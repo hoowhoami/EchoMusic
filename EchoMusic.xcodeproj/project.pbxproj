@@ -1,0 +1,607 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1EBC6D2B2E4E1FEB00D7BCC1 /* EchoMusicApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D2A2E4E1FEB00D7BCC1 /* EchoMusicApp.swift */; };
+		1EBC6D2D2E4E1FEB00D7BCC1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D2C2E4E1FEB00D7BCC1 /* ContentView.swift */; };
+		1EBC6D2F2E4E1FED00D7BCC1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1EBC6D2E2E4E1FED00D7BCC1 /* Assets.xcassets */; };
+		1EBC6D322E4E1FED00D7BCC1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1EBC6D312E4E1FED00D7BCC1 /* Preview Assets.xcassets */; };
+		1EBC6D342E4E1FED00D7BCC1 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D332E4E1FED00D7BCC1 /* Persistence.swift */; };
+		1EBC6D372E4E1FED00D7BCC1 /* EchoMusic.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D352E4E1FED00D7BCC1 /* EchoMusic.xcdatamodeld */; };
+		1EBC6D422E4E1FED00D7BCC1 /* EchoMusicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D412E4E1FED00D7BCC1 /* EchoMusicTests.swift */; };
+		1EBC6D4C2E4E1FED00D7BCC1 /* EchoMusicUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D4B2E4E1FED00D7BCC1 /* EchoMusicUITests.swift */; };
+		1EBC6D4E2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D4D2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1EBC6D3E2E4E1FED00D7BCC1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1EBC6D1F2E4E1FEB00D7BCC1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1EBC6D262E4E1FEB00D7BCC1;
+			remoteInfo = EchoMusic;
+		};
+		1EBC6D482E4E1FED00D7BCC1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1EBC6D1F2E4E1FEB00D7BCC1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1EBC6D262E4E1FEB00D7BCC1;
+			remoteInfo = EchoMusic;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1EBC6D272E4E1FEB00D7BCC1 /* EchoMusic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EchoMusic.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EBC6D2A2E4E1FEB00D7BCC1 /* EchoMusicApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicApp.swift; sourceTree = "<group>"; };
+		1EBC6D2C2E4E1FEB00D7BCC1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1EBC6D2E2E4E1FED00D7BCC1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1EBC6D312E4E1FED00D7BCC1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
+		1EBC6D332E4E1FED00D7BCC1 /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
+		1EBC6D362E4E1FED00D7BCC1 /* EchoMusic.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = EchoMusic.xcdatamodel; sourceTree = "<group>"; };
+		1EBC6D382E4E1FED00D7BCC1 /* EchoMusic.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EchoMusic.entitlements; sourceTree = "<group>"; };
+		1EBC6D3D2E4E1FED00D7BCC1 /* EchoMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EBC6D412E4E1FED00D7BCC1 /* EchoMusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicTests.swift; sourceTree = "<group>"; };
+		1EBC6D472E4E1FED00D7BCC1 /* EchoMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1EBC6D4B2E4E1FED00D7BCC1 /* EchoMusicUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicUITests.swift; sourceTree = "<group>"; };
+		1EBC6D4D2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicUITestsLaunchTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1EBC6D242E4E1FEB00D7BCC1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D3A2E4E1FED00D7BCC1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D442E4E1FED00D7BCC1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1EBC6D1E2E4E1FEB00D7BCC1 = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D292E4E1FEB00D7BCC1 /* EchoMusic */,
+				1EBC6D402E4E1FED00D7BCC1 /* EchoMusicTests */,
+				1EBC6D4A2E4E1FED00D7BCC1 /* EchoMusicUITests */,
+				1EBC6D282E4E1FEB00D7BCC1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1EBC6D282E4E1FEB00D7BCC1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D272E4E1FEB00D7BCC1 /* EchoMusic.app */,
+				1EBC6D3D2E4E1FED00D7BCC1 /* EchoMusicTests.xctest */,
+				1EBC6D472E4E1FED00D7BCC1 /* EchoMusicUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1EBC6D292E4E1FEB00D7BCC1 /* EchoMusic */ = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D2A2E4E1FEB00D7BCC1 /* EchoMusicApp.swift */,
+				1EBC6D2C2E4E1FEB00D7BCC1 /* ContentView.swift */,
+				1EBC6D2E2E4E1FED00D7BCC1 /* Assets.xcassets */,
+				1EBC6D332E4E1FED00D7BCC1 /* Persistence.swift */,
+				1EBC6D382E4E1FED00D7BCC1 /* EchoMusic.entitlements */,
+				1EBC6D352E4E1FED00D7BCC1 /* EchoMusic.xcdatamodeld */,
+				1EBC6D302E4E1FED00D7BCC1 /* Preview Content */,
+			);
+			path = EchoMusic;
+			sourceTree = "<group>";
+		};
+		1EBC6D302E4E1FED00D7BCC1 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D312E4E1FED00D7BCC1 /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		1EBC6D402E4E1FED00D7BCC1 /* EchoMusicTests */ = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D412E4E1FED00D7BCC1 /* EchoMusicTests.swift */,
+			);
+			path = EchoMusicTests;
+			sourceTree = "<group>";
+		};
+		1EBC6D4A2E4E1FED00D7BCC1 /* EchoMusicUITests */ = {
+			isa = PBXGroup;
+			children = (
+				1EBC6D4B2E4E1FED00D7BCC1 /* EchoMusicUITests.swift */,
+				1EBC6D4D2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift */,
+			);
+			path = EchoMusicUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1EBC6D262E4E1FEB00D7BCC1 /* EchoMusic */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1EBC6D512E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusic" */;
+			buildPhases = (
+				1EBC6D232E4E1FEB00D7BCC1 /* Sources */,
+				1EBC6D242E4E1FEB00D7BCC1 /* Frameworks */,
+				1EBC6D252E4E1FEB00D7BCC1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = EchoMusic;
+			productName = EchoMusic;
+			productReference = 1EBC6D272E4E1FEB00D7BCC1 /* EchoMusic.app */;
+			productType = "com.apple.product-type.application";
+		};
+		1EBC6D3C2E4E1FED00D7BCC1 /* EchoMusicTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1EBC6D542E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusicTests" */;
+			buildPhases = (
+				1EBC6D392E4E1FED00D7BCC1 /* Sources */,
+				1EBC6D3A2E4E1FED00D7BCC1 /* Frameworks */,
+				1EBC6D3B2E4E1FED00D7BCC1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1EBC6D3F2E4E1FED00D7BCC1 /* PBXTargetDependency */,
+			);
+			name = EchoMusicTests;
+			productName = EchoMusicTests;
+			productReference = 1EBC6D3D2E4E1FED00D7BCC1 /* EchoMusicTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		1EBC6D462E4E1FED00D7BCC1 /* EchoMusicUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1EBC6D572E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusicUITests" */;
+			buildPhases = (
+				1EBC6D432E4E1FED00D7BCC1 /* Sources */,
+				1EBC6D442E4E1FED00D7BCC1 /* Frameworks */,
+				1EBC6D452E4E1FED00D7BCC1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1EBC6D492E4E1FED00D7BCC1 /* PBXTargetDependency */,
+			);
+			name = EchoMusicUITests;
+			productName = EchoMusicUITests;
+			productReference = 1EBC6D472E4E1FED00D7BCC1 /* EchoMusicUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1EBC6D1F2E4E1FEB00D7BCC1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1520;
+				LastUpgradeCheck = 1520;
+				TargetAttributes = {
+					1EBC6D262E4E1FEB00D7BCC1 = {
+						CreatedOnToolsVersion = 15.2;
+					};
+					1EBC6D3C2E4E1FED00D7BCC1 = {
+						CreatedOnToolsVersion = 15.2;
+						TestTargetID = 1EBC6D262E4E1FEB00D7BCC1;
+					};
+					1EBC6D462E4E1FED00D7BCC1 = {
+						CreatedOnToolsVersion = 15.2;
+						TestTargetID = 1EBC6D262E4E1FEB00D7BCC1;
+					};
+				};
+			};
+			buildConfigurationList = 1EBC6D222E4E1FEB00D7BCC1 /* Build configuration list for PBXProject "EchoMusic" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1EBC6D1E2E4E1FEB00D7BCC1;
+			productRefGroup = 1EBC6D282E4E1FEB00D7BCC1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1EBC6D262E4E1FEB00D7BCC1 /* EchoMusic */,
+				1EBC6D3C2E4E1FED00D7BCC1 /* EchoMusicTests */,
+				1EBC6D462E4E1FED00D7BCC1 /* EchoMusicUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1EBC6D252E4E1FEB00D7BCC1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EBC6D322E4E1FED00D7BCC1 /* Preview Assets.xcassets in Resources */,
+				1EBC6D2F2E4E1FED00D7BCC1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D3B2E4E1FED00D7BCC1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D452E4E1FED00D7BCC1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1EBC6D232E4E1FEB00D7BCC1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EBC6D342E4E1FED00D7BCC1 /* Persistence.swift in Sources */,
+				1EBC6D2D2E4E1FEB00D7BCC1 /* ContentView.swift in Sources */,
+				1EBC6D372E4E1FED00D7BCC1 /* EchoMusic.xcdatamodeld in Sources */,
+				1EBC6D2B2E4E1FEB00D7BCC1 /* EchoMusicApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D392E4E1FED00D7BCC1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EBC6D422E4E1FED00D7BCC1 /* EchoMusicTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EBC6D432E4E1FED00D7BCC1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1EBC6D4C2E4E1FED00D7BCC1 /* EchoMusicUITests.swift in Sources */,
+				1EBC6D4E2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1EBC6D3F2E4E1FED00D7BCC1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1EBC6D262E4E1FEB00D7BCC1 /* EchoMusic */;
+			targetProxy = 1EBC6D3E2E4E1FED00D7BCC1 /* PBXContainerItemProxy */;
+		};
+		1EBC6D492E4E1FED00D7BCC1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1EBC6D262E4E1FEB00D7BCC1 /* EchoMusic */;
+			targetProxy = 1EBC6D482E4E1FED00D7BCC1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1EBC6D4F2E4E1FED00D7BCC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.7;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1EBC6D502E4E1FED00D7BCC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.7;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		1EBC6D522E4E1FED00D7BCC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EchoMusic/EchoMusic.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"EchoMusic/Preview Content\"";
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusic;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1EBC6D532E4E1FED00D7BCC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = EchoMusic/EchoMusic.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "\"EchoMusic/Preview Content\"";
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusic;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		1EBC6D552E4E1FED00D7BCC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.7;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusicTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EchoMusic.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EchoMusic";
+			};
+			name = Debug;
+		};
+		1EBC6D562E4E1FED00D7BCC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.7;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusicTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EchoMusic.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EchoMusic";
+			};
+			name = Release;
+		};
+		1EBC6D582E4E1FED00D7BCC1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusicUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = EchoMusic;
+			};
+			name = Debug;
+		};
+		1EBC6D592E4E1FED00D7BCC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 63TT4FKF4K;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whoami.EchoMusicUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = EchoMusic;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1EBC6D222E4E1FEB00D7BCC1 /* Build configuration list for PBXProject "EchoMusic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EBC6D4F2E4E1FED00D7BCC1 /* Debug */,
+				1EBC6D502E4E1FED00D7BCC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1EBC6D512E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusic" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EBC6D522E4E1FED00D7BCC1 /* Debug */,
+				1EBC6D532E4E1FED00D7BCC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1EBC6D542E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusicTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EBC6D552E4E1FED00D7BCC1 /* Debug */,
+				1EBC6D562E4E1FED00D7BCC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1EBC6D572E4E1FED00D7BCC1 /* Build configuration list for PBXNativeTarget "EchoMusicUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EBC6D582E4E1FED00D7BCC1 /* Debug */,
+				1EBC6D592E4E1FED00D7BCC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCVersionGroup section */
+		1EBC6D352E4E1FED00D7BCC1 /* EchoMusic.xcdatamodeld */ = {
+			isa = XCVersionGroup;
+			children = (
+				1EBC6D362E4E1FED00D7BCC1 /* EchoMusic.xcdatamodel */,
+			);
+			currentVersion = 1EBC6D362E4E1FED00D7BCC1 /* EchoMusic.xcdatamodel */;
+			path = EchoMusic.xcdatamodeld;
+			sourceTree = "<group>";
+			versionGroupType = wrapper.xcdatamodel;
+		};
+/* End XCVersionGroup section */
+	};
+	rootObject = 1EBC6D1F2E4E1FEB00D7BCC1 /* Project object */;
+}
