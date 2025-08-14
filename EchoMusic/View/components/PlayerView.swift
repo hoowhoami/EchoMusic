@@ -60,7 +60,10 @@ struct PlayerView: View {
                     ),
                     playMode: Binding(
                         get: { playerService.playMode },
-                        set: { _ in playerService.togglePlayMode() }
+                        set: { _ in 
+                            // 立即触发模式切换
+                            playerService.togglePlayMode()
+                        }
                     ),
                     showVolumeSlider: $showVolumeSlider,
                     showSpeedSlider: $showSpeedSlider,
@@ -94,6 +97,7 @@ struct TopProgressBarView: View {
     let duration: Double
     @State private var isHovering = false
     @State private var isDragging = false
+    @State private var draggedTime: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -103,17 +107,20 @@ struct TopProgressBarView: View {
                     .fill(Color.gray.opacity(0.3))
                     .frame(height: isHovering || isDragging ? 6 : 3)
 
-                // 进度条
+                // 进度条 - 始终显示当前进度
+                let displayTime = isDragging ? draggedTime : currentTime
+                let progress = duration > 0 ? max(0, min(1, displayTime / duration)) : 0
                 Rectangle()
                     .fill(Color.accentColor)
-                    .frame(width: max(0, geometry.size.width * max(0, min(1, duration > 0 ? currentTime / duration : 0))), height: isHovering || isDragging ? 6 : 3)
+                    .frame(width: geometry.size.width * progress, height: isHovering || isDragging ? 6 : 3)
 
                 // 拖拽手柄（仅在悬停或拖拽时显示）
                 if isHovering || isDragging {
+                    let handleProgress = duration > 0 ? max(0, min(1, displayTime / duration)) : 0
                     Circle()
                         .fill(Color.accentColor)
                         .frame(width: 12, height: 12)
-                        .offset(x: max(0, geometry.size.width * max(0, min(1, duration > 0 ? currentTime / duration : 0))) - 6)
+                        .offset(x: (geometry.size.width * handleProgress) - 6)
                 }
             }
             .onHover { hovering in
@@ -127,18 +134,21 @@ struct TopProgressBarView: View {
                         isDragging = true
                         if duration > 0 {
                             let newTime = (value.location.x / geometry.size.width) * duration
-                            currentTime = max(0, min(duration, newTime))
+                            draggedTime = max(0, min(duration, newTime))
                         }
                     }
                     .onEnded { _ in
                         isDragging = false
+                        // 结束拖拽时才实际设置时间
+                        currentTime = draggedTime
                     }
             )
 
             // 时间提示（仅在悬停且有时长时显示）
             if (isHovering || isDragging) && duration > 0 {
+                let showTime = isDragging ? draggedTime : currentTime
                 HStack {
-                    Text(formatTime(currentTime))
+                    Text(formatTime(showTime))
                         .font(.caption)
                         .foregroundColor(.primary)
                         .padding(.horizontal, 6)
@@ -163,6 +173,14 @@ struct TopProgressBarView: View {
         .frame(height: isHovering || isDragging ? 20 : 6)
         .animation(.easeInOut(duration: 0.2), value: isHovering)
         .animation(.easeInOut(duration: 0.2), value: isDragging)
+        .onAppear {
+            draggedTime = currentTime
+        }
+        .onChange(of: currentTime) { newValue in
+            if !isDragging {
+                draggedTime = newValue
+            }
+        }
     }
 
     private func formatTime(_ time: Double) -> String {
@@ -538,20 +556,36 @@ struct PlayerSettingsView: View {
 // 音量控制弹出窗口
 struct VolumeControlPopover: View {
     @Binding var volume: Double
-
+    @State private var localVolume: Double = 0.0
+    
     var body: some View {
         VStack(spacing: 8) {
-            Text("\(Int(volume * 100))%")
+            Text("\(Int(localVolume * 100))%")
                 .font(.caption)
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
 
             // 简约的横排滑块
-            Slider(value: $volume, in: 0...1)
+            Slider(value: Binding(
+                get: { localVolume },
+                set: { newValue in
+                    localVolume = newValue
+                    volume = newValue  // 立即更新外部绑定
+                }
+            ), in: 0...1)
                 .frame(width: 120)
                 .controlSize(.small)
         }
         .padding(12)
+        .onAppear {
+            localVolume = volume  // 初始化本地状态
+        }
+        .onChange(of: volume) { newValue in
+            // 当外部值改变时同步本地状态
+            if abs(newValue - localVolume) > 0.01 {
+                localVolume = newValue
+            }
+        }
     }
 }
 
@@ -831,11 +865,9 @@ struct QualitySelectionPopover: View {
                 Toggle(isOn: Binding(
                     get: { compatibilityMode },
                     set: { newValue in
-                        // 只有在真正改变时才调用PlayerService
-                        if compatibilityMode != newValue {
-                            compatibilityMode = newValue
-                            playerService.setQualityCompatibility(newValue)
-                        }
+                        compatibilityMode = newValue
+                        // 立即调用PlayerService，不检查是否真正改变
+                        playerService.setQualityCompatibility(newValue)
                     }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -851,7 +883,7 @@ struct QualitySelectionPopover: View {
         .padding(16)
         .frame(minWidth: 240)
         .onAppear {
-            // 从 PlayerService 获取当前设置，不触发任何回调
+            // 从 PlayerService 获取当前设置
             selectedQuality = playerService.audioQuality
             compatibilityMode = playerService.qualityCompatibility
         }
@@ -860,11 +892,9 @@ struct QualitySelectionPopover: View {
     @ViewBuilder
     private func qualityRow(quality: AudioQuality) -> some View {
         Button(action: {
-            // 只有在用户真正选择不同音质时才调用
-            if selectedQuality != quality {
-                selectedQuality = quality
-                playerService.setAudioQuality(quality)
-            }
+            selectedQuality = quality
+            // 立即调用PlayerService，不检查是否真正改变
+            playerService.setAudioQuality(quality)
         }) {
             HStack(spacing: 8) {
                 // 使用 macOS 原生单选框样式

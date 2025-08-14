@@ -6,14 +6,29 @@
 //
 import SwiftUI
 import AVFoundation
+import Combine
+
+/// 播放模式枚举
+enum PlayMode: String, CaseIterable {
+    case sequence = "repeat"           // 顺序播放
+    case repeatOne = "repeat.1"        // 单曲循环
+    case shuffle = "shuffle"           // 随机播放
+
+    var displayName: String {
+        switch self {
+        case .sequence: return "顺序播放"
+        case .repeatOne: return "单曲循环"
+        case .shuffle: return "随机播放"
+        }
+    }
+}
 
 /// 播放器服务，处理所有播放器相关的业务逻辑
 class PlayerService: ObservableObject {
     static let shared = PlayerService()
     
-    /// 播放器状态（内部使用）
-    @Published
-    private var player = Player()
+    /// 记录音频中断前的播放状态
+    private var wasPlayingBeforeInterruption: Bool = false
     
     /// 当前正在播放的AVPlayer
     private var audioPlayer: AVPlayer?
@@ -29,12 +44,6 @@ class PlayerService: ObservableObject {
     
     /// 音乐播放服务
     private let musicService = MusicService.shared
-    
-    /// 音频设备变化监听器
-    private var audioDeviceObserver: Any?
-    
-    /// 记录音频中断前的播放状态
-    private var wasPlayingBeforeInterruption: Bool = false
     
     // MARK: - 持久化相关常量
     private let playlistKey = "SavedPlaylist"
@@ -76,21 +85,21 @@ class PlayerService: ObservableObject {
             
             await MainActor.run {
                 // 清理当前播放器
-                cleanupPlayer()
+                self.cleanupPlayer()
                 
-                audioPlayer = AVPlayer(url: url)
-                isNewSong = true  // 标记为新歌曲
+                self.audioPlayer = AVPlayer(url: url)
+                self.isNewSong = true  // 标记为新歌曲
                 
                 // 设置播放器观察器
-                setupPlayerObservers()
+                self.setupPlayerObservers()
                 
                 // 设置音量和播放速度
-                audioPlayer?.volume = Float(player.volume)
-                audioPlayer?.rate = 0 // 先设置为0，不自动播放
+                self.audioPlayer?.volume = Float(self.volume)
+                self.audioPlayer?.rate = 0 // 先设置为0，不自动播放
             }
         } catch let error as MusicServiceError {
             await MainActor.run {
-                player.isPlaying = false
+                self.isPlaying = false
             }
             // 将MusicServiceError转换为PlayerServiceError
             switch error {
@@ -107,7 +116,7 @@ class PlayerService: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                player.isPlaying = false
+                self.isPlaying = false
             }
             throw PlayerServiceError.unknownError
         }
@@ -202,25 +211,25 @@ class PlayerService: ObservableObject {
                         if strongSelf.isNewSong {
                             // 新歌曲从头开始播放
                             strongSelf.isNewSong = false
-                            strongSelf.player.currentTime = 0
-                            if strongSelf.player.isPlaying {
-                                player.rate = Float(strongSelf.player.playbackSpeed)
+                            strongSelf.currentTime = 0
+                            if strongSelf.isPlaying {
+                                player.rate = Float(strongSelf.playbackSpeed)
                             }
                         } else {
                             // 非新歌曲，恢复到保存的播放位置
-                            let savedTime = strongSelf.player.currentTime
+                            let savedTime = strongSelf.currentTime
                             if savedTime > 0 {
                                 let cmTime = CMTime(seconds: savedTime, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
                                 player.seek(to: cmTime) { _ in
                                     // 跳转完成后开始播放
-                                    if strongSelf.player.isPlaying {
-                                        player.rate = Float(strongSelf.player.playbackSpeed)
+                                    if strongSelf.isPlaying {
+                                        player.rate = Float(strongSelf.playbackSpeed)
                                     }
                                 }
                             } else {
                                 // 如果没有保存的时间，直接播放
-                                if strongSelf.player.isPlaying {
-                                    player.rate = Float(strongSelf.player.playbackSpeed)
+                                if strongSelf.isPlaying {
+                                    player.rate = Float(strongSelf.playbackSpeed)
                                 }
                             }
                         }
@@ -248,18 +257,18 @@ class PlayerService: ObservableObject {
         }
     }
     
-    // MARK: - 对外暴露的属性（只读）
-    var currentSong: Song? { player.currentSong }
-    var isPlaying: Bool { player.isPlaying }
-    var currentTime: Double { player.currentTime }
-    var duration: Double { player.duration }
-    var volume: Double { player.volume }
-    var playbackSpeed: Double { player.playbackSpeed }
-    var playMode: PlayMode { player.playMode }
-    var playlist: [Song] { player.playlist }
-    var currentIndex: Int { player.currentIndex }
-    var errorMessage: String? { player.errorMessage }
-    var hasError: Bool { player.hasError }
+    // MARK: - 对外暴露的属性（@Published确保UI更新）
+    @Published var currentSong: Song?
+    @Published var isPlaying: Bool = false
+    @Published var currentTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var volume: Double = 0.7
+    @Published var playbackSpeed: Double = 1.0
+    @Published var playMode: PlayMode = .sequence
+    @Published var playlist: [Song] = []
+    @Published var currentIndex: Int = 0
+    @Published var errorMessage: String?
+    @Published var hasError: Bool = false
     
     // MARK: - 音质相关属性
     private var _audioQuality: AudioQuality = .normal
@@ -277,7 +286,11 @@ class PlayerService: ObservableObject {
     /// 设置播放失败自动跳过
     func setAutoSkipOnError(_ enabled: Bool) {
         _autoSkipOnError = enabled
-        UserDefaults.standard.set(enabled, forKey: autoSkipOnErrorKey)
+        
+        // 异步保存到UserDefaults
+        DispatchQueue.global(qos: .utility).async {
+            UserDefaults.standard.set(enabled, forKey: self.autoSkipOnErrorKey)
+        }
     }
     
     // MARK: - 持久化方法
@@ -287,16 +300,16 @@ class PlayerService: ObservableObject {
         let userDefaults = UserDefaults.standard
         
         // 保存播放列表
-        if let playlistData = try? JSONEncoder().encode(player.playlist) {
+        if let playlistData = try? JSONEncoder().encode(playlist) {
             userDefaults.set(playlistData, forKey: playlistKey)
         }
         
         // 保存其他状态
-        userDefaults.set(player.currentIndex, forKey: currentIndexKey)
-        userDefaults.set(player.currentTime, forKey: currentTimeKey)
-        userDefaults.set(player.playMode.rawValue, forKey: playModeKey)
-        userDefaults.set(player.volume, forKey: volumeKey)
-        userDefaults.set(player.playbackSpeed, forKey: playbackSpeedKey)
+        userDefaults.set(currentIndex, forKey: currentIndexKey)
+        userDefaults.set(currentTime, forKey: currentTimeKey)
+        userDefaults.set(playMode.rawValue, forKey: playModeKey)
+        userDefaults.set(volume, forKey: volumeKey)
+        userDefaults.set(playbackSpeed, forKey: playbackSpeedKey)
         userDefaults.set(_audioQuality.rawValue, forKey: audioQualityKey)
         userDefaults.set(_qualityCompatibility, forKey: qualityCompatibilityKey)
     }
@@ -307,39 +320,39 @@ class PlayerService: ObservableObject {
         
         // 恢复播放列表
         if let playlistData = userDefaults.data(forKey: playlistKey),
-           let playlist = try? JSONDecoder().decode([Song].self, from: playlistData) {
-            player.playlist = playlist
+           let restoredPlaylist = try? JSONDecoder().decode([Song].self, from: playlistData) {
+            playlist = restoredPlaylist
         }
         
         // 恢复播放索引
         let savedIndex = userDefaults.integer(forKey: currentIndexKey)
-        if savedIndex >= 0 && savedIndex < player.playlist.count {
-            player.currentIndex = savedIndex
-            player.currentSong = player.playlist[savedIndex]
-        } else if !player.playlist.isEmpty {
-            player.currentIndex = 0
-            player.currentSong = player.playlist[0]
+        if savedIndex >= 0 && savedIndex < playlist.count {
+            currentIndex = savedIndex
+            currentSong = playlist[savedIndex]
+        } else if !playlist.isEmpty {
+            currentIndex = 0
+            currentSong = playlist[0]
         }
         
         // 恢复播放时间
-        player.currentTime = userDefaults.double(forKey: currentTimeKey)
+        currentTime = userDefaults.double(forKey: currentTimeKey)
         
         // 恢复播放模式
         if let playModeRawValue = userDefaults.object(forKey: playModeKey) as? String,
-           let playMode = PlayMode(rawValue: playModeRawValue) {
-            player.playMode = playMode
+           let restoredPlayMode = PlayMode(rawValue: playModeRawValue) {
+            playMode = restoredPlayMode
         }
         
         // 恢复音量
         let savedVolume = userDefaults.double(forKey: volumeKey)
         if savedVolume > 0 {
-            player.volume = savedVolume
+            volume = savedVolume
         }
         
         // 恢复播放速度
         let savedSpeed = userDefaults.double(forKey: playbackSpeedKey)
         if savedSpeed >= 0.5 && savedSpeed <= 2.0 {
-            player.playbackSpeed = savedSpeed
+            playbackSpeed = savedSpeed
         }
         
         // 恢复音质设置
@@ -356,8 +369,8 @@ class PlayerService: ObservableObject {
         
         // 设置默认时长（如果有当前歌曲）
         // 注意：实际时长会在AVPlayer准备好时更新
-        if let currentSong = player.currentSong {
-            player.duration = Double(currentSong.duration ?? 0)
+        if let currentSong = currentSong {
+            duration = Double(currentSong.duration ?? 0)
         }
     }
     
@@ -376,63 +389,72 @@ class PlayerService: ObservableObject {
     
     /// 切换播放/暂停状态
     func togglePlayback() {
-        if player.isPlaying {
+        if isPlaying {
             pausePlayback()
-            player.isPlaying = false
+            isPlaying = false
         } else {
             // 如果有当前歌曲但音频播放器未准备好，重新加载歌曲
-            if let currentSong = player.currentSong, !isPlayerReady() {
-                player.isPlaying = true  // 先设置为true，让观察器知道需要播放
+            if let currentSong = currentSong, !isPlayerReady() {
+                isPlaying = true  // 先设置为true，让观察器知道需要播放
                 Task {
                     do {
                         try await playNewSong(currentSong)
                     } catch {
-                        player.isPlaying = false
+                        await MainActor.run {
+                            self.isPlaying = false
+                        }
                     }
                 }
             } else {
                 // 播放器已经准备好，直接恢复播放
                 resumePlayback()
-                player.isPlaying = true
+                isPlaying = true
             }
         }
-        savePlaylistState()
+        
+        // 异步保存状态
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
     }
     
     /// 播放上一首
     func playPrevious() {
-        guard !player.playlist.isEmpty else { return }
+        guard !playlist.isEmpty else { return }
         
-        switch player.playMode {
+        switch playMode {
         case .shuffle:
-            player.currentIndex = Int.random(in: 0..<player.playlist.count)
+            currentIndex = Int.random(in: 0..<playlist.count)
         case .sequence, .repeatOne:
-            player.currentIndex = player.currentIndex > 0 ? player.currentIndex - 1 : player.playlist.count - 1
+            currentIndex = currentIndex > 0 ? currentIndex - 1 : playlist.count - 1
         }
         
-        let newSong = player.playlist[player.currentIndex]
+        let newSong = playlist[currentIndex]
         
         // 立即更新UI显示的歌曲，不管播放是否成功
-        player.currentSong = newSong
-        player.currentTime = 0
-        player.duration = Double(newSong.duration ?? 0)  // 使用歌曲元数据中的时长
-        player.clearError()
+        currentSong = newSong
+        currentTime = 0
+        duration = Double(newSong.duration ?? 0)
+        clearError()
         
         // 播放新歌曲
         Task {
             do {
                 try await playNewSong(newSong)
                 await MainActor.run {
-                    savePlaylistState()
+                    // 异步保存状态
+                    DispatchQueue.global(qos: .utility).async {
+                        self.savePlaylistState()
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    player.isPlaying = false
+                    isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
                     if let playerError = error as? PlayerServiceError {
-                        player.setError(playerError.errorDescription ?? "播放失败")
+                        setError(playerError.errorDescription ?? "播放失败")
                     } else {
-                        player.setError("播放失败")
+                        setError("播放失败")
                     }
                     // 停止当前播放器
                     cleanupPlayer()
@@ -440,7 +462,7 @@ class PlayerService: ObservableObject {
                     // 如果启用了自动跳过，尝试播放下一首
                     if autoSkipOnError {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.player.isPlaying = true  // 确保设置为播放状态
+                            self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
                     }
@@ -451,28 +473,28 @@ class PlayerService: ObservableObject {
     
     /// 播放下一首
     func playNext() {
-        guard !player.playlist.isEmpty else { return }
+        guard !playlist.isEmpty else { return }
         
-        let previousIndex = player.currentIndex
-        let wasPlaying = player.isPlaying
+        let previousIndex = currentIndex
+        let wasPlaying = isPlaying
         
-        switch player.playMode {
+        switch playMode {
         case .shuffle:
-            player.currentIndex = Int.random(in: 0..<player.playlist.count)
+            currentIndex = Int.random(in: 0..<playlist.count)
         case .repeatOne:
             // 单曲循环，不改变索引
             break
         case .sequence:
-            player.currentIndex = (player.currentIndex + 1) % player.playlist.count
+            currentIndex = (currentIndex + 1) % playlist.count
         }
         
-        let newSong = player.playlist[player.currentIndex]
+        let newSong = playlist[currentIndex]
         
         // 立即更新UI显示的歌曲，不管播放是否成功
-        player.currentSong = newSong
-        player.currentTime = 0
-        player.duration = Double(newSong.duration ?? 0)  // 使用歌曲元数据中的时长
-        player.clearError()
+        currentSong = newSong
+        currentTime = 0
+        duration = Double(newSong.duration ?? 0)
+        clearError()
         
         // 播放新歌曲
         Task {
@@ -480,25 +502,29 @@ class PlayerService: ObservableObject {
                 try await playNewSong(newSong)
                 await MainActor.run {
                     // 如果之前在播放或者是自动切换到下一首，继续播放
-                    player.isPlaying = wasPlaying || previousIndex != player.currentIndex
-                    savePlaylistState()
+                    isPlaying = wasPlaying || previousIndex != currentIndex
+                    
+                    // 异步保存状态
+                    DispatchQueue.global(qos: .utility).async {
+                        self.savePlaylistState()
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    player.isPlaying = false
+                    isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
                     if let playerError = error as? PlayerServiceError {
-                        player.setError(playerError.errorDescription ?? "播放失败")
+                        setError(playerError.errorDescription ?? "播放失败")
                     } else {
-                        player.setError("播放失败")
+                        setError("播放失败")
                     }
                     // 停止当前播放器
                     cleanupPlayer()
                     
                     // 如果启用了自动跳过，尝试播放下一首（避免无限循环）
-                    if autoSkipOnError && previousIndex != player.currentIndex {
+                    if autoSkipOnError && previousIndex != currentIndex {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.player.isPlaying = true  // 确保设置为播放状态
+                            self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
                     }
@@ -510,42 +536,50 @@ class PlayerService: ObservableObject {
     /// 切换播放模式
     func togglePlayMode() {
         let allModes = PlayMode.allCases
-        if let currentModeIndex = allModes.firstIndex(of: player.playMode) {
+        if let currentModeIndex = allModes.firstIndex(of: playMode) {
             let nextIndex = (currentModeIndex + 1) % allModes.count
-            player.playMode = allModes[nextIndex]
+            playMode = allModes[nextIndex]
+            
+            // 异步保存状态
+            DispatchQueue.global(qos: .utility).async {
+                self.savePlaylistState()
+            }
         }
-        savePlaylistState()
     }
     
     /// 播放指定歌曲
     func playSong(at index: Int) {
-        guard index >= 0 && index < player.playlist.count else { return }
+        guard index >= 0 && index < playlist.count else { return }
         
-        let newSong = player.playlist[index]
+        let newSong = playlist[index]
         
         // 立即更新UI显示的歌曲，不管播放是否成功
-        player.currentIndex = index
-        player.currentSong = newSong
-        player.currentTime = 0
-        player.duration = Double(newSong.duration ?? 0)  // 使用歌曲元数据中的时长
-        player.clearError()
+        currentIndex = index
+        currentSong = newSong
+        currentTime = 0
+        duration = Double(newSong.duration ?? 0)
+        clearError()
         
         // 播放新歌曲
         Task {
             do {
                 try await playNewSong(newSong)
                 await MainActor.run {
-                    player.isPlaying = true
-                    savePlaylistState()
+                    isPlaying = true
+                    
+                    // 异步保存状态
+                    DispatchQueue.global(qos: .utility).async {
+                        self.savePlaylistState()
+                    }
                 }
             } catch {
                 await MainActor.run {
-                    player.isPlaying = false
+                    isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
                     if let playerError = error as? PlayerServiceError {
-                        player.setError(playerError.errorDescription ?? "播放失败")
+                        setError(playerError.errorDescription ?? "播放失败")
                     } else {
-                        player.setError("播放失败")
+                        setError("播放失败")
                     }
                     // 停止当前播放器
                     cleanupPlayer()
@@ -553,7 +587,7 @@ class PlayerService: ObservableObject {
                     // 如果启用了自动跳过，尝试播放下一首
                     if autoSkipOnError {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.player.isPlaying = true  // 确保设置为播放状态
+                            self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
                     }
@@ -564,38 +598,65 @@ class PlayerService: ObservableObject {
     
     /// 设置播放进度
     func seekTo(time: Double) {
-        player.currentTime = max(0, min(player.duration, time))
-        seekToTime(time)
-        savePlaylistState()
+        let clampedTime = max(0, min(duration, time))
+        currentTime = clampedTime
+        
+        // 立即跳转播放器位置
+        seekToTime(clampedTime)
+        
+        // 异步保存状态
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
     }
     
     /// 设置音量
     func setVolume(_ newVolume: Double) {
-        player.volume = max(0, min(1, newVolume))
-        setPlayerVolume(newVolume)
-        savePlaylistState()
+        let clampedVolume = max(0, min(1, newVolume))
+        volume = clampedVolume
+        
+        // 立即更新播放器音量
+        setPlayerVolume(clampedVolume)
+        
+        // 异步保存状态，避免阻塞UI
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
     }
     
     /// 设置播放速度
     func setPlaybackSpeed(_ speed: Double) {
-        player.playbackSpeed = max(0.5, min(2.0, speed))
-        setPlayerPlaybackSpeed(speed)
-        savePlaylistState()
+        let clampedSpeed = max(0.5, min(2.0, speed))
+        playbackSpeed = clampedSpeed
+        
+        // 立即更新播放器速度
+        setPlayerPlaybackSpeed(clampedSpeed)
+        
+        // 异步保存状态，避免阻塞UI
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
     }
     
     /// 设置音质
     func setAudioQuality(_ quality: AudioQuality) {
-        let wasPlaying = player.isPlaying
+        let wasPlaying = isPlaying
         _audioQuality = quality
-        savePlaylistState()
+        
+        // 异步保存状态
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
         
         // 如果当前有歌曲在播放，重新获取并播放
-        if player.currentSong != nil {
+        if currentSong != nil {
             Task {
                 do {
                     try await reloadCurrentSong(shouldPlay: wasPlaying)
                 } catch {
-                    player.isPlaying = false
+                    await MainActor.run {
+                        self.isPlaying = false
+                    }
                 }
             }
         }
@@ -603,17 +664,23 @@ class PlayerService: ObservableObject {
     
     /// 设置兼容模式
     func setQualityCompatibility(_ compatibility: Bool) {
-        let wasPlaying = player.isPlaying
+        let wasPlaying = isPlaying
         _qualityCompatibility = compatibility
-        savePlaylistState()
+        
+        // 异步保存状态
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
         
         // 如果当前有歌曲在播放，重新获取并播放
-        if player.currentSong != nil {
+        if currentSong != nil {
             Task {
                 do {
                     try await reloadCurrentSong(shouldPlay: wasPlaying)
                 } catch {
-                    player.isPlaying = false
+                    await MainActor.run {
+                        self.isPlaying = false
+                    }
                 }
             }
         }
@@ -621,13 +688,13 @@ class PlayerService: ObservableObject {
     
     /// 重新加载当前歌曲
     private func reloadCurrentSong(shouldPlay: Bool) async throws {
-        guard let currentSong = player.currentSong else { return }
+        guard let currentSong = currentSong else { return }
         
         await MainActor.run {
             // 暂停当前播放
-            if player.isPlaying {
+            if isPlaying {
                 pausePlayback()
-                player.isPlaying = false
+                isPlaying = false
             }
         }
         
@@ -636,19 +703,19 @@ class PlayerService: ObservableObject {
         
         await MainActor.run {
             if shouldPlay {
-                player.isPlaying = true
+                isPlaying = true
             }
         }
     }
     
     /// 加载播放列表
     func loadPlaylist(_ songs: [Song]) {
-        player.playlist = songs
-        if !songs.isEmpty && player.currentSong == nil {
-            player.currentIndex = 0
-            player.currentSong = songs[0]
+        playlist = songs
+        if !songs.isEmpty && currentSong == nil {
+            currentIndex = 0
+            currentSong = songs[0]
             // 设置默认时长，实际时长会在AVPlayer准备好时更新
-            player.duration = Double(songs[0].duration ?? 0)
+            duration = Double(songs[0].duration ?? 0)
         }
         savePlaylistState()
     }
@@ -656,18 +723,18 @@ class PlayerService: ObservableObject {
     /// 添加歌曲到播放列表（去重）
     func addSongs(_ songs: [Song]) {
         let uniqueSongs = songs.filter { newSong in
-            !player.playlist.contains { existingSong in
+            !playlist.contains { existingSong in
                 existingSong == newSong
             }
         }
         
-        player.playlist.append(contentsOf: uniqueSongs)
+        playlist.append(contentsOf: uniqueSongs)
         
         // 如果当前没有播放歌曲，则设置第一首
-        if player.currentSong == nil && !player.playlist.isEmpty {
-            player.currentIndex = 0
-            player.currentSong = player.playlist[0]
-            player.duration = Double(player.playlist[0].duration ?? 0)
+        if currentSong == nil && !playlist.isEmpty {
+            currentIndex = 0
+            currentSong = playlist[0]
+            duration = Double(playlist[0].duration ?? 0)
         }
         savePlaylistState()
     }
@@ -680,34 +747,34 @@ class PlayerService: ObservableObject {
     /// 播放指定的歌曲列表（替换当前播放列表）
     func playAllSongs(_ songs: [Song]) {
         let songsToPlay = songs.isEmpty ? [] : songs
-        player.playlist = songsToPlay
+        playlist = songsToPlay
         
         if !songsToPlay.isEmpty {
             let firstSong = songsToPlay[0]
             
             // 立即更新UI显示的歌曲，不管播放是否成功
-            player.currentIndex = 0
-            player.currentSong = firstSong
-            player.currentTime = 0
-            player.duration = Double(firstSong.duration ?? 0)
-            player.clearError()
+            currentIndex = 0
+            currentSong = firstSong
+            currentTime = 0
+            duration = Double(firstSong.duration ?? 0)
+            clearError()
             
             // 播放第一首歌曲
             Task {
                 do {
                     try await playNewSong(firstSong)
                     await MainActor.run {
-                        player.isPlaying = true
+                        isPlaying = true
                         savePlaylistState()
                     }
                 } catch {
                     await MainActor.run {
-                        player.isPlaying = false
+                        isPlaying = false
                         // 设置错误信息但保持显示失败的歌曲
                         if let playerError = error as? PlayerServiceError {
-                            player.setError(playerError.errorDescription ?? "播放失败")
+                            setError(playerError.errorDescription ?? "播放失败")
                         } else {
-                            player.setError("播放失败")
+                            setError("播放失败")
                         }
                         // 停止当前播放器
                         cleanupPlayer()
@@ -716,7 +783,7 @@ class PlayerService: ObservableObject {
                         // 如果启用了自动跳过，尝试播放下一首
                         if autoSkipOnError {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                self.player.isPlaying = true  // 确保设置为播放状态
+                                self.isPlaying = true  // 确保设置为播放状态
                                 self.playNext()
                             }
                         }
@@ -731,12 +798,12 @@ class PlayerService: ObservableObject {
     /// 播放指定歌曲（将歌曲添加到播放列表并播放）
     func playSong(_ song: Song) {
         // 如果歌曲已在播放列表中，直接播放
-        if let existingIndex = player.playlist.firstIndex(where: { $0 == song }) {
+        if let existingIndex = playlist.firstIndex(where: { $0 == song }) {
             playSong(at: existingIndex)
         } else {
             // 添加歌曲到播放列表并播放
-            player.playlist.append(song)
-            let newIndex = player.playlist.count - 1
+            playlist.append(song)
+            let newIndex = playlist.count - 1
             playSong(at: newIndex)
         }
         // 注意: playSong(at:) 已经调用了 savePlaylistState，所以这里不需要重复调用
@@ -744,61 +811,66 @@ class PlayerService: ObservableObject {
     
     /// 从播放列表中删除指定歌曲
     func removeSong(at index: Int) {
-        guard index >= 0 && index < player.playlist.count else { return }
+        guard index >= 0 && index < playlist.count else { return }
         
         // 如果删除的是当前播放的歌曲
-        if index == player.currentIndex {
+        if index == currentIndex {
             // 停止当前播放
             stopPlayback()
-            player.isPlaying = false
-            player.currentTime = 0
+            isPlaying = false
+            currentTime = 0
             
             // 如果只有一首歌，清空播放状态
-            if player.playlist.count == 1 {
-                player.currentSong = nil
-                player.currentIndex = 0
-                player.playlist.remove(at: index)
+            if playlist.count == 1 {
+                currentSong = nil
+                currentIndex = 0
+                playlist.remove(at: index)
             } else {
                 // 删除歌曲
-                player.playlist.remove(at: index)
+                playlist.remove(at: index)
                 
                 // 调整播放索引
-                if index >= player.playlist.count {
+                if index >= playlist.count {
                     // 如果删除的是最后一首歌，播放前一首
-                    player.currentIndex = player.playlist.count - 1
+                    currentIndex = playlist.count - 1
                 } else {
                     // 否则保持当前索引，播放原来的下一首
                     // currentIndex 不需要改变，因为删除后索引自动向前移动
                 }
                 
-                // 更新当前歌曲
-                if !player.playlist.isEmpty {
-                    player.currentSong = player.playlist[player.currentIndex]
+                // 更新当前歌曲 - 立即同步执行
+                if !playlist.isEmpty {
+                    currentSong = playlist[currentIndex]
+                    duration = Double(currentSong?.duration ?? 0)
                 } else {
-                    player.currentSong = nil
-                    player.currentIndex = 0
+                    currentSong = nil
+                    currentIndex = 0
                 }
             }
         } else {
             // 如果删除的歌曲在当前播放歌曲之前，更新索引
-            if index < player.currentIndex {
-                player.currentIndex -= 1
+            if index < currentIndex {
+                currentIndex -= 1
             }
             
             // 删除歌曲
-            player.playlist.remove(at: index)
+            playlist.remove(at: index)
         }
         
-        savePlaylistState()
+        // 异步保存状态
+        DispatchQueue.global(qos: .utility).async {
+            self.savePlaylistState()
+        }
     }
     
     /// 清空播放列表
     func clearPlaylist() {
-        player.playlist.removeAll()
-        player.currentSong = nil
-        player.currentIndex = 0
-        player.isPlaying = false
-        player.currentTime = 0
+        playlist.removeAll()
+        currentSong = nil
+        currentIndex = 0
+        isPlaying = false
+        currentTime = 0
+        duration = 0
         stopPlayback()
         clearSavedPlaylistState()
     }
@@ -809,7 +881,7 @@ class PlayerService: ObservableObject {
         var indicesToRemove: [Int] = []
         
         for song in songsToRemove {
-            if let index = player.playlist.firstIndex(of: song) {
+            if let index = playlist.firstIndex(of: song) {
                 indicesToRemove.append(index)
             }
         }
@@ -824,34 +896,41 @@ class PlayerService: ObservableObject {
     
     /// 验证播放索引是否有效
     func isValidIndex(_ index: Int) -> Bool {
-        return index >= 0 && index < player.playlist.count
+        return index >= 0 && index < playlist.count
     }
     
     /// 获取随机播放索引
     func getRandomIndex() -> Int {
-        guard !player.playlist.isEmpty else { return 0 }
-        return Int.random(in: 0..<player.playlist.count)
+        guard !playlist.isEmpty else { return 0 }
+        return Int.random(in: 0..<playlist.count)
     }
     
     // MARK: - 内部方法（用于直接更新状态，供音频播放器使用）
     /// 更新播放时间（通常由音频播放器定时器调用）
     func updateCurrentTime(_ time: Double) {
-        player.currentTime = time
+        currentTime = time
     }
     
     /// 更新歌曲时长（当加载新歌曲时调用）
     func updateDuration(_ duration: Double) {
-        player.duration = duration
+        self.duration = duration
     }
     
     /// 更新播放状态（当音频播放器状态改变时调用）
-    func updatePlayingState(_ isPlaying: Bool) {
-        player.isPlaying = isPlaying
+    func updatePlayingState(_ newIsPlaying: Bool) {
+        isPlaying = newIsPlaying
     }
     
     /// 清除错误信息
     func clearError() {
-        player.clearError()
+        errorMessage = nil
+        hasError = false
+    }
+    
+    /// 设置错误信息
+    func setError(_ message: String) {
+        errorMessage = message
+        hasError = true
     }
     
     // MARK: - macOS音频设备监听（入耳检测）
@@ -969,20 +1048,20 @@ class PlayerService: ObservableObject {
     private func handleInEarDetection(isInEar: Bool) {
         if isInEar {
             // 如果之前因为离耳而暂停，现在恢复播放
-            if wasPlayingBeforeInterruption && !player.isPlaying {
+            if wasPlayingBeforeInterruption && !isPlaying {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     self.resumePlayback()
-                    self.player.isPlaying = true
+                    self.isPlaying = true
                     self.wasPlayingBeforeInterruption = false
                     self.savePlaylistState()
                 }
             }
         } else {
             // 如果正在播放，暂停并记录状态
-            if player.isPlaying {
+            if isPlaying {
                 wasPlayingBeforeInterruption = true
                 pausePlayback()
-                player.isPlaying = false
+                isPlaying = false
                 savePlaylistState()
             }
         }

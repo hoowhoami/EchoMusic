@@ -29,7 +29,6 @@
 		1EBC6D8B2E4E207100D7BCC1 /* Song.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D682E4E207100D7BCC1 /* Song.swift */; };
 		1EBC6D8C2E4E207100D7BCC1 /* AppSetting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D692E4E207100D7BCC1 /* AppSetting.swift */; };
 		1EBC6D8D2E4E207100D7BCC1 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D6A2E4E207100D7BCC1 /* User.swift */; };
-		1EBC6D8E2E4E207100D7BCC1 /* Player.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D6B2E4E207100D7BCC1 /* Player.swift */; };
 		1EBC6D8F2E4E207100D7BCC1 /* LenientDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D6D2E4E207100D7BCC1 /* LenientDecoding.swift */; };
 		1EBC6D902E4E207100D7BCC1 /* SubPageNavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D6E2E4E207100D7BCC1 /* SubPageNavigationManager.swift */; };
 		1EBC6D912E4E207100D7BCC1 /* ImageURLHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBC6D6F2E4E207100D7BCC1 /* ImageURLHelper.swift */; };
@@ -92,7 +91,6 @@
 		1EBC6D682E4E207100D7BCC1 /* Song.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Song.swift; sourceTree = "<group>"; };
 		1EBC6D692E4E207100D7BCC1 /* AppSetting.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppSetting.swift; sourceTree = "<group>"; };
 		1EBC6D6A2E4E207100D7BCC1 /* User.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
-		1EBC6D6B2E4E207100D7BCC1 /* Player.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Player.swift; sourceTree = "<group>"; };
 		1EBC6D6D2E4E207100D7BCC1 /* LenientDecoding.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LenientDecoding.swift; sourceTree = "<group>"; };
 		1EBC6D6E2E4E207100D7BCC1 /* SubPageNavigationManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SubPageNavigationManager.swift; sourceTree = "<group>"; };
 		1EBC6D6F2E4E207100D7BCC1 /* ImageURLHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ImageURLHelper.swift; sourceTree = "<group>"; };
@@ -223,7 +221,6 @@
 				1EBC6D682E4E207100D7BCC1 /* Song.swift */,
 				1EBC6D692E4E207100D7BCC1 /* AppSetting.swift */,
 				1EBC6D6A2E4E207100D7BCC1 /* User.swift */,
-				1EBC6D6B2E4E207100D7BCC1 /* Player.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -425,7 +422,6 @@
 				1EBC6D8B2E4E207100D7BCC1 /* Song.swift in Sources */,
 				1EBC6D8D2E4E207100D7BCC1 /* User.swift in Sources */,
 				1EBC6D8A2E4E207100D7BCC1 /* Navigation.swift in Sources */,
-				1EBC6D8E2E4E207100D7BCC1 /* Player.swift in Sources */,
 				1EBC6D812E4E207100D7BCC1 /* AppSettingService.swift in Sources */,
 				1EBC6D922E4E207100D7BCC1 /* DateHelper.swift in Sources */,
 				1EBC6D2B2E4E1FEB00D7BCC1 /* EchoMusicApp.swift in Sources */,
@@ -588,6 +584,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = EchoMusic/EchoMusic.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -598,6 +595,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EchoMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = EchoMusic;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -618,6 +616,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = EchoMusic/EchoMusic.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -628,6 +627,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = EchoMusic/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = EchoMusic;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
