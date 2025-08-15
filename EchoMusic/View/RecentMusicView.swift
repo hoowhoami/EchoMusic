@@ -16,32 +16,43 @@ struct RecentMusicView: View {
     @State private var isRefreshing = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 统计信息头部
-            headerView
-            
-            Divider()
-            
-            // 歌曲列表
-            SongListView(
-                tracks: tracks,
-                title: "最近播放",
-                isLoading: isLoading,
-                errorMessage: errorMessage
-            )
-        }
-        .onAppear {
-            Task {
-                await loadRecentMusic()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
-            Task {
-                await loadRecentMusic()
-                // 发送刷新完成通知
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("RefreshCompleted"),
-                    object: nil
+        Group {
+            if userService.isLoggedIn {
+                VStack(alignment: .leading, spacing: 0) {
+                    // 统计信息头部
+                    headerView
+                    
+                    Divider()
+                    
+                    // 歌曲列表
+                    SongListView(
+                        tracks: tracks,
+                        title: "最近播放",
+                        isLoading: isLoading,
+                        errorMessage: errorMessage
+                    )
+                }
+                .onAppear {
+                    Task {
+                        await loadRecentMusic()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
+                    Task {
+                        await loadRecentMusic()
+                        // 发送刷新完成通知
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("RefreshCompleted"),
+                            object: nil
+                        )
+                    }
+                }
+            } else {
+                UnauthorizedView(
+                    title: "需要登录才能查看最近播放",
+                    description: "登录后您可以查看最近播放的音乐记录，继续享受音乐",
+                    iconName: "clock.fill",
+                    iconColor: .orange
                 )
             }
         }
@@ -119,9 +130,6 @@ struct RecentMusicView: View {
     
     private func loadRecentMusic() async {
         guard userService.isLoggedIn else {
-            await MainActor.run {
-                self.errorMessage = "用户未登录"
-            }
             return
         }
         

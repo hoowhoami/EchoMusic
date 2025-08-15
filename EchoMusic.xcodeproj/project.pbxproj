@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1E0F16E12E4F6D5D00354E49 /* UnauthorizedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */; };
 		1E966DE02E4EFCBA004F0464 /* PlaylistSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DDF2E4EFCBA004F0464 /* PlaylistSidebarView.swift */; };
 		1E966DE22E4F2D9E004F0464 /* PlaylistService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DE12E4F2D9E004F0464 /* PlaylistService.swift */; };
 		1E966DE72E4F2DB6004F0464 /* FavoriteMusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DE42E4F2DB6004F0464 /* FavoriteMusicView.swift */; };
@@ -70,6 +71,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UnauthorizedView.swift; sourceTree = "<group>"; };
 		1E966DDF2E4EFCBA004F0464 /* PlaylistSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistSidebarView.swift; sourceTree = "<group>"; };
 		1E966DE12E4F2D9E004F0464 /* PlaylistService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistService.swift; sourceTree = "<group>"; };
 		1E966DE32E4F2DB6004F0464 /* CloudMusicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMusicView.swift; sourceTree = "<group>"; };
@@ -267,6 +269,7 @@
 		1EBC6D792E4E207100D7BCC1 /* components */ = {
 			isa = PBXGroup;
 			children = (
+				1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */,
 				1E966DEB2E4F2DFA004F0464 /* SongListView.swift */,
 				1EBC6D7A2E4E207100D7BCC1 /* CustomTitleBar.swift */,
 				1EBC6D7B2E4E207100D7BCC1 /* SidebarView.swift */,
@@ -408,6 +411,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1E0F16E12E4F6D5D00354E49 /* UnauthorizedView.swift in Sources */,
 				1EBC6D972E4E207100D7BCC1 /* HomeView.swift in Sources */,
 				1EBC6D902E4E207100D7BCC1 /* SubPageNavigationManager.swift in Sources */,
 				1EBC6D852E4E207100D7BCC1 /* NetworkService.swift in Sources */,

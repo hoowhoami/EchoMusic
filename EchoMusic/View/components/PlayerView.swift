@@ -78,7 +78,6 @@ struct PlayerView: View {
             .padding(.vertical, 12)
         }
         .frame(height: 80)
-        .background(Color(NSColor.windowBackgroundColor))
         .overlay(
             // 顶部边框
             Rectangle()

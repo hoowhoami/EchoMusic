@@ -101,8 +101,8 @@ class PlaylistService: ObservableObject {
         }
     }
     
-    /// 刷新指定类型的歌单数据
-    func refreshPlaylistsByType(_ contentType: LibraryContentType) async {
+    /// 刷新歌单数据
+    func refreshPlaylists() async {
         await getAllPlaylistsData()
     }
     
@@ -232,15 +232,8 @@ class PlaylistService: ObservableObject {
     // MARK: - 通用方法
     
     /// 刷新指定分类的数据
-    func refreshSection(_ section: LibrarySection) async {
-        switch section {
-        case .myCreatedPlaylists:
-            await refreshPlaylistsByType(.userCreatedPlaylists)
-        case .myCollectedPlaylists:
-            await refreshPlaylistsByType(.collectedPlaylists)
-        case .myCollectedAlbums:
-            await refreshPlaylistsByType(.collectedAlbums)
-        }
+    func refreshSection() async {
+        await refreshPlaylists()
     }
     
     /// 清除所有数据

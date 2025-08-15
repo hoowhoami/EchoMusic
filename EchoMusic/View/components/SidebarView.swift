@@ -53,33 +53,31 @@ struct SidebarView: View {
                             .font(.system(size: 32))
                             .foregroundColor(.secondary)
                     }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        if userService.isLoggedIn {
-                            Text(userService.currentUser?.username ?? "用户")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.primary)
-                            if userService.isVipUser {
-                                Image("vip-open")
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(width: 25, height: 25)
-                            }
-                        } else {
-                            Text("点击登录")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.accentColor)
+                    
+                    if userService.isLoggedIn {
+                        Text(userService.currentUser?.username ?? "用户")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                        if userService.isVipUser {
+                            Image("vip-open")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 25, height: 25)
                         }
+                    } else {
+                        Text("点击登录")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.accentColor)
                     }
 
                     Spacer()
                 }
-                .frame(height: 60)
+                .frame(height: 30)
                 .padding(.horizontal, 16)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.top, 20)
+            .padding(.top, 10)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -110,11 +108,7 @@ struct SidebarView: View {
                                 isSelected: selectedItem == item,
                                 requiresLogin: item.requiresLogin,
                                 action: { 
-                                    if item.requiresLogin && !userService.isLoggedIn {
-                                        showLoginSheet = true
-                                    } else {
-                                        selectedItem = item
-                                    }
+                                    selectedItem = item
                                 }
                             )
                         }
@@ -128,6 +122,7 @@ struct SidebarView: View {
                     Spacer(minLength: 100)
                 }
             }
+            .padding(.top, 20)
 
             // 底部设置按钮
             VStack(spacing: 0) {

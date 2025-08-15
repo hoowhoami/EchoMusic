@@ -45,7 +45,7 @@ struct LoginView: View {
                         .font(.title)
                         .fontWeight(.bold)
                     
-                    Text("登录以同步您的音乐和播放列表")
+                    Text("您的数据始终只存储在酷狗服务和您所使用的设备中")
                         .font(.body)
                         .foregroundColor(.secondary)
                 }
@@ -76,6 +76,13 @@ struct LoginView: View {
             }
             .padding(32)
             .frame(width: 500, height: 500)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") {
+                        dismiss()
+                    }
+                }
+            }
         }
         .alert("登录失败", isPresented: $showError) {
             Button("确定") { }
@@ -89,6 +96,9 @@ struct LoginView: View {
     @ViewBuilder
     private var mobileLoginForm: some View {
         VStack(spacing: 16) {
+            // 添加占位空间使高度与二维码登录一致
+            Spacer()
+                .frame(height: 20)
             VStack(alignment: .leading, spacing: 8) {
                 Text("手机号")
                     .font(.headline)
@@ -106,6 +116,10 @@ struct LoginView: View {
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
             }
+            
+            // 添加占位空间使高度与二维码登录一致
+            Spacer()
+                .frame(height: 20)
             
             VStack(alignment: .leading, spacing: 8) {
                 Text("验证码")
@@ -140,6 +154,10 @@ struct LoginView: View {
                 }
             }
             
+            // 添加占位空间使高度与二维码登录一致
+            Spacer()
+                .frame(height: 20)
+            
             Button(action: performMobileLogin) {
                 HStack {
                     if isLoading {
@@ -162,7 +180,7 @@ struct LoginView: View {
             
             // 添加占位空间使高度与二维码登录一致
             Spacer()
-                .frame(height: 80)
+                .frame(height: 20)
         }
         .frame(width: 350, height: 320) // 与二维码登录保持相同高度
     }
@@ -219,7 +237,7 @@ struct LoginView: View {
                     }
                     
                     if qrStatus == .waiting {
-                        Text("请使用手机APP扫描二维码")
+                        Text("请打开手机使用酷狗APP扫描二维码")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

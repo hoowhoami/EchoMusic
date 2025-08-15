@@ -17,32 +17,43 @@ struct FavoriteMusicView: View {
     @State private var isRefreshing = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 统计信息头部
-            headerView
-            
-            Divider()
-            
-            // 歌曲列表
-            SongListView(
-                tracks: tracks,
-                title: "喜欢的歌曲",
-                isLoading: isLoading,
-                errorMessage: errorMessage
-            )
-        }
-        .onAppear {
-            Task {
-                await loadFavoriteMusic()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
-            Task {
-                await loadFavoriteMusic()
-                // 发送刷新完成通知
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("RefreshCompleted"),
-                    object: nil
+        Group {
+            if userService.isLoggedIn {
+                VStack(alignment: .leading, spacing: 0) {
+                    // 统计信息头部
+                    headerView
+                    
+                    Divider()
+                    
+                    // 歌曲列表
+                    SongListView(
+                        tracks: tracks,
+                        title: "喜欢的歌曲",
+                        isLoading: isLoading,
+                        errorMessage: errorMessage
+                    )
+                }
+                .onAppear {
+                    Task {
+                        await loadFavoriteMusic()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
+                    Task {
+                        await loadFavoriteMusic()
+                        // 发送刷新完成通知
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("RefreshCompleted"),
+                            object: nil
+                        )
+                    }
+                }
+            } else {
+                UnauthorizedView(
+                    title: "需要登录才能查看喜欢的音乐",
+                    description: "登录后您可以收藏音乐、查看喜欢的歌曲，享受个性化音乐体验",
+                    iconName: "heart.fill", 
+                    iconColor: .red
                 )
             }
         }
@@ -103,9 +114,6 @@ struct FavoriteMusicView: View {
     
     private func loadFavoriteMusic() async {
         guard userService.isLoggedIn else {
-            await MainActor.run {
-                self.errorMessage = "用户未登录"
-            }
             return
         }
         

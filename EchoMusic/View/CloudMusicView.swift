@@ -16,32 +16,43 @@ struct CloudMusicView: View {
     @State private var isRefreshing = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 统计信息头部
-            headerView
-            
-            Divider()
-            
-            // 歌曲列表
-            SongListView(
-                tracks: tracks,
-                title: "云盘歌曲",
-                isLoading: isLoading,
-                errorMessage: errorMessage
-            )
-        }
-        .onAppear {
-            Task {
-                await loadCloudMusic()
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
-            Task {
-                await loadCloudMusic()
-                // 发送刷新完成通知
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("RefreshCompleted"),
-                    object: nil
+        Group {
+            if userService.isLoggedIn {
+                VStack(alignment: .leading, spacing: 0) {
+                    // 统计信息头部
+                    headerView
+                    
+                    Divider()
+                    
+                    // 歌曲列表
+                    SongListView(
+                        tracks: tracks,
+                        title: "云盘歌曲",
+                        isLoading: isLoading,
+                        errorMessage: errorMessage
+                    )
+                }
+                .onAppear {
+                    Task {
+                        await loadCloudMusic()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCurrentContent"))) { _ in
+                    Task {
+                        await loadCloudMusic()
+                        // 发送刷新完成通知
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("RefreshCompleted"),
+                            object: nil
+                        )
+                    }
+                }
+            } else {
+                UnauthorizedView(
+                    title: "需要登录才能查看云盘音乐",
+                    description: "登录后您可以上传音乐文件到云端，随时随地收听",
+                    iconName: "icloud.fill",
+                    iconColor: .blue
                 )
             }
         }
@@ -118,9 +129,6 @@ struct CloudMusicView: View {
     
     private func loadCloudMusic() async {
         guard userService.isLoggedIn else {
-            await MainActor.run {
-                self.errorMessage = "用户未登录"
-            }
             return
         }
         

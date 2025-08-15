@@ -124,15 +124,17 @@ struct PlaylistTypeSection: View {
                                 selectedPlaylist = playlist
                                 selectedPlaylistType = playlistType
                                 
-                                // 发送歌单选择通知
-                                NotificationCenter.default.post(
-                                    name: NSNotification.Name("PlaylistSelected"),
-                                    object: nil,
-                                    userInfo: [
-                                        "playlist": playlist,
-                                        "playlistType": playlistType
-                                    ]
-                                )
+                                // 延迟发送歌单选择通知，确保PlaylistView已经完全初始化
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    NotificationCenter.default.post(
+                                        name: NSNotification.Name("PlaylistSelected"),
+                                        object: nil,
+                                        userInfo: [
+                                            "playlist": playlist,
+                                            "playlistType": playlistType
+                                        ]
+                                    )
+                                }
                             }
                         )
                     }

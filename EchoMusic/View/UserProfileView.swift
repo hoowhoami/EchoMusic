@@ -97,7 +97,7 @@ struct UserProfileView: View {
                     .padding(.horizontal, 20)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(NSColor.controlBackgroundColor))
+                            .fill(Color(NSColor.windowBackgroundColor))
                     )
                     
                     // 详细信息
@@ -122,7 +122,7 @@ struct UserProfileView: View {
                     .padding(.horizontal, 20)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(NSColor.controlBackgroundColor))
+                            .fill(Color(NSColor.windowBackgroundColor))
                     )
                     
                     // 操作按钮
@@ -146,26 +146,17 @@ struct UserProfileView: View {
                     .padding(.horizontal, 20)
                     .background(
                         RoundedRectangle(cornerRadius: 12)
-                            .fill(Color(NSColor.controlBackgroundColor))
+                            .fill(Color(NSColor.windowBackgroundColor))
                     )
                     
                 } else {
-                    // 未登录状态
-                    VStack(spacing: 16) {
-                        Image(systemName: "person.circle")
-                            .font(.system(size: 64))
-                            .foregroundColor(.secondary)
-                        
-                        Text("未登录")
-                            .font(.title2)
-                            .fontWeight(.medium)
-                        
-                        Text("请先登录以查看用户详情")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.top, 100)
+                    // 未登录状态 - 使用UnauthorizedView
+                    UnauthorizedView(
+                        title: "需要登录才能查看用户详情",
+                        description: "登录后您可以查看个人信息、管理账户设置",
+                        iconName: "person.circle",
+                        iconColor: .secondary
+                    )
                 }
                 
                 Spacer()
