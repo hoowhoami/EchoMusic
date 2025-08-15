@@ -543,6 +543,55 @@ struct PlaylistTrackInfo: Codable, Identifiable {
         case cover, mixsongid, fileid, heat, mvdata, relate_goods
         case download, tagmap, albuminfo, singerinfo
     }
+    
+    // 便利初始化器，用于预览和测试
+    init(name: String? = nil,
+         singername: String? = nil,
+         albumname: String? = nil,
+         duration: Int? = nil,
+         cover: String? = nil,
+         privilege: Int? = nil,
+         relate_goods: [String]? = nil) {
+        self.name = name
+        self.hash = nil
+        self.audio_id = nil
+        self.size = nil
+        self.publish_date = nil
+        self.brief = nil
+        self.mvtype = nil
+        self.add_mixsongid = nil
+        self.album_id = nil
+        self.bpm = nil
+        self.mvhash = nil
+        self.extname = nil
+        self.language = nil
+        self.collecttime = nil
+        self.csong = nil
+        self.remark = nil
+        self.level = nil
+        self.media_old_cpy = nil
+        self.rcflag = nil
+        self.feetype = nil
+        self.has_obbligato = nil
+        self.timelen = duration
+        self.sort = nil
+        self.trans_param = nil
+        self.medistype = nil
+        self.user_id = nil
+        self.bitrate = nil
+        self.audio_group_id = nil
+        self.privilege = privilege
+        self.cover = cover
+        self.mixsongid = nil
+        self.fileid = nil
+        self.heat = nil
+        self.mvdata = nil
+        self.relate_goods = relate_goods?.map { _ in PlaylistRelateGood(size: nil, hash: nil, level: nil, privilege: nil, bitrate: nil) }
+        self.download = nil
+        self.tagmap = nil
+        self.albuminfo = albumname != nil ? PlaylistAlbumInfo(name: albumname, id: nil, publish: nil) : nil
+        self.singerinfo = singername != nil ? [PlaylistSingerInfo(name: singername, id: nil)] : nil
+    }
 }
 
 struct PlaylistMVData: Codable {
@@ -576,6 +625,15 @@ struct PlaylistSingerInfo: Codable {
     let name: String?
     let avatar: String?
     let type: Int?
+    
+    // 便利初始化器，用于预览和测试
+    init(name: String? = nil, id: Int? = nil) {
+        self.name = name
+        self.id = id
+        self.publish = nil
+        self.avatar = nil
+        self.type = nil
+    }
 }
 
 struct PlaylistTransParam: Codable {

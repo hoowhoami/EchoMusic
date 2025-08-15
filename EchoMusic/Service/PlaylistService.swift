@@ -1,5 +1,5 @@
 //
-//  LibraryService.swift
+//  PlaylistService.swift
 //  EchoMusic
 //
 //  Created by AI Assistant on 2025/8/6.
@@ -7,9 +7,9 @@
 import SwiftUI
 import Foundation
 
-/// 音乐库服务 - 负责音乐库相关的所有业务逻辑
-class LibraryService: ObservableObject {
-    static let shared = LibraryService()
+/// 歌单服务 - 负责歌单相关的所有业务逻辑
+class PlaylistService: ObservableObject {
+    static let shared = PlaylistService()
     private let userService = UserService.shared
     
     // MARK: - 我的歌单相关 (重构后的通用方法)

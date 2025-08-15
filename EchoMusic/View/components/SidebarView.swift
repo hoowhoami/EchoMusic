@@ -14,7 +14,7 @@ struct SidebarView: View {
     @State private var showLoginSheet = false
     
     @EnvironmentObject private var userService: UserService
-    @EnvironmentObject private var libraryService: LibraryService
+    @EnvironmentObject private var playlistService: PlaylistService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -123,7 +123,7 @@ struct SidebarView: View {
                     .padding(.bottom, 16)
                     
                     // 歌单分组 - 无论是否登录都显示
-                    PlaylistListView(selectedItem: $selectedItem)
+                    PlaylistSidebarView(selectedItem: $selectedItem)
                     
                     Spacer(minLength: 100)
                 }

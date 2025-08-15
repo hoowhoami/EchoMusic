@@ -19,8 +19,12 @@ struct ContentView: View {
                 HomeView()
             case .discover:
                 DiscoverView()
-            case .favoriteMusic, .myCloud, .recentPlay:
-                LibraryView()
+            case .favoriteMusic:
+                FavoriteMusicView()
+            case .myCloud:
+                CloudMusicView()
+            case .recentPlay:
+                RecentMusicView()
             case .playlists:
                 playlistContentView
             case .userProfile:

@@ -23,8 +23,8 @@ struct EchoMusicApp: App {
     /// 用户服务管理器
     @State private var userService = UserService.shared
     
-    /// 音乐库服务管理器
-    @State private var libraryService = LibraryService.shared
+    /// 歌单服务管理器
+    @State private var playlistService = PlaylistService.shared
     
     
     var body: some Scene {
@@ -33,7 +33,7 @@ struct EchoMusicApp: App {
                 .environmentObject(playerService)
                 .environmentObject(appSetting)
                 .environmentObject(userService)
-                .environmentObject(libraryService)
+                .environmentObject(playlistService)
         }
         .windowResizability(.contentSize)
         .windowToolbarStyle(.unified)
@@ -52,5 +52,5 @@ struct EchoMusicApp: App {
         .environmentObject(PlayerService.shared)
         .environmentObject(AppSetting.shared)
         .environmentObject(UserService.shared)
-        .environmentObject(LibraryService.shared)
+        .environmentObject(PlaylistService.shared)
 }

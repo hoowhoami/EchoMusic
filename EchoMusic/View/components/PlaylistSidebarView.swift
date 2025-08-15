@@ -1,5 +1,5 @@
 //
-//  PlaylistListView.swift
+//  PlaylistSidebarView.swift
 //  EchoMusic
 //
 //  Created by AI Assistant on 2025/8/15.
@@ -7,9 +7,9 @@
 
 import SwiftUI
 
-/// 独立的歌单列表视图组件
+/// 独立的歌单侧边栏视图组件
 /// 负责显示所有歌单并处理歌单选择逻辑
-struct PlaylistListView: View {
+struct PlaylistSidebarView: View {
     @Binding var selectedItem: NavigationItemType
     @State private var selectedPlaylist: UserPlaylistResponse.UserPlaylist?
     @State private var selectedPlaylistType: PlaylistType?
@@ -17,7 +17,7 @@ struct PlaylistListView: View {
     @State private var showNewPlaylistDialog = false
     
     @EnvironmentObject private var userService: UserService
-    @EnvironmentObject private var libraryService: LibraryService
+    @EnvironmentObject private var playlistService: PlaylistService
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -68,7 +68,7 @@ struct PlaylistTypeSection: View {
     let onToggle: () -> Void
     let onNewPlaylist: () -> Void
     
-    @EnvironmentObject private var libraryService: LibraryService
+    @EnvironmentObject private var playlistService: PlaylistService
     @EnvironmentObject private var userService: UserService
     @State private var playlists: [UserPlaylistResponse.UserPlaylist] = []
     
@@ -187,10 +187,10 @@ struct PlaylistTypeSection: View {
         }
         
         Task {
-            await libraryService.getAllPlaylistsData()
+            await playlistService.getAllPlaylistsData()
             await MainActor.run {
                 let targetType = playlistTypeToLibraryType(playlistType)
-                self.playlists = libraryService.getPlaylistsByType(targetType)
+                self.playlists = playlistService.getPlaylistsByType(targetType)
             }
         }
     }
@@ -258,7 +258,7 @@ struct NewPlaylistDialog: View {
     @Environment(\.presentationMode) var presentationMode
     @State private var playlistName = ""
     @State private var isCreating = false
-    @EnvironmentObject private var libraryService: LibraryService
+    @EnvironmentObject private var playlistService: PlaylistService
     
     var body: some View {
         VStack(spacing: 20) {
@@ -319,6 +319,6 @@ struct NewPlaylistDialog: View {
 }
 
 #Preview {
-    PlaylistListView(selectedItem: .constant(.playlists))
+    PlaylistSidebarView(selectedItem: .constant(.playlists))
         .frame(width: 200, height: 400)
 }
