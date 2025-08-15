@@ -357,34 +357,3 @@ struct SongListTrackRow: View {
         return nameParts.count > 1 ? nameParts[1] : (track.name ?? "未知歌曲")
     }
 }
-
-#Preview {
-    // 创建示例数据用于预览
-    let sampleTracks = [
-        PlaylistTrackInfo(
-            name: "测试歌曲1 - 歌手名",
-            singername: "测试歌手1",
-            albumname: "测试专辑1",
-            duration: 180,
-            cover: nil,
-            privilege: 0,
-            relate_goods: nil
-        ),
-        PlaylistTrackInfo(
-            name: "测试歌曲2 - 歌手名",
-            singername: "测试歌手2",
-            albumname: "测试专辑2",
-            duration: 240,
-            cover: nil,
-            privilege: 10,
-            relate_goods: ["sq"]
-        )
-    ]
-    
-    SongListView(
-        tracks: sampleTracks,
-        title: "测试歌曲列表"
-    )
-    .frame(width: 600, height: 400)
-    .environmentObject(PlayerService.shared)
-}
