@@ -15,10 +15,10 @@ struct MainView: View {
     /// 控制侧边栏可见性的状态变量
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
-    /// 歌单详情页状态管理
-    @State private var showingPlaylistDetail = false
-    @State private var currentPlaylist: UserPlaylistResponse.UserPlaylist?
-    @State private var currentPlaylistType: PlaylistType?
+    /// 歌单详情页状态管理 - 已废弃，改为通过主导航处理
+    // @State private var showingPlaylistDetail = false
+    // @State private var currentPlaylist: UserPlaylistResponse.UserPlaylist?
+    // @State private var currentPlaylistType: PlaylistType?
 
     @EnvironmentObject private var appSettings: AppSetting
     @EnvironmentObject private var userService: UserService
@@ -79,26 +79,8 @@ struct MainView: View {
                 
         } detail: {
             // 右侧主内容
-            Group {
-                if showingPlaylistDetail, let playlist = currentPlaylist, let playlistType = currentPlaylistType {
-                    // 显示歌单详情页
-                    PlaylistDetailView(
-                        playlist: playlist,
-                        sourceSection: playlistTypeToLibrarySection(playlistType),
-                        onBack: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingPlaylistDetail = false
-                                currentPlaylist = nil
-                                currentPlaylistType = nil
-                            }
-                        }
-                    )
-                } else {
-                    // 显示正常内容
-                    ContentView(selectedItem: selectedItem)
-                }
-            }
-            .environmentObject(subPageManager)
+            ContentView(selectedItem: selectedItem)
+                .environmentObject(subPageManager)
                 .navigationTitle("")
                 .toolbar {
                     
@@ -131,17 +113,6 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RefreshCompleted"))) { _ in
             // 监听刷新完成通知
             isRefreshing = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("OpenPlaylistDetailDirectly"))) { notification in
-            // 监听直接打开歌单详情的通知
-            if let playlist = notification.userInfo?["playlist"] as? UserPlaylistResponse.UserPlaylist,
-               let playlistType = notification.userInfo?["playlistType"] as? PlaylistType {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    currentPlaylist = playlist
-                    currentPlaylistType = playlistType
-                    showingPlaylistDetail = true
-                }
-            }
         }
         
     }
@@ -193,7 +164,7 @@ struct MainView: View {
     
     // MARK: - Actions
     private func navigateBack() {
-        // 首先尝试退出子页面
+        // 尝试退出SubPageManager管理的子页面
         if subPageManager.hasActiveSubPage {
             subPageManager.exitCurrentSubPage()
             return
@@ -209,6 +180,9 @@ struct MainView: View {
 
     private func navigateForward() {
         guard currentHistoryIndex < navigationHistory.count - 1 else { return }
+        
+        // 清空子页面
+        subPageManager.clearAllSubPages()
         
         isNavigatingThroughHistory = true
         currentHistoryIndex += 1
@@ -238,26 +212,22 @@ struct MainView: View {
     
     /// 是否可以后退
     private var canNavigateBack: Bool {
-        let canBack = currentHistoryIndex > 0
-        return canBack
+        // 如果有子页面在显示，可以后退
+        if subPageManager.hasActiveSubPage {
+            return true
+        }
+        // 否则检查导航历史
+        return currentHistoryIndex > 0
     }
     
     /// 是否可以前进
     private var canNavigateForward: Bool {
-        let canForward = currentHistoryIndex < navigationHistory.count - 1 && currentHistoryIndex >= 0
-        return canForward
-    }
-    
-    /// 将PlaylistType转换为LibrarySection
-    private func playlistTypeToLibrarySection(_ playlistType: PlaylistType) -> LibrarySection {
-        switch playlistType {
-        case .created:
-            return .myCreatedPlaylists
-        case .collected:
-            return .myCollectedPlaylists
-        case .albums:
-            return .myCollectedAlbums
+        // 如果有子页面在显示，不能前进（需要先回到主导航）
+        if subPageManager.hasActiveSubPage {
+            return false
         }
+        // 否则检查导航历史
+        return currentHistoryIndex < navigationHistory.count - 1 && currentHistoryIndex >= 0
     }
     
 }

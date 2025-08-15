@@ -629,7 +629,7 @@ struct SpeedControlPopover: View {
 
 // 播放列表弹出窗口
 struct PlaylistPopover: View {
-    let playerService: PlayerService
+    @ObservedObject var playerService: PlayerService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -688,7 +688,7 @@ struct PlaylistPopover: View {
                             PlaylistItemView(
                                 song: song,
                                 index: index,
-                                isCurrentSong: index == playerService.currentIndex,
+                                isCurrentSong: index == playerService.currentIndex && song.id == playerService.currentSong?.id,
                                 onTap: {
                                     playerService.playSong(at: index)
                                 },
@@ -708,6 +708,7 @@ struct PlaylistPopover: View {
             }
         }
         .frame(width: 320)
+        .id(playerService.playlist.count)
     }
 }
 
@@ -719,6 +720,7 @@ struct PlaylistItemView: View {
     let onTap: () -> Void
     let onDelete: () -> Void
     @State private var isHovered = false
+    @EnvironmentObject private var playerService: PlayerService
 
     var body: some View {
         Button(action: onTap) {
@@ -793,9 +795,10 @@ struct PlaylistItemView: View {
 
                 // 播放按钮或当前播放指示器
                 HStack(spacing: 8) {
-                    if isCurrentSong {
+                    // 使用实时检查当前播放歌曲
+                    if playerService.currentSong?.id == song.id && index == playerService.currentIndex {
                         Image(systemName: "speaker.wave.2.fill")
-                            .font(.system(size: 16))  // 与删除按钮大小一致
+                            .font(.system(size: 16))
                             .foregroundColor(.accentColor)
                     }
                     
@@ -866,7 +869,6 @@ struct QualitySelectionPopover: View {
                     get: { compatibilityMode },
                     set: { newValue in
                         compatibilityMode = newValue
-                        // 立即调用PlayerService，不检查是否真正改变
                         playerService.setQualityCompatibility(newValue)
                     }
                 )) {
@@ -883,9 +885,14 @@ struct QualitySelectionPopover: View {
         .padding(16)
         .frame(minWidth: 240)
         .onAppear {
-            // 从 PlayerService 获取当前设置
             selectedQuality = playerService.audioQuality
             compatibilityMode = playerService.qualityCompatibility
+        }
+        .onChange(of: playerService.audioQuality) { newValue in
+            selectedQuality = newValue
+        }
+        .onChange(of: playerService.qualityCompatibility) { newValue in
+            compatibilityMode = newValue
         }
     }
     
@@ -893,7 +900,6 @@ struct QualitySelectionPopover: View {
     private func qualityRow(quality: AudioQuality) -> some View {
         Button(action: {
             selectedQuality = quality
-            // 立即调用PlayerService，不检查是否真正改变
             playerService.setAudioQuality(quality)
         }) {
             HStack(spacing: 8) {
@@ -931,7 +937,8 @@ struct QualitySelectionPopover: View {
 
 // 播放器通用设置弹出窗口
 struct PlayerGeneralSettingsPopover: View {
-    let playerService: PlayerService
+    @ObservedObject var playerService: PlayerService
+    @State private var autoSkipOnError: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -941,8 +948,9 @@ struct PlayerGeneralSettingsPopover: View {
             
             VStack(alignment: .leading, spacing: 12) {
                 Toggle(isOn: Binding(
-                    get: { playerService.autoSkipOnError },
+                    get: { autoSkipOnError },
                     set: { newValue in
+                        autoSkipOnError = newValue
                         playerService.setAutoSkipOnError(newValue)
                     }
                 )) {
@@ -960,6 +968,12 @@ struct PlayerGeneralSettingsPopover: View {
         }
         .padding(16)
         .frame(minWidth: 280)
+        .onAppear {
+            autoSkipOnError = playerService.autoSkipOnError
+        }
+        .onChange(of: playerService.autoSkipOnError) { newValue in
+            autoSkipOnError = newValue
+        }
     }
 }
 

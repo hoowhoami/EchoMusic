@@ -99,16 +99,16 @@ struct SubPageInfo {
 
 /// 子页面类型枚举
 enum SubPageType: String, CaseIterable {
-    case playlistDetail = "PlaylistDetail"
     case albumDetail = "AlbumDetail"
     case artistDetail = "ArtistDetail"
     case searchResult = "SearchResult"
     case songDetail = "SongDetail"
+    case videoDetail = "VideoDetail"
+    case discoverContent = "DiscoverContent"
+    case recommendationDetail = "RecommendationDetail"
     
     var displayName: String {
         switch self {
-        case .playlistDetail:
-            return "歌单详情"
         case .albumDetail:
             return "专辑详情"
         case .artistDetail:
@@ -117,6 +117,12 @@ enum SubPageType: String, CaseIterable {
             return "搜索结果"
         case .songDetail:
             return "歌曲详情"
+        case .videoDetail:
+            return "视频详情"
+        case .discoverContent:
+            return "发现内容"
+        case .recommendationDetail:
+            return "推荐详情"
         }
     }
 }

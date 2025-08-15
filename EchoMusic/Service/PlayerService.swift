@@ -278,7 +278,7 @@ class PlayerService: ObservableObject {
     var qualityCompatibility: Bool { _qualityCompatibility }
     
     // MARK: - 播放失败自动跳过设置
-    private var _autoSkipOnError: Bool = false
+    @Published private var _autoSkipOnError: Bool = false
     private let autoSkipOnErrorKey = "AutoSkipOnError"
     
     var autoSkipOnError: Bool { _autoSkipOnError }

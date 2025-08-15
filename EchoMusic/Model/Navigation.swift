@@ -10,14 +10,15 @@ import SwiftUI
 /// 左侧导航栏选项枚举
 enum NavigationItemType: String, CaseIterable, Identifiable {
     // 在线音乐
-    case home = "个性推荐"
-    case discover = "发现音乐"
+    case home = "推荐"
+    case discover = "发现"
     case videos = "视频"
     
     // 我的音乐
-    case favoriteMusic = "喜欢的音乐"
-    case myCloud = "我的云盘"
-    case recentPlay = "最近播放"
+    case favoriteMusic = "喜欢"
+    case myCloud = "云盘"
+    case recentPlay = "最近"
+    case playlists = "我的歌单"
     
     // 用户相关
     case userProfile = "用户详情"
@@ -33,6 +34,7 @@ enum NavigationItemType: String, CaseIterable, Identifiable {
         case .favoriteMusic: return "heart.fill"
         case .myCloud: return "icloud.fill"
         case .recentPlay: return "clock.fill"
+        case .playlists: return "music.note.list"
         case .userProfile: return "person.circle"
         }
     }
@@ -50,7 +52,7 @@ enum NavigationItemType: String, CaseIterable, Identifiable {
     /// 是否需要登录才能访问
     var requiresLogin: Bool {
         switch self {
-        case .favoriteMusic, .myCloud, .recentPlay:
+        case .favoriteMusic, .myCloud, .recentPlay, .playlists:
             return true
         default:
             return false
