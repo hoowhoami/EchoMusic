@@ -135,7 +135,7 @@ struct SidebarView: View {
                     showSettings = true
                 }) {
                     HStack(spacing: 12) {
-                        Image(systemName: "gear")
+                        Image(systemName: "gearshape")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.secondary)
                             .frame(width: 20)
