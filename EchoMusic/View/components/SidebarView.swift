@@ -58,12 +58,39 @@ struct SidebarView: View {
                         Text(userService.currentUser?.username ?? "用户")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.primary)
-                        if userService.isVipUser {
-                            Image("vip-open")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 25, height: 25)
+                        
+                        // vip标识
+                        if let vipInfo = userService.vipInfo,
+                           let busiVip = vipInfo.busi_vip,
+                           busiVip.count > 0 {
+                           
+                            // svip标识
+                            if busiVip.first?.is_vip == 1 {
+                                Text("SVIP")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.orange)
+                                    .padding(.horizontal, 2)
+                                    .padding(.vertical, 0.5)
+                                    .background(Color.orange.opacity(0.1))
+                                    .cornerRadius(2)
+                            }
+                            
+                            // tvip标识
+                            if busiVip.count > 1,
+                               busiVip[1].is_vip == 1 {
+                                Text("TVIP")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.blue)
+                                    .padding(.horizontal, 2)
+                                    .padding(.vertical, 0.5)
+                                    .background(Color.orange.opacity(0.1))
+                                    .cornerRadius(2)
+                            }
+                               
                         }
+                        
                     } else {
                         Text("点击登录")
                             .font(.system(size: 16, weight: .medium))

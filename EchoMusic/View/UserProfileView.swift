@@ -78,17 +78,50 @@ struct UserProfileView: View {
                                 Text(userInfo.nickname.isEmpty ? userInfo.username : userInfo.nickname)
                                     .font(.title2)
                                     .fontWeight(.semibold)
-                                if userService.isVipUser {
-                                    Image("vip-open")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 25, height: 25)
+                                
+                                // vip标识
+                                if let vipInfo = userService.vipInfo,
+                                   let busiVip = vipInfo.busi_vip,
+                                   busiVip.count > 0 {
+                                   
+                                    // svip标识
+                                    if busiVip.first?.is_vip == 1 {
+                                        Text("SVIP")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.orange)
+                                            .padding(.horizontal, 2)
+                                            .padding(.vertical, 0.5)
+                                            .background(Color.orange.opacity(0.1))
+                                            .cornerRadius(2)
+                                    }
+                                    
+                                    // tvip标识
+                                    if busiVip.count > 1,
+                                       busiVip[1].is_vip == 1 {
+                                        Text("TVIP")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.blue)
+                                            .padding(.horizontal, 2)
+                                            .padding(.vertical, 0.5)
+                                            .background(Color.orange.opacity(0.1))
+                                            .cornerRadius(2)
+                                    }
+                                       
                                 }
+                                
+                                
                             }
                             
-                            Text("用户ID: \(String(userInfo.userid))")
+                            Text("Lv.\(userService.userDetail?.p_grade ?? 0)")
                                 .font(.body)
                                 .foregroundColor(.secondary)
+                            
+                            Text("用户签名: \(userService.userDetail?.descri ?? "暂无~")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
                         }
                         
                         Spacer()
@@ -106,15 +139,45 @@ struct UserProfileView: View {
                             .font(.headline)
                             .fontWeight(.semibold)
                         
-                        // IP属地
-                        if let loc = userService.userDetail?.loc, !loc.isEmpty {
-                            Text("IP属地: \(loc)")
-                                .font(.body)
-                                .foregroundColor(.primary)
-                        } else {
-                            Text("IP属地: 未知")
-                                .font(.body)
-                                .foregroundColor(.primary)
+                        // 其他信息每行2个，左右布局
+                        VStack(spacing: 16) {
+                            // 第一行：用户ID | 等级
+                            HStack(spacing: 20) {
+                                // ID肯定存在
+                                InfoRowItem(label: "用户ID", value: String(userInfo.userid))
+                                if let gender = userService.userDetail?.gender {
+                                    InfoRowItem(label: "用户性别", value: formatGender(gender))
+                                } else {
+                                    Spacer()
+                                }
+                            }
+                            
+                            // 第二行：听歌时长 | 用户乐龄
+                            HStack(spacing: 20) {
+                                if let duration = userService.userDetail?.duration {
+                                    InfoRowItem(label: "听歌时长", value: formatDuration(duration))
+                                } else {
+                                    Spacer()
+                                }
+                                
+                                if let rtime = userService.userDetail?.rtime {
+                                    InfoRowItem(label: "用户乐龄", value: formatRegTime(rtime))
+                                } else {
+                                    Spacer()
+                                }
+                            }
+                            
+                            // 第三行：IP属地 | 预留位置
+                            HStack(spacing: 20) {
+                                if let loc = userService.userDetail?.loc, !loc.isEmpty {
+                                    InfoRowItem(label: "IP属地", value: loc)
+                                } else {
+                                    InfoRowItem(label: "IP属地", value: "未知")
+                                }
+                                
+                                // 右侧预留位置，可以添加其他信息
+                                Spacer()
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -188,9 +251,73 @@ struct UserProfileView: View {
         }
     }
     
-    private func formatDate(_ dateString: String) -> String {
-        // 简单的日期格式化，可以根据需要调整
-        return dateString
+    private func formatGender(_ gender: Int) -> String {
+        switch gender {
+        case 1:
+            return "男"
+        case 0:
+            return "女"
+        default:
+            return "保密"
+        }
+    }
+    
+    private func formatDuration(_ duration: Int) -> String {
+        // 分钟转为小时和分钟
+        let hours = duration / 60
+        let minutes = duration % 60
+        
+        if hours == 0 {
+            return "\(minutes)分钟"
+        } else if minutes == 0 {
+            return "\(hours)小时"
+        } else {
+            return "\(hours)小时\(minutes)分钟"
+        }
+    }
+    
+    private func formatRegTime(_ regTime: Int) -> String {
+        // 当前时间 - 注册时间戳 转为年和月
+        // 将时间戳转换为Date
+        let regDate = Date(timeIntervalSince1970: TimeInterval(regTime))
+        let currentDate = Date()
+        
+        // 使用Calendar计算差值
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: regDate, to: currentDate)
+        
+        guard let years = components.year, let months = components.month, years >= 0, months >= 0 else {
+            return "刚刚" // 处理异常情况或未来时间
+        }
+        
+        if years == 0 {
+            return "\(months)个月"
+        } else if months == 0 {
+            return "\(years)年"
+        } else {
+            return "\(years)年\(months)个月"
+        }
+    }
+    
+    
+}
+
+// 信息行项目组件
+struct InfoRowItem: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Text(value)
+                .font(.body)
+                .foregroundColor(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
