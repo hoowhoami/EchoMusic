@@ -70,7 +70,7 @@ class PlayerService: ObservableObject {
     // MARK: - AVPlayer 相关方法
     
     /// 播放新歌曲（内部方法）
-    private func playNewSong(_ song: Song) async throws {
+    private func playNewSong(_ song: Song, resetProgress: Bool = true) async throws {
         let selectedQuality = _audioQuality
         let selectedCompatibility = _qualityCompatibility
         
@@ -88,7 +88,7 @@ class PlayerService: ObservableObject {
                 self.cleanupPlayer()
                 
                 self.audioPlayer = AVPlayer(url: url)
-                self.isNewSong = true  // 标记为新歌曲
+                self.isNewSong = resetProgress  // 根据resetProgress参数决定是否重置进度
                 
                 // 设置播放器观察器
                 self.setupPlayerObservers()
@@ -398,7 +398,7 @@ class PlayerService: ObservableObject {
                 isPlaying = true  // 先设置为true，让观察器知道需要播放
                 Task {
                     do {
-                        try await playNewSong(currentSong)
+                        try await playNewSong(currentSong, resetProgress: false)  // 不重置进度，从保存的位置继续
                     } catch {
                         await MainActor.run {
                             self.isPlaying = false
@@ -698,7 +698,7 @@ class PlayerService: ObservableObject {
             }
         }
         
-        // 重新播放歌曲
+        // 重新播放歌曲，标记为新歌曲（从头开始）
         try await playNewSong(currentSong)
         
         await MainActor.run {

@@ -422,7 +422,7 @@ struct PlayerSettingsView: View {
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showSpeedSlider, arrowEdge: .top) {
-                SpeedControlPopover(playbackSpeed: $playbackSpeed)
+                SpeedControlPopover(playbackSpeed: $playbackSpeed, showSpeedSlider: $showSpeedSlider)
             }
             .onHover { isHovering in
                 if isHovering {
@@ -591,6 +591,7 @@ struct VolumeControlPopover: View {
 // 播放速度控制弹出窗口
 struct SpeedControlPopover: View {
     @Binding var playbackSpeed: Double
+    @Binding var showSpeedSlider: Bool
 
     private let speedOptions: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
@@ -600,6 +601,7 @@ struct SpeedControlPopover: View {
             ForEach(speedOptions, id: \.self) { speed in
                 Button(action: {
                     playbackSpeed = speed
+                    showSpeedSlider = false
                 }) {
                     Text("\(speed, specifier: "%.2g")x")
                         .font(.caption)
