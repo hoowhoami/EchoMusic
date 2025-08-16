@@ -458,32 +458,6 @@ struct PlayerSettingsView: View {
                     NSCursor.pop()
                 }
             }
-
-            // 播放列表
-            Button(action: {
-                showPlaylist.toggle()
-                if showPlaylist {
-                    showVolumeSlider = false
-                    showSpeedSlider = false
-                    showQuality = false
-                    showPlayerSettings = false
-                }
-            }) {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 16))
-                    .foregroundColor(showPlaylist ? .accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showPlaylist, arrowEdge: .top) {
-                PlaylistPopover(playerService: playerService)
-            }
-            .onHover { isHovering in
-                if isHovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
             
             // 音质选择按钮
             Button(action: {
@@ -528,6 +502,32 @@ struct PlayerSettingsView: View {
             .buttonStyle(.plain)
             .popover(isPresented: $showPlayerSettings, arrowEdge: .top) {
                 PlayerGeneralSettingsPopover(playerService: playerService)
+            }
+            .onHover { isHovering in
+                if isHovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+
+            // 播放列表
+            Button(action: {
+                showPlaylist.toggle()
+                if showPlaylist {
+                    showVolumeSlider = false
+                    showSpeedSlider = false
+                    showQuality = false
+                    showPlayerSettings = false
+                }
+            }) {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 16))
+                    .foregroundColor(showPlaylist ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showPlaylist, arrowEdge: .top) {
+                PlaylistPopover(playerService: playerService)
             }
             .onHover { isHovering in
                 if isHovering {
