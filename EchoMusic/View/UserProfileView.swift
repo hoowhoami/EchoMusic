@@ -82,8 +82,8 @@ struct UserProfileView: View {
                                 // vip标识
                                 if let vipInfo = userService.vipInfo,
                                    let busiVip = vipInfo.busi_vip,
-                                   busiVip.count > 0 {
-                                   
+                                   busiVip.count > 0
+                                {
                                     // svip标识
                                     if busiVip.first?.is_vip == 1 {
                                         Text("SVIP")
@@ -98,7 +98,8 @@ struct UserProfileView: View {
                                     
                                     // tvip标识
                                     if busiVip.count > 1,
-                                       busiVip[1].is_vip == 1 {
+                                       busiVip[1].is_vip == 1
+                                    {
                                         Text("TVIP")
                                             .font(.caption2)
                                             .fontWeight(.bold)
@@ -108,11 +109,8 @@ struct UserProfileView: View {
                                             .background(Color.orange.opacity(0.1))
                                             .cornerRadius(2)
                                     }
-                                       
-                                }
-                                
-                                
-                            }
+                                 }
+                              }
                             
                             Text("Lv.\(userService.userDetail?.p_grade ?? 0)")
                                 .font(.body)
@@ -121,11 +119,59 @@ struct UserProfileView: View {
                             Text("用户签名: \(userService.userDetail?.descri ?? "暂无~")")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
-                        }
+                         }
                         
                         Spacer()
                     }
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color(NSColor.windowBackgroundColor))
+                    )
+                    
+                    // vip信息
+                    VStack(alignment: .leading, spacing: 16) {
+                        
+                        HStack(alignment: .center) {
+                            Text("VIP信息")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Spacer()
+                            
+                            Text("签到")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            
+                            Text("领取VIP")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+
+                        }
+                        
+                       
+                        
+                        // vip标识
+                        if let vipInfo = userService.vipInfo,
+                           let busiVip = vipInfo.busi_vip,
+                           busiVip.count > 0
+                        {
+                            // svip标识
+                            if let svip = busiVip.first, svip.is_vip == 1 {
+                                InfoRowItem(label: "SVIP时间", value: "\(svip.vip_begin_time ?? "未知") ~ \(svip.vip_end_time ?? "未知")")
+                            }
+                            
+                            // tvip标识
+                            if busiVip.count > 1 {
+                                let tvip = busiVip[1]
+                                if tvip.is_vip == 1 {
+                                    InfoRowItem(label: "TVIP时间", value: "\(tvip.vip_begin_time ?? "未知") ~ \(tvip.vip_end_time ?? "未知")")
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 16)
                     .padding(.horizontal, 20)
                     .background(
@@ -139,7 +185,7 @@ struct UserProfileView: View {
                             .font(.headline)
                             .fontWeight(.semibold)
                         
-                        // 其他信息每行2个，左右布局
+                        // 每行2个，左右布局
                         VStack(spacing: 16) {
                             // 第一行：用户ID | 等级
                             HStack(spacing: 20) {
@@ -227,7 +273,7 @@ struct UserProfileView: View {
             .padding(32)
         }
         .alert("确认注销", isPresented: $showLogoutConfirmation) {
-            Button("取消", role: .cancel) { }
+            Button("取消", role: .cancel) {}
             Button("注销", role: .destructive) {
                 userService.clearUserSession()
             }
@@ -246,8 +292,7 @@ struct UserProfileView: View {
             
             do {
                 try await UserService.shared.refreshUserInfo()
-            } catch {
-            }
+            } catch {}
         }
     }
     
@@ -298,8 +343,6 @@ struct UserProfileView: View {
             return "\(years)年\(months)个月"
         }
     }
-    
-    
 }
 
 // 信息行项目组件

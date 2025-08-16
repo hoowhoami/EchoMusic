@@ -55,7 +55,7 @@ struct SidebarView: View {
                     }
                     
                     if userService.isLoggedIn {
-                        Text(userService.currentUser?.username ?? "用户")
+                        Text(userService.currentUser?.nickname ?? userService.currentUser?.username ?? "unknown")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.primary)
                         
@@ -74,6 +74,7 @@ struct SidebarView: View {
                                     .padding(.vertical, 0.5)
                                     .background(Color.orange.opacity(0.1))
                                     .cornerRadius(2)
+                                    .padding(.top, 2)
                             }
                             
                             // tvip标识
@@ -87,6 +88,7 @@ struct SidebarView: View {
                                     .padding(.vertical, 0.5)
                                     .background(Color.orange.opacity(0.1))
                                     .cornerRadius(2)
+                                    .padding(.top, 2)
                             }
                                
                         }
