@@ -495,7 +495,7 @@ struct PlayerSettingsView: View {
                     showQuality = false
                 }
             }) {
-                Image(systemName: "gearshape")
+                Image(systemName: "switch.2")
                     .font(.system(size: 16))
                     .foregroundColor(showPlayerSettings ? .accentColor : .secondary)
             }
