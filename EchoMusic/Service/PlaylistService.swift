@@ -231,6 +231,127 @@ class PlaylistService: ObservableObject {
     
     // MARK: - 通用方法
     
+    /// 删除歌单
+    func deletePlaylist(listid: Int) async throws {
+        do {
+            let params = ["listid": String(listid)]
+            
+            let response: PlaylistDeleteResponse = try await NetworkService.shared.get(
+                endpoint: "/playlist/del",
+                params: params,
+                responseType: PlaylistDeleteResponse.self
+            )
+            
+            if response.status != 1 {
+                throw UserServiceError.serverError(response.error_code, response.error_msg ?? "删除歌单失败")
+            }
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch let error as UserServiceError {
+            throw error
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
+    
+    /// 创建歌单
+    func createPlaylist(name: String, isPrivate: Bool = false) async throws -> PlaylistCreateResponse.PlaylistCreateData {
+        do {
+            var params = [
+                "name": name,
+                "type": "0"  // 0：创建歌单，1：收藏歌单
+            ]
+            
+            if isPrivate {
+                params["is_pri"] = "1"  // 1：隐私，0：公开
+            }
+            
+            let response: PlaylistCreateResponse = try await NetworkService.shared.get(
+                endpoint: "/playlist/add",
+                params: params,
+                responseType: PlaylistCreateResponse.self
+            )
+            
+            if response.status == 1, let data = response.data {
+                return data
+            } else {
+                throw UserServiceError.serverError(response.error_code, response.error_msg ?? "创建歌单失败")
+            }
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch let error as UserServiceError {
+            throw error
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
+    
+    /// 添加歌曲到歌单
+    func addTracksToPlaylist(listid: Int, tracks: [PlaylistTrackInfo]) async throws {
+        do {
+            // 构造data参数：歌曲名称|歌曲 hash|专辑 id|mixsongid/album_audio_id
+            let dataItems = tracks.compactMap { track -> String? in
+                guard let name = track.name, let hash = track.hash else { return nil }
+                
+                let albumId = track.album_id ?? ""
+                let mixsongid = track.mixsongid.map(String.init) ?? track.audio_id.map(String.init) ?? ""
+                
+                return "\(name)|\(hash)|\(albumId)|\(mixsongid)"
+            }
+            
+            guard !dataItems.isEmpty else {
+                throw UserServiceError.serverError(0, "没有有效的歌曲数据")
+            }
+            
+            let params = [
+                "listid": String(listid),
+                "data": dataItems.joined(separator: ",")
+            ]
+            
+            let response: PlaylistAddTracksResponse = try await NetworkService.shared.get(
+                endpoint: "/playlist/tracks/add",
+                params: params,
+                responseType: PlaylistAddTracksResponse.self
+            )
+            
+            if response.status != 1 {
+                throw UserServiceError.serverError(response.error_code, response.error_msg ?? "添加歌曲到歌单失败")
+            }
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch let error as UserServiceError {
+            throw error
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
+    
+    /// 从歌单删除歌曲
+    func removeTracksFromPlaylist(listid: Int, fileids: [Int]) async throws {
+        do {
+            let params = [
+                "listid": String(listid),
+                "fileids": fileids.map(String.init).joined(separator: ",")
+            ]
+            
+            let response: PlaylistRemoveTracksResponse = try await NetworkService.shared.get(
+                endpoint: "/playlist/tracks/del",
+                params: params,
+                responseType: PlaylistRemoveTracksResponse.self
+            )
+            
+            if response.status != 1 {
+                throw UserServiceError.serverError(response.error_code, response.error_msg ?? "从歌单删除歌曲失败")
+            }
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch let error as UserServiceError {
+            throw error
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
+    
     /// 刷新指定分类的数据
     func refreshSection() async {
         await refreshPlaylists()

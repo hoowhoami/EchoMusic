@@ -33,7 +33,10 @@ struct PlayerView: View {
             // 主要控制区域
             HStack(spacing: 0) {
                 // 左侧：歌曲信息
-                SongInfoView(song: playerService.currentSong, playerService: playerService)
+                SongInfoView(
+                    song: playerService.currentSong, 
+                    playerService: playerService
+                )
                     .frame(width: 200)
 
                 // 中央：播放控制（绝对居中）
@@ -189,64 +192,6 @@ struct TopProgressBarView: View {
     }
 }
 
-// 原进度条组件（保留以防其他地方使用）
-struct ProgressBarView: View {
-    @Binding var currentTime: Double
-    let duration: Double
-
-    var body: some View {
-        if duration > 0 {
-            VStack(spacing: 6) {
-                // 进度条
-                Slider(value: $currentTime, in: 0...duration) {
-                    // 拖拽时的处理
-                } onEditingChanged: { editing in
-                    // 拖拽开始/结束时的处理
-                }
-                .controlSize(.small)
-
-                // 时间显示
-                HStack {
-                    Text(formatTime(currentTime))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    Text(formatTime(duration))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        } else {
-            // 没有时长时显示空的进度条
-            VStack(spacing: 6) {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(height: 4)
-                    .cornerRadius(2)
-                
-                HStack {
-                    Text("--:--")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Spacer()
-                    
-                    Text("--:--")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-    }
-
-    private func formatTime(_ time: Double) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-}
 
 // 歌曲信息组件
 struct SongInfoView: View {
@@ -291,20 +236,26 @@ struct SongInfoView: View {
                         .fontWeight(.medium)
                         .lineLimit(1)
                     
-                    // 如果有错误，显示错误图标
-                    if playerService.hasError {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
-                    
                     // 下方播放器不显示音质标识
                 }
                 
-                Text(playerService.hasError ? (playerService.errorMessage ?? "播放失败") : (song?.artist ?? "未知歌手"))
-                    .font(.caption)
-                    .foregroundColor(playerService.hasError ? .orange : .secondary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    // 如果有错误，显示错误图标
+                    if playerService.hasError {
+                        Image(systemName: playerService.currentError?.iconName ?? "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Text(playerService.errorMessage ?? "播放失败")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                            .lineLimit(1)
+                    } else {
+                        Text(song?.artist ?? "未知歌手")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
             .frame(width: 120, alignment: .leading)
         }
@@ -844,7 +795,7 @@ struct PlaylistItemView: View {
 struct QualitySelectionPopover: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var playerService: PlayerService
-    @State private var selectedQuality: AudioQuality = .normal
+    @State private var selectedQuality: AudioQuality = ._128
     @State private var compatibilityMode: Bool = true
     
     var body: some View {

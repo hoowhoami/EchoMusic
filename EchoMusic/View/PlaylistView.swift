@@ -65,7 +65,11 @@ struct PlaylistDetailView: View {
     @State private var isLoadingTracks = false
     @State private var isRefreshing = false
     @State private var errorMessage: String?
+    @State private var showPlaylistSelection = false
+    @State private var showRemoveConfirmation = false
+    @State private var tracksToRemove: [PlaylistTrackInfo] = []
     @EnvironmentObject private var playerService: PlayerService
+    @EnvironmentObject private var userService: UserService
     
     init(playlist: UserPlaylistResponse.UserPlaylist, onBack: @escaping () -> Void) {
         self.playlist = playlist
@@ -86,7 +90,8 @@ struct PlaylistDetailView: View {
                     tracks: tracks,
                     title: "歌曲列表",
                     isLoading: isLoadingTracks,
-                    errorMessage: errorMessage
+                    errorMessage: errorMessage,
+                    batchOperations: batchOperations
                 )
             } else if isLoadingDetail {
                 // 加载状态
@@ -115,6 +120,26 @@ struct PlaylistDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .sheet(isPresented: $showPlaylistSelection) {
+            PlaylistSelectionDialog(
+                selectedTracks: tracksToRemove,
+                onAddToPlaylist: { targetPlaylist, selectedTracks in
+                    await addTracksToPlaylist(targetPlaylist, selectedTracks)
+                }
+            )
+        }
+        .alert("确认删除", isPresented: $showRemoveConfirmation) {
+            Button("取消", role: .cancel) {
+                tracksToRemove = []
+            }
+            Button("删除", role: .destructive) {
+                Task {
+                    await removeTracksFromPlaylist(tracksToRemove)
+                }
+            }
+        } message: {
+            Text("确定要从歌单中删除这 \(tracksToRemove.count) 首歌曲吗？")
+        }
         .onAppear {
             Task { await loadPlaylistData() }
         }
@@ -130,6 +155,33 @@ struct PlaylistDetailView: View {
                 )
             }
         }
+    }
+    
+    // 批量操作配置
+    private var batchOperations: [BatchOperation] {
+        var operations: [BatchOperation] = []
+        
+        // 添加到其他歌单
+        operations.append(BatchOperation(title: "添加到其他歌单") { selectedTracks in
+            tracksToRemove = selectedTracks
+            showPlaylistSelection = true
+        })
+        
+        // 从此歌单中删除 - 只有用户创建的歌单才显示
+        if isUserCreatedPlaylist {
+            operations.append(BatchOperation(title: "从此歌单中删除", isDestructive: true) { selectedTracks in
+                tracksToRemove = selectedTracks
+                showRemoveConfirmation = true
+            })
+        }
+        
+        return operations
+    }
+    
+    // 判断是否为用户创建的歌单
+    private var isUserCreatedPlaylist: Bool {
+        let currentUserId = userService.currentUser?.userid
+        return playlist.list_create_userid == currentUserId
     }
     
     @ViewBuilder
@@ -298,6 +350,70 @@ struct PlaylistDetailView: View {
                 self.errorMessage = error.localizedDescription
                 self.isLoadingDetail = false
                 self.isLoadingTracks = false
+            }
+        }
+    }
+    
+    // 添加歌曲到其他歌单
+    private func addTracksToPlaylist(_ targetPlaylist: UserPlaylistResponse.UserPlaylist, _ selectedTracks: [PlaylistTrackInfo]) async {
+        guard let listid = targetPlaylist.listid else {
+            await MainActor.run {
+                errorMessage = "目标歌单ID无效"
+            }
+            return
+        }
+        
+        do {
+            try await playlistService.addTracksToPlaylist(listid: listid, tracks: selectedTracks)
+            
+            await MainActor.run {
+                // 可以显示成功提示
+                print("成功添加 \(selectedTracks.count) 首歌曲到歌单「\(targetPlaylist.name ?? "未知歌单")」")
+                tracksToRemove = []
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "添加失败: \(error.localizedDescription)"
+                tracksToRemove = []
+            }
+        }
+    }
+    
+    // 从歌单中删除歌曲
+    private func removeTracksFromPlaylist(_ selectedTracks: [PlaylistTrackInfo]) async {
+        guard let listid = playlist.listid else {
+            await MainActor.run {
+                errorMessage = "歌单ID无效"
+                tracksToRemove = []
+            }
+            return
+        }
+        
+        // 获取要删除的歌曲的 fileid
+        let fileids = selectedTracks.compactMap { $0.fileid }
+        
+        guard !fileids.isEmpty else {
+            await MainActor.run {
+                errorMessage = "没有有效的歌曲文件ID"
+                tracksToRemove = []
+            }
+            return
+        }
+        
+        do {
+            try await playlistService.removeTracksFromPlaylist(listid: listid, fileids: fileids)
+            
+            // 删除成功后重新加载歌曲列表
+            await loadPlaylistData()
+            
+            await MainActor.run {
+                print("成功从歌单中删除 \(selectedTracks.count) 首歌曲")
+                tracksToRemove = []
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "删除失败: \(error.localizedDescription)"
+                tracksToRemove = []
             }
         }
     }

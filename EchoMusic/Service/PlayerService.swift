@@ -76,11 +76,11 @@ class PlayerService: ObservableObject {
         
         do {
             guard let urlString = try await musicService.getSongURL(for: song, quality: selectedQuality, qualityCompatibility: selectedCompatibility) else {
-                throw PlayerServiceError.urlNotAvailable
+                throw EchoMusicError.urlNotAvailable
             }
             
             guard let url = URL(string: urlString) else {
-                throw PlayerServiceError.urlNotAvailable
+                throw EchoMusicError.urlNotAvailable
             }
             
             await MainActor.run {
@@ -97,28 +97,17 @@ class PlayerService: ObservableObject {
                 self.audioPlayer?.volume = Float(self.volume)
                 self.audioPlayer?.rate = 0 // 先设置为0，不自动播放
             }
-        } catch let error as MusicServiceError {
+        } catch let error as EchoMusicError {
             await MainActor.run {
                 self.isPlaying = false
             }
-            // 将MusicServiceError转换为PlayerServiceError
-            switch error {
-            case .invalidHash:
-                throw PlayerServiceError.invalidHash
-            case .urlNotAvailable:
-                throw PlayerServiceError.urlNotAvailable
-            case .networkError(let message):
-                throw PlayerServiceError.networkError(message)
-            case .copyrightRestricted:
-                throw PlayerServiceError.copyrightRestricted
-            case .unknownError:
-                throw PlayerServiceError.unknownError
-            }
+            // 直接抛出 EchoMusicError
+            throw error
         } catch {
             await MainActor.run {
                 self.isPlaying = false
             }
-            throw PlayerServiceError.unknownError
+            throw EchoMusicError.unknownError
         }
     }
     
@@ -269,9 +258,10 @@ class PlayerService: ObservableObject {
     @Published var currentIndex: Int = 0
     @Published var errorMessage: String?
     @Published var hasError: Bool = false
+    @Published var currentError: EchoMusicError?
     
     // MARK: - 音质相关属性
-    private var _audioQuality: AudioQuality = .normal
+    private var _audioQuality: AudioQuality = ._128
     private var _qualityCompatibility: Bool = true
     
     var audioQuality: AudioQuality { _audioQuality }
@@ -396,12 +386,19 @@ class PlayerService: ObservableObject {
             // 如果有当前歌曲但音频播放器未准备好，重新加载歌曲
             if let currentSong = currentSong, !isPlayerReady() {
                 isPlaying = true  // 先设置为true，让观察器知道需要播放
+                clearError()
                 Task {
                     do {
                         try await playNewSong(currentSong, resetProgress: false)  // 不重置进度，从保存的位置继续
                     } catch {
                         await MainActor.run {
                             self.isPlaying = false
+                            // 设置错误信息但保持显示失败的歌曲
+                            if let playerError = error as? EchoMusicError {
+                                setError(playerError)
+                            } else {
+                                setError("播放失败")
+                            }
                         }
                     }
                 }
@@ -451,8 +448,8 @@ class PlayerService: ObservableObject {
                 await MainActor.run {
                     isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
-                    if let playerError = error as? PlayerServiceError {
-                        setError(playerError.errorDescription ?? "播放失败")
+                    if let playerError = error as? EchoMusicError {
+                        setError(playerError)
                     } else {
                         setError("播放失败")
                     }
@@ -461,7 +458,7 @@ class PlayerService: ObservableObject {
                     
                     // 如果启用了自动跳过，尝试播放下一首
                     if autoSkipOnError {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                             self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
@@ -513,8 +510,8 @@ class PlayerService: ObservableObject {
                 await MainActor.run {
                     isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
-                    if let playerError = error as? PlayerServiceError {
-                        setError(playerError.errorDescription ?? "播放失败")
+                    if let playerError = error as? EchoMusicError {
+                        setError(playerError)
                     } else {
                         setError("播放失败")
                     }
@@ -523,7 +520,7 @@ class PlayerService: ObservableObject {
                     
                     // 如果启用了自动跳过，尝试播放下一首（避免无限循环）
                     if autoSkipOnError && previousIndex != currentIndex {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                             self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
@@ -576,8 +573,8 @@ class PlayerService: ObservableObject {
                 await MainActor.run {
                     isPlaying = false
                     // 设置错误信息但保持显示失败的歌曲
-                    if let playerError = error as? PlayerServiceError {
-                        setError(playerError.errorDescription ?? "播放失败")
+                    if let playerError = error as? EchoMusicError {
+                        setError(playerError)
                     } else {
                         setError("播放失败")
                     }
@@ -586,7 +583,7 @@ class PlayerService: ObservableObject {
                     
                     // 如果启用了自动跳过，尝试播放下一首
                     if autoSkipOnError {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                             self.isPlaying = true  // 确保设置为播放状态
                             self.playNext()
                         }
@@ -771,8 +768,8 @@ class PlayerService: ObservableObject {
                     await MainActor.run {
                         isPlaying = false
                         // 设置错误信息但保持显示失败的歌曲
-                        if let playerError = error as? PlayerServiceError {
-                            setError(playerError.errorDescription ?? "播放失败")
+                        if let playerError = error as? EchoMusicError {
+                            setError(playerError)
                         } else {
                             setError("播放失败")
                         }
@@ -782,7 +779,7 @@ class PlayerService: ObservableObject {
                         
                         // 如果启用了自动跳过，尝试播放下一首
                         if autoSkipOnError {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                                 self.isPlaying = true  // 确保设置为播放状态
                                 self.playNext()
                             }
@@ -923,14 +920,25 @@ class PlayerService: ObservableObject {
     
     /// 清除错误信息
     func clearError() {
-        errorMessage = nil
-        hasError = false
+        print("clearError")
+         errorMessage = nil
+         hasError = false
+         currentError = nil
     }
     
     /// 设置错误信息
     func setError(_ message: String) {
         errorMessage = message
         hasError = true
+        currentError = nil
+    }
+    
+    /// 设置详细错误信息
+    func setError(_ error: EchoMusicError) {
+        print(error)
+        errorMessage = error.userFriendlyMessage
+        hasError = true
+        currentError = error
     }
     
     // MARK: - macOS音频设备监听（入耳检测）
@@ -1064,31 +1072,6 @@ class PlayerService: ObservableObject {
                 isPlaying = false
                 savePlaylistState()
             }
-        }
-    }
-}
-
-// MARK: - 错误定义
-
-enum PlayerServiceError: LocalizedError {
-    case invalidHash
-    case urlNotAvailable
-    case networkError(String)
-    case copyrightRestricted
-    case unknownError
-    
-    var errorDescription: String? {
-        switch self {
-        case .invalidHash:
-            return "歌曲标识无效"
-        case .urlNotAvailable:
-            return "无法获取播放链接"
-        case .networkError(let message):
-            return "网络错误: \(message)"
-        case .copyrightRestricted:
-            return "该歌曲暂无版权，无法播放"
-        case .unknownError:
-            return "未知错误"
         }
     }
 }

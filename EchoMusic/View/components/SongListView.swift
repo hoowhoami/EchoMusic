@@ -7,6 +7,19 @@
 
 import SwiftUI
 
+/// 批量操作结构体
+struct BatchOperation {
+    let title: String
+    let action: ([PlaylistTrackInfo]) -> Void
+    let isDestructive: Bool
+    
+    init(title: String, isDestructive: Bool = false, action: @escaping ([PlaylistTrackInfo]) -> Void) {
+        self.title = title
+        self.isDestructive = isDestructive
+        self.action = action
+    }
+}
+
 /// 通用歌曲列表视图组件
 /// 可用于显示任何歌曲列表，支持批量操作
 struct SongListView: View {
@@ -15,6 +28,7 @@ struct SongListView: View {
     let isLoading: Bool
     let errorMessage: String?
     let onTrackPlay: ((PlaylistTrackInfo) -> Void)?
+    let batchOperations: [BatchOperation]
     
     @State private var isSelectionMode = false
     @State private var selectedTracks: Set<UUID> = []
@@ -25,13 +39,15 @@ struct SongListView: View {
         title: String = "歌曲列表",
         isLoading: Bool = false,
         errorMessage: String? = nil,
-        onTrackPlay: ((PlaylistTrackInfo) -> Void)? = nil
+        onTrackPlay: ((PlaylistTrackInfo) -> Void)? = nil,
+        batchOperations: [BatchOperation] = []
     ) {
         self.tracks = tracks
         self.title = title
         self.isLoading = isLoading
         self.errorMessage = errorMessage
         self.onTrackPlay = onTrackPlay
+        self.batchOperations = batchOperations
     }
     
     var body: some View {
@@ -84,6 +100,7 @@ struct SongListView: View {
                         
                         if !selectedTracks.isEmpty {
                             Menu {
+                                // 默认的添加到播放列表操作
                                 Button("添加到播放列表") {
                                     let selectedSongs = tracks.filter { track in
                                         selectedTracks.contains(track.id)
@@ -93,12 +110,16 @@ struct SongListView: View {
                                     selectedTracks.removeAll()
                                 }
                                 
-                                Button("添加到其他歌单") {
-                                    // TODO: 实现添加到其他歌单功能
-                                }
-                                
-                                Button("从此歌单中删除") {
-                                    // TODO: 实现从歌单中删除功能
+                                // 动态的批量操作
+                                ForEach(Array(batchOperations.enumerated()), id: \.offset) { _, operation in
+                                    Button(operation.title, role: operation.isDestructive ? .destructive : nil) {
+                                        let selectedTracksList = tracks.filter { track in
+                                            selectedTracks.contains(track.id)
+                                        }
+                                        operation.action(selectedTracksList)
+                                        isSelectionMode = false
+                                        selectedTracks.removeAll()
+                                    }
                                 }
                             } label: {
                                 HStack(spacing: 4) {

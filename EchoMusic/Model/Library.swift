@@ -722,3 +722,40 @@ struct UserFollowResponse: Codable {
         }
     }
 }
+
+// MARK: - 歌单操作响应模型
+
+/// 删除歌单响应模型
+struct PlaylistDeleteResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+}
+
+/// 创建歌单响应模型
+struct PlaylistCreateResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+    let data: PlaylistCreateData?
+    
+    struct PlaylistCreateData: Codable {
+        let listid: Int?
+        let name: String?
+        let global_collection_id: String?
+    }
+}
+
+/// 添加歌曲到歌单响应模型
+struct PlaylistAddTracksResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+}
+
+/// 从歌单删除歌曲响应模型
+struct PlaylistRemoveTracksResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+}

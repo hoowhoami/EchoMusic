@@ -8,26 +8,29 @@ import SwiftUI
 
 /// 音质选项枚举
 enum AudioQuality: String, CaseIterable {
-    case normal = "normal_1"        // 普通音质 - 128Kbps 接口自动处理无需显示指定
-    case high = "normal_2"         // 高品音质 - 320Kbps+ 接口自动处理无需显示指定
-    case lossless = "flac"     // 无损音质 - FLAC
-    case hires = "high"        // Hi-Res音质 - 高品质
+    case _128 = "128" // 128 码率 mp3
+    case _320 = "320" // 320 码率 mp3
+    case flac // flac 格式音频
+    case high // 无损格式音频
+    case viper_clear // 蝰蛇超清音质
     
     var displayName: String {
         switch self {
-        case .normal: return "普通音质 - 128Kbps"
-        case .high: return "高品音质 - 320Kbps"
-        case .lossless: return "无损音质 - 1104kbps"
-        case .hires: return "Hi-Res音质"
+        case ._128: return "128Kbps"
+        case ._320: return "320Kbps"
+        case .flac: return "flac"
+        case .high: return "high"
+        case .viper_clear: return "viper"
         }
     }
     
     var description: String {
         switch self {
-        case .normal: return "标准音质，适合日常播放"
-        case .high: return "高品质音频，音质更佳"
-        case .lossless: return "无损压缩，原汁原味"
-        case .hires: return "高解析度音频，顶级体验"
+        case ._128: return "128码率mp3"
+        case ._320: return "320码率mp3"
+        case .flac: return "flac音频"
+        case .high: return "无损音频"
+        case .viper_clear: return "蝰蛇超清音质"
         }
     }
 }
@@ -108,23 +111,23 @@ struct Song: Identifiable, Codable, Equatable {
     // 使用hash作为唯一标识
     var id: String { return hash ?? "" }
     
-    let title: String?    // 歌曲名
+    let title: String? // 歌曲名
     let originalTitle: String? // 原始歌曲名
-    let artist: String?   // 歌手
-    let album: String?    // 专辑
-    let cover: String?    // 封面图名称（本地 Assets 或网络地址）
-    let hash: String?    // 歌曲哈希值，用于去重和唯一标识
-    let duration: Int?   // 歌曲时长（秒）
+    let artist: String? // 歌手
+    let album: String? // 专辑
+    let cover: String? // 封面图名称（本地 Assets 或网络地址）
+    let hash: String? // 歌曲哈希值，用于去重和唯一标识
+    let duration: Int? // 歌曲时长（秒）
     let albumId: String? // 专辑ID（用于获取URL）
     let albumAudioId: String? // 专辑音频ID
     
     // 音质标识
-    let isVip: Bool?      // VIP标识
-    let isHq: Bool?       // HQ高音质标识
-    let isSq: Bool?       // SQ超品音质标识
+    let isVip: Bool? // VIP标识
+    let isHq: Bool? // HQ高音质标识
+    let isSq: Bool? // SQ超品音质标识
     
     // 播放相关的运行时属性（不保存到持久化）
-    var playableURL: String?    // 当前可播放的URL
+    var playableURL: String? // 当前可播放的URL
     var currentQuality: AudioQuality? // 当前音质
     
     // 用于去重的比较，基于 hash 或者 title + artist
@@ -158,6 +161,7 @@ struct Song: Identifiable, Codable, Equatable {
         self.playableURL = nil
         self.currentQuality = nil
     }
+
     init(from track: PlaylistTrackInfo) {
         // 处理歌曲名称：如果包含 " - "，则取后半部分作为歌曲名
         let nameParts = (track.name ?? "未知歌曲").components(separatedBy: " - ")

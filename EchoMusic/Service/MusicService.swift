@@ -39,7 +39,7 @@ class MusicService: ObservableObject {
     /// - Returns: 播放URL字符串
     func getSongURL(for song: Song, quality: AudioQuality, qualityCompatibility: Bool, freePart: Bool = false) async throws -> String? {
         guard let hash = song.hash else {
-            throw MusicServiceError.invalidHash
+            throw EchoMusicError.invalidHash
         }
         
         let cacheKey = "\(hash)_\(quality.rawValue)_\(freePart ? "free" : "full")_\(qualityCompatibility ? "compat" : "direct")"
@@ -54,16 +54,9 @@ class MusicService: ObservableObject {
             "hash": hash
         ]
         
-        // 处理音质参数 (兼容模式关闭且选择的是lossless或hires)
+        // 处理音质参数 (兼容模式关闭)
         if !qualityCompatibility {
-            switch quality {
-            case .lossless:
-                params["quality"] = "flac"
-            case .hires:
-                params["quality"] = "high"
-            default:
-                break
-            }
+            params["quality"] = quality.rawValue
         }
         
         // 传递 album_id 和 album_audio_id 参数可能导致某些歌曲获取不到播放地址
@@ -82,12 +75,17 @@ class MusicService: ObservableObject {
             
             // 判断格式
             if response.extName == "mp4" {
-                throw MusicServiceError.urlNotAvailable
+                throw EchoMusicError.urlNotAvailable
+            }
+            
+            // 需要购买
+            if response.status == 2 {
+                throw EchoMusicError.needBuy
             }
             
             // 处理版权提示
             if response.status == 3 {
-                throw MusicServiceError.copyrightRestricted
+                throw EchoMusicError.copyrightRestricted
             }
             
             if response.status == 1 {
@@ -108,15 +106,15 @@ class MusicService: ObservableObject {
                 }
                 
                 // 如果请求的音质不可用，尝试降级到普通音质
-                if quality != .normal {
-                    return try await getSongURL(for: song, quality: .normal, qualityCompatibility: qualityCompatibility, freePart: freePart)
+                if quality != ._128, quality != ._320 {
+                    return try await getSongURL(for: song, quality: ._128, qualityCompatibility: true, freePart: freePart)
                 }
-                throw MusicServiceError.urlNotAvailable
+                throw EchoMusicError.urlNotAvailable
             } else {
-                throw MusicServiceError.urlNotAvailable
+                throw EchoMusicError.urlNotAvailable
             }
         } catch let error as NetworkError {
-            throw MusicServiceError.networkError(error.localizedDescription)
+            throw EchoMusicError.networkError(error.localizedDescription)
         } catch {
             throw error
         }
@@ -127,7 +125,7 @@ class MusicService: ObservableObject {
         var availableURLs: [AudioQuality: String] = [:]
         
         // 按优先级测试音质
-        let priorityQualities: [AudioQuality] = [.normal, .high, .lossless, .hires]
+        let priorityQualities: [AudioQuality] = [._128, ._320, .flac, .high, .viper_clear]
         
         for quality in priorityQualities {
             do {
@@ -146,30 +144,5 @@ class MusicService: ObservableObject {
     /// 清理URL缓存
     func clearURLCache() {
         urlCache.removeAll()
-    }
-}
-
-// MARK: - 错误定义
-
-enum MusicServiceError: LocalizedError {
-    case invalidHash
-    case urlNotAvailable
-    case networkError(String)
-    case copyrightRestricted
-    case unknownError
-    
-    var errorDescription: String? {
-        switch self {
-        case .invalidHash:
-            return "歌曲标识无效"
-        case .urlNotAvailable:
-            return "无法获取播放链接"
-        case .networkError(let message):
-            return "网络错误: \(message)"
-        case .copyrightRestricted:
-            return "该歌曲暂无版权，无法播放"
-        case .unknownError:
-            return "未知错误"
-        }
     }
 }
