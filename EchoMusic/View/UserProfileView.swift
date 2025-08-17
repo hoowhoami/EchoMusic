@@ -108,6 +108,7 @@ struct UserProfileView: View {
                                             .padding(.vertical, 0.5)
                                             .background(Color.orange.opacity(0.1))
                                             .cornerRadius(2)
+                                            .help("SVIP\n开始时间: \(formatVipTime(busiVip.first?.vip_begin_time))\n结束时间: \(formatVipTime(busiVip.first?.vip_end_time))")
                                     }
                                     
                                     // tvip标识
@@ -122,18 +123,20 @@ struct UserProfileView: View {
                                             .padding(.vertical, 0.5)
                                             .background(Color.orange.opacity(0.1))
                                             .cornerRadius(2)
+                                            .help("TVIP\n开始时间: \(formatVipTime(busiVip[1].vip_begin_time))\n结束时间: \(formatVipTime(busiVip[1].vip_end_time))")
                                     }
-                                 }
-                              }
+                                }
+                            }
                             
                             Text("Lv.\(userService.userDetail?.p_grade ?? 0)")
                                 .font(.body)
                                 .foregroundColor(.secondary)
                             
-                            Text("用户签名: \(userService.userDetail?.descri ?? "暂无~")")
+                            Text("用户签名: \(userService.userDetail?.descri ?? "暂无")")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                         }
+                           
+                        }
                         
                         Spacer()
                     }
@@ -147,7 +150,7 @@ struct UserProfileView: View {
                     // VIP签到日历
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(alignment: .center) {
-                            Text("VIP签到日历")
+                            Text("概念VIP签到日历")
                                 .font(.headline)
                                 .fontWeight(.semibold)
                             
@@ -192,7 +195,7 @@ struct UserProfileView: View {
                             // 今日领取进度（突出显示）
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("今日领取进度")
+                                    Text("畅听VIP领取进度")
                                         .font(.subheadline)
                                         .fontWeight(.semibold)
                                         .foregroundColor(.primary)
@@ -474,7 +477,7 @@ struct UserProfileView: View {
     
     // 执行签到
     private func performCheckIn(for day: Int) {
-        guard canCheckIn(for: day) && !isCheckingIn else { return }
+        guard canCheckIn(for: day), !isCheckingIn else { return }
         
         Task {
             isCheckingIn = true
@@ -514,7 +517,7 @@ struct UserProfileView: View {
     
     // 执行领取VIP
     private func performClaimVip() {
-        guard canClaimVip() && !isClaimingVip else { return }
+        guard canClaimVip(), !isClaimingVip else { return }
         
         Task {
             isClaimingVip = true
@@ -666,12 +669,12 @@ struct UserProfileView: View {
         var days: [CalendarDayInfo] = []
         
         // 添加空白天数
-        for _ in 0..<firstWeekday {
+        for _ in 0 ..< firstWeekday {
             days.append(CalendarDayInfo(day: 0, isToday: false, isCheckedIn: false, canCheckIn: false))
         }
         
         // 添加当月所有天数
-        for day in 1...daysInMonth {
+        for day in 1 ... daysInMonth {
             let isToday = day == today
             let isCheckedIn = isAlreadyCheckedIn(for: day)
             let canCheckIn = self.canCheckIn(for: day)
@@ -733,6 +736,24 @@ struct UserProfileView: View {
         } else {
             return "\(years)年\(months)个月"
         }
+    }
+    
+    private func formatVipTime(_ timeString: String?) -> String {
+        guard let timeString = timeString, !timeString.isEmpty else {
+            return "未知"
+        }
+        
+        // 如果是时间戳格式
+        if let timestamp = Int(timeString) {
+            let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm"
+            formatter.locale = Locale(identifier: "zh_CN")
+            return formatter.string(from: date)
+        }
+        
+        // 如果已经是格式化的日期字符串，直接返回
+        return timeString
     }
     
     // 获取今日已领取VIP次数
@@ -797,10 +818,10 @@ struct InfoCard: View {
 
 /// 日历天信息
 struct CalendarDayInfo {
-    let day: Int            // 日期，0表示空白
-    let isToday: Bool       // 是否是今天
-    let isCheckedIn: Bool   // 是否已签到
-    let canCheckIn: Bool    // 是否可以签到
+    let day: Int // 日期，0表示空白
+    let isToday: Bool // 是否是今天
+    let isCheckedIn: Bool // 是否已签到
+    let canCheckIn: Bool // 是否可以签到
 }
 
 /// 签到日期视图
