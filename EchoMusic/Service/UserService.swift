@@ -263,9 +263,71 @@ class UserService: ObservableObject {
         }
     }
     
+    // MARK: - VIP相关API
     
+    /// 签到领取VIP（每日签到，使用/youth/day/vip接口）
+    func dailyCheckIn() async throws -> YouthDayVipResponse {
+        do {
+            let response: YouthDayVipResponse = try await networkService.get(
+                endpoint: "/youth/day/vip",
+                responseType: YouthDayVipResponse.self
+            )
+            
+            return response
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
     
+    /// 领取VIP（使用/youth/vip接口，获取详细的VIP信息）
+    func claimVip() async throws -> YouthVipResponse {
+        do {
+            let response: YouthVipResponse = try await networkService.get(
+                endpoint: "/youth/vip",
+                responseType: YouthVipResponse.self
+            )
+            
+            return response
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
     
+    /// 获取当月已领取VIP天数（用来控制用户的调用频率）
+    func getMonthVipRecord() async throws -> MonthVipRecordResponse {
+        do {
+            let response: MonthVipRecordResponse = try await networkService.get(
+                endpoint: "/youth/month/vip/record",
+                responseType: MonthVipRecordResponse.self
+            )
+            
+            return response
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
+    
+    /// 获取已领取VIP状态（用来控制用户的调用频率）
+    func getVipUnionStatus() async throws -> VipUnionStatusResponse {
+        do {
+            let response: VipUnionStatusResponse = try await networkService.get(
+                endpoint: "/youth/union/vip",
+                responseType: VipUnionStatusResponse.self
+            )
+            
+            return response
+        } catch let error as NetworkError {
+            throw UserServiceError.networkError(error.localizedDescription)
+        } catch {
+            throw UserServiceError.unknownError
+        }
+    }
     
     // MARK: - 组合方法
     

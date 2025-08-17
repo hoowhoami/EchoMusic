@@ -396,3 +396,79 @@ struct TokenRefreshResponse: Codable {
     let error_code: Int
     let data: User?
 }
+
+// MARK: - VIP相关响应模型
+
+/// VIP领取响应模型 (通用)
+struct VipClaimResponse: Codable {
+    let status: Int
+    let error_code: Int?
+    let message: String?
+    let data: VipClaimData?
+    
+    struct VipClaimData: Codable {
+        let success: Int?
+        let message: String?
+        let vip_duration: Int?
+    }
+}
+
+/// Youth VIP领取响应模型 (/youth/vip接口)
+struct YouthVipResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String
+    let data: YouthVipData
+    
+    struct YouthVipData: Codable {
+        let remain_vip_hour: Int    // 剩余VIP小时数
+        let total: Int              // 总共需要领取次数
+        let done: Int               // 已完成次数
+        let remain: Int             // 剩余次数
+        let award_vip_hour: Int     // 每次奖励的VIP小时数
+    }
+}
+
+/// Youth Day VIP领取响应模型 (/youth/day/vip接口)
+struct YouthDayVipResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String
+    let data: String            // 该接口返回空字符串
+}
+
+/// 当月VIP记录响应模型
+struct MonthVipRecordResponse: Codable {
+    let status: Int
+    let error_code: Int?
+    let error_msg: String?
+    let data: MonthVipRecordData?
+    
+    struct MonthVipRecordData: Codable {
+        let list: [VipRecord]?
+        let month: String?
+        let sign_list: [String]?
+        let future_duration: FutureDuration?
+        let server_time: Int?
+        
+        struct VipRecord: Codable {
+            let day: String?
+            let receive_vip: Int?
+            let vip_type: String?
+        }
+        
+        struct FutureDuration: Codable {
+            let up_seconds: Int?
+            let duration: Int?
+            let seconds: Int?
+            let month_num: Int?
+        }
+    }
+}
+
+/// VIP联合状态响应模型 (与 /user/vip/detail 接口响应结构相同)
+struct VipUnionStatusResponse: Codable {
+    let status: Int
+    let error_code: Int
+    let data: UserVipResponse.UserVipData?
+}
