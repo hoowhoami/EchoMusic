@@ -619,7 +619,7 @@ struct UserProfileView: View {
         // 获取当前月份和年份
         let calendar = Calendar.current
         let now = Date()
-        let currentYear = calendar.component(.year, from: now)
+        _ = calendar.component(.year, from: now)
         let currentMonth = calendar.component(.month, from: now)
         
         // 构造要检查的日期字符串格式
