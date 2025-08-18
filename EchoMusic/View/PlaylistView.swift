@@ -50,6 +50,15 @@ struct PlaylistView: View {
                 selectedPlaylistType = playlistType
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("PlaylistDeleted"))) { notification in
+            // 监听歌单删除通知
+            if let deletedPlaylistId = notification.userInfo?["deletedPlaylistId"] as? String,
+               selectedPlaylist?.global_collection_id == deletedPlaylistId {
+                // 清除已删除歌单的状态
+                selectedPlaylist = nil
+                selectedPlaylistType = nil
+            }
+        }
     }
 }
 

@@ -101,6 +101,13 @@ struct PlaylistSidebarView: View {
                         if selectedPlaylist?.global_collection_id == playlist.global_collection_id {
                             selectedPlaylist = nil
                             selectedPlaylistType = nil
+                            
+                            // 发送歌单删除通知，让PlaylistView清除状态
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("PlaylistDeleted"),
+                                object: nil,
+                                userInfo: ["deletedPlaylistId": playlist.global_collection_id ?? ""]
+                            )
                         }
                         
                         playlistToDelete = nil
