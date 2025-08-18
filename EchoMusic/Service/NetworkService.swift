@@ -72,6 +72,10 @@ class NetworkService: ObservableObject {
         
         var queryItems: [URLQueryItem] = []
         
+        // 添加时间戳
+        let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
+        queryItems.append(URLQueryItem(name: "timestamp", value: timestamp))
+        
         // 添加认证参数
         if let auth = userAuth {
             let cookieValue = "token=\(auth.token);userid=\(auth.userid)"

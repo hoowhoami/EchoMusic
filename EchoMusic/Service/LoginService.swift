@@ -81,12 +81,10 @@ class LoginService {
     
     /// 生成二维码（合并key生成和二维码创建）
     func generateQRCode() async throws -> (key: String, qrimg: String?) {
-        let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
         
         do {
             let response: QRKeyResponse = try await networkService.get(
                 endpoint: "/login/qr/key",
-                params: ["timestamp": timestamp],
                 responseType: QRKeyResponse.self
             )
             
@@ -106,14 +104,12 @@ class LoginService {
     
     /// 检查二维码状态
     func checkQRStatus(key: String) async throws -> QRCheckResponse {
-        let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
         
         do {
             let response: QRCheckResponse = try await networkService.get(
                 endpoint: "/login/qr/check",
                 params: [
-                    "key": key,
-                    "timestamp": timestamp
+                    "key": key
                 ],
                 responseType: QRCheckResponse.self
             )

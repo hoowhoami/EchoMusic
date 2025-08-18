@@ -24,11 +24,40 @@ struct PlaylistSidebarView: View {
     
     @EnvironmentObject private var userService: UserService
     @EnvironmentObject private var playlistService: PlaylistService
+    @State private var isRefreshing = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 歌单分组标题
-            SidebarSectionHeader(title: "我的歌单")
+            // 歌单分组标题带刷新按钮和新建按钮
+            HStack(spacing: 12) {
+                Text("我的歌单")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 16)
+                
+                Spacer()
+                
+                // 新建歌单按钮
+                Button(action: { showNewPlaylistDialog = true }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                
+                // 统一刷新按钮
+                Button(action: { refreshAllPlaylists() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isRefreshing ? 360 : 0))
+                        .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                }
+                .buttonStyle(.plain)
+                .disabled(isRefreshing)
+            }
+            .frame(height: 44)
+            .padding(.trailing, 28)
             
             // 歌单分组列表
             VStack(alignment: .leading, spacing: 0) {
@@ -47,11 +76,6 @@ struct PlaylistSidebarView: View {
                                 expandedSections.remove(playlistType)
                             } else {
                                 expandedSections.insert(playlistType)
-                            }
-                        },
-                        onNewPlaylist: {
-                            if playlistType == .created {
-                                showNewPlaylistDialog = true
                             }
                         }
                     )
@@ -126,6 +150,20 @@ struct PlaylistSidebarView: View {
             }
         }
     }
+    
+    /// 刷新所有歌单
+    private func refreshAllPlaylists() {
+        guard !isRefreshing else { return }
+        
+        isRefreshing = true
+        
+        Task {
+            await playlistService.refreshPlaylists()
+            await MainActor.run {
+                isRefreshing = false
+            }
+        }
+    }
 }
 
 /// 歌单类型分组
@@ -139,12 +177,10 @@ struct PlaylistTypeSection: View {
     @Binding var deletePlaylistType: PlaylistType?
     @Binding var showDeleteConfirmation: Bool
     let onToggle: () -> Void
-    let onNewPlaylist: () -> Void
     
     @EnvironmentObject private var playlistService: PlaylistService
     @EnvironmentObject private var userService: UserService
     @State private var playlists: [UserPlaylistResponse.UserPlaylist] = []
-    @State private var isRefreshing = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -162,26 +198,16 @@ struct PlaylistTypeSection: View {
                     
                     Spacer()
                     
-                    // 只在创建的歌单分组显示+号
-                    if playlistType == .created {
-                        Button(action: onNewPlaylist) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    // 刷新按钮
-                    Button(action: { refreshSection() }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 12))
+                    // 计数徽章
+                    if !playlists.isEmpty {
+                        Text("\(playlists.count)")
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.secondary)
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.1))
+                            .cornerRadius(8)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isRefreshing)
                     
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 12))
@@ -209,7 +235,7 @@ struct PlaylistTypeSection: View {
                         .frame(height: 32)
                         .padding(.horizontal, 28)
                     } else {
-                            ForEach(Array(playlists.prefix(5).enumerated()), id: \.offset) { index, playlist in
+                            ForEach(Array(playlists.enumerated()), id: \.offset) { index, playlist in
                             PlaylistItemRow(
                                 playlist: playlist,
                                 playlistType: playlistType,
@@ -240,16 +266,6 @@ struct PlaylistTypeSection: View {
                                     showDeleteConfirmation = true
                                 }
                             )
-                        }
-                        
-                        if playlists.count > 5 {
-                            Button("查看更多...") {
-                                // TODO: 显示完整列表
-                            }
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 8)
                         }
                         
                         // 空状态提示
@@ -318,20 +334,6 @@ struct PlaylistTypeSection: View {
             return .collectedPlaylists
         case .albums:
             return .collectedAlbums
-        }
-    }
-    
-    /// 刷新当前分组
-    private func refreshSection() {
-        guard !isRefreshing else { return }
-        
-        isRefreshing = true
-        
-        Task {
-            await playlistService.refreshSection()
-            await MainActor.run {
-                isRefreshing = false
-            }
         }
     }
     

@@ -60,7 +60,7 @@ enum EchoMusicError: LocalizedError {
         case .urlNotAvailable:
             return "歌曲暂时无法播放"
         case .needBuy:
-            return "需要购买该歌曲"
+            return "需要购买该歌曲/音质"
         case .networkError(_):
             return "网络连接异常"
         case .copyrightRestricted:
