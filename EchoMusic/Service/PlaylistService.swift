@@ -111,13 +111,16 @@ class PlaylistService: ObservableObject {
         
         var likedPlaylistId: String?
         
+        // 首先过滤掉已删除的歌单 (is_del = 1)
+        let activePlaylists = playlists.filter { $0.is_del != 1 }
+        
         // 根据JavaScript逻辑进行分类
         let userCreatedFilter = PlaylistFilter(contentType: .userCreatedPlaylists, currentUserId: currentUserId)
         let collectedFilter = PlaylistFilter(contentType: .collectedPlaylists, currentUserId: currentUserId)
         let albumsFilter = PlaylistFilter(contentType: .collectedAlbums, currentUserId: currentUserId)
         
         // 过滤我创建的歌单
-        let userCreated = playlists.filter { playlist in
+        let userCreated = activePlaylists.filter { playlist in
             let matches = userCreatedFilter.matches(playlist)
             
             // 保存"我喜欢"歌单的ID (类似JavaScript中的localStorage.setItem)
@@ -132,12 +135,12 @@ class PlaylistService: ObservableObject {
         }
         
         // 过滤收藏的歌单
-        let collected = playlists.filter { playlist in
+        let collected = activePlaylists.filter { playlist in
             return collectedFilter.matches(playlist)
         }
         
         // 过滤收藏的专辑
-        let albums = playlists.filter { playlist in
+        let albums = activePlaylists.filter { playlist in
             return albumsFilter.matches(playlist)
         }
         
@@ -273,6 +276,8 @@ class PlaylistService: ObservableObject {
             )
             
             if response.status == 1, let data = response.data {
+                // 创建成功后立即刷新本地歌单列表
+                await refreshPlaylists()
                 return data
             } else {
                 throw UserServiceError.serverError(response.error_code, response.error_msg ?? "创建歌单失败")

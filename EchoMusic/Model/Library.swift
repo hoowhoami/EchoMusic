@@ -34,6 +34,9 @@ struct PlaylistFilter {
     
     /// 判断播放列表是否属于指定类型
     func matches(_ playlist: UserPlaylistResponse.UserPlaylist) -> Bool {
+        // 过滤掉已删除的歌单 (is_del = 1)
+        guard playlist.is_del != 1 else { return false }
+        
         switch contentType {
         case .userCreatedPlaylists:
             // 我创建的歌单 = 创建者是我
@@ -740,9 +743,45 @@ struct PlaylistCreateResponse: Codable {
     let data: PlaylistCreateData?
     
     struct PlaylistCreateData: Codable {
-        let listid: Int?
-        let name: String?
-        let global_collection_id: String?
+        let last_area: String?
+        let info: PlaylistInfo?
+        let pre_total_ver: Int?
+        let total_ver: Int?
+        let userid: Int?
+        let need_to_upfile: Int?
+        let list_count: Int?
+        let last_time: Int?
+        
+        struct PlaylistInfo: Codable {
+            let list_create_listid: Int?
+            let source: Int?
+            let tags: String?
+            let status: Int?
+            let list_create_gid: String?
+            let global_collection_id: String?
+            let is_edit: Int?
+            let is_pri: Int?
+            let pub_new: Int?
+            let create_time: Int?
+            let number: Int?
+            let list_create_userid: Int?
+            let update_time: Int?
+            let is_copy: Int?
+            let count: Int?
+            let sort: Int?
+            let name: String?
+            let pub_type: Int?
+            let list_ver: Int?
+            let is_per: Int?
+            let is_featured: Int?
+            let pic: String?
+            let list_create_username: String?
+            let code: Int?
+            let per_num: Int?
+            let listid: Int?
+            let intro: String?
+            let type: Int?
+        }
     }
 }
 
