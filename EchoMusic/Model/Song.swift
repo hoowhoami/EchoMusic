@@ -184,16 +184,6 @@ struct Song: Identifiable, Codable, Equatable {
         self.addMixSongId = track.add_mixsongid
         self.mixSongId = track.mixsongid
         
-        // 调试输出
-        print("🎵 创建Song对象:")
-        print("   歌曲: \(self.title ?? "未知")")
-        print("   原始mixsongid: \(track.mixsongid?.description ?? "nil")")
-        print("   原始audio_id: \(track.audio_id?.description ?? "nil")")
-        print("   原始add_mixsongid: \(track.add_mixsongid?.description ?? "nil")")
-        print("   映射后mixSongId: \(self.mixSongId?.description ?? "nil")")
-        print("   映射后albumAudioId: \(self.albumAudioId?.description ?? "nil")")
-        print("   映射后addMixSongId: \(self.addMixSongId?.description ?? "nil")")
-        
         // 根据音质数据设置标识
         self.isSq = (track.relate_goods?.count ?? 0) > 2
         self.isHq = (track.relate_goods?.count ?? 0) > 1
