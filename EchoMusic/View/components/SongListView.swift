@@ -7,6 +7,38 @@
 
 import SwiftUI
 
+/// 排序字段枚举
+enum SortField: String, CaseIterable {
+    case defaultOrder = "default"
+    case title = "title"
+    case artist = "artist"
+    case album = "album"
+    case duration = "duration"
+    
+    var displayName: String {
+        switch self {
+        case .defaultOrder: return "默认排序"
+        case .title: return "歌曲名"
+        case .artist: return "歌手"
+        case .album: return "专辑"
+        case .duration: return "时长"
+        }
+    }
+}
+
+/// 排序顺序枚举
+enum SortOrder: String, CaseIterable {
+    case asc = "asc"
+    case desc = "desc"
+    
+    var displayName: String {
+        switch self {
+        case .asc: return "升序"
+        case .desc: return "降序"
+        }
+    }
+}
+
 /// 批量操作结构体
 struct BatchOperation {
     let title: String
@@ -32,6 +64,8 @@ struct SongListView: View {
     
     @State private var isSelectionMode = false
     @State private var selectedTracks: Set<UUID> = []
+    @State private var sortField: SortField = .defaultOrder
+    @State private var sortOrder: SortOrder = .asc
     @EnvironmentObject private var playerService: PlayerService
     
     init(
@@ -48,6 +82,60 @@ struct SongListView: View {
         self.errorMessage = errorMessage
         self.onTrackPlay = onTrackPlay
         self.batchOperations = batchOperations
+    }
+    
+    // MARK: - 排序相关方法
+    
+    /// 获取排序后的歌曲列表
+    private var sortedTracks: [PlaylistTrackInfo] {
+        if sortField == .defaultOrder {
+            return tracks
+        }
+        
+        return tracks.sorted { track1, track2 in
+            let comparison: Bool
+            
+            switch sortField {
+            case .title:
+                let title1 = getSongTitle(from: track1)
+                let title2 = getSongTitle(from: track2)
+                comparison = title1.localizedCaseInsensitiveCompare(title2) == .orderedAscending
+            case .artist:
+                let artist1 = track1.singername ?? ""
+                let artist2 = track2.singername ?? ""
+                comparison = artist1.localizedCaseInsensitiveCompare(artist2) == .orderedAscending
+            case .album:
+                let album1 = track1.albumname ?? ""
+                let album2 = track2.albumname ?? ""
+                comparison = album1.localizedCaseInsensitiveCompare(album2) == .orderedAscending
+            case .duration:
+                let duration1 = track1.duration ?? 0
+                let duration2 = track2.duration ?? 0
+                comparison = duration1 < duration2
+            case .defaultOrder:
+                comparison = false
+            }
+            
+            return sortOrder == .asc ? comparison : !comparison
+        }
+    }
+    
+    /// 获取歌曲标题（处理包含歌手名的格式）
+    private func getSongTitle(from track: PlaylistTrackInfo) -> String {
+        let nameParts = (track.name ?? "未知歌曲").components(separatedBy: " - ")
+        return nameParts.count > 1 ? nameParts[1] : (track.name ?? "未知歌曲")
+    }
+    
+    /// 切换排序字段
+    private func toggleSortField(_ field: SortField) {
+        if sortField == field {
+            // 如果点击相同的字段，切换排序顺序
+            sortOrder = sortOrder == .asc ? .desc : .asc
+        } else {
+            // 如果点击不同的字段，设置新的字段并使用升序
+            sortField = field
+            sortOrder = .asc
+        }
     }
     
     var body: some View {
@@ -92,7 +180,7 @@ struct SongListView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        Text("已选择 \(selectedTracks.count) 首歌曲")
+                        Text("已选择 \(selectedTracks.count) / \(tracks.count) 首歌曲")
                             .font(.headline)
                             .fontWeight(.semibold)
                         
@@ -149,20 +237,72 @@ struct SongListView: View {
                         .foregroundColor(.accentColor)
                     }
                 } else {
-                    Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        isSelectionMode = true
-                    }) {
-                        Text("批量操作")
+                    HStack(spacing: 12) {
+                        Text(title)
                             .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        // 排序控件
+                        Menu {
+                            ForEach(SortField.allCases, id: \.self) { field in
+                                Button(action: {
+                                    toggleSortField(field)
+                                }) {
+                                    HStack {
+                                        Text(field.displayName)
+                                        Spacer()
+                                        if sortField == field {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.accentColor)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            ForEach(SortOrder.allCases, id: \.self) { order in
+                                Button(action: {
+                                    sortOrder = order
+                                }) {
+                                    HStack {
+                                        Text(order.displayName)
+                                        Spacer()
+                                        if sortOrder == order {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.accentColor)
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: sortOrder == .asc ? "arrow.up" : "arrow.down")
+                                    .font(.caption)
+                                Text(sortField.displayName)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
                             .foregroundColor(.accentColor)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.accentColor.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .help("排序方式")
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            isSelectionMode = true
+                        }) {
+                            Text("批量操作")
+                                .font(.headline)
+                                .foregroundColor(.accentColor)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 20)
@@ -201,12 +341,17 @@ struct SongListView: View {
                         Text("暂无歌曲")
                             .font(.headline)
                             .foregroundColor(.secondary)
+                        if sortField != .defaultOrder {
+                            Text("当前排序: \(sortField.displayName) - \(sortOrder.displayName)")
+                                .font(.caption)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                            ForEach(Array(sortedTracks.enumerated()), id: \.element.id) { index, track in
                                 SongListTrackRow(
                                     track: track,
                                     index: index + 1,
