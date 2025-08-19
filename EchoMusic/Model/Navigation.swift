@@ -12,10 +12,8 @@ enum NavigationItemType: String, CaseIterable, Identifiable {
     // 在线音乐
     case home = "推荐"
     case discover = "发现"
-    case videos = "视频"
     
     // 我的音乐
-    case favoriteMusic = "喜欢"
     case myCloud = "云盘"
     case recentPlay = "最近"
     case playlists = "我的歌单"
@@ -30,8 +28,6 @@ enum NavigationItemType: String, CaseIterable, Identifiable {
         switch self {
         case .home: return "house.fill"
         case .discover: return "globe.americas.fill"
-        case .videos: return "play.rectangle.fill"
-        case .favoriteMusic: return "heart.fill"
         case .myCloud: return "icloud.fill"
         case .recentPlay: return "clock.fill"
         case .playlists: return "music.note.list"
@@ -41,18 +37,18 @@ enum NavigationItemType: String, CaseIterable, Identifiable {
     
     /// 获取所有在线音乐类型
     static var onlineMusicItems: [NavigationItemType] {
-        return [.home, .discover, .videos]
+        return [.home, .discover]
     }
     
     /// 获取所有我的音乐类型
     static var myMusicItems: [NavigationItemType] {
-        return [.favoriteMusic, .myCloud, .recentPlay]
+        return [.myCloud, .recentPlay]
     }
     
     /// 是否需要登录才能访问
     var requiresLogin: Bool {
         switch self {
-        case .favoriteMusic, .myCloud, .recentPlay, .playlists:
+        case .myCloud, .recentPlay, .playlists:
             return true
         default:
             return false
