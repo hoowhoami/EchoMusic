@@ -357,7 +357,7 @@ struct PlaylistItemRow: View {
     
     var body: some View {
         HStack(spacing: 8) {
-            AsyncImage(url: URL(string: playlist.pic ?? "")) { image in
+            AsyncImage(url: ImageURLHelper.processImageURL(playlist.pic ?? "", size: .thumbnail)) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)

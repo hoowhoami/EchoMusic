@@ -67,8 +67,6 @@ struct LoginView: View {
                         mobileLoginForm
                     case .qrcode:
                         qrCodeLoginForm
-                    default:
-                        mobileLoginForm
                     }
                 }
                 
