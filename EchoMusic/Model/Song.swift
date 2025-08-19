@@ -231,7 +231,11 @@ struct Song: Identifiable, Codable, Equatable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case title, originalTitle, artist, album, cover, hash, duration, albumId, albumAudioId, addMixSongId, mixSongId, isVip, isHq, isSq
+        case title, originalTitle, artist, album, cover, hash, duration, albumId
+        case albumAudioId = "album_audio_id"
+        case addMixSongId = "add_mixsongid"
+        case mixSongId = "mixsongid"
+        case isVip, isHq, isSq
         // playableURL和currentQuality不参与编码，因为它们是运行时属性
     }
 }

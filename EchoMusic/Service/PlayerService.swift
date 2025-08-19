@@ -956,31 +956,20 @@ class PlayerService: ObservableObject, @unchecked Sendable {
         // 获取专辑音频ID（优先使用mixSongId，其次albumAudioId，最后使用addMixSongId）
         let mxid = song.mixSongId ?? song.albumAudioId ?? song.addMixSongId
         
-        print("🎵 准备提交听歌历史:")
-        print("   歌曲: \(song.title ?? "未知")")
-        print("   mixSongId: \(song.mixSongId?.description ?? "nil")")
-        print("   albumAudioId: \(song.albumAudioId?.description ?? "nil")")
-        print("   addMixSongId: \(song.addMixSongId?.description ?? "nil")")
-        print("   最终使用的mxid: \(mxid?.description ?? "nil")")
-        
         guard let mxid = mxid else {
-            print("❌ 没有可用的ID，不提交历史记录")
             return // 没有可用的ID，不提交
         }
         
         Task {
             do {
                 let timestamp = Int(Date().timeIntervalSince1970)
-                print("📤 正在提交听歌历史: mxid=\(mxid), timestamp=\(timestamp)")
                 let response = try await musicService.uploadPlayHistory(
                     mxid: mxid,
                     ot: timestamp,
                     pc: playCount
                 )
-                print("✅ 听歌历史提交成功: \(response)")
             } catch {
                 // 提交失败，静默处理，不影响播放体验
-                print("❌ 提交听歌历史失败: \(error.localizedDescription)")
             }
         }
     }
