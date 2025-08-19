@@ -204,7 +204,7 @@ class PlaylistService: ObservableObject {
     }
     
     /// 获取歌单所有歌曲
-    func getPlaylistTracks(globalCollectionId: String, page: Int = 1, pageSize: Int = 100) async throws -> [PlaylistTrackInfo] {
+    func getPlaylistTracks(globalCollectionId: String, page: Int = 1, pageSize: Int = 300) async throws -> [PlaylistTrackInfo] {
         do {
             let params = [
                 "id": globalCollectionId,

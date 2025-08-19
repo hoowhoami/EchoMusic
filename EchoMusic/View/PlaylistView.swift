@@ -325,7 +325,7 @@ struct PlaylistDetailView: View {
             // 获取所有页的歌曲列表
             var allTracks: [PlaylistTrackInfo] = []
             var currentPage = 1
-            let pageSize = 100
+            let pageSize = 300
             
             // 持续获取页面直到没有更多数据
             while true {
