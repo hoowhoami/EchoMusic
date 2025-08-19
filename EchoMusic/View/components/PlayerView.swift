@@ -26,7 +26,8 @@ struct PlayerView: View {
                     get: { playerService.currentTime },
                     set: { playerService.seekTo(time: $0) }
                 ),
-                duration: playerService.duration
+                duration: playerService.duration,
+                song: playerService.currentSong
             )
             // .padding(.horizontal, 16)
 
@@ -97,6 +98,7 @@ struct PlayerView: View {
 struct TopProgressBarView: View {
     @Binding var currentTime: Double
     let duration: Double
+    let song: Song?
     @State private var isHovering = false
     @State private var isDragging = false
     @State private var draggedTime: Double = 0
@@ -108,6 +110,44 @@ struct TopProgressBarView: View {
                 Rectangle()
                     .fill(Color.gray.opacity(0.3))
                     .frame(height: isHovering || isDragging ? 6 : 3)
+                
+                // 多个高潮部分显示
+                if let climaxInfo = song?.climaxInfo,
+                   duration > 0 {
+                    
+                    // 遍历所有高潮段
+                    ForEach(climaxInfo.climaxSections, id: \.startTime) { climax in
+                        if let startTimeDouble = Double(climax.startTime),
+                           let endTimeDouble = Double(climax.endTime) {
+                            
+                            let startTime = startTimeDouble / 1000 // 转换为秒
+                            let endTime = endTimeDouble / 1000
+                            
+                            let climaxStart = max(0, min(1, startTime / duration))
+                            let climaxEnd = max(0, min(1, endTime / duration))
+                            let climaxWidth = max(0, climaxEnd - climaxStart)
+                            
+                            if climaxWidth > 0 {
+                                // 高潮段背景
+                                Rectangle()
+                                    .fill(Color.orange.opacity(0.4))
+                                    .frame(width: geometry.size.width * climaxWidth, height: isHovering || isDragging ? 6 : 3)
+                                    .offset(x: geometry.size.width * climaxStart)
+                                
+                                // 高潮开始和结束标记点
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 4, height: 4)
+                                    .offset(x: geometry.size.width * climaxStart - 2)
+                                
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 4, height: 4)
+                                    .offset(x: geometry.size.width * climaxEnd - 2)
+                            }
+                        }
+                    }
+                }
 
                 // 进度条 - 始终显示当前进度
                 let displayTime = isDragging ? draggedTime : currentTime

@@ -173,4 +173,77 @@ class MusicService: ObservableObject {
         )
     }
     
+    // MARK: - 高潮部分相关方法
+    
+    /// 获取歌曲高潮部分信息
+    /// - Parameter hashes: 歌曲hash数组
+    /// - Returns: 高潮部分信息数组
+    func getSongClimax(hashes: [String]) async throws -> [SongClimax] {
+        guard !hashes.isEmpty else {
+            return []
+        }
+        
+        let hashString = hashes.joined(separator: ",")
+        let params: [String: String] = [
+            "hash": hashString
+        ]
+        
+        do {
+            let response: SongClimaxResponse = try await NetworkService.shared.get(
+                endpoint: "/song/climax",
+                params: params,
+                responseType: SongClimaxResponse.self
+            )
+            
+            // 检查响应状态
+            if response.status == 1 {
+                return response.data ?? []
+            } else {
+                return []
+            }
+        } catch let error as NetworkError {
+            throw EchoMusicError.networkError(error.localizedDescription)
+        } catch {
+            return []
+        }
+    }
+    
+    /// 获取单个歌曲的高潮部分信息
+    /// - Parameter hash: 歌曲hash
+    /// - Returns: 高潮部分信息，如果没有找到则返回nil
+    func getSongClimax(hash: String) async throws -> SongClimaxInfo? {
+        let climaxArray = try await getSongClimax(hashes: [hash])
+        
+        if climaxArray.isEmpty {
+            return nil
+        }
+        
+        // 将多个高潮段组合成一个SongClimaxInfo
+        return SongClimaxInfo(hash: hash, climaxSections: climaxArray)
+    }
+    
+}
+
+/// 歌曲高潮部分API响应
+struct SongClimaxResponse: Codable {
+    let status: Int?
+    let errorCode: Int?
+    let errmsg: String?
+    let data: [SongClimax]?
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        self.status = c[safe: .status]
+        self.errorCode = c[safe: .errorCode]
+        self.errmsg = c[safe: .errmsg]
+        self.data = c[safe: .data]
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case errorCode = "error_code"
+        case errmsg
+        case data
+    }
 }

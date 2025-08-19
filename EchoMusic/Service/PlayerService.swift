@@ -110,6 +110,9 @@ class PlayerService: ObservableObject, @unchecked Sendable {
             // 提交听歌历史
             uploadPlayHistory(for: song)
             
+            // 获取高潮部分信息
+            await loadSongClimax(for: song)
+            
         } catch let error as EchoMusicError {
             // 如果获取URL失败，设置错误状态
             await MainActor.run {
@@ -327,6 +330,32 @@ class PlayerService: ObservableObject, @unchecked Sendable {
         // 异步保存到UserDefaults
         DispatchQueue.global(qos: .utility).async {
             UserDefaults.standard.set(enabled, forKey: self.autoSkipOnErrorKey)
+        }
+    }
+    
+    // MARK: - 高潮部分相关方法
+    
+    /// 加载歌曲高潮部分信息
+    /// - Parameter song: 要加载高潮信息的歌曲
+    @MainActor
+    private func loadSongClimax(for song: Song) async {
+        guard let hash = song.hash else { return }
+        
+        do {
+            let climaxInfo = try await musicService.getSongClimax(hash: hash)
+            
+            // 更新播放列表中的歌曲高潮信息
+            if let index = playlist.firstIndex(where: { $0.hash == hash }) {
+                playlist[index].climaxInfo = climaxInfo
+            }
+            
+            // 更新当前播放歌曲的高潮信息
+            if currentSong?.hash == hash {
+                currentSong?.climaxInfo = climaxInfo
+            }
+        } catch {
+            // 获取高潮信息失败，静默处理
+            print("获取歌曲高潮信息失败: \(error)")
         }
     }
     
@@ -963,7 +992,7 @@ class PlayerService: ObservableObject, @unchecked Sendable {
         Task {
             do {
                 let timestamp = Int(Date().timeIntervalSince1970)
-                let response = try await musicService.uploadPlayHistory(
+                _ = try await musicService.uploadPlayHistory(
                     mxid: mxid,
                     ot: timestamp,
                     pc: playCount

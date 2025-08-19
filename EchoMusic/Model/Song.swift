@@ -6,6 +6,62 @@
 //
 import SwiftUI
 
+/// 单个歌曲高潮部分信息
+struct SongClimax: Codable {
+    let startTime: String
+    let endTime: String
+    let timeLength: String
+    let authorName: String
+    let hash: String
+    let audioId: String
+    let audioName: String
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        self.startTime = c[safe: .startTime] ?? ""
+        self.endTime = c[safe: .endTime] ?? ""
+        self.timeLength = c[safe: .timeLength] ?? ""
+        self.authorName = c[safe: .authorName] ?? ""
+        self.hash = c[safe: .hash] ?? ""
+        self.audioId = c[safe: .audioId] ?? ""
+        self.audioName = c[safe: .audioName] ?? ""
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case timeLength = "timelength"
+        case authorName = "author_name"
+        case hash
+        case audioId = "audio_id"
+        case audioName = "audio_name"
+    }
+}
+
+/// 歌曲高潮部分信息（包含多个高潮段）
+struct SongClimaxInfo: Codable {
+    let hash: String
+    let climaxSections: [SongClimax]
+    
+    init(hash: String, climaxSections: [SongClimax]) {
+        self.hash = hash
+        self.climaxSections = climaxSections
+    }
+    
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        self.hash = c[safe: .hash] ?? ""
+        self.climaxSections = c[safe: .climaxSections] ?? []
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case hash
+        case climaxSections
+    }
+}
+
 /// 音质选项枚举
 enum AudioQuality: String, CaseIterable {
     case _128 = "128" // 128 码率 mp3
@@ -131,6 +187,7 @@ struct Song: Identifiable, Codable, Equatable {
     // 播放相关的运行时属性（不保存到持久化）
     var playableURL: String? // 当前可播放的URL
     var currentQuality: AudioQuality? // 当前音质
+    var climaxInfo: SongClimaxInfo? // 高潮部分信息（包含多个高潮段）
     
     // 用于去重的比较，基于 hash 或者 title + artist
     static func == (lhs: Song, rhs: Song) -> Bool {
@@ -164,6 +221,7 @@ struct Song: Identifiable, Codable, Equatable {
         
         self.playableURL = nil
         self.currentQuality = nil
+        self.climaxInfo = nil
     }
 
     init(from track: PlaylistTrackInfo) {
@@ -191,6 +249,7 @@ struct Song: Identifiable, Codable, Equatable {
         
         self.playableURL = nil
         self.currentQuality = nil
+        self.climaxInfo = nil
     }
     
     // 原有的初始化器
@@ -211,6 +270,7 @@ struct Song: Identifiable, Codable, Equatable {
         self.isSq = isSq
         self.playableURL = nil
         self.currentQuality = nil
+        self.climaxInfo = nil
     }
     
     /// 获取处理后的封面图片URL
