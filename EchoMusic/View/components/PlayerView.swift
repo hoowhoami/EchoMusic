@@ -196,7 +196,7 @@ struct TopProgressBarView: View {
 // 歌曲信息组件
 struct SongInfoView: View {
     let song: Song?
-    let playerService: PlayerService
+    @ObservedObject var playerService: PlayerService
 
     var body: some View {
         HStack(spacing: 12) {

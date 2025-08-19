@@ -188,7 +188,6 @@ class PlayerService: ObservableObject, @unchecked Sendable {
     
     /// 清理播放器和观察器
     private func cleanupPlayer() {
-        print("清理播放器")
         // 移除时间观察器
         if let observer = timeObserver {
             audioPlayer?.removeTimeObserver(observer)
@@ -227,7 +226,6 @@ class PlayerService: ObservableObject, @unchecked Sendable {
             DispatchQueue.main.async {
                 switch player.status {
                 case .readyToPlay:
-                    // 只有在确实有可播放内容时才清除错误状态
                     // 检查播放器是否有有效的播放项目
                     if let currentItem = player.currentItem,
                        let asset = currentItem.asset as? AVURLAsset,
