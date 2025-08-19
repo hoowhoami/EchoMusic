@@ -132,6 +132,7 @@ struct PlaylistDetailView: View {
         .sheet(isPresented: $showPlaylistSelection) {
             PlaylistSelectionDialog(
                 selectedTracks: tracksToRemove,
+                currentPlaylistId: playlist.global_collection_id,
                 onAddToPlaylist: { targetPlaylist, selectedTracks in
                     await addTracksToPlaylist(targetPlaylist, selectedTracks)
                 }

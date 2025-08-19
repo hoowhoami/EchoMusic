@@ -11,6 +11,7 @@ import SwiftUI
 struct PlaylistSelectionDialog: View {
     @Environment(\.presentationMode) var presentationMode
     let selectedTracks: [PlaylistTrackInfo]
+    let currentPlaylistId: String? // 当前歌单ID，用于排除
     let onAddToPlaylist: (UserPlaylistResponse.UserPlaylist, [PlaylistTrackInfo]) async -> Void
     
     @State private var searchText = ""
@@ -153,10 +154,19 @@ struct PlaylistSelectionDialog: View {
     private var filteredPlaylists: [UserPlaylistResponse.UserPlaylist] {
         let allPlaylists = playlistService.userCreatedPlaylists
         
+        // 过滤掉当前歌单
+        let filtered = allPlaylists.filter { playlist in
+            guard let currentId = currentPlaylistId,
+                  let playlistId = playlist.global_collection_id else {
+                return true
+            }
+            return playlistId != currentId
+        }
+        
         if searchText.isEmpty {
-            return allPlaylists
+            return filtered
         } else {
-            return allPlaylists.filter { playlist in
+            return filtered.filter { playlist in
                 playlist.name?.localizedCaseInsensitiveContains(searchText) == true
             }
         }
@@ -258,6 +268,7 @@ struct PlaylistSelectionRow: View {
 #Preview {
     PlaylistSelectionDialog(
         selectedTracks: [],
+        currentPlaylistId: nil,
         onAddToPlaylist: { _, _ in }
     )
     .environmentObject(PlaylistService.shared)
