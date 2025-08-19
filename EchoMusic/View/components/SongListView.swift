@@ -66,6 +66,7 @@ struct SongListView: View {
     @State private var selectedTracks: Set<UUID> = []
     @State private var sortField: SortField = .defaultOrder
     @State private var sortOrder: SortOrder = .asc
+    @State private var searchQuery: String = ""
     @EnvironmentObject private var playerService: PlayerService
     
     init(
@@ -84,15 +85,34 @@ struct SongListView: View {
         self.batchOperations = batchOperations
     }
     
-    // MARK: - 排序相关方法
+    // MARK: - 搜索和排序相关方法
     
-    /// 获取排序后的歌曲列表
-    private var sortedTracks: [PlaylistTrackInfo] {
-        if sortField == .defaultOrder {
+    /// 获取搜索过滤后的歌曲列表
+    private var filteredTracks: [PlaylistTrackInfo] {
+        if searchQuery.isEmpty {
             return tracks
         }
         
-        return tracks.sorted { track1, track2 in
+        let trimmedQuery = searchQuery.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return tracks.filter { track in
+            let songTitle = getSongTitle(from: track)
+            let artistName = track.singername ?? ""
+            
+            return songTitle.lowercased().contains(trimmedQuery) ||
+                   artistName.lowercased().contains(trimmedQuery)
+        }
+    }
+    
+    /// 获取排序后的歌曲列表
+    private var sortedTracks: [PlaylistTrackInfo] {
+        let tracksToSort = filteredTracks
+        
+        if sortField == .defaultOrder {
+            return tracksToSort
+        }
+        
+        return tracksToSort.sorted { track1, track2 in
             let comparison: Bool
             
             switch sortField {
@@ -146,22 +166,31 @@ struct SongListView: View {
                     HStack(spacing: 16) {
                         // 全选复选框
                         Button(action: {
-                            if selectedTracks.count == tracks.count {
-                                // 全部选中 -> 全部取消
-                                selectedTracks.removeAll()
+                            let visibleTracks = sortedTracks
+                            let visibleTrackIds = Set(visibleTracks.map { $0.id })
+                            let allVisibleSelected = visibleTrackIds.isSubset(of: selectedTracks)
+                            
+                            if allVisibleSelected && selectedTracks.count >= visibleTracks.count {
+                                // 全部选中 -> 取消选择所有可见的
+                                selectedTracks.subtract(visibleTrackIds)
                             } else {
-                                // 部分选中或未选中 -> 全选
-                                selectedTracks = Set(tracks.map { $0.id })
+                                // 部分选中或未选中 -> 全选所有可见的
+                                selectedTracks.formUnion(visibleTrackIds)
                             }
                         }) {
                             HStack(spacing: 8) {
                                 // 根据选中状态显示不同的复选框
-                                if selectedTracks.isEmpty {
+                                let visibleTracks = sortedTracks
+                                let visibleTrackIds = Set(visibleTracks.map { $0.id })
+                                let allVisibleSelected = visibleTrackIds.isSubset(of: selectedTracks)
+                                let anyVisibleSelected = visibleTrackIds.intersection(selectedTracks).count > 0
+                                
+                                if selectedTracks.isEmpty || !anyVisibleSelected {
                                     // 全部未选中
                                     Image(systemName: "square")
                                         .font(.system(size: 18))
                                         .foregroundColor(.secondary)
-                                } else if selectedTracks.count == tracks.count {
+                                } else if allVisibleSelected {
                                     // 全部选中
                                     Image(systemName: "checkmark.square.fill")
                                         .font(.system(size: 18))
@@ -180,7 +209,7 @@ struct SongListView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        Text("已选择 \(selectedTracks.count) / \(tracks.count) 首歌曲")
+                        Text("已选择 \(selectedTracks.count) / \(sortedTracks.count) 首歌曲")
                             .font(.headline)
                             .fontWeight(.semibold)
                         
@@ -242,6 +271,8 @@ struct SongListView: View {
                             .font(.headline)
                             .fontWeight(.semibold)
                         
+                        Spacer()
+                        
                         // 排序控件
                         Menu {
                             ForEach(SortField.allCases, id: \.self) { field in
@@ -276,21 +307,45 @@ struct SongListView: View {
                                 }
                             }
                         } label: {
-                            HStack(spacing: 4) {
+                            HStack(spacing: 2) {
                                 Image(systemName: sortOrder == .asc ? "arrow.up" : "arrow.down")
-                                    .font(.caption)
+                                    .font(.caption2)
                                 Text(sortField.displayName)
-                                    .font(.caption)
+                                    .font(.caption2)
                                     .fontWeight(.medium)
                             }
                             .foregroundColor(.accentColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
                             .background(Color.accentColor.opacity(0.1))
-                            .cornerRadius(6)
+                            .cornerRadius(4)
                         }
                         .menuStyle(.borderlessButton)
                         .help("排序方式")
+                        
+                        Spacer()
+                        
+                        // 搜索框
+                        TextField("搜索歌曲或歌手", text: $searchQuery)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.caption)
+                            // .frame(width: 120)
+                            .overlay(
+                                HStack {
+                                    if !searchQuery.isEmpty {
+                                        Spacer()
+                                        Button(action: {
+                                            searchQuery = ""
+                                        }) {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .foregroundColor(.secondary)
+                                                .font(.caption)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(.trailing, 8)
+                                    }
+                                }
+                            )
                         
                         Spacer()
                         
@@ -333,15 +388,19 @@ struct SongListView: View {
                         .buttonStyle(.borderedProminent)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if tracks.isEmpty {
+                } else if sortedTracks.isEmpty {
                     VStack(spacing: 12) {
-                        Image(systemName: "music.note")
+                        Image(systemName: "magnifyingglass")
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
-                        Text("暂无歌曲")
+                        Text(searchQuery.isEmpty ? "暂无歌曲" : "未找到匹配的歌曲")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        if sortField != .defaultOrder {
+                        if !searchQuery.isEmpty {
+                            Text("搜索关键词: \"\(searchQuery)\"")
+                                .font(.caption)
+                                .foregroundColor(.secondary.opacity(0.7))
+                        } else if sortField != .defaultOrder {
                             Text("当前排序: \(sortField.displayName) - \(sortOrder.displayName)")
                                 .font(.caption)
                                 .foregroundColor(.secondary.opacity(0.7))
