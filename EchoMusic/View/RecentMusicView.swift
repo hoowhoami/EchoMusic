@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+
 /// 最近播放音乐视图
 struct RecentMusicView: View {
     @EnvironmentObject private var userService: UserService
@@ -139,21 +140,32 @@ struct RecentMusicView: View {
         }
         
         do {
-            // TODO: 实现获取最近播放音乐的API调用
-            // 这里先模拟一些数据
+            // 调用 /user/history 接口获取播放历史
+            let response: UserHistoryResponse = try await NetworkService.shared.get(
+                endpoint: "/user/history",
+                responseType: UserHistoryResponse.self
+            )
+            
             await MainActor.run {
-                // 模拟数据
-                self.tracks = []
+                if response.status == 1 && response.error_code == 0 {
+                    if let data = response.data {
+                        // 过滤出有info的歌曲
+                        self.tracks = data.songs.compactMap { $0.info }
+                    } else {
+                        self.tracks = []
+                    }
+                } else {
+                    self.errorMessage = "获取历史记录失败: 错误代码 \(response.error_code)"
+                    self.tracks = []
+                }
                 self.isLoading = false
             }
-            
-            // 模拟网络延迟
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
             
         } catch {
             await MainActor.run {
                 self.errorMessage = error.localizedDescription
                 self.isLoading = false
+                self.tracks = []
             }
         }
     }

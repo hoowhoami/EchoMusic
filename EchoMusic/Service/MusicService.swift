@@ -145,4 +145,32 @@ class MusicService: ObservableObject {
     func clearURLCache() {
         urlCache.removeAll()
     }
+    
+    /// 提交听歌历史
+    /// - Parameters:
+    ///   - mxid: 专辑音乐 id (album_audio_id/MixSongID)
+    ///   - ot: 当前时间戳，秒级
+    ///   - pc: 当前播放次数
+    /// - Returns: 提交结果
+    func uploadPlayHistory(mxid: Int, ot: Int? = nil, pc: Int? = nil) async throws -> PlayHistoryUploadResponse {
+        var params: [String: String] = [
+            "mxid": String(mxid)
+        ]
+        
+        // 添加可选参数
+        if let ot = ot {
+            params["ot"] = String(ot)
+        }
+        
+        if let pc = pc {
+            params["pc"] = String(pc)
+        }
+        
+        return try await NetworkService.shared.get(
+            endpoint: "/playhistory/upload",
+            params: params,
+            responseType: PlayHistoryUploadResponse.self
+        )
+    }
+    
 }

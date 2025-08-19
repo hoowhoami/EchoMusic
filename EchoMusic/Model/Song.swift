@@ -119,7 +119,9 @@ struct Song: Identifiable, Codable, Equatable {
     let hash: String? // 歌曲哈希值，用于去重和唯一标识
     let duration: Int? // 歌曲时长（秒）
     let albumId: String? // 专辑ID（用于获取URL）
-    let albumAudioId: String? // 专辑音频ID
+    let albumAudioId: Int? // 专辑音频ID
+    let mixSongId: Int? // mixsongid字段，用于历史记录提交
+    let addMixSongId: Int?
     
     // 音质标识
     let isVip: Bool? // VIP标识
@@ -154,6 +156,8 @@ struct Song: Identifiable, Codable, Equatable {
         self.duration = c[safe: .duration]
         self.albumId = c[safe: .albumId]
         self.albumAudioId = c[safe: .albumAudioId]
+        self.addMixSongId = c[safe: .addMixSongId]
+        self.mixSongId = c[safe: .mixSongId]
         self.isVip = c[safe: .isVip]
         self.isHq = c[safe: .isHq]
         self.isSq = c[safe: .isSq]
@@ -175,7 +179,20 @@ struct Song: Identifiable, Codable, Equatable {
         self.hash = track.hash
         self.duration = track.duration
         self.albumId = track.album_id
-        self.albumAudioId = track.audio_group_id
+        // self.albumAudioId = track.audio_group_id
+        self.albumAudioId = track.audio_id
+        self.addMixSongId = track.add_mixsongid
+        self.mixSongId = track.mixsongid
+        
+        // 调试输出
+        print("🎵 创建Song对象:")
+        print("   歌曲: \(self.title ?? "未知")")
+        print("   原始mixsongid: \(track.mixsongid?.description ?? "nil")")
+        print("   原始audio_id: \(track.audio_id?.description ?? "nil")")
+        print("   原始add_mixsongid: \(track.add_mixsongid?.description ?? "nil")")
+        print("   映射后mixSongId: \(self.mixSongId?.description ?? "nil")")
+        print("   映射后albumAudioId: \(self.albumAudioId?.description ?? "nil")")
+        print("   映射后addMixSongId: \(self.addMixSongId?.description ?? "nil")")
         
         // 根据音质数据设置标识
         self.isSq = (track.relate_goods?.count ?? 0) > 2
@@ -187,7 +204,7 @@ struct Song: Identifiable, Codable, Equatable {
     }
     
     // 原有的初始化器
-    init(title: String, artist: String, album: String, cover: String, hash: String? = nil, duration: Int? = nil, albumId: String? = nil, albumAudioId: String? = nil, isVip: Bool = false, isHq: Bool = false, isSq: Bool = false) {
+    init(title: String, artist: String, album: String, cover: String, hash: String? = nil, duration: Int? = nil, albumId: String? = nil, albumAudioId: Int? = nil, mixSongId: Int? = nil, addMixSongId: Int? = nil, isVip: Bool = false, isHq: Bool = false, isSq: Bool = false) {
         self.title = title
         self.originalTitle = title
         self.artist = artist
@@ -197,6 +214,8 @@ struct Song: Identifiable, Codable, Equatable {
         self.duration = duration
         self.albumId = albumId
         self.albumAudioId = albumAudioId
+        self.mixSongId = mixSongId
+        self.addMixSongId = addMixSongId
         self.isVip = isVip
         self.isHq = isHq
         self.isSq = isSq
@@ -212,7 +231,7 @@ struct Song: Identifiable, Codable, Equatable {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case title, originalTitle, artist, album, cover, hash, duration, albumId, albumAudioId, isVip, isHq, isSq
+        case title, originalTitle, artist, album, cover, hash, duration, albumId, albumAudioId, addMixSongId, mixSongId, isVip, isHq, isSq
         // playableURL和currentQuality不参与编码，因为它们是运行时属性
     }
 }

@@ -106,6 +106,10 @@ class PlayerService: ObservableObject, @unchecked Sendable {
                 self.audioPlayer?.volume = Float(self.volume)
                 self.audioPlayer?.rate = 0 // 先设置为0，不自动播放
             }
+            
+            // 提交听歌历史
+            uploadPlayHistory(for: song)
+            
         } catch let error as EchoMusicError {
             // 如果获取URL失败，设置错误状态
             await MainActor.run {
@@ -937,6 +941,50 @@ class PlayerService: ObservableObject, @unchecked Sendable {
         }
     }
     
+    // MARK: - 听歌历史提交
+    
+    /// 提交听歌历史
+    /// - Parameters:
+    ///   - song: 当前播放的歌曲
+    ///   - playCount: 播放次数（可选）
+    private func uploadPlayHistory(for song: Song, playCount: Int? = nil) {
+        guard UserService.shared.isLoggedIn else {
+            print("📱 未登录用户，不提交历史记录")
+            return // 未登录用户不提交历史记录
+        }
+        
+        // 获取专辑音频ID（优先使用mixSongId，其次albumAudioId，最后使用addMixSongId）
+        let mxid = song.mixSongId ?? song.albumAudioId ?? song.addMixSongId
+        
+        print("🎵 准备提交听歌历史:")
+        print("   歌曲: \(song.title ?? "未知")")
+        print("   mixSongId: \(song.mixSongId?.description ?? "nil")")
+        print("   albumAudioId: \(song.albumAudioId?.description ?? "nil")")
+        print("   addMixSongId: \(song.addMixSongId?.description ?? "nil")")
+        print("   最终使用的mxid: \(mxid?.description ?? "nil")")
+        
+        guard let mxid = mxid else {
+            print("❌ 没有可用的ID，不提交历史记录")
+            return // 没有可用的ID，不提交
+        }
+        
+        Task {
+            do {
+                let timestamp = Int(Date().timeIntervalSince1970)
+                print("📤 正在提交听歌历史: mxid=\(mxid), timestamp=\(timestamp)")
+                let response = try await musicService.uploadPlayHistory(
+                    mxid: mxid,
+                    ot: timestamp,
+                    pc: playCount
+                )
+                print("✅ 听歌历史提交成功: \(response)")
+            } catch {
+                // 提交失败，静默处理，不影响播放体验
+                print("❌ 提交听歌历史失败: \(error.localizedDescription)")
+            }
+        }
+    }
+    
     // MARK: - macOS音频设备监听（入耳检测）
     
     /// 设置音频设备监听
@@ -1073,4 +1121,5 @@ class PlayerService: ObservableObject, @unchecked Sendable {
             }
         }
     }
+    
 }
