@@ -137,12 +137,12 @@ struct TopProgressBarView: View {
                                 // 高潮开始和结束标记点
                                 Circle()
                                     .fill(Color.orange)
-                                    .frame(width: 4, height: 4)
+                                    .frame(width: isHovering || isDragging ? 6 : 3, height: isHovering || isDragging ? 6 : 3)
                                     .offset(x: geometry.size.width * climaxStart - 2)
                                 
                                 Circle()
                                     .fill(Color.orange)
-                                    .frame(width: 4, height: 4)
+                                    .frame(width: isHovering || isDragging ? 6 : 3, height: isHovering || isDragging ? 6 : 3)
                                     .offset(x: geometry.size.width * climaxEnd - 2)
                             }
                         }
