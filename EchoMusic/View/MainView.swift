@@ -86,12 +86,7 @@ struct MainView: View {
                     
                     // 中间搜索框
                     ToolbarItem(placement: .automatic) {
-                        TextField("搜索音乐、歌手、歌单", text: $searchText)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .frame(width: 200)
-                            .onSubmit {
-                                performSearch()
-                            }
+                        CustomTitleBarContent()
                     }
                 }
             
@@ -119,7 +114,6 @@ struct MainView: View {
 
     
     // MARK: - State
-    @State private var searchText = ""
     @State private var isRefreshing = false
     
     /// 导航历史栈
@@ -131,12 +125,7 @@ struct MainView: View {
     /// 子页面导航管理器
     @StateObject private var subPageManager = SubPageNavigationManager()
     
-    private func performSearch() {
-        guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        print("搜索: \(searchText)")
-        searchText = ""
-    }
-    
+      
     /// 刷新当前内容
     private func refreshCurrentContent() async {
         // 设置刷新状态

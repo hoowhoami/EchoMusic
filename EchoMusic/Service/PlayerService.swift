@@ -978,7 +978,6 @@ class PlayerService: ObservableObject, @unchecked Sendable {
     ///   - playCount: 播放次数（可选）
     private func uploadPlayHistory(for song: Song, playCount: Int? = nil) {
         guard UserService.shared.isLoggedIn else {
-            print("📱 未登录用户，不提交历史记录")
             return // 未登录用户不提交历史记录
         }
         

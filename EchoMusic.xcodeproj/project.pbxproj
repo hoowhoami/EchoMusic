@@ -10,6 +10,10 @@
 		1E0F16E12E4F6D5D00354E49 /* UnauthorizedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */; };
 		1E273DBD2E52321D007E6037 /* EchoMusicError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E273DBC2E52321D007E6037 /* EchoMusicError.swift */; };
 		1E3FF50B2E5461B70088DEEC /* History.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E3FF50A2E5461B00088DEEC /* History.swift */; };
+		1E833FBB2E555CEB00E0FF5B /* Search.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E833FBA2E555CEB00E0FF5B /* Search.swift */; };
+		1E833FBF2E555D1200E0FF5B /* SearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E833FBE2E555D1200E0FF5B /* SearchService.swift */; };
+		1E833FC12E55670400E0FF5B /* SearchResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E833FC02E55670400E0FF5B /* SearchResultsView.swift */; };
+		1E833FC32E556B6800E0FF5B /* SearchTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E833FC22E556B6800E0FF5B /* SearchTextView.swift */; };
 		1E966DE02E4EFCBA004F0464 /* PlaylistSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DDF2E4EFCBA004F0464 /* PlaylistSidebarView.swift */; };
 		1E966DE22E4F2D9E004F0464 /* PlaylistService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DE12E4F2D9E004F0464 /* PlaylistService.swift */; };
 		1E966DE82E4F2DB6004F0464 /* CloudMusicView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E966DE32E4F2DB6004F0464 /* CloudMusicView.swift */; };
@@ -76,6 +80,10 @@
 		1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UnauthorizedView.swift; sourceTree = "<group>"; };
 		1E273DBC2E52321D007E6037 /* EchoMusicError.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EchoMusicError.swift; sourceTree = "<group>"; };
 		1E3FF50A2E5461B00088DEEC /* History.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = History.swift; sourceTree = "<group>"; };
+		1E833FBA2E555CEB00E0FF5B /* Search.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Search.swift; sourceTree = "<group>"; };
+		1E833FBE2E555D1200E0FF5B /* SearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchService.swift; sourceTree = "<group>"; };
+		1E833FC02E55670400E0FF5B /* SearchResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchResultsView.swift; sourceTree = "<group>"; };
+		1E833FC22E556B6800E0FF5B /* SearchTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchTextView.swift; sourceTree = "<group>"; };
 		1E966DDF2E4EFCBA004F0464 /* PlaylistSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistSidebarView.swift; sourceTree = "<group>"; };
 		1E966DE12E4F2D9E004F0464 /* PlaylistService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistService.swift; sourceTree = "<group>"; };
 		1E966DE32E4F2DB6004F0464 /* CloudMusicView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMusicView.swift; sourceTree = "<group>"; };
@@ -219,6 +227,7 @@
 			children = (
 				1EBC6D5C2E4E207100D7BCC1 /* UserService.swift */,
 				1EBC6D5D2E4E207100D7BCC1 /* AppSettingService.swift */,
+				1E833FBE2E555D1200E0FF5B /* SearchService.swift */,
 				1E966DE12E4F2D9E004F0464 /* PlaylistService.swift */,
 				1EBC6D5E2E4E207100D7BCC1 /* PlayerService.swift */,
 				1EBC6D602E4E207100D7BCC1 /* MusicService.swift */,
@@ -233,6 +242,7 @@
 			children = (
 				1E3FF50A2E5461B00088DEEC /* History.swift */,
 				1EBC6D652E4E207100D7BCC1 /* Library.swift */,
+				1E833FBA2E555CEB00E0FF5B /* Search.swift */,
 				1EBC6D662E4E207100D7BCC1 /* Login.swift */,
 				1E273DBC2E52321D007E6037 /* EchoMusicError.swift */,
 				1EBC6D672E4E207100D7BCC1 /* Navigation.swift */,
@@ -259,6 +269,7 @@
 			children = (
 				1EBC6D732E4E207100D7BCC1 /* SettingsView.swift */,
 				1EBC6D742E4E207100D7BCC1 /* LoginView.swift */,
+				1E833FC02E55670400E0FF5B /* SearchResultsView.swift */,
 				1EBC6D752E4E207100D7BCC1 /* UserProfileView.swift */,
 				1EBC6D762E4E207100D7BCC1 /* HomeView.swift */,
 				1EBC6D772E4E207100D7BCC1 /* DiscoverView.swift */,
@@ -274,6 +285,7 @@
 		1EBC6D792E4E207100D7BCC1 /* components */ = {
 			isa = PBXGroup;
 			children = (
+				1E833FC22E556B6800E0FF5B /* SearchTextView.swift */,
 				1E0F16E02E4F6D5D00354E49 /* UnauthorizedView.swift */,
 				1E966DEB2E4F2DFA004F0464 /* SongListView.swift */,
 				1EBC6D7A2E4E207100D7BCC1 /* CustomTitleBar.swift */,
@@ -420,7 +432,9 @@
 				1E0F16E12E4F6D5D00354E49 /* UnauthorizedView.swift in Sources */,
 				1EBC6D972E4E207100D7BCC1 /* HomeView.swift in Sources */,
 				1EBC6D902E4E207100D7BCC1 /* SubPageNavigationManager.swift in Sources */,
+				1E833FBF2E555D1200E0FF5B /* SearchService.swift in Sources */,
 				1EBC6D852E4E207100D7BCC1 /* NetworkService.swift in Sources */,
+				1E833FC12E55670400E0FF5B /* SearchResultsView.swift in Sources */,
 				1EBC6D882E4E207100D7BCC1 /* Library.swift in Sources */,
 				1EBC6D342E4E1FED00D7BCC1 /* Persistence.swift in Sources */,
 				1EBC6D842E4E207100D7BCC1 /* MusicService.swift in Sources */,
@@ -440,6 +454,7 @@
 				1EBC6D862E4E207100D7BCC1 /* LoginService.swift in Sources */,
 				1EBC6D9C2E4E207100D7BCC1 /* PlayerView.swift in Sources */,
 				1EBC6D952E4E207100D7BCC1 /* LoginView.swift in Sources */,
+				1E833FBB2E555CEB00E0FF5B /* Search.swift in Sources */,
 				1E966DE82E4F2DB6004F0464 /* CloudMusicView.swift in Sources */,
 				1E966DE92E4F2DB6004F0464 /* RecentMusicView.swift in Sources */,
 				1E966DEA2E4F2DB6004F0464 /* PlaylistView.swift in Sources */,
@@ -455,6 +470,7 @@
 				1EBC6D8A2E4E207100D7BCC1 /* Navigation.swift in Sources */,
 				1E966DEC2E4F2DFA004F0464 /* SongListView.swift in Sources */,
 				1EBC6D812E4E207100D7BCC1 /* AppSettingService.swift in Sources */,
+				1E833FC32E556B6800E0FF5B /* SearchTextView.swift in Sources */,
 				1EBC6D922E4E207100D7BCC1 /* DateHelper.swift in Sources */,
 				1EBC6D2B2E4E1FEB00D7BCC1 /* EchoMusicApp.swift in Sources */,
 			);

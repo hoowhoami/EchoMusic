@@ -273,6 +273,30 @@ struct Song: Identifiable, Codable, Equatable {
         self.climaxInfo = nil
     }
     
+    // 便利构造器，用于从字典创建（搜索结果使用）
+    init?(from dict: [String: Any]) {
+        guard let title = dict["title"] as? String else { return nil }
+        
+        self.title = title
+        self.originalTitle = dict["originalTitle"] as? String ?? title
+        self.artist = dict["artist"] as? String
+        self.album = dict["album"] as? String
+        self.cover = dict["cover"] as? String
+        self.hash = dict["hash"] as? String
+        self.duration = dict["duration"] as? Int
+        self.albumId = dict["albumId"] as? String
+        self.albumAudioId = dict["album_audio_id"] as? Int
+        self.mixSongId = dict["mixsongid"] as? Int
+        self.addMixSongId = dict["add_mixsongid"] as? Int
+        self.isVip = dict["isVip"] as? Bool
+        self.isHq = dict["isHq"] as? Bool
+        self.isSq = dict["isSq"] as? Bool
+        
+        self.playableURL = nil
+        self.currentQuality = nil
+        self.climaxInfo = nil
+    }
+    
     /// 获取处理后的封面图片URL
     /// - Parameter size: 期望的图片尺寸
     /// - Returns: 处理后的URL
