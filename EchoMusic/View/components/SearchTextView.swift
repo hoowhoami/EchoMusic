@@ -153,7 +153,7 @@ struct SearchTextView: View {
                 }
             }
         }
-        .frame(width: 360, height: 300)
+        .frame(width: 320)
         .padding(8)
         .onTapGesture {
             // 阻止弹出框内部点击导致失去焦点
