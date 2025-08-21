@@ -13,7 +13,6 @@ struct CustomSearchView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var showSearchResults = false
-    @State private var searchResults: SearchResult?
     @State private var searchSuggestions: SearchSuggestResult?
     @State private var hotSearchItems: [HotSearchItem] = []
     @State private var defaultKeyword: String = ""
@@ -83,6 +82,10 @@ struct CustomSearchView: View {
                         // 点击文本框时确保弹出层显示并获取焦点
                         if !showDropdown {
                             showDropdown = true
+                            // 确保热搜数据已加载
+                            if hotSearchItems.isEmpty && !isHotSearchLoading {
+                                loadHotSearch()
+                            }
                         }
                         isTextFieldFocused = true
                     }
@@ -108,6 +111,10 @@ struct CustomSearchView: View {
             // 点击整个搜索框时显示下拉框并获取焦点
             if !showDropdown {
                 showDropdown = true
+                // 确保热搜数据已加载
+                if hotSearchItems.isEmpty && !isHotSearchLoading {
+                    loadHotSearch()
+                }
             }
             isTextFieldFocused = true
         }
@@ -118,6 +125,10 @@ struct CustomSearchView: View {
             if focused {
                 // 获得焦点时显示下拉框
                 showDropdown = true
+                // 确保热搜数据已加载
+                if hotSearchItems.isEmpty && !isHotSearchLoading {
+                    loadHotSearch()
+                }
             }
         }
         .popover(isPresented: $showDropdown, arrowEdge: .bottom) {
@@ -137,7 +148,7 @@ struct CustomSearchView: View {
                 )
             }
             .frame(width: 320)
-            .frame(height: 300) // 固定高度，避免太高
+            .frame(height: 200) // 固定高度，避免太高
         }
     }
     
@@ -203,10 +214,10 @@ struct CustomSearchView: View {
         
         Task<Void, Never> {
             do {
-                let result = try await searchService.search(keyword: searchText)
-                self.searchResults = result
-                    self.isSearching = false
-                    self.showingSearchResultsView = true
+                // 使用默认的歌曲搜索
+                let result = try await searchService.searchSong(keyword: searchText)
+                self.isSearching = false
+                self.showingSearchResultsView = true
             } catch {
                     self.errorMessage = "搜索失败: \(error.localizedDescription)"
                     self.isSearching = false
@@ -216,7 +227,7 @@ struct CustomSearchView: View {
     
     private func clearSearch() {
         searchText = ""
-        searchResults = nil
+        // searchResults = nil
         searchSuggestions = nil
         showSearchResults = false
         // 清空搜索文本时，如果有热搜内容则显示下拉框
@@ -515,8 +526,9 @@ struct SearchPopoverContent: View {
     private func sectionTitle(for label: String?) -> String {
         guard let label = label else { return "推荐" }
         switch label {
-        case "MV": return "MV"
         case "专辑": return "专辑"
+        case "歌手": return "歌手"
+        case "歌单": return "歌单"
         default: return "歌曲"
         }
     }
@@ -524,8 +536,9 @@ struct SearchPopoverContent: View {
     private func sectionIcon(for label: String?) -> String {
         guard let label = label else { return "music.note" }
         switch label {
-        case "MV": return "video.fill"
         case "专辑": return "square.stack"
+        case "歌手": return "person.fill"
+        case "歌单": return "list.bullet"
         default: return "music.note"
         }
     }

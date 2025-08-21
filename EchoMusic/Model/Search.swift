@@ -7,110 +7,6 @@
 
 import Foundation
 
-// MARK: - AnyCodable 类型
-struct AnyCodable: Codable {
-    let value: Any
-    
-    init(_ value: Any) {
-        self.value = value
-    }
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        
-        // 尝试解码为不同的类型
-        if let intValue = try? container.decode(Int.self) {
-            value = intValue
-        } else if let stringValue = try? container.decode(String.self) {
-            value = stringValue
-        } else if let boolValue = try? container.decode(Bool.self) {
-            value = boolValue
-        } else if let doubleValue = try? container.decode(Double.self) {
-            value = doubleValue
-        } else if let dictValue = try? container.decode([String: JSONValue].self) {
-            value = dictValue
-        } else if let arrayValue = try? container.decode([JSONValue].self) {
-            value = arrayValue
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported type")
-        }
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        
-        switch value {
-        case let intValue as Int:
-            try container.encode(intValue)
-        case let stringValue as String:
-            try container.encode(stringValue)
-        case let boolValue as Bool:
-            try container.encode(boolValue)
-        case let doubleValue as Double:
-            try container.encode(doubleValue)
-        case let dictValue as [String: JSONValue]:
-            try container.encode(dictValue)
-        case let arrayValue as [JSONValue]:
-            try container.encode(arrayValue)
-        default:
-            throw EncodingError.invalidValue(value, EncodingError.Context(codingPath: container.codingPath, debugDescription: "Unsupported type"))
-        }
-    }
-}
-
-// MARK: - JSONValue 类型
-enum JSONValue: Codable {
-    case string(String)
-    case int(Int)
-    case double(Double)
-    case bool(Bool)
-    case array([JSONValue])
-    case dictionary([String: JSONValue])
-    case null
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        
-        if let stringValue = try? container.decode(String.self) {
-            self = .string(stringValue)
-        } else if let intValue = try? container.decode(Int.self) {
-            self = .int(intValue)
-        } else if let doubleValue = try? container.decode(Double.self) {
-            self = .double(doubleValue)
-        } else if let boolValue = try? container.decode(Bool.self) {
-            self = .bool(boolValue)
-        } else if let arrayValue = try? container.decode([JSONValue].self) {
-            self = .array(arrayValue)
-        } else if let dictValue = try? container.decode([String: JSONValue].self) {
-            self = .dictionary(dictValue)
-        } else if container.decodeNil() {
-            self = .null
-        } else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid JSON value")
-        }
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        
-        switch self {
-        case .string(let value):
-            try container.encode(value)
-        case .int(let value):
-            try container.encode(value)
-        case .double(let value):
-            try container.encode(value)
-        case .bool(let value):
-            try container.encode(value)
-        case .array(let value):
-            try container.encode(value)
-        case .dictionary(let value):
-            try container.encode(value)
-        case .null:
-            try container.encodeNil()
-        }
-    }
-}
 
 // MARK: - 搜索类型枚举
 enum SearchType: String, CaseIterable {
@@ -118,8 +14,6 @@ enum SearchType: String, CaseIterable {
     case album = "album"        // 专辑
     case artist = "author"      // 歌手
     case playlist = "special"   // 歌单
-    case mv = "mv"              // MV
-    case lyric = "lyric"        // 歌词
     
     var displayName: String {
         switch self {
@@ -127,18 +21,16 @@ enum SearchType: String, CaseIterable {
         case .album: return "专辑"
         case .artist: return "歌手"
         case .playlist: return "歌单"
-        case .mv: return "MV"
-        case .lyric: return "歌词"
         }
     }
 }
 
-// MARK: - 搜索结果模型
-struct SearchResult: Codable {
+// MARK: - 歌曲搜索结果模型
+struct SearchSongResult: Codable {
     let status: Int
     let error_code: Int
     let error_msg: String?
-    var data: SearchData?
+    var data: SearchSongData?
     
     enum CodingKeys: String, CodingKey {
         case status
@@ -148,8 +40,8 @@ struct SearchResult: Codable {
     }
 }
 
-struct SearchData: Codable {
-    var lists: [AnyCodable]?
+struct SearchSongData: Codable {
+    var lists: [Song]?
     let correctiontip: String?
     let pagesize: Int?
     let isshareresult: Int?
@@ -176,67 +68,140 @@ struct SearchData: Codable {
         case total
         case istag
     }
+}
+
+// MARK: - 歌单搜索结果模型
+struct SearchPlaylistResult: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+    var data: SearchPlaylistData?
     
-    // 便利方法来获取特定类型的搜索结果
-    var songs: [Song]? {
-        return lists?.compactMap { item in
-            if let dict = item.value as? [String: Any] {
-                return Song(from: dict)
-            }
-            return nil
-        }
-    }
-    
-    var albums: [Album]? {
-        return lists?.compactMap { item in
-            if let dict = item.value as? [String: Any] {
-                return Album(from: dict)
-            }
-            return nil
-        }
-    }
-    
-    var artists: [Artist]? {
-        return lists?.compactMap { item in
-            if let dict = item.value as? [String: Any] {
-                return Artist(from: dict)
-            }
-            return nil
-        }
-    }
-    
-    var playlists: [Playlist]? {
-        return lists?.compactMap { item in
-            if let dict = item.value as? [String: Any] {
-                return Playlist(from: dict)
-            }
-            return nil
-        }
-    }
-    
-    var mvs: [MV]? {
-        return lists?.compactMap { item in
-            if let dict = item.value as? [String: Any] {
-                return MV(from: dict)
-            }
-            return nil
-        }
+    enum CodingKeys: String, CodingKey {
+        case status
+        case error_code
+        case error_msg
+        case data
     }
 }
 
-struct SearchContent: Codable {
-    let songs: [Song]?
-    let albums: [Album]?
-    let artists: [Artist]?
-    let playlists: [Playlist]?
-    let mvs: [MV]?
+struct SearchPlaylistData: Codable {
+    var lists: [Playlist]?
+    let correctiontip: String?
+    let pagesize: Int?
+    let isshareresult: Int?
+    let istagresult: Int?
+    let page: Int?
+    let correctiontype: Int?
+    let correctionrelate: String?
+    let AlgPath: String?
+    let from: Int?
+    var total: Int?
+    let istag: Int?
     
     enum CodingKeys: String, CodingKey {
-        case songs = "songs"
-        case albums = "albums"
-        case artists = "artists"
-        case playlists = "playlists"
-        case mvs = "mvs"
+        case lists
+        case correctiontip
+        case pagesize
+        case isshareresult
+        case istagresult
+        case page
+        case correctiontype
+        case correctionrelate
+        case AlgPath
+        case from
+        case total
+        case istag
+    }
+}
+
+// MARK: - 专辑搜索结果模型
+struct SearchAlbumResult: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+    var data: SearchAlbumData?
+    
+    enum CodingKeys: String, CodingKey {
+        case status
+        case error_code
+        case error_msg
+        case data
+    }
+}
+
+struct SearchAlbumData: Codable {
+    var lists: [Album]?
+    let correctiontip: String?
+    let pagesize: Int?
+    let isshareresult: Int?
+    let istagresult: Int?
+    let page: Int?
+    let correctiontype: Int?
+    let correctionrelate: String?
+    let AlgPath: String?
+    let from: Int?
+    var total: Int?
+    let istag: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case lists
+        case correctiontip
+        case pagesize
+        case isshareresult
+        case istagresult
+        case page
+        case correctiontype
+        case correctionrelate
+        case AlgPath
+        case from
+        case total
+        case istag
+    }
+}
+
+// MARK: - 歌手搜索结果模型
+struct SearchArtistResult: Codable {
+    let status: Int
+    let error_code: Int
+    let error_msg: String?
+    var data: SearchArtistData?
+    
+    enum CodingKeys: String, CodingKey {
+        case status
+        case error_code
+        case error_msg
+        case data
+    }
+}
+
+struct SearchArtistData: Codable {
+    var lists: [Artist]?
+    let correctiontip: String?
+    let pagesize: Int?
+    let isshareresult: Int?
+    let istagresult: Int?
+    let page: Int?
+    let correctiontype: Int?
+    let correctionrelate: String?
+    let AlgPath: String?
+    let from: Int?
+    var total: Int?
+    let istag: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case lists
+        case correctiontip
+        case pagesize
+        case isshareresult
+        case istagresult
+        case page
+        case correctiontype
+        case correctionrelate
+        case AlgPath
+        case from
+        case total
+        case istag
     }
 }
 
@@ -282,6 +247,7 @@ struct ComplexSearchContent: Codable {
         case albums = "albums"
     }
 }
+
 
 // MARK: - 搜索建议模型
 struct SearchSuggestResult: Codable {
@@ -493,6 +459,19 @@ struct Album: Codable, Identifiable {
     let description: String?
     let songs: [Song]?
     
+    // 专辑特有字段
+    let grade: Int?
+    let intro: String?
+    let company: String?
+    let quality: Int?
+    let collectCount: Int?
+    let language: String?
+    let privilege: Int?
+    let songCount: Int?
+    let category: Int?
+    let shortIntro: String?
+    let playCount: Int?
+    
     enum CodingKeys: String, CodingKey {
         case id = "id"
         case name = "name"
@@ -502,6 +481,12 @@ struct Album: Codable, Identifiable {
         case size = "size"
         case description = "description"
         case songs = "songs"
+        case grade, intro, company, quality
+        case collectCount = "collect_count"
+        case language, privilege
+        case songCount = "songcount"
+        case category, shortIntro = "short_intro"
+        case playCount = "play_count"
     }
     
     // 便利构造器，用于从字典创建
@@ -515,6 +500,30 @@ struct Album: Codable, Identifiable {
         self.size = dict["size"] as? Int
         self.description = dict["description"] as? String
         self.songs = nil // 搜索结果中通常不包含歌曲列表
+        
+        // 专辑特有字段
+        self.grade = dict["grade"] as? Int
+        self.intro = dict["intro"] as? String
+        self.company = dict["company"] as? String
+        self.quality = dict["quality"] as? Int
+        self.collectCount = dict["collect_count"] as? Int
+        self.language = dict["language"] as? String
+        self.privilege = dict["privilege"] as? Int
+        self.songCount = dict["songcount"] as? Int
+        self.category = dict["category"] as? Int
+        self.shortIntro = dict["short_intro"] as? String
+        self.playCount = dict["play_count"] as? Int
+    }
+    
+    // 将日期字符串转换为时间戳
+    private static func dateFromString(_ dateString: String?) -> Int? {
+        guard let dateString = dateString else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        if let date = formatter.date(from: dateString) {
+            return Int(date.timeIntervalSince1970 * 1000)
+        }
+        return nil
     }
 }
 
@@ -527,6 +536,19 @@ struct Artist: Codable, Identifiable {
     let musicSize: Int?
     let fansSize: Int?
     let followed: Bool?
+    
+    // 支持从API响应直接创建的便利构造器
+    init?(name: String?, cover: String?, albumSize: Int?, musicSize: Int?, fansSize: Int?, followed: Bool?) {
+        // 如果没有id，使用name的hash值作为id
+        guard let name = name else { return nil }
+        self.id = abs(name.hashValue)
+        self.name = name
+        self.cover = cover
+        self.albumSize = albumSize
+        self.musicSize = musicSize
+        self.fansSize = fansSize
+        self.followed = followed
+    }
     
     enum CodingKeys: String, CodingKey {
         case id = "id"
@@ -549,6 +571,7 @@ struct Artist: Codable, Identifiable {
         self.fansSize = dict["fansSize"] as? Int
         self.followed = dict["followed"] as? Bool
     }
+    
 }
 
 // MARK: - 歌单模型
@@ -594,43 +617,9 @@ struct Playlist: Codable, Identifiable {
         self.shareCount = dict["shareCount"] as? Int
         self.tracks = nil // 搜索结果中通常不包含歌曲列表
     }
+    
 }
 
-// MARK: - MV模型
-struct MV: Codable, Identifiable {
-    let id: Int
-    let name: String?
-    let artistName: String?
-    let cover: String?
-    let playCount: Int?
-    let duration: Int?
-    let briefDesc: String?
-    let artists: [Artist]?
-    
-    enum CodingKeys: String, CodingKey {
-        case id = "id"
-        case name = "name"
-        case artistName = "artistName"
-        case cover = "cover"
-        case playCount = "playCount"
-        case duration = "duration"
-        case briefDesc = "briefDesc"
-        case artists = "artists"
-    }
-    
-    // 便利构造器，用于从字典创建
-    init?(from dict: [String: Any]) {
-        guard let id = dict["id"] as? Int else { return nil }
-        self.id = id
-        self.name = dict["name"] as? String
-        self.artistName = dict["artistName"] as? String
-        self.cover = dict["cover"] as? String
-        self.playCount = dict["playCount"] as? Int
-        self.duration = dict["duration"] as? Int
-        self.briefDesc = dict["briefDesc"] as? String
-        self.artists = nil // 搜索结果中通常不包含艺术家列表
-    }
-}
 
 // MARK: - 搜索用户模型
 struct SearchUser: Codable, Identifiable {
@@ -656,5 +645,14 @@ struct SearchUser: Codable, Identifiable {
         self.avatarUrl = dict["avatarUrl"] as? String
         self.signature = dict["signature"] as? String
         self.followed = dict["followed"] as? Bool
+    }
+    
+    // 便利构造器，用于直接创建
+    init(userId: Int, nickname: String?, avatarUrl: String?, signature: String?, followed: Bool?) {
+        self.id = userId
+        self.nickname = nickname
+        self.avatarUrl = avatarUrl
+        self.signature = signature
+        self.followed = followed
     }
 }

@@ -15,32 +15,106 @@ class SearchService: ObservableObject {
     
     private init() {}
     
-    // MARK: - 基础搜索
+        
+    // MARK: - 分类型搜索
     
-    /// 搜索音乐
+    /// 搜索单曲
     /// - Parameters:
     ///   - keyword: 搜索关键词
-    ///   - type: 搜索类型，默认为单曲
     ///   - page: 页码，默认为1
     ///   - pageSize: 每页数量，默认为30
-    /// - Returns: 搜索结果
-    func search(
+    /// - Returns: 单曲搜索结果
+    func searchSong(
         keyword: String,
-        type: SearchType = .song,
         page: Int = 1,
         pageSize: Int = 30
-    ) async throws -> SearchResult {
+    ) async throws -> SearchSongResult {
         let params: [String: String] = [
             "keywords": keyword,
-            "type": type.rawValue,
-            "offset": String((page - 1) * pageSize),
-            "limit": String(pageSize)
+            "type": SearchType.song.rawValue,
+            "page": String((page - 1) * pageSize),
+            "pageSize": String(pageSize)
         ]
         
         return try await networkService.get(
             endpoint: "/search",
             params: params,
-            responseType: SearchResult.self
+            responseType: SearchSongResult.self
+        )
+    }
+    
+    /// 搜索专辑
+    /// - Parameters:
+    ///   - keyword: 搜索关键词
+    ///   - page: 页码，默认为1
+    ///   - pageSize: 每页数量，默认为30
+    /// - Returns: 专辑搜索结果
+    func searchAlbum(
+        keyword: String,
+        page: Int = 1,
+        pageSize: Int = 30
+    ) async throws -> SearchAlbumResult {
+        let params: [String: String] = [
+            "keywords": keyword,
+            "type": SearchType.album.rawValue,
+            "page": String((page - 1) * pageSize),
+            "pageSize": String(pageSize)
+        ]
+        
+        return try await networkService.get(
+            endpoint: "/search",
+            params: params,
+            responseType: SearchAlbumResult.self
+        )
+    }
+    
+    /// 搜索歌手
+    /// - Parameters:
+    ///   - keyword: 搜索关键词
+    ///   - page: 页码，默认为1
+    ///   - pageSize: 每页数量，默认为30
+    /// - Returns: 歌手搜索结果
+    func searchArtist(
+        keyword: String,
+        page: Int = 1,
+        pageSize: Int = 30
+    ) async throws -> SearchArtistResult {
+        let params: [String: String] = [
+            "keywords": keyword,
+            "type": SearchType.artist.rawValue,
+            "page": String((page - 1) * pageSize),
+            "pageSize": String(pageSize)
+        ]
+        
+        return try await networkService.get(
+            endpoint: "/search",
+            params: params,
+            responseType: SearchArtistResult.self
+        )
+    }
+    
+    /// 搜索歌单
+    /// - Parameters:
+    ///   - keyword: 搜索关键词
+    ///   - page: 页码，默认为1
+    ///   - pageSize: 每页数量，默认为30
+    /// - Returns: 歌单搜索结果
+    func searchPlaylist(
+        keyword: String,
+        page: Int = 1,
+        pageSize: Int = 30
+    ) async throws -> SearchPlaylistResult {
+        let params: [String: String] = [
+            "keywords": keyword,
+            "type": SearchType.playlist.rawValue,
+            "page": String((page - 1) * pageSize),
+            "pageSize": String(pageSize)
+        ]
+        
+        return try await networkService.get(
+            endpoint: "/search",
+            params: params,
+            responseType: SearchPlaylistResult.self
         )
     }
     
@@ -59,8 +133,8 @@ class SearchService: ObservableObject {
     ) async throws -> ComplexSearchResult {
         let params: [String: String] = [
             "keywords": keyword,
-            "offset": String((page - 1) * pageSize),
-            "limit": String(pageSize)
+            "page": String((page - 1) * pageSize),
+            "pageSize": String(pageSize)
         ]
         
         return try await networkService.get(
@@ -77,13 +151,13 @@ class SearchService: ObservableObject {
     ///   - keyword: 搜索关键词
     ///   - musicTipCount: 音乐返回数量，默认为5
     ///   - albumTipCount: 专辑返回数量，默认为2
-    ///   - mvTipCount: MV返回数量，默认为2
+    ///   - mvTipCount: MV返回数量，默认为0
     /// - Returns: 搜索建议结果
     func searchSuggest(
         keyword: String,
         musicTipCount: Int = 5,
-        albumTipCount: Int = 2,
-        mvTipCount: Int = 2
+        albumTipCount: Int = 5,
+        mvTipCount: Int = 0
     ) async throws -> SearchSuggestResult {
         let params: [String: String] = [
             "keywords": keyword,
@@ -127,36 +201,26 @@ class SearchService: ObservableObject {
     
     /// 搜索单曲
     func searchSongs(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [Song] {
-        let result = try await search(keyword: keyword, type: .song, page: page, pageSize: pageSize)
-        return result.data?.songs ?? []
+        let result = try await searchSong(keyword: keyword, page: page, pageSize: pageSize)
+        return result.data?.lists ?? []
     }
     
     /// 搜索专辑
     func searchAlbums(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [Album] {
-        let result = try await search(keyword: keyword, type: .album, page: page, pageSize: pageSize)
-        return result.data?.albums ?? []
+        let result = try await searchAlbum(keyword: keyword, page: page, pageSize: pageSize)
+        return result.data?.lists ?? []
     }
     
     /// 搜索歌手
     func searchArtists(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [Artist] {
-        let result = try await search(keyword: keyword, type: .artist, page: page, pageSize: pageSize)
-        return result.data?.artists ?? []
+        let result = try await searchArtist(keyword: keyword, page: page, pageSize: pageSize)
+        return result.data?.lists ?? []
     }
     
     /// 搜索歌单
     func searchPlaylists(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [Playlist] {
-        let result = try await search(keyword: keyword, type: .playlist, page: page, pageSize: pageSize)
-        return result.data?.playlists ?? []
+        let result = try await searchPlaylist(keyword: keyword, page: page, pageSize: pageSize)
+        return result.data?.lists ?? []
     }
     
-    /// 搜索MV
-    func searchMVs(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [MV] {
-        let result = try await search(keyword: keyword, type: .mv, page: page, pageSize: pageSize)
-        return result.data?.mvs ?? []
-    }
-    
-    /// 搜索歌词
-    func searchLyrics(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> SearchResult {
-        return try await search(keyword: keyword, type: .lyric, page: page, pageSize: pageSize)
-    }
 }

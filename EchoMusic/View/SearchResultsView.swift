@@ -10,7 +10,10 @@ import SwiftUI
 // 搜索结果页面
 struct SearchResultsView: View {
     let keyword: String
-    @State private var searchResults: SearchResult?
+    @State private var songResults: SearchSongResult?
+    @State private var albumResults: SearchAlbumResult?
+    @State private var artistResults: SearchArtistResult?
+    @State private var playlistResults: SearchPlaylistResult?
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var selectedTab: SearchType = .song
@@ -33,6 +36,7 @@ struct SearchResultsView: View {
                 if isLoading {
                     ProgressView()
                         .scaleEffect(0.8)
+                        .frame(width: 14, height: 14)
                 }
             }
             .padding(.horizontal, 20)
@@ -50,19 +54,66 @@ struct SearchResultsView: View {
             .padding(.vertical, 8)
             
             // 搜索结果内容
-            if let data = searchResults?.data {
-                searchResultsContent(data)
-            } else if isLoading {
-                loadingView
-            } else if !errorMessage.isEmpty {
-                errorView
-            } else {
-                emptyView
+            Group {
+                switch selectedTab {
+                case .song:
+                    if let data = songResults?.data {
+                        searchSongResultsContent(data)
+                    } else if isLoading {
+                        loadingView
+                    } else if !errorMessage.isEmpty {
+                        errorView
+                    } else {
+                        emptyView
+                    }
+                case .album:
+                    if let data = albumResults?.data {
+                        searchAlbumResultsContent(data)
+                    } else if isLoading {
+                        loadingView
+                    } else if !errorMessage.isEmpty {
+                        errorView
+                    } else {
+                        emptyView
+                    }
+                case .artist:
+                    if let data = artistResults?.data {
+                        searchArtistResultsContent(data)
+                    } else if isLoading {
+                        loadingView
+                    } else if !errorMessage.isEmpty {
+                        errorView
+                    } else {
+                        emptyView
+                    }
+                case .playlist:
+                    if let data = playlistResults?.data {
+                        searchPlaylistResultsContent(data)
+                    } else if isLoading {
+                        loadingView
+                    } else if !errorMessage.isEmpty {
+                        errorView
+                    } else {
+                        emptyView
+                    }
+                }
+            }
+            .onAppear {
+                if let data = songResults?.data {
+                    print("SearchResultsView: 显示搜索结果数据")
+                } else if isLoading {
+                    print("SearchResultsView: 显示加载状态")
+                } else if !errorMessage.isEmpty {
+                    print("SearchResultsView: 显示错误状态: \(errorMessage)")
+                } else {
+                    print("SearchResultsView: 显示空状态")
+                }
             }
             
             Spacer()
         }
         .onAppear {
+            print("SearchResultsView: 视图出现，关键词: \(keyword)")
             performSearch()
         }
         .onChange(of: selectedTab) { _ in
@@ -74,47 +125,55 @@ struct SearchResultsView: View {
     
     // MARK: - 搜索结果内容
     @ViewBuilder
-    private func searchResultsContent(_ data: SearchData) -> some View {
+    private func searchSongResultsContent(_ data: SearchSongData) -> some View {
+        searchResultsContent(data.lists, data.total, "单曲")
+    }
+    
+    @ViewBuilder
+    private func searchAlbumResultsContent(_ data: SearchAlbumData) -> some View {
+        searchResultsContent(data.lists, data.total, "专辑")
+    }
+    
+    @ViewBuilder
+    private func searchArtistResultsContent(_ data: SearchArtistData) -> some View {
+        searchResultsContent(data.lists, data.total, "歌手")
+    }
+    
+    @ViewBuilder
+    private func searchPlaylistResultsContent(_ data: SearchPlaylistData) -> some View {
+        searchResultsContent(data.lists, data.total, "歌单")
+    }
+    
+    @ViewBuilder
+    private func searchResultsContent<T: Identifiable>(_ items: [T]?, _ total: Int?, _ type: String) -> some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    switch selectedTab {
-                    case .song:
-                        if let songs = data.songs, !songs.isEmpty {
-                            songsSection(songs)
-                        } else {
-                            emptyResultsView("没有找到相关单曲")
+                    if let items = items, !items.isEmpty {
+                        switch selectedTab {
+                        case .song:
+                            if let songs = items as? [Song] {
+                                songsSection(songs)
+                            }
+                        case .artist:
+                            if let artists = items as? [Artist] {
+                                artistsSection(artists)
+                            }
+                        case .playlist:
+                            if let playlists = items as? [Playlist] {
+                                playlistsSection(playlists)
+                            }
+                        case .album:
+                            if let albums = items as? [Album] {
+                                albumsSection(albums)
+                            }
                         }
-                    case .artist:
-                        if let artists = data.artists, !artists.isEmpty {
-                            artistsSection(artists)
-                        } else {
-                            emptyResultsView("没有找到相关歌手")
-                        }
-                    case .playlist:
-                        if let playlists = data.playlists, !playlists.isEmpty {
-                            playlistsSection(playlists)
-                        } else {
-                            emptyResultsView("没有找到相关歌单")
-                        }
-                    case .album:
-                        if let albums = data.albums, !albums.isEmpty {
-                            albumsSection(albums)
-                        } else {
-                            emptyResultsView("没有找到相关专辑")
-                        }
-                    case .mv:
-                        if let mvs = data.mvs, !mvs.isEmpty {
-                            mvsSection(mvs)
-                        } else {
-                            emptyResultsView("没有找到相关MV")
-                        }
-                    case .lyric:
-                        lyricSection()
+                    } else {
+                        emptyResultsView("没有找到相关\(type)")
                     }
                     
                     // 加载更多按钮
-                    if hasMorePages && (currentPage > 1 || (data.total ?? 0) > 30) {
+                    if hasMorePages && (currentPage > 1 || (total ?? 0) > 30) {
                         loadMoreButton
                     }
                 }
@@ -183,23 +242,6 @@ struct SearchResultsView: View {
         }
     }
     
-    // MARK: - MV部分
-    private func mvsSection(_ mvs: [MV]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(mvs, id: \.id) { mv in
-                MVRowView(mv: mv)
-            }
-        }
-    }
-    
-    // MARK: - 歌词部分
-    private func lyricSection() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("歌词搜索功能开发中...")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
-        }
-    }
     
     // MARK: - 加载视图
     private var loadingView: some View {
@@ -270,20 +312,56 @@ struct SearchResultsView: View {
     private func performSearch() {
         guard !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
+        print("SearchResultsView: 开始搜索关键词: \(keyword)")
         currentPage = 1
         hasMorePages = true
         isLoading = true
         errorMessage = ""
         
+        // 清除其他标签页的结果
+        songResults = nil
+        albumResults = nil
+        artistResults = nil
+        playlistResults = nil
+        
         Task {
             do {
-                let result = try await searchService.search(keyword: keyword, type: selectedTab, page: currentPage)
-                await MainActor.run {
-                    searchResults = result
-                    isLoading = false
-                    updatePaginationInfo(result.data)
+                switch selectedTab {
+                case .song:
+                    let result = try await searchService.searchSong(keyword: keyword, page: currentPage)
+                    print("SearchResultsView: 歌曲搜索成功")
+                    await MainActor.run {
+                        songResults = result
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
+                case .album:
+                    let result = try await searchService.searchAlbum(keyword: keyword, page: currentPage)
+                    print("SearchResultsView: 专辑搜索成功")
+                    await MainActor.run {
+                        albumResults = result
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
+                case .artist:
+                    let result = try await searchService.searchArtist(keyword: keyword, page: currentPage)
+                    print("SearchResultsView: 歌手搜索成功")
+                    await MainActor.run {
+                        artistResults = result
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
+                case .playlist:
+                    let result = try await searchService.searchPlaylist(keyword: keyword, page: currentPage)
+                    print("SearchResultsView: 歌单搜索成功")
+                    await MainActor.run {
+                        playlistResults = result
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
                 }
             } catch {
+                print("SearchResultsView: 搜索失败: \(error)")
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     isLoading = false
@@ -300,16 +378,51 @@ struct SearchResultsView: View {
         
         Task {
             do {
-                let result = try await searchService.search(keyword: keyword, type: selectedTab, page: currentPage)
-                await MainActor.run {
-                    // 合并结果
-                    if let newResult = result.data, let existingResult = searchResults?.data {
-                        let mergedLists = (existingResult.lists ?? []) + (newResult.lists ?? [])
-                        searchResults?.data?.lists = mergedLists
-                        searchResults?.data?.total = newResult.total
+                switch selectedTab {
+                case .song:
+                    let result = try await searchService.searchSong(keyword: keyword, page: currentPage)
+                    await MainActor.run {
+                        // 合并结果
+                        if let newItems = result.data?.lists, var existingData = songResults?.data {
+                            existingData.lists = (existingData.lists ?? []) + newItems
+                            songResults?.data = existingData
+                        }
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
                     }
-                    isLoading = false
-                    updatePaginationInfo(result.data)
+                case .album:
+                    let result = try await searchService.searchAlbum(keyword: keyword, page: currentPage)
+                    await MainActor.run {
+                        // 合并结果
+                        if let newItems = result.data?.lists, var existingData = albumResults?.data {
+                            existingData.lists = (existingData.lists ?? []) + newItems
+                            albumResults?.data = existingData
+                        }
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
+                case .artist:
+                    let result = try await searchService.searchArtist(keyword: keyword, page: currentPage)
+                    await MainActor.run {
+                        // 合并结果
+                        if let newItems = result.data?.lists, var existingData = artistResults?.data {
+                            existingData.lists = (existingData.lists ?? []) + newItems
+                            artistResults?.data = existingData
+                        }
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
+                case .playlist:
+                    let result = try await searchService.searchPlaylist(keyword: keyword, page: currentPage)
+                    await MainActor.run {
+                        // 合并结果
+                        if let newItems = result.data?.lists, var existingData = playlistResults?.data {
+                            existingData.lists = (existingData.lists ?? []) + newItems
+                            playlistResults?.data = existingData
+                        }
+                        isLoading = false
+                        hasMorePages = (result.data?.total ?? 0) > currentPage * 30
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -319,19 +432,6 @@ struct SearchResultsView: View {
                 }
             }
         }
-    }
-    
-    private func updatePaginationInfo(_ data: SearchData?) {
-        guard let data = data else {
-            hasMorePages = false
-            return
-        }
-        
-        let pageSize = 30
-        let totalItems = data.total ?? 0
-        let currentItems = (data.lists ?? []).count
-        
-        hasMorePages = currentItems < totalItems && currentItems >= pageSize
     }
 }
 
@@ -423,22 +523,29 @@ struct ArtistRowView: View {
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 
-                if let albumSize = artist.albumSize, let musicSize = artist.musicSize {
-                    Text("专辑: \(albumSize) | 歌曲: \(musicSize)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                // 显示歌手信息
+                HStack(spacing: 8) {
+                    if let albumSize = artist.albumSize {
+                        Text("专辑: \(albumSize)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if let musicSize = artist.musicSize {
+                        Text("歌曲: \(musicSize)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if let fansSize = artist.fansSize {
+                        Text("粉丝: \(fansSize)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             
             Spacer()
-            
-            // 粉丝数
-            if let fansSize = artist.fansSize {
-                Text("\(fansSize) 粉丝")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
@@ -527,105 +634,6 @@ struct PlaylistRowView: View {
     }
 }
 
-// MARK: - MV行视图
-struct MVRowView: View {
-    let mv: MV
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            // MV封面
-            AsyncImage(url: URL(string: mv.cover ?? "")) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .overlay(
-                        Image(systemName: "video.fill")
-                            .foregroundColor(.secondary)
-                    )
-            }
-            .frame(width: 60, height: 40)
-            .cornerRadius(4)
-            
-            // MV信息
-            VStack(alignment: .leading, spacing: 4) {
-                Text(mv.name ?? "")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                
-                HStack {
-                    Text(mv.artistName ?? "")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                    
-                    if let duration = mv.duration {
-                        Text("•")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                        
-                        Text(formatDuration(duration))
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    
-                    if let playCount = mv.playCount {
-                        Text("•")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                        
-                        Text("\(formatPlayCount(playCount)) 播放")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            // 播放按钮
-            Button(action: {
-                // TODO: 播放MV
-            }) {
-                Image(systemName: "play.circle.fill")
-                    .foregroundColor(.blue)
-                    .font(.system(size: 20))
-            }
-            .buttonStyle(PlainButtonStyle())
-            .help("播放MV")
-        }
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .onHover { isHovered in
-            if isHovered {
-                Color.gray.opacity(0.1)
-            } else {
-                Color.clear
-            }
-        }
-    }
-    
-    private func formatDuration(_ duration: Int) -> String {
-        let minutes = duration / 60
-        let seconds = duration % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-    
-    private func formatPlayCount(_ count: Int) -> String {
-        if count >= 10000 {
-            return String(format: "%.1f万", Double(count) / 10000)
-        } else if count >= 1000 {
-            return String(format: "%.1fk", Double(count) / 1000)
-        } else {
-            return "\(count)"
-        }
-    }
-}
 
 // MARK: - 专辑行视图
 struct AlbumRowView: View {

@@ -162,6 +162,8 @@ struct QualityMap: Codable {
     }
 }
 
+// These structs are now defined in Search.swift to avoid conflicts
+
 /// 歌曲数据模型
 struct Song: Identifiable, Codable, Equatable {
     // 使用hash作为唯一标识
@@ -275,18 +277,60 @@ struct Song: Identifiable, Codable, Equatable {
     
     // 便利构造器，用于从字典创建（搜索结果使用）
     init?(from dict: [String: Any]) {
-        guard let title = dict["title"] as? String else { return nil }
+        // 处理API返回的字段名
+        var title: String?
+        var artist: String?
+        var album: String?
+        var cover: String?
+        var hash: String?
+        var duration: Int?
+        var albumId: String?
+        var albumAudioId: Int?
+        var mixSongId: Int?
         
-        self.title = title
-        self.originalTitle = dict["originalTitle"] as? String ?? title
-        self.artist = dict["artist"] as? String
-        self.album = dict["album"] as? String
-        self.cover = dict["cover"] as? String
-        self.hash = dict["hash"] as? String
-        self.duration = dict["duration"] as? Int
-        self.albumId = dict["albumId"] as? String
-        self.albumAudioId = dict["album_audio_id"] as? Int
-        self.mixSongId = dict["mixsongid"] as? Int
+        // 检查API返回的实际字段名
+        if let fileName = dict["FileName"] as? String {
+            // FileName格式通常是 "歌手 - 歌曲名"
+            let components = fileName.components(separatedBy: " - ")
+            if components.count >= 2 {
+                artist = components[0]
+                title = components[1]
+            } else {
+                title = fileName
+            }
+        }
+        
+        // 如果没有从FileName解析出标题，尝试其他字段
+        if title == nil {
+            title = dict["title"] as? String
+                ?? dict["SongName"] as? String
+                ?? dict["OriSongName"] as? String
+        }
+        
+        if artist == nil {
+            artist = dict["SingerName"] as? String
+        }
+        
+        album = dict["AlbumName"] as? String
+        cover = dict["Image"] as? String
+        hash = dict["FileHash"] as? String
+        duration = dict["Duration"] as? Int
+        albumId = dict["AlbumID"] as? String
+        albumAudioId = dict["Audioid"] as? Int
+        mixSongId = dict["MixSongID"] as? Int
+        
+        guard let finalTitle = title else { return nil }
+        
+        self.title = finalTitle
+        self.originalTitle = dict["OriSongName"] as? String ?? finalTitle
+        self.artist = artist
+        self.album = album
+        self.cover = cover
+        self.hash = hash
+        self.duration = duration
+        self.albumId = albumId
+        self.albumAudioId = albumAudioId
+        self.mixSongId = mixSongId
         self.addMixSongId = dict["add_mixsongid"] as? Int
         self.isVip = dict["isVip"] as? Bool
         self.isHq = dict["isHq"] as? Bool
