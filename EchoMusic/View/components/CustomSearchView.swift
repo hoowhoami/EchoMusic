@@ -153,7 +153,20 @@ struct CustomSearchView: View {
             isHotSearchLoading = true
             do {
                 let result = try await searchService.getHotSearch()
-                self.hotSearchItems = result.data?.list?.compactMap { $0.keywords }.flatMap { $0 } ?? []
+                // 正确解析热搜数据：遍历所有热搜列表，收集所有关键词
+                var allKeywords: [HotSearchItem] = []
+                if let lists = result.data?.list {
+                    print("热搜列表数量: \(lists.count)")
+                    for list in lists {
+                        print("列表名称: \(list.name ?? "无")")
+                        if let keywords = list.keywords {
+                            print("关键词数量: \(keywords.count)")
+                            allKeywords.append(contentsOf: keywords)
+                        }
+                    }
+                }
+                print("总共获取到 \(allKeywords.count) 个热搜项")
+                self.hotSearchItems = allKeywords
                 self.isHotSearchLoading = false
             } catch {
                 print("加载热搜失败: \(error)")
@@ -401,6 +414,9 @@ struct SearchPopoverContent: View {
                 let item = hotSearchItems[index]
                 hotSearchItemView(index: index, item: item)
             }
+        }
+        .onAppear {
+            print("显示热搜内容，共有 \(hotSearchItems.count) 项")
         }
     }
     
