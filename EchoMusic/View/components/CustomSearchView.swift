@@ -8,7 +8,7 @@
 import SwiftUI
 
 // 搜索文本视图组件：包含完整的搜索功能
-struct SearchTextView: View {
+struct CustomSearchView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var showSearchResults = false

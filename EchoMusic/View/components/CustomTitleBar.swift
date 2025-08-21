@@ -10,7 +10,7 @@ import SwiftUI
 // 自定义标题栏组件：引用SearchTextView组件
 struct CustomTitleBarContent: View {
     var body: some View {
-        SearchTextView()
+        CustomSearchView()
     }
 }
 
