@@ -182,18 +182,6 @@ class MockSearchService {
     var lastSuggestKeyword = ""
     
     func getHotSearch() async throws -> HotSearchResult {
-    var mockHotSearchResult: HotSearchResult?
-    var mockSearchResult: SearchResult?
-    var mockSearchSuggestResult: SearchSuggestResult?
-    var shouldThrowError = false
-    
-    var getHotSearchCallCount = 0
-    var searchCallCount = 0
-    var searchSuggestCallCount = 0
-    var lastSearchKeyword = ""
-    var lastSuggestKeyword = ""
-    
-    override func getHotSearch() async throws -> HotSearchResult {
         getHotSearchCallCount += 1
         
         if shouldThrowError {
@@ -206,17 +194,24 @@ class MockSearchService {
         
         // Return default mock result
         return HotSearchResult(
+            status: 1,
+            errcode: 0,
             data: HotSearchData(
+                timestamp: Int(Date().timeIntervalSince1970),
                 list: [
-                    HotSearchItem(keyword: "测试歌曲1", icon: 1),
-                    HotSearchItem(keyword: "测试歌曲2", icon: 0)
-                ],
-                defaultKeyword: "默认搜索"
+                    HotSearchList(
+                        name: "热搜榜",
+                        keywords: [
+                            HotSearchItem(keyword: "测试歌曲1", icon: 1),
+                            HotSearchItem(keyword: "测试歌曲2", icon: 0)
+                        ]
+                    )
+                ]
             )
         )
     }
     
-    override func search(keyword: String, type: SearchType = .song, page: Int = 1, pageSize: Int = 30) async throws -> SearchResult {
+    func search(keyword: String, type: SearchType = .song, page: Int = 1, pageSize: Int = 30) async throws -> SearchResult {
         searchCallCount += 1
         lastSearchKeyword = keyword
         
@@ -230,19 +225,26 @@ class MockSearchService {
         
         // Return default mock result
         return SearchResult(
+            status: 1,
+            error_code: 0,
             data: SearchData(
-                content: SearchContent(
-                    songs: [],
-                    albums: [],
-                    artists: [],
-                    playlists: [],
-                    mvs: []
-                )
+                lists: [],
+                correctiontip: nil,
+                pagesize: 30,
+                isshareresult: 0,
+                istagresult: 0,
+                page: 1,
+                correctiontype: 0,
+                correctionrelate: nil,
+                AlgPath: nil,
+                from: 0,
+                total: 0,
+                istag: 0
             )
         )
     }
     
-    override func searchSuggest(keyword: String) async throws -> SearchSuggestResult {
+    func searchSuggest(keyword: String) async throws -> SearchSuggestResult {
         searchSuggestCallCount += 1
         lastSuggestKeyword = keyword
         
@@ -256,8 +258,11 @@ class MockSearchService {
         
         // Return default mock result
         return SearchSuggestResult(
+            status: 1,
+            error_code: 0,
             data: [
                 SuggestSection(
+                    RecordCount: 2,
                     LableName: "歌曲",
                     RecordDatas: [
                         SuggestItem(HintInfo: "测试歌曲1", HintInfo2: "测试歌手1"),
@@ -267,10 +272,23 @@ class MockSearchService {
             ]
         )
     }
+    
+    func getDefaultSearchKeyword() async throws -> DefaultSearchResult {
+        return DefaultSearchResult(
+            status: 1,
+            errcode: 0,
+            errmsg: nil,
+            data: DefaultSearchData(
+                timestamp: Int(Date().timeIntervalSince1970),
+                ads: [
+                    AdItem(title: "默认搜索关键词")
+                ],
+                fallback: nil
+            )
+        )
+    }
 }
 
-class MockPlayerService: PlayerService {
-    override init() {
-        super.init()
-    }
+class MockPlayerService {
+    init() {}
 }

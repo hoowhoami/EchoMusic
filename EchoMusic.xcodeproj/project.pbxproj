@@ -99,6 +99,7 @@
 		1EBC6D382E4E1FED00D7BCC1 /* EchoMusic.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EchoMusic.entitlements; sourceTree = "<group>"; };
 		1EBC6D3D2E4E1FED00D7BCC1 /* EchoMusicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoMusicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1EBC6D412E4E1FED00D7BCC1 /* EchoMusicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicTests.swift; sourceTree = "<group>"; };
+		1E833FC52E557A0F00E0FF5B /* CustomSearchViewSimpleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomSearchViewSimpleTests.swift; sourceTree = "<group>"; };
 		1EBC6D472E4E1FED00D7BCC1 /* EchoMusicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EchoMusicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1EBC6D4B2E4E1FED00D7BCC1 /* EchoMusicUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicUITests.swift; sourceTree = "<group>"; };
 		1EBC6D4D2E4E1FED00D7BCC1 /* EchoMusicUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EchoMusicUITestsLaunchTests.swift; sourceTree = "<group>"; };
@@ -209,6 +210,7 @@
 			isa = PBXGroup;
 			children = (
 				1EBC6D412E4E1FED00D7BCC1 /* EchoMusicTests.swift */,
+				1E833FC52E557A0F00E0FF5B /* CustomSearchViewSimpleTests.swift */,
 			);
 			path = EchoMusicTests;
 			sourceTree = "<group>";
@@ -481,6 +483,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1EBC6D422E4E1FED00D7BCC1 /* EchoMusicTests.swift in Sources */,
+				1E833FC62E557A0F00E0FF5B /* CustomSearchViewSimpleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
