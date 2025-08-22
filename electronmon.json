@@ -1,0 +1,6 @@
+{
+  "watch": ["electron"],
+  "ext": "js,ts,json",
+  "exec": "tsx {{path}}",
+  "ignore": ["node_modules", "dist"]
+}
