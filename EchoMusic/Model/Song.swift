@@ -130,37 +130,7 @@ struct SongURLResponse: Codable {
     }
 }
 
-struct TransParam: Codable {
-    let union_cover: String?
-    let language: String?
-    let qualitymap: QualityMap?
-    
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        
-        // 🎯 优雅简洁的解码方式
-        self.union_cover = c[safe: .union_cover]
-        self.language = c[safe: .language]
-        self.qualitymap = c[safe: .qualitymap]
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case union_cover, language, qualitymap
-    }
-}
-
-struct QualityMap: Codable {
-    let attr0: Int?
-    let attr1: Int?
-    
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        
-        // 🎯 优雅简洁的解码方式
-        self.attr0 = c[safe: .attr0]
-        self.attr1 = c[safe: .attr1]
-    }
-}
+// TransParam and QualityMap are now defined in Search.swift to avoid conflicts
 
 // These structs are now defined in Search.swift to avoid conflicts
 

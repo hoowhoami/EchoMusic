@@ -38,10 +38,297 @@ struct SearchSongResult: Codable {
         case error_msg
         case data
     }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        // Try to decode each field with safe access
+        self.status = try container.decodeIfPresent(Int.self, forKey: .status) ?? 0
+        self.error_code = try container.decodeIfPresent(Int.self, forKey: .error_code) ?? 0
+        self.error_msg = try container.decodeIfPresent(String.self, forKey: .error_msg)
+        self.data = try container.decodeIfPresent(SearchSongData.self, forKey: .data)
+    }
+}
+
+// MARK: - 搜索返回的歌曲模型（专门用于搜索API响应）
+struct SearchSong: Codable, Identifiable {
+    // 使用audioId作为唯一标识
+    var id: Int { return Audioid ?? 0 }
+    
+    // 基本信息字段
+    let Audioid: Int?
+    let FileHash: String?
+    let OriSongName: String?
+    let FileName: String?
+    let Duration: Int?
+    let AlbumID: String?
+    let AlbumName: String?
+    let MixSongID: Int?
+    
+    // 歌手信息
+    let SingerName: String?
+    let Singers: [SearchSinger]?
+    
+    // 图片信息
+    let Image: String?
+    
+    // 音质信息
+    let HQ: QualityInfo?
+    let SQ: QualityInfo?
+    let Res: QualityInfo?
+    
+    // 其他信息
+    let PayType: Int?
+    let AlbumPrivilege: Int?
+    let Bitrate: Int?
+    let ExtName: String?
+    let mvdata: [MvData]?
+    let Suffix: String?
+    let PublishDate: String?
+    let OwnerCount: Int?
+    let HeatLevel: Int?
+    let TagContent: String?
+    let TagDetails: [TagDetail]?
+    let Grp: [SearchSong]?
+    let trans_param: TransParam?
+    let recommend_type: Int?
+    
+    // 便利属性
+    var title: String? {
+        if let fileName = FileName {
+            // FileName格式通常是 "歌手 - 歌曲名"
+            let components = fileName.components(separatedBy: " - ")
+            if components.count >= 2 {
+                return components[1]
+            }
+            return fileName
+        }
+        return OriSongName
+    }
+    
+    var artist: String? {
+        return SingerName
+    }
+    
+    var album: String? {
+        return AlbumName
+    }
+    
+    var cover: String? {
+        return Image
+    }
+    
+    var hash: String? {
+        return FileHash
+    }
+    
+    var duration: Int? {
+        return Duration
+    }
+    
+    var albumId: String? {
+        return AlbumID
+    }
+    
+    var albumAudioId: Int? {
+        return Audioid
+    }
+    
+    var mixSongId: Int? {
+        return MixSongID
+    }
+    
+    var isVip: Bool? {
+        return PayType == 3
+    }
+    
+    var isSq: Bool? {
+        return SQ != nil
+    }
+    
+    var isHq: Bool? {
+        return HQ != nil
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case Audioid
+        case FileHash
+        case OriSongName
+        case FileName
+        case Duration
+        case AlbumID
+        case AlbumName
+        case MixSongID
+        case SingerName
+        case Singers
+        case Image
+        case HQ
+        case SQ
+        case Res
+        case PayType
+        case AlbumPrivilege
+        case Bitrate
+        case ExtName
+        case mvdata
+        case Suffix
+        case PublishDate
+        case OwnerCount
+        case HeatLevel
+        case TagContent
+        case TagDetails
+        case Grp
+        case trans_param
+        case recommend_type
+    }
+    
+    // 转换为Song对象
+    func toSong() -> Song {
+        return Song(
+            title: title ?? "未知歌曲",
+            artist: artist ?? "未知歌手",
+            album: album ?? "未知专辑",
+            cover: cover ?? "",
+            hash: hash,
+            duration: duration,
+            albumId: albumId,
+            albumAudioId: albumAudioId,
+            mixSongId: mixSongId,
+            addMixSongId: nil,
+            isVip: isVip ?? false,
+            isHq: isHq ?? false,
+            isSq: isSq ?? false
+        )
+    }
+}
+
+struct SearchSinger: Codable {
+    let name: String?
+    let ip_id: Int?
+    let id: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case name
+        case ip_id
+        case id
+    }
+}
+
+struct QualityInfo: Codable {
+    let FileSize: Int?
+    let Hash: String?
+    let Privilege: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case FileSize
+        case Hash
+        case Privilege
+    }
+}
+
+struct MvData: Codable {
+    let typ: Int?
+    let trk: String?
+    let hash: String?
+    let id: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case typ
+        case trk
+        case hash
+        case id
+    }
+}
+
+struct TagDetail: Codable {
+    let content: String?
+    let version: Int?
+    let type: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case content
+        case version
+        case type
+    }
+}
+
+struct TransParam: Codable {
+    let union_cover: String?
+    let language: String?
+    let classmap: [String: Int]?
+    let cpy_attr0: Int?
+    let musicpack_advance: Int?
+    let display: Int?
+    let display_rate: Int?
+    let qualitymap: QualityMap?
+    let ogg_128_hash: String?
+    let ogg_128_filesize: Int?
+    let ogg_320_hash: String?
+    let ogg_320_filesize: Int?
+    let cid: Int?
+    let ipmap: Int?
+    let hash_multitrack: String?
+    let pay_block_tpl: Int?
+    let cpy_grade: Int?
+    let cpy_level: Int?
+    let songname_suffix: String?
+    let hash_offset: HashOffset?
+    
+    enum CodingKeys: String, CodingKey {
+        case union_cover
+        case language
+        case classmap
+        case cpy_attr0
+        case musicpack_advance
+        case display
+        case display_rate
+        case qualitymap
+        case ogg_128_hash
+        case ogg_128_filesize
+        case ogg_320_hash
+        case ogg_320_filesize
+        case cid
+        case ipmap
+        case hash_multitrack
+        case pay_block_tpl
+        case cpy_grade
+        case cpy_level
+        case songname_suffix
+        case hash_offset
+    }
+}
+
+struct HashOffset: Codable {
+    let clip_hash: String?
+    let start_byte: Int?
+    let end_ms: Int?
+    let end_byte: Int?
+    let file_type: Int?
+    let start_ms: Int?
+    let offset_hash: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case clip_hash
+        case start_byte
+        case end_ms
+        case end_byte
+        case file_type
+        case start_ms
+        case offset_hash
+    }
+}
+
+struct QualityMap: Codable {
+    let attr0: Int?
+    let attr1: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case attr0
+        case attr1
+    }
 }
 
 struct SearchSongData: Codable {
-    var lists: [Song]?
+    var lists: [SearchSong]?
     let correctiontip: String?
     let pagesize: Int?
     let isshareresult: Int?

@@ -126,7 +126,8 @@ struct SearchResultsView: View {
     // MARK: - 搜索结果内容
     @ViewBuilder
     private func searchSongResultsContent(_ data: SearchSongData) -> some View {
-        searchResultsContent(data.lists, data.total, "单曲")
+        let songs = data.lists?.map { $0.toSong() }
+        songsSection(songs ?? [], total: data.total)
     }
     
     @ViewBuilder
@@ -151,10 +152,6 @@ struct SearchResultsView: View {
                 LazyVStack(spacing: 16) {
                     if let items = items, !items.isEmpty {
                         switch selectedTab {
-                        case .song:
-                            if let songs = items as? [Song] {
-                                songsSection(songs)
-                            }
                         case .artist:
                             if let artists = items as? [Artist] {
                                 artistsSection(artists)
@@ -167,6 +164,8 @@ struct SearchResultsView: View {
                             if let albums = items as? [Album] {
                                 albumsSection(albums)
                             }
+                        default:
+                            EmptyView()
                         }
                     } else {
                         emptyResultsView("没有找到相关\(type)")
@@ -205,7 +204,7 @@ struct SearchResultsView: View {
     }
     
     // MARK: - 单曲部分
-    private func songsSection(_ songs: [Song]) -> some View {
+    private func songsSection(_ songs: [Song], total: Int?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(songs, id: \.id) { song in
                 SongRowView(song: song) {

@@ -202,7 +202,7 @@ class SearchService: ObservableObject {
     /// 搜索单曲
     func searchSongs(keyword: String, page: Int = 1, pageSize: Int = 30) async throws -> [Song] {
         let result = try await searchSong(keyword: keyword, page: page, pageSize: pageSize)
-        return result.data?.lists ?? []
+        return result.data?.lists?.map { $0.toSong() } ?? []
     }
     
     /// 搜索专辑
