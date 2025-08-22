@@ -19,6 +19,10 @@ function createWindow() {
       contextIsolation: false,
     },
     show: false,
+    // remove the default titlebar
+    titleBarStyle: 'hidden',
+    // expose window controls in Windows/Linux
+    ...(process.platform !== 'darwin' ? { titleBarOverlay: true } : {}),
   });
 
   const startUrl = isDev

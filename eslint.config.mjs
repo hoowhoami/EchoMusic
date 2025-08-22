@@ -53,44 +53,27 @@ export default [
     },
   },
   {
-    files: ['**/*.vue'],
+    plugins: {
+      '@typescript-eslint': typescriptEslint,
+      vue,
+    },
     languageOptions: {
-      parser: pluginVue.parserTypescript,
-      parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-        ecmaFeatures: {
-          jsx: true,
-        },
-      },
       globals: {
         ...globals.browser,
         ...globals.node,
-        ...globals.es2021,
-        electron: 'readonly',
-        require: 'readonly',
-        module: 'readonly',
-        process: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        Buffer: 'readonly',
-        global: 'readonly',
-        console: 'readonly',
+        ...autoEslint.globals,
+      },
+
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+
+      parserOptions: {
+        parser: '@typescript-eslint/parser',
       },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-    },
     rules: {
-      ...tseslint.configs.recommended.rules,
+      '@typescript-eslint/no-explicit-any': 'off',
       'vue/multi-word-component-names': 'off',
-      '@typescript-eslint/no-explicit-any': 'warn',
-      '@typescript-eslint/no-non-null-assertion': 'warn',
-      '@typescript-eslint/no-require-imports': 'off',
-      'no-undef': 'off',
-      semi: ['error', 'always'],
-      quotes: ['error', 'single'],
-      'comma-dangle': ['error', 'always-multiline'],
     },
   },
 ];
