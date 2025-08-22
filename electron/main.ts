@@ -27,11 +27,11 @@ function createWindow() {
 
   console.log('Loading URL:', startUrl);
   mainWindow.loadURL(startUrl);
-  
+
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorDescription);
   });
-  
+
   mainWindow.webContents.on('did-frame-finish-load', () => {
     console.log('Page loaded successfully');
   });
