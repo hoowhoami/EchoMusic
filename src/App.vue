@@ -1,19 +1,16 @@
 <template>
-  <div id="app">
-    <ConfigProvider :locale="zhCN">
-      <App>
-        <router-view />
-      </App>
-    </ConfigProvider>
-  </div>
+  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme="naiveTheme">
+    <n-global-style />
+    <router-view />
+  </n-config-provider>
 </template>
 
 <script setup lang="ts">
-import { App, ConfigProvider } from 'ant-design-vue';
-import zhCN from 'ant-design-vue/es/locale/zh_CN';
-import dayjs from 'dayjs';
-import 'dayjs/locale/zh-cn';
-dayjs.locale('zh-cn');
+import { NConfigProvider, NGlobalStyle } from 'naive-ui';
+import { zhCN, dateZhCN } from 'naive-ui';
+import { useTheme } from '@/hooks';
+
+const { naiveTheme } = useTheme();
 </script>
 
 <style>

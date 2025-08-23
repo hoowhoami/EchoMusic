@@ -1,34 +1,38 @@
 <template>
-  <Layout class="layout overflow-hidden">
-    <!-- Sidebar -->
-    <LayoutSider v-model:collapsed="collapsed" :trigger="null" collapsible class="sidebar">
-      <div class="logo">
-        <span v-if="!collapsed">MixMusic</span>
-        <span v-else>MM</span>
-      </div>
-      <Sidebar :collapsed="collapsed" @toggle="toggleCollapse" />
-    </LayoutSider>
-
-    <Layout>
-      <!-- Header -->
-      <LayoutHeader class="header">
-        <Titlebar />
-      </LayoutHeader>
+  <NLayout class="layout overflow-hidden select-none">
+    <!-- Header -->
+    <NLayoutHeader class="header">
+      <Titlebar />
+    </NLayoutHeader>
+    <NLayout has-sider>
+      <!-- Sidebar -->
+      <NLayoutSider
+        v-model:collapsed="collapsed"
+        :native-scrollbar="false"
+        collapsible
+        class="sidebar"
+      >
+        <div class="logo">
+          <span v-if="!collapsed">MixMusic</span>
+          <span v-else>MM</span>
+        </div>
+        <Sidebar :collapsed="collapsed" @toggle="toggleCollapse" />
+      </NLayoutSider>
       <!-- Main Content -->
-      <LayoutContent class="content">
+      <NLayoutContent class="content" :native-scrollbar="false">
         <Main />
-      </LayoutContent>
-      <!-- Player -->
-      <LayoutFooter class="footer">
-        <Player />
-      </LayoutFooter>
-    </Layout>
-  </Layout>
+      </NLayoutContent>
+    </NLayout>
+    <!-- Footer -->
+    <NLayoutFooter class="footer">
+      <Player />
+    </NLayoutFooter>
+  </NLayout>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Layout, LayoutContent, LayoutHeader, LayoutSider, LayoutFooter } from 'ant-design-vue';
+import { NLayout, NLayoutContent, NLayoutHeader, NLayoutSider, NLayoutFooter } from 'naive-ui';
 import Sidebar from './Sidebar.vue';
 import Titlebar from './Titlebar.vue';
 import Main from './Main.vue';
@@ -47,12 +51,18 @@ const toggleCollapse = () => {
 }
 
 .header {
-  height: 40px;
+  height: 60px;
   padding: 0;
 }
 
 .sidebar {
   width: 200px;
+  padding: 0;
+}
+
+.content {
+  height: calc(100vh - 120px);
+  padding: 0;
 }
 
 .footer {

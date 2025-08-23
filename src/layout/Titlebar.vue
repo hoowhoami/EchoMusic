@@ -5,11 +5,15 @@
     </div>
 
     <div class="center no-drag">
-      <InputSearch
+      <NInput
         v-model:value="searchText"
         placeholder="搜索音乐、歌手、歌词、用户"
         style="width: 300px"
-      />
+      >
+        <template #prefix>
+          <search-outlined />
+        </template>
+      </NInput>
     </div>
 
     <div class="right no-drag">
@@ -40,15 +44,14 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { UserOutlined, SettingOutlined } from '@ant-design/icons-vue';
-import { InputSearch } from 'ant-design-vue';
+import { NInput } from 'naive-ui';
 
 const searchText = ref('');
 </script>
 
 <style scoped>
 .titlebar {
-  height: 40px;
+  height: 60px;
   display: flex;
   justify-content: space-between;
   align-items: center;

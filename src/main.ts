@@ -1,10 +1,9 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { createPersistedState } from 'pinia-plugin-persistedstate';
-import Antd from 'ant-design-vue';
+import naive from 'naive-ui';
 import App from './App.vue';
 import router from './router';
-import 'ant-design-vue/dist/reset.css';
 import './styles/index.css';
 
 const app = createApp(App);
@@ -13,6 +12,5 @@ pinia.use(createPersistedState());
 
 app.use(pinia);
 app.use(router);
-app.use(Antd);
-
+app.use(naive);
 app.mount('#app');

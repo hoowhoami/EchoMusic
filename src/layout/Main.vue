@@ -6,7 +6,7 @@
         <KeepAlive v-if="settingStore.keepAlive" :max="20" :exclude="['layout']">
           <component :is="Component" class="router-view" />
         </KeepAlive>
-        <component v-else :is="Component" class="router-view" />
+        <component :is="Component" v-else class="router-view" />
       </Transition>
     </RouterView>
   </div>
