@@ -1,22 +1,16 @@
 <template>
   <NLayout class="layout overflow-hidden select-none">
     <!-- Header -->
-    <NLayoutHeader class="header">
+    <NLayoutHeader class="header" bordered>
       <Titlebar />
     </NLayoutHeader>
     <NLayout has-sider>
       <!-- Sidebar -->
-      <NLayoutSider
-        v-model:collapsed="collapsed"
-        :native-scrollbar="false"
-        collapsible
-        class="sidebar"
-      >
+      <NLayoutSider :width="200" bordered :native-scrollbar="false" class="sidebar">
         <div class="logo">
-          <span v-if="!collapsed">MixMusic</span>
-          <span v-else>MM</span>
+          <span>MixMusic</span>
         </div>
-        <Sidebar :collapsed="collapsed" @toggle="toggleCollapse" />
+        <Sidebar />
       </NLayoutSider>
       <!-- Main Content -->
       <NLayoutContent class="content" :native-scrollbar="false">
@@ -24,25 +18,18 @@
       </NLayoutContent>
     </NLayout>
     <!-- Footer -->
-    <NLayoutFooter class="footer">
+    <NLayoutFooter class="footer" position="absolute" bordered>
       <Player />
     </NLayoutFooter>
   </NLayout>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
 import { NLayout, NLayoutContent, NLayoutHeader, NLayoutSider, NLayoutFooter } from 'naive-ui';
 import Sidebar from './Sidebar.vue';
 import Titlebar from './Titlebar.vue';
 import Main from './Main.vue';
 import Player from './Player.vue';
-
-const collapsed = ref(false);
-
-const toggleCollapse = () => {
-  collapsed.value = !collapsed.value;
-};
 </script>
 
 <style scoped>
@@ -51,8 +38,9 @@ const toggleCollapse = () => {
 }
 
 .header {
-  height: 60px;
+  height: 50px;
   padding: 0;
+  box-shadow: 0px 1px 4px rgba(0, 21, 41, 0.08);
 }
 
 .sidebar {
@@ -66,7 +54,7 @@ const toggleCollapse = () => {
 }
 
 .footer {
-  height: 60px;
+  height: 70px;
   padding: 0;
   box-shadow: 0 -1px 4px rgba(0, 21, 41, 0.08);
 }

@@ -1,60 +1,37 @@
 <template>
   <div class="titlebar drag">
-    <div class="left">
-      <div>前进/后退/刷新</div>
-    </div>
-
-    <div class="center no-drag">
-      <NInput
-        v-model:value="searchText"
-        placeholder="搜索音乐、歌手、歌词、用户"
-        style="width: 300px"
-      >
-        <template #prefix>
-          <search-outlined />
-        </template>
-      </NInput>
-    </div>
-
-    <div class="right no-drag">
-      <a-space size="large">
-        <a-tooltip title="设置">
-          <setting-outlined class="icon" />
-        </a-tooltip>
-
-        <a-dropdown>
-          <a-avatar class="avatar" size="small">
-            <template #icon>
-              <user-outlined />
-            </template>
-          </a-avatar>
-          <template #overlay>
-            <a-menu>
-              <a-menu-item key="profile"> 个人中心 </a-menu-item>
-              <a-menu-item key="settings"> 账号设置 </a-menu-item>
-              <a-menu-divider />
-              <a-menu-item key="logout"> 退出登录 </a-menu-item>
-            </a-menu>
+    <NFlex class="content" align="center">
+      <div class="no-drag nav">前进/后退/刷新</div>
+      <div class="no-drag">
+        <NInput
+          v-model:value="searchText"
+          placeholder="搜索音乐、歌手、歌词、用户"
+          style="width: 300px"
+        >
+          <template #prefix>
+            <search-outlined />
           </template>
-        </a-dropdown>
-      </a-space>
-    </div>
+        </NInput>
+      </div>
+      <div class="no-drag">xxx</div>
+    </NFlex>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { NInput } from 'naive-ui';
+import { NFlex, NInput } from 'naive-ui';
 
 const searchText = ref('');
 </script>
 
 <style scoped>
 .titlebar {
-  height: 60px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  height: 50px;
+}
+
+.content {
+  height: 50px;
 }
 
 .drag {
@@ -67,7 +44,7 @@ const searchText = ref('');
   -webkit-app-region: no-drag;
 }
 
-.center {
-  height: 32px;
+.nav {
+  margin-left: 200px;
 }
 </style>
