@@ -44,7 +44,7 @@ export function useTheme() {
     store,
     // 实际生效的模式（'light' 或 'dark'）
     effectiveMode,
-    // Ant Design 配置，用于传递给 ConfigProvider
+    // Naive UI 主题配置，用于传递给 ConfigProvider
     naiveTheme,
     // 切换到指定模式
     switchTheme,

@@ -7,9 +7,6 @@
     <NLayout has-sider>
       <!-- Sidebar -->
       <NLayoutSider :width="200" bordered :native-scrollbar="false" class="sidebar">
-        <div class="logo">
-          <span>MixMusic</span>
-        </div>
         <Sidebar />
       </NLayoutSider>
       <!-- Main Content -->

@@ -52,7 +52,9 @@
     "wait-on": "^8.0.4"
   },
   "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
     "@vueuse/core": "^13.7.0",
+    "lodash-es": "^4.17.21",
     "naive-ui": "^2.42.0",
     "pinia": "^3.0.3",
     "pinia-plugin-persistedstate": "^4.5.0",

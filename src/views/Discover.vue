@@ -1,10 +1,10 @@
 <template>
-  <div>Home</div>
+  <div>Discover</div>
 </template>
 
 <script setup lang="ts">
 defineOptions({
-  name: 'Home',
+  name: 'Discover',
 });
 </script>
 
