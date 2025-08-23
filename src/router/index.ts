@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import { useUserStore } from '@/store';
 import Layout from '@/layout/Layout.vue';
 import Home from '@/views/Home.vue';
 import Discover from '@/views/Discover.vue';
@@ -8,6 +9,7 @@ import History from '@/views/History.vue';
 import Cloud from '@/views/Cloud.vue';
 import Playlist from '@/views/Playlist.vue';
 import Album from '@/views/Album.vue';
+import Error from '@/views/Error.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -43,14 +45,17 @@ const router = createRouter({
 
 // 全局前置守卫：验证登录状态
 router.beforeEach((to, from, next) => {
-  const isLogin = !!localStorage.getItem('token');
-
-  // 未登录且需要登录的路由 → 跳转到登录页
-  if (to.meta.auth !== false && !isLogin) {
-    next(`/login?redirect=${to.fullPath}`);
-  } else {
-    next();
+  console.log('from:', from.fullPath, 'to:', to.fullPath);
+  if (to.meta.auth) {
+    const userStore = useUserStore();
+    if (userStore.isAuthenticated) {
+      next();
+    } else {
+      // 需要登陆
+      next(false);
+    }
   }
+  next();
 });
 
 export default router;
