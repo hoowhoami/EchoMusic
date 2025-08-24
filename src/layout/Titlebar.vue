@@ -43,7 +43,7 @@
         </NFlex>
       </div>
       <div class="no-drag flex justify-center">
-        <NAvatar round :size="25"> whoami </NAvatar>
+        <NAvatar round :size="25" @click="logout"> whoami </NAvatar>
       </div>
     </NFlex>
   </div>
@@ -59,10 +59,18 @@ import {
   Search,
 } from '@vicons/ionicons5';
 import { useRouter } from 'vue-router';
+import { useUserStore } from '@/store';
 
 const searchText = ref('');
 
 const router = useRouter();
+
+const userStore = useUserStore();
+
+const logout = () => {
+  console.log('logout');
+  userStore.clearUserInfo();
+};
 </script>
 
 <style scoped>
