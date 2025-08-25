@@ -15,13 +15,17 @@
         :width="280"
         bordered
         class="sidebar"
-        content-style="padding: 12px;"
+        content-style="padding: 12px; overflow: hidden;"
         :native-scrollbar="false"
       >
         <Sidebar />
       </NLayoutSider>
       <!-- Main Content -->
-      <NLayout class="content" :native-scrollbar="false" content-style="padding: 12px;">
+      <NLayout
+        class="content"
+        :native-scrollbar="false"
+        content-style="padding: 12px; overflow: hidden;"
+      >
         <Main />
       </NLayout>
     </NLayout>
