@@ -6,7 +6,8 @@ interface User {
   username?: string;
   nickname?: string;
   pic?: string;
-  status?: number;
+  // 扩展信息
+  extends?: any;
 }
 
 export const useUserStore = defineStore('user', {
@@ -17,11 +18,14 @@ export const useUserStore = defineStore('user', {
     username: undefined,
     nickname: undefined,
     pic: undefined,
-    status: undefined,
+    extends: undefined,
   }),
   getters: {
     isAuthenticated(state) {
       return !!state.token && !!state.userid;
+    },
+    hasExtends(state) {
+      return !!state.extends;
     },
   },
   actions: {

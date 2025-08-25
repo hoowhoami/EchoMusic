@@ -20,6 +20,7 @@
                   v-model:value="formValue.mobile"
                   placeholder="请输入手机号"
                   :maxlength="11"
+                  clearable
                 />
               </NFormItem>
               <NFormItem label="验证码" path="code">
@@ -30,7 +31,7 @@
                     @click="sendCaptcha"
                     :loading="captchaLoading || countdown > 0"
                   >
-                    {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
+                    {{ captchaSentButtonTitle }}
                   </NButton>
                 </NFlex>
               </NFormItem>
@@ -47,16 +48,12 @@
           </NTabPane>
           <NTabPane name="qrcode" tab="二维码登录" class="h-[280px]">
             <NFlex vertical align="center" :size="16">
-              <NText>{{ qrStatusText }}</NText>
-              <NQrCode v-if="qrcode" :value="qrcode" :size="120" :padding="0" color="#18a058" />
-              <div class="w-[120px] h-[120px] bg-gray-200 flex items-center justify-center" v-else>
-                <NSpin :show="!qrcode">
-                  <NText depth="3">加载中...</NText>
-                </NSpin>
-              </div>
-              <NButton v-if="qrStatus === 0" type="primary" @click="refreshQrCode">
-                刷新二维码
-              </NButton>
+              <NText class="mt-2">{{ qrStatusText }}</NText>
+              <NCard class="w-[140px] h-[140px] flex items-center justify-center">
+                <NQrCode v-if="qrcode" :value="qrcode" :size="120" :padding="0" class="mt-1" />
+                <NSpin v-else :show="!qrcode" class="w-[140px] h-[140px]" />
+              </NCard>
+              <NButton type="primary" text @click="refreshQrCode"> 刷新二维码 </NButton>
             </NFlex>
           </NTabPane>
         </NTabs>
@@ -86,11 +83,11 @@ import {
   FormInst,
   FormRules,
 } from 'naive-ui';
-import { ref, reactive, onUnmounted, computed } from 'vue';
+import { ref, reactive, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/store';
 
-import { captchaSent, loginCellphone, loginQrKey, loginQrCreate, loginQrCheck } from '@/api/user';
+import { captchaSent, loginCellphone, loginQrKey, loginQrCreate, loginQrCheck } from '@/api';
 import { useNaiveDiscreteApi } from '@/hooks';
 
 defineOptions({
@@ -116,24 +113,74 @@ const rules: FormRules = {
     { key: 'mobile', pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' },
   ],
   code: [
-    { key: 'code', required: true, message: '请输入验证码', trigger: 'blur' },
-    { key: 'code', len: 6, message: '验证码长度为6位', trigger: 'blur' },
+    {
+      key: 'code',
+      required: true,
+      message: '请输入验证码',
+      trigger: 'blur',
+      validator: (_, value: string[] | null) => {
+        if (value === null) return false;
+        return value.filter(Boolean).length >= 6;
+      },
+    },
   ],
 };
 
 const countdown = ref(0);
 const captchaTimer = ref();
 const captchaLoading = ref(false);
+const captchaSentButtonTitle = computed(() => {
+  if (captchaLoading.value) {
+    return '发送中';
+  }
+  if (countdown.value > 0) {
+    return `${countdown.value} s`;
+  }
+  return '获取验证码';
+});
 const phoneLoading = ref(false);
 
 const qrPollingTimer = ref();
 
 const handleLogin = () => {
   showModal.value = true;
+  // phone
+  activeTab.value = 'phone';
+  formValue.mobile = '';
+  formValue.code = [];
+  countdown.value = 0;
+  captchaLoading.value = false;
+  phoneLoading.value = false;
+  clearInterval(captchaTimer.value);
+  formRef.value?.restoreValidation();
+  // qrcode
+  captchaTimer.value = null;
+  qrStatus.value = -1;
+  qrcode.value = '';
+  clearInterval(qrPollingTimer.value);
+  qrPollingTimer.value = null;
+};
+
+watch(activeTab, () => {
   if (activeTab.value === 'qrcode') {
     initQrLogin();
+  } else {
+    qrStatus.value = -1;
+    qrcode.value = '';
+    clearInterval(qrPollingTimer.value);
+    qrPollingTimer.value = null;
   }
-};
+});
+
+watch(showModal, () => {
+  if (!showModal.value) {
+    activeTab.value = 'phone';
+    qrStatus.value = -1;
+    qrcode.value = '';
+    clearInterval(qrPollingTimer.value);
+    qrPollingTimer.value = null;
+  }
+});
 
 const sendCaptcha = () => {
   if (!formRef.value) return;
@@ -168,7 +215,7 @@ const sendCaptcha = () => {
   );
 };
 
-const handlePhoneLogin = async () => {
+const handlePhoneLogin = () => {
   if (!formRef.value) return;
 
   formRef.value.validate(errors => {
@@ -177,9 +224,7 @@ const handlePhoneLogin = async () => {
       const code = formValue.code.join('');
       loginCellphone(formValue.mobile, code)
         .then(response => {
-          userStore.setUserInfo(response.data);
-          message.success('登录成功');
-          showModal.value = false;
+          handleLoginSuccess(response);
         })
         .catch(() => {
           message.error('登录失败');
@@ -193,7 +238,7 @@ const handlePhoneLogin = async () => {
 
 // QR Code Login
 const qrcode = ref('');
-const qrStatus = ref(0);
+const qrStatus = ref(-1);
 const qrStatusText = computed(() => {
   switch (qrStatus.value) {
     case 0:
@@ -212,10 +257,10 @@ const qrStatusText = computed(() => {
 const initQrLogin = () => {
   loginQrKey()
     .then(keyResponse => {
-      const { qrcode: key } = keyResponse.data;
+      const { qrcode: key } = keyResponse;
       loginQrCreate(key)
         .then(qrResponse => {
-          qrcode.value = qrResponse.data.url;
+          qrcode.value = qrResponse.url;
           startQrPolling(key);
         })
         .catch(error => {
@@ -237,7 +282,7 @@ const startQrPolling = (key: string) => {
   qrPollingTimer.value = setInterval(async () => {
     loginQrCheck(key)
       .then(response => {
-        const { status } = response.data;
+        const { status } = response;
         switch (status) {
           case 0:
             qrStatus.value = 0;
@@ -252,10 +297,7 @@ const startQrPolling = (key: string) => {
           case 4:
             qrStatus.value = 4;
             clearInterval(qrPollingTimer.value);
-            userStore.setUserInfo(response.data);
-            message.success('登录成功');
-            showModal.value = false;
-            router.push('/');
+            handleLoginSuccess(response);
             break;
         }
       })
@@ -270,6 +312,21 @@ const refreshQrCode = () => {
   qrcode.value = '';
   qrStatus.value = 0;
   initQrLogin();
+};
+
+const handleLoginSuccess = async (data: any) => {
+  const { userid, token, username, nickname, pic } = data;
+  userStore.setUserInfo({
+    userid,
+    token,
+    username,
+    nickname,
+    pic,
+  });
+
+  message.success('登录成功');
+  showModal.value = false;
+  router.push('/');
 };
 
 onUnmounted(() => {

@@ -2,6 +2,13 @@ import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosE
 import { useNaiveDiscreteApi } from '@/hooks';
 import { useUserStore } from '@/store';
 
+interface ApiResult<T> {
+  status?: number;
+  error_code?: number;
+  code?: number;
+  data?: T;
+}
+
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL, // 从环境变量获取基础地址
@@ -38,8 +45,13 @@ request.interceptors.request.use(
 
 // 响应拦截器：处理响应数据、统一错误提示
 request.interceptors.response.use(
-  (response: AxiosResponse<any>) => {
-    return response.data;
+  (response: AxiosResponse<ApiResult<any>>) => {
+    const { status, error_code, code, data } = response.data;
+    if ((status === 1 && error_code === 0) || code === 200) {
+      return data;
+    }
+    // 业务错误不统一提示而是交给调用者处理
+    return Promise.reject(response.data);
   },
   (error: AxiosError) => {
     const { message } = useNaiveDiscreteApi();

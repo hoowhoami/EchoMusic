@@ -24,3 +24,22 @@ export function loginQrCheck(key: string) {
     key,
   });
 }
+
+export function refreshToken(userid: number, token: string) {
+  return api.get('/login/token', {
+    userid,
+    token,
+  });
+}
+
+export function dfid() {
+  return api.get('/register/dev');
+}
+
+export function userDetail() {
+  return api.get('/user/detail');
+}
+
+export function userVipDetail() {
+  return api.get('/user/vip/detail');
+}
