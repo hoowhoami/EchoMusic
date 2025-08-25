@@ -21,8 +21,9 @@ const router = createRouter({
       path: '/',
       name: 'Layout',
       component: Layout,
+      redirect: '/home',
       children: [
-        { path: '', name: 'Home', component: Home },
+        { path: '/home', name: 'Home', component: Home },
         { path: '/discover', name: 'Discover', component: Discover },
         { path: '/search', name: 'SearchResult', component: Search },
         { path: '/login', name: 'Login', component: Login },
@@ -75,7 +76,9 @@ router.beforeEach(async (to, from, next) => {
     return;
   }
 
-  await initUserExtends();
+  if (isAuthenticated) {
+    await initUserExtends();
+  }
   next();
 });
 

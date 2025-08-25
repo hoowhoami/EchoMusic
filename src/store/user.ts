@@ -25,7 +25,7 @@ export const useUserStore = defineStore('user', {
       return !!state.token && !!state.userid;
     },
     hasExtends(state) {
-      return !!state.extends;
+      return !!state.extends?.dfid && !!state.extends?.detail && !!state.extends?.vip;
     },
   },
   actions: {

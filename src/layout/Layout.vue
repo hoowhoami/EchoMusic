@@ -4,15 +4,15 @@
     <NLayoutHeader class="header" bordered>
       <Titlebar />
     </NLayoutHeader>
-    <NLayout has-sider>
+    <NLayout position="absolute" style="top: 50px; bottom: 70px" has-sider>
       <!-- Sidebar -->
-      <NLayoutSider :width="200" bordered :native-scrollbar="false" class="sidebar">
+      <NLayoutSider :width="280" bordered :native-scrollbar="false" class="sidebar">
         <Sidebar />
       </NLayoutSider>
       <!-- Main Content -->
-      <NLayoutContent class="content" :native-scrollbar="false">
+      <NLayout class="content" :native-scrollbar="false">
         <Main />
-      </NLayoutContent>
+      </NLayout>
     </NLayout>
     <!-- Footer -->
     <NLayoutFooter class="footer" position="absolute" bordered>
@@ -22,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { NLayout, NLayoutContent, NLayoutHeader, NLayoutSider, NLayoutFooter } from 'naive-ui';
+import { NLayout, NLayoutHeader, NLayoutSider, NLayoutFooter } from 'naive-ui';
 import Sidebar from './Sidebar.vue';
 import Titlebar from './Titlebar.vue';
 import Main from './Main.vue';
@@ -41,7 +41,8 @@ import Player from './Player.vue';
 }
 
 .sidebar {
-  width: 200px;
+  width: 280px;
+  height: calc(100vh - 120px);
   padding: 0;
 }
 

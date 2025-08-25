@@ -94,6 +94,6 @@ const logout = () => {
 }
 
 .nav {
-  margin-left: 200px;
+  margin-left: 280px;
 }
 </style>

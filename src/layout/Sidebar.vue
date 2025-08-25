@@ -1,134 +1,250 @@
 <template>
   <div class="sidebar">
-    <NMenu ref="menuRef" v-model:value="menuActiveKey" :options="menuOptions" />
+    <NMenu
+      ref="menuRef"
+      v-model:value="menuActiveKey"
+      :options="menuOptions"
+      :render-label="renderMenuLabel"
+      :default-expand-all="true"
+      @update:value="menuUpdate"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { MenuInst, MenuOption } from 'naive-ui';
-import { NMenu, NIcon } from 'naive-ui';
-import { Component, h, ref, watch } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import type { MenuGroupOption, MenuInst, MenuOption } from 'naive-ui';
+import type { Playlist } from '@/types';
+
+import { NMenu, NIcon, NText, NButton, NAvatar, NEllipsis } from 'naive-ui';
+import { Component, computed, h, onMounted, ref, watch } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import {
   HomeOutline,
   CompassOutline,
   TimeOutline,
   CloudOutline,
+  Add,
   AlbumsOutline,
   MusicalNotesOutline,
   ListOutline,
 } from '@vicons/ionicons5';
 
-import { findTreeNodeByField } from '@/utils';
+import { getPlaylist } from '@/api';
 
+import { useUserStore } from '@/store';
+
+const userStore = useUserStore();
 const route = useRoute();
+const router = useRouter();
 
 const menuRef = ref<MenuInst>();
+const menuActiveKey = ref<string | number>((route.name as string) || 'home');
 
-const menuActiveKey = ref('home');
+const renderIcon = (icon: Component, size: number = 18) => {
+  const style = {
+    transform: 'translateY(-1px)',
+  };
+  return () => h(NIcon, { size, style }, { default: () => h(icon) });
+};
+
+const playlists = ref<Playlist[]>([]);
+
+// 菜单内容
+const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
+  return [
+    {
+      key: 'home',
+      link: 'home',
+      label: '推荐',
+      icon: renderIcon(HomeOutline),
+    },
+    {
+      key: 'discover',
+      link: 'discover',
+      label: '发现',
+      icon: renderIcon(CompassOutline),
+    },
+    {
+      key: 'divider',
+      type: 'divider',
+    },
+    {
+      key: 'history',
+      link: 'history',
+      label: '最近',
+      icon: renderIcon(TimeOutline),
+    },
+    {
+      key: 'cloud',
+      link: 'cloud',
+      label: '云盘',
+      icon: renderIcon(CloudOutline),
+    },
+    {
+      key: 'divider-two',
+      type: 'divider',
+    },
+    // 创建的歌单
+    {
+      key: 'user-playlists',
+      icon: renderIcon(AlbumsOutline),
+      label: () =>
+        h('div', { class: 'flex items-center justify-between space-x-4' }, [
+          h(NText, { depth: 3 }, () => ['创建的歌单']),
+          h(NButton, {
+            text: true,
+            type: 'tertiary',
+            round: true,
+            strong: true,
+            secondary: true,
+            renderIcon: renderIcon(Add),
+            onclick: (event: Event) => {
+              event.stopPropagation();
+              openCreatePlaylist();
+            },
+          }),
+        ]),
+      children: [...createPlaylist.value],
+    },
+    // 收藏的歌单
+    {
+      key: 'liked-playlists',
+      icon: renderIcon(MusicalNotesOutline),
+      label: () =>
+        h(
+          'div',
+          { class: 'flex items-center justify-between' },
+          h(NText, { depth: 3 }, () => ['收藏的歌单']),
+        ),
+      children: [...likedPlaylist.value],
+    },
+  ];
+});
+
+// 生成歌单列表
+const renderPlaylist = (playlist: Playlist[], showCover: boolean = true) => {
+  if (!userStore.isAuthenticated) {
+    return [];
+  }
+  return playlist.map(playlist => ({
+    key: playlist.global_collection_id,
+    label: () =>
+      showCover
+        ? h('div', { class: 'flex items-center' }, [
+            h(NAvatar, {
+              src: playlist.cover,
+              fallbackSrc: '/images/album.jpg?assest',
+              lazy: true,
+            }),
+            h(NEllipsis, null, () => playlist.name),
+          ])
+        : h(NEllipsis, null, () => playlist.name),
+    icon: showCover ? undefined : renderIcon(ListOutline),
+  }));
+};
+
+// 创建的歌单
+const createPlaylist = computed<MenuOption[]>(() => {
+  const userid = userStore.userid;
+  const list = playlists.value.filter(
+    playlist => playlist.list_create_userid === userid || playlist.name === '我喜欢',
+  );
+  return renderPlaylist(list, false);
+});
+
+// 收藏的歌单
+const likedPlaylist = computed<MenuOption[]>(() => {
+  const userid = userStore.userid;
+  const list = playlists.value.filter(
+    playlist => playlist.list_create_userid !== userid && !playlist.authors,
+  );
+  return renderPlaylist(list);
+});
+
+// 渲染菜单路由
+const renderMenuLabel = (option: MenuOption) => {
+  // 路由链接
+  if (option.link) {
+    console.log(option);
+  }
+  if ('link' in option) {
+    return h(RouterLink, { to: { path: option.link as string } }, () => option.label as string);
+  }
+  return typeof option.label === 'function' ? option.label() : (option.label as string);
+};
+
+// 菜单项更改
+const menuUpdate = (key: string, item: MenuOption) => {
+  if (typeof key === 'number') {
+    router.push({
+      name: 'playlist',
+      query: { id: item.key },
+    });
+  } else {
+    switch (key) {
+      case 'like-songs':
+        router.push({
+          name: 'like-songs',
+        });
+        break;
+      default:
+        break;
+    }
+  }
+};
+
+// 选中菜单项
+const checkMenuItem = () => {
+  // 当前路由名称
+  const routerName = route?.name as string;
+  if (!routerName) {
+    return;
+  }
+  // 显示菜单
+  menuRef.value?.showOption(routerName);
+  // 高亮菜单
+  switch (routerName) {
+    case 'playlist': {
+      // 获取歌单 id
+      const playlistId = Number(route.query.id || 0);
+      // 是否处于用户歌单
+      const isUserPlaylist = playlists.value.some(
+        playlist => playlist?.global_collection_id === playlistId,
+      );
+      if (playlistId) {
+        menuActiveKey.value = isUserPlaylist ? Number(playlistId) : 'home';
+      }
+      menuRef.value?.showOption(playlistId);
+      break;
+    }
+    default:
+      menuActiveKey.value = routerName;
+      break;
+  }
+};
+
+const openCreatePlaylist = () => {};
 
 // 监听路由
 watch(
-  () => route.fullPath,
-  newValue => {
-    menuActiveKey.value = findTreeNodeByField(menuOptions, 'path', newValue)?.key || 'home';
-    menuRef.value?.showOption(menuActiveKey.value);
-  },
+  () => [route, playlists],
+  () => checkMenuItem(),
 );
 
-const renderIcon = (icon: Component, size: number = 18) => {
-  return () => h(NIcon, { size }, { default: () => h(icon) });
-};
-
-const renderLabel = (label: string, to: object) => {
-  return () => h(RouterLink, { to }, { default: () => label });
-};
-
-const menuOptions: MenuOption[] = [
-  {
-    label: '在线音乐',
-    key: 'online-music',
-    type: 'group',
-    children: [
-      {
-        label: renderLabel('推荐', {
-          path: '/',
-        }),
-        key: 'home',
-        icon: renderIcon(HomeOutline),
-      },
-      {
-        label: renderLabel('发现', {
-          path: '/discover',
-        }),
-        key: 'discover',
-        icon: renderIcon(CompassOutline),
-      },
-    ],
-  },
-  {
-    label: '我的音乐',
-    key: 'my-music',
-    type: 'group',
-    children: [
-      {
-        label: renderLabel('最近', {
-          path: '/history',
-        }),
-        key: 'history',
-        path: '/history',
-        icon: renderIcon(TimeOutline),
-      },
-      {
-        label: renderLabel('云盘', {
-          path: '/cloud',
-        }),
-        key: 'cloud',
-        path: '/cloud',
-        icon: renderIcon(CloudOutline),
-      },
-    ],
-  },
-  {
-    label: '歌单专辑',
-    key: 'playlist',
-    type: 'group',
-    children: [
-      {
-        label: renderLabel('自建歌单', {
-          name: 'Playlist',
-          path: '/playlist',
-          params: {
-            type: 'created',
-          },
-        }),
-        key: 'created-playlist',
-        path: '/playlist/created',
-        icon: renderIcon(ListOutline),
-      },
-      {
-        label: renderLabel('收藏歌单', {
-          name: 'Playlist',
-          path: '/playlist',
-          params: {
-            type: 'favorite',
-          },
-        }),
-        key: 'favorite-playlist',
-        path: '/playlist/favorite',
-        icon: renderIcon(MusicalNotesOutline),
-      },
-      {
-        label: renderLabel('收藏专辑', {
-          path: '/album',
-        }),
-        key: 'favorite-album',
-        path: '/album',
-        icon: renderIcon(AlbumsOutline),
-      },
-    ],
-  },
-];
+onMounted(() => {
+  // 获取歌单
+  if (userStore.isAuthenticated) {
+    getPlaylist().then(res => {
+      const sortedInfo = res.info.sort((a: Playlist, b: Playlist) => {
+        if (a.sort !== b.sort) {
+          return a.sort - b.sort;
+        }
+        return 0;
+      });
+      playlists.value = sortedInfo;
+    });
+  }
+});
 </script>
 
 <style scoped></style>
