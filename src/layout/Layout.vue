@@ -4,13 +4,24 @@
     <NLayoutHeader class="header" bordered>
       <Titlebar />
     </NLayoutHeader>
-    <NLayout position="absolute" style="top: 50px; bottom: 70px" has-sider>
+    <NLayout
+      position="absolute"
+      style="top: 50px; bottom: 70px"
+      has-sider
+      :native-scrollbar="false"
+    >
       <!-- Sidebar -->
-      <NLayoutSider :width="280" bordered :native-scrollbar="false" class="sidebar">
+      <NLayoutSider
+        :width="280"
+        bordered
+        class="sidebar"
+        content-style="padding: 12px;"
+        :native-scrollbar="false"
+      >
         <Sidebar />
       </NLayoutSider>
       <!-- Main Content -->
-      <NLayout class="content" :native-scrollbar="false">
+      <NLayout class="content" :native-scrollbar="false" content-style="padding: 12px;">
         <Main />
       </NLayout>
     </NLayout>
@@ -43,12 +54,10 @@ import Player from './Player.vue';
 .sidebar {
   width: 280px;
   height: calc(100vh - 120px);
-  padding: 0;
 }
 
 .content {
   height: calc(100vh - 120px);
-  padding: 0;
 }
 
 .footer {

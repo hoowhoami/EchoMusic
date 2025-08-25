@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar">
+  <div class="sidebar-content">
     <NMenu
       ref="menuRef"
       v-model:value="menuActiveKey"
@@ -30,15 +30,15 @@ import {
 } from '@vicons/ionicons5';
 
 import { getPlaylist } from '@/api';
-
 import { useUserStore } from '@/store';
+import { getCover } from '@/utils';
 
 const userStore = useUserStore();
 const route = useRoute();
 const router = useRouter();
 
 const menuRef = ref<MenuInst>();
-const menuActiveKey = ref<string | number>((route.name as string) || 'home');
+const menuActiveKey = ref<string>((route.name as string) || 'Home');
 
 const renderIcon = (icon: Component, size: number = 18) => {
   const style = {
@@ -53,13 +53,13 @@ const playlists = ref<Playlist[]>([]);
 const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
   return [
     {
-      key: 'home',
+      key: 'Home',
       link: 'home',
       label: '推荐',
       icon: renderIcon(HomeOutline),
     },
     {
-      key: 'discover',
+      key: 'Discover',
       link: 'discover',
       label: '发现',
       icon: renderIcon(CompassOutline),
@@ -69,13 +69,13 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
       type: 'divider',
     },
     {
-      key: 'history',
+      key: 'History',
       link: 'history',
       label: '最近',
       icon: renderIcon(TimeOutline),
     },
     {
-      key: 'cloud',
+      key: 'Cloud',
       link: 'cloud',
       label: '云盘',
       icon: renderIcon(CloudOutline),
@@ -89,14 +89,11 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
       key: 'user-playlists',
       icon: renderIcon(AlbumsOutline),
       label: () =>
-        h('div', { class: 'flex items-center justify-between space-x-4' }, [
+        h('div', { class: 'flex items-center justify-between' }, [
           h(NText, { depth: 3 }, () => ['创建的歌单']),
           h(NButton, {
+            class: 'mr-6',
             text: true,
-            type: 'tertiary',
-            round: true,
-            strong: true,
-            secondary: true,
             renderIcon: renderIcon(Add),
             onclick: (event: Event) => {
               event.stopPropagation();
@@ -122,7 +119,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
 });
 
 // 生成歌单列表
-const renderPlaylist = (playlist: Playlist[], showCover: boolean = true) => {
+const renderPlaylist = (playlist: Playlist[], showCover: boolean = true, custom: string = '') => {
   if (!userStore.isAuthenticated) {
     return [];
   }
@@ -132,14 +129,20 @@ const renderPlaylist = (playlist: Playlist[], showCover: boolean = true) => {
       showCover
         ? h('div', { class: 'flex items-center' }, [
             h(NAvatar, {
-              src: playlist.cover,
+              size: 26,
+              src: getCover(playlist.pic, 26),
               fallbackSrc: '/images/album.jpg?assest',
               lazy: true,
             }),
-            h(NEllipsis, null, () => playlist.name),
+            h(
+              NEllipsis,
+              { style: { 'margin-left': '10px', width: 'calc(100% - 36px)' } },
+              () => playlist.name,
+            ),
           ])
-        : h(NEllipsis, null, () => playlist.name),
+        : h(NEllipsis, { 'margin-left': '10px', width: 'calc(100% - 36px)' }, () => playlist.name),
     icon: showCover ? undefined : renderIcon(ListOutline),
+    custom,
   }));
 };
 
@@ -149,7 +152,7 @@ const createPlaylist = computed<MenuOption[]>(() => {
   const list = playlists.value.filter(
     playlist => playlist.list_create_userid === userid || playlist.name === '我喜欢',
   );
-  return renderPlaylist(list, false);
+  return renderPlaylist(list, false, 'create-playlist');
 });
 
 // 收藏的歌单
@@ -158,15 +161,12 @@ const likedPlaylist = computed<MenuOption[]>(() => {
   const list = playlists.value.filter(
     playlist => playlist.list_create_userid !== userid && !playlist.authors,
   );
-  return renderPlaylist(list);
+  return renderPlaylist(list, true, 'liked-playlist');
 });
 
 // 渲染菜单路由
 const renderMenuLabel = (option: MenuOption) => {
   // 路由链接
-  if (option.link) {
-    console.log(option);
-  }
   if ('link' in option) {
     return h(RouterLink, { to: { path: option.link as string } }, () => option.label as string);
   }
@@ -175,21 +175,11 @@ const renderMenuLabel = (option: MenuOption) => {
 
 // 菜单项更改
 const menuUpdate = (key: string, item: MenuOption) => {
-  if (typeof key === 'number') {
+  if (key && (item.custom === 'create-playlist' || item.custom === 'liked-playlist')) {
     router.push({
-      name: 'playlist',
-      query: { id: item.key },
+      name: 'Playlist',
+      query: { id: item.key, type: item.custom === 'create-playlist' ? 'create' : 'liked' },
     });
-  } else {
-    switch (key) {
-      case 'like-songs':
-        router.push({
-          name: 'like-songs',
-        });
-        break;
-      default:
-        break;
-    }
   }
 };
 
@@ -204,15 +194,15 @@ const checkMenuItem = () => {
   menuRef.value?.showOption(routerName);
   // 高亮菜单
   switch (routerName) {
-    case 'playlist': {
+    case 'Playlist': {
       // 获取歌单 id
-      const playlistId = Number(route.query.id || 0);
+      const playlistId = String(route.query.id || '');
       // 是否处于用户歌单
       const isUserPlaylist = playlists.value.some(
         playlist => playlist?.global_collection_id === playlistId,
       );
       if (playlistId) {
-        menuActiveKey.value = isUserPlaylist ? Number(playlistId) : 'home';
+        menuActiveKey.value = isUserPlaylist ? playlistId : 'Home';
       }
       menuRef.value?.showOption(playlistId);
       break;
@@ -227,7 +217,7 @@ const openCreatePlaylist = () => {};
 
 // 监听路由
 watch(
-  () => [route, playlists],
+  () => [route.fullPath, playlists],
   () => checkMenuItem(),
 );
 

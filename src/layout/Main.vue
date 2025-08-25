@@ -1,5 +1,5 @@
 <template>
-  <div class="main-content overflow-y-auto">
+  <div class="main-content">
     <!-- 路由页面 -->
     <RouterView v-slot="{ Component }">
       <Transition name="router-transition" mode="out-in">
@@ -10,7 +10,7 @@
       </Transition>
     </RouterView>
     <!-- 回到顶部 -->
-    <NBackTop />
+    <NBackTop :right="20" :bottom="90" />
   </div>
 </template>
 
@@ -23,6 +23,6 @@ const settingStore = useSettingStore();
 
 <style scoped>
 .main-content {
-  padding: 10px 24px;
+  width: 100%;
 }
 </style>
