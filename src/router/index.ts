@@ -45,31 +45,43 @@ router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore();
   const isAuthenticated = userStore.isAuthenticated;
 
-  if (to.name === 'Login') {
-    if (isAuthenticated) {
-      await initUserExtends();
-      const targetPath = from.fullPath && from.fullPath !== to.fullPath ? from.fullPath : '/';
-      next({ path: targetPath, replace: true });
-    } else {
-      next();
-    }
-    return;
+  // 显示加载动画
+  if (window.$globalLoading) {
+    window.$globalLoading.show('正在加载用户数据...');
   }
 
-  if (to.meta.auth) {
+  try {
+    if (to.name === 'Login') {
+      if (isAuthenticated) {
+        await initUserExtends();
+        const targetPath = from.fullPath && from.fullPath !== to.fullPath ? from.fullPath : '/';
+        next({ path: targetPath, replace: true });
+      } else {
+        next();
+      }
+      return;
+    }
+
+    if (to.meta.auth) {
+      if (isAuthenticated) {
+        await initUserExtends();
+        next();
+      } else {
+        next({ path: '/login', replace: true });
+      }
+      return;
+    }
+
     if (isAuthenticated) {
       await initUserExtends();
-      next();
-    } else {
-      next({ path: '/login', replace: true });
     }
-    return;
+    next();
+  } finally {
+    // 隐藏加载动画
+    if (window.$globalLoading) {
+      window.$globalLoading.hide();
+    }
   }
-
-  if (isAuthenticated) {
-    await initUserExtends();
-  }
-  next();
 });
 
 const initUserExtends = async () => {

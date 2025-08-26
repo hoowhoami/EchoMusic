@@ -215,24 +215,38 @@ const checkMenuItem = () => {
 
 const openCreatePlaylist = () => {};
 
+const getUserPlaylist = () => {
+  getPlaylist().then(res => {
+    const sortedInfo = res.info.sort((a: Playlist, b: Playlist) => {
+      if (a.sort !== b.sort) {
+        return a.sort - b.sort;
+      }
+      return 0;
+    });
+    playlists.value = sortedInfo;
+  });
+};
+
 // 监听路由
 watch(
   () => [route.fullPath, playlists],
   () => checkMenuItem(),
 );
 
+// 监听用户登录
+watch(
+  () => userStore.isAuthenticated,
+  () => {
+    if (userStore.isAuthenticated) {
+      getUserPlaylist();
+    }
+  },
+);
+
 onMounted(() => {
   // 获取歌单
   if (userStore.isAuthenticated) {
-    getPlaylist().then(res => {
-      const sortedInfo = res.info.sort((a: Playlist, b: Playlist) => {
-        if (a.sort !== b.sort) {
-          return a.sort - b.sort;
-        }
-        return 0;
-      });
-      playlists.value = sortedInfo;
-    });
+    getUserPlaylist();
   }
 });
 </script>
