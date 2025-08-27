@@ -46,8 +46,8 @@ router.beforeEach(async (to, from, next) => {
   const isAuthenticated = userStore.isAuthenticated;
 
   // 显示加载动画
-  if (window.$globalLoading) {
-    window.$globalLoading.show('正在加载用户数据...');
+  if (window.$loadingBar) {
+    window.$loadingBar.start();
   }
 
   try {
@@ -78,8 +78,8 @@ router.beforeEach(async (to, from, next) => {
     next();
   } finally {
     // 隐藏加载动画
-    if (window.$globalLoading) {
-      window.$globalLoading.hide();
+    if (window.$loadingBar) {
+      window.$loadingBar.finish();
     }
   }
 });

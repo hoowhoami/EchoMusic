@@ -15,8 +15,8 @@
 import type { MenuGroupOption, MenuInst, MenuOption } from 'naive-ui';
 import type { Playlist } from '@/types';
 
-import { NMenu, NIcon, NText, NButton, NAvatar, NEllipsis } from 'naive-ui';
-import { Component, computed, h, onMounted, ref, watch } from 'vue';
+import { NMenu, NText, NButton, NAvatar, NEllipsis } from 'naive-ui';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import {
   HomeOutline,
@@ -31,7 +31,7 @@ import {
 
 import { getPlaylist } from '@/api';
 import { useUserStore } from '@/store';
-import { getCover } from '@/utils';
+import { getCover, renderIcon } from '@/utils';
 
 const userStore = useUserStore();
 const route = useRoute();
@@ -39,13 +39,6 @@ const router = useRouter();
 
 const menuRef = ref<MenuInst>();
 const menuActiveKey = ref<string>((route.name as string) || 'Home');
-
-const renderIcon = (icon: Component, size: number = 18) => {
-  const style = {
-    transform: 'translateY(-1px)',
-  };
-  return () => h(NIcon, { size, style }, { default: () => h(icon) });
-};
 
 const playlists = ref<Playlist[]>([]);
 
