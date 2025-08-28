@@ -1,10 +1,10 @@
 <template>
-  <div>SongListMenu</div>
+  <div>SongList</div>
 </template>
 
 <script setup lang="ts">
 defineOptions({
-  name: 'SongListMenu',
+  name: 'SongList',
 });
 </script>
 

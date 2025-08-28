@@ -88,7 +88,6 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/store';
 
 import { captchaSent, loginCellphone, loginQrKey, loginQrCreate, loginQrCheck } from '@/api';
-import { useNaiveDiscreteApi } from '@/hooks';
 
 defineOptions({
   name: 'Login',
@@ -96,7 +95,6 @@ defineOptions({
 
 const router = useRouter();
 const userStore = useUserStore();
-const { message } = useNaiveDiscreteApi();
 
 const showModal = ref(false);
 const activeTab = ref('phone');
@@ -192,7 +190,7 @@ const sendCaptcha = () => {
         captchaSent(formValue.mobile)
           .then(() => {
             captchaLoading.value = false;
-            message.success('验证码已发送');
+            window.$message.success('验证码已发送');
             countdown.value = 60;
             captchaTimer.value = setInterval(() => {
               countdown.value--;
@@ -202,7 +200,7 @@ const sendCaptcha = () => {
             }, 1000);
           })
           .catch(() => {
-            message.error('验证码发送失败');
+            window.$message.error('验证码发送失败');
           })
           .finally(() => {
             captchaLoading.value = false;
@@ -227,7 +225,7 @@ const handlePhoneLogin = () => {
           handleLoginSuccess(response);
         })
         .catch(() => {
-          message.error('登录失败');
+          window.$message.error('登录失败');
         })
         .finally(() => {
           phoneLoading.value = false;
@@ -265,12 +263,12 @@ const initQrLogin = () => {
         })
         .catch(error => {
           console.error('生成二维码失败', error);
-          message.error('生成二维码失败');
+          window.$message.error('生成二维码失败');
         });
     })
     .catch(error => {
       console.error('获取二维码key失败', error);
-      message.error('获取二维码key失败');
+      window.$message.error('获取二维码key失败');
     });
 };
 
@@ -324,7 +322,7 @@ const handleLoginSuccess = async (data: any) => {
     pic,
   });
 
-  message.success('登录成功');
+  window.$message.success('登录成功');
   showModal.value = false;
   router.push('/');
 };

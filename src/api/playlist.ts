@@ -1,7 +1,9 @@
 import { api } from '@/utils/request';
 
 // 获取用户歌单
-export const getPlaylist = (page: number = 1, pagesize: number = 100) => {
+// page：页数
+// pagesize : 每页页数, 默认为 30
+export const getPlaylist = (page: number = 1, pagesize: number = 30) => {
   return api.get('/user/playlist', { page, pagesize });
 };
 
@@ -39,12 +41,15 @@ export const deletePlaylistTrack = (listid: string, fileids: string) => {
 };
 
 // 获取歌单详情
-// ids: global_collection_id 可以传多个，用逗号分隔
+// ids: 歌单中的 global_collection_id，可以传多个，用逗号分隔
 export const getPlaylistDetail = (ids: string) => {
   return api.get('/playlist/detail', { ids });
 };
 
-// id: global_collection_id
-export const getPlaylistTrackAll = (id: string, page: number = 1, pagesize: number = 300) => {
+// 获取歌单所有歌曲
+// id: 歌单中的 global_collection_id
+// page : 页数
+// pagesize : 每页页数, 默认为 30
+export const getPlaylistTrackAll = (id: string, page: number = 1, pagesize: number = 30) => {
   return api.get('/playlist/track/all', { id, page, pagesize });
 };

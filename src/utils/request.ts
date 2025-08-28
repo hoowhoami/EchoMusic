@@ -1,5 +1,4 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
-import { useNaiveDiscreteApi } from '@/hooks';
 import { useUserStore } from '@/store';
 
 interface ApiResult<T> {
@@ -37,8 +36,7 @@ request.interceptors.request.use(
   },
   (error: AxiosError) => {
     // 请求错误处理
-    const { message } = useNaiveDiscreteApi();
-    message.error('请求参数错误');
+    window.$message.error('请求参数错误');
     return Promise.reject(error);
   },
 );
@@ -54,32 +52,34 @@ request.interceptors.response.use(
     return Promise.reject(response.data);
   },
   (error: AxiosError) => {
-    const { message } = useNaiveDiscreteApi();
     // HTTP 状态码错误处理
     if (error.response) {
       const userStore = useUserStore();
       const status = error.response.status;
       switch (status) {
+        case 400:
+          window.$message.error('请求参数错误');
+          break;
         case 401:
           // 未授权：清除 Token 并跳转到登录页
           userStore.clearUserInfo();
-          message.error('登录已过期，请重新登录');
+          window.$message.error('登录已过期，请重新登录');
           break;
         case 403:
-          message.error('没有权限访问');
+          window.$message.error('没有权限访问');
           break;
         case 404:
-          message.error('接口不存在');
+          window.$message.error('接口不存在');
           break;
         case 500:
-          message.error('服务器内部错误');
+          window.$message.error('服务器内部错误');
           break;
         default:
-          message.error(`请求失败（${status}）`);
+          window.$message.error(`请求失败（${status}）`);
       }
     } else if (error.request) {
       // 无响应（如网络错误）
-      message.error('网络异常，请检查网络连接');
+      window.$message.error('网络异常，请检查网络连接');
     }
     return Promise.reject(error);
   },
