@@ -117,7 +117,10 @@ const renderPlaylist = (playlist: Playlist[], showCover: boolean = true, custom:
     return [];
   }
   return playlist.map(playlist => ({
-    key: playlist.global_collection_id,
+    key:
+      playlist.list_create_userid === userStore.userid
+        ? playlist.global_collection_id
+        : playlist.list_create_gid,
     label: () =>
       showCover
         ? h('div', { class: 'flex items-center' }, [

@@ -33,7 +33,7 @@ export const msToS = (milliseconds: number, decimalPlaces: number = 2): number =
  * @param {string} [format="YYYY-MM-DD"] - 可选的时间格式，默认格式为 "YYYY-MM-DD"。可传入任意 dayjs 支持的格式。
  * @returns {string} - 根据指定格式返回的日期字符串
  */
-export const formatTimestamp = (
+export const formatTimestampSimple = (
   timestamp: number | undefined,
   format: string = 'YYYY-MM-DD',
 ): string => {
@@ -46,6 +46,11 @@ export const formatTimestamp = (
     return date.format(format.replace('YYYY-', ''));
   }
   return date.format(format);
+};
+
+export const formatTimestamp = (timestamp: number, format: string = 'YYYY-MM-DD'): string => {
+  if (!timestamp) return '';
+  return dayjs(timestamp).format(format);
 };
 
 // 格式化评论时间戳

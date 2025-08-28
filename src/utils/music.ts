@@ -1,7 +1,7 @@
 import { Song } from '@/types';
 
 export const getCover = (coverUrl: string, size: number = 200) => {
-  if (!coverUrl) return './assets/images/ico.png';
+  if (!coverUrl) return 'https://imge.kugou.com/soft/collection/default.jpg';
   return coverUrl
     .replace('{size}', `${size}`)
     .replace('http://', 'https://')
