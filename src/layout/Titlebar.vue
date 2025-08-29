@@ -1,23 +1,41 @@
 <template>
   <div class="titlebar drag">
-    <NFlex class="content" align="center" justify="space-between">
+    <NFlex
+      class="content"
+      align="center"
+      justify="space-between"
+    >
       <div class="no-drag nav">
         <NFlex align="center">
-          <NButton ghost text :focusable="false" @click="router.go(-1)">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+            @click="router.go(-1)"
+          >
             <template #icon>
               <NIcon :size="25">
                 <ArrowBackCircleOutline />
               </NIcon>
             </template>
           </NButton>
-          <NButton ghost text :focusable="false" @click="router.go(1)">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+            @click="router.go(1)"
+          >
             <template #icon>
               <NIcon :size="25">
                 <ArrowForwardCircleOutline />
               </NIcon>
             </template>
           </NButton>
-          <NButton ghost text :focusable="false">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+          >
             <template #icon>
               <NIcon :size="25">
                 <RefreshCircleOutline />
@@ -31,6 +49,7 @@
                 placeholder="搜索音乐、专辑、歌手、歌词"
                 style="width: 300px"
                 size="small"
+                clearable
               >
                 <template #prefix>
                   <NIcon :size="20">
@@ -43,7 +62,16 @@
         </NFlex>
       </div>
       <div class="no-drag flex justify-center">
-        <NAvatar round :size="25" @click="logout"> whoami </NAvatar>
+        <NDropdown :options="menuOptions">
+          <NAvatar
+            round
+            :size="25"
+            :src="userStore.pic"
+            @click="logout"
+          >
+            {{ userStore.nickname }}
+          </NAvatar>  
+        </NDropdown>
       </div>
     </NFlex>
   </div>
@@ -51,7 +79,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { NAvatar, NButton, NFlex, NIcon, NInput, NPopselect } from 'naive-ui';
+import { NAvatar, NButton, NDropdown, NFlex, NIcon, NInput, NPopselect } from 'naive-ui';
 import {
   ArrowBackCircleOutline,
   ArrowForwardCircleOutline,
@@ -66,6 +94,13 @@ const searchText = ref('');
 const router = useRouter();
 
 const userStore = useUserStore();
+
+const menuOptions = ref([
+  {
+    label: '退出',
+    key: 'logout',
+  },
+]);
 
 const logout = () => {
   console.log('logout');

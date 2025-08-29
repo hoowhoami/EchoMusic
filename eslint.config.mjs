@@ -1,63 +1,96 @@
-import typescriptEslint from '@typescript-eslint/eslint-plugin';
-import { fileURLToPath } from 'node:url';
-import { FlatCompat } from '@eslint/eslintrc';
-import vue from 'eslint-plugin-vue';
-import js from '@eslint/js';
+import eslint from '@eslint/js';
+import pluginVue from 'eslint-plugin-vue';
+import tseslint from '@typescript-eslint/eslint-plugin';
+import typescriptParser from '@typescript-eslint/parser';
 import globals from 'globals';
-import path from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-  allConfig: js.configs.all,
-});
 
 export default [
   {
     ignores: ['dist/**', 'node_modules/**', 'electron/dist/**'],
   },
-  ...compat.extends(
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'plugin:vue/essential',
-  ),
+  eslint.configs.recommended,
+  ...pluginVue.configs['flat/essential'],
+  ...pluginVue.configs['flat/recommended'],
   {
-    plugins: {
-      '@typescript-eslint': typescriptEslint,
-      vue,
-    },
-
+    files: ['**/*.{js,jsx,cjs,mjs,ts,tsx,cts,mts}'],
     languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
       globals: {
         ...globals.browser,
         ...globals.node,
-      },
-
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-
-      parserOptions: {
-        parser: '@typescript-eslint/parser',
+        ...globals.es2021,
+        electron: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
+        global: 'readonly',
+        console: 'readonly',
       },
     },
-
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
+      ...tseslint.configs.recommended.rules,
       'vue/multi-word-component-names': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-non-null-assertion': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-undef': 'off',
       semi: ['error', 'always'],
       quotes: ['error', 'single'],
       'comma-dangle': ['error', 'always-multiline'],
     },
   },
   {
-    files: ['**/.eslintrc.{js,cjs}'],
-
+    files: ['**/*.vue'],
     languageOptions: {
-      globals: { ...globals.node },
-      ecmaVersion: 5,
-      sourceType: 'commonjs',
+      parser: pluginVue.parserTypescript,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.es2021,
+        electron: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        Buffer: 'readonly',
+        global: 'readonly',
+        console: 'readonly',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
+    rules: {
+      ...tseslint.configs.recommended.rules,
+      'vue/multi-word-component-names': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-non-null-assertion': 'warn',
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-undef': 'off',
+      semi: ['error', 'always'],
+      quotes: ['error', 'single'],
+      'comma-dangle': ['error', 'always-multiline'],
     },
   },
 ];
