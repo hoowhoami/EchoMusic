@@ -57,14 +57,21 @@
         </NFlex>
       </div>
       <div class="no-drag flex justify-center">
-        <NDropdown :options="menuOptions">
-          <NAvatar
-            round
-            :size="25"
-            :src="userStore.pic"
-            @click="logout">
-            {{ userStore.nickname || '未登录' }}
-          </NAvatar>  
+        <NDropdown trigger="click"
+                   size="small"
+                   :options="menuOptions"
+                   @select="handleSelect">
+          <NAvatar v-if="userStore.isAuthenticated"
+                   class="cursor-pointer"
+                   round
+                   :size="25"
+                   :src="userStore.pic"/>
+          <NAvatar v-else
+                   class="cursor-pointer"
+                   round
+                   :size="25">
+            未登录
+          </NAvatar>
         </NDropdown>
       </div>
     </NFlex>
@@ -72,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { NAvatar, NButton, NDropdown, NFlex, NIcon, NInput, NPopselect } from 'naive-ui';
 import {
   ArrowBackCircleOutline,
@@ -89,16 +96,68 @@ const router = useRouter();
 
 const userStore = useUserStore();
 
-const menuOptions = ref([
-  {
-    label: '退出',
-    key: 'logout',
-  },
-]);
+const menuOptions = computed(() => {
+  if (userStore.isAuthenticated) {
+    return [
+      {
+        label: '个人中心',
+        key: 'profile',
+      },
+      {
+        label: '设置',
+        key: 'setting',
+      },
+      {
+        type: 'divider',
+        key: 'd1',
+      },
+      {
+        label: '退出',
+        key: 'logout',
+      },
+    ];
+  }
+  return [
+    {
+        label: '设置',
+        key: 'setting',
+    },
+    {
+        type: 'divider',
+        key: 'd1',
+    },
+    {
+      label: '登录',
+      key: 'login',
+    },
+  ];
+});
+
+const handleSelect = (key: string) => {
+  if (key === 'login') {
+    router.push('/login');
+  }
+  if (key === 'profile') {
+    router.push('/profile');
+  }
+  if (key === 'setting') {
+    router.push('/setting');
+  }
+  if (key === 'logout') {
+    logout();
+  }
+};
 
 const logout = () => {
-  console.log('logout');
-  userStore.clearUserInfo();
+  window.$dialog.warning({
+      title: '退出登录',
+      content: '确定要退出登录吗？',
+      positiveText: '确定',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        userStore.clearUserInfo();
+      },
+  });
 };
 </script>
 
