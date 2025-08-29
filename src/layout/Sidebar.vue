@@ -26,7 +26,8 @@ import {
   Add,
   ListOutline,
 } from '@vicons/ionicons5';
-import { FavoriteBorderFilled, PlaylistPlayFilled } from '@vicons/material';
+import { FavoriteBorderFilled } from '@vicons/material';
+import { Playlist as PlaylistIcon } from '@vicons/tabler';
 
 import { getPlaylist } from '@/api';
 import { useUserStore } from '@/store';
@@ -79,7 +80,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
     // 创建的歌单
     {
       key: 'user-playlists',
-      icon: renderIcon(PlaylistPlayFilled),
+      icon: renderIcon(PlaylistIcon),
       label: () =>
         h('div', { class: 'flex items-center justify-between' }, [
           h(NText, { depth: 3 }, () => ['创建的歌单']),
@@ -126,7 +127,7 @@ const renderPlaylist = (playlist: Playlist[], showCover: boolean = true, custom:
             h(NAvatar, {
               size: 26,
               src: getCover(playlist.pic, 26),
-              fallbackSrc: '/images/album.jpg?assest',
+              fallbackSrc: getCover(playlist.pic, 26),
               lazy: true,
             }),
             h(
