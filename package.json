@@ -9,9 +9,18 @@
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "electron": "cross-env NODE_ENV=development electronmon .",
-    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && npm run electron\"",
-    "electron-build": "npm run build && electron-builder",
-    "dist": "npm run build && electron-builder --publish=never",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && npm run electron\"",
+    "electron:build": "npm run build && electron:builder",
+    "dist": "npm run build && electron:builder --publish=never",
+    "install:all": "npm install && cd server && pnpm install",
+    "install:server": "cd server && pnpm install",
+    "server:dev": "cd server && pnpm run dev",
+    "server:start": "cd server && pnpm start",
+    "server:build": "cd server && pnpm run pkgjs",
+    "server:pkg": "cd server && pnpm run pkgmacos",
+    "dev:all": "concurrently \"npm run server:dev\" \"npm run dev\" \"wait-on http://localhost:3000 http://localhost:10086 && npm run electron\"",
+    "build:all": "npm run build && npm run server:build",
+    "dist:all": "npm run build:all && electron:builder --publish=never",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
   },
@@ -73,7 +82,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "server/bin/**/*"
     ],
     "mac": {
       "category": "public.app-category.music",

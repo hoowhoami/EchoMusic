@@ -3,12 +3,46 @@ const require = createRequire(import.meta.url);
 const { app, BrowserWindow } = require('electron');
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn, ChildProcess } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDev = process.env.NODE_ENV !== 'production';
 
+let serverProcess: ChildProcess | null = null;
+
 let mainWindow: any;
+
+// 启动服务器
+function startServer() {
+  if (isDev) {
+    // 开发环境 - 假设服务器已经在外部启动
+    console.log('开发环境：请确保服务器已在 http://localhost:10086 启动');
+    return;
+  }
+
+  // 生产环境 - 启动打包后的服务器
+  try {
+    const serverPath = path.join(__dirname, '../server/bin/api_js/app.js');
+    console.log('启动服务器:', serverPath);
+    
+    serverProcess = spawn('node', [serverPath], {
+      stdio: 'inherit',
+      env: { ...process.env, PORT: '10086', HOST: 'localhost' },
+    });
+
+    serverProcess.on('error', (err) => {
+      console.error('服务器启动失败:', err);
+    });
+
+    serverProcess.on('exit', (code) => {
+      console.log(`服务器进程退出，代码: ${code}`);
+      serverProcess = null;
+    });
+  } catch (error) {
+    console.error('启动服务器时出错:', error);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -53,9 +87,25 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  // 先启动服务器
+  if (!isDev) {
+    console.log('启动API服务器...');
+    startServer();
+    // 等待服务器启动
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
+  // 关闭服务器进程
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
+  }
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -64,5 +114,13 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+
+app.on('before-quit', () => {
+  // 确保服务器进程被关闭
+  if (serverProcess) {
+    serverProcess.kill();
+    serverProcess = null;
   }
 });
