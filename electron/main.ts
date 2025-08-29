@@ -28,7 +28,7 @@ function startServer() {
     
     serverProcess = spawn('node', [serverPath], {
       stdio: 'inherit',
-      env: { ...process.env, PORT: '10086', HOST: 'localhost' },
+      env: { ...process.env, PORT: '10086', HOST: '0.0.0.0' },
     });
 
     serverProcess.on('error', (err) => {
