@@ -2,7 +2,15 @@
 <template>
   <div class="playlist">
     <div class="info">
-      <div class="flex space-x-4">
+      <div v-if="!playlistInfo" class="flex space-x-4">
+        <div class="rounded-lg w-[200px] h-[200px]">
+          <NSkeleton class="rounded-lg w-[200px] h-[200px]" />
+        </div>
+        <div class="w-full flex flex-col justify-between space-y-2">
+          <NSkeleton class="h-[30px] rounded-lg" v-for="i in 5" :key="i" />
+        </div>
+      </div>
+      <div v-else class="flex space-x-4">
         <NImage
           class="rounded-lg"
           width="200"
@@ -62,7 +70,7 @@
 <script setup lang="ts">
 import { getPlaylistDetail } from '@/api';
 import { formatTimestamp, getCover } from '@/utils';
-import { NAvatar, NEllipsis, NH2, NIcon, NImage, NText } from 'naive-ui';
+import { NAvatar, NEllipsis, NH2, NIcon, NImage, NSkeleton, NText } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
