@@ -6,8 +6,7 @@
       :options="menuOptions"
       :render-label="renderMenuLabel"
       :default-expand-all="true"
-      @update:value="menuUpdate"
-    />
+      @update:value="menuUpdate"/>
   </div>
 </template>
 

@@ -16,8 +16,7 @@
           width="200"
           height="200"
           :src="getCover(playlistInfo?.pic, 200)"
-          :fallback-src="getCover(playlistInfo?.pic, 200)"
-        />
+          :fallback-src="getCover(playlistInfo?.pic, 200)"/>
         <div class="detail flex flex-col">
           <NH2>{{ playlistInfo?.name }}</NH2>
           <div class="flex flex-col space-y-4">
@@ -26,13 +25,15 @@
                 round
                 size="small"
                 :src="getCover(playlistInfo?.create_user_pic, 50)"
-                :fallback-src="getCover(playlistInfo?.create_user_pic, 50)"
-              />
+                :fallback-src="getCover(playlistInfo?.create_user_pic, 50)"/>
               <div class="name">{{ playlistInfo?.list_create_username }}</div>
               <div class="time">{{ formatTimestamp(playlistInfo?.create_time * 1000) }} 创建</div>
             </div>
             <div v-if="playlistTags" class="tags flex items-center space-x-2">
-              <NTag v-for="tag in playlistTags" :key="tag" size="small" round>
+              <NTag v-for="tag in playlistTags"
+                    :key="tag"
+                    size="small"
+                    round>
                 {{ tag }}
               </NTag>
             </div>

@@ -3,16 +3,14 @@
     <NFlex
       class="content"
       align="center"
-      justify="space-between"
-    >
+      justify="space-between">
       <div class="no-drag nav">
         <NFlex align="center">
           <NButton
             ghost
             text
             :focusable="false"
-            @click="router.go(-1)"
-          >
+            @click="router.go(-1)">
             <template #icon>
               <NIcon :size="25">
                 <ArrowBackCircleOutline />
@@ -23,8 +21,7 @@
             ghost
             text
             :focusable="false"
-            @click="router.go(1)"
-          >
+            @click="router.go(1)">
             <template #icon>
               <NIcon :size="25">
                 <ArrowForwardCircleOutline />
@@ -34,8 +31,7 @@
           <NButton
             ghost
             text
-            :focusable="false"
-          >
+            :focusable="false">
             <template #icon>
               <NIcon :size="25">
                 <RefreshCircleOutline />
@@ -49,8 +45,7 @@
                 placeholder="搜索音乐、专辑、歌手、歌词"
                 style="width: 300px"
                 size="small"
-                clearable
-              >
+                clearable>
                 <template #prefix>
                   <NIcon :size="20">
                     <Search />
@@ -67,9 +62,8 @@
             round
             :size="25"
             :src="userStore.pic"
-            @click="logout"
-          >
-            {{ userStore.nickname }}
+            @click="logout">
+            {{ userStore.nickname || '未登录' }}
           </NAvatar>  
         </NDropdown>
       </div>
