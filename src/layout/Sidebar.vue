@@ -24,10 +24,9 @@ import {
   TimeOutline,
   CloudOutline,
   Add,
-  AlbumsOutline,
-  MusicalNotesOutline,
   ListOutline,
 } from '@vicons/ionicons5';
+import { FavoriteBorderFilled, PlaylistPlayFilled } from '@vicons/material';
 
 import { getPlaylist } from '@/api';
 import { useUserStore } from '@/store';
@@ -80,7 +79,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
     // 创建的歌单
     {
       key: 'user-playlists',
-      icon: renderIcon(AlbumsOutline),
+      icon: renderIcon(PlaylistPlayFilled),
       label: () =>
         h('div', { class: 'flex items-center justify-between' }, [
           h(NText, { depth: 3 }, () => ['创建的歌单']),
@@ -99,7 +98,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
     // 收藏的歌单
     {
       key: 'liked-playlists',
-      icon: renderIcon(MusicalNotesOutline),
+      icon: renderIcon(FavoriteBorderFilled),
       label: () =>
         h(
           'div',
