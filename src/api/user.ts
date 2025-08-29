@@ -1,45 +1,45 @@
 import { api } from '@/utils/request';
 
-export function captchaSent(mobile: string) {
+export const captchaSent = (mobile: string) => {
   return api.get('/captcha/sent', { mobile });
-}
+};
 
-export function loginCellphone(mobile: string, code: string) {
+export const loginCellphone = (mobile: string, code: string) => {
   return api.get('/login/cellphone', { mobile, code });
-}
+};
 
-export function loginQrKey() {
+export const loginQrKey = () => {
   return api.get('/login/qr/key');
-}
+};
 
-export function loginQrCreate(key: string, qrimg: boolean = true) {
+export const loginQrCreate = (key: string, qrimg: boolean = true) => {
   return api.get('/login/qr/create', {
     key,
     qrimg,
   });
-}
+};
 
-export function loginQrCheck(key: string) {
+export const loginQrCheck = (key: string) => {
   return api.get('/login/qr/check', {
     key,
   });
-}
+};
 
-export function refreshToken(userid: number, token: string) {
+export const refreshToken = (userid: number, token: string) => {
   return api.get('/login/token', {
     userid,
     token,
   });
-}
+};
 
-export function dfid() {
+export const dfid = () => {
   return api.get('/register/dev');
-}
+};
 
-export function userDetail() {
+export const userDetail = () => {
   return api.get('/user/detail');
-}
+};
 
-export function userVipDetail() {
+export const userVipDetail = () => {
   return api.get('/user/vip/detail');
-}
+};

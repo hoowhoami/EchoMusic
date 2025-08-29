@@ -50,8 +50,7 @@ export default [
     rules: {
       'vue/multi-word-component-names': 'off',
       'vue/html-indent': ['error', 2],
-      'vue/html-closing-bracket-newline': ['error', { 'multiline': 'never' }],
-      'vue/max-attributes-per-line': ['error', { 'singleline': 3 }],
+      'vue/max-attributes-per-line': ['error', { singleline: 5 }],
       'vue/no-unused-vars': 'error',
       'vue/require-v-for-key': 'error',
       'vue/valid-v-model': 'error',
