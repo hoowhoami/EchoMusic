@@ -1,6 +1,6 @@
 <!-- 歌单列表 -->
 <template>
-  <div class="playlist">
+  <div class="playlist flex flex-col space-y-2">
     <div class="info">
       <div v-if="!playlistInfo" class="flex space-x-4">
         <div class="rounded-lg w-[200px] h-[200px]">
@@ -15,6 +15,7 @@
           class="rounded-lg"
           width="200"
           height="200"
+          :preview-disabled="true"
           :src="getCover(playlistInfo?.pic, 200)"
           :fallback-src="getCover(playlistInfo?.pic, 200)"/>
         <div class="detail flex flex-col">
@@ -62,8 +63,11 @@
         </div>
       </div>
     </div>
+    <div class="toolbar">
+      <div class="play">播放全部</div>
+    </div>
     <div class="list">
-      {{ playlistInfo }}
+      <SongList :playlist-id="playlistId" />
     </div>
   </div>
 </template>
@@ -76,6 +80,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
 import { ArrowsSort } from '@vicons/tabler';
+import SongList from '@/components/List/SongList.vue';
 
 defineOptions({
   name: 'Playlist',
@@ -87,6 +92,7 @@ const playlistId = ref('');
 const playlistInfo = ref();
 
 const getPlaylistInfo = async () => {
+  if (!playlistId.value) return;
   const res = await getPlaylistDetail(playlistId.value);
   playlistInfo.value = res?.[0];
 };
@@ -104,14 +110,13 @@ const playlistIntro = computed(() => {
 });
 
 onMounted(() => {
-  console.log('Playlist');
   getPlaylistInfo();
 });
 
 watch(
   () => route.query.id,
   newValue => {
-    console.log(newValue);
+    if (!newValue) return;
     playlistId.value = newValue as string;
     getPlaylistInfo();
   },

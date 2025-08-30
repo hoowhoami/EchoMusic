@@ -154,18 +154,5 @@ export type Song = {
   }>;
 };
 
-// 排序选项
-export const sortOptions = {
-  default: { name: '默认排序', show: 'all', icon: 'Sort' },
-  titleAZ: { name: '标题升序（ A - Z ）', show: 'all', icon: 'SortAZ' },
-  titleZA: { name: '标题降序（ Z - A ）', show: 'all', icon: 'SortZA' },
-  arAZ: { name: '歌手升序（ A - Z ）', show: 'song', icon: 'SortAZ' },
-  arZA: { name: '歌手降序（ Z - A ）', show: 'song', icon: 'SortZA' },
-  timeUp: { name: '时长升序', show: 'all', icon: 'SortClockUp' },
-  timeDown: { name: '时长降序', show: 'all', icon: 'SortClockDown' },
-  dateUp: { name: '日期升序', show: 'radio', icon: 'SortDateUp' },
-  dateDown: { name: '日期降序', show: 'radio', icon: 'SortDateDown' },
-} as const;
-
-// sort
-export type Sort = keyof typeof sortOptions;
+// PlayMode
+export type PlayMode = 'repeat' | 'repeat-once' | 'shuffle';

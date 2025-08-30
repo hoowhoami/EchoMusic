@@ -7,3 +7,6 @@ export const renderIcon = (icon: Component, size: number = 18) => {
   };
   return () => h(NIcon, { size, style }, { default: () => h(icon) });
 };
+
+// 环境判断
+export const isDev = import.meta.env.MODE === 'development' || import.meta.env.DEV;

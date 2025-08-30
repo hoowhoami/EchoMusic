@@ -30,6 +30,7 @@
   "description": "",
   "devDependencies": {
     "@types/electron": "^1.4.38",
+    "@types/howler": "^2.2.12",
     "@types/node": "^24.3.0",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
@@ -68,6 +69,7 @@
     "@vicons/tabler": "^0.13.0",
     "@vueuse/core": "^13.7.0",
     "dayjs": "^1.11.13",
+    "howler": "^2.2.4",
     "lodash-es": "^4.17.21",
     "naive-ui": "^2.42.0",
     "pinia": "^3.0.3",

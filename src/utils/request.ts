@@ -45,12 +45,15 @@ request.interceptors.request.use(
 // 响应拦截器：处理响应数据、统一错误提示
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResult<any>>) => {
-    const { status, error_code, errcode, code, data } = response.data;
-    if ((status === 1 && (error_code === 0 || errcode === 0)) || code === 200) {
-      return data;
+    if ('error_code' in response.data || 'errcode' in response.data || 'code' in response.data) {
+      const { status, error_code, errcode, code, data } = response.data;
+      if ((status === 1 && (error_code === 0 || errcode === 0)) || code === 200) {
+        return data;
+      }
+      // 业务错误不统一提示而是交给调用者处理
+      return Promise.reject(response.data);
     }
-    // 业务错误不统一提示而是交给调用者处理
-    return Promise.reject(response.data);
+    return response.data;
   },
   (error: AxiosError) => {
     // HTTP 状态码错误处理

@@ -3,6 +3,10 @@ import { defineStore } from 'pinia';
 interface Setting {
   theme: 'light' | 'dark' | 'auto';
   keepAlive: boolean;
+  unblock: boolean;
+  volumeFade: boolean;
+  volumeFadeTime: number;
+  showPlaylistCount: boolean;
 }
 
 export const useSettingStore = defineStore('setting', {
@@ -10,6 +14,10 @@ export const useSettingStore = defineStore('setting', {
   state: (): Setting => ({
     theme: 'light',
     keepAlive: true,
+    unblock: false,
+    volumeFade: false,
+    volumeFadeTime: 1000,
+    showPlaylistCount: true,
   }),
   getters: {
     getTheme: state => state.theme,
