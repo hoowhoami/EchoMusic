@@ -26,6 +26,7 @@
 <script setup lang="ts">
 import type { Song } from '@/types';
 import { getCover } from '@/utils';
+import { isArray } from 'lodash-es';
 import { NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';
 
@@ -50,7 +51,7 @@ const name = computed(() => {
 });
 
 const singer = computed(() => {
-    return props.song.singerinfo?.map(item => item.name).join(' / ');
+    return isArray(props.song.singerinfo) ? props.song.singerinfo?.map(item => item.name).join(' / ') : props.song.singerinfo || '未知艺术家';
 });
 
 </script>
