@@ -1,5 +1,8 @@
 <template>
-  <div class="song-card flex items-center space-x-2 cursor-pointer" @dblclick.stop>
+  <div
+    class="song-card flex items-center space-x-2 cursor-pointer"
+    @dblclick.stop
+  >
     <NImage
       v-if="showCover || true"
       class="border rounded-lg"
@@ -14,7 +17,10 @@
           {{ name }}
         </div>
       </NEllipsis>
-      <NEllipsis class=" text-gray-400" :line-clamp="1">
+      <NEllipsis
+        class="text-gray-400"
+        :line-clamp="1"
+      >
         <div class="song-singer">
           {{ singer }}
         </div>
@@ -30,41 +36,41 @@ import { isArray } from 'lodash-es';
 import { NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';
 
-
 defineOptions({
   name: 'SongCard',
 });
 
 const props = defineProps<{
-  song: Song,
-  showCover?: boolean,
-  coverSize?: number,
+  song: Song;
+  showCover?: boolean;
+  coverSize?: number;
 }>();
 
 const cover = computed(() => {
-    return getCover(props.song.cover);
+  return getCover(props.song.cover);
 });
 
 const name = computed(() => {
-    const nameParts = props.song.name.split(' - ');                    
-    return nameParts.length > 1 ? nameParts[1] : props.song.name;
+  const nameParts = props.song.name.split(' - ');
+  return nameParts.length > 1 ? nameParts[1] : props.song.name;
 });
 
 const singer = computed(() => {
-    return isArray(props.song.singerinfo) ? props.song.singerinfo?.map(item => item.name).join(' / ') : props.song.singerinfo || '未知艺术家';
+  return isArray(props.song.singerinfo)
+    ? props.song.singerinfo?.map(item => item.name).join(' / ')
+    : props.song.singerinfo || '未知艺术家';
 });
-
 </script>
 
 <style scoped lang="scss">
 .song-card {
-    .song-info {
-        .song-name {
-            font-size: 12px;
-        }
-        .song-singer {
-            font-size: 10px;
-        }
+  .song-info {
+    .song-name {
+      font-size: 12px;
     }
+    .song-singer {
+      font-size: 10px;
+    }
+  }
 }
 </style>

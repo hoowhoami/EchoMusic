@@ -7,6 +7,8 @@ interface Setting {
   volumeFade: boolean;
   volumeFadeTime: number;
   showPlaylistCount: boolean;
+  autoNextOnError: boolean;
+  autoNextOnErrorTime: number;
 }
 
 export const useSettingStore = defineStore('setting', {
@@ -18,6 +20,8 @@ export const useSettingStore = defineStore('setting', {
     volumeFade: false,
     volumeFadeTime: 1000,
     showPlaylistCount: true,
+    autoNextOnError: false,
+    autoNextOnErrorTime: 3000,
   }),
   getters: {
     getTheme: state => state.theme,

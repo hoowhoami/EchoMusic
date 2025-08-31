@@ -56,7 +56,7 @@ class Player {
     // 播放列表
     const playlist = playerStore.playlist;
     if (!playlist?.length || !playerStore.index) {
-        return null;
+      return null;
     }
     return playlist[playerStore.index];
   }
@@ -84,7 +84,7 @@ class Player {
       // 计算进度条距离
       const progress = calculateProgress(currentTime, duration);
       // 计算歌词索引 TODO
-      
+
       // 更新状态
       playerStore.$patch({ currentTime, duration, progress });
     }, 250);
@@ -107,10 +107,11 @@ class Player {
     } else {
       // 设置URL
       if (res.url && res.url[0]) {
-        return res.url[0];
-        // return res.url[0].replace('http://', 'https://');
+        const url = res.url[0];
+        // return url.replace('http://', 'https://');
+        return url;
       } else {
-          console.error('未获取到音乐URL');
+        console.error('未获取到音乐URL');
       }
     }
     return null;
@@ -159,13 +160,13 @@ class Player {
     this.playerEvent({ seek });
     // 自动播放
     if (autoPlay) {
-        this.play();
+      this.play();
     }
     // 获取歌曲附加信息 - 非电台和本地 TODO
-    
+
     // 定时获取状态
     if (!this.playerInterval) {
-        this.handlePlayStatus();
+      this.handlePlayStatus();
     }
     // 新增播放历史 TODO
     console.log('add history', playerStore.current);
@@ -175,7 +176,7 @@ class Player {
     this.updateMediaSession();
     // 开发模式
     if (isDev) {
-        window.player = this.player;
+      window.player = this.player;
     }
   }
   /**
@@ -233,14 +234,14 @@ class Player {
    */
   private initMediaSession() {
     if (!('mediaSession' in navigator)) {
-        return;
+      return;
     }
     navigator.mediaSession.setActionHandler('play', () => this.play());
     navigator.mediaSession.setActionHandler('pause', () => this.pause());
     navigator.mediaSession.setActionHandler('previoustrack', () => this.nextOrPrev('prev'));
     navigator.mediaSession.setActionHandler('nexttrack', () => this.nextOrPrev('next'));
     // 跳转进度
-    navigator.mediaSession.setActionHandler('seekto', (event) => {
+    navigator.mediaSession.setActionHandler('seekto', event => {
       if (event.seekTime) {
         this.setSeek(event.seekTime);
       }
@@ -252,7 +253,7 @@ class Player {
    */
   private updateMediaSession() {
     if (!('mediaSession' in navigator)) {
-        return;
+      return;
     }
     // 获取播放数据
     const playSongData = this.getPlaySongData();
@@ -263,43 +264,44 @@ class Player {
     const metaData = {
       title: playSongData.name,
       artist: Array.isArray(playSongData.singerinfo)
-          ? playSongData.singerinfo.map((item) => item.name).join(' / ')
-          : String(playSongData.singerinfo),
-      album: typeof playSongData.albuminfo === 'object'
+        ? playSongData.singerinfo.map(item => item.name).join(' / ')
+        : String(playSongData.singerinfo),
+      album:
+        typeof playSongData.albuminfo === 'object'
           ? playSongData.albuminfo.name
           : String(playSongData.albuminfo),
       artwork: [
-            {
-              src: getCover(playSongData.cover, 512),
-              sizes: '512x512',
-              type: 'image/jpeg',
-            },
-            {
-              src: getCover(playSongData.cover, 100),
-              sizes: '100x100',
-              type: 'image/jpeg',
-            },
-            {
-              src: getCover(playSongData.cover, 300),
-              sizes: '300x300',
-              type: 'image/jpeg',
-            },
-            {
-              src: getCover(playSongData.cover, 1024),
-              sizes: '1024x1024',
-              type: 'image/jpeg',
-            },
-            {
-              src: getCover(playSongData.cover, 1920),
-              sizes: '1920x1920',
-              type: 'image/jpeg',
-            },
-          ],
+        {
+          src: getCover(playSongData.cover, 512),
+          sizes: '512x512',
+          type: 'image/jpeg',
+        },
+        {
+          src: getCover(playSongData.cover, 100),
+          sizes: '100x100',
+          type: 'image/jpeg',
+        },
+        {
+          src: getCover(playSongData.cover, 300),
+          sizes: '300x300',
+          type: 'image/jpeg',
+        },
+        {
+          src: getCover(playSongData.cover, 1024),
+          sizes: '1024x1024',
+          type: 'image/jpeg',
+        },
+        {
+          src: getCover(playSongData.cover, 1920),
+          sizes: '1920x1920',
+          type: 'image/jpeg',
+        },
+      ],
     };
     // 更新数据
     navigator.mediaSession.metadata = new window.MediaMetadata(metaData);
   }
-  
+
   /**
    * 获取歌曲高潮部分
    * @param id 歌曲id
@@ -316,26 +318,31 @@ class Player {
    */
   private async errorNext(errCode?: number) {
     const playerStore = usePlayerStore();
-    // 次数加一
-    this.testNumber++;
-    if (this.testNumber > 5) {
-      this.testNumber = 0;
-      this.resetStatus();
-      window.$message.error('当前重试次数过多，请稍后再试');
-      return;
-    }
-    // 错误 2 通常为网络地址过期
-    if (errCode === 2) {
-      // 重载播放器
-      await this.initPlayer(true, this.getSeek());
-      return;
-    }
-    // 播放下一曲
-    if (playerStore.playlist.length > 1) {
-      await this.nextOrPrev('next');
-    } else {
-      window.$message.error('当前列表暂无可播放歌曲');
-      this.cleanPlayList();
+    const settingStore = useSettingStore();
+    if (settingStore.autoNextOnError) {
+      setTimeout(async () => {
+        // 次数加一
+        this.testNumber++;
+        if (this.testNumber > 5) {
+          this.testNumber = 0;
+          this.resetStatus();
+          window.$message.error('当前重试次数过多，请稍后再试');
+          return;
+        }
+        // 错误 2 通常为网络地址过期
+        if (errCode === 2) {
+          // 重载播放器
+          await this.initPlayer(true, this.getSeek());
+          return;
+        }
+        // 播放下一曲
+        if (playerStore.playlist.length > 1) {
+          await this.nextOrPrev('next');
+        } else {
+          window.$message.error('当前列表暂无可播放歌曲');
+          this.cleanPlayList();
+        }
+      }, settingStore.autoNextOnErrorTime);
     }
   }
   /**
@@ -364,8 +371,8 @@ class Player {
     const title = `${playSongData.name || '未知歌曲'}`;
     // 歌手
     const artist = Array.isArray(playSongData.singerinfo)
-          ? playSongData.singerinfo.map((artists: { name: string }) => artists.name).join(sep)
-          : String(playSongData?.singerinfo || '未知歌手');
+      ? playSongData.singerinfo.map((artists: { name: string }) => artists.name).join(sep)
+      : String(playSongData?.singerinfo || '未知歌手');
     return `${title} - ${artist}`;
   }
 
@@ -384,7 +391,6 @@ class Player {
       if (!playSongData) {
         return;
       }
-      console.log('初始化播放器', playSongData);
       const { hash } = playSongData;
       // 更改当前播放歌曲
       playerStore.current = playSongData;
@@ -392,11 +398,9 @@ class Player {
       playerStore.loading = true;
       // 在线歌曲
       if (hash && playerStore.playlist.length) {
-        console.log('获取在线播放地址');
         const url = await this.getOnlineUrl(hash);
         // 正常播放地址
         if (url) {
-          console.log(url);
           await this.createPlayer(url, autoPlay, seek);
         }
         // 尝试解灰
@@ -409,7 +413,7 @@ class Player {
             return;
           } else {
             window.$message.error('该歌曲无法播放，跳至下一首');
-            // this.nextOrPrev();
+            this.nextOrPrev();
             return;
           }
         }
@@ -417,7 +421,7 @@ class Player {
     } catch (error) {
       console.error('❌ 初始化音乐播放器出错：', error);
       window.$message.error('播放器遇到错误，请尝试软件热重载');
-      // this.errorNext();
+      this.errorNext();
     }
   }
 
@@ -434,7 +438,7 @@ class Player {
     this.player.play();
     playerStore.isPlaying = true;
     // 淡入
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
       this.player.once('play', () => {
         this.player.fade(0, playerStore.volume, this.getFadeTime());
         resolve();
@@ -455,7 +459,7 @@ class Player {
     }
 
     // 淡出
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
       this.player.fade(playerStore.volume, 0, this.getFadeTime());
       this.player.once('fade', () => {
         this.player.pause();
@@ -475,7 +479,7 @@ class Player {
     if (playerStore.isPlaying) {
       await this.pause();
     } else {
-       await this.play();
+      await this.play();
     }
   }
 
@@ -704,13 +708,14 @@ class Player {
         }
       } else {
         // 查找索引
-        playerStore.index = data.findIndex((item) => item.hash === song.hash);
+        playerStore.index = data.findIndex(item => item.hash === song.hash);
         // 播放
         await this.pause(false);
         await this.initPlayer();
       }
     } else {
-      playerStore.index = playerStore.mode === 'shuffle' ? Math.floor(Math.random() * data.length) : 0;
+      playerStore.index =
+        playerStore.mode === 'shuffle' ? Math.floor(Math.random() * data.length) : 0;
       // 播放
       await this.pause(false);
       await this.initPlayer();
@@ -754,7 +759,7 @@ class Player {
   async togglePlayIndex(index: number, play: boolean = false) {
     const playerStore = usePlayerStore();
     // 获取数据
-    const  playlist  = playerStore.playlist;
+    const playlist = playerStore.playlist;
     // 若超出播放列表
     if (index >= playlist.length) return;
     // 相同
@@ -776,7 +781,7 @@ class Player {
   removeSongIndex(index: number) {
     const playerStore = usePlayerStore();
     // 获取数据
-    const playlist  = playerStore.playlist;
+    const playlist = playerStore.playlist;
     // 若超出播放列表
     if (index >= playlist?.length) {
       return;
@@ -817,7 +822,6 @@ class Player {
     this.resetStatus();
     window.$message.success('已清空播放列表');
   }
-  
 }
 
 export default new Player();

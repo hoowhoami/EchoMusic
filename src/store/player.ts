@@ -6,7 +6,7 @@ interface Player {
   isPlaying: boolean;
   duration: number;
   progress: number;
-  climax?: Record<string, string>; 
+  climax?: Record<string, string>;
   playlist: Song[];
   originalPlaylist: Song[];
   current?: Song;
@@ -53,11 +53,13 @@ export const usePlayerStore = defineStore('player', {
       const indexAdd = index + 1;
       this.playlist.splice(indexAdd, 0, song);
       // 移除重复的歌曲（如果存在）
-      const playList = this.playlist.filter((item, idx) => idx === indexAdd || item.hash !== song.hash);
+      const playList = this.playlist.filter(
+        (item, idx) => idx === indexAdd || item.hash !== song.hash,
+      );
       // 更新本地存储
       this.playlist = playList;
       // 返回刚刚插入的歌曲索引
-      return playList.findIndex((item) => item.hash === song.hash);
+      return playList.findIndex(item => item.hash === song.hash);
     },
     setOriginalPlaylist(originalPlaylist: Song[]) {
       this.originalPlaylist = originalPlaylist;

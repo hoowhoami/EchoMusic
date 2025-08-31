@@ -1,23 +1,41 @@
 <template>
   <div class="titlebar drag">
-    <NFlex class="content" align="center" justify="space-between">
+    <NFlex
+      class="content"
+      align="center"
+      justify="space-between"
+    >
       <div class="no-drag nav">
         <NFlex align="center">
-          <NButton ghost text :focusable="false" @click="router.go(-1)">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+            @click="router.go(-1)"
+          >
             <template #icon>
               <NIcon :size="25">
                 <ArrowBackCircleOutline />
               </NIcon>
             </template>
           </NButton>
-          <NButton ghost text :focusable="false" @click="router.go(1)">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+            @click="router.go(1)"
+          >
             <template #icon>
               <NIcon :size="25">
                 <ArrowForwardCircleOutline />
               </NIcon>
             </template>
           </NButton>
-          <NButton ghost text :focusable="false">
+          <NButton
+            ghost
+            text
+            :focusable="false"
+          >
             <template #icon>
               <NIcon :size="25">
                 <RefreshCircleOutline />
@@ -25,7 +43,10 @@
             </template>
           </NButton>
           <div class="no-drag flex justify-center">
-            <NPopover trigger="click" @update:show="getSearchHotResult">
+            <NPopover
+              trigger="click"
+              @update:show="getSearchHotResult"
+            >
               <template #trigger>
                 <NInput
                   v-model:value="searchKeyword"
@@ -43,8 +64,16 @@
               </template>
               <div class="w-[274px] h-[300px] overflow-hidden">
                 <NScrollbar content-class="h-[300px]">
-                  <NList v-if="!searchKeyword" hoverable :show-divider="false" size="small">
-                    <NListItem v-for="(item, index) in searchHot" :key="item">
+                  <NList
+                    v-if="!searchKeyword"
+                    hoverable
+                    :show-divider="false"
+                    size="small"
+                  >
+                    <NListItem
+                      v-for="(item, index) in searchHot"
+                      :key="item"
+                    >
                       <template #prefix>
                         <div class="w-[20px]">
                           {{ index + 1 }}
@@ -66,7 +95,10 @@
                       <template #header>
                         {{ suggest.LableName || '综合' }}
                       </template>
-                      <NListItem v-for="(item, index) in suggest.RecordDatas" :key="item.HintInfo">
+                      <NListItem
+                        v-for="(item, index) in suggest.RecordDatas"
+                        :key="item.HintInfo"
+                      >
                         <template #prefix>
                           <div class="w-[20px]">
                             {{ index + 1 }}
@@ -90,7 +122,12 @@
         </NFlex>
       </div>
       <div class="no-drag flex justify-center">
-        <NDropdown trigger="click" size="small" :options="menuOptions" @select="handleSelect">
+        <NDropdown
+          trigger="click"
+          size="small"
+          :options="menuOptions"
+          @select="handleSelect"
+        >
           <NAvatar
             v-if="userStore.isAuthenticated"
             class="cursor-pointer"
@@ -98,7 +135,14 @@
             :size="25"
             :src="userStore.pic"
           />
-          <NAvatar v-else class="cursor-pointer" round :size="25"> 未登录 </NAvatar>
+          <NAvatar
+            v-else
+            class="cursor-pointer"
+            round
+            :size="25"
+          >
+            未登录
+          </NAvatar>
         </NDropdown>
       </div>
     </NFlex>

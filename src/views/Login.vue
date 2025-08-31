@@ -1,39 +1,86 @@
 <template>
   <div class="login-container">
     <NCard class="login-card">
-      <NSpace vertical :size="24">
+      <NSpace
+        vertical
+        :size="24"
+      >
         <NH1 align="center">欢迎访问 MixMusic</NH1>
-        <NText align="center" depth="3" class="login-message"> 您需要登录后才能进行后续操作 </NText>
-        <NButton type="primary"
-                 size="large"
-                 block
-                 @click="handleLogin"> 登录 </NButton>
+        <NText
+          align="center"
+          depth="3"
+          class="login-message"
+        >
+          您需要登录后才能进行后续操作
+        </NText>
+        <NButton
+          type="primary"
+          size="large"
+          block
+          @click="handleLogin"
+        >
+          登录
+        </NButton>
       </NSpace>
     </NCard>
-    <NModal style="width: 400px"
-            title="登录 MixMusic"
-            preset="dialog"
-            v-model:show="showModal">
-      <NFlex vertical justify="center">
-        <NGradientText type="warning"
-                       class="mt-2">您的数据始终只存储在酷狗服务和您所使用的设备中</NGradientText>
-        <NTabs type="segment" class="mt-2" v-model:value="activeTab">
-          <NTabPane name="phone" tab="手机号登录" class="h-[280px]">
-            <NForm ref="formRef" :model="formValue" :rules="rules">
-              <NFormItem label="手机号" path="mobile">
+    <NModal
+      style="width: 400px"
+      title="登录 MixMusic"
+      preset="dialog"
+      v-model:show="showModal"
+    >
+      <NFlex
+        vertical
+        justify="center"
+      >
+        <NGradientText
+          type="warning"
+          class="mt-2"
+          >您的数据始终只存储在酷狗服务和您所使用的设备中</NGradientText
+        >
+        <NTabs
+          type="segment"
+          class="mt-2"
+          v-model:value="activeTab"
+        >
+          <NTabPane
+            name="phone"
+            tab="手机号登录"
+            class="h-[280px]"
+          >
+            <NForm
+              ref="formRef"
+              :model="formValue"
+              :rules="rules"
+            >
+              <NFormItem
+                label="手机号"
+                path="mobile"
+              >
                 <NInput
                   v-model:value="formValue.mobile"
                   placeholder="请输入手机号"
                   :maxlength="11"
-                  clearable/>
+                  clearable
+                />
               </NFormItem>
-              <NFormItem label="验证码" path="code">
-                <NFlex justify="space-between" class="w-full">
-                  <NInputOtp v-model:value="formValue.code" :length="6" />
+              <NFormItem
+                label="验证码"
+                path="code"
+              >
+                <NFlex
+                  justify="space-between"
+                  class="w-full"
+                >
+                  <NInputOtp
+                    v-model:value="formValue.code"
+                    :length="6"
+                  />
                   <NButton
                     :disabled="countdown > 0 || !formValue.mobile"
                     @click="sendCaptcha"
-                    :loading="captchaLoading || countdown > 0">
+                    :loading="captchaLoading || countdown > 0"
+                  >
                     {{ captchaSentButtonTitle }}
                   </NButton>
                 </NFlex>
@@ -43,23 +90,44 @@
                 block
                 :loading="phoneLoading"
                 :disabled="!formValue.mobile || !formValue.code"
-                @click="handlePhoneLogin">
+                @click="handlePhoneLogin"
+              >
                 登录
               </NButton>
             </NForm>
           </NTabPane>
-          <NTabPane name="qrcode" tab="二维码登录" class="h-[280px]">
-            <NFlex vertical align="center" :size="16">
+          <NTabPane
+            name="qrcode"
+            tab="二维码登录"
+            class="h-[280px]"
+          >
+            <NFlex
+              vertical
+              align="center"
+              :size="16"
+            >
               <NText class="mt-2">{{ qrStatusText }}</NText>
               <NCard class="w-[140px] h-[140px] flex items-center justify-center">
-                <NQrCode v-if="qrcode"
-                         :value="qrcode"
-                         :size="120"
-                         :padding="0"
-                         class="mt-1" />
-                <NSpin v-else :show="!qrcode" class="w-[140px] h-[140px]" />
+                <NQrCode
+                  v-if="qrcode"
+                  :value="qrcode"
+                  :size="120"
+                  :padding="0"
+                  class="mt-1"
+                />
+                <NSpin
+                  v-else
+                  :show="!qrcode"
+                  class="w-[140px] h-[140px]"
+                />
               </NCard>
-              <NButton type="primary" text @click="refreshQrCode"> 刷新二维码 </NButton>
+              <NButton
+                type="primary"
+                text
+                @click="refreshQrCode"
+              >
+                刷新二维码
+              </NButton>
             </NFlex>
           </NTabPane>
         </NTabs>

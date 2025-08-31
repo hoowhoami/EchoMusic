@@ -1,12 +1,14 @@
 <template>
   <div class="song-list">
-    <NDataTable :columns="columns"
-                :data="songs"
-                :row-key="(row) => row.hash"
-                size="small"
-                :bordered="false"
-                :bottom-bordered="false"
-                :single-column="true"></NDataTable>
+    <NDataTable
+      :columns="columns"
+      :data="songs"
+      :row-key="row => row.hash"
+      size="small"
+      :bordered="false"
+      :bottom-bordered="false"
+      :single-column="true"
+    ></NDataTable>
   </div>
 </template>
 
@@ -20,7 +22,6 @@ import { NDataTable, NEllipsis } from 'naive-ui';
 import { computed, h, onMounted, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
-
 
 defineOptions({
   name: 'SongList',
@@ -41,7 +42,7 @@ const columns = computed<DataTableColumns>(() => {
       title: '歌曲',
       key: 'name',
       minWidth: 300,
-      render: (row) => {
+      render: row => {
         const song = row as Song;
         return h(SongCard, { song, onDblclick: () => player.updatePlayList(songs.value, song) });
       },
@@ -51,11 +52,15 @@ const columns = computed<DataTableColumns>(() => {
       title: '专辑',
       key: 'album',
       minWidth: 80,
-      render: (row) => {
+      render: row => {
         const song = row as Song;
-        return h(NEllipsis, { style: 'font-size: 12px;', lineClamp: 1 }, {
-          default: () => song.albuminfo?.name,
-        });
+        return h(
+          NEllipsis,
+          { style: 'font-size: 12px;', lineClamp: 1 },
+          {
+            default: () => song.albuminfo?.name,
+          },
+        );
       },
       sorter: 'default',
     },
@@ -63,11 +68,15 @@ const columns = computed<DataTableColumns>(() => {
       title: '时长',
       key: 'duration',
       minWidth: 80,
-      render: (row) => {
+      render: row => {
         const song = row as Song;
-        return h(NEllipsis, { style: 'font-size: 12px;', lineClamp: 1 }, {
-          default: () => msToTime(song.timelen),
-        });
+        return h(
+          NEllipsis,
+          { style: 'font-size: 12px;', lineClamp: 1 },
+          {
+            default: () => msToTime(song.timelen),
+          },
+        );
       },
       sorter: 'default',
     },
@@ -103,7 +112,6 @@ const getSongs = () => {
       page++;
     });
   } while (fetchCount > 0);
-  
 };
 
 onMounted(() => {
@@ -111,10 +119,12 @@ onMounted(() => {
   getSongs();
 });
 
-watch(() => props.playlistId, () => {
-  getSongs();
-});
-
+watch(
+  () => props.playlistId,
+  () => {
+    getSongs();
+  },
+);
 </script>
 
 <style lang="scss" scoped></style>

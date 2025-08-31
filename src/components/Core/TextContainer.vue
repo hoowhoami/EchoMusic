@@ -1,10 +1,26 @@
 <template>
-  <div ref="textContainerRef" :key="text.length" class="text-container">
+  <div
+    ref="textContainerRef"
+    :key="text.length"
+    class="text-container"
+  >
     <!-- 空白占位符 -->
     <span class="empty">{{ text }}</span>
-    <div ref="scrollWrapperRef" class="scroll-wrapper">
-      <span ref="textRef" class="text">{{ text }}</span>
-      <span v-if="isTextOverflowing" ref="textCloneRef" class="text">{{ text }}</span>
+    <div
+      ref="scrollWrapperRef"
+      class="scroll-wrapper"
+    >
+      <span
+        ref="textRef"
+        class="text"
+        >{{ text }}</span
+      >
+      <span
+        v-if="isTextOverflowing"
+        ref="textCloneRef"
+        class="text"
+        >{{ text }}</span
+      >
     </div>
   </div>
 </template>

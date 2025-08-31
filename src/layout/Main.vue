@@ -2,15 +2,32 @@
   <div class="main-content">
     <!-- 路由页面 -->
     <RouterView v-slot="{ Component }">
-      <Transition name="router-transition" mode="out-in">
-        <KeepAlive v-if="settingStore.keepAlive" :max="20" :exclude="['layout']">
-          <component :is="Component" class="router-view" />
+      <Transition
+        name="router-transition"
+        mode="out-in"
+      >
+        <KeepAlive
+          v-if="settingStore.keepAlive"
+          :max="20"
+          :exclude="['layout']"
+        >
+          <component
+            :is="Component"
+            class="router-view"
+          />
         </KeepAlive>
-        <component :is="Component" v-else class="router-view" />
+        <component
+          :is="Component"
+          v-else
+          class="router-view"
+        />
       </Transition>
     </RouterView>
     <!-- 回到顶部 -->
-    <NBackTop :right="20" :bottom="90" />
+    <NBackTop
+      :right="20"
+      :bottom="90"
+    />
   </div>
 </template>
 

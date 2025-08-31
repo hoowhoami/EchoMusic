@@ -25,17 +25,17 @@ function startServer() {
   try {
     const serverPath = path.join(__dirname, '../server/bin/api_js/app.js');
     console.log('启动服务器:', serverPath);
-    
+
     serverProcess = spawn('node', [serverPath], {
       stdio: 'inherit',
       env: { ...process.env, PORT: '10086', HOST: '0.0.0.0' },
     });
 
-    serverProcess.on('error', (err) => {
+    serverProcess.on('error', err => {
       console.error('服务器启动失败:', err);
     });
 
-    serverProcess.on('exit', (code) => {
+    serverProcess.on('exit', code => {
       console.log(`服务器进程退出，代码: ${code}`);
       serverProcess = null;
     });
@@ -63,7 +63,22 @@ function createWindow() {
     ? 'http://localhost:3000'
     : `file://${path.join(__dirname, '../dist/index.html')}`;
 
-  console.log('Loading URL:', startUrl);
+  // 配置 webRequest 拦截器处理跨域
+  const session = mainWindow.webContents.session;
+  session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        // 允许所有来源跨域访问
+        'Access-Control-Allow-Origin': ['*'],
+        // 允许的请求方法
+        'Access-Control-Allow-Methods': ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        // 允许的请求头
+        'Access-Control-Allow-Headers': ['Content-Type', 'Authorization'],
+      },
+    });
+  });
+
   mainWindow.loadURL(startUrl);
 
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
@@ -95,7 +110,7 @@ app.whenReady().then(async () => {
     // 等待服务器启动
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   createWindow();
 });
 
@@ -105,7 +120,7 @@ app.on('window-all-closed', () => {
     serverProcess.kill();
     serverProcess = null;
   }
-  
+
   if (process.platform !== 'darwin') {
     app.quit();
   }

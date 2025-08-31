@@ -1,62 +1,73 @@
 <template>
   <div class="player">
     <div class="player-slider">
-      <NSlider v-model:value="playerStore.progress"
-               :step="0.01"
-               :min="0"
-               :max="100"
-               :tooltip="false"
-               :keyboard="false"
-               :marks="playerStore.climax"
-               class="player-slider"
-               @dragstart="player.pause(false)"
-               @dragend="sliderDragend" />
+      <NSlider
+        v-model:value="playerStore.progress"
+        :step="0.01"
+        :min="0"
+        :max="100"
+        :tooltip="false"
+        :keyboard="false"
+        :marks="playerStore.climax"
+        class="player-slider"
+        @dragstart="player.pause(false)"
+        @dragend="sliderDragend"
+      />
     </div>
     <!-- 信息 -->
     <div class="play-data">
       <!-- 封面 -->
-      <Transition name="fade" mode="out-in">
+      <Transition
+        name="fade"
+        mode="out-in"
+      >
         <div
-          :key="playerStore.current?.cover"
+          :key="cover"
           class="cover"
         >
           <NImage
-            :src="playerStore.current?.cover"
-            :alt="playerStore.current?.cover"
+            :src="cover"
+            :alt="cover"
             class="cover-img"
             preview-disabled
           />
-            
-          <!-- 打开播放器 -->
 
+          <!-- 打开播放器 -->
         </div>
       </Transition>
       <!-- 信息 -->
-      <Transition name="left-sm" mode="out-in">
-        <div :key="playerStore.current?.hash" class="info">
+      <Transition
+        name="left-sm"
+        mode="out-in"
+      >
+        <div
+          :key="playerStore.current?.hash"
+          class="info"
+        >
           <div class="data">
             <!-- 名称 -->
             <TextContainer
-              style="font-size: 12px;"
+              style="font-size: 12px"
               :key="name"
               :text="name"
               :speed="0.2"
               class="name"
             />
             <!-- 喜欢 -->
-              
+
             <!-- 更多操作 -->
-              
           </div>
-          <Transition name="fade" mode="out-in">
+          <Transition
+            name="fade"
+            mode="out-in"
+          >
             <!-- 歌词 -->
-              
+
             <!-- 歌手 -->
             <div class="artists">
-              
               <TextContainer
                 class="ar-item"
-                style="font-size: 10px;"
+                style="font-size: 10px"
                 :key="singer"
                 :text="singer"
                 :speed="0.2"
@@ -69,15 +80,19 @@
     <!-- 控制 -->
     <div class="play-control">
       <!-- 不喜欢 -->
-        
+
       <!-- 上一曲 -->
-      <NButton ghost text v-debounce="() => player.nextOrPrev('prev')">
+      <NButton
+        ghost
+        text
+        v-debounce="() => player.nextOrPrev('prev')"
+      >
         <template #icon>
           <NIcon :size="26">
             <SkipPreviousRound />
           </NIcon>
         </template>
-      </NButton> 
+      </NButton>
       <!-- 播放暂停 -->
       <NButton
         :loading="playerStore.loading"
@@ -91,7 +106,10 @@
         v-debounce="() => player.playOrPause()"
       >
         <template #icon>
-          <Transition name="fade" mode="out-in">
+          <Transition
+            name="fade"
+            mode="out-in"
+          >
             <NIcon :size="28">
               <PauseRound v-if="playerStore.isPlaying" />
               <PlayArrowRound v-else />
@@ -100,16 +118,23 @@
         </template>
       </NButton>
       <!-- 下一曲 -->
-      <NButton ghost text v-debounce="() => player.nextOrPrev('next')">
+      <NButton
+        ghost
+        text
+        v-debounce="() => player.nextOrPrev('next')"
+      >
         <template #icon>
           <NIcon :size="26">
             <SkipNextRound />
           </NIcon>
         </template>
-      </NButton> 
+      </NButton>
     </div>
     <!-- 功能 -->
-    <Transition name="fade" mode="out-in">
+    <Transition
+      name="fade"
+      mode="out-in"
+    >
       <NFlex
         key="normal"
         :size="[8, 0]"
@@ -122,15 +147,21 @@
           <NText depth="2">{{ secondsToTime(playerStore.duration) }}</NText>
         </div>
         <!-- 桌面歌词 -->
-          
+
         <!-- 播放模式 -->
-        <NDropdown 
+        <NDropdown
           :options="playModeOptions"
           :show-arrow="true"
-          @select="(mode) => player.togglePlayMode(mode)"
+          @select="mode => player.togglePlayMode(mode)"
         >
-          <div class="menu-icon" @click.stop="player.togglePlayMode(false)">
-            <NButton ghost text>
+          <div
+            class="menu-icon"
+            @click.stop="player.togglePlayMode(false)"
+          >
+            <NButton
+              ghost
+              text
+            >
               <template #icon>
                 <NIcon :size="20">
                   <component :is="playModeIcon" />
@@ -142,8 +173,15 @@
         <!-- 音量调节 -->
         <NPopover>
           <template #trigger>
-            <div class="menu-icon" @click.stop="player.toggleMute" @wheel="player.setVolume">
-              <NButton ghost text>
+            <div
+              class="menu-icon"
+              @click.stop="player.toggleMute"
+              @wheel="player.setVolume"
+            >
+              <NButton
+                ghost
+                text
+              >
                 <template #icon>
                   <NIcon :size="20">
                     <component :is="volumeIcon" />
@@ -152,7 +190,10 @@
               </NButton>
             </div>
           </template>
-          <div class="volume-change" @wheel="player.setVolume">
+          <div
+            class="volume-change"
+            @wheel="player.setVolume"
+          >
             <NSlider
               v-model:value="playerStore.volume"
               :tooltip="false"
@@ -160,9 +201,13 @@
               :max="1"
               :step="0.01"
               vertical
-              @update:value="(val) => player.setVolume(val)"
+              @update:value="val => player.setVolume(val)"
             />
-            <NText class="slider-num" style="font-size: 12px;">{{ (playerStore.volume * 100).toFixed(0) }}%</NText>
+            <NText
+              class="slider-num"
+              style="font-size: 12px"
+              >{{ (playerStore.volume * 100).toFixed(0) }}%</NText
+            >
           </div>
         </NPopover>
         <!-- 播放列表 -->
@@ -174,7 +219,12 @@
             marginRight: settingStore.showPlaylistCount ? '12px' : null,
           }"
         >
-          <NButton ghost text class="menu-icon" @click.stop="playerStore.playlistShow = !playerStore.playlistShow">
+          <NButton
+            ghost
+            text
+            class="menu-icon"
+            @click.stop="playerStore.playlistShow = !playerStore.playlistShow"
+          >
             <template #icon>
               <NIcon :size="20">
                 <ListRound />
@@ -188,14 +238,30 @@
 </template>
 
 <script setup lang="ts">
-import { NBadge, NButton, NDropdown, NFlex, NIcon, NImage, NPopover, NSlider, NText } from 'naive-ui';
+import {
+  NBadge,
+  NButton,
+  NDropdown,
+  NFlex,
+  NIcon,
+  NImage,
+  NPopover,
+  NSlider,
+  NText,
+} from 'naive-ui';
 
 import { usePlayerStore, useSettingStore } from '@/store';
-import { calculateCurrentTime, renderIcon, secondsToTime } from '@/utils';
+import { calculateCurrentTime, getCover, renderIcon, secondsToTime } from '@/utils';
 import player from '@/utils/player';
 import { computed, ref } from 'vue';
-import {Repeat, RepeatOnce, ArrowsShuffle, Volume, Volume2, Volume3} from '@vicons/tabler';
-import { SkipPreviousRound, SkipNextRound, PauseRound, PlayArrowRound, ListRound } from '@vicons/material';
+import { Repeat, RepeatOnce, ArrowsShuffle, Volume, Volume2, Volume3 } from '@vicons/tabler';
+import {
+  SkipPreviousRound,
+  SkipNextRound,
+  PauseRound,
+  PlayArrowRound,
+  ListRound,
+} from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
 
@@ -255,13 +321,18 @@ const volumeIcon = computed(() => {
   return Volume;
 });
 
+const cover = computed(() => {
+  const song = playerStore.current;
+  return getCover(song?.cover || '', 50);
+});
+
 const name = computed(() => {
-    const song = playerStore.current;
-    const nameParts = song?.name.split(' - ');     
-    if (nameParts && nameParts.length > 1) {
-        return nameParts[1];
-    }               
-    return song?.name || '未知歌曲';
+  const song = playerStore.current;
+  const nameParts = song?.name.split(' - ');
+  if (nameParts && nameParts.length > 1) {
+    return nameParts[1];
+  }
+  return song?.name || '未知歌曲';
 });
 
 const singer = computed(() => {
@@ -274,7 +345,6 @@ const singer = computed(() => {
   }
   return '未知艺术家';
 });
-
 </script>
 
 <style scoped lang="scss">
@@ -312,6 +382,7 @@ const singer = computed(() => {
   .play-data {
     display: flex;
     flex-direction: row;
+    align-items: center;
     max-width: 100%;
     overflow: hidden;
     .cover {
@@ -319,18 +390,19 @@ const singer = computed(() => {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 55px;
-      height: 55px;
-      min-width: 55px;
+      width: 50px;
+      height: 50px;
+      min-width: 50px;
+      border-width: 1px;
       border-radius: 8px;
       overflow: hidden;
       margin-right: 12px;
       transition: opacity 0.2s;
       cursor: pointer;
       :deep(img) {
-        width: 55px;
-        height: 55px;
-        opacity: 0;
+        width: 50px;
+        height: 50px;
+        // opacity: 0;
         transition:
           transform 0.3s,
           opacity 0.3s,
@@ -406,7 +478,7 @@ const singer = computed(() => {
           transition: color 0.3s;
           cursor: pointer;
           &::after {
-            content: "/";
+            content: '/';
             margin: 0 6px;
             opacity: 0.6;
             transition: none;
@@ -485,7 +557,7 @@ const singer = computed(() => {
         opacity: 0.8;
         &:nth-of-type(1) {
           &::after {
-            content: "/";
+            content: '/';
             margin: 0 4px;
           }
         }

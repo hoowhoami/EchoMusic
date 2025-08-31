@@ -2,22 +2,33 @@
 <template>
   <div class="playlist flex flex-col space-y-2">
     <div class="info">
-      <div v-if="!playlistInfo" class="flex space-x-4">
+      <div
+        v-if="!playlistInfo"
+        class="flex space-x-4"
+      >
         <div class="rounded-lg w-[200px] h-[200px]">
           <NSkeleton class="rounded-lg w-[200px] h-[200px]" />
         </div>
         <div class="w-full flex flex-col justify-between space-y-2">
-          <NSkeleton class="h-[30px] rounded-lg" v-for="i in 5" :key="i" />
+          <NSkeleton
+            class="h-[30px] rounded-lg"
+            v-for="i in 5"
+            :key="i"
+          />
         </div>
       </div>
-      <div v-else class="flex space-x-4">
+      <div
+        v-else
+        class="flex space-x-4"
+      >
         <NImage
           class="rounded-lg"
           width="200"
           height="200"
           :preview-disabled="true"
           :src="getCover(playlistInfo?.pic, 200)"
-          :fallback-src="getCover(playlistInfo?.pic, 200)"/>
+          :fallback-src="getCover(playlistInfo?.pic, 200)"
+        />
         <div class="detail flex flex-col">
           <NH2>{{ playlistInfo?.name }}</NH2>
           <div class="flex flex-col space-y-4">
@@ -26,15 +37,21 @@
                 round
                 size="small"
                 :src="getCover(playlistInfo?.create_user_pic, 50)"
-                :fallback-src="getCover(playlistInfo?.create_user_pic, 50)"/>
+                :fallback-src="getCover(playlistInfo?.create_user_pic, 50)"
+              />
               <div class="name">{{ playlistInfo?.list_create_username }}</div>
               <div class="time">{{ formatTimestamp(playlistInfo?.create_time * 1000) }} 创建</div>
             </div>
-            <div v-if="playlistTags" class="tags flex items-center space-x-2">
-              <NTag v-for="tag in playlistTags"
-                    :key="tag"
-                    size="small"
-                    round>
+            <div
+              v-if="playlistTags"
+              class="tags flex items-center space-x-2"
+            >
+              <NTag
+                v-for="tag in playlistTags"
+                :key="tag"
+                size="small"
+                round
+              >
                 {{ tag }}
               </NTag>
             </div>

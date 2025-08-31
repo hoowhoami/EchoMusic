@@ -58,7 +58,7 @@ export const visibleDirective = {
     const { modifiers, value } = binding;
 
     const handleIntersection = (entries: IntersectionObserverEntry[]) => {
-      entries.forEach((entry) => {
+      entries.forEach(entry => {
         const isVisible = entry.isIntersecting;
         el.classList.toggle('hidden', !isVisible);
         if (typeof value === 'function') value(isVisible);

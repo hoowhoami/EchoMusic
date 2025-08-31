@@ -1,5 +1,9 @@
 <template>
-  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme="naiveTheme">
+  <n-config-provider
+    :locale="zhCN"
+    :date-locale="dateZhCN"
+    :theme="naiveTheme"
+  >
     <n-global-style />
     <router-view />
   </n-config-provider>

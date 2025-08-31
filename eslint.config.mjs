@@ -49,8 +49,7 @@ export default [
     },
     rules: {
       'vue/multi-word-component-names': 'off',
-      'vue/html-indent': ['error', 2],
-      'vue/max-attributes-per-line': ['error', { singleline: 4 }],
+      'vue/max-attributes-per-line': ['error', { singleline: 3, multiline: 1 }],
       'vue/no-unused-vars': 'error',
       'vue/require-v-for-key': 'error',
       'vue/valid-v-model': 'error',
