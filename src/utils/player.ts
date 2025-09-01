@@ -45,7 +45,7 @@ class Player {
   resetStatus() {
     const playerStore = usePlayerStore();
     // 重置状态
-    playerStore.$reset();
+    playerStore.resetStatus();
   }
   /**
    * 获取当前播放歌曲
@@ -78,7 +78,9 @@ class Player {
     clearInterval(this.playerInterval);
     // 更新播放状态
     this.playerInterval = setInterval(() => {
-      if (!this.player.playing()) return;
+      if (!this.player.playing()) {
+        return;
+      }
       const currentTime = this.getSeek();
       const duration = this.player.duration();
       // 计算进度条距离
@@ -304,16 +306,21 @@ class Player {
 
   /**
    * 获取歌曲高潮部分
-   * @param id 歌曲id
+   * @param song 歌曲
    */
-  private async getClimax(id: string) {
+  private async getClimax(song: Song) {
     const playerStore = usePlayerStore();
-    const result = await getSongClimax(id);
+    const result = await getSongClimax(song.hash);
     if (result && result.length) {
       const climaxs: { [key: number]: string } = {};
+      const songDuration = song.timelen / 1000;
       for (const item of result) {
-        climaxs[item.start_time / 1000] = '';
-        climaxs[item.end_time / 1000] = '';
+        const start = item.start_time / 1000;
+        const startProgress = calculateProgress(start, songDuration);
+        const end = item.end_time / 1000;
+        const endProgress = calculateProgress(end, songDuration);
+        climaxs[startProgress] = '';
+        climaxs[endProgress] = '';
       }
       playerStore.setClimax(climaxs);
     }
@@ -409,7 +416,7 @@ class Player {
         // 正常播放地址
         if (url) {
           // 获取歌曲高潮部分
-          this.getClimax(hash);
+          this.getClimax(playSongData);
           // 创建播放器
           await this.createPlayer(url, autoPlay, seek);
         }
@@ -760,6 +767,26 @@ class Player {
     } else {
       window.$message.success('已添加至下一首播放');
     }
+  }
+
+  /**
+   * 播放指定歌曲
+   * @param song 歌曲
+   */
+  async playSong(song: Song) {
+    const playerStore = usePlayerStore();
+    // 是否为当前播放歌曲
+    if (playerStore.current?.hash === song.hash) {
+      this.play();
+      window.$message.success('已开始播放');
+      return;
+    }
+    // 查找歌曲
+    const songIndex = playerStore.playlist.findIndex(item => item.hash === song.hash);
+    if (songIndex < 0) {
+      return;
+    }
+    await this.togglePlayIndex(songIndex, true);
   }
 
   /**

@@ -288,7 +288,7 @@
                 <div>
                   <SongCard
                     :song="item"
-                    @dblclick.stop="player.addNextSong(item, true)"
+                    @dblclick.stop="player.playSong(item)"
                   />
                 </div>
                 <div class="delete-btn-wrapper">
@@ -300,7 +300,7 @@
                     @click.stop="handlePlaylistDelete(item)"
                   >
                     <template #icon>
-                      <NIcon :size="20">
+                      <NIcon :size="16">
                         <Trash />
                       </NIcon>
                     </template>
@@ -363,7 +363,11 @@ const handlePlaylistClearAll = () => {
 };
 
 const handlePlaylistDelete = (song: Song) => {
-  console.log(song);
+  const songIndex = playerStore.playlist.findIndex(item => item.hash === song.hash);
+  if (songIndex === -1) {
+    return;
+  }
+  player.removeSongIndex(songIndex);
 };
 
 // 进度条拖拽结束
