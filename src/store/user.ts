@@ -1,3 +1,4 @@
+import type { Playlist } from '@/types';
 import { defineStore } from 'pinia';
 
 interface User {
@@ -8,6 +9,10 @@ interface User {
   pic?: string;
   // 扩展信息
   extends?: any;
+  // 创建歌单
+  createdPlaylist?: Playlist[];
+  // 收藏歌单
+  likedPlaylist?: Playlist[];
 }
 
 export const useUserStore = defineStore('user', {
@@ -19,6 +24,7 @@ export const useUserStore = defineStore('user', {
     nickname: undefined,
     pic: undefined,
     extends: undefined,
+    likedPlaylist: undefined,
   }),
   getters: {
     isAuthenticated(state) {
@@ -27,6 +33,9 @@ export const useUserStore = defineStore('user', {
     hasExtends(state) {
       return !!state.extends?.dfid && !!state.extends?.detail && !!state.extends?.vip;
     },
+    isLikedPlaylist: state => (id: string) => {
+      return state.likedPlaylist?.some(item => item.list_create_gid === id);
+    },
   },
   actions: {
     setUserInfo(user: User) {
@@ -34,6 +43,9 @@ export const useUserStore = defineStore('user', {
     },
     clearUserInfo() {
       this.$reset();
+    },
+    setLikedPlaylist(playlist: Playlist[]) {
+      this.likedPlaylist = playlist;
     },
   },
 });

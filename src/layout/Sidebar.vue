@@ -157,6 +157,7 @@ const likedPlaylist = computed<MenuOption[]>(() => {
   const list = playlists.value.filter(
     playlist => playlist.list_create_userid !== userid && !playlist.authors,
   );
+  userStore.setLikedPlaylist(list);
   return renderPlaylist(list, true, 'liked-playlist');
 });
 

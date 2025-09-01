@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 
 interface Setting {
+  mainHeight: number;
   theme: 'light' | 'dark' | 'auto';
   keepAlive: boolean;
   unblock: boolean;
@@ -14,8 +15,9 @@ interface Setting {
 export const useSettingStore = defineStore('setting', {
   persist: true,
   state: (): Setting => ({
+    mainHeight: 0,
     theme: 'light',
-    keepAlive: true,
+    keepAlive: false,
     unblock: false,
     volumeFade: false,
     volumeFadeTime: 1000,
@@ -28,6 +30,9 @@ export const useSettingStore = defineStore('setting', {
     getKeepAlive: state => state.keepAlive,
   },
   actions: {
+    setMainHeight(height: number) {
+      this.mainHeight = height;
+    },
     setTheme(theme: 'light' | 'dark' | 'auto') {
       this.theme = theme;
     },

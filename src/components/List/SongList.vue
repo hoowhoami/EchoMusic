@@ -1,13 +1,17 @@
 <template>
   <div class="song-list">
     <NDataTable
-      :columns="columns"
-      :data="songs"
-      :row-key="row => row.hash"
       size="small"
+      :virtual-scroll="props.virtualScroll"
+      :max-height="props.maxHeight"
       :bordered="false"
       :bottom-bordered="false"
       :single-column="true"
+      :row-key="row => row.hash"
+      :loading="props.loading"
+      :columns="columns"
+      :data="songs"
+      v-model:checked-row-keys="checkedRowKeys"
     ></NDataTable>
   </div>
 </template>
@@ -15,25 +19,30 @@
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui';
 
-import { getPlaylistTrackAll } from '@/api';
 import { Song } from '@/types';
 import { msToTime } from '@/utils';
 import { NDataTable, NEllipsis } from 'naive-ui';
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
+import { isEqual } from 'lodash-es';
 
 defineOptions({
   name: 'SongList',
 });
 
 const props = defineProps<{
-  playlistId: string;
+  maxHeight?: number;
+  virtualScroll?: boolean;
+  loading?: boolean;
+  batchMode?: boolean;
 }>();
 
-const batchMode = ref(false);
+const songs = defineModel<Song[]>();
 
-const songs = ref<Song[]>([]);
+const checkedSongs = defineModel<Song[]>('checked-songs');
+
+const checkedRowKeys = ref<string[]>([]);
 
 const columns = computed<DataTableColumns>(() => {
   return [
@@ -44,7 +53,10 @@ const columns = computed<DataTableColumns>(() => {
       minWidth: 300,
       render: row => {
         const song = row as Song;
-        return h(SongCard, { song, onDblclick: () => player.updatePlayList(songs.value, song) });
+        return h(SongCard, {
+          song,
+          onDblclick: () => player.updatePlayList(songs.value || [], song),
+        });
       },
       sorter: 'default',
     },
@@ -67,7 +79,7 @@ const columns = computed<DataTableColumns>(() => {
     {
       title: '时长',
       key: 'duration',
-      minWidth: 80,
+      width: 80,
       render: row => {
         const song = row as Song;
         return h(
@@ -85,7 +97,7 @@ const columns = computed<DataTableColumns>(() => {
 
 const firstColumns = computed<DataTableColumns>(() => {
   return [
-    batchMode.value
+    props.batchMode
       ? {
           type: 'selection',
           width: 60,
@@ -100,30 +112,49 @@ const firstColumns = computed<DataTableColumns>(() => {
   ];
 });
 
-const getSongs = () => {
-  let page = 1;
-  const size = 300;
-  let fetchCount = 0;
-  songs.value = [];
-  do {
-    getPlaylistTrackAll(props.playlistId, page, size).then(res => {
-      songs.value.push(...res.songs);
-      fetchCount = res.count;
-      page++;
-    });
-  } while (fetchCount > 0);
-};
-
-onMounted(() => {
-  console.log(props.playlistId);
-  getSongs();
-});
-
 watch(
-  () => props.playlistId,
-  () => {
-    getSongs();
+  songs,
+  newSongs => {
+    if (!newSongs) {
+      checkedRowKeys.value = [];
+      return;
+    }
+    if (checkedRowKeys.value.length) {
+      checkedRowKeys.value = checkedRowKeys.value.filter(item =>
+        newSongs.some(song => song.hash === item),
+      );
+    }
   },
+  { deep: true },
+);
+
+// 根据选中的rowKeys同步选中的歌曲到checkedSongs
+watch(
+  checkedRowKeys,
+  newKeys => {
+    if (!songs.value?.length) {
+      return;
+    }
+    // 根据hash匹配选中的歌曲
+    checkedSongs.value = songs.value.filter(song => newKeys.includes(song.hash));
+  },
+  { deep: true },
+);
+
+// 当外部修改checkedSongs时，同步更新表格选中状态
+watch(
+  checkedSongs,
+  newChecked => {
+    if (!newChecked) {
+      return;
+    }
+    const newKeys = newChecked.map(song => song.hash);
+    // 避免不必要的更新
+    if (!isEqual(newKeys, checkedRowKeys.value)) {
+      checkedRowKeys.value = newKeys;
+    }
+  },
+  { deep: true },
 );
 </script>
 

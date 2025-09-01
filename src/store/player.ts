@@ -43,6 +43,9 @@ export const usePlayerStore = defineStore('player', {
     setPlaylist(playlist: Song[]) {
       this.playlist = playlist;
     },
+    setClimax(climax: Record<string, string>) {
+      this.climax = climax;
+    },
     setNextPlaySong(song: Song, index: number): number {
       // 若为空,则直接添加
       if (this.playlist.length === 0) {

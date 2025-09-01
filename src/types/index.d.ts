@@ -156,3 +156,14 @@ export type Song = {
 
 // PlayMode
 export type PlayMode = 'repeat' | 'repeat-once' | 'shuffle';
+
+// Song climax
+export type SongClimax = {
+  start_time: number;
+  end_time: number;
+  timelength: number;
+  author_name: string;
+  hash: string;
+  audio_id: string;
+  audio_name: string;
+};

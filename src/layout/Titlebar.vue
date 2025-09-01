@@ -56,7 +56,7 @@
                   clearable
                 >
                   <template #prefix>
-                    <NIcon :size="20">
+                    <NIcon :size="16">
                       <Search />
                     </NIcon>
                   </template>

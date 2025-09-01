@@ -83,6 +83,7 @@
 
       <!-- 上一曲 -->
       <NButton
+        :focusable="false"
         ghost
         text
         v-debounce="() => player.nextOrPrev('prev')"
@@ -119,6 +120,7 @@
       </NButton>
       <!-- 下一曲 -->
       <NButton
+        :focusable="false"
         ghost
         text
         v-debounce="() => player.nextOrPrev('next')"
@@ -159,6 +161,7 @@
             @click.stop="player.togglePlayMode(false)"
           >
             <NButton
+              :focusable="false"
               ghost
               text
             >
@@ -179,6 +182,7 @@
               @wheel="player.setVolume"
             >
               <NButton
+                :focusable="false"
                 ghost
                 text
               >
@@ -220,6 +224,7 @@
           }"
         >
           <NButton
+            :focusable="false"
             ghost
             text
             class="menu-icon"
@@ -583,13 +588,6 @@ const singer = computed(() => {
       }
       &:active {
         transform: scale(1);
-      }
-    }
-    :deep(.n-badge-sup) {
-      background-color: rgba(var(--primary), 0.28);
-      backdrop-filter: blur(20px);
-      .n-base-slot-machine {
-        color: var(--primary-hex);
       }
     }
   }

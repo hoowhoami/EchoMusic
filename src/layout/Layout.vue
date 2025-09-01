@@ -25,9 +25,11 @@
       </NLayoutSider>
       <!-- Main Content -->
       <NLayout
+        ref="mainRef"
         class="content"
         :native-scrollbar="false"
         content-style="padding: 12px; overflow: hidden;"
+        embedded
       >
         <Main />
       </NLayout>
@@ -49,6 +51,20 @@ import Sidebar from './Sidebar.vue';
 import Titlebar from './Titlebar.vue';
 import Main from './Main.vue';
 import Player from './Player.vue';
+import { ref, watchEffect } from 'vue';
+import { useElementSize } from '@vueuse/core';
+import { useSettingStore } from '@/store';
+
+const settingStore = useSettingStore();
+
+const mainRef = ref<HTMLElement>();
+
+// 主内容高度
+const { height: mainHeight } = useElementSize(mainRef);
+
+watchEffect(() => {
+  settingStore.setMainHeight(mainHeight.value);
+});
 </script>
 
 <style scoped>

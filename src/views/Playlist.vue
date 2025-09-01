@@ -1,6 +1,6 @@
 <!-- 歌单列表 -->
 <template>
-  <div class="playlist flex flex-col space-y-2">
+  <div class="playlist flex flex-col space-y-4">
     <div class="info">
       <div
         v-if="!playlistInfo"
@@ -17,125 +17,235 @@
           />
         </div>
       </div>
-      <div
+      <PlaylistCard
         v-else
-        class="flex space-x-4"
-      >
-        <NImage
-          class="rounded-lg"
-          width="200"
-          height="200"
-          :preview-disabled="true"
-          :src="getCover(playlistInfo?.pic, 200)"
-          :fallback-src="getCover(playlistInfo?.pic, 200)"
-        />
-        <div class="detail flex flex-col">
-          <NH2>{{ playlistInfo?.name }}</NH2>
-          <div class="flex flex-col space-y-4">
-            <div class="creator flex items-center space-x-2">
-              <NAvatar
-                round
-                size="small"
-                :src="getCover(playlistInfo?.create_user_pic, 50)"
-                :fallback-src="getCover(playlistInfo?.create_user_pic, 50)"
-              />
-              <div class="name">{{ playlistInfo?.list_create_username }}</div>
-              <div class="time">{{ formatTimestamp(playlistInfo?.create_time * 1000) }} 创建</div>
-            </div>
-            <div
-              v-if="playlistTags"
-              class="tags flex items-center space-x-2"
+        :playlist="playlistInfo"
+      />
+    </div>
+    <div class="toolbar flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <NButton
+          :focusable="false"
+          circle
+        >
+          <template #icon>
+            <NIcon :size="24">
+              <PlayArrowRound />
+            </NIcon>
+          </template>
+        </NButton>
+        <NButton
+          :focusable="false"
+          round
+          v-if="userStore.isAuthenticated && !isCreatedPlaylist"
+        >
+          <template #icon>
+            <NIcon :size="20">
+              <Heart />
+            </NIcon>
+          </template>
+          {{ isLikedPlaylist ? '取消收藏' : '收藏歌单' }}
+        </NButton>
+        <NButton
+          :focusable="false"
+          circle
+          v-if="userStore.isAuthenticated && isCreatedPlaylist"
+        >
+          <template #icon>
+            <NIcon :size="24">
+              <DeleteRound />
+            </NIcon>
+          </template>
+        </NButton>
+        <NButton
+          :focusable="false"
+          round
+          @click="batchMode = !batchMode"
+        >
+          <template #icon>
+            <NIcon :size="24">
+              <ListRound />
+            </NIcon>
+          </template>
+          {{ batchMode ? '取消操作' : '批量操作' }}
+        </NButton>
+        <NDropdown
+          v-if="batchMode"
+          trigger="click"
+          :options="moreOptions"
+        >
+          <NBadge
+            :value="checkedSongs.length"
+            :max="999"
+          >
+            <NButton
+              :focusable="false"
+              circle
+              :disabled="!checkedSongs.length"
             >
-              <NTag
-                v-for="tag in playlistTags"
-                :key="tag"
-                size="small"
-                round
-              >
-                {{ tag }}
-              </NTag>
-            </div>
-            <div class="count flex items-center space-x-2">
-              <div class="flex items-center space-x-1">
-                <NIcon :size="18">
-                  <MusicNoteFilled />
+              <template #icon>
+                <NIcon :size="24">
+                  <BatchPredictionRound />
                 </NIcon>
-                <NText depth="3"> {{ playlistInfo?.count || 0 }} </NText>
-              </div>
-              <div class="flex items-center space-x-1">
-                <NIcon :size="18">
-                  <ArrowsSort />
-                </NIcon>
-                <NText depth="3"> {{ playlistInfo?.sort || 0 }} </NText>
-              </div>
-              <div class="flex items-center space-x-1">
-                <NIcon :size="18">
-                  <HistoryOutlined />
-                </NIcon>
-                <NText depth="3"> {{ formatTimestamp(playlistInfo?.update_time * 1000) }} </NText>
-              </div>
-            </div>
-            <NEllipsis :line-clamp="1">{{ playlistIntro }}</NEllipsis>
-          </div>
-        </div>
+              </template>
+            </NButton>
+          </NBadge>
+        </NDropdown>
+      </div>
+      <div class="flex items-center space-x-2">
+        <NInput
+          v-model:value="searchKeyword"
+          size="small"
+          clearable
+          placeholder="模糊搜索"
+        >
+          <template #prefix>
+            <NIcon :size="16">
+              <Search />
+            </NIcon>
+          </template>
+        </NInput>
       </div>
     </div>
-    <div class="toolbar">
-      <div class="play">播放全部</div>
-    </div>
     <div class="list">
-      <SongList :playlist-id="playlistId" />
+      <SongList
+        virtual-scroll
+        :max-height="maxHeight"
+        :loading="loading"
+        :batch-mode="batchMode"
+        v-model="filteredSongs"
+        v-model:checked-songs="checkedSongs"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { getPlaylistDetail } from '@/api';
-import { formatTimestamp, getCover } from '@/utils';
-import { NAvatar, NEllipsis, NH2, NIcon, NImage, NSkeleton, NText } from 'naive-ui';
+import type { Song } from '@/types';
+import { getPlaylistDetail, getPlaylistTrackAll } from '@/api';
+import { DropdownOption, NBadge, NButton, NDropdown, NIcon, NInput, NSkeleton } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
-import { ArrowsSort } from '@vicons/tabler';
 import SongList from '@/components/List/SongList.vue';
+import PlaylistCard from '@/components/Card/PlaylistCard.vue';
+import { PlayArrowRound, ListRound, DeleteRound, BatchPredictionRound } from '@vicons/material';
+import { Search, Heart } from '@vicons/ionicons5';
+import { useSettingStore, useUserStore } from '@/store';
 
 defineOptions({
   name: 'Playlist',
 });
 
 const route = useRoute();
+const userStore = useUserStore();
+const settingStore = useSettingStore();
 
 const playlistId = ref('');
 const playlistInfo = ref();
 
+const maxHeight = computed(() => {
+  return settingStore.mainHeight - 290;
+});
+
+const loading = ref(false);
+const songs = ref<Song[]>([]);
+const checkedSongs = ref<Song[]>([]);
+
+const filteredSongs = ref<Song[]>([]);
+
+const searchKeyword = ref('');
+
+const batchMode = ref(false);
+
+// 更多操作
+const moreOptions = computed<DropdownOption[]>(() => [
+  {
+    label: '添加到播放列表',
+    key: 'addToPlaylist',
+    props: {
+      onClick: () => {
+        console.log('添加到播放列表', checkedSongs.value);
+      },
+    },
+  },
+  {
+    label: '添加到其他歌单',
+    key: 'addToOtherPlaylist',
+    props: {
+      onClick: () => {
+        console.log('添加到歌单', checkedSongs.value);
+      },
+    },
+  },
+  {
+    label: '从当前歌单删除',
+    key: 'deleteFromPlaylist',
+    show: isCreatedPlaylist.value,
+    props: {
+      onClick: () => {
+        console.log('从歌单中删除', checkedSongs.value);
+      },
+    },
+  },
+]);
+
+const isCreatedPlaylist = computed(() => {
+  return playlistInfo.value?.list_create_userid === userStore.userid;
+});
+
+const isLikedPlaylist = computed(() => {
+  return userStore.isLikedPlaylist(playlistInfo.value?.list_create_gid);
+});
+
 const getPlaylistInfo = async () => {
-  if (!playlistId.value) return;
+  if (!playlistId.value) {
+    return;
+  }
   const res = await getPlaylistDetail(playlistId.value);
   playlistInfo.value = res?.[0];
 };
 
-const playlistTags = computed(() => {
-  const tags = playlistInfo.value?.tags?.split(',').filter((tag: string) => tag.trim());
-  if (tags?.length > 0) {
-    return tags;
+const getSongs = async () => {
+  if (!playlistId.value) {
+    return;
   }
-  return ['默认'];
-});
-
-const playlistIntro = computed(() => {
-  return playlistInfo.value?.intro || '暂无简介';
-});
+  let page = 1;
+  const size = 300;
+  let fetchCount = 0;
+  songs.value = [];
+  try {
+    loading.value = true;
+    do {
+      const res = await getPlaylistTrackAll(playlistId.value, page, size);
+      songs.value.push(...res.songs);
+      fetchCount = res.songs.length;
+      page++;
+    } while (fetchCount > 0);
+    // 初始化
+    filteredSongs.value = songs.value;
+  } finally {
+    loading.value = false;
+  }
+};
 
 onMounted(() => {
+  playlistId.value = route.query.id as string;
   getPlaylistInfo();
+  getSongs();
 });
 
 watch(
-  () => route.query.id,
+  () => searchKeyword.value,
   newValue => {
-    if (!newValue) return;
-    playlistId.value = newValue as string;
-    getPlaylistInfo();
+    if (!newValue) {
+      filteredSongs.value = songs.value;
+    } else {
+      filteredSongs.value = songs.value.filter(song => {
+        const name = song.name;
+        const album = song.albuminfo?.name;
+        return name.includes(newValue) || album.includes(newValue);
+      });
+    }
   },
 );
 </script>

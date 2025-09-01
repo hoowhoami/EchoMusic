@@ -1,7 +1,10 @@
 <template>
   <div class="main-content">
     <!-- 路由页面 -->
-    <RouterView v-slot="{ Component }">
+    <RouterView
+      v-slot="{ Component }"
+      :key="$route.fullPath"
+    >
       <Transition
         name="router-transition"
         mode="out-in"

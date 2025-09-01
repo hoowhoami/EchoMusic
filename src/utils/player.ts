@@ -309,7 +309,14 @@ class Player {
   private async getClimax(id: string) {
     const playerStore = usePlayerStore();
     const result = await getSongClimax(id);
-    console.log(result, playerStore.climax);
+    if (result && result.length) {
+      const climaxs: { [key: number]: string } = {};
+      for (const item of result) {
+        climaxs[item.start_time / 1000] = '';
+        climaxs[item.end_time / 1000] = '';
+      }
+      playerStore.setClimax(climaxs);
+    }
   }
 
   /**
@@ -401,6 +408,9 @@ class Player {
         const url = await this.getOnlineUrl(hash);
         // 正常播放地址
         if (url) {
+          // 获取歌曲高潮部分
+          this.getClimax(hash);
+          // 创建播放器
           await this.createPlayer(url, autoPlay, seek);
         }
         // 尝试解灰
