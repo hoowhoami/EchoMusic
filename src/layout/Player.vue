@@ -228,24 +228,101 @@
             ghost
             text
             class="menu-icon"
-            @click.stop="playerStore.playlistShow = !playerStore.playlistShow"
+            @click.stop="playlistShow = !playlistShow"
           >
             <template #icon>
               <NIcon :size="20">
-                <ListRound />
+                <Playlist />
               </NIcon>
             </template>
           </NButton>
         </NBadge>
       </NFlex>
     </Transition>
+    <!-- 播放列表 -->
+    <NDrawer
+      v-model:show="playlistShow"
+      :trap-focus="false"
+      :block-scroll="false"
+      to="#main-layout"
+    >
+      <NDrawerContent
+        :native-scrollbar="false"
+        :title="`播放列表 (${playerStore.playlist.length})`"
+        :closable="false"
+        @close="playlistShow = false"
+      >
+        <template #header>
+          <div class="playlist-header flex items-center justify-between">
+            <div style="font-size: 12px">
+              <NText>播放列表({{ playerStore.playlist.length }})</NText>
+            </div>
+            <div>
+              <NButton
+                :focusable="false"
+                ghost
+                text
+                @click.stop="handlePlaylistClearAll"
+              >
+                <template #icon>
+                  <NIcon :size="16">
+                    <Trash />
+                  </NIcon>
+                </template>
+              </NButton>
+            </div>
+          </div>
+        </template>
+        <div class="playlist">
+          <NVirtualList
+            v-if="playerStore.playlist.length"
+            :items="playerStore.playlist"
+            :item-size="50"
+            key-field="hash"
+          >
+            <template #default="{ item }">
+              <div
+                class="playlist-item flex items-center justify-between"
+                style="height: 50px"
+              >
+                <div>
+                  <SongCard
+                    :song="item"
+                    @dblclick.stop="player.addNextSong(item, true)"
+                  />
+                </div>
+                <div class="delete-btn-wrapper">
+                  <NButton
+                    class="delete-btn"
+                    :focusable="false"
+                    ghost
+                    text
+                    @click.stop="handlePlaylistDelete(item)"
+                  >
+                    <template #icon>
+                      <NIcon :size="20">
+                        <Trash />
+                      </NIcon>
+                    </template>
+                  </NButton>
+                </div>
+              </div>
+            </template>
+          </NVirtualList>
+        </div>
+      </NDrawerContent>
+    </NDrawer>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { Song } from '@/types';
+
 import {
   NBadge,
   NButton,
+  NDrawer,
+  NDrawerContent,
   NDropdown,
   NFlex,
   NIcon,
@@ -253,26 +330,41 @@ import {
   NPopover,
   NSlider,
   NText,
+  NVirtualList,
 } from 'naive-ui';
 
 import { usePlayerStore, useSettingStore } from '@/store';
 import { calculateCurrentTime, getCover, renderIcon, secondsToTime } from '@/utils';
 import player from '@/utils/player';
 import { computed, ref } from 'vue';
-import { Repeat, RepeatOnce, ArrowsShuffle, Volume, Volume2, Volume3 } from '@vicons/tabler';
 import {
-  SkipPreviousRound,
-  SkipNextRound,
-  PauseRound,
-  PlayArrowRound,
-  ListRound,
-} from '@vicons/material';
+  Repeat,
+  RepeatOnce,
+  ArrowsShuffle,
+  Volume,
+  Volume2,
+  Volume3,
+  Playlist,
+  Trash,
+} from '@vicons/tabler';
+import { SkipPreviousRound, SkipNextRound, PauseRound, PlayArrowRound } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
+import SongCard from '@/components/Card/SongCard.vue';
 
 const playerStore = usePlayerStore();
 
 const settingStore = useSettingStore();
+
+const playlistShow = ref(false);
+
+const handlePlaylistClearAll = () => {
+  playerStore.clearPlaylist();
+};
+
+const handlePlaylistDelete = (song: Song) => {
+  console.log(song);
+};
 
 // 进度条拖拽结束
 const sliderDragend = () => {
@@ -604,5 +696,21 @@ const singer = computed(() => {
     margin-top: 4px;
     font-size: 12px;
   }
+}
+
+/* 默认隐藏删除按钮 */
+.playlist-item .delete-btn-wrapper {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* 鼠标悬停在列表项时显示删除按钮 */
+.playlist-item:hover .delete-btn-wrapper {
+  opacity: 1;
+}
+
+/* 可选：添加按钮本身的过渡效果 */
+.delete-btn {
+  transition: all 0.2s ease;
 }
 </style>

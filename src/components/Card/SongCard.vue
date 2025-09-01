@@ -5,7 +5,8 @@
   >
     <NImage
       v-if="showCover || true"
-      class="border rounded-lg"
+      class="song-cover border rounded-lg"
+      :height="coverSize || 40"
       :width="coverSize || 40"
       :src="cover"
       :preview-disabled="true"
@@ -64,6 +65,9 @@ const singer = computed(() => {
 
 <style scoped lang="scss">
 .song-card {
+  .song-cover {
+    flex-shrink: 0;
+  }
   .song-info {
     .song-name {
       font-size: 12px;

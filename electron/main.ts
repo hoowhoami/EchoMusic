@@ -47,7 +47,9 @@ function startServer() {
 function createWindow() {
   mainWindow = new BrowserWindow({
     minWidth: 1000,
+    width: 1000,
     minHeight: 700,
+    height: 700,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,

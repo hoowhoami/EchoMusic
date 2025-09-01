@@ -55,7 +55,9 @@ const columns = computed<DataTableColumns>(() => {
         const song = row as Song;
         return h(SongCard, {
           song,
-          onDblclick: () => player.updatePlayList(songs.value || [], song),
+          onDblclick: () => {
+            player.addNextSong(song, true);
+          },
         });
       },
       sorter: 'default',

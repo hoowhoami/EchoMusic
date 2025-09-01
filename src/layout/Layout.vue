@@ -8,6 +8,7 @@
       <Titlebar />
     </NLayoutHeader>
     <NLayout
+      id="main-layout"
       position="absolute"
       style="top: 50px; bottom: 70px"
       has-sider

@@ -16,7 +16,6 @@ interface Player {
   mute: number;
   rate: number;
   mode: PlayMode;
-  playlistShow: boolean;
 }
 
 export const usePlayerStore = defineStore('player', {
@@ -36,7 +35,6 @@ export const usePlayerStore = defineStore('player', {
     mute: 0,
     rate: 1,
     mode: 'repeat',
-    playlistShow: false,
   }),
   getters: {},
   actions: {
@@ -69,6 +67,12 @@ export const usePlayerStore = defineStore('player', {
     },
     clearOriginalPlaylist() {
       this.originalPlaylist = [];
+    },
+    clearPlaylist() {
+      this.playlist = [];
+      this.originalPlaylist = [];
+      this.current = undefined;
+      this.index = -1;
     },
   },
 });

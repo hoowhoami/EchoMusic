@@ -52,19 +52,20 @@
           v-if="userStore.isAuthenticated && isCreatedPlaylist"
         >
           <template #icon>
-            <NIcon :size="24">
-              <DeleteRound />
+            <NIcon :size="20">
+              <Trash />
             </NIcon>
           </template>
         </NButton>
         <NButton
           :focusable="false"
           round
-          @click="batchMode = !batchMode"
+          @click="handleBatchModeClick"
         >
           <template #icon>
-            <NIcon :size="24">
-              <ListRound />
+            <NIcon :size="20">
+              <List v-if="batchMode" />
+              <ListCheck v-else />
             </NIcon>
           </template>
           {{ batchMode ? '取消操作' : '批量操作' }}
@@ -84,7 +85,7 @@
               :disabled="!checkedSongs.length"
             >
               <template #icon>
-                <NIcon :size="24">
+                <NIcon :size="20">
                   <BatchPredictionRound />
                 </NIcon>
               </template>
@@ -128,8 +129,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import SongList from '@/components/List/SongList.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
-import { PlayArrowRound, ListRound, DeleteRound, BatchPredictionRound } from '@vicons/material';
+import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
 import { Search, Heart } from '@vicons/ionicons5';
+import { ListCheck, List, Trash } from '@vicons/tabler';
 import { useSettingStore, useUserStore } from '@/store';
 
 defineOptions({
@@ -156,6 +158,13 @@ const filteredSongs = ref<Song[]>([]);
 const searchKeyword = ref('');
 
 const batchMode = ref(false);
+
+const handleBatchModeClick = () => {
+  batchMode.value = !batchMode.value;
+  if (!batchMode.value) {
+    checkedSongs.value = [];
+  }
+};
 
 // 更多操作
 const moreOptions = computed<DropdownOption[]>(() => [

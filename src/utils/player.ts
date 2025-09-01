@@ -750,6 +750,7 @@ class Player {
     }
     // 尝试添加
     const songIndex = await playerStore.setNextPlaySong(song, playerStore.index);
+    console.log('songIndex', songIndex);
     // 播放歌曲
     if (songIndex < 0) {
       return;
@@ -771,7 +772,9 @@ class Player {
     // 获取数据
     const playlist = playerStore.playlist;
     // 若超出播放列表
-    if (index >= playlist.length) return;
+    if (index >= playlist.length) {
+      return;
+    }
     // 相同
     if (!play && playerStore.index === index) {
       this.play();
