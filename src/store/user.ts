@@ -9,8 +9,6 @@ interface User {
   pic?: string;
   // 扩展信息
   extends?: any;
-  // 创建歌单
-  createdPlaylist?: Playlist[];
   // 收藏歌单
   likedPlaylist?: Playlist[];
 }
