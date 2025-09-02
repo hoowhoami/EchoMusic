@@ -48,17 +48,24 @@
           </template>
           {{ isLikedPlaylist ? '取消收藏' : '收藏歌单' }}
         </NButton>
-        <NButton
-          :focusable="false"
-          circle
-          v-if="userStore.isAuthenticated && isCreatedPlaylist"
+        <NPopconfirm
+          v-if="userStore.isAuthenticated && isCreatedPlaylist && !isDefaultPlaylist"
+          @positive-click="handleDeletePlaylist"
         >
-          <template #icon>
-            <NIcon :size="20">
-              <Trash />
-            </NIcon>
+          <template #trigger>
+            <NButton
+              :focusable="false"
+              circle
+            >
+              <template #icon>
+                <NIcon :size="20">
+                  <Trash />
+                </NIcon>
+              </template>
+            </NButton>
           </template>
-        </NButton>
+          确定要删除歌单吗？
+        </NPopconfirm>
         <NButton
           :focusable="false"
           round
@@ -138,9 +145,18 @@
 <script setup lang="ts">
 import type { Song } from '@/types';
 import { getPlaylistDetail, getPlaylistTrackAll } from '@/api';
-import { DropdownOption, NBadge, NButton, NDropdown, NIcon, NInput, NSkeleton } from 'naive-ui';
+import {
+  DropdownOption,
+  NBadge,
+  NButton,
+  NDropdown,
+  NIcon,
+  NInput,
+  NPopconfirm,
+  NSkeleton,
+} from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import SongList from '@/components/List/SongList.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
@@ -154,6 +170,7 @@ defineOptions({
 });
 
 const route = useRoute();
+const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
@@ -179,6 +196,18 @@ const handleBatchModeClick = () => {
   if (!batchMode.value) {
     checkedSongs.value = [];
   }
+};
+
+const handleDeletePlaylist = () => {
+  userStore
+    .deletePlaylist(playlistInfo.value.listid)
+    .then(async () => {
+      window.$message.success('删除成功');
+      router.back();
+    })
+    .catch(() => {
+      window.$message.error('删除失败');
+    });
 };
 
 // 更多操作
@@ -214,11 +243,15 @@ const moreOptions = computed<DropdownOption[]>(() => [
 ]);
 
 const isCreatedPlaylist = computed(() => {
-  return playlistInfo.value?.list_create_userid === userStore.userid;
+  return userStore.isCreatedPlaylist(playlistInfo.value?.list_create_gid);
 });
 
 const isLikedPlaylist = computed(() => {
   return userStore.isLikedPlaylist(playlistInfo.value?.list_create_gid);
+});
+
+const isDefaultPlaylist = computed(() => {
+  return userStore.isDefaultPlaylist(playlistInfo.value?.list_create_gid);
 });
 
 const getPlaylistInfo = async () => {

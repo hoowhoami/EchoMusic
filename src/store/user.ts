@@ -1,3 +1,4 @@
+import { addPlaylist, deletePlaylist, dfid, getPlaylist, userDetail, userVipDetail } from '@/api';
 import type { Playlist } from '@/types';
 import { defineStore } from 'pinia';
 
@@ -9,8 +10,8 @@ interface User {
   pic?: string;
   // 扩展信息
   extends?: any;
-  // 收藏歌单
-  likedPlaylist?: Playlist[];
+  // 用户歌单
+  playlist?: Playlist[];
 }
 
 export const useUserStore = defineStore('user', {
@@ -22,7 +23,7 @@ export const useUserStore = defineStore('user', {
     nickname: undefined,
     pic: undefined,
     extends: undefined,
-    likedPlaylist: undefined,
+    playlist: undefined,
   }),
   getters: {
     isAuthenticated(state) {
@@ -31,8 +32,55 @@ export const useUserStore = defineStore('user', {
     hasExtends(state) {
       return !!state.extends?.dfid && !!state.extends?.detail && !!state.extends?.vip;
     },
+    getCreatedPlaylist(state) {
+      return state.playlist?.filter(item => item.list_create_userid === state.userid) ?? [];
+    },
+    getDefaultPlaylist(state) {
+      return (
+        state.playlist?.filter(
+          item =>
+            item.list_create_userid === state.userid &&
+            (item.name === '默认收藏' || item.name === '我喜欢'),
+        ) ?? []
+      );
+    },
+    getLikedPlaylist(state) {
+      return (
+        state.playlist?.filter(item => item.list_create_userid !== state.userid && !item.authors) ??
+        []
+      );
+    },
+    isUserPlaylist: state => (id: string) => {
+      return (
+        state.playlist
+          ?.filter(item => item.list_create_userid === state.userid)
+          ?.some(item => item.global_collection_id === id) ?? false
+      );
+    },
+    isCreatedPlaylist: state => (id: string) => {
+      return (
+        state.playlist
+          ?.filter(item => item.list_create_userid === state.userid)
+          ?.some(item => item.list_create_gid === id) ?? false
+      );
+    },
+    isDefaultPlaylist: state => (id: string) => {
+      return (
+        state.playlist
+          ?.filter(
+            item =>
+              item.list_create_userid === state.userid &&
+              (item.name === '默认收藏' || item.name === '我喜欢'),
+          )
+          ?.some(item => item.list_create_gid === id) ?? false
+      );
+    },
     isLikedPlaylist: state => (id: string) => {
-      return state.likedPlaylist?.some(item => item.list_create_gid === id);
+      return (
+        state.playlist
+          ?.filter(item => item.list_create_userid !== state.userid && !item.authors)
+          ?.some(item => item.list_create_gid === id) ?? false
+      );
     },
   },
   actions: {
@@ -42,8 +90,60 @@ export const useUserStore = defineStore('user', {
     clearUserInfo() {
       this.$reset();
     },
-    setLikedPlaylist(playlist: Playlist[]) {
-      this.likedPlaylist = playlist;
+    async fetchUserExtends() {
+      if (!this.isAuthenticated) {
+        return;
+      }
+      this.extends = undefined;
+      const dfidResult = await dfid();
+      this.setUserInfo({
+        extends: {
+          dfid: dfidResult.dfid,
+        },
+      });
+      const detailResult = await userDetail();
+      this.setUserInfo({
+        extends: {
+          detail: detailResult,
+        },
+      });
+      const vipResult = await userVipDetail();
+      this.setUserInfo({
+        extends: {
+          vip: vipResult,
+        },
+      });
+    },
+    async initUserExtends() {
+      if (!this.isAuthenticated) {
+        return;
+      }
+      if (this.hasExtends) {
+        return;
+      }
+      await this.fetchUserExtends();
+    },
+    async fetchPlaylist() {
+      if (!this.isAuthenticated) {
+        return;
+      }
+      this.playlist = undefined;
+      const res = await getPlaylist();
+      const sortedInfo = res.info.sort((a: Playlist, b: Playlist) => {
+        if (a.sort !== b.sort) {
+          return a.sort - b.sort;
+        }
+        return 0;
+      });
+      this.playlist = sortedInfo;
+    },
+    async createPlaylist(name: string, isPrivate: boolean = false) {
+      await addPlaylist(name, isPrivate ? 1 : 0, 0);
+      await this.fetchPlaylist();
+    },
+    async deletePlaylist(id: string) {
+      await deletePlaylist(id);
+      await this.fetchPlaylist();
     },
   },
 });

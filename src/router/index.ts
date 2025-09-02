@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useUserStore } from '@/store';
-import { dfid, userDetail, userVipDetail } from '@/api';
 
 import Layout from '@/layout/Layout.vue';
 import Login from '@/views/Login.vue';
@@ -55,7 +54,7 @@ router.beforeEach(async (to, from, next) => {
   try {
     if (to.name === 'Login') {
       if (isAuthenticated) {
-        await initUserExtends();
+        await userStore.initUserExtends();
         const targetPath = from.fullPath && from.fullPath !== to.fullPath ? from.fullPath : '/';
         next({ path: targetPath, replace: true });
       } else {
@@ -66,7 +65,7 @@ router.beforeEach(async (to, from, next) => {
 
     if (to.meta.auth) {
       if (isAuthenticated) {
-        await initUserExtends();
+        await userStore.initUserExtends();
         next();
       } else {
         next({ path: '/login', replace: true });
@@ -75,7 +74,7 @@ router.beforeEach(async (to, from, next) => {
     }
 
     if (isAuthenticated) {
-      await initUserExtends();
+      await userStore.initUserExtends();
     }
     next();
   } finally {
@@ -85,30 +84,5 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 });
-
-const initUserExtends = async () => {
-  const userStore = useUserStore();
-  if (userStore.hasExtends) {
-    return;
-  }
-  const dfidResult = await dfid();
-  userStore.setUserInfo({
-    extends: {
-      dfid: dfidResult.dfid,
-    },
-  });
-  const detailResult = await userDetail();
-  userStore.setUserInfo({
-    extends: {
-      detail: detailResult,
-    },
-  });
-  const vipResult = await userVipDetail();
-  userStore.setUserInfo({
-    extends: {
-      vip: vipResult,
-    },
-  });
-};
 
 export default router;

@@ -2,20 +2,62 @@
   <div class="sidebar-content">
     <NMenu
       ref="menuRef"
+      :indent="20"
       v-model:value="menuActiveKey"
       :options="menuOptions"
       :render-label="renderMenuLabel"
       :default-expand-all="true"
       @update:value="menuUpdate"
     />
+    <NModal
+      v-model:show="playlistCreateModal"
+      preset="dialog"
+      title="创建歌单"
+      style="width: 400px"
+      :loading="loading"
+      positive-text="确认"
+      negative-text="取消"
+      @positive-click="handleCreatePlaylist"
+      @negative-click="playlistCreateModal = false"
+    >
+      <div>
+        <NForm
+          ref="formRef"
+          :model="formValue"
+          :rules="formRules"
+          size="small"
+        >
+          <NFormItem
+            label="歌单名称"
+            path="name"
+          >
+            <NInput
+              v-model:value="formValue.name"
+              :maxlength="60"
+              placeholder="请输入歌单名称"
+              clearable
+            />
+          </NFormItem>
+          <NFormItem
+            label="隐私歌单"
+            path="isPrivate"
+          >
+            <NSwitch
+              v-model:value="formValue.isPrivate"
+              clearable
+            />
+          </NFormItem>
+        </NForm>
+      </div>
+    </NModal>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { MenuGroupOption, MenuInst, MenuOption } from 'naive-ui';
+import type { FormRules, MenuGroupOption, MenuInst, MenuOption } from 'naive-ui';
 import type { Playlist } from '@/types';
 
-import { NMenu, NText, NButton, NAvatar, NEllipsis } from 'naive-ui';
+import { NMenu, NText, NButton, NAvatar, NEllipsis, NModal, NForm, NSwitch } from 'naive-ui';
 import { computed, h, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import {
@@ -26,10 +68,9 @@ import {
   Add,
   ListOutline,
 } from '@vicons/ionicons5';
-import { FavoriteBorderFilled } from '@vicons/material';
+import { FavoriteBorderFilled, RefreshRound } from '@vicons/material';
 import { Playlist as PlaylistIcon } from '@vicons/tabler';
 
-import { getPlaylist } from '@/api';
 import { useUserStore } from '@/store';
 import { getCover, renderIcon } from '@/utils';
 
@@ -40,73 +81,154 @@ const router = useRouter();
 const menuRef = ref<MenuInst>();
 const menuActiveKey = ref<string>((route.name as string) || 'Home');
 
-const playlists = ref<Playlist[]>([]);
+const loading = ref(false);
+
+const playlistCreateModal = ref(false);
+
+const formRef = ref();
+
+const formValue = ref({
+  name: '',
+  isPrivate: false,
+});
+
+const formRules: FormRules = {
+  name: [{ key: 'name', required: true, message: '请输入歌单名称', trigger: 'blur' }],
+};
+
+const openCreatePlaylist = () => {
+  formValue.value = {
+    name: '',
+    isPrivate: false,
+  };
+  formRef.value?.restoreValidation();
+  playlistCreateModal.value = true;
+};
+
+const handleCreatePlaylist = () => {
+  formRef.value?.validate((errors: any) => {
+    loading.value = true;
+    if (!errors) {
+      // 创建歌单
+      userStore
+        .createPlaylist(formValue.value.name, formValue.value.isPrivate)
+        .then(() => {
+          playlistCreateModal.value = false;
+        })
+        .catch((err: any) => {
+          console.error('创建歌单失败', err);
+        })
+        .finally(() => {
+          loading.value = false;
+        });
+    }
+  });
+};
 
 // 菜单内容
 const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
   return [
     {
-      key: 'Home',
-      link: 'home',
-      label: '推荐',
-      icon: renderIcon(HomeOutline),
-    },
-    {
-      key: 'Discover',
-      link: 'discover',
-      label: '发现',
-      icon: renderIcon(CompassOutline),
+      key: 'OnlineMusic',
+      type: 'group',
+      label: '在线音乐',
+      children: [
+        {
+          key: 'Home',
+          link: 'home',
+          label: '推荐',
+          icon: renderIcon(HomeOutline),
+        },
+        {
+          key: 'Discover',
+          link: 'discover',
+          label: '发现',
+          icon: renderIcon(CompassOutline),
+        },
+      ],
     },
     {
       key: 'divider',
       type: 'divider',
     },
     {
-      key: 'History',
-      link: 'history',
-      label: '最近',
-      icon: renderIcon(TimeOutline),
-    },
-    {
-      key: 'Cloud',
-      link: 'cloud',
-      label: '云盘',
-      icon: renderIcon(CloudOutline),
+      key: 'MyMusic',
+      type: 'group',
+      label: '我的音乐',
+      children: [
+        {
+          key: 'History',
+          link: 'history',
+          label: '最近',
+          icon: renderIcon(TimeOutline),
+        },
+        {
+          key: 'Cloud',
+          link: 'cloud',
+          label: '云盘',
+          icon: renderIcon(CloudOutline),
+        },
+      ],
     },
     {
       key: 'divider-two',
       type: 'divider',
     },
-    // 创建的歌单
     {
-      key: 'user-playlists',
-      icon: renderIcon(PlaylistIcon),
+      key: 'Playlist-Album',
+      type: 'group',
       label: () =>
-        h('div', { class: 'flex items-center justify-between' }, [
-          h(NText, { depth: 3 }, () => ['创建的歌单']),
+        h('div', { class: 'flex items-center justify-between w-full' }, [
+          h(NText, { depth: 3 }, () => ['歌单/专辑']),
           h(NButton, {
-            class: 'mr-6',
+            class: 'mr-[18px]',
             text: true,
-            renderIcon: renderIcon(Add),
-            onclick: (event: Event) => {
+            focusable: false,
+            loading: loading.value,
+            disabled: !userStore.isAuthenticated,
+            renderIcon: renderIcon(RefreshRound),
+            onclick: async (event: Event) => {
               event.stopPropagation();
-              openCreatePlaylist();
+              getUserPlaylist();
             },
           }),
         ]),
-      children: [...createPlaylist.value],
-    },
-    // 收藏的歌单
-    {
-      key: 'liked-playlists',
-      icon: renderIcon(FavoriteBorderFilled),
-      label: () =>
-        h(
-          'div',
-          { class: 'flex items-center justify-between' },
-          h(NText, { depth: 3 }, () => ['收藏的歌单']),
-        ),
-      children: [...likedPlaylist.value],
+      children: [
+        // 创建的歌单
+        {
+          key: 'user-playlists',
+          icon: renderIcon(PlaylistIcon),
+          label: () =>
+            h('div', { class: 'flex items-center justify-between' }, [
+              h(NText, { depth: 3 }, () => ['创建的歌单']),
+              h(NButton, {
+                class: 'mr-6',
+                text: true,
+                focusable: false,
+                loading: loading.value,
+                disabled: !userStore.isAuthenticated,
+                renderIcon: renderIcon(Add),
+                onclick: (event: Event) => {
+                  event.stopPropagation();
+                  openCreatePlaylist();
+                },
+              }),
+            ]),
+          children: [...createPlaylist.value],
+        },
+        // 收藏的歌单
+        {
+          key: 'liked-playlists',
+          icon: renderIcon(FavoriteBorderFilled),
+          label: () =>
+            h(
+              'div',
+              { class: 'flex items-center justify-between' },
+              h(NText, { depth: 3 }, () => ['收藏的歌单']),
+            ),
+          children: [...likedPlaylist.value],
+        },
+      ],
     },
   ];
 });
@@ -144,20 +266,13 @@ const renderPlaylist = (playlist: Playlist[], showCover: boolean = true, custom:
 
 // 创建的歌单
 const createPlaylist = computed<MenuOption[]>(() => {
-  const userid = userStore.userid;
-  const list = playlists.value.filter(
-    playlist => playlist.list_create_userid === userid || playlist.name === '我喜欢',
-  );
+  const list = userStore.getCreatedPlaylist;
   return renderPlaylist(list, false, 'create-playlist');
 });
 
 // 收藏的歌单
 const likedPlaylist = computed<MenuOption[]>(() => {
-  const userid = userStore.userid;
-  const list = playlists.value.filter(
-    playlist => playlist.list_create_userid !== userid && !playlist.authors,
-  );
-  userStore.setLikedPlaylist(list);
+  const list = userStore.getLikedPlaylist;
   return renderPlaylist(list, true, 'liked-playlist');
 });
 
@@ -195,9 +310,8 @@ const checkMenuItem = () => {
       // 获取歌单 id
       const playlistId = String(route.query.id || '');
       // 是否处于用户歌单
-      const isUserPlaylist = playlists.value.some(
-        playlist => playlist?.global_collection_id === playlistId,
-      );
+      const isUserPlaylist = userStore.isUserPlaylist(playlistId);
+
       if (playlistId) {
         menuActiveKey.value = isUserPlaylist ? playlistId : 'Home';
       }
@@ -210,40 +324,35 @@ const checkMenuItem = () => {
   }
 };
 
-const openCreatePlaylist = () => {};
-
-const getUserPlaylist = () => {
-  getPlaylist().then(res => {
-    const sortedInfo = res.info.sort((a: Playlist, b: Playlist) => {
-      if (a.sort !== b.sort) {
-        return a.sort - b.sort;
-      }
-      return 0;
-    });
-    playlists.value = sortedInfo;
-  });
+const getUserPlaylist = async () => {
+  try {
+    loading.value = true;
+    await userStore.fetchPlaylist();
+  } finally {
+    loading.value = false;
+  }
 };
 
 // 监听路由
 watch(
-  () => [route.fullPath, playlists],
+  () => [route.fullPath],
   () => checkMenuItem(),
 );
 
 // 监听用户登录
 watch(
   () => userStore.isAuthenticated,
-  () => {
+  async () => {
     if (userStore.isAuthenticated) {
-      getUserPlaylist();
+      await getUserPlaylist();
     }
   },
 );
 
-onMounted(() => {
+onMounted(async () => {
   // 获取歌单
   if (userStore.isAuthenticated) {
-    getUserPlaylist();
+    await getUserPlaylist();
   }
 });
 </script>
