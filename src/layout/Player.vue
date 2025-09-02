@@ -265,6 +265,7 @@
       :trap-focus="false"
       :block-scroll="false"
       to="#main-layout"
+      width="350px"
     >
       <NDrawerContent
         :native-scrollbar="false"
@@ -275,9 +276,21 @@
         <template #header>
           <div class="playlist-header flex items-center justify-between">
             <div style="font-size: 12px">
-              <NText>播放列表({{ playerStore.playlist.length }})</NText>
+              <NText>播放列表</NText>
             </div>
-            <div>
+            <div class="flex items-center gap-2">
+              <NButton
+                :focusable="false"
+                ghost
+                text
+                @click.stop="handleScrollToCurrent"
+              >
+                <template #icon>
+                  <NIcon :size="16">
+                    <CurrentLocation />
+                  </NIcon>
+                </template>
+              </NButton>
               <NButton
                 :focusable="false"
                 ghost
@@ -308,7 +321,8 @@
                 <div>
                   <SongCard
                     :song="item"
-                    @dblclick.stop="player.playSong(item)"
+                    :cover-size="40"
+                    @play="player.playSong(item)"
                   />
                 </div>
                 <div class="delete-btn-wrapper">
@@ -367,6 +381,7 @@ import {
   Volume3,
   Playlist,
   Trash,
+  CurrentLocation,
 } from '@vicons/tabler';
 import {
   SkipPreviousRound,
@@ -546,6 +561,8 @@ const singer = computed(() => {
   }
   return '未知艺术家';
 });
+
+const handleScrollToCurrent = () => {};
 </script>
 
 <style scoped lang="scss">

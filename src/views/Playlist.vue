@@ -93,7 +93,19 @@
           </NBadge>
         </NDropdown>
       </div>
-      <div class="flex items-center space-x-2">
+      <div class="flex items-center space-x-4">
+        <NButton
+          :focusable="false"
+          ghost
+          text
+          @click.stop="handleScrollToCurrent"
+        >
+          <template #icon>
+            <NIcon :size="18">
+              <CurrentLocation />
+            </NIcon>
+          </template>
+        </NButton>
         <NInput
           v-model:value="searchKeyword"
           size="small"
@@ -131,7 +143,7 @@ import SongList from '@/components/List/SongList.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
 import { Search, Heart } from '@vicons/ionicons5';
-import { ListCheck, List, Trash } from '@vicons/tabler';
+import { ListCheck, List, Trash, CurrentLocation } from '@vicons/tabler';
 import { useSettingStore, useUserStore } from '@/store';
 
 defineOptions({
@@ -236,6 +248,8 @@ const getSongs = async () => {
     loading.value = false;
   }
 };
+
+const handleScrollToCurrent = () => {};
 
 onMounted(() => {
   playlistId.value = route.query.id as string;

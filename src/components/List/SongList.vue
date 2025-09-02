@@ -55,7 +55,8 @@ const columns = computed<DataTableColumns>(() => {
         const song = row as Song;
         return h(SongCard, {
           song,
-          onDblclick: () => {
+          coverSize: 40,
+          onPlay: (song: Song) => {
             player.addNextSong(song, true);
           },
         });
