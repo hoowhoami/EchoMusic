@@ -27,6 +27,8 @@
         <NButton
           :focusable="false"
           circle
+          :disabled="!songs.length"
+          @click="handlePlayAll"
         >
           <template #icon>
             <NIcon :size="24">
@@ -145,6 +147,7 @@ import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
 import { Search, Heart } from '@vicons/ionicons5';
 import { ListCheck, List, Trash, CurrentLocation } from '@vicons/tabler';
 import { useSettingStore, useUserStore } from '@/store';
+import player from '@/utils/player';
 
 defineOptions({
   name: 'Playlist',
@@ -246,6 +249,16 @@ const getSongs = async () => {
     filteredSongs.value = songs.value;
   } finally {
     loading.value = false;
+  }
+};
+
+const handlePlayAll = () => {
+  if (settingStore.playlistOnlyAddPlaySong) {
+    songs.value.forEach(song => {
+      player.addNextSong(song, false);
+    });
+  } else {
+    player.updatePlayList(songs.value);
   }
 };
 
