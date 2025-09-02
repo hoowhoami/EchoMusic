@@ -1,13 +1,13 @@
 <template>
   <div
-    class="song-card flex items-center space-x-2 group cursor-pointer"
+    class="song-card flex items-center space-x-2 group"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
-    @click="handlePlay"
   >
     <div
-      class="song-cover-wrapper relative rounded-lg overflow-hidden border"
+      class="song-cover-wrapper relative rounded-lg overflow-hidden border cursor-pointer"
       :style="{ width: `${coverSize || 40}px`, height: `${coverSize || 40}px` }"
+      @click="handlePlay"
     >
       <NImage
         v-if="showCover || true"

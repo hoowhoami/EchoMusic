@@ -81,7 +81,7 @@ class Player {
     const playerStore = usePlayerStore();
     // 播放列表
     const playlist = playerStore.playlist;
-    if (!playlist?.length || !playerStore.index) {
+    if (!playlist?.length || playerStore.index < 0) {
       return null;
     }
     return playlist[playerStore.index];

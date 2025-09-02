@@ -26,6 +26,7 @@ import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
+import { useSettingStore } from '@/store';
 
 defineOptions({
   name: 'SongList',
@@ -37,6 +38,8 @@ const props = defineProps<{
   loading?: boolean;
   batchMode?: boolean;
 }>();
+
+const settingStore = useSettingStore();
 
 const songs = defineModel<Song[]>();
 
@@ -57,7 +60,11 @@ const columns = computed<DataTableColumns>(() => {
           song,
           coverSize: 40,
           onPlay: (song: Song) => {
-            player.addNextSong(song, true);
+            if (settingStore.playlistOnlyAddPlaySong) {
+              player.addNextSong(song, true);
+            } else {
+              player.updatePlayList(songs.value || [], song);
+            }
           },
         });
       },
