@@ -27,6 +27,8 @@ class Player {
     this.player = new Howl({ src: [''], format: allowPlayFormat, autoplay: false });
     // 初始化媒体会话
     this.initMediaSession();
+    // 初始化后恢复状态
+    this.initPlayerOnAppStart();
   }
   /**
    * 洗牌数组（Fisher-Yates）
@@ -40,12 +42,36 @@ class Player {
     return copy;
   }
   /**
+   * 应用启动时初始化播放器
+   * 处理 Pinia 持久化后的状态恢复问题
+   */
+  private initPlayerOnAppStart() {
+    // 使用 nextTick 确保 DOM 已加载且 Pinia 状态已恢复
+    setTimeout(() => {
+      const playerStore = usePlayerStore();
+      
+      // 检查是否有播放列表和当前歌曲
+      if (playerStore.playlist.length > 0 && playerStore.current && playerStore.index >= 0) {
+        console.log('🎵 恢复播放器状态');
+        
+        // 重置播放状态，防止状态不一致
+        const wasPlaying = playerStore.isPlaying;
+        playerStore.isPlaying = false;
+        playerStore.loading = false;
+        
+        // 重新初始化播放器
+        this.initPlayer(wasPlaying);
+      }
+    }, 200); // 增加延迟时间确保 Pinia 完全恢复
+  }
+
+  /**
    * 重置状态
    */
   resetStatus() {
     const playerStore = usePlayerStore();
     // 重置状态
-    playerStore.resetStatus();
+    playerStore.resetPlaybackState();
   }
   /**
    * 获取当前播放歌曲
@@ -118,22 +144,7 @@ class Player {
     }
     return null;
   }
-  /**
-   * 获取解锁播放链接
-   * @param songData 歌曲数据
-   * @returns
-   */
-  private async getUnlockSongUrl(songData: Song): Promise<string | null> {
-    try {
-      // TODO
-      console.log('getUnlockSongUrl', songData);
-      return null;
-    } catch (error) {
-      console.error('Error in getUnlockSongUrl', error);
-      return null;
-    }
-  }
-  /**
+    /**
    * 创建播放器
    * @param src 播放地址
    * @param autoPlay 是否自动播放
@@ -147,29 +158,25 @@ class Player {
     console.log(hash, cover);
     // 清理播放器
     Howler.unload();
+    // 清理定时器
+    clearInterval(this.playerInterval);
     // 创建播放器
     this.player = new Howl({
       src,
       format: allowPlayFormat,
       html5: true,
-      autoplay: autoPlay,
+      autoplay: false, // 先不自动播放，等待 load 事件
       preload: 'metadata',
       pool: 1,
       volume: playerStore.volume,
       rate: playerStore.rate,
     });
     // 播放器事件
-    this.playerEvent({ seek });
-    // 自动播放
-    if (autoPlay) {
-      this.play();
-    }
+    this.playerEvent({ seek, autoPlay });
     // 获取歌曲附加信息 - 非电台和本地 TODO
 
     // 定时获取状态
-    if (!this.playerInterval) {
-      this.handlePlayStatus();
-    }
+    this.handlePlayStatus();
     // 新增播放历史 TODO
     console.log('add history', playerStore.current);
     // 获取歌曲封面主色 TODO
@@ -188,13 +195,15 @@ class Player {
     options: {
       // 恢复进度
       seek?: number;
-    } = { seek: 0 },
+      // 是否自动播放
+      autoPlay?: boolean;
+    } = { seek: 0, autoPlay: true },
   ) {
     // 获取数据
     const playerStore = usePlayerStore();
     const playSongData = this.getPlaySongData();
     // 获取配置
-    const { seek } = options;
+    const { seek, autoPlay } = options;
     // 初次加载
     this.player.once('load', () => {
       // 允许跨域
@@ -206,11 +215,17 @@ class Player {
       }
       // 更新状态
       playerStore.loading = false;
+      // 如果需要自动播放，在加载完成后播放
+      if (autoPlay) {
+        this.play();
+      }
       // ipc
     });
     // 播放
     this.player.on('play', () => {
       window.document.title = this.getPlayerInfo() || 'SPlayer';
+      // 更新播放状态
+      playerStore.isPlaying = true;
       // ipc
       console.log('▶️ song play:', playSongData);
     });
@@ -410,6 +425,8 @@ class Player {
       playerStore.current = playSongData;
       // 更改状态
       playerStore.loading = true;
+      // 重置播放状态，防止状态不一致
+      playerStore.isPlaying = false;
       // 在线歌曲
       if (hash && playerStore.playlist.length) {
         const url = await this.getOnlineUrl(hash);
@@ -450,6 +467,12 @@ class Player {
     // 已在播放
     if (this.player.playing()) {
       playerStore.isPlaying = true;
+      return;
+    }
+    // 如果播放器未正确初始化，重新初始化
+    if (!playerStore.current || playerStore.index < 0) {
+      console.warn('⚠️ 播放器未正确初始化，重新初始化');
+      await this.initPlayer(true);
       return;
     }
     this.player.play();
@@ -628,6 +651,13 @@ class Player {
    */
   getSeek(): number {
     return this.player.seek();
+  }
+  /**
+   * 检查是否正在播放
+   * @returns 是否正在播放
+   */
+  playing(): boolean {
+    return this.player.playing();
   }
   /**
    * 设置播放速率

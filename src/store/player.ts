@@ -74,8 +74,9 @@ export const usePlayerStore = defineStore('player', {
       this.current = undefined;
       this.index = -1;
     },
-    resetStatus() {
+    resetPlaybackState() {
       this.isPlaying = false;
+      this.loading = false;
       this.duration = 0;
       this.progress = 0;
       this.currentTime = 0;

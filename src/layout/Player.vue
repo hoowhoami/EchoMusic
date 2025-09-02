@@ -173,6 +173,26 @@
             </NButton>
           </div>
         </NDropdown>
+        <!-- 倍速播放 -->
+        <NPopselect
+          :options="playSpeedOptions"
+          v-model:value="playerStore.rate"
+          @update:value="speed => player.setRate(speed)"
+        >
+          <div class="menu-icon">
+            <NButton
+              :focusable="false"
+              ghost
+              text
+            >
+              <template #icon>
+                <NIcon :size="20">
+                  <SpeedRound />
+                </NIcon>
+              </template>
+            </NButton>
+          </div>
+        </NPopselect>
         <!-- 音量调节 -->
         <NPopover>
           <template #trigger>
@@ -328,6 +348,7 @@ import {
   NIcon,
   NImage,
   NPopover,
+  NPopselect,
   NSlider,
   NText,
   NVirtualList,
@@ -336,7 +357,7 @@ import {
 import { usePlayerStore, useSettingStore } from '@/store';
 import { calculateCurrentTime, getCover, renderIcon, secondsToTime } from '@/utils';
 import player from '@/utils/player';
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import {
   Repeat,
   RepeatOnce,
@@ -347,7 +368,13 @@ import {
   Playlist,
   Trash,
 } from '@vicons/tabler';
-import { SkipPreviousRound, SkipNextRound, PauseRound, PlayArrowRound } from '@vicons/material';
+import {
+  SkipPreviousRound,
+  SkipNextRound,
+  PauseRound,
+  PlayArrowRound,
+  SpeedRound,
+} from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
 import SongCard from '@/components/Card/SongCard.vue';
@@ -357,6 +384,44 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 
 const playlistShow = ref(false);
+
+// 组件挂载时初始化播放器
+onMounted(() => {
+  console.log('🎵 Player component mounted');
+  initializePlayer();
+});
+
+// 监听播放器状态变化
+watch(
+  () => playerStore.current,
+  (newVal, oldVal) => {
+    if (newVal && newVal !== oldVal) {
+      console.log('🎵 Current song changed:', newVal.name);
+    }
+  },
+);
+
+// 初始化播放器
+const initializePlayer = () => {
+  const playerStore = usePlayerStore();
+
+  // 检查是否有播放列表和当前歌曲
+  if (playerStore.playlist.length > 0 && playerStore.current && playerStore.index >= 0) {
+    console.log('🎵 初始化播放器');
+
+    // 如果显示正在播放但实际没有播放，则重置状态
+    if (playerStore.isPlaying && !player.playing()) {
+      console.log('🔄 重置播放状态');
+      playerStore.isPlaying = false;
+      playerStore.loading = false;
+
+      // 重新初始化播放器
+      setTimeout(() => {
+        player.initPlayer(false);
+      }, 100);
+    }
+  }
+};
 
 const handlePlaylistClearAll = () => {
   playerStore.clearPlaylist();
@@ -395,6 +460,41 @@ const playModeOptions = ref([
     label: '随机播放',
     key: 'shuffle',
     icon: renderIcon(ArrowsShuffle),
+  },
+]);
+
+const playSpeedOptions = ref([
+  {
+    label: '0.25x',
+    value: 0.25,
+  },
+  {
+    label: '0.5x',
+    value: 0.5,
+  },
+  {
+    label: '0.75x',
+    value: 0.75,
+  },
+  {
+    label: '1.0x',
+    value: 1,
+  },
+  {
+    label: '1.25x',
+    value: 1.25,
+  },
+  {
+    label: '1.5x',
+    value: 1.5,
+  },
+  {
+    label: '1.75x',
+    value: 1.75,
+  },
+  {
+    label: '2.0x',
+    value: 2,
   },
 ]);
 
