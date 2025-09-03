@@ -202,6 +202,11 @@ const handleBatchModeClick = () => {
   }
 };
 
+const resetBatchMode = () => {
+  batchMode.value = false;
+  checkedSongs.value = [];
+};
+
 const handleDeletePlaylist = () => {
   userStore
     .deletePlaylist(playlistInfo.value.listid)
@@ -221,7 +226,8 @@ const moreOptions = computed<DropdownOption[]>(() => [
     key: 'addToPlaylist',
     props: {
       onClick: () => {
-        console.log('添加到播放列表', checkedSongs.value);
+        player.updatePlayList(checkedSongs.value);
+        resetBatchMode();
       },
     },
   },
@@ -231,8 +237,21 @@ const moreOptions = computed<DropdownOption[]>(() => [
     props: {
       onClick: () => {
         console.log('添加到歌单', checkedSongs.value);
+        resetBatchMode();
       },
     },
+    children: [
+      {
+        label: '创建新歌单',
+        key: 'createNewPlaylist',
+        props: {
+          onClick: () => {
+            console.log('创建新歌单', checkedSongs.value);
+            resetBatchMode();
+          },
+        },
+      },
+    ],
   },
   {
     label: '从当前歌单删除',
@@ -241,6 +260,7 @@ const moreOptions = computed<DropdownOption[]>(() => [
     props: {
       onClick: () => {
         console.log('从歌单中删除', checkedSongs.value);
+        resetBatchMode();
       },
     },
   },
