@@ -112,6 +112,7 @@ import { NEllipsis, NImage, NThing } from 'naive-ui';
 import { computed } from 'vue';
 import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
 import { ArrowsSort } from '@vicons/tabler';
+import { useUserStore } from '@/store';
 
 defineOptions({
   name: 'PlaylistCard',
@@ -120,6 +121,8 @@ defineOptions({
 const props = defineProps<{
   playlist?: Playlist;
 }>();
+
+const userStore = useUserStore();
 
 const coverSize = computed(() => {
   return 150;
@@ -154,7 +157,14 @@ const playlistTags = computed(() => {
   if (tags && tags.length > 0) {
     return tags;
   }
-  return ['默认'];
+  // 用户歌单
+  if (userStore.isCreatedPlaylist(props.playlist?.list_create_gid || '')) {
+    if (userStore.isDefaultPlaylist(props.playlist?.list_create_gid || '')) {
+      return ['默认'];
+    }
+    return ['自建'];
+  }
+  return ['unknown'];
 });
 </script>
 

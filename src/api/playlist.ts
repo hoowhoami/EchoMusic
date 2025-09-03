@@ -22,22 +22,22 @@ export const addPlaylist = (
 
 // 取消收藏歌单/删除歌单
 // listid: 用户歌单 listid
-export const deletePlaylist = (listid: string) => {
+export const deletePlaylist = (listid: number) => {
   return api.get('/playlist/del', { listid });
 };
 
 // 对歌单添加歌曲
 // listid: 用户歌单 listid
 // data: 歌曲数据, 格式为 歌曲名称|歌曲 hash|专辑 id|(mixsongid/album_audio_id)，最少需要 歌曲名称以及歌曲 hash(若返回错误则需要全部参数)， 支持多个，每 个以逗号分隔
-export const addPlaylistTrack = (listid: string, data: string) => {
-  return api.get('/playlist/track/add', { listid, data });
+export const addPlaylistTrack = (listid: number, data: string) => {
+  return api.get('/playlist/tracks/add', { listid, data });
 };
 
 // 对歌单删除歌曲
 // listid: 用户歌单 listid
 // fileids: 歌单中歌曲的 fileid，可多个,用逗号隔开
-export const deletePlaylistTrack = (listid: string, fileids: string) => {
-  return api.get('/playlist/track/del', { listid, fileids });
+export const deletePlaylistTrack = (listid: number, fileids: string) => {
+  return api.get('/playlist/tracks/del', { listid, fileids });
 };
 
 // 获取歌单详情

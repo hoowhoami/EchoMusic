@@ -141,7 +141,7 @@ export const useUserStore = defineStore('user', {
       await addPlaylist(name, isPrivate ? 1 : 0, 0);
       await this.fetchPlaylist();
     },
-    async deletePlaylist(id: string) {
+    async deletePlaylist(id: number) {
       await deletePlaylist(id);
       await this.fetchPlaylist();
     },

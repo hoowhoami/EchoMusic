@@ -22,112 +22,25 @@
         :playlist="playlistInfo"
       />
     </div>
-    <div class="toolbar flex items-center justify-between">
-      <div class="flex items-center space-x-2">
-        <NButton
-          :focusable="false"
-          circle
-          :disabled="!songs.length"
-          @click="handlePlayAll"
-        >
-          <template #icon>
-            <NIcon :size="24">
-              <PlayArrowRound />
-            </NIcon>
-          </template>
-        </NButton>
-        <NButton
-          :focusable="false"
-          round
-          v-if="userStore.isAuthenticated && !isCreatedPlaylist"
-        >
-          <template #icon>
-            <NIcon :size="20">
-              <Heart />
-            </NIcon>
-          </template>
-          {{ isLikedPlaylist ? '取消收藏' : '收藏歌单' }}
-        </NButton>
-        <NPopconfirm
-          v-if="userStore.isAuthenticated && isCreatedPlaylist && !isDefaultPlaylist"
-          @positive-click="handleDeletePlaylist"
-        >
-          <template #trigger>
-            <NButton
-              :focusable="false"
-              circle
-            >
-              <template #icon>
-                <NIcon :size="20">
-                  <Trash />
-                </NIcon>
-              </template>
-            </NButton>
-          </template>
-          确定要删除歌单吗？
-        </NPopconfirm>
-        <NButton
-          :focusable="false"
-          round
-          @click="handleBatchModeClick"
-        >
-          <template #icon>
-            <NIcon :size="20">
-              <List v-if="batchMode" />
-              <ListCheck v-else />
-            </NIcon>
-          </template>
-          {{ batchMode ? '取消操作' : '批量操作' }}
-        </NButton>
-        <NDropdown
-          v-if="batchMode"
-          trigger="click"
-          :options="moreOptions"
-        >
-          <NBadge
-            :value="checkedSongs.length"
-            :max="999"
-          >
-            <NButton
-              :focusable="false"
-              circle
-              :disabled="!checkedSongs.length"
-            >
-              <template #icon>
-                <NIcon :size="20">
-                  <BatchPredictionRound />
-                </NIcon>
-              </template>
-            </NButton>
-          </NBadge>
-        </NDropdown>
-      </div>
-      <div class="flex items-center space-x-4">
-        <NButton
-          :focusable="false"
-          ghost
-          text
-          @click.stop="handleScrollToCurrent"
-        >
-          <template #icon>
-            <NIcon :size="18">
-              <CurrentLocation />
-            </NIcon>
-          </template>
-        </NButton>
-        <NInput
-          v-model:value="searchKeyword"
-          size="small"
-          clearable
-          placeholder="模糊搜索"
-        >
-          <template #prefix>
-            <NIcon :size="16">
-              <Search />
-            </NIcon>
-          </template>
-        </NInput>
-      </div>
+    <div class="toolbar">
+      <SongListMenu
+        :songs="songs"
+        v-model:selected-songs="checkedSongs"
+        v-model:search-keyword="searchKeyword"
+        :batch-mode="batchMode"
+        :playlist="playlistInfo"
+        :is-liked="isLikedPlaylist"
+        :show-like="userStore.isAuthenticated && !isCreatedPlaylist"
+        :show-delete="userStore.isAuthenticated && isCreatedPlaylist && !isDefaultPlaylist"
+        @play-all="handlePlayAll"
+        @like="handleLikePlaylist"
+        @delete="handleDeletePlaylist"
+        @toggle-batch-mode="handleBatchModeClick"
+        @locate-current="handleScrollToCurrent"
+        @batch-operation-complete="resetBatchMode"
+        @add-to-playlist="handleAddToPlaylist"
+        @delete-from-playlist="handleDeletedSongs"
+      />
     </div>
     <div class="list">
       <SongList
@@ -146,23 +59,12 @@
 <script setup lang="ts">
 import type { Song } from '@/types';
 import { getPlaylistDetail, getPlaylistTrackAll } from '@/api';
-import {
-  DropdownOption,
-  NBadge,
-  NButton,
-  NDropdown,
-  NIcon,
-  NInput,
-  NPopconfirm,
-  NSkeleton,
-} from 'naive-ui';
+import { NSkeleton } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SongList from '@/components/List/SongList.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
-import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
-import { Search, Heart } from '@vicons/ionicons5';
-import { ListCheck, List, Trash, CurrentLocation } from '@vicons/tabler';
+import SongListMenu from '@/components/Menu/SongListMenu.vue';
 import { useSettingStore, useUserStore, usePlayerStore } from '@/store';
 import player from '@/utils/player';
 
@@ -219,52 +121,26 @@ const handleDeletePlaylist = () => {
     });
 };
 
-// 更多操作
-const moreOptions = computed<DropdownOption[]>(() => [
-  {
-    label: '添加到播放列表',
-    key: 'addToPlaylist',
-    props: {
-      onClick: () => {
-        player.updatePlayList(checkedSongs.value);
-        resetBatchMode();
-      },
-    },
-  },
-  {
-    label: '添加到其他歌单',
-    key: 'addToOtherPlaylist',
-    props: {
-      onClick: () => {
-        console.log('添加到歌单', checkedSongs.value);
-        resetBatchMode();
-      },
-    },
-    children: [
-      {
-        label: '创建新歌单',
-        key: 'createNewPlaylist',
-        props: {
-          onClick: () => {
-            console.log('创建新歌单', checkedSongs.value);
-            resetBatchMode();
-          },
-        },
-      },
-    ],
-  },
-  {
-    label: '从当前歌单删除',
-    key: 'deleteFromPlaylist',
-    show: isCreatedPlaylist.value,
-    props: {
-      onClick: () => {
-        console.log('从歌单中删除', checkedSongs.value);
-        resetBatchMode();
-      },
-    },
-  },
-]);
+const handleLikePlaylist = () => {
+  // TODO: 实现收藏/取消收藏逻辑
+  if (isLikedPlaylist.value) {
+    window.$message.success('已取消收藏');
+  } else {
+    window.$message.success('已添加到收藏');
+  }
+};
+
+const handleAddToPlaylist = () => {
+  window.$message.success('已添加到播放列表');
+};
+
+const handleDeletedSongs = (deletedSongs: Song[]) => {
+  // 从当前列表中移除已删除的歌曲
+  songs.value = songs.value.filter(song => 
+    !deletedSongs.some(deleted => deleted.fileid === song.fileid),
+  );
+  filteredSongs.value = songs.value;
+};
 
 const isCreatedPlaylist = computed(() => {
   return userStore.isCreatedPlaylist(playlistInfo.value?.list_create_gid);
