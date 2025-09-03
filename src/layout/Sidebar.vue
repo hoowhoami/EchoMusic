@@ -20,7 +20,7 @@
       @positive-click="handleCreatePlaylist"
       @negative-click="playlistCreateModal = false"
     >
-      <div>
+      <div class="pt-4">
         <NForm
           ref="formRef"
           :model="formValue"
