@@ -1,12 +1,12 @@
 <template>
-  <n-config-provider
+  <NConfigProvider
     :locale="zhCN"
     :date-locale="dateZhCN"
     :theme="naiveTheme"
   >
     <n-global-style />
     <router-view />
-  </n-config-provider>
+  </NConfigProvider>
 </template>
 
 <script setup lang="ts">
