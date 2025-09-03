@@ -203,7 +203,7 @@ const menuOptions = computed(() => {
         key: 'profile',
       },
       {
-        label: '设置',
+        label: '偏好设置',
         key: 'setting',
       },
       {
@@ -211,14 +211,14 @@ const menuOptions = computed(() => {
         key: 'd1',
       },
       {
-        label: '退出',
+        label: '退出登录',
         key: 'logout',
       },
     ];
   }
   return [
     {
-      label: '设置',
+      label: '偏好设置',
       key: 'setting',
     },
     {
@@ -226,7 +226,7 @@ const menuOptions = computed(() => {
       key: 'd1',
     },
     {
-      label: '登录',
+      label: '立即登录',
       key: 'login',
     },
   ];
@@ -255,6 +255,10 @@ const logout = () => {
     negativeText: '取消',
     onPositiveClick: () => {
       userStore.clearUserInfo();
+      router.push({
+        path: '/home',
+        replace: true,
+      });
     },
   });
 };

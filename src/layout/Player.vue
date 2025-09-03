@@ -152,6 +152,7 @@
 
         <!-- 播放模式 -->
         <NDropdown
+          size="small"
           :options="playModeOptions"
           :show-arrow="true"
           @select="mode => player.togglePlayMode(mode)"
