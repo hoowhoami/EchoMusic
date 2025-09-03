@@ -131,6 +131,7 @@
     </div>
     <div class="list">
       <SongList
+        ref="songListRef"
         virtual-scroll
         :max-height="maxHeight"
         :loading="loading"
@@ -162,7 +163,7 @@ import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
 import { Search, Heart } from '@vicons/ionicons5';
 import { ListCheck, List, Trash, CurrentLocation } from '@vicons/tabler';
-import { useSettingStore, useUserStore } from '@/store';
+import { useSettingStore, useUserStore, usePlayerStore } from '@/store';
 import player from '@/utils/player';
 
 defineOptions({
@@ -173,6 +174,9 @@ const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
+const playerStore = usePlayerStore();
+
+const songListRef = ref();
 
 const playlistId = ref('');
 const playlistInfo = ref();
@@ -295,7 +299,23 @@ const handlePlayAll = () => {
   }
 };
 
-const handleScrollToCurrent = () => {};
+const handleScrollToCurrent = () => {
+  // 获取当前播放歌曲
+  const currentSong = playerStore.current;
+  if (!currentSong) {
+    window.$message.warning('暂无正在播放的歌曲');
+    return;
+  }
+
+  // 调用 SongList 组件的 scrollToCurrent 方法
+  const success = songListRef.value?.scrollToCurrent();
+  
+  if (success) {
+    window.$message.success(`已定位到：${currentSong.name}`);
+  } else {
+    window.$message.warning('当前播放歌曲不在此歌单中');
+  }
+};
 
 onMounted(() => {
   playlistId.value = route.query.id as string;

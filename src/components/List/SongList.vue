@@ -1,6 +1,7 @@
 <template>
   <div class="song-list">
     <NDataTable
+      ref="dataTableRef"
       size="small"
       :virtual-scroll="props.virtualScroll"
       :max-height="props.maxHeight"
@@ -26,7 +27,7 @@ import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
-import { useSettingStore } from '@/store';
+import { useSettingStore, usePlayerStore } from '@/store';
 
 defineOptions({
   name: 'SongList',
@@ -40,6 +41,9 @@ const props = defineProps<{
 }>();
 
 const settingStore = useSettingStore();
+const playerStore = usePlayerStore();
+
+const dataTableRef = ref();
 
 const songs = defineModel<Song[]>();
 
@@ -166,6 +170,38 @@ watch(
   },
   { deep: true },
 );
+
+// 滚动到当前播放歌曲
+const scrollToCurrent = () => {
+  // 获取当前播放歌曲
+  const currentSong = playerStore.current;
+  if (!currentSong || !songs.value) {
+    return false;
+  }
+
+  // 在当前歌单中查找当前播放歌曲的索引
+  const currentIndex = songs.value.findIndex(song => song.hash === currentSong.hash);
+  
+  if (currentIndex === -1) {
+    return false;
+  }
+
+  // 使用 DataTable 的 scrollTo 方法实现平滑滚动
+  if (dataTableRef.value?.scrollTo) {
+    dataTableRef.value.scrollTo({
+      index: currentIndex,
+      behavior: 'smooth',
+    });
+    return true;
+  }
+  
+  return false;
+};
+
+// 暴露方法给父组件
+defineExpose({
+  scrollToCurrent,
+});
 </script>
 
 <style lang="scss" scoped></style>

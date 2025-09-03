@@ -309,9 +309,13 @@
         <div class="playlist">
           <NVirtualList
             v-if="playerStore.playlist.length"
+            ref="virtualListInst"
             :items="playerStore.playlist"
             :item-size="50"
             key-field="hash"
+            :style="{
+              'max-height': `${playlistHeight}px`,
+            }"
           >
             <template #default="{ item }">
               <div
@@ -351,7 +355,7 @@
 
 <script setup lang="ts">
 import type { Song } from '@/types';
-
+import type { VirtualListInst } from 'naive-ui';
 import {
   NBadge,
   NButton,
@@ -399,6 +403,11 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 
 const playlistShow = ref(false);
+const virtualListInst = ref<VirtualListInst>();
+
+const playlistHeight = computed(() => {
+  return settingStore.mainHeight - 100;
+});
 
 // 组件挂载时初始化播放器
 onMounted(() => {
@@ -562,7 +571,26 @@ const singer = computed(() => {
   return '未知艺术家';
 });
 
-const handleScrollToCurrent = () => {};
+const handleScrollToCurrent = () => {
+  // 获取当前播放歌曲
+  const currentSong = playerStore.current;
+  if (!currentSong) {
+    window.$message.warning('暂无正在播放的歌曲');
+    return;
+  }
+
+  // 获取当前播放歌曲在播放列表中的索引
+  const currentIndex = playerStore.index;
+
+  if (currentIndex === -1 || currentIndex >= playerStore.playlist.length) {
+    window.$message.warning('当前播放歌曲不在播放列表中');
+    return;
+  }
+
+  // 使用官方示例的方式调用 scrollTo
+  virtualListInst.value?.scrollTo({ index: currentIndex, behavior: 'smooth' });
+  window.$message.success(`已定位到：${currentSong.name}`);
+};
 </script>
 
 <style scoped lang="scss">
