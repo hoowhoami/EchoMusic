@@ -27,7 +27,7 @@ import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
-import { useSettingStore, usePlayerStore } from '@/store';
+import { usePlayerStore } from '@/store';
 
 defineOptions({
   name: 'SongList',
@@ -40,7 +40,6 @@ const props = defineProps<{
   batchMode?: boolean;
 }>();
 
-const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
 
 const dataTableRef = ref();
