@@ -17,6 +17,9 @@ export function setupNaive(app: App<Element>) {
     ['message', 'dialog', 'notification', 'loadingBar', 'modal'],
     {
       configProviderProps: configProviderPropsRef,
+      messageProviderProps: {
+        max: 3,
+      },
     },
   );
   // 挂在到window

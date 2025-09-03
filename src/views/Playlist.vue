@@ -290,13 +290,7 @@ const getSongs = async () => {
 };
 
 const handlePlayAll = () => {
-  if (settingStore.playlistOnlyAddPlaySong) {
-    songs.value.forEach(song => {
-      player.addNextSong(song, false);
-    });
-  } else {
-    player.updatePlayList(songs.value);
-  }
+  player.updatePlayList(songs.value);
 };
 
 const handleScrollToCurrent = () => {
@@ -309,7 +303,7 @@ const handleScrollToCurrent = () => {
 
   // 调用 SongList 组件的 scrollToCurrent 方法
   const success = songListRef.value?.scrollToCurrent();
-  
+
   if (success) {
     window.$message.success(`已定位到：${currentSong.name}`);
   } else {

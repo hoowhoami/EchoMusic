@@ -10,7 +10,6 @@ interface Setting {
   showPlaylistCount: boolean;
   autoNextOnError: boolean;
   autoNextOnErrorTime: number;
-  playlistOnlyAddPlaySong: boolean;
 }
 
 export const useSettingStore = defineStore('setting', {
@@ -25,7 +24,6 @@ export const useSettingStore = defineStore('setting', {
     showPlaylistCount: true,
     autoNextOnError: false,
     autoNextOnErrorTime: 3000,
-    playlistOnlyAddPlaySong: false,
   }),
   getters: {
     getTheme: state => state.theme,
