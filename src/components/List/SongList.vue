@@ -64,11 +64,7 @@ const columns = computed<DataTableColumns>(() => {
           song,
           coverSize: 40,
           onPlay: (song: Song) => {
-            if (settingStore.playlistOnlyAddPlaySong) {
-              player.addNextSong(song, true);
-            } else {
-              player.updatePlayList(songs.value || [], song);
-            }
+            player.updatePlayList(songs.value || [], song);
           },
         });
       },
@@ -181,7 +177,7 @@ const scrollToCurrent = () => {
 
   // 在当前歌单中查找当前播放歌曲的索引
   const currentIndex = songs.value.findIndex(song => song.hash === currentSong.hash);
-  
+
   if (currentIndex === -1) {
     return false;
   }
@@ -194,7 +190,7 @@ const scrollToCurrent = () => {
     });
     return true;
   }
-  
+
   return false;
 };
 
