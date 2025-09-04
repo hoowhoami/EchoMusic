@@ -190,3 +190,22 @@ export type AudioQuality =
  * 组合音效类型和音频质量的联合类型
  */
 export type SongQuality = MusicEffect | AudioQuality;
+
+/**
+ * 音质选项配置
+ */
+export interface QualityOption {
+  label: string;
+  value: AudioQuality | MusicEffect;
+}
+
+export interface QualityOptionGroup {
+  label: string;
+  key: string;
+  type: 'group';
+  children: QualityOption[];
+  // 添加 naive-ui SelectGroupOption 需要的属性
+  [key: string]: any;
+}
+
+export type QualitySelectOption = QualityOptionGroup;

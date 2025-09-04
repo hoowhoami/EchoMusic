@@ -237,6 +237,7 @@ import {
   BrandGithub,
 } from '@vicons/tabler';
 import { useTheme } from '@/hooks';
+import { AUDIO_QUALITY_OPTIONS } from '@/constants';
 
 defineOptions({
   name: 'Setting',
@@ -254,12 +255,10 @@ const themeOptions = [
 ];
 
 // 音质选项
-const audioQualityOptions = [
-  { label: '标准品质', value: '128' },
-  { label: 'HQ高品质', value: '320' },
-  { label: 'SQ无损品质', value: 'flac' },
-  { label: 'Hi-Res无损品质', value: 'high' },
-];
+const audioQualityOptions = AUDIO_QUALITY_OPTIONS.map(option => ({
+  label: option.label,
+  value: option.value,
+}));
 
 // 打开链接
 const openLink = (url: string) => {

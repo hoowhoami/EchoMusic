@@ -15,6 +15,9 @@ interface Setting {
   backupQuality: AudioQuality;
 }
 
+// 默认音质设置
+const DEFAULT_AUDIO_QUALITY: AudioQuality = 'high';
+
 export const useSettingStore = defineStore('setting', {
   persist: true,
   state: (): Setting => ({
@@ -28,7 +31,7 @@ export const useSettingStore = defineStore('setting', {
     autoNextOnError: false,
     autoNextOnErrorTime: 3000,
     compatibilityMode: true,
-    backupQuality: 'high',
+    backupQuality: DEFAULT_AUDIO_QUALITY,
   }),
   getters: {
     getTheme: state => state.theme,

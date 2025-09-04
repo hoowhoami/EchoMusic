@@ -1,6 +1,9 @@
 import type { PlayMode, Song, SongQuality } from '@/types';
 import { defineStore } from 'pinia';
 
+// 默认音质设置
+const DEFAULT_AUDIO_QUALITY: SongQuality = 'high';
+
 interface Player {
   loading: boolean;
   isPlaying: boolean;
@@ -37,8 +40,7 @@ export const usePlayerStore = defineStore('player', {
     mute: 0,
     rate: 1,
     mode: 'repeat',
-    // 音质设置默认值
-    audioQuality: '320',
+    audioQuality: DEFAULT_AUDIO_QUALITY,
   }),
   getters: {},
   actions: {

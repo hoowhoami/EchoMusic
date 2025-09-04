@@ -176,7 +176,7 @@
         </NDropdown>
         <!-- 倍速播放 -->
         <NPopselect
-          :options="playSpeedOptions"
+          :options="[...PLAY_SPEED_OPTIONS]"
           v-model:value="playerStore.rate"
           @update:value="speed => player.setRate(speed)"
         >
@@ -196,7 +196,7 @@
         </NPopselect>
         <!-- 音质选择 -->
         <NPopselect
-          :options="qualityOptions"
+          :options="qualityOptions as any"
           v-model:value="playerStore.audioQuality"
           @update:value="handleQualitySelect"
           scrollable
@@ -397,7 +397,29 @@ import {
 import { usePlayerStore, useSettingStore } from '@/store';
 import { calculateCurrentTime, getCover, renderIcon, secondsToTime } from '@/utils';
 import player from '@/utils/player';
+import {
+  AUDIO_QUALITY_OPTIONS,
+  MUSIC_EFFECT_OPTIONS,
+  PLAY_SPEED_OPTIONS,
+  QUALITY_NAMES,
+} from '@/constants';
 import { computed, ref, onMounted, watch } from 'vue';
+
+// 组合音质和音效选项
+const qualityOptions = computed(() => [
+  {
+    label: '音质',
+    key: 'quality',
+    type: 'group' as const,
+    children: AUDIO_QUALITY_OPTIONS,
+  },
+  {
+    label: '音效',
+    key: 'effect',
+    type: 'group' as const,
+    children: MUSIC_EFFECT_OPTIONS,
+  },
+]);
 import {
   Repeat,
   RepeatOnce,
@@ -510,107 +532,6 @@ const playModeOptions = ref([
   },
 ]);
 
-const playSpeedOptions = ref([
-  {
-    label: '0.25x',
-    value: 0.25,
-  },
-  {
-    label: '0.5x',
-    value: 0.5,
-  },
-  {
-    label: '0.75x',
-    value: 0.75,
-  },
-  {
-    label: '1.0x',
-    value: 1,
-  },
-  {
-    label: '1.25x',
-    value: 1.25,
-  },
-  {
-    label: '1.5x',
-    value: 1.5,
-  },
-  {
-    label: '1.75x',
-    value: 1.75,
-  },
-  {
-    label: '2.0x',
-    value: 2,
-  },
-]);
-
-// 音质选项
-const qualityOptions = ref([
-  {
-    label: '音质',
-    key: 'quality',
-    type: 'group',
-    children: [
-      {
-        label: '标准品质',
-        value: '128',
-      },
-      {
-        label: 'HQ高品质',
-        value: '320',
-      },
-      {
-        label: 'SQ无损品质',
-        value: 'flac',
-      },
-      {
-        label: 'Hi-Res无损品质',
-        value: 'high',
-      },
-    ],
-  },
-  {
-    label: '音效',
-    key: 'effect',
-    type: 'group',
-    children: [
-      {
-        label: '钢琴音效',
-        value: 'piano',
-      },
-      {
-        label: '人声伴奏',
-        value: 'acappella',
-      },
-      {
-        label: '骨笛音效',
-        value: 'subwoofer',
-      },
-      {
-        label: '尤克里里',
-        value: 'ancient',
-      },
-      {
-        label: '唢呐音效',
-        value: 'surnay',
-      },
-      {
-        label: 'DJ音效',
-        value: 'dj',
-      },
-      {
-        label: '蝰蛇全景声',
-        value: 'viper_atmos',
-      },
-      {
-        label: '蝰蛇超清',
-        value: 'viper_clear',
-      },
-    ],
-  },
-]);
-
 const playModeIcon = computed(() => {
   const mode = playerStore.mode;
   if (mode === 'repeat') {
@@ -683,23 +604,10 @@ const handleScrollToCurrent = () => {
 
 // 处理音质选择
 const handleQualitySelect = (quality: string) => {
-  const qualityNames: Record<string, string> = {
-    '128': '标准品质',
-    '320': 'HQ高品质',
-    flac: 'SQ无损品质',
-    high: 'Hi-Res无损品质',
-    piano: '钢琴音效',
-    acappella: '人声伴奏',
-    subwoofer: '骨笛音效',
-    ancient: '尤克里里',
-    surnay: '唢呐音效',
-    dj: 'DJ音效',
-    viper_atmos: '蝰蛇全景声',
-    viper_clear: '蝰蛇超清',
-  };
-
   playerStore.setAudioQuality(quality as any);
-  window.$message.success(`已切换到音质：${qualityNames[quality] || quality}`);
+  window.$message.success(
+    `已切换到音质：${QUALITY_NAMES[quality as keyof typeof QUALITY_NAMES] || quality}`,
+  );
 
   // 立即应用新音质，不管当前播放器状态
   if (playerStore.current) {
