@@ -13,6 +13,7 @@ interface Setting {
   autoNextOnErrorTime: number;
   compatibilityMode: boolean;
   backupQuality: AudioQuality;
+  preventSleep: boolean;
 }
 
 // 默认音质设置
@@ -32,6 +33,7 @@ export const useSettingStore = defineStore('setting', {
     autoNextOnErrorTime: 3000,
     compatibilityMode: true,
     backupQuality: DEFAULT_AUDIO_QUALITY,
+    preventSleep: false,
   }),
   getters: {
     getTheme: state => state.theme,
@@ -52,6 +54,9 @@ export const useSettingStore = defineStore('setting', {
     },
     setBackupQuality(quality: AudioQuality) {
       this.backupQuality = quality;
+    },
+    setPreventSleep(prevent: boolean) {
+      this.preventSleep = prevent;
     },
   },
 });

@@ -131,6 +131,19 @@
           </div>
           <NSwitch v-model:value="settingStore.unblock" />
         </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">播放时防止系统休眠</div>
+            <div class="setting-desc">播放音乐时阻止系统进入休眠状态</div>
+          </div>
+          <NSwitch 
+            v-model:value="settingStore.preventSleep"
+            @update:value="settingStore.setPreventSleep"
+          />
+        </div>
       </NCard>
 
       <!-- 音质设置 -->

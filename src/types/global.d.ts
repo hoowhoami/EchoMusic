@@ -9,5 +9,6 @@ declare global {
     $message: MessageApi;
     $modal: ModalApi;
     $notification: NotificationApi;
+    require?: any;
   }
 }

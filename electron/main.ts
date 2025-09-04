@@ -1,6 +1,6 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, powerSaveBlocker } = require('electron');
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, ChildProcess } from 'child_process';
@@ -114,6 +114,21 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+
+  // IPC 处理程序 - 防止系统休眠
+  ipcMain.on('prevent-sleep', (event) => {
+    const id = powerSaveBlocker.start('prevent-display-sleep');
+    console.log('Prevented system sleep with ID:', id);
+    event.returnValue = id;
+  });
+
+  // IPC 处理程序 - 允许系统休眠
+  ipcMain.on('allow-sleep', (event, id) => {
+    if (powerSaveBlocker.isStarted(id)) {
+      powerSaveBlocker.stop(id);
+      console.log('Allowed system sleep for ID:', id);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {

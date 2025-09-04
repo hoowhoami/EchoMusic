@@ -397,6 +397,7 @@ import {
 import { usePlayerStore, useSettingStore } from '@/store';
 import { calculateCurrentTime, getCover, renderIcon, secondsToTime } from '@/utils';
 import player from '@/utils/player';
+import { preventSystemSleep, allowSystemSleep } from '@/utils/sleep';
 import {
   AUDIO_QUALITY_OPTIONS,
   MUSIC_EFFECT_OPTIONS,
@@ -468,6 +469,19 @@ watch(
       console.log('🎵 Current song changed:', newVal.name);
     }
   },
+);
+
+// 监听播放状态和防止休眠设置
+watch(
+  [() => playerStore.isPlaying, () => settingStore.preventSleep],
+  ([isPlaying, preventSleep]) => {
+    if (isPlaying && preventSleep) {
+      preventSystemSleep();
+    } else {
+      allowSystemSleep();
+    }
+  },
+  { immediate: true },
 );
 
 // 初始化播放器
