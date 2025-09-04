@@ -128,21 +128,20 @@
           :options="menuOptions"
           @select="handleSelect"
         >
-          <NAvatar
-            v-if="userStore.isAuthenticated"
+          <NTag
             class="cursor-pointer"
             round
-            :size="25"
-            :src="userStore.pic"
-          />
-          <NAvatar
-            v-else
-            class="cursor-pointer"
-            round
-            :size="25"
+            :bordered="false"
           >
-            未登录
-          </NAvatar>
+            <template #avatar>
+              <NAvatar
+                round
+                :size="25"
+                :src="userStore.isAuthenticated ? userStore.pic : undefined"
+              />
+            </template>
+            {{ userStore.isAuthenticated ? userStore.nickname : '未登录' }}
+          </NTag>
         </NDropdown>
       </div>
     </NFlex>
@@ -163,6 +162,7 @@ import {
   NListItem,
   NPopover,
   NScrollbar,
+  NTag,
 } from 'naive-ui';
 import {
   ArrowBackCircleOutline,
