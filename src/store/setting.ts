@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import type { SongQuality } from '@/types';
+import type { AudioQuality } from '@/types';
 
 interface Setting {
   mainHeight: number;
@@ -11,9 +11,8 @@ interface Setting {
   showPlaylistCount: boolean;
   autoNextOnError: boolean;
   autoNextOnErrorTime: number;
-  // 音质降级设置
-  qualityFallback: boolean;
-  fallbackQualities: SongQuality[];
+  compatibilityMode: boolean;
+  backupQuality: AudioQuality;
 }
 
 export const useSettingStore = defineStore('setting', {
@@ -23,14 +22,13 @@ export const useSettingStore = defineStore('setting', {
     theme: 'light',
     keepAlive: false,
     unblock: false,
-    volumeFade: false,
+    volumeFade: true,
     volumeFadeTime: 1000,
     showPlaylistCount: true,
     autoNextOnError: false,
     autoNextOnErrorTime: 3000,
-    // 音质降级设置默认值
-    qualityFallback: true,
-    fallbackQualities: ['320', '128'],
+    compatibilityMode: true,
+    backupQuality: 'high',
   }),
   getters: {
     getTheme: state => state.theme,
@@ -46,11 +44,11 @@ export const useSettingStore = defineStore('setting', {
     setKeepAlive(keepAlive: boolean) {
       this.keepAlive = keepAlive;
     },
-    setQualityFallback(enabled: boolean) {
-      this.qualityFallback = enabled;
+    setCompatibilityMode(enabled: boolean) {
+      this.compatibilityMode = enabled;
     },
-    setFallbackQualities(qualities: SongQuality[]) {
-      this.fallbackQualities = qualities;
+    setBackupQuality(quality: AudioQuality) {
+      this.backupQuality = quality;
     },
   },
 });

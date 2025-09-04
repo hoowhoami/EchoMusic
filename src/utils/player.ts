@@ -127,9 +127,9 @@ class Player {
     const playerStore = usePlayerStore();
     const settingStore = useSettingStore();
 
-    // 音质列表
-    const qualityList = settingStore.qualityFallback
-      ? [playerStore.audioQuality, ...settingStore.fallbackQualities]
+    // 音质列表（首选音质 + 备选音质）
+    const qualityList = settingStore.compatibilityMode
+      ? [playerStore.audioQuality, settingStore.backupQuality]
       : [playerStore.audioQuality];
 
     // 去重音质列表
@@ -156,15 +156,19 @@ class Player {
       }
     }
 
-    // 所有音质都失败，尝试不带音质参数
-    try {
-      const res = await getSongUrl(id);
-      if (res.status === 1 && res.url && res.url[0]) {
-        console.log('🎵 歌曲URL获取成功');
-        return res.url[0];
+    // 所有音质都失败，尝试不带音质参数作为最后备选
+    if (settingStore.compatibilityMode) {
+      console.log('🔄 所有音质获取失败，尝试兼容模式');
+      try {
+        const res = await getSongUrl(id);
+        if (res.status === 1 && res.url && res.url[0]) {
+          console.log('🎵 兼容模式获取成功');
+          window.$message.warning('该歌曲使用兼容模式播放');
+          return res.url[0];
+        }
+      } catch (error) {
+        console.error('❌ 兼容模式也失败:', error);
       }
-    } catch (error) {
-      console.error('❌ 歌曲URL获取失败:', error);
     }
 
     console.error('❌ 所有音质获取尝试均失败');
@@ -471,7 +475,7 @@ class Player {
             return;
           } else {
             window.$message.error('该歌曲无法播放，跳至下一首');
-            this.nextOrPrev();
+            this.errorNext();
             return;
           }
         }

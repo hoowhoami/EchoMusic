@@ -1,11 +1,388 @@
 <template>
-  <div>Setting</div>
+  <div class="setting-page">
+    <div class="setting-header">
+      <h1>偏好设置</h1>
+      <p>个性化您的音乐播放体验</p>
+    </div>
+
+    <div class="setting-content">
+      <!-- 外观设置 -->
+      <NCard
+        class="setting-group"
+        title="外观设置"
+      >
+        <template #header-extra>
+          <NIcon
+            :size="20"
+            color="var(--primary-color)"
+          >
+            <Palette />
+          </NIcon>
+        </template>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">主题模式</div>
+            <div class="setting-desc">选择您喜欢的主题外观</div>
+          </div>
+          <NSelect
+            v-model:value="settingStore.theme"
+            :options="themeOptions"
+            style="width: 120px"
+            @update:value="switchTheme"
+          />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">显示播放列表数量</div>
+            <div class="setting-desc">在播放列表图标上显示歌曲数量</div>
+          </div>
+          <NSwitch v-model:value="settingStore.showPlaylistCount" />
+        </div>
+      </NCard>
+
+      <!-- 播放设置 -->
+      <NCard
+        class="setting-group"
+        title="播放设置"
+      >
+        <template #header-extra>
+          <NIcon
+            :size="20"
+            color="var(--primary-color)"
+          >
+            <PlayerPlay />
+          </NIcon>
+        </template>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">音量淡入淡出</div>
+            <div class="setting-desc">播放和暂停时启用音量渐变效果</div>
+          </div>
+          <NSwitch v-model:value="settingStore.volumeFade" />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">淡入淡出时间</div>
+            <div class="setting-desc">音量渐变效果的持续时间</div>
+          </div>
+          <div class="setting-control">
+            <NSlider
+              v-model:value="settingStore.volumeFadeTime"
+              :min="100"
+              :max="3000"
+              :step="100"
+              style="width: 200px"
+              :tooltip="false"
+              :disabled="!settingStore.volumeFade"
+            />
+            <NText class="fade-time-text"
+              >{{ (settingStore.volumeFadeTime / 1000).toFixed(1) }}s</NText
+            >
+          </div>
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">播放错误时自动下一首</div>
+            <div class="setting-desc">歌曲无法播放时自动跳到下一首</div>
+          </div>
+          <NSwitch v-model:value="settingStore.autoNextOnError" />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">自动跳转延迟</div>
+            <div class="setting-desc">播放错误后等待多长时间跳转</div>
+          </div>
+          <div class="setting-control">
+            <NSlider
+              v-model:value="settingStore.autoNextOnErrorTime"
+              :min="1000"
+              :max="10000"
+              :step="500"
+              style="width: 200px"
+              :tooltip="false"
+              :disabled="!settingStore.autoNextOnError"
+            />
+            <NText class="fade-time-text"
+              >{{ (settingStore.autoNextOnErrorTime / 1000).toFixed(1) }}s</NText
+            >
+          </div>
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">解灰功能</div>
+            <div class="setting-desc">尝试播放无法正常播放的歌曲</div>
+          </div>
+          <NSwitch v-model:value="settingStore.unblock" />
+        </div>
+      </NCard>
+
+      <!-- 音质设置 -->
+      <NCard
+        class="setting-group"
+        title="音质设置"
+      >
+        <template #header-extra>
+          <NIcon
+            :size="20"
+            color="var(--primary-color)"
+          >
+            <DeviceAudioTape />
+          </NIcon>
+        </template>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">兼容模式</div>
+            <div class="setting-desc">当首选音质无法获取时，自动尝试备选音质和兼容播放</div>
+          </div>
+          <NSwitch
+            v-model:value="settingStore.compatibilityMode"
+            @update:value="settingStore.setCompatibilityMode"
+          />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <div class="setting-title">备选音质</div>
+            <div class="setting-desc">兼容模式下的备选音质选择</div>
+          </div>
+          <NSelect
+            size="small"
+            v-model:value="settingStore.backupQuality"
+            :options="audioQualityOptions"
+            style="width: 150px"
+            :disabled="!settingStore.compatibilityMode"
+            @update:value="settingStore.setBackupQuality"
+          />
+        </div>
+      </NCard>
+
+      <!-- 关于 -->
+      <NCard
+        class="setting-group"
+        title="关于"
+      >
+        <template #header-extra>
+          <NIcon
+            :size="20"
+            color="var(--primary-color)"
+          >
+            <InfoCircle />
+          </NIcon>
+        </template>
+
+        <div class="about-content">
+          <div class="app-info">
+            <h3>EchoMusic</h3>
+            <p>版本 1.0.0</p>
+            <p>一个现代化的音乐播放器</p>
+          </div>
+
+          <div class="links">
+            <NButton
+              text
+              type="primary"
+              @click="openLink('https://github.com')"
+            >
+              <template #icon>
+                <NIcon><BrandGithub /></NIcon>
+              </template>
+              GitHub
+            </NButton>
+            <NButton
+              text
+              type="primary"
+              @click="openLink('mailto:support@example.com')"
+            >
+              <template #icon>
+                <NIcon><Mail /></NIcon>
+              </template>
+              反馈建议
+            </NButton>
+          </div>
+        </div>
+      </NCard>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { NCard, NSwitch, NSelect, NSlider, NText, NDivider, NIcon, NButton } from 'naive-ui';
+import { useSettingStore } from '@/store';
+import {
+  Palette,
+  PlayerPlay,
+  InfoCircle,
+  Mail,
+  DeviceAudioTape,
+  BrandGithub,
+} from '@vicons/tabler';
+import { useTheme } from '@/hooks';
+
 defineOptions({
   name: 'Setting',
 });
+
+const { switchTheme } = useTheme();
+
+const settingStore = useSettingStore();
+
+// 主题选项
+const themeOptions = [
+  { label: '跟随系统', value: 'auto' },
+  { label: '浅色模式', value: 'light' },
+  { label: '深色模式', value: 'dark' },
+];
+
+// 音质选项
+const audioQualityOptions = [
+  { label: '128k MP3', value: '128' },
+  { label: '320k MP3', value: '320' },
+  { label: 'FLAC 无损', value: 'flac' },
+  { label: '高品质音频', value: 'high' },
+];
+
+// 打开链接
+const openLink = (url: string) => {
+  window.open(url, '_blank');
+};
 </script>
 
-<style scoped></style>
+<style scoped lang="scss">
+.setting-page {
+  padding: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+  min-height: calc(100vh - 100px);
+}
+
+.setting-header {
+  margin-bottom: 32px;
+  text-align: center;
+
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: var(--text-color-1);
+  }
+
+  p {
+    color: var(--text-color-3);
+    margin: 0;
+    font-size: 14px;
+  }
+}
+
+.setting-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setting-group {
+  :deep(.n-card-header) {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border-color);
+
+    .n-card-header__main {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-color-1);
+    }
+  }
+
+  :deep(.n-card__content) {
+    padding: 0;
+  }
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+
+  .setting-info {
+    flex: 1;
+    margin-right: 16px;
+
+    .setting-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-color-1);
+      margin-bottom: 4px;
+    }
+
+    .setting-desc {
+      font-size: 12px;
+      color: var(--text-color-3);
+      line-height: 1.4;
+    }
+  }
+
+  .setting-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .fade-time-text {
+      font-size: 12px;
+      color: var(--text-color-2);
+      min-width: 50px;
+      text-align: right;
+    }
+  }
+}
+
+.about-content {
+  padding: 24px;
+
+  .app-info {
+    text-align: center;
+    margin-bottom: 24px;
+
+    h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 8px 0;
+      color: var(--text-color-1);
+    }
+
+    p {
+      margin: 4px 0;
+      color: var(--text-color-2);
+      font-size: 14px;
+    }
+  }
+
+  .links {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+}
+
+:deep(.n-divider) {
+  margin: 0;
+}
+</style>

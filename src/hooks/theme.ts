@@ -8,7 +8,7 @@ export const ThemeInjectionKey: InjectionKey<ReturnType<typeof useTheme>> = Symb
 export function useTheme() {
   // 初始化颜色模式管理
   const { system, store } = useColorMode({
-    storageKey: 'antd-theme-mode',
+    storageKey: 'app-theme-mode',
   });
 
   // 计算实际生效的主题模式
