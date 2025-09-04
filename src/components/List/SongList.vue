@@ -25,7 +25,7 @@
       :playlist="playlist"
       @close="closeContextMenu"
       @song-played="handleSongPlayed"
-      @song-removed="emit('song-removed', contextMenu.song!)"
+      @song-removed="(song?: Song) => emit('song-removed', song)"
     />
   </div>
 </template>
@@ -48,7 +48,7 @@ defineOptions({
 });
 
 const emit = defineEmits<{
-  'song-removed': [song: Song];
+  'song-removed': [song?: Song];
 }>();
 
 const props = defineProps<{
@@ -98,7 +98,10 @@ const closeContextMenu = () => {
 };
 
 // 处理播放歌曲
-const handleSongPlayed = (song: Song) => {
+const handleSongPlayed = (song?: Song) => {
+  if (!song) {
+    return;
+  }
   player.playSong(song);
 };
 

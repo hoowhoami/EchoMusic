@@ -26,7 +26,7 @@ interface Props {
   show: boolean;
   x: number;
   y: number;
-  song: Song;
+  song?: Song;
   playlist?: Playlist;
 }
 
@@ -34,8 +34,8 @@ const props = defineProps<Props>();
 
 const emit = defineEmits<{
   close: [];
-  'song-played': [song: Song];
-  'song-removed': [song: Song];
+  'song-played': [song?: Song];
+  'song-removed': [song?: Song];
 }>();
 
 const userStore = useUserStore();
@@ -98,6 +98,9 @@ const handleSelect = async (key: string) => {
 
 // 添加到指定歌单
 const handleAddToPlaylist = async (playlist: { listid: number; name: string }) => {
+  if (!props.song) {
+    return;
+  }
   let loadingMessage;
   try {
     loadingMessage = window.$message.loading(`正在添加歌曲到歌单「${playlist.name}」...`, {
@@ -127,7 +130,9 @@ const handleAddToPlaylist = async (playlist: { listid: number; name: string }) =
 
 // 从当前歌单删除
 const handleRemoveFromPlaylist = async () => {
-  if (!props.playlist) return;
+  if (!props.playlist || !props.song) {
+    return;
+  }
 
   let loadingMessage;
 
