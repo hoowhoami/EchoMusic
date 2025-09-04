@@ -23,7 +23,7 @@
       />
     </div>
     <div class="toolbar">
-      <SongListMenu
+      <SongListToolbar
         :songs="songs"
         v-model:selected-songs="checkedSongs"
         v-model:search-keyword="searchKeyword"
@@ -64,7 +64,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SongList from '@/components/List/SongList.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
-import SongListMenu from '@/components/Menu/SongListMenu.vue';
+import SongListToolbar from '@/components/Toolbar/SongListToolbar.vue';
 import { useSettingStore, useUserStore, usePlayerStore } from '@/store';
 import player from '@/utils/player';
 
@@ -136,8 +136,8 @@ const handleAddToPlaylist = () => {
 
 const handleDeletedSongs = (deletedSongs: Song[]) => {
   // 从当前列表中移除已删除的歌曲
-  songs.value = songs.value.filter(song => 
-    !deletedSongs.some(deleted => deleted.fileid === song.fileid),
+  songs.value = songs.value.filter(
+    song => !deletedSongs.some(deleted => deleted.fileid === song.fileid),
   );
   filteredSongs.value = songs.value;
 };
