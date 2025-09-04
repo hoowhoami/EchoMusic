@@ -1,4 +1,4 @@
-import type { PlayMode, Song } from '@/types';
+import type { PlayMode, Song, SongQuality } from '@/types';
 import { defineStore } from 'pinia';
 
 interface Player {
@@ -16,6 +16,8 @@ interface Player {
   mute: number;
   rate: number;
   mode: PlayMode;
+  // 音质设置
+  audioQuality: SongQuality;
 }
 
 export const usePlayerStore = defineStore('player', {
@@ -35,6 +37,8 @@ export const usePlayerStore = defineStore('player', {
     mute: 0,
     rate: 1,
     mode: 'repeat',
+    // 音质设置默认值
+    audioQuality: '320',
   }),
   getters: {},
   actions: {
@@ -97,6 +101,9 @@ export const usePlayerStore = defineStore('player', {
       this.currentTime = 0;
       this.current = undefined;
       this.climax = undefined;
+    },
+    setAudioQuality(quality: SongQuality) {
+      this.audioQuality = quality;
     },
   },
 });

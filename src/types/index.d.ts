@@ -167,3 +167,26 @@ export type SongClimax = {
   audio_id: string;
   audio_name: string;
 };
+
+// Song quality
+export type MusicEffect =
+  | 'piano' // 钢琴音效，仅部分音乐支持
+  | 'acappella' // 人声伴奏模式，仅部分音乐支持，返回mkv格式（含人声和伴奏两个音轨）
+  | 'subwoofer' // 骨笛音效，仅部分音乐支持
+  | 'ancient' // 尤克里里音效，仅部分音乐支持
+  | 'surnay' // 唢呐音效，仅部分音乐支持
+  | 'dj' // DJ音效，仅部分音乐支持
+  | 'viper_atmos' // 蝰蛇全景声，仅部分音乐支持
+  | 'viper_clear'; // 蝰蛇超清音质
+
+export type AudioQuality =
+  | '128' // 128码率MP3格式
+  | '320' // 320码率MP3格式
+  | 'flac' // FLAC格式音频
+  | 'high'; // 无损格式音频
+
+/**
+ * 音乐转换参数类型
+ * 组合音效类型和音频质量的联合类型
+ */
+export type SongQuality = MusicEffect | AudioQuality;

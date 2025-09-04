@@ -194,6 +194,27 @@
             </NButton>
           </div>
         </NPopselect>
+        <!-- 音质选择 -->
+        <NPopselect
+          :options="qualityOptions"
+          v-model:value="playerStore.audioQuality"
+          @update:value="handleQualitySelect"
+          scrollable
+        >
+          <div class="menu-icon">
+            <NButton
+              :focusable="false"
+              ghost
+              text
+            >
+              <template #icon>
+                <NIcon :size="20">
+                  <HighQualityRound />
+                </NIcon>
+              </template>
+            </NButton>
+          </div>
+        </NPopselect>
         <!-- 音量调节 -->
         <NPopover>
           <template #trigger>
@@ -394,6 +415,7 @@ import {
   PauseRound,
   PlayArrowRound,
   SpeedRound,
+  HighQualityRound,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
@@ -523,6 +545,72 @@ const playSpeedOptions = ref([
   },
 ]);
 
+// 音质选项
+const qualityOptions = ref([
+  {
+    label: '音质',
+    key: 'quality',
+    type: 'group',
+    children: [
+      {
+        label: '128k MP3',
+        value: '128',
+      },
+      {
+        label: '320k MP3',
+        value: '320',
+      },
+      {
+        label: 'FLAC 无损',
+        value: 'flac',
+      },
+      {
+        label: '高品质音频',
+        value: 'high',
+      },
+    ],
+  },
+  {
+    label: '音效',
+    key: 'effect',
+    type: 'group',
+    children: [
+      {
+        label: '钢琴音效',
+        value: 'piano',
+      },
+      {
+        label: '人声伴奏',
+        value: 'acappella',
+      },
+      {
+        label: '骨笛音效',
+        value: 'subwoofer',
+      },
+      {
+        label: '尤克里里',
+        value: 'ancient',
+      },
+      {
+        label: '唢呐音效',
+        value: 'surnay',
+      },
+      {
+        label: 'DJ音效',
+        value: 'dj',
+      },
+      {
+        label: '蝰蛇全景声',
+        value: 'viper_atmos',
+      },
+      {
+        label: '蝰蛇超清',
+        value: 'viper_clear',
+      },
+    ],
+  },
+]);
+
 const playModeIcon = computed(() => {
   const mode = playerStore.mode;
   if (mode === 'repeat') {
@@ -591,6 +679,34 @@ const handleScrollToCurrent = () => {
   // 使用官方示例的方式调用 scrollTo
   virtualListInst.value?.scrollTo({ index: currentIndex, behavior: 'smooth' });
   window.$message.success(`已定位到：${currentSong.name}`);
+};
+
+// 处理音质选择
+const handleQualitySelect = (quality: string) => {
+  const qualityNames: Record<string, string> = {
+    '128': '128k MP3',
+    '320': '320k MP3',
+    flac: 'FLAC 无损',
+    high: '高品质音频',
+    piano: '钢琴音效',
+    acappella: '人声伴奏',
+    subwoofer: '骨笛音效',
+    ancient: '尤克里里',
+    surnay: '唢呐音效',
+    dj: 'DJ音效',
+    viper_atmos: '蝰蛇全景声',
+    viper_clear: '蝰蛇超清',
+  };
+
+  playerStore.setAudioQuality(quality as any);
+  window.$message.success(`已切换到音质：${qualityNames[quality] || quality}`);
+
+  // 立即应用新音质，不管当前播放器状态
+  if (playerStore.current) {
+    player.resetStatus();
+    // 重新加载以应用新音质
+    player.initPlayer(true, 0);
+  }
 };
 </script>
 

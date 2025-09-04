@@ -117,31 +117,57 @@ class Player {
       playerStore.$patch({ currentTime, duration, progress });
     }, 250);
   }
+
   /**
-   * 获取在线播放链接
+   * 获取在线播放链接（支持音质降级）
    * @param id 歌曲id
    * @returns 播放链接
    */
   private async getOnlineUrl(id: string): Promise<string | null> {
-    const res = await getSongUrl(id);
-    console.log(`🌐 ${id} music data:`, res);
-    if (res.status !== 1) {
-      console.error('获取音乐URL失败', res);
-      if (res.status === 3) {
-        console.error('该歌曲暂无版权');
-      } else if (res.status === 2) {
-        console.error('该歌曲/音质需要购买');
-      }
-    } else {
-      // 设置URL
-      if (res.url && res.url[0]) {
-        const url = res.url[0];
-        // return url.replace('http://', 'https://');
-        return url;
-      } else {
-        console.error('未获取到音乐URL');
+    const playerStore = usePlayerStore();
+    const settingStore = useSettingStore();
+
+    // 音质列表
+    const qualityList = settingStore.qualityFallback
+      ? [playerStore.audioQuality, ...settingStore.fallbackQualities]
+      : [playerStore.audioQuality];
+
+    // 去重音质列表
+    const uniqueQualities = [...new Set(qualityList)];
+
+    for (const quality of uniqueQualities) {
+      try {
+        console.log(`🎵 尝试获取音质: ${quality}`);
+        const res = await getSongUrl(id, quality);
+        if (res.status === 1) {
+          if (res.url && res.url[0]) {
+            console.log(`✅ 成功获取音质 ${quality} 的播放链接`);
+            return res.url[0];
+          }
+        } else if (res.status === 2) {
+          console.warn(`💰 音质 ${quality} 需要购买，尝试下一个音质`);
+        } else if (res.status === 3) {
+          console.warn(`🚫 音质 ${quality} 暂无版权，尝试下一个音质`);
+        } else {
+          console.warn(`⚠️ 音质 ${quality} 获取失败 (status: ${res.status})，尝试下一个音质`);
+        }
+      } catch (error) {
+        console.error(`❌ 获取音质 ${quality} 时出错:`, error);
       }
     }
+
+    // 所有音质都失败，尝试不带音质参数
+    try {
+      const res = await getSongUrl(id);
+      if (res.status === 1 && res.url && res.url[0]) {
+        console.log('🎵 歌曲URL获取成功');
+        return res.url[0];
+      }
+    } catch (error) {
+      console.error('❌ 歌曲URL获取失败:', error);
+    }
+
+    console.error('❌ 所有音质获取尝试均失败');
     return null;
   }
   /**
@@ -153,9 +179,6 @@ class Player {
   private async createPlayer(src: string, autoPlay: boolean = true, seek: number = 0) {
     // 获取数据
     const playerStore = usePlayerStore();
-    // 播放信息
-    const { hash, cover } = playerStore.current!;
-    console.log(hash, cover);
     // 清理播放器
     Howler.unload();
     // 清理定时器
@@ -227,17 +250,16 @@ class Player {
       // 更新播放状态
       playerStore.isPlaying = true;
       // ipc
-      console.log('▶️ song play:', playSongData);
+      console.log('▶️ song play:', playSongData?.name);
     });
     // 暂停
     this.player.on('pause', () => {
       // ipc
-      console.log('⏸️ song pause:', playSongData);
+      console.log('⏸️ song pause:', playSongData?.name);
     });
     // 结束
     this.player.on('end', () => {
-      // statusStore.playStatus = false;
-      console.log('⏹️ song end:', playSongData);
+      console.log('⏹️ song end:', playSongData?.name);
       this.nextOrPrev('next');
     });
     // 错误
@@ -429,6 +451,8 @@ class Player {
       playerStore.isPlaying = false;
       // 在线歌曲
       if (hash && playerStore.playlist.length) {
+        // 歌曲信息
+        console.log('歌曲信息', playSongData.name, 'hash', hash);
         const url = await this.getOnlineUrl(hash);
         // 正常播放地址
         if (url) {
@@ -813,7 +837,6 @@ class Player {
     }
     // 查找歌曲
     let songIndex = playerStore.playlist.findIndex(item => item.hash === song.hash);
-    console.log('songIndex', songIndex);
     if (songIndex < 0) {
       // 添加歌曲到播放列表
       songIndex = playerStore.addToPlaylist(song, true);
