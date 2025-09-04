@@ -38,6 +38,21 @@ export const usePlayerStore = defineStore('player', {
   }),
   getters: {},
   actions: {
+    addToPlaylist(song: Song, first: boolean = false): number {
+      if (first) {
+        this.playlist = [song, ...this.playlist];
+      } else {
+        this.playlist = [...this.playlist, song];
+      }
+      return this.playlist.findIndex(item => item.hash === song.hash);
+    },
+    appendToPlaylist(songs: Song[], first: boolean = false) {
+      if (first) {
+        this.playlist = [...songs, ...this.playlist];
+      } else {
+        this.playlist = [...this.playlist, ...songs];
+      }
+    },
     setPlaylist(playlist: Song[]) {
       this.playlist = playlist;
     },

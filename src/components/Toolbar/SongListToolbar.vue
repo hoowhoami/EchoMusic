@@ -262,11 +262,16 @@ const handleAddToPlaylist = async (playlist: { listid: number; name: string }) =
   const totalSongs = selectedSongs.value.length;
   const totalBatches = Math.ceil(totalSongs / BATCH_SIZE);
 
+  let loadingMessage;
+
   try {
     // 显示加载提示（3秒后自动消失）
-    window.$message.loading(`正在添加 ${totalSongs} 首歌曲到歌单「${playlist.name}」...`, {
-      duration: 1000,
-    });
+    loadingMessage = window.$message.loading(
+      `正在添加 ${totalSongs} 首歌曲到歌单「${playlist.name}」...`,
+      {
+        duration: 0,
+      },
+    );
 
     // 分批次处理
     for (let i = 0; i < totalBatches; i++) {
@@ -288,6 +293,8 @@ const handleAddToPlaylist = async (playlist: { listid: number; name: string }) =
       }
     }
 
+    loadingMessage.destroy();
+
     // 显示完成通知
     window.$notification.success({
       title: '添加完成',
@@ -297,8 +304,8 @@ const handleAddToPlaylist = async (playlist: { listid: number; name: string }) =
 
     resetBatchSelection();
   } catch (error) {
+    loadingMessage?.destroy();
     console.error('添加到歌单失败:', error);
-
     // 显示错误通知
     window.$notification.error({
       title: '添加失败',
@@ -316,10 +323,12 @@ const handleDeleteFromPlaylist = async () => {
   const BATCH_SIZE = 50;
   const totalBatches = Math.ceil(totalSongs / BATCH_SIZE);
 
+  let loadingMessage;
+
   try {
     // 显示加载提示
-    window.$message.loading(`正在从歌单中删除 ${totalSongs} 首歌曲...`, {
-      duration: 1000,
+    loadingMessage = window.$message.loading(`正在从歌单中删除 ${totalSongs} 首歌曲...`, {
+      duration: 0,
     });
 
     // 分批次处理
@@ -346,6 +355,8 @@ const handleDeleteFromPlaylist = async () => {
     // 重置批量选择
     resetBatchSelection();
 
+    loadingMessage.destroy();
+
     // 显示完成通知
     window.$notification.success({
       title: '删除完成',
@@ -353,8 +364,8 @@ const handleDeleteFromPlaylist = async () => {
       duration: 5000,
     });
   } catch (error) {
+    loadingMessage?.destroy();
     console.error('从歌单删除失败:', error);
-
     // 显示错误通知
     window.$notification.error({
       title: '删除失败',

@@ -49,8 +49,10 @@
         :max-height="maxHeight"
         :loading="loading"
         :batch-mode="batchMode"
+        :playlist="playlistInfo"
         v-model="filteredSongs"
         v-model:checked-songs="checkedSongs"
+        @song-removed="handleSongRemoved"
       />
     </div>
   </div>
@@ -137,8 +139,14 @@ const handleAddToPlaylist = () => {
 const handleDeletedSongs = (deletedSongs: Song[]) => {
   // 从当前列表中移除已删除的歌曲
   songs.value = songs.value.filter(
-    song => !deletedSongs.some(deleted => deleted.fileid === song.fileid),
+    song => !deletedSongs.some(deleted => deleted.hash === song.hash),
   );
+  filteredSongs.value = songs.value;
+};
+
+const handleSongRemoved = (removedSong: Song) => {
+  // 从当前列表中移除已删除的歌曲
+  songs.value = songs.value.filter(song => removedSong.hash !== song.hash);
   filteredSongs.value = songs.value;
 };
 

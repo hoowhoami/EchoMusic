@@ -13,18 +13,32 @@
       :columns="columns"
       :data="songs"
       v-model:checked-row-keys="checkedRowKeys"
+      :row-props="rowProps"
     ></NDataTable>
+
+    <!-- 右键菜单 -->
+    <SongListMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :song="contextMenu.song!"
+      :playlist="playlist"
+      @close="closeContextMenu"
+      @song-played="handleSongPlayed"
+      @song-removed="emit('song-removed', contextMenu.song!)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { DataTableColumns } from 'naive-ui';
 
-import { Song } from '@/types';
+import { Song, Playlist } from '@/types';
 import { msToTime } from '@/utils';
 import { NDataTable, NEllipsis } from 'naive-ui';
 import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
+import SongListMenu from '@/components/Menu/SongListMenu.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
 import { usePlayerStore } from '@/store';
@@ -33,11 +47,16 @@ defineOptions({
   name: 'SongList',
 });
 
+const emit = defineEmits<{
+  'song-removed': [song: Song];
+}>();
+
 const props = defineProps<{
   maxHeight?: number;
   virtualScroll?: boolean;
   loading?: boolean;
   batchMode?: boolean;
+  playlist?: Playlist;
 }>();
 
 const playerStore = usePlayerStore();
@@ -49,6 +68,39 @@ const songs = defineModel<Song[]>();
 const checkedSongs = defineModel<Song[]>('checked-songs');
 
 const checkedRowKeys = ref<string[]>([]);
+
+// 右键菜单状态
+const contextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  song: null as Song | null,
+});
+
+// 行属性配置，添加右键事件
+const rowProps = (row: Song) => {
+  return {
+    onContextmenu: (e: MouseEvent) => {
+      e.preventDefault();
+      contextMenu.value = {
+        show: true,
+        x: e.clientX,
+        y: e.clientY,
+        song: row,
+      };
+    },
+  };
+};
+
+// 关闭右键菜单
+const closeContextMenu = () => {
+  contextMenu.value.show = false;
+};
+
+// 处理播放歌曲
+const handleSongPlayed = (song: Song) => {
+  player.playSong(song);
+};
 
 const columns = computed<DataTableColumns>(() => {
   return [

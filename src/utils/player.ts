@@ -49,16 +49,16 @@ class Player {
     // 使用 nextTick 确保 DOM 已加载且 Pinia 状态已恢复
     setTimeout(() => {
       const playerStore = usePlayerStore();
-      
+
       // 检查是否有播放列表和当前歌曲
       if (playerStore.playlist.length > 0 && playerStore.current && playerStore.index >= 0) {
         console.log('🎵 恢复播放器状态');
-        
+
         // 重置播放状态，防止状态不一致
         const wasPlaying = playerStore.isPlaying;
         playerStore.isPlaying = false;
         playerStore.loading = false;
-        
+
         // 重新初始化播放器
         this.initPlayer(wasPlaying);
       }
@@ -144,7 +144,7 @@ class Player {
     }
     return null;
   }
-    /**
+  /**
    * 创建播放器
    * @param src 播放地址
    * @param autoPlay 是否自动播放
@@ -812,7 +812,12 @@ class Player {
       return;
     }
     // 查找歌曲
-    const songIndex = playerStore.playlist.findIndex(item => item.hash === song.hash);
+    let songIndex = playerStore.playlist.findIndex(item => item.hash === song.hash);
+    console.log('songIndex', songIndex);
+    if (songIndex < 0) {
+      // 添加歌曲到播放列表
+      songIndex = playerStore.addToPlaylist(song, true);
+    }
     if (songIndex < 0) {
       return;
     }
