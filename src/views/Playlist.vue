@@ -144,7 +144,10 @@ const handleDeletedSongs = (deletedSongs: Song[]) => {
   filteredSongs.value = songs.value;
 };
 
-const handleSongRemoved = (removedSong: Song) => {
+const handleSongRemoved = (removedSong?: Song) => {
+  if (!removedSong) {
+    return;
+  }
   // 从当前列表中移除已删除的歌曲
   songs.value = songs.value.filter(song => removedSong.hash !== song.hash);
   filteredSongs.value = songs.value;
