@@ -10,11 +10,12 @@
       <NCard
         class="setting-group"
         title="外观设置"
+        size="small"
       >
         <template #header-extra>
           <NIcon
             :size="20"
-            color="var(--primary-color)"
+            :color="themeVars.primaryColor"
           >
             <Palette />
           </NIcon>
@@ -26,6 +27,7 @@
             <div class="setting-desc">选择您喜欢的主题外观</div>
           </div>
           <NSelect
+            size="small"
             v-model:value="settingStore.theme"
             :options="themeOptions"
             style="width: 120px"
@@ -48,11 +50,12 @@
       <NCard
         class="setting-group"
         title="播放设置"
+        size="small"
       >
         <template #header-extra>
           <NIcon
             :size="20"
-            color="var(--primary-color)"
+            :color="themeVars.primaryColor"
           >
             <PlayerPlay />
           </NIcon>
@@ -139,7 +142,7 @@
             <div class="setting-title">播放时防止系统休眠</div>
             <div class="setting-desc">播放音乐时阻止系统进入休眠状态</div>
           </div>
-          <NSwitch 
+          <NSwitch
             v-model:value="settingStore.preventSleep"
             @update:value="settingStore.setPreventSleep"
           />
@@ -150,11 +153,12 @@
       <NCard
         class="setting-group"
         title="音质设置"
+        size="small"
       >
         <template #header-extra>
           <NIcon
             :size="20"
-            color="var(--primary-color)"
+            :color="themeVars.primaryColor"
           >
             <DeviceAudioTape />
           </NIcon>
@@ -193,11 +197,12 @@
       <NCard
         class="setting-group"
         title="关于"
+        size="small"
       >
         <template #header-extra>
           <NIcon
             :size="20"
-            color="var(--primary-color)"
+            :color="themeVars.primaryColor"
           >
             <InfoCircle />
           </NIcon>
@@ -251,6 +256,7 @@ import {
 } from '@vicons/tabler';
 import { useTheme } from '@/hooks';
 import { AUDIO_QUALITY_OPTIONS } from '@/constants';
+import { useThemeVars } from 'naive-ui';
 
 defineOptions({
   name: 'Setting',
@@ -259,6 +265,7 @@ defineOptions({
 const { switchTheme } = useTheme();
 
 const settingStore = useSettingStore();
+const themeVars = useThemeVars();
 
 // 主题选项
 const themeOptions = [
