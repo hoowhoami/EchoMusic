@@ -19,7 +19,7 @@ export const useSettingStore = defineStore('setting', {
   persist: true,
   state: (): Setting => ({
     mainHeight: 0,
-    theme: 'light',
+    theme: 'auto',
     keepAlive: false,
     unblock: false,
     volumeFade: true,

@@ -553,19 +553,19 @@ const qualityOptions = ref([
     type: 'group',
     children: [
       {
-        label: '128k MP3',
+        label: '标准品质',
         value: '128',
       },
       {
-        label: '320k MP3',
+        label: 'HQ高品质',
         value: '320',
       },
       {
-        label: 'FLAC 无损',
+        label: 'SQ无损品质',
         value: 'flac',
       },
       {
-        label: '高品质音频',
+        label: 'Hi-Res无损品质',
         value: 'high',
       },
     ],
@@ -684,10 +684,10 @@ const handleScrollToCurrent = () => {
 // 处理音质选择
 const handleQualitySelect = (quality: string) => {
   const qualityNames: Record<string, string> = {
-    '128': '128k MP3',
-    '320': '320k MP3',
-    flac: 'FLAC 无损',
-    high: '高品质音频',
+    '128': '标准品质',
+    '320': 'HQ高品质',
+    flac: 'SQ无损品质',
+    high: 'Hi-Res无损品质',
     piano: '钢琴音效',
     acappella: '人声伴奏',
     subwoofer: '骨笛音效',

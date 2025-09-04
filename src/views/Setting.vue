@@ -255,10 +255,10 @@ const themeOptions = [
 
 // 音质选项
 const audioQualityOptions = [
-  { label: '128k MP3', value: '128' },
-  { label: '320k MP3', value: '320' },
-  { label: 'FLAC 无损', value: 'flac' },
-  { label: '高品质音频', value: 'high' },
+  { label: '标准品质', value: '128' },
+  { label: 'HQ高品质', value: '320' },
+  { label: 'SQ无损品质', value: 'flac' },
+  { label: 'Hi-Res无损品质', value: 'high' },
 ];
 
 // 打开链接
