@@ -101,10 +101,7 @@ export const useUserStore = defineStore('user', {
       if (!isToday(state.vipReceive.day)) {
         return true;
       }
-      return (
-        state.vipReceive.remain > 0 &&
-        (state.vipReceiveNextTime === undefined || new Date().getTime() > state.vipReceiveNextTime)
-      );
+      return state.vipReceive.remain > 0;
     },
   },
   actions: {

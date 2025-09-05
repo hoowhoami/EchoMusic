@@ -261,18 +261,26 @@
                 size="small"
                 :focusable="false"
                 :loading="loading"
+                :disabled="userStore.isVipReceiveCompleted"
                 @click="handleReceiveVip"
               >
                 领取
               </NButton>
-              <div class="flex items-center space-x-1">
+              <div
+                class="flex items-center space-x-1"
+                v-if="
+                  !userStore.isVipReceiveCompleted &&
+                  !userStore.canReceiveVip &&
+                  userStore.vipReceiveNextTime &&
+                  userStore.vipReceiveNextTime > new Date().getTime()
+                "
+              >
                 <NIcon :size="12">
                   <AccessTimeRound />
                 </NIcon>
                 <NText
                   depth="3"
                   style="font-size: 12px"
-                  v-if="!userStore.canReceiveVip && userStore.vipReceiveNextTime"
                 >
                   下一次领取时间为
                   {{ formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss') }} 之后
@@ -524,8 +532,12 @@ const getVipReceiveResult = async () => {
 
 const handleReceiveVip = async () => {
   try {
+    if (userStore.isVipReceiveCompleted) {
+      window.$message.warning('今日会员已经领取完成');
+      return;
+    }
     if (!userStore.canReceiveVip) {
-      if (userStore.vipReceiveNextTime) {
+      if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
         window.$message.warning(
           `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
         );
