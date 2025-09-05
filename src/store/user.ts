@@ -13,8 +13,9 @@ interface User {
   extends?: any;
   // 用户歌单
   playlist?: Playlist[];
-  // VIP领取记录
+  // VIP领取
   vipReceive?: VipReceive;
+  vipReceiveNextTime?: number;
 }
 
 export const useUserStore = defineStore('user', {
@@ -28,6 +29,7 @@ export const useUserStore = defineStore('user', {
     extends: undefined,
     playlist: undefined,
     vipReceive: undefined,
+    vipReceiveNextTime: undefined,
   }),
   getters: {
     isAuthenticated(state) {
@@ -91,6 +93,18 @@ export const useUserStore = defineStore('user', {
         return false;
       }
       return isToday(state.vipReceive.day) && state.vipReceive.remain === 0;
+    },
+    canReceiveVip(state) {
+      if (!state.vipReceive) {
+        return true;
+      }
+      if (!isToday(state.vipReceive.day)) {
+        return true;
+      }
+      return (
+        state.vipReceive.remain > 0 &&
+        (state.vipReceiveNextTime === undefined || new Date().getTime() > state.vipReceiveNextTime)
+      );
     },
   },
   actions: {
@@ -156,7 +170,9 @@ export const useUserStore = defineStore('user', {
       await this.fetchPlaylist();
     },
     setVipReceive(vipReceive: VipReceive) {
-      vipReceive.day = new Date().getTime();
+      const timestamp = new Date().getTime();
+      vipReceive.day = timestamp;
+      this.vipReceiveNextTime = timestamp + 10 * 60 * 1000;
       this.$patch({
         vipReceive,
       });

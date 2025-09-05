@@ -256,15 +256,29 @@
                 :key="i"
               ></NStep>
             </NSteps>
-            <NButton
-              size="small"
-              :focusable="false"
-              :disabled="userStore.isVipReceiveCompleted"
-              :loading="loading"
-              @click="handleReceiveVip"
-            >
-              领取
-            </NButton>
+            <div class="w-[500px] flex flex-col items-end space-y-2">
+              <NButton
+                size="small"
+                :focusable="false"
+                :loading="loading"
+                @click="handleReceiveVip"
+              >
+                领取
+              </NButton>
+              <div class="flex items-center space-x-1">
+                <NIcon :size="12">
+                  <AccessTimeRound />
+                </NIcon>
+                <NText
+                  depth="3"
+                  style="font-size: 12px"
+                  v-if="!userStore.canReceiveVip && userStore.vipReceiveNextTime"
+                >
+                  下一次领取时间为
+                  {{ formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss') }} 之后
+                </NText>
+              </div>
+            </div>
           </div>
         </NCard>
       </NTabPane>
@@ -510,6 +524,16 @@ const getVipReceiveResult = async () => {
 
 const handleReceiveVip = async () => {
   try {
+    if (!userStore.canReceiveVip) {
+      if (userStore.vipReceiveNextTime) {
+        window.$message.warning(
+          `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
+        );
+        return;
+      }
+      window.$message.warning('由于未知原因暂时无法领取');
+      return;
+    }
     loading.value = true;
     const res = await youthVip();
     console.log('领取结果', res);
