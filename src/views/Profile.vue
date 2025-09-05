@@ -117,15 +117,84 @@
       </div>
     </NCard>
     <NCard size="small"> Come Soon... </NCard>
+    <NCard
+      size="small"
+      title="会员签到日历"
+    >
+      <template #header-extra>
+        <NText
+          style="font-size: 12px"
+          depth="3"
+        >
+          每天签到可领取一日会员
+        </NText>
+      </template>
+      <div class="calender">
+        <NCalendar
+          :is-date-disabled="isDateDisabled"
+          @update:value="handleSign"
+        >
+          <template #default="{ year, month, date }">
+            <div class="mt-[30px] flex flex-col items-center space-y-2">
+              <div style="font-size: 12px">
+                <NIcon
+                  v-if="isSigned(year, month, date)"
+                  :size="30"
+                  :color="themeVars.primaryColor"
+                >
+                  <CheckCircleRound />
+                </NIcon>
+                <NIcon
+                  v-if="
+                    !isSigned(year, month, date) && isBeforeToday(toTimestamp(year, month, date))
+                  "
+                  :size="30"
+                >
+                  <CheckCircleOutlineRound />
+                </NIcon>
+                <NIcon
+                  :size="30"
+                  :color="themeVars.infoColor"
+                  v-if="!isSigned(year, month, date) && isToday(toTimestamp(year, month, date))"
+                >
+                  <CheckCircleOutlineRound />
+                </NIcon>
+              </div>
+              <div
+                style="font-size: 12px"
+                v-if="
+                  isBeforeToday(toTimestamp(year, month, date)) ||
+                  isToday(toTimestamp(year, month, date))
+                "
+              >
+                <NGradientText
+                  depth="2"
+                  :type="isSigned(year, month, date) ? 'success' : 'info'"
+                >
+                  {{
+                    isSigned(year, month, date)
+                      ? '已签到'
+                      : isToday(toTimestamp(year, month, date))
+                        ? '点击签到'
+                        : '未签到'
+                  }}
+                </NGradientText>
+              </div>
+            </div>
+          </template>
+        </NCalendar>
+      </div>
+    </NCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useUserStore } from '@/store';
-import { getCover } from '@/utils';
+import { formatTimestamp, getCover, isAfterToday, isBeforeToday, isToday } from '@/utils';
 import {
   NAvatar,
   NButton,
+  NCalendar,
   NCard,
   NDivider,
   NEllipsis,
@@ -134,10 +203,17 @@ import {
   NPopover,
   NTag,
   NText,
+  useThemeVars,
 } from 'naive-ui';
-import { computed } from 'vue';
-import { RefreshRound, AccessTimeRound } from '@vicons/material';
+import { computed, onMounted } from 'vue';
+import {
+  RefreshRound,
+  AccessTimeRound,
+  CheckCircleOutlineRound,
+  CheckCircleRound,
+} from '@vicons/material';
 import { ref } from 'vue';
+import { youthDayVip, youthMonthVipRecord } from '@/api';
 
 defineOptions({
   name: 'Profile',
@@ -148,6 +224,8 @@ const userStore = useUserStore();
 const avatarSize = 100;
 
 const loading = ref(false);
+
+const themeVars = useThemeVars();
 
 // 头像
 const avatar = computed(() => {
@@ -204,6 +282,28 @@ const tvip = computed(() => {
   )?.[0];
 });
 
+// 会员当月领取记录
+const vipMonthRecord = ref([]);
+
+const toTimestamp = (year: number, month: number, day: number) => {
+  return new Date(year, month - 1, day).getTime();
+};
+
+const isSigned = (year: number, month: number, day: number): boolean => {
+  const timestamp = toTimestamp(year, month, day);
+  return vipMonthRecord.value?.some(
+    (item: { day: string }) => item.day === formatTimestamp(timestamp),
+  );
+};
+
+// 禁用日历日期
+const isDateDisabled = (timestamp: number) => {
+  if (isBeforeToday(timestamp) || isAfterToday(timestamp)) {
+    return true;
+  }
+  return false;
+};
+
 const handleRefresh = async () => {
   try {
     loading.value = true;
@@ -214,6 +314,50 @@ const handleRefresh = async () => {
     loading.value = false;
   }
 };
+
+const handleSign = async (
+  timestamp: number,
+  info: { year: number; month: number; date: number },
+) => {
+  try {
+    if (loading.value) {
+      return;
+    }
+    if (!isToday(timestamp)) {
+      return;
+    }
+    const { year, month, date } = info;
+    if (isSigned(year, month, date)) {
+      return;
+    }
+    const time = `${year}-${month}-${date}`;
+    console.log('签到日期', time);
+    loading.value = true;
+    const res = await youthDayVip();
+    console.log('签到结果', res);
+    getVipReceiveResult();
+  } catch (error) {
+    console.error('签到失败', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const getVipReceiveResult = async () => {
+  try {
+    loading.value = true;
+    const monthRecord = await youthMonthVipRecord();
+    vipMonthRecord.value = monthRecord.list;
+  } catch (error) {
+    console.error('获取用户VIP领取结果失败', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+onMounted(async () => {
+  getVipReceiveResult();
+});
 </script>
 
 <style scoped lang="scss">
@@ -231,5 +375,15 @@ const handleRefresh = async () => {
 
 :deep(.vip-tag-wrapper > .n-tag) {
   height: 18px;
+}
+
+.calender {
+  :deep(.n-calendar-header) {
+    display: none;
+  }
+
+  :deep(.n-calendar .n-calendar-cell) {
+    padding-top: 15px;
+  }
 }
 </style>

@@ -143,3 +143,54 @@ export const isBeforeSixAM = (timestamp: number) => {
 export const convertToLocalTime = (isoString: string): string => {
   return dayjs(isoString).format('YYYY-MM-DD HH:mm:ss');
 };
+
+export const isYesterday = (timestamp: number) => {
+  // 处理秒级时间戳（10位），转换为毫秒级（13位）
+  const adjustedTimestamp = timestamp.toString().length === 10 ? timestamp * 1000 : timestamp;
+
+  // 转换目标时间戳为「年-月-日」
+  const targetDate = dayjs(adjustedTimestamp).format('YYYY-MM-DD');
+  // 获取昨天的「年-月-日」
+  const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
+
+  return targetDate === yesterday;
+};
+
+export const isBeforeToday = (timestamp: number) => {
+  // 处理秒级时间戳（10位）转毫秒级（13位）
+  const adjustedTimestamp = timestamp.toString().length === 10 ? timestamp * 1000 : timestamp;
+
+  // 目标日期的「年-月-日」
+  const targetDate = dayjs(adjustedTimestamp).format('YYYY-MM-DD');
+  // 今天的「年-月-日」
+  const today = dayjs().format('YYYY-MM-DD');
+
+  // 比较目标日期是否早于今天
+  return dayjs(targetDate).isBefore(today);
+};
+
+export const isAfterToday = (timestamp: number) => {
+  // 处理秒级时间戳（10位）转换为毫秒级（13位）
+  const adjustedTimestamp = timestamp.toString().length === 10 ? timestamp * 1000 : timestamp;
+
+  // 提取目标日期的「年-月-日」（忽略具体时间）
+  const targetDate = dayjs(adjustedTimestamp).format('YYYY-MM-DD');
+  // 提取今天的「年-月-日」
+  const today = dayjs().format('YYYY-MM-DD');
+
+  // 比较目标日期是否晚于今天
+  return dayjs(targetDate).isAfter(today);
+};
+
+export const isToday = (timestamp: number) => {
+  // 处理秒级时间戳（10位）转换为毫秒级（13位）
+  const adjustedTimestamp = timestamp.toString().length === 10 ? timestamp * 1000 : timestamp;
+
+  // 提取目标日期的「年-月-日」（忽略具体时间）
+  const targetDate = dayjs(adjustedTimestamp).format('YYYY-MM-DD');
+  // 提取今天的「年-月-日」
+  const today = dayjs().format('YYYY-MM-DD');
+
+  // 比较目标日期是否是今天
+  return dayjs(targetDate).isSame(today);
+};
