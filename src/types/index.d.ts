@@ -209,3 +209,13 @@ export interface QualityOptionGroup {
 }
 
 export type QualitySelectOption = QualityOptionGroup;
+
+// VIP领取
+export interface VipReceive {
+  remain_vip_hour: number;
+  total: number;
+  done: number;
+  remain: number;
+  award_vip_hour: number;
+  day: number;
+}

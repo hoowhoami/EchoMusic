@@ -1,5 +1,6 @@
 import { addPlaylist, deletePlaylist, dfid, getPlaylist, userDetail, userVipDetail } from '@/api';
-import type { Playlist } from '@/types';
+import type { Playlist, VipReceive } from '@/types';
+import { isToday } from '@/utils';
 import { defineStore } from 'pinia';
 
 interface User {
@@ -12,6 +13,8 @@ interface User {
   extends?: any;
   // 用户歌单
   playlist?: Playlist[];
+  // VIP领取记录
+  vipReceive?: VipReceive;
 }
 
 export const useUserStore = defineStore('user', {
@@ -24,6 +27,7 @@ export const useUserStore = defineStore('user', {
     pic: undefined,
     extends: undefined,
     playlist: undefined,
+    vipReceive: undefined,
   }),
   getters: {
     isAuthenticated(state) {
@@ -81,6 +85,12 @@ export const useUserStore = defineStore('user', {
           ?.filter(item => item.list_create_userid !== state.userid && !item.authors)
           ?.some(item => item.list_create_gid === id) ?? false
       );
+    },
+    isVipReceiveCompleted(state) {
+      if (!state.vipReceive) {
+        return false;
+      }
+      return isToday(state.vipReceive.day) && state.vipReceive.remain === 0;
     },
   },
   actions: {
@@ -144,6 +154,12 @@ export const useUserStore = defineStore('user', {
     async deletePlaylist(id: number) {
       await deletePlaylist(id);
       await this.fetchPlaylist();
+    },
+    setVipReceive(vipReceive: VipReceive) {
+      vipReceive.day = new Date().getTime();
+      this.$patch({
+        vipReceive,
+      });
     },
   },
 });

@@ -194,3 +194,53 @@ export const isToday = (timestamp: number) => {
   // 比较目标日期是否是今天
   return dayjs(targetDate).isSame(today);
 };
+
+export const formatTimeDiff = (timestamp: number) => {
+  // 转换时间戳为 dayjs 对象
+  const targetTime = dayjs(timestamp);
+  const now = dayjs();
+
+  // 计算时间差（毫秒），取绝对值（支持过去和未来的时间）
+  const diffMs = Math.abs(now.diff(targetTime));
+
+  // 用 duration 解析时间差
+  const diff = dayjs.duration(diffMs);
+
+  // 提取年、月、天（注：dayjs 的月和年是近似值，基于30天/月和365天/年）
+  const years = Math.floor(diff.years());
+  const months = Math.floor(diff.months());
+  const days = Math.floor(diff.days() % 30); // 扣除月份包含的天后的剩余天数
+
+  // 拼接结果（只保留有值的部分）
+  const parts = [];
+  if (years > 0) parts.push(`${years}年`);
+  if (months > 0) parts.push(`${months}个月`);
+  if (days > 0) parts.push(`${days}天`);
+
+  // 若所有值为0，返回"0天"
+  return parts.length > 0 ? parts.join('') : '0天';
+};
+
+export const formatMinutesToHM = (minutes: number) => {
+  // 处理非数字或负数（默认按0处理）
+  if (typeof minutes !== 'number' || minutes < 0) {
+    minutes = 0;
+  }
+
+  // 转换为分钟数（取整，避免小数干扰）
+  const totalMinutes = Math.floor(minutes);
+
+  // 用 duration 解析总分钟数（单位：分钟）
+  const duration = dayjs.duration(totalMinutes, 'minutes');
+
+  // 提取小时和剩余分钟
+  const hours = Math.floor(duration.asHours()); // 总小时数（向下取整）
+  const mins = duration.minutes(); // 剩余分钟（0-59）
+
+  // 拼接结果（处理0小时或0分钟的情况）
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}小时`);
+  if (mins > 0 || parts.length === 0) parts.push(`${mins}分钟`); // 若没有小时，强制显示分钟
+
+  return parts.join('');
+};
