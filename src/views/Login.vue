@@ -1,27 +1,29 @@
 <template>
   <div class="login-container">
     <NCard class="login-card">
-      <NSpace
-        vertical
-        :size="24"
-      >
-        <NH1 align="center">欢迎访问 MixMusic</NH1>
-        <NText
-          align="center"
-          depth="3"
-          class="login-message"
-        >
-          您需要登录后才能进行后续操作
-        </NText>
-        <NButton
-          type="primary"
-          size="large"
-          block
-          @click="handleLogin"
-        >
-          登录
-        </NButton>
-      </NSpace>
+      <div class="flex flex-col items-center">
+        <div>
+          <NH1>欢迎访问 MixMusic</NH1>
+        </div>
+        <div>
+          <NText
+            depth="3"
+            class="login-message"
+          >
+            您需要登录后才能进行后续操作
+          </NText>
+        </div>
+        <div class="mt-[20px] w-full">
+          <NButton
+            type="primary"
+            size="large"
+            block
+            @click="handleLogin"
+          >
+            登录
+          </NButton>
+        </div>
+      </div>
     </NCard>
     <NModal
       style="width: 400px"
@@ -29,10 +31,7 @@
       preset="dialog"
       v-model:show="showModal"
     >
-      <NFlex
-        vertical
-        justify="center"
-      >
+      <div class="flex flex-col space-y-4">
         <NGradientText
           type="warning"
           class="mt-2"
@@ -46,7 +45,7 @@
           <NTabPane
             name="phone"
             tab="手机号登录"
-            class="h-[280px]"
+            class="h-[240px]"
           >
             <NForm
               ref="formRef"
@@ -68,10 +67,7 @@
                 label="验证码"
                 path="code"
               >
-                <NFlex
-                  justify="space-between"
-                  class="w-full"
-                >
+                <div class="w-full flex justify-between">
                   <NInputOtp
                     v-model:value="formValue.code"
                     :length="6"
@@ -83,7 +79,7 @@
                   >
                     {{ captchaSentButtonTitle }}
                   </NButton>
-                </NFlex>
+                </div>
               </NFormItem>
               <NButton
                 type="primary"
@@ -99,13 +95,9 @@
           <NTabPane
             name="qrcode"
             tab="二维码登录"
-            class="h-[280px]"
+            class="h-[240px]"
           >
-            <NFlex
-              vertical
-              align="center"
-              :size="16"
-            >
+            <div class="flex flex-col items-center space-y-4">
               <NText class="mt-2">{{ qrStatusText }}</NText>
               <NCard class="w-[140px] h-[140px] flex items-center justify-center">
                 <NQrCode
@@ -128,10 +120,10 @@
               >
                 刷新二维码
               </NButton>
-            </NFlex>
+            </div>
           </NTabPane>
         </NTabs>
-      </NFlex>
+      </div>
     </NModal>
   </div>
 </template>
@@ -140,11 +132,9 @@
 import {
   NCard,
   NModal,
-  NSpace,
   NH1,
   NText,
   NButton,
-  NFlex,
   NTabs,
   NTabPane,
   NForm,

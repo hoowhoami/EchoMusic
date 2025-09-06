@@ -1,12 +1,8 @@
 <template>
   <div class="titlebar drag">
-    <NFlex
-      class="content"
-      align="center"
-      justify="space-between"
-    >
+    <div class="content flex items-center justify-between">
       <div class="no-drag nav">
-        <NFlex align="center">
+        <div class="flex items-center space-x-4">
           <NButton
             ghost
             text
@@ -128,7 +124,7 @@
               </div>
             </NPopover>
           </div>
-        </NFlex>
+        </div>
       </div>
       <div class="no-drag flex justify-center">
         <NDropdown
@@ -153,7 +149,7 @@
           </NTag>
         </NDropdown>
       </div>
-    </NFlex>
+    </div>
   </div>
 </template>
 
@@ -164,7 +160,6 @@ import {
   NButton,
   NDropdown,
   NEllipsis,
-  NFlex,
   NIcon,
   NInput,
   NList,
