@@ -68,6 +68,7 @@
     "@vicons/material": "^0.13.0",
     "@vicons/tabler": "^0.13.0",
     "@vueuse/core": "^13.7.0",
+    "color2k": "^2.0.3",
     "dayjs": "^1.11.13",
     "howler": "^2.2.4",
     "lodash-es": "^4.17.21",

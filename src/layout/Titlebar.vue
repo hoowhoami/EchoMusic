@@ -73,9 +73,13 @@
                     <NListItem
                       v-for="(item, index) in searchHot"
                       :key="item"
+                      @click="handleSearchItemClick(item)"
                     >
                       <template #prefix>
-                        <div class="w-[20px]">
+                        <div
+                          class="w-[20px]"
+                          :style="{ color: getIndexColor(index) }"
+                        >
                           {{ index + 1 }}
                         </div>
                       </template>
@@ -98,9 +102,13 @@
                       <NListItem
                         v-for="(item, index) in suggest.RecordDatas"
                         :key="item.HintInfo"
+                        @click="handleSearchItemClick(item.HintInfo)"
                       >
                         <template #prefix>
-                          <div class="w-[20px]">
+                          <div
+                            class="w-[20px]"
+                            :style="{ color: getIndexColor(index) }"
+                          >
                             {{ index + 1 }}
                           </div>
                         </template>
@@ -173,9 +181,22 @@ import {
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/store';
 import { getSearchDefault, getSearchHot, getSearchSuggest } from '@/api';
+import { useGradientColor } from '@/hooks';
 
 const router = useRouter();
 const userStore = useUserStore();
+
+const { currentColor, getNextColor } = useGradientColor({
+  steps: 5,
+  lightColors: {
+    start: '#EA0E0E',
+    end: '#EB987E',
+  },
+  darkColors: {
+    start: '#EA0E0E',
+    end: '#EB987E',
+  },
+});
 
 const searchKeyword = ref('');
 const searchDefault = ref('搜索音乐、专辑、歌手、歌词');
@@ -194,6 +215,27 @@ const searchSuggest = ref<
     },
   ]
 >();
+
+const generateIndexColor = () => {
+  const colors = [];
+  for (let i = 0; i < 5; i++) {
+    if (i === 0) {
+      colors.push(currentColor.value);
+    } else {
+      colors.push(getNextColor());
+    }
+  }
+  return colors;
+};
+
+const indexColors = ref<string[]>(generateIndexColor());
+
+const getIndexColor = (index: number) => {
+  if (index <= indexColors.value.length - 1) {
+    return indexColors.value[index];
+  }
+  return undefined;
+};
 
 const menuOptions = computed(() => {
   if (userStore.isAuthenticated) {
@@ -285,9 +327,12 @@ const getSearchHotResult = (show: boolean) => {
 const getSearchSuggestResult = () => {
   // 获取搜索建议
   getSearchSuggest(searchKeyword.value).then(res => {
-    console.log(res);
     searchSuggest.value = res;
   });
+};
+
+const handleSearchItemClick = (keyword: string) => {
+  console.log(keyword);
 };
 
 watch(
