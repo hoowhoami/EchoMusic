@@ -270,7 +270,6 @@
                 class="flex items-center space-x-1"
                 v-if="
                   !userStore.isVipReceiveCompleted &&
-                  !userStore.canReceiveVip &&
                   userStore.vipReceiveNextTime &&
                   userStore.vipReceiveNextTime > new Date().getTime()
                 "
@@ -536,14 +535,10 @@ const handleReceiveVip = async () => {
       window.$message.warning('今日会员已经领取完成');
       return;
     }
-    if (!userStore.canReceiveVip) {
-      if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
-        window.$message.warning(
-          `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
-        );
-        return;
-      }
-      window.$message.warning('由于未知原因暂时无法领取');
+    if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
+      window.$message.warning(
+        `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
+      );
       return;
     }
     loading.value = true;

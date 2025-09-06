@@ -94,15 +94,6 @@ export const useUserStore = defineStore('user', {
       }
       return isToday(state.vipReceive.day) && state.vipReceive.remain === 0;
     },
-    canReceiveVip(state) {
-      if (!state.vipReceive) {
-        return true;
-      }
-      if (!isToday(state.vipReceive.day)) {
-        return true;
-      }
-      return state.vipReceive.remain > 0;
-    },
   },
   actions: {
     setUserInfo(user: User) {
