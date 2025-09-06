@@ -63,32 +63,55 @@
       </div>
     </div>
 
-    <div class="song-info flex flex-col space-y-1 flex-1 min-w-0">
-      <NEllipsis :line-clamp="1">
-        <div
-          class="song-name"
-          :style="{ color: isPlaying ? themeVars.primaryColor : '' }"
+    <div class="flex items-center justify-between w-full">
+      <div class="song-info flex flex-col space-y-1">
+        <NEllipsis :line-clamp="1">
+          <div
+            class="song-name"
+            :style="{ color: isPlaying ? themeVars.primaryColor : '' }"
+          >
+            {{ name }}
+          </div>
+        </NEllipsis>
+        <NEllipsis
+          class="text-gray-400"
+          :line-clamp="1"
         >
-          {{ name }}
-        </div>
-      </NEllipsis>
-      <NEllipsis
-        class="text-gray-400"
-        :line-clamp="1"
+          <div class="song-singer">
+            {{ singer }}
+          </div>
+        </NEllipsis>
+      </div>
+
+      <div
+        class="flex items-center space-x-10"
+        v-if="showMore"
       >
-        <div class="song-singer">
-          {{ singer }}
+        <div class="song-album">
+          <NEllipsis :line-clamp="1">
+            <NText depth="3">
+              {{ album }}
+            </NText>
+          </NEllipsis>
         </div>
-      </NEllipsis>
+
+        <div class="song-duration">
+          <NEllipsis :line-clamp="1">
+            <NText depth="3">
+              {{ duration }}
+            </NText>
+          </NEllipsis>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Song } from '@/types';
-import { getCover } from '@/utils';
+import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
-import { NEllipsis, NImage, NIcon, useThemeVars } from 'naive-ui';
+import { NEllipsis, NImage, NIcon, useThemeVars, NText } from 'naive-ui';
 import { computed, ref } from 'vue';
 import { PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
@@ -102,6 +125,7 @@ const props = defineProps<{
   song: Song;
   showCover?: boolean;
   coverSize?: number;
+  showMore?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -141,6 +165,14 @@ const singer = computed(() => {
   return isArray(props.song.singerinfo)
     ? props.song.singerinfo?.map(item => item.name).join(' / ')
     : props.song.singerinfo || '未知艺术家';
+});
+
+const album = computed(() => {
+  return props.song.albuminfo?.name || '-';
+});
+
+const duration = computed(() => {
+  return msToTime(props.song.timelen) || 0;
 });
 </script>
 
@@ -184,6 +216,11 @@ const singer = computed(() => {
     .song-singer {
       font-size: 10px;
     }
+  }
+
+  .song-album,
+  .song-duration {
+    font-size: 10px;
   }
 
   // 音波动画

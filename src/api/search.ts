@@ -32,3 +32,25 @@ export const getSearchSuggest = (
     musicTipCount,
   });
 };
+
+// 搜索
+// 说明: 调用此接口 , 传入搜索关键词可以搜索该音乐 / mv / 歌单 / 歌词 / 专辑 / 歌手
+// 必选参数：
+// keyword: 关键词
+// 可选参数：
+// page : 页数
+// pagesize : 每页页数, 默认为 30
+// type: 搜索类型；默认为单曲，special：歌单，lyric：歌词，song：单曲，album：专辑，author：歌手，mv：mv
+export const getSearchResult = (
+  keywords: string,
+  type: string = 'song',
+  page: number = 1,
+  pagesize: number = 30,
+) => {
+  return api.get('/search', {
+    keywords,
+    page,
+    pagesize,
+    type,
+  });
+};

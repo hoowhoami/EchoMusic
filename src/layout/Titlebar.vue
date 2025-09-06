@@ -51,6 +51,7 @@
                   style="width: 300px"
                   size="small"
                   clearable
+                  @keydown.enter.stop="handleSearchItemClick(searchKeyword)"
                 >
                   <template #prefix>
                     <NIcon :size="16">
@@ -329,7 +330,9 @@ const getSearchSuggestResult = () => {
 };
 
 const handleSearchItemClick = async (keyword: string) => {
-  console.log(keyword);
+  if (!keyword) {
+    keyword = searchDefault.value;
+  }
   await router.push({
     path: '/search',
     query: {
