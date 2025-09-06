@@ -45,6 +45,7 @@
           <div class="no-drag flex justify-center">
             <NPopover
               trigger="click"
+              v-model:show="searchPopoverShow"
               @update:show="getSearchHotResult"
             >
               <template #trigger>
@@ -198,6 +199,7 @@ const { currentColor, getNextColor } = useGradientColor({
   },
 });
 
+const searchPopoverShow = ref(false);
 const searchKeyword = ref('');
 const searchDefault = ref('搜索音乐、专辑、歌手、歌词');
 const searchDefaultKeywords = ref<string[]>([]);
@@ -331,8 +333,16 @@ const getSearchSuggestResult = () => {
   });
 };
 
-const handleSearchItemClick = (keyword: string) => {
+const handleSearchItemClick = async (keyword: string) => {
   console.log(keyword);
+  await router.push({
+    path: '/search',
+    query: {
+      keyword,
+    },
+  });
+  searchPopoverShow.value = false;
+  searchKeyword.value = '';
 };
 
 watch(
