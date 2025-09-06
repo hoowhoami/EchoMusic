@@ -503,6 +503,9 @@ class Player {
       await this.initPlayer(true);
       return;
     }
+    // 设置当前播放进度
+    this.setSeek(playerStore.currentTime);
+    // 播放
     this.player.play();
     playerStore.isPlaying = true;
     // 淡入
