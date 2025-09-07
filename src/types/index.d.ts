@@ -46,6 +46,7 @@ export type Playlist = {
   heat: number;
   list_create_gid: string;
   authors?: string;
+  play_count?: number;
 };
 
 // Song

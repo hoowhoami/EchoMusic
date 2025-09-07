@@ -111,9 +111,17 @@
                           </div>
                         </template>
                         <template #suffix>
-                          <NEllipsis class="w-[50px]">
-                            {{ item.Hot }}
-                          </NEllipsis>
+                          <div class="flex items-center space-x-1">
+                            <NIcon
+                              :size="12"
+                              :color="getIndexColor(index)"
+                            >
+                              <WhatshotTwotone />
+                            </NIcon>
+                            <NEllipsis class="w-[50px]">
+                              {{ item.Hot }}
+                            </NEllipsis>
+                          </div>
                         </template>
                         <NEllipsis class="w-[150px]">
                           {{ item.HintInfo }}
@@ -175,10 +183,12 @@ import {
   RefreshCircleOutline,
   Search,
 } from '@vicons/ionicons5';
+import { WhatshotTwotone } from '@vicons/material';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/store';
 import { getSearchDefault, getSearchHot, getSearchSuggest } from '@/api';
 import { useGradientColor } from '@/hooks';
+import { debounce } from 'lodash-es';
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -324,9 +334,11 @@ const getSearchHotResult = (show: boolean) => {
 
 const getSearchSuggestResult = () => {
   // 获取搜索建议
-  getSearchSuggest(searchKeyword.value).then(res => {
-    searchSuggest.value = res;
-  });
+  debounce(() => {
+    getSearchSuggest(searchKeyword.value).then(res => {
+      searchSuggest.value = res;
+    });
+  }, 500)();
 };
 
 const handleSearchItemClick = async (keyword: string) => {
@@ -391,6 +403,9 @@ onMounted(() => {
   }
   .n-list-item {
     padding: 5px 10px;
+  }
+  .n-list-item__suffix {
+    margin-left: 10px;
   }
 }
 </style>

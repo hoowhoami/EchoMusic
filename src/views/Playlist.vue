@@ -17,7 +17,7 @@
           />
         </div>
       </div>
-      <PlaylistCard
+      <PlaylistPanel
         v-else
         :playlist="playlistInfo"
       />
@@ -65,7 +65,7 @@ import { NSkeleton } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import SongList from '@/components/List/SongList.vue';
-import PlaylistCard from '@/components/Card/PlaylistCard.vue';
+import PlaylistPanel from '@/components/Panel/PlaylistPanel.vue';
 import SongListToolbar from '@/components/Toolbar/SongListToolbar.vue';
 import { useSettingStore, useUserStore, usePlayerStore } from '@/store';
 import player from '@/utils/player';

@@ -1,11 +1,11 @@
 <template>
   <div class="scrollable-loading">
     <NInfiniteScroll
-      @load="handleLoad"
+      @load="handleThrottleLoad"
       :style="{ height: `${props.height}px` }"
     >
       <slot
-        :list="list"
+        :list="loadedList"
         :loading="loading"
         :no-more="noMore"
       />
@@ -30,6 +30,7 @@
 </template>
 
 <script lang="ts" setup>
+import { throttle } from 'lodash-es';
 import { NInfiniteScroll, NSpin } from 'naive-ui';
 import { onMounted, ref } from 'vue';
 
@@ -39,8 +40,8 @@ defineOptions({
 
 const loading = ref(false);
 const noMore = ref(false);
-const page = ref(1);
-const list = ref<object[]>([]);
+const page = ref(0);
+const loadedList = ref<any[]>([]);
 
 const props = withDefaults(
   defineProps<{
@@ -48,17 +49,21 @@ const props = withDefaults(
     distance?: number;
     pageSize?: number;
     // eslint-disable-next-line no-unused-vars
-    loader: (page: number, pageSize: number) => Promise<object[]>;
+    loader: (page: number, pageSize: number) => Promise<{ list: any[]; total: number }>;
   }>(),
   {
     height: 300,
     distance: 0,
     pageSize: 30,
-    loader: () => Promise.resolve([]),
+    loader: () => Promise.resolve({ list: [], total: 0 }),
   },
 );
 
-const handleLoad = () => {
+const handleThrottleLoad = throttle(async () => {
+  await handleLoad();
+}, 500);
+
+const handleLoad = async () => {
   if (loading.value || noMore.value) {
     return;
   }
@@ -67,21 +72,25 @@ const handleLoad = () => {
     return;
   }
   try {
+    page.value = page.value + 1;
     loading.value = true;
-    loader(page.value, props.pageSize)
-      .then(data => {
-        if (data && data.length > 0) {
-          list.value.push(...data);
-        }
-        if (!data || data.length < props.pageSize) {
-          noMore.value = true;
-        } else {
-          page.value = page.value + 1;
-        }
-      })
-      .catch(error => {
-        console.error('Failed to load data', error);
-      });
+    const { list, total } = await loader(page.value, props.pageSize);
+    if (list && list.length > 0) {
+      loadedList.value.push(...list);
+    }
+    if (total !== undefined && total === 0) {
+      noMore.value = true;
+      return;
+    } else {
+      const maxPage = Math.ceil(total / props.pageSize);
+      if (page.value >= maxPage) {
+        noMore.value = true;
+        return;
+      }
+    }
+    if (!list || list.length < props.pageSize) {
+      noMore.value = true;
+    }
   } catch (error) {
     console.error('Failed to handle load', error);
   } finally {
