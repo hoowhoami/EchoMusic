@@ -1,13 +1,22 @@
 <template>
   <div class="playlist-card">
-    <NCard size="small">
+    <NCard size="small" class="card-container">
       <template #cover>
-        <NImage
-          class="cover"
-          :src="cover"
-          :preview-disabled="true"
-          object-fit="fill"
-        />
+        <div class="cover-container">
+          <NImage
+            class="cover"
+            :src="cover"
+            :preview-disabled="true"
+            object-fit="fill"
+          />
+          <div class="play-button-overlay">
+            <div class="play-button">
+              <NIcon :size="24" color="white">
+                <PlayArrowRound />
+              </NIcon>
+            </div>
+          </div>
+        </div>
       </template>
       <div class="flex flex-col space-y-1">
         <div class="name">
@@ -63,7 +72,7 @@ import type { Playlist } from '@/types';
 import { getCover } from '@/utils';
 import { NCard, NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';
-import { MusicNoteFilled, SmartDisplayRound } from '@vicons/material';
+import { MusicNoteFilled, SmartDisplayRound, PlayArrowRound } from '@vicons/material';
 
 defineOptions({
   name: 'PlaylistCard',
@@ -88,8 +97,57 @@ const publishTime = computed(() => {
 
 <style lang="scss" scoped>
 .playlist-card {
-  .cover {
-    width: 100%;
+  .card-container {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+    
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .cover-container {
+    position: relative;
+    
+    .cover {
+      width: 100%;
+    }
+    
+    .play-button-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      
+      .play-button {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(10px);
+        transition: all 0.3s ease;
+        
+        &:hover {
+          background: rgba(255, 255, 255, 0.3);
+          transform: scale(1.1);
+        }
+      }
+    }
+    
+    &:hover .play-button-overlay {
+      opacity: 1;
+    }
   }
 }
 </style>

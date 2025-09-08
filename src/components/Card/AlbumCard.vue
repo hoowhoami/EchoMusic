@@ -1,6 +1,6 @@
 <template>
   <div class="album-card">
-    <NCard size="small">
+    <NCard size="small" class="card-container">
       <template #cover>
         <NImage
           class="cover"
@@ -97,6 +97,16 @@ const publishTime = computed(() => {
 
 <style lang="scss" scoped>
 .album-card {
+  .card-container {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+    
+    &:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    }
+  }
+
   .cover {
     width: 100%;
   }
