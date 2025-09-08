@@ -157,7 +157,47 @@ export type Song = {
 
 // Album
 export type Album = {
-  id: number;
+  albumid: number;
+  albumname: string;
+  singer: string;
+  singerid: string;
+  grade: number;
+  grade_int: string;
+  img: string;
+  intro: string;
+  grade_float: string;
+  company: string;
+  quality: number;
+  title: string;
+  collect_count: number;
+  publish_time: string;
+  language: string;
+  privilege: number;
+  oldhide: number;
+  buyercount: number;
+  songcount: number;
+  newquality: number;
+  cd_url: string;
+  isfirst: number;
+  category: number;
+  short_intro: string;
+  ostremark: string;
+  auxiliary: string;
+  play_times: number;
+  program_inner: number;
+  alg_path: string;
+  program_def_songs: [];
+  tag_str: string;
+  album_aux: string;
+  play_count: number;
+  isouter: number;
+  outerdata: any;
+  trans_param: any;
+  singerids: number[];
+  singers: Array<{
+    id: number;
+    name: string;
+  }>;
 };
 
 // PlayMode

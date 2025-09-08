@@ -66,12 +66,12 @@
             :loader="searchAlbum"
           >
             <template #default="{ list }">
-              <div class="p-2 flex flex-col space-y-2 mr-2">
-                <SongCard
-                  show-more
-                  :song="song as Song"
-                  v-for="song in list"
-                  :key="(song as Song).hash"
+              <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
+                <AlbumCard
+                  class="w-[200px]"
+                  :album="album as Album"
+                  v-for="album in list"
+                  :key="(album as Album).albumid"
                 />
               </div>
             </template>
@@ -108,11 +108,12 @@ import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import ScrollableLoad from '@/components/Core/ScrollableLoad.vue';
 import { useSettingStore } from '@/store';
-import { Playlist, Song } from '@/types';
+import { Album, Playlist, Song } from '@/types';
 import { NTabPane, NTabs, NTag, NText } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import player from '@/utils/player';
+import AlbumCard from '@/components/Card/AlbumCard.vue';
 
 defineOptions({
   name: 'SearchResult',

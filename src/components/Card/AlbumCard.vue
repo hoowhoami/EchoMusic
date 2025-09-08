@@ -1,12 +1,12 @@
 <template>
-  <div class="playlist-card">
+  <div class="album-card">
     <NCard size="small">
       <template #header>
         <NEllipsis
           :line-clamp="1"
           style="font-size: 14px; font-weight: 800"
         >
-          {{ props.playlist?.name }}
+          {{ props.album?.albumname }}
         </NEllipsis>
       </template>
       <template #cover>
@@ -34,7 +34,7 @@
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.count || 0 }}
+              {{ props.album?.songcount || 0 }}
             </NText>
           </div>
           <div class="flex items-center space-x-1">
@@ -45,7 +45,7 @@
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.play_count || 0 }}
+              {{ props.album?.play_count || 0 }}
             </NText>
           </div>
         </div>
@@ -55,18 +55,18 @@
 </template>
 
 <script lang="ts" setup>
-import type { Playlist } from '@/types';
+import type { Album } from '@/types';
 import { getCover } from '@/utils';
 import { NCard, NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';
 import { MusicNoteFilled, SmartDisplayRound } from '@vicons/material';
 
 defineOptions({
-  name: 'PlaylistCard',
+  name: 'AlbumCard',
 });
 
 const props = defineProps<{
-  playlist?: Playlist;
+  album?: Album;
 }>();
 
 const coverSize = computed(() => {
@@ -74,20 +74,20 @@ const coverSize = computed(() => {
 });
 
 const cover = computed(() => {
-  return getCover(props.playlist?.pic || '', 150);
+  return getCover(props.album?.img || '', 150);
 });
 
 const creator = computed(() => {
-  return props.playlist?.list_create_username || '未知';
+  return props.album?.singer || '未知';
 });
 
 const publishTime = computed(() => {
-  return props.playlist?.publish_date;
+  return props.album?.publish_time;
 });
 </script>
 
 <style lang="scss" scoped>
-.playlist-card {
+.album-card {
   .cover {
     border-radius: 8px;
   }
