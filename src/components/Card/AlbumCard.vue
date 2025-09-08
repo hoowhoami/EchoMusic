@@ -23,7 +23,24 @@
           class="time"
           style="font-size: 12px"
         >
-          {{ creator }} {{ publishTime }} 发布
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 12px"
+          >
+            {{ creator }} {{ publishTime }} 发布
+          </NEllipsis>
+        </div>
+        <div
+          class="language"
+          style="font-size: 12px"
+        >
+          <NTag
+            size="small"
+            round
+            v-if="props.album?.language"
+          >
+            {{ props.album?.language }}
+          </NTag>
         </div>
         <div class="count flex items-center space-x-2">
           <div class="flex items-center space-x-1">
@@ -57,7 +74,7 @@
 <script lang="ts" setup>
 import type { Album } from '@/types';
 import { getCover } from '@/utils';
-import { NCard, NEllipsis, NImage } from 'naive-ui';
+import { NCard, NEllipsis, NImage, NTag } from 'naive-ui';
 import { computed } from 'vue';
 import { MusicNoteFilled, SmartDisplayRound } from '@vicons/material';
 

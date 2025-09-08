@@ -23,7 +23,12 @@
           class="time"
           style="font-size: 12px"
         >
-          {{ creator }} {{ publishTime }} 发布
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 12px"
+          >
+            {{ creator }} {{ publishTime }} 发布
+          </NEllipsis>
         </div>
         <div class="count flex items-center space-x-2">
           <div class="flex items-center space-x-1">
