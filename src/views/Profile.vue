@@ -502,11 +502,8 @@ const handleSign = async (
     if (isSigned(year, month, date)) {
       return;
     }
-    const time = `${year}-${month}-${date}`;
-    console.log('签到日期', time);
     loading.value = true;
-    const res = await youthDayVip();
-    console.log('签到结果', res);
+    await youthDayVip();
     await getVipReceiveResult();
     await userStore.fetchUserExtends();
   } catch (error) {

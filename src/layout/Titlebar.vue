@@ -349,6 +349,7 @@ const handleSearchItemClick = async (keyword: string) => {
     path: '/search',
     query: {
       keyword,
+      t: new Date().getTime(),
     },
   });
   searchPopoverShow.value = false;

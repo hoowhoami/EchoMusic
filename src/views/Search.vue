@@ -30,6 +30,7 @@
                   :song="song as Song"
                   v-for="song in list"
                   :key="(song as Song).hash"
+                  @play="handlePlaySong(song as Song)"
                 />
               </div>
             </template>
@@ -110,6 +111,7 @@ import { Playlist, Song } from '@/types';
 import { NTabPane, NTabs, NTag, NText } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import player from '@/utils/player';
 
 defineOptions({
   name: 'SearchResult',
@@ -124,6 +126,11 @@ const scrollHeight = computed(() => {
 const route = useRoute();
 const keyword = ref('');
 const activeKey = ref('song');
+
+const handlePlaySong = (song: Song) => {
+  console.log(song);
+  player.playSong(song);
+};
 
 const searchSong = async (
   page: number,
@@ -190,7 +197,7 @@ watch(
   },
 );
 
-onMounted(async () => {
+onMounted(() => {
   keyword.value = route.query.keyword as string;
 });
 </script>

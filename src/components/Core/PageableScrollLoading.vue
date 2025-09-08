@@ -32,7 +32,7 @@
 <script lang="ts" setup>
 import { throttle } from 'lodash-es';
 import { NInfiniteScroll, NSpin } from 'naive-ui';
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 
 defineOptions({
   name: 'PageableScrollLoading',
@@ -71,31 +71,33 @@ const handleLoad = async () => {
   if (!loader || !(loader instanceof Function)) {
     return;
   }
-  try {
-    page.value = page.value + 1;
-    loading.value = true;
-    const { list, total } = await loader(page.value, props.pageSize);
-    if (list && list.length > 0) {
-      loadedList.value.push(...list);
-    }
-    if (total !== undefined && total === 0) {
-      noMore.value = true;
-      return;
-    } else {
-      const maxPage = Math.ceil(total / props.pageSize);
-      if (page.value >= maxPage) {
+  nextTick(async () => {
+    try {
+      page.value = page.value + 1;
+      loading.value = true;
+      const { list, total } = await loader(page.value, props.pageSize);
+      if (list && list.length > 0) {
+        loadedList.value.push(...list);
+      }
+      if (total !== undefined && total === 0) {
         noMore.value = true;
         return;
+      } else {
+        const maxPage = Math.ceil(total / props.pageSize);
+        if (page.value >= maxPage) {
+          noMore.value = true;
+          return;
+        }
       }
+      if (!list || list.length < props.pageSize) {
+        noMore.value = true;
+      }
+    } catch (error) {
+      console.error('Failed to handle load', error);
+    } finally {
+      loading.value = false;
     }
-    if (!list || list.length < props.pageSize) {
-      noMore.value = true;
-    }
-  } catch (error) {
-    console.error('Failed to handle load', error);
-  } finally {
-    loading.value = false;
-  }
+  });
 };
 
 onMounted(() => {
