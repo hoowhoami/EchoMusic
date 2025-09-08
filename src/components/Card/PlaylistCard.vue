@@ -15,6 +15,7 @@
           :width="coverSize"
           :height="coverSize"
           :src="cover"
+          :preview-disabled="true"
         />
       </template>
       <div class="flex flex-col space-y-2">
@@ -54,7 +55,7 @@
 </template>
 
 <script lang="ts" setup>
-import { Playlist } from '@/types';
+import type { Playlist } from '@/types';
 import { getCover } from '@/utils';
 import { NCard, NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';

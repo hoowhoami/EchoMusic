@@ -51,6 +51,7 @@
                   :playlist="item as Playlist"
                   v-for="item in list"
                   :key="item.listid"
+                  @click="handleOpenPlaylist(item as Playlist)"
                 />
               </div>
             </template>
@@ -110,7 +111,7 @@ import { useSettingStore } from '@/store';
 import { Playlist, Song } from '@/types';
 import { NTabPane, NTabs, NTag, NText } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import player from '@/utils/player';
 
 defineOptions({
@@ -124,12 +125,23 @@ const scrollHeight = computed(() => {
 });
 
 const route = useRoute();
+const router = useRouter();
 const keyword = ref('');
 const activeKey = ref('song');
 
 const handlePlaySong = (song: Song) => {
-  console.log(song);
-  player.playSong(song);
+  player.addNextSong(song, true);
+};
+
+const handleOpenPlaylist = async (playlist: Playlist) => {
+  console.log(playlist);
+  await router.push({
+    name: 'Playlist',
+    query: {
+      id: playlist.global_collection_id,
+      t: new Date().getTime(),
+    },
+  });
 };
 
 const searchSong = async (
@@ -140,7 +152,7 @@ const searchSong = async (
   const list = res?.lists?.map((item: any) => {
     return {
       ...item,
-      hahs: item.FileHash,
+      hash: item.FileHash,
       name: item.FileName,
       timelen: item.Duration * 1000,
       audio_id: item.Audioid,

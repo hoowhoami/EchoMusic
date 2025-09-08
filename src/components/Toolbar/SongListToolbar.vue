@@ -21,7 +21,7 @@
         v-if="props.showLike"
         :focusable="false"
         round
-        @click="$emit('like')"
+        @click="handleLike(props.playlist)"
       >
         <template #icon>
           <NIcon :size="20">
@@ -170,7 +170,7 @@ interface Props {
 
 type Emits = {
   'play-all': [songs: Song[]];
-  like: [];
+  like: [playlist?: Playlist];
   delete: [];
   'toggle-batch-mode': [];
   'locate-current': [];
@@ -195,6 +195,10 @@ const searchKeyword = defineModel<string>('searchKeyword', { default: '' });
 const userStore = useUserStore();
 
 const searchValue = ref(searchKeyword.value);
+
+const handleLike = (playlist?: Playlist) => {
+  emit('like', playlist);
+};
 
 // 批量操作选项
 const batchOptions = computed<DropdownOption[]>(() => {

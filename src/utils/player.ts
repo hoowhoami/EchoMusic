@@ -818,7 +818,6 @@ class Player {
     }
     // 尝试添加
     const songIndex = await playerStore.setNextPlaySong(song, playerStore.index);
-    console.log('songIndex', songIndex);
     // 播放歌曲
     if (songIndex < 0) {
       return;

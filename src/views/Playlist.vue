@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Song } from '@/types';
+import type { Playlist, Song } from '@/types';
 import { getPlaylistDetail, getPlaylistTrackAll } from '@/api';
 import { NSkeleton } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
@@ -123,12 +123,22 @@ const handleDeletePlaylist = () => {
     });
 };
 
-const handleLikePlaylist = () => {
-  // TODO: 实现收藏/取消收藏逻辑
+const handleLikePlaylist = async (playlist?: Playlist) => {
+  if (!playlist) {
+    return;
+  }
   if (isLikedPlaylist.value) {
+    const likedPlaylist = userStore.playlist?.filter(
+      item => item.list_create_gid === playlist.list_create_gid,
+    )?.[0];
+    if (!likedPlaylist) {
+      return;
+    }
+    await userStore.unlikePlaylist(likedPlaylist.listid);
     window.$message.success('已取消收藏');
   } else {
-    window.$message.success('已添加到收藏');
+    await userStore.likePlaylist(playlist);
+    window.$message.success('已添加收藏');
   }
 };
 

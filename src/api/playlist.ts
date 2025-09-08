@@ -10,14 +10,16 @@ export const getPlaylist = (page: number = 1, pagesize: number = 30) => {
 // 收藏歌单/新建歌单
 // is_pri: 是否设为隐私，0：公开，1：隐私，仅支持创建歌单时传入
 // type: 1：为收藏歌单，0：创建歌单, 默认为 0
-// list_create_gid：歌单 list_create_gid
-export const addPlaylist = (
-  name: string,
-  is_pri: number = 0,
-  type: number = 0,
-  list_create_gid: string = '',
-) => {
-  return api.get('/playlist/add', { name, is_pri, type, list_create_gid });
+// list_create_userid：歌单 list_create_userid
+// list_create_listid：歌单 list_create_listid
+export const addPlaylist = ({
+  name = '',
+  is_pri = 0,
+  type = 0,
+  list_create_userid = 0,
+  list_create_listid = 0,
+}) => {
+  return api.get('/playlist/add', { name, is_pri, type, list_create_userid, list_create_listid });
 };
 
 // 取消收藏歌单/删除歌单

@@ -150,10 +150,27 @@ export const useUserStore = defineStore('user', {
       this.playlist = sortedInfo;
     },
     async createPlaylist(name: string, isPrivate: boolean = false) {
-      await addPlaylist(name, isPrivate ? 1 : 0, 0);
+      await addPlaylist({
+        name,
+        is_pri: isPrivate ? 1 : 0,
+        list_create_userid: this.userid,
+      });
       await this.fetchPlaylist();
     },
     async deletePlaylist(id: number) {
+      await deletePlaylist(id);
+      await this.fetchPlaylist();
+    },
+    async likePlaylist(playlist: Playlist) {
+      await addPlaylist({
+        name: playlist.name,
+        type: 1,
+        list_create_listid: playlist.list_create_listid,
+        list_create_userid: playlist.list_create_userid,
+      });
+      await this.fetchPlaylist();
+    },
+    async unlikePlaylist(id: number) {
       await deletePlaylist(id);
       await this.fetchPlaylist();
     },
