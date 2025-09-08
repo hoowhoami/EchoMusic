@@ -324,11 +324,13 @@ const getDefaultSearchKeyword = () => {
 
 const getSearchHotResult = (show: boolean) => {
   if (show && searchHot.value.length === 0) {
-    getSearchHot().then(res => {
-      searchHot.value =
-        res.list?.[0]?.keywords?.map((item: { keyword: string }) => item.keyword) ||
-        searchHot.value;
-    });
+    debounce(() => {
+      getSearchHot().then(res => {
+        searchHot.value =
+          res.list?.[0]?.keywords?.map((item: { keyword: string }) => item.keyword) ||
+          searchHot.value;
+      });
+    }, 500)();
   }
 };
 

@@ -18,10 +18,7 @@
             {{ props.album?.albumname }}
           </NEllipsis>
         </div>
-        <div
-          class="time"
-          style="font-size: 12px"
-        >
+        <div class="time">
           <NEllipsis
             :line-clamp="1"
             style="font-size: 12px"
