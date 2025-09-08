@@ -200,6 +200,25 @@ export type Album = {
   }>;
 };
 
+// Singer
+export type Singer = {
+  albumcount: number;
+  descibe: string; // 注意：原字段可能是"describe"的拼写，这里保持与JSON一致
+  offline_url: string;
+  heatoffset: number;
+  singerid: number;
+  songcount: number;
+  fanscount: number;
+  singername: string;
+  is_settled: number;
+  intro: string;
+  mvcount: number;
+  url: string;
+  sortoffset: number;
+  heat: number;
+  imgurl: string;
+};
+
 // PlayMode
 export type PlayMode = 'repeat' | 'repeat-once' | 'shuffle';
 

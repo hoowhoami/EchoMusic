@@ -83,15 +83,14 @@
         >
           <ScrollableLoad
             :height="scrollHeight"
-            :loader="searchSong"
+            :loader="searchSinger"
           >
             <template #default="{ list }">
               <div class="p-2 flex flex-col space-y-2 mr-2">
-                <SongCard
-                  show-more
-                  :song="song as Song"
-                  v-for="song in list"
-                  :key="(song as Song).hash"
+                <SingerCard
+                  :singer="singer as Singer"
+                  v-for="singer in list"
+                  :key="(singer as Singer).singerid"
                 />
               </div>
             </template>
@@ -103,17 +102,18 @@
 </template>
 
 <script setup lang="ts">
+import type { Album, Playlist, Singer, Song } from '@/types';
 import { getSearchResult } from '@/api';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import ScrollableLoad from '@/components/Core/ScrollableLoad.vue';
 import { useSettingStore } from '@/store';
-import { Album, Playlist, Song } from '@/types';
 import { NTabPane, NTabs, NTag, NText } from 'naive-ui';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import player from '@/utils/player';
 import AlbumCard from '@/components/Card/AlbumCard.vue';
+import SingerCard from '@/components/Card/SingerCard.vue';
 
 defineOptions({
   name: 'SearchResult',
@@ -212,6 +212,31 @@ const searchAlbum = async (
   const list = res?.lists?.map((item: any) => {
     return {
       ...item,
+    };
+  });
+  return {
+    list,
+    total: res?.total,
+  };
+};
+
+const searchSinger = async (
+  page: number,
+  pageSize: number,
+): Promise<{ list: any[]; total: number }> => {
+  const res = await getSearchResult(keyword.value, 'author', page, pageSize);
+  console.log(res);
+  const list = res?.lists?.map((item: any) => {
+    return {
+      ...item,
+      singerid: item.AuthorId,
+      singername: item.AuthorName,
+      imgurl: item.Avatar,
+      heat: item.Heat,
+      albumcount: item.AlbumCount,
+      mvcount: item.VideoCount,
+      fanscount: item.FansNum,
+      songcount: item.AudioCount,
     };
   });
   return {
