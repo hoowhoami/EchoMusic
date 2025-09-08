@@ -47,7 +47,7 @@
             <template #default="{ list }">
               <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
                 <PlaylistCard
-                  class="w-[200px]"
+                  class="w-[200px] h-[300px]"
                   :playlist="item as Playlist"
                   v-for="item in list"
                   :key="item.listid"
@@ -68,7 +68,7 @@
             <template #default="{ list }">
               <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
                 <AlbumCard
-                  class="w-[200px]"
+                  class="w-[200px] h-[300px]"
                   :album="album as Album"
                   v-for="album in list"
                   :key="(album as Album).albumid"
@@ -88,7 +88,7 @@
             <template #default="{ list }">
               <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
                 <SingerCard
-                  class="w-[200px]"
+                  class="w-[200px] h-[300px]"
                   :singer="singer as Singer"
                   v-for="singer in list"
                   :key="(singer as Singer).singerid"
