@@ -1,24 +1,23 @@
 <template>
   <div class="playlist-card">
     <NCard size="small">
-      <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 14px; font-weight: 800"
-        >
-          {{ props.playlist?.name }}
-        </NEllipsis>
-      </template>
       <template #cover>
         <NImage
           class="cover"
-          :width="coverSize"
-          :height="coverSize"
           :src="cover"
           :preview-disabled="true"
+          object-fit="fill"
         />
       </template>
-      <div class="flex flex-col space-y-2">
+      <div class="flex flex-col space-y-1">
+        <div class="name">
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 14px; font-weight: 800"
+          >
+            {{ props.playlist?.name }}
+          </NEllipsis>
+        </div>
         <div
           class="time"
           style="font-size: 12px"
@@ -74,12 +73,8 @@ const props = defineProps<{
   playlist?: Playlist;
 }>();
 
-const coverSize = computed(() => {
-  return 150;
-});
-
 const cover = computed(() => {
-  return getCover(props.playlist?.pic || '', 150);
+  return getCover(props.playlist?.pic || '');
 });
 
 const creator = computed(() => {
@@ -94,7 +89,7 @@ const publishTime = computed(() => {
 <style lang="scss" scoped>
 .playlist-card {
   .cover {
-    border-radius: 8px;
+    width: 100%;
   }
 }
 </style>

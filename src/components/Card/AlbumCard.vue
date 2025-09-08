@@ -1,24 +1,23 @@
 <template>
   <div class="album-card">
     <NCard size="small">
-      <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 14px; font-weight: 800"
-        >
-          {{ props.album?.albumname }}
-        </NEllipsis>
-      </template>
       <template #cover>
         <NImage
           class="cover"
-          :width="coverSize"
-          :height="coverSize"
           :src="cover"
           :preview-disabled="true"
+          object-fit="fill"
         />
       </template>
-      <div class="flex flex-col space-y-2">
+      <div class="flex flex-col space-y-1">
+        <div class="name">
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 14px; font-weight: 800"
+          >
+            {{ props.album?.albumname }}
+          </NEllipsis>
+        </div>
         <div
           class="time"
           style="font-size: 12px"
@@ -86,12 +85,8 @@ const props = defineProps<{
   album?: Album;
 }>();
 
-const coverSize = computed(() => {
-  return 150;
-});
-
 const cover = computed(() => {
-  return getCover(props.album?.img || '', 150);
+  return getCover(props.album?.img || '');
 });
 
 const creator = computed(() => {
@@ -106,7 +101,7 @@ const publishTime = computed(() => {
 <style lang="scss" scoped>
 .album-card {
   .cover {
-    border-radius: 8px;
+    width: 100%;
   }
 }
 </style>

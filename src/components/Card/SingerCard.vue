@@ -1,24 +1,23 @@
 <template>
   <div class="singer-card">
     <NCard size="small">
-      <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 14px; font-weight: 800"
-        >
-          {{ props.singer?.singername }}
-        </NEllipsis>
-      </template>
       <template #cover>
         <NImage
           class="cover"
-          :width="coverSize"
-          :height="coverSize"
           :src="cover"
           :preview-disabled="true"
+          object-fit="fill"
         />
       </template>
-      <div class="flex flex-col space-y-2">
+      <div class="flex flex-col space-y-1">
+        <div class="name">
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 14px; font-weight: 800"
+          >
+            {{ props.singer?.singername }}
+          </NEllipsis>
+        </div>
         <div class="flex items-center space-x-2">
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
@@ -104,19 +103,15 @@ const props = defineProps<{
   singer?: Singer;
 }>();
 
-const coverSize = computed(() => {
-  return 150;
-});
-
 const cover = computed(() => {
-  return getCover(props.singer?.imgurl || '', 150);
+  return getCover(props.singer?.imgurl || '');
 });
 </script>
 
 <style lang="scss" scoped>
 .singer-card {
   .cover {
-    border-radius: 8px;
+    width: 100%;
   }
 }
 </style>

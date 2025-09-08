@@ -45,7 +45,7 @@
             :loader="searchPlaylist"
           >
             <template #default="{ list }">
-              <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
+              <div class="flex flex-wrap justify-center gap-4 p-2">
                 <PlaylistCard
                   class="w-[200px] h-[300px]"
                   :playlist="item as Playlist"
@@ -66,7 +66,7 @@
             :loader="searchAlbum"
           >
             <template #default="{ list }">
-              <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
+              <div class="flex flex-wrap justify-center gap-4 p-2">
                 <AlbumCard
                   class="w-[200px] h-[300px]"
                   :album="album as Album"
@@ -86,7 +86,7 @@
             :loader="searchSinger"
           >
             <template #default="{ list }">
-              <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
+              <div class="flex flex-wrap justify-center gap-4 p-2">
                 <SingerCard
                   class="w-[200px] h-[300px]"
                   :singer="singer as Singer"
