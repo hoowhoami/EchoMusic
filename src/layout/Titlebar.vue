@@ -62,32 +62,39 @@
               </template>
               <div class="w-[274px] h-[300px] overflow-hidden">
                 <NScrollbar content-class="h-[300px]">
-                  <NList
-                    v-if="!searchKeyword"
-                    hoverable
-                    :show-divider="false"
-                    size="small"
+                  <div
+                    v-if="loading"
+                    class="flex items-center justify-center h-full"
                   >
-                    <NListItem
-                      v-for="(item, index) in searchHot"
-                      :key="item"
-                      @click="handleSearchItemClick(item)"
-                    >
-                      <template #prefix>
-                        <div
-                          class="w-[20px]"
-                          :style="{ color: getIndexColor(index) }"
-                        >
-                          {{ index + 1 }}
-                        </div>
-                      </template>
-                      <div>
-                        {{ item }}
-                      </div>
-                    </NListItem>
-                  </NList>
+                    <NSpin :size="20" />
+                  </div>
                   <div v-else>
                     <NList
+                      v-if="!searchKeyword"
+                      hoverable
+                      :show-divider="false"
+                      size="small"
+                    >
+                      <NListItem
+                        v-for="(item, index) in searchHot"
+                        :key="item"
+                        @click="handleSearchItemClick(item)"
+                      >
+                        <template #prefix>
+                          <div
+                            class="w-[20px]"
+                            :style="{ color: getIndexColor(index) }"
+                          >
+                            {{ index + 1 }}
+                          </div>
+                        </template>
+                        <div>
+                          {{ item }}
+                        </div>
+                      </NListItem>
+                    </NList>
+                    <NList
+                      v-else
                       hoverable
                       :show-divider="false"
                       size="small"
@@ -175,6 +182,7 @@ import {
   NListItem,
   NPopover,
   NScrollbar,
+  NSpin,
   NTag,
 } from 'naive-ui';
 import {
@@ -205,11 +213,13 @@ const { currentColor, getNextColor } = useGradientColor({
   },
 });
 
+const loading = ref(false);
+
 const searchPopoverShow = ref(false);
 const searchKeyword = ref('');
 const searchDefault = ref('搜索音乐、专辑、歌手、歌词');
 const searchDefaultKeywords = ref<string[]>([]);
-const searchHot = ref<[]>([]);
+const searchHot = ref<string[]>([]);
 const searchSuggest = ref<
   [
     {
@@ -313,7 +323,7 @@ const logout = () => {
   });
 };
 
-const getDefaultSearchKeyword = () => {
+const getDefaultSearchKeyword = async () => {
   getSearchDefault().then(res => {
     searchDefaultKeywords.value =
       res.fallback?.map((item: { main_title: string }) => item.main_title) ||
@@ -322,25 +332,34 @@ const getDefaultSearchKeyword = () => {
   });
 };
 
-const getSearchHotResult = (show: boolean) => {
-  if (show && searchHot.value.length === 0) {
-    debounce(() => {
-      getSearchHot().then(res => {
-        searchHot.value =
-          res.list?.[0]?.keywords?.map((item: { keyword: string }) => item.keyword) ||
-          searchHot.value;
-      });
-    }, 500)();
+// 先定义防抖后的函数
+const debouncedFetchSearchHot = debounce(async () => {
+  const res = await getSearchHot();
+  const data = res.list?.[0]?.keywords?.map((item: { keyword: string }) => item.keyword) || [];
+  searchHot.value = data;
+  loading.value = false;
+}, 500);
+
+const getSearchHotResult = async (show: boolean) => {
+  if (show && searchHot.value?.length === 0) {
+    loading.value = true;
+    await debouncedFetchSearchHot();
   }
 };
 
-const getSearchSuggestResult = () => {
-  // 获取搜索建议
-  debounce(() => {
-    getSearchSuggest(searchKeyword.value).then(res => {
-      searchSuggest.value = res;
-    });
-  }, 500)();
+// 定义搜索建议的防抖函数
+const debouncedGetSearchSuggest = debounce(async (keyword: string) => {
+  const res = await getSearchSuggest(keyword);
+  searchSuggest.value = res;
+  loading.value = false;
+}, 500);
+
+const getSearchSuggestResult = async () => {
+  if (!searchKeyword.value) {
+    return;
+  }
+  loading.value = true;
+  await debouncedGetSearchSuggest(searchKeyword.value);
 };
 
 const handleSearchItemClick = async (keyword: string) => {
@@ -360,18 +379,18 @@ const handleSearchItemClick = async (keyword: string) => {
 
 watch(
   () => searchKeyword.value,
-  newValue => {
+  async newValue => {
     if (!newValue) {
-      getDefaultSearchKeyword();
+      await getDefaultSearchKeyword();
     } else {
       // 获取搜索建议 需要防抖
-      getSearchSuggestResult();
+      await getSearchSuggestResult();
     }
   },
 );
 
-onMounted(() => {
-  getDefaultSearchKeyword();
+onMounted(async () => {
+  await getDefaultSearchKeyword();
 });
 </script>
 
