@@ -1,6 +1,9 @@
 <template>
   <div class="album-card">
-    <NCard size="small" class="card-container">
+    <NCard
+      size="small"
+      class="card-container"
+    >
       <template #cover>
         <NImage
           class="cover"
@@ -26,19 +29,19 @@
             {{ creator }} {{ publishTime }} 发布
           </NEllipsis>
         </div>
-        <div
-          class="language"
-          style="font-size: 12px"
-        >
-          <NTag
-            size="small"
-            round
-            v-if="props.album?.language"
+        <div class="flex items-center space-x-2">
+          <div
+            class="language"
+            style="font-size: 12px"
           >
-            {{ props.album?.language }}
-          </NTag>
-        </div>
-        <div class="count flex items-center space-x-2">
+            <NTag
+              size="small"
+              round
+              v-if="props.album?.language"
+            >
+              {{ props.album?.language }}
+            </NTag>
+          </div>
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
               <MusicNoteFilled />
@@ -48,17 +51,6 @@
               style="font-size: 12px"
             >
               {{ props.album?.songcount || 0 }}
-            </NText>
-          </div>
-          <div class="flex items-center space-x-1">
-            <NIcon :size="16">
-              <SmartDisplayRound />
-            </NIcon>
-            <NText
-              depth="3"
-              style="font-size: 12px"
-            >
-              {{ props.album?.play_count || 0 }}
             </NText>
           </div>
         </div>
@@ -72,7 +64,7 @@ import type { Album } from '@/types';
 import { getCover } from '@/utils';
 import { NCard, NEllipsis, NImage, NTag } from 'naive-ui';
 import { computed } from 'vue';
-import { MusicNoteFilled, SmartDisplayRound } from '@vicons/material';
+import { MusicNoteFilled } from '@vicons/material';
 
 defineOptions({
   name: 'AlbumCard',
@@ -98,9 +90,11 @@ const publishTime = computed(() => {
 <style lang="scss" scoped>
 .album-card {
   .card-container {
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition:
+      transform 0.3s ease,
+      box-shadow 0.3s ease;
     cursor: pointer;
-    
+
     &:hover {
       transform: translateY(-6px);
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);

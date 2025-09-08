@@ -68,7 +68,7 @@
             <template #default="{ list }">
               <div class="flex flex-wrap justify-center gap-4 p-2">
                 <AlbumCard
-                  class="w-[200px] h-[330px]"
+                  class="w-[200px] h-[310px]"
                   :album="album as Album"
                   v-for="album in list"
                   :key="(album as Album).albumid"
