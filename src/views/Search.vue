@@ -7,8 +7,9 @@
       <NTag
         size="small"
         type="info"
-        >{{ keyword }}</NTag
       >
+        {{ keyword }}
+      </NTag>
     </div>
     <div>
       <NTabs
@@ -183,7 +184,6 @@ const searchPlaylist = async (
   pageSize: number,
 ): Promise<{ list: any[]; total: number }> => {
   const res = await getSearchResult(keyword.value, 'special', page, pageSize);
-  console.log(res);
   const list = res?.lists?.map((item: any) => {
     return {
       ...item,
