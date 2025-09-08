@@ -1,5 +1,5 @@
 <template>
-  <div class="scrollable-loading">
+  <div class="scrollable-load">
     <NInfiniteScroll
       @load="handleThrottleLoad"
       :style="{ height: `${props.height}px` }"
@@ -35,7 +35,7 @@ import { NInfiniteScroll, NSpin } from 'naive-ui';
 import { nextTick, onMounted, ref } from 'vue';
 
 defineOptions({
-  name: 'PageableScrollLoading',
+  name: 'ScrollableLoading',
 });
 
 const loading = ref(false);
@@ -106,7 +106,7 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-.scrollable-loading {
+.scrollable-load {
   .loading {
     height: 30px;
   }

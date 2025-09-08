@@ -19,7 +19,7 @@
           name="song"
           tab="单曲"
         >
-          <PageableScrollLoading
+          <ScrollableLoad
             :height="scrollHeight"
             :loader="searchSong"
           >
@@ -34,13 +34,13 @@
                 />
               </div>
             </template>
-          </PageableScrollLoading>
+          </ScrollableLoad>
         </NTabPane>
         <NTabPane
           name="playlist"
           tab="歌单"
         >
-          <PageableScrollLoading
+          <ScrollableLoad
             :height="scrollHeight"
             :loader="searchPlaylist"
           >
@@ -55,15 +55,15 @@
                 />
               </div>
             </template>
-          </PageableScrollLoading>
+          </ScrollableLoad>
         </NTabPane>
         <NTabPane
           name="album"
           tab="专辑"
         >
-          <PageableScrollLoading
+          <ScrollableLoad
             :height="scrollHeight"
-            :loader="searchSong"
+            :loader="searchAlbum"
           >
             <template #default="{ list }">
               <div class="p-2 flex flex-col space-y-2 mr-2">
@@ -75,13 +75,13 @@
                 />
               </div>
             </template>
-          </PageableScrollLoading>
+          </ScrollableLoad>
         </NTabPane>
         <NTabPane
           name="artist"
           tab="歌手"
         >
-          <PageableScrollLoading
+          <ScrollableLoad
             :height="scrollHeight"
             :loader="searchSong"
           >
@@ -95,7 +95,7 @@
                 />
               </div>
             </template>
-          </PageableScrollLoading>
+          </ScrollableLoad>
         </NTabPane>
       </NTabs>
     </div>
@@ -106,7 +106,7 @@
 import { getSearchResult } from '@/api';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import SongCard from '@/components/Card/SongCard.vue';
-import PageableScrollLoading from '@/components/Core/PageableScrollLoading.vue';
+import ScrollableLoad from '@/components/Core/ScrollableLoad.vue';
 import { useSettingStore } from '@/store';
 import { Playlist, Song } from '@/types';
 import { NTabPane, NTabs, NTag, NText } from 'naive-ui';
@@ -194,6 +194,23 @@ const searchPlaylist = async (
       pic: item.img,
       intro: item.intro,
       publish_date: item.publish_time?.split(' ')[0],
+    };
+  });
+  return {
+    list,
+    total: res?.total,
+  };
+};
+
+const searchAlbum = async (
+  page: number,
+  pageSize: number,
+): Promise<{ list: any[]; total: number }> => {
+  const res = await getSearchResult(keyword.value, 'album', page, pageSize);
+  console.log(res);
+  const list = res?.lists?.map((item: any) => {
+    return {
+      ...item,
     };
   });
   return {

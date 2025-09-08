@@ -155,6 +155,11 @@ export type Song = {
   }>;
 };
 
+// Album
+export type Album = {
+  id: number;
+};
+
 // PlayMode
 export type PlayMode = 'repeat' | 'repeat-once' | 'shuffle';
 
