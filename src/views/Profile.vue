@@ -93,7 +93,7 @@
             <NEllipsis :line-clamp="1">
               <NText
                 depth="3"
-                style="font-size: 10px"
+                style="font-size: 11px"
               >
                 个性签名: {{ intro }}
               </NText>
