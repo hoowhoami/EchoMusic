@@ -86,8 +86,9 @@
             :loader="searchSinger"
           >
             <template #default="{ list }">
-              <div class="p-2 flex flex-col space-y-2 mr-2">
+              <div class="p-2 flex flex-wrap space-x-2 space-y-2 mr-2">
                 <SingerCard
+                  class="w-[200px]"
                   :singer="singer as Singer"
                   v-for="singer in list"
                   :key="(singer as Singer).singerid"

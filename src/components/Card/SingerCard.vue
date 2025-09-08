@@ -19,7 +19,7 @@
         />
       </template>
       <div class="flex flex-col space-y-2">
-        <div class="count flex items-center space-x-2">
+        <div class="flex items-center space-x-2">
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
               <MusicNoteFilled />
@@ -53,6 +53,8 @@
               {{ props.singer?.mvcount || 0 }}
             </NText>
           </div>
+        </div>
+        <div class="flex items-center space-x-2">
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
               <PeopleRound />
