@@ -1,6 +1,9 @@
 <template>
   <div class="singer-card">
-    <NCard size="small" class="card-container">
+    <NCard
+      size="small"
+      class="card-container"
+    >
       <template #cover>
         <div class="cover-container">
           <div class="background-blur">
@@ -21,7 +24,7 @@
           </div>
         </div>
       </template>
-      <div class="flex flex-col space-y-1">
+      <div class="mt-2 flex flex-col space-y-1">
         <div class="name">
           <NEllipsis
             :line-clamp="1"
@@ -123,9 +126,11 @@ const cover = computed(() => {
 <style lang="scss" scoped>
 .singer-card {
   .card-container {
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition:
+      transform 0.3s ease,
+      box-shadow 0.3s ease;
     cursor: pointer;
-    
+
     &:hover {
       transform: translateY(-6px);
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -137,21 +142,21 @@ const cover = computed(() => {
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
-    
+
     .background-blur {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      
+
       .blur-image {
         width: 100%;
         height: 100%;
         filter: blur(8px);
       }
     }
-    
+
     .circle-overlay {
       position: absolute;
       top: 50%;
@@ -163,7 +168,7 @@ const cover = computed(() => {
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.4);
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-      
+
       .circle-image {
         width: 100%;
         height: 100%;
