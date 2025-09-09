@@ -1,5 +1,5 @@
 <template>
-  <div class="playlist-panel">
+  <div class="album-panel">
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -14,7 +14,7 @@
           :line-clamp="1"
           style="font-size: 16px; font-weight: 800"
         >
-          {{ props.playlist?.name }}
+          {{ props.album?.albumname }}
         </NEllipsis>
       </template>
       <template #description>
@@ -46,11 +46,11 @@
       </template>
       <div class="flex flex-col justify-between space-y-2">
         <div
-          v-if="playlistTags"
+          v-if="tags"
           class="tags flex items-center space-x-2"
         >
           <NTag
-            v-for="tag in playlistTags"
+            v-for="tag in tags"
             :key="tag"
             size="small"
             round
@@ -67,29 +67,18 @@
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.count || 0 }}
+              {{ props.album?.songcount || 0 }}
             </NText>
           </div>
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
-              <ArrowsSort />
+              <WhatshotRound />
             </NIcon>
             <NText
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.sort || 0 }}
-            </NText>
-          </div>
-          <div class="flex items-center space-x-1">
-            <NIcon :size="16">
-              <HistoryOutlined />
-            </NIcon>
-            <NText
-              depth="3"
-              style="font-size: 12px"
-            >
-              {{ updateTime }}
+              {{ props.album?.heat || 0 }}
             </NText>
           </div>
         </div>
@@ -101,10 +90,10 @@
         >
           <template #tooltip>
             <div style="font-size: 11px">
-              {{ playlistIntro }}
+              {{ intro }}
             </div>
           </template>
-          {{ playlistIntro }}
+          {{ intro }}
         </NEllipsis>
       </template>
     </NThing>
@@ -112,66 +101,56 @@
 </template>
 
 <script lang="ts" setup>
-import { Playlist } from '@/types';
-import { formatTimestamp, getCover } from '@/utils';
+import { Album } from '@/types';
+import { getCover } from '@/utils';
 import { NEllipsis, NImage, NThing } from 'naive-ui';
 import { computed } from 'vue';
-import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
-import { ArrowsSort } from '@vicons/tabler';
-import { useUserStore } from '@/store';
+import { MusicNoteFilled, WhatshotRound } from '@vicons/material';
 
 defineOptions({
-  name: 'PlaylistCard',
+  name: 'AlbumCard',
 });
 
 const props = defineProps<{
-  playlist?: Playlist;
+  album?: Album;
 }>();
 
-const userStore = useUserStore();
-
 const cover = computed(() => {
-  return getCover(props.playlist?.pic || '', 150);
+  return getCover(props.album?.img || '', 150);
 });
 
 const avatar = computed(() => {
-  return getCover(props.playlist?.create_user_pic || '', 40);
+  return getCover(props.album?.cd_url || '', 40);
 });
 
 const creator = computed(() => {
-  return props.playlist?.list_create_username || '未知';
+  return props.album?.singer || '未知';
 });
 
 const createTime = computed(() => {
-  return formatTimestamp((props.playlist?.create_time || 0) * 1000);
+  return props.album?.publish_time || '未知';
 });
 
-const updateTime = computed(() => {
-  return formatTimestamp((props.playlist?.update_time || 0) * 1000);
+const intro = computed(() => {
+  return props.album?.intro || '暂无简介';
 });
 
-const playlistIntro = computed(() => {
-  return props.playlist?.intro || '暂无简介';
-});
-
-const playlistTags = computed(() => {
-  const tags = props.playlist?.tags?.split(',').filter((tag: string) => tag.trim());
-  if (tags && tags.length > 0) {
-    return tags;
+const tags = computed(() => {
+  const list = [];
+  const language = props.album?.language;
+  if (language) {
+    list.push(language);
   }
-  // 用户歌单
-  if (userStore.isCreatedPlaylist(props.playlist?.list_create_gid || '')) {
-    if (userStore.isDefaultPlaylist(props.playlist?.list_create_gid || '')) {
-      return ['默认'];
-    }
-    return ['自建'];
+  const type = props.album?.type;
+  if (type) {
+    list.push(type);
   }
-  return ['unknown'];
+  return list;
 });
 </script>
 
 <style lang="scss" scoped>
-.playlist-panel {
+.album-panel {
   .cover {
     flex-shrink: 0;
     width: 150px;

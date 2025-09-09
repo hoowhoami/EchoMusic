@@ -198,6 +198,8 @@ export type Album = {
     id: number;
     name: string;
   }>;
+  heat: number;
+  type: string;
 };
 
 // Singer

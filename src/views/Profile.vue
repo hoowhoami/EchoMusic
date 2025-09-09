@@ -22,36 +22,6 @@
               </NText>
               <NPopover
                 trigger="hover"
-                v-if="svip"
-              >
-                <template #trigger>
-                  <div class="vip-tag-wrapper">
-                    <NTag
-                      class="vip-tag"
-                      size="small"
-                      round
-                      :type="svip.is_vip === 1 ? 'success' : 'default'"
-                    >
-                      SVIP
-                    </NTag>
-                  </div>
-                </template>
-                <div style="font-size: 12px">
-                  <NGradientText> 酷狗概念版VIP </NGradientText>
-                </div>
-                <div
-                  style="font-size: 11px"
-                  class="flex items-center space-x-1"
-                >
-                  <NIcon :size="12">
-                    <AccessTimeRound />
-                  </NIcon>
-                  <NText depth="2"> {{ svip.vip_begin_time }} ~ {{ svip.vip_end_time }} </NText>
-                </div>
-              </NPopover>
-
-              <NPopover
-                trigger="hover"
                 v-if="tvip"
               >
                 <template #trigger>
@@ -60,7 +30,7 @@
                       class="vip-tag"
                       size="small"
                       round
-                      :type="tvip.is_vip === 1 ? 'warning' : 'default'"
+                      :type="tvip.is_vip === 1 ? 'success' : 'default'"
                     >
                       TVIP
                     </NTag>
@@ -77,6 +47,35 @@
                     <AccessTimeRound />
                   </NIcon>
                   <NText depth="2"> {{ tvip.vip_begin_time }} ~ {{ tvip.vip_end_time }} </NText>
+                </div>
+              </NPopover>
+              <NPopover
+                trigger="hover"
+                v-if="svip"
+              >
+                <template #trigger>
+                  <div class="vip-tag-wrapper">
+                    <NTag
+                      class="vip-tag"
+                      size="small"
+                      round
+                      :type="svip.is_vip === 1 ? 'warning' : 'default'"
+                    >
+                      SVIP
+                    </NTag>
+                  </div>
+                </template>
+                <div style="font-size: 12px">
+                  <NGradientText> 酷狗概念版VIP </NGradientText>
+                </div>
+                <div
+                  style="font-size: 11px"
+                  class="flex items-center space-x-1"
+                >
+                  <NIcon :size="12">
+                    <AccessTimeRound />
+                  </NIcon>
+                  <NText depth="2"> {{ svip.vip_begin_time }} ~ {{ svip.vip_end_time }} </NText>
                 </div>
               </NPopover>
             </div>
@@ -153,8 +152,8 @@
         </NCard>
       </NTabPane>
       <NTabPane
-        name="svip"
-        tab="概念会员"
+        name="tvip"
+        tab="畅听会员"
       >
         <NCard
           size="small"
@@ -227,8 +226,8 @@
         </NCard>
       </NTabPane>
       <NTabPane
-        name="tvip"
-        tab="畅听会员"
+        name="svip"
+        tab="概念会员"
       >
         <NCard
           size="small"

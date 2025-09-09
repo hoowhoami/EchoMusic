@@ -74,6 +74,7 @@
                   :album="album as Album"
                   v-for="album in list"
                   :key="(album as Album).albumid"
+                  @click="handleOpenAlbum(album as Album)"
                 />
               </div>
             </template>
@@ -143,6 +144,16 @@ const handleOpenPlaylist = async (playlist: Playlist) => {
     name: 'Playlist',
     query: {
       id: playlist.global_collection_id,
+      t: new Date().getTime(),
+    },
+  });
+};
+
+const handleOpenAlbum = async (album: Album) => {
+  await router.push({
+    name: 'Album',
+    query: {
+      id: album.albumid,
       t: new Date().getTime(),
     },
   });
