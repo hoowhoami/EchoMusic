@@ -100,7 +100,10 @@
           style="font-size: 12px"
         >
           <template #tooltip>
-            <div style="font-size: 11px">
+            <div
+              class="intro w-[500px]"
+              style="font-size: 11px"
+            >
               {{ playlistIntro }}
             </div>
           </template>

@@ -23,12 +23,6 @@
           style="margin-top: -5px"
         >
           <div class="creator flex items-center space-x-2">
-            <NAvatar
-              round
-              size="small"
-              :src="avatar"
-              :fallback-src="avatar"
-            />
             <div
               class="name"
               style="font-size: 12px"
@@ -39,7 +33,7 @@
               class="time"
               style="font-size: 12px"
             >
-              {{ createTime }} 创建
+              {{ publishDate }} 发布
             </div>
           </div>
         </div>
@@ -89,8 +83,13 @@
           style="font-size: 12px"
         >
           <template #tooltip>
-            <div style="font-size: 11px">
-              {{ intro }}
+            <div
+              class="intro w-[500px]"
+              style="font-size: 11px"
+            >
+              <p>
+                {{ intro }}
+              </p>
             </div>
           </template>
           {{ intro }}
@@ -119,15 +118,11 @@ const cover = computed(() => {
   return getCover(props.album?.img || '', 150);
 });
 
-const avatar = computed(() => {
-  return getCover(props.album?.cd_url || '', 40);
-});
-
 const creator = computed(() => {
   return props.album?.singer || '未知';
 });
 
-const createTime = computed(() => {
+const publishDate = computed(() => {
   return props.album?.publish_time || '未知';
 });
 

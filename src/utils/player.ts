@@ -799,6 +799,7 @@ class Player {
       await this.initPlayer();
     }
     if (showTip) {
+      console.log('已开始播放');
       window.$message.success('已开始播放');
     }
   }
