@@ -4,9 +4,9 @@
       <template #avatar>
         <NImage
           class="cover"
-          :width="coverSize"
-          :height="coverSize"
           :src="cover"
+          :preview-disabled="true"
+          object-fit="fill"
         />
       </template>
       <template #header>
@@ -98,8 +98,14 @@
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
-          >{{ playlistIntro }}</NEllipsis
         >
+          <template #tooltip>
+            <div style="font-size: 11px">
+              {{ playlistIntro }}
+            </div>
+          </template>
+          {{ playlistIntro }}
+        </NEllipsis>
       </template>
     </NThing>
   </div>
@@ -123,10 +129,6 @@ const props = defineProps<{
 }>();
 
 const userStore = useUserStore();
-
-const coverSize = computed(() => {
-  return 150;
-});
 
 const cover = computed(() => {
   return getCover(props.playlist?.pic || '', 150);
@@ -171,6 +173,8 @@ const playlistTags = computed(() => {
 <style lang="scss" scoped>
 .playlist-panel {
   .cover {
+    flex-shrink: 0;
+    width: 150px;
     border-radius: 8px;
   }
 }

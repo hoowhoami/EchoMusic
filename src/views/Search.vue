@@ -46,7 +46,7 @@
             :loader="searchPlaylist"
           >
             <template #default="{ list }">
-              <div class="flex flex-wrap justify-center gap-4 p-2">
+              <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2">
                 <PlaylistCard
                   class="w-[200px] h-[300px]"
                   :playlist="item as Playlist"
@@ -63,11 +63,12 @@
           tab="专辑"
         >
           <ScrollableLoad
+            :no-more-on-error="true"
             :height="scrollHeight"
             :loader="searchAlbum"
           >
             <template #default="{ list }">
-              <div class="flex flex-wrap justify-center gap-4 p-2">
+              <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2">
                 <AlbumCard
                   class="w-[200px] h-[310px]"
                   :album="album as Album"
@@ -87,7 +88,7 @@
             :loader="searchSinger"
           >
             <template #default="{ list }">
-              <div class="flex flex-wrap justify-center gap-4 p-2">
+              <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2">
                 <SingerCard
                   class="w-[200px] h-[300px]"
                   :singer="singer as Singer"

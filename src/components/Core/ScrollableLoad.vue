@@ -48,6 +48,7 @@ const props = withDefaults(
     height?: number;
     distance?: number;
     pageSize?: number;
+    noMoreOnError?: boolean;
     // eslint-disable-next-line no-unused-vars
     loader: (page: number, pageSize: number) => Promise<{ list: any[]; total: number }>;
   }>(),
@@ -55,6 +56,7 @@ const props = withDefaults(
     height: 300,
     distance: 0,
     pageSize: 30,
+    noMoreOnError: false,
     loader: () => Promise.resolve({ list: [], total: 0 }),
   },
 );
@@ -93,6 +95,9 @@ const handleLoad = async () => {
         noMore.value = true;
       }
     } catch (error) {
+      if (props.noMoreOnError) {
+        noMore.value = true;
+      }
       console.error('Failed to handle load', error);
     } finally {
       loading.value = false;
