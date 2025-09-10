@@ -26,19 +26,6 @@
         </div>
       </template>
       <div class="flex flex-col justify-between space-y-2">
-        <div
-          v-if="tags"
-          class="tags flex items-center space-x-2"
-        >
-          <NTag
-            v-for="tag in tags"
-            :key="tag"
-            size="small"
-            round
-          >
-            {{ tag }}
-          </NTag>
-        </div>
         <div class="count flex items-center space-x-2">
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
@@ -148,19 +135,6 @@ const cover = computed(() => {
 
 const intro = computed(() => {
   return props.singer?.intro || '暂无简介';
-});
-
-const tags = computed(() => {
-  const list = [];
-  const language = props.singer?.language;
-  if (language) {
-    list.push(language);
-  }
-  const type = props.singer?.type;
-  if (type) {
-    list.push(type);
-  }
-  return list;
 });
 </script>
 
