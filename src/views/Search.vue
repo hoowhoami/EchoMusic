@@ -165,6 +165,19 @@ const searchSong = async (
 ): Promise<{ list: any[]; total: number }> => {
   const res = await getSearchResult(keyword.value, 'song', page, pageSize);
   const list = res?.lists?.map((item: any) => {
+    const relate_goods = [];
+    if (item.HQ) {
+      relate_goods.push({
+        hash: item.HQ.hash,
+        quality: '320',
+      });
+    }
+    if (item.SQ) {
+      relate_goods.push({
+        hash: item.SQ.hash,
+        quality: 'flac',
+      });
+    }
     return {
       ...item,
       hash: item.FileHash,
@@ -183,6 +196,8 @@ const searchSong = async (
         };
       }),
       cover: item.Image,
+      privilege: item.HQ?.Privilege,
+      relate_goods: relate_goods,
     };
   });
   return {

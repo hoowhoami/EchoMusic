@@ -19,18 +19,6 @@ export const AUDIO_QUALITY_OPTIONS: readonly {
     label: 'SQ无损品质',
     value: 'flac',
   },
-  {
-    label: '蝰蛇母带',
-    value: 'viper_tape',
-  },
-  {
-    label: '蝰蛇全景声',
-    value: 'viper_atmos',
-  },
-  {
-    label: '蝰蛇超清',
-    value: 'viper_clear',
-  },
 ] as const;
 
 /**
@@ -63,6 +51,18 @@ export const MUSIC_EFFECT_OPTIONS: readonly {
   {
     label: 'DJ音效',
     value: 'dj',
+  },
+  {
+    label: '蝰蛇母带',
+    value: 'viper_tape',
+  },
+  {
+    label: '蝰蛇全景声',
+    value: 'viper_atmos',
+  },
+  {
+    label: '蝰蛇超清',
+    value: 'viper_clear',
   },
 ] as const;
 
@@ -108,7 +108,7 @@ export const PLAY_SPEED_OPTIONS: readonly {
 ] as const;
 
 /**
- * 音质名称映射
+ * 音质/音效名称映射
  */
 export const QUALITY_NAMES: Record<AudioQuality | MusicEffect, string> = {
   '128': '标准品质',

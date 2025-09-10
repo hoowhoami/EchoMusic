@@ -64,23 +64,45 @@
     </div>
 
     <div class="flex items-center justify-between w-full">
-      <div class="song-info flex flex-col space-y-1">
-        <NEllipsis :line-clamp="1">
-          <div
-            class="song-name"
-            :style="{ color: isPlaying ? themeVars.primaryColor : '' }"
+      <div class="song-info flex items-center space-x-4">
+        <div class="flex flex-col space-y-1">
+          <NEllipsis :line-clamp="1">
+            <div
+              class="song-name"
+              :style="{ color: isPlaying ? themeVars.primaryColor : '' }"
+            >
+              {{ name }}
+            </div>
+          </NEllipsis>
+          <NEllipsis
+            class="text-gray-400"
+            :line-clamp="1"
           >
-            {{ name }}
+            <div class="song-singer">
+              {{ singer }}
+            </div>
+          </NEllipsis>
+        </div>
+        <div class="tags flex items-center space-x-2">
+          <div v-if="isVip">
+            <NTag
+              size="small"
+              type="warning"
+            >
+              <div>VIP</div>
+            </NTag>
           </div>
-        </NEllipsis>
-        <NEllipsis
-          class="text-gray-400"
-          :line-clamp="1"
-        >
-          <div class="song-singer">
-            {{ singer }}
+          <div v-if="quality">
+            <NTag
+              size="small"
+              type="info"
+            >
+              <div>
+                {{ quality }}
+              </div>
+            </NTag>
           </div>
-        </NEllipsis>
+        </div>
       </div>
 
       <div
@@ -111,7 +133,7 @@
 import type { Song } from '@/types';
 import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
-import { NEllipsis, NImage, NIcon, useThemeVars, NText } from 'naive-ui';
+import { NEllipsis, NImage, NIcon, useThemeVars, NText, NTag } from 'naive-ui';
 import { computed, ref } from 'vue';
 import { PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
@@ -165,6 +187,22 @@ const singer = computed(() => {
   return isArray(props.song.singerinfo)
     ? props.song.singerinfo?.map(item => item.name).join(' / ')
     : props.song.singerinfo || '未知艺术家';
+});
+
+const isVip = computed(() => {
+  return props.song.privilege === 10;
+});
+
+const quality = computed(() => {
+  if (props.song.relate_goods) {
+    if (props.song.relate_goods.length > 2) {
+      return 'SQ';
+    }
+    if (props.song.relate_goods.length > 1) {
+      return 'HQ';
+    }
+  }
+  return '';
 });
 
 const album = computed(() => {
@@ -239,6 +277,14 @@ const duration = computed(() => {
   .animate-wave {
     animation: wave 1.2s ease-in-out infinite;
     transform-origin: bottom;
+  }
+
+  .tags {
+    .n-tag {
+      font-size: 8px;
+      padding: 1px 4px;
+      height: 12px;
+    }
   }
 }
 </style>
