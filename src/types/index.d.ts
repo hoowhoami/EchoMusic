@@ -153,8 +153,6 @@ export type Song = {
     avatar: string;
     type: number;
   }>;
-  hash_flac: string;
-  hash_320: string;
 };
 
 // Album
