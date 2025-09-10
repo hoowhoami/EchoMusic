@@ -4,6 +4,8 @@
       <AlbumPanel :album="albumInfo" />
     </div>
     <SongListContainer
+      virtual-scroll
+      :max-height="maxHeight"
       :songs="songs"
       :album="albumInfo"
       :loading="loading"
@@ -18,12 +20,19 @@ import type { Song } from '@/types';
 import { getAlbumDetail, getAlbumSongs } from '@/api';
 import SongListContainer from '@/components/Container/SongListContainer.vue';
 import AlbumPanel from '@/components/Panel/AlbumPanel.vue';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import player from '@/utils/player';
+import { useSettingStore } from '@/store';
 
 defineOptions({
   name: 'Album',
+});
+
+const settingStore = useSettingStore();
+
+const maxHeight = computed(() => {
+  return settingStore.mainHeight - 290;
 });
 
 const route = useRoute();

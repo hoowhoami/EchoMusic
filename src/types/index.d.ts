@@ -219,6 +219,7 @@ export type Singer = {
   sortoffset: number;
   heat: number;
   imgurl: string;
+  birthday: string;
 };
 
 // PlayMode

@@ -95,6 +95,7 @@
                   :singer="singer as Singer"
                   v-for="singer in list"
                   :key="(singer as Singer).singerid"
+                  @click="handleOpenSinger(singer as Singer)"
                 />
               </div>
             </template>
@@ -154,6 +155,16 @@ const handleOpenAlbum = async (album: Album) => {
     name: 'Album',
     query: {
       id: album.albumid,
+      t: new Date().getTime(),
+    },
+  });
+};
+
+const handleOpenSinger = async (singer: Singer) => {
+  await router.push({
+    name: 'Singer',
+    query: {
+      id: singer.singerid,
       t: new Date().getTime(),
     },
   });

@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Playlist, Song, Album } from '@/types';
+import type { Playlist, Song, Album, Singer } from '@/types';
 import { ref, watch } from 'vue';
 import SongList from '@/components/List/SongList.vue';
 import SongListToolbar from '@/components/Toolbar/SongListToolbar.vue';
@@ -56,6 +56,7 @@ interface Props {
   songs: Song[];
   playlist?: Playlist;
   album?: Album;
+  singer?: Singer;
 
   // 配置相关
   virtualScroll?: boolean;

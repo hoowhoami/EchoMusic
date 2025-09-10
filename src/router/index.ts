@@ -12,6 +12,7 @@ import History from '@/views/History.vue';
 import Cloud from '@/views/Cloud.vue';
 import Playlist from '@/views/Playlist.vue';
 import Album from '@/views/Album.vue';
+import Singer from '@/views/Singer.vue';
 import Error from '@/views/Error.vue';
 
 const router = createRouter({
@@ -30,6 +31,7 @@ const router = createRouter({
         { path: '/setting', name: 'Setting', component: Setting },
         { path: '/playlist', name: 'Playlist', component: Playlist },
         { path: '/album', name: 'Album', component: Album },
+        { path: '/singer', name: 'Singer', component: Singer },
         { path: '/profile', name: 'Profile', component: Profile, meta: { auth: true } },
         { path: '/history', name: 'History', component: History, meta: { auth: true } },
         { path: '/cloud', name: 'Cloud', component: Cloud, meta: { auth: true } },

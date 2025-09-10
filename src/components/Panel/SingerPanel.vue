@@ -1,5 +1,5 @@
 <template>
-  <div class="playlist-panel">
+  <div class="singer-panel">
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -14,43 +14,24 @@
           :line-clamp="1"
           style="font-size: 16px; font-weight: 800"
         >
-          {{ props.playlist?.name }}
+          {{ props.singer?.singername }}
         </NEllipsis>
       </template>
       <template #description>
         <div
           class="flex flex-col"
-          style="margin-top: -5px"
+          style="margin-top: -5px; font-size: 12px"
         >
-          <div class="creator flex items-center space-x-2">
-            <NAvatar
-              round
-              size="small"
-              :src="avatar"
-              :fallback-src="avatar"
-            />
-            <div
-              class="name"
-              style="font-size: 12px"
-            >
-              {{ creator }}
-            </div>
-            <div
-              class="time"
-              style="font-size: 12px"
-            >
-              {{ createTime }} 创建
-            </div>
-          </div>
+          生日 {{ props.singer?.birthday }}
         </div>
       </template>
       <div class="flex flex-col justify-between space-y-2">
         <div
-          v-if="playlistTags"
+          v-if="tags"
           class="tags flex items-center space-x-2"
         >
           <NTag
-            v-for="tag in playlistTags"
+            v-for="tag in tags"
             :key="tag"
             size="small"
             round
@@ -67,29 +48,53 @@
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.count || 0 }}
+              {{ props.singer?.songcount || 0 }}
             </NText>
           </div>
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
-              <ArrowsSort />
+              <AlbumRound />
             </NIcon>
             <NText
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.sort || 0 }}
+              {{ props.singer?.albumcount || 0 }}
             </NText>
           </div>
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
-              <HistoryOutlined />
+              <SmartDisplayRound />
             </NIcon>
             <NText
               depth="3"
               style="font-size: 12px"
             >
-              {{ updateTime }}
+              {{ props.singer?.mvcount || 0 }}
+            </NText>
+          </div>
+        </div>
+        <div class="count flex items-center space-x-2">
+          <div class="flex items-center space-x-1">
+            <NIcon :size="16">
+              <PeopleRound />
+            </NIcon>
+            <NText
+              depth="3"
+              style="font-size: 12px"
+            >
+              {{ props.singer?.fanscount || 0 }}
+            </NText>
+          </div>
+          <div class="flex items-center space-x-1">
+            <NIcon :size="16">
+              <WhatshotRound />
+            </NIcon>
+            <NText
+              depth="3"
+              style="font-size: 12px"
+            >
+              {{ props.singer?.heat || 0 }}
             </NText>
           </div>
         </div>
@@ -104,10 +109,12 @@
               class="intro w-[500px]"
               style="font-size: 11px"
             >
-              {{ playlistIntro }}
+              <p>
+                {{ intro }}
+              </p>
             </div>
           </template>
-          {{ playlistIntro }}
+          {{ intro }}
         </NEllipsis>
       </template>
     </NThing>
@@ -115,66 +122,50 @@
 </template>
 
 <script lang="ts" setup>
-import { Playlist } from '@/types';
-import { formatTimestamp, getCover } from '@/utils';
+import { Singer } from '@/types';
+import { getCover } from '@/utils';
 import { NEllipsis, NImage, NThing } from 'naive-ui';
 import { computed } from 'vue';
-import { MusicNoteFilled, HistoryOutlined } from '@vicons/material';
-import { ArrowsSort } from '@vicons/tabler';
-import { useUserStore } from '@/store';
+import {
+  MusicNoteFilled,
+  WhatshotRound,
+  SmartDisplayRound,
+  PeopleRound,
+  AlbumRound,
+} from '@vicons/material';
 
 defineOptions({
-  name: 'PlaylistPanel',
+  name: 'SingerPanel',
 });
 
 const props = defineProps<{
-  playlist?: Playlist;
+  singer?: Singer;
 }>();
 
-const userStore = useUserStore();
-
 const cover = computed(() => {
-  return getCover(props.playlist?.pic || '', 150);
+  return getCover(props.singer?.imgurl || '', 150);
 });
 
-const avatar = computed(() => {
-  return getCover(props.playlist?.create_user_pic || '', 40);
+const intro = computed(() => {
+  return props.singer?.intro || '暂无简介';
 });
 
-const creator = computed(() => {
-  return props.playlist?.list_create_username || '未知';
-});
-
-const createTime = computed(() => {
-  return formatTimestamp((props.playlist?.create_time || 0) * 1000);
-});
-
-const updateTime = computed(() => {
-  return formatTimestamp((props.playlist?.update_time || 0) * 1000);
-});
-
-const playlistIntro = computed(() => {
-  return props.playlist?.intro || '暂无简介';
-});
-
-const playlistTags = computed(() => {
-  const tags = props.playlist?.tags?.split(',').filter((tag: string) => tag.trim());
-  if (tags && tags.length > 0) {
-    return tags;
+const tags = computed(() => {
+  const list = [];
+  const language = props.singer?.language;
+  if (language) {
+    list.push(language);
   }
-  // 用户歌单
-  if (userStore.isCreatedPlaylist(props.playlist?.list_create_gid || '')) {
-    if (userStore.isDefaultPlaylist(props.playlist?.list_create_gid || '')) {
-      return ['默认'];
-    }
-    return ['自建'];
+  const type = props.singer?.type;
+  if (type) {
+    list.push(type);
   }
-  return ['unknown'];
+  return list;
 });
 </script>
 
 <style lang="scss" scoped>
-.playlist-panel {
+.singer-panel {
   .cover {
     flex-shrink: 0;
     width: 150px;

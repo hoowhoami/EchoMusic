@@ -107,7 +107,7 @@ import { computed } from 'vue';
 import { MusicNoteFilled, WhatshotRound } from '@vicons/material';
 
 defineOptions({
-  name: 'AlbumCard',
+  name: 'AlbumPanel',
 });
 
 const props = defineProps<{

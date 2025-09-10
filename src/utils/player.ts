@@ -373,12 +373,19 @@ class Player {
       const climaxs: { [key: number]: string } = {};
       const songDuration = song.timelen / 1000;
       for (const item of result) {
-        const start = item.start_time / 1000;
-        const startProgress = calculateProgress(start, songDuration);
-        const end = item.end_time / 1000;
-        const endProgress = calculateProgress(end, songDuration);
-        climaxs[startProgress] = '';
-        climaxs[endProgress] = '';
+        const startTime =
+          typeof item.start_time === 'string' ? parseInt(item.start_time) : item.start_time;
+        if (startTime > 0) {
+          const start = startTime / 1000;
+          const startProgress = calculateProgress(start, songDuration);
+          climaxs[startProgress] = '';
+        }
+        const endTime = typeof item.end_time === 'string' ? parseInt(item.end_time) : item.end_time;
+        if (endTime > 0) {
+          const end = endTime / 1000;
+          const endProgress = calculateProgress(end, songDuration);
+          climaxs[endProgress] = '';
+        }
       }
       playerStore.setClimax(climaxs);
     }
