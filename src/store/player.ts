@@ -50,6 +50,11 @@ export const usePlayerStore = defineStore('player', {
       } else {
         this.playlist = [...this.playlist, song];
       }
+      // 移除重复的歌曲（如果存在）
+      const playList = this.playlist.filter(
+        (value, index, self) => self.findIndex(item => item.hash === value.hash) === index,
+      );
+      this.playlist = playList;
       return this.playlist.findIndex(item => item.hash === song.hash);
     },
     appendToPlaylist(songs: Song[], first: boolean = false) {
@@ -58,6 +63,11 @@ export const usePlayerStore = defineStore('player', {
       } else {
         this.playlist = [...this.playlist, ...songs];
       }
+      // 移除重复的歌曲（如果存在）
+      const playList = this.playlist.filter(
+        (value, index, self) => self.findIndex(item => item.hash === value.hash) === index,
+      );
+      this.playlist = playList;
     },
     setPlaylist(playlist: Song[]) {
       this.playlist = playlist;

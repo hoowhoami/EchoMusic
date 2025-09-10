@@ -26,3 +26,23 @@ export const getSingerSongs = ({ id = 0, page = 1, pagesize = 30, sort = 'hot' }
     sort,
   });
 };
+
+// 关注歌手
+// 说明：调用此接口, 传入歌手 id, 可以关注该歌手（需要登录）
+// 必选参数：
+// id: 歌手 id
+export const followSinger = (id: number) => {
+  return api.get('/artist/follow', {
+    id,
+  });
+};
+
+// 取消关注歌手
+// 说明：调用此接口, 传入歌手 id, 可以取消关注该歌手（需要登录）
+// 必选参数：
+// id: 歌手 id
+export const unfollowSinger = (id: number) => {
+  return api.get('/artist/unfollow', {
+    id,
+  });
+};

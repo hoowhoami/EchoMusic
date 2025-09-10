@@ -2,12 +2,12 @@
   <div class="song-list-container flex flex-col space-y-4">
     <div class="toolbar">
       <SongListToolbar
+        :type="type"
         :songs="songs"
         v-model:selected-songs="checkedSongs"
         v-model:search-keyword="searchKeyword"
         :batch-mode="batchMode"
-        :playlist="playlist"
-        :album="album"
+        :instance="instance"
         :is-liked="isLiked"
         :show-like="showLike"
         :show-delete="showDelete"
@@ -18,7 +18,6 @@
         @toggle-batch-mode="handleBatchModeClick"
         @locate-current="handleScrollToCurrent"
         @batch-operation-complete="resetBatchMode"
-        @add-to-playlist="handleAddToPlaylist"
         @delete-from-playlist="handleDeletedSongs"
       />
     </div>
@@ -29,8 +28,7 @@
         :max-height="maxHeight"
         :loading="loading"
         :batch-mode="batchMode"
-        :playlist="playlist"
-        :album="album"
+        :playlist="instance && type === 'playlist' ? (instance as Playlist) : undefined"
         v-model="filteredSongs"
         v-model:checked-songs="checkedSongs"
         @song-removed="handleSongRemoved"
@@ -44,7 +42,7 @@ import type { Playlist, Song, Album, Singer } from '@/types';
 import { ref, watch } from 'vue';
 import SongList from '@/components/List/SongList.vue';
 import SongListToolbar from '@/components/Toolbar/SongListToolbar.vue';
-import { usePlayerStore } from '@/store';
+import { usePlayerStore, useSettingStore } from '@/store';
 import player from '@/utils/player';
 
 defineOptions({
@@ -54,9 +52,9 @@ defineOptions({
 interface Props {
   // 数据相关
   songs: Song[];
-  playlist?: Playlist;
-  album?: Album;
-  singer?: Singer;
+
+  type: 'playlist' | 'album' | 'singer';
+  instance?: Playlist | Album | Singer;
 
   // 配置相关
   virtualScroll?: boolean;
@@ -73,9 +71,8 @@ interface Props {
 }
 
 type Emits = {
-  like: [data?: Playlist | Album];
-  delete: [];
-  'add-to-playlist': [];
+  like: [data?: Playlist | Album | Singer];
+  delete: [data?: Playlist | Album | Singer];
   'song-removed': [song?: Song];
   'deleted-songs': [songs: Song[]];
 };
@@ -86,11 +83,12 @@ const props = withDefaults(defineProps<Props>(), {
   virtualScroll: false,
   loading: false,
   isLiked: false,
-  showLike: true,
-  showDelete: true,
+  showLike: false,
+  showDelete: false,
   showBatch: true,
 });
 
+const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
 
 const songListRef = ref();
@@ -137,19 +135,17 @@ const resetBatchMode = () => {
 };
 
 const handlePlayAll = () => {
-  player.updatePlayList(props.songs);
+  player.updatePlayList(props.songs, undefined, {
+    replace: settingStore.replacePlaylist,
+  });
 };
 
-const handleLike = (data?: Playlist | Album) => {
-  emit('like', data || props.playlist || props.album);
+const handleLike = (data?: Playlist | Album | Singer) => {
+  emit('like', data);
 };
 
-const handleDelete = () => {
-  emit('delete');
-};
-
-const handleAddToPlaylist = () => {
-  emit('add-to-playlist');
+const handleDelete = (data?: Playlist | Album | Singer) => {
+  emit('delete', data);
 };
 
 const handleDeletedSongs = (deletedSongs: Song[]) => {

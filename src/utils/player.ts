@@ -787,10 +787,12 @@ class Player {
       showTip?: boolean;
       scrobble?: boolean;
       play?: boolean;
+      replace?: boolean;
     } = {
       showTip: true,
       scrobble: true,
       play: true,
+      replace: false,
     },
   ) {
     if (!data || !data.length) {
@@ -800,7 +802,11 @@ class Player {
     // 获取配置
     const { showTip, play } = options;
     // 更新列表
-    playerStore.setPlaylist(cloneDeep(data));
+    if (options.replace) {
+      playerStore.setPlaylist(cloneDeep(data));
+    } else {
+      playerStore.appendToPlaylist(data, true);
+    }
     // 是否直接播放
     if (song && typeof song === 'object' && 'hash' in song) {
       // 是否为当前播放歌曲

@@ -14,7 +14,7 @@
       :data="songs"
       v-model:checked-row-keys="checkedRowKeys"
       :row-props="rowProps"
-    ></NDataTable>
+    />
 
     <!-- 右键菜单 -->
     <SongListMenu
@@ -41,7 +41,7 @@ import SongCard from '@/components/Card/SongCard.vue';
 import SongListMenu from '@/components/Menu/SongListMenu.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
-import { usePlayerStore } from '@/store';
+import { usePlayerStore, useSettingStore } from '@/store';
 
 defineOptions({
   name: 'SongList',
@@ -59,6 +59,7 @@ const props = defineProps<{
   playlist?: Playlist;
 }>();
 
+const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
 
 const dataTableRef = ref();
@@ -118,7 +119,13 @@ const columns = computed<DataTableColumns>(() => {
           song,
           coverSize: 40,
           onPlay: (song: Song) => {
-            player.updatePlayList(songs.value || [], song);
+            if (settingStore.addSongsToPlaylist) {
+              player.updatePlayList(songs.value || [], song, {
+                replace: false,
+              });
+            } else {
+              player.playSong(song);
+            }
           },
         });
       },

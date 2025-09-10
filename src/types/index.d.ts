@@ -220,6 +220,7 @@ export type Singer = {
   heat: number;
   imgurl: string;
   birthday: string;
+  source: number;
 };
 
 // PlayMode

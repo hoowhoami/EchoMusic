@@ -4,31 +4,33 @@
       <AlbumPanel :album="albumInfo" />
     </div>
     <SongListContainer
+      type="album"
       virtual-scroll
       :max-height="maxHeight"
       :songs="songs"
-      :album="albumInfo"
+      :instance="albumInfo"
       :loading="loading"
-      @play-all="handlePlayAll"
-      @song-removed="handleSongRemoved"
+      :is-liked="isLikedAlbum"
+      :show-like="userStore.isAuthenticated"
+      @like="handleAlbumLike"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Song } from '@/types';
+import type { Album, Song } from '@/types';
 import { getAlbumDetail, getAlbumSongs } from '@/api';
 import SongListContainer from '@/components/Container/SongListContainer.vue';
 import AlbumPanel from '@/components/Panel/AlbumPanel.vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import player from '@/utils/player';
-import { useSettingStore } from '@/store';
+import { useSettingStore, useUserStore } from '@/store';
 
 defineOptions({
   name: 'Album',
 });
 
+const userStore = useUserStore();
 const settingStore = useSettingStore();
 
 const maxHeight = computed(() => {
@@ -41,15 +43,19 @@ const albumInfo = ref();
 const songs = ref<Song[]>([]);
 const loading = ref(false);
 
-const handlePlayAll = () => {
-  player.updatePlayList(songs.value);
-};
+const isLikedAlbum = ref(false);
 
-const handleSongRemoved = (removedSong?: Song) => {
-  if (!removedSong) {
+const handleAlbumLike = async (data: any) => {
+  if (!albumInfo.value) {
     return;
   }
-  songs.value = songs.value.filter(song => removedSong.hash !== song.hash);
+  if (isLikedAlbum.value) {
+    // 取消收藏
+  } else {
+    // 收藏
+    const album = data as Album;
+    console.log(album);
+  }
 };
 
 const getAlbumInfo = async () => {

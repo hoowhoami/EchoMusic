@@ -4,31 +4,33 @@
       <SingerPanel :singer="singerInfo" />
     </div>
     <SongListContainer
+      type="singer"
       virtual-scroll
       :max-height="maxHeight"
       :songs="songs"
-      :singer="singerInfo"
+      :instance="singerInfo"
       :loading="loading"
-      @play-all="handlePlayAll"
-      @song-removed="handleSongRemoved"
+      :show-like="userStore.isAuthenticated"
+      :is-liked="isLikedSinger"
+      @like="handleLikeSinger"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Song } from '@/types';
+import type { Singer, Song } from '@/types';
 import { getSingerDetail, getSingerSongs } from '@/api';
 import SongListContainer from '@/components/Container/SongListContainer.vue';
 import SingerPanel from '@/components/Panel/SingerPanel.vue';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import player from '@/utils/player';
-import { useSettingStore } from '@/store';
+import { useSettingStore, useUserStore } from '@/store';
 
 defineOptions({
   name: 'Singer',
 });
 
+const userStore = useUserStore();
 const settingStore = useSettingStore();
 
 const maxHeight = computed(() => {
@@ -40,16 +42,22 @@ const singerId = ref();
 const singerInfo = ref();
 const songs = ref<Song[]>([]);
 const loading = ref(false);
-
-const handlePlayAll = () => {
-  player.updatePlayList(songs.value);
-};
-
-const handleSongRemoved = (removedSong?: Song) => {
-  if (!removedSong) {
-    return;
+const isLikedSinger = computed(() => {
+  if (!singerId.value) {
+    return false;
   }
-  songs.value = songs.value.filter(song => removedSong.hash !== song.hash);
+  return userStore.isFollowedSinger(Number(singerId.value));
+});
+
+const handleLikeSinger = async (data: any) => {
+  const singer = data as Singer;
+  if (isLikedSinger.value) {
+    await userStore.unfollowSinger(singer.singerid);
+    window.$message.success('已取消关注');
+  } else {
+    await userStore.followSinger(singer.singerid);
+    window.$message.success('已添加关注');
+  }
 };
 
 const getSingerInfo = async () => {
@@ -132,8 +140,9 @@ const getSongs = async () => {
 
 onMounted(async () => {
   singerId.value = route.query.id;
-  getSingerInfo();
-  getSongs();
+  await userStore.fetchUserFollow();
+  await getSingerInfo();
+  await getSongs();
 });
 </script>
 

@@ -1,8 +1,17 @@
 <template>
   <div class="setting-page">
     <div class="setting-header">
-      <NText tag="h1" :depth="1" class="header-title">偏好设置</NText>
-      <NText :depth="3" class="header-desc">个性化您的音乐播放体验</NText>
+      <NText
+        tag="h1"
+        :depth="1"
+        class="header-title"
+        >偏好设置</NText
+      >
+      <NText
+        :depth="3"
+        class="header-desc"
+        >个性化您的音乐播放体验</NText
+      >
     </div>
 
     <div class="setting-content">
@@ -23,8 +32,16 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">主题模式</NText>
-            <NText :depth="3" class="setting-desc">选择您喜欢的主题外观</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+              >主题模式</NText
+            >
+            <NText
+              :depth="3"
+              class="setting-desc"
+              >选择您喜欢的主题外观</NText
+            >
           </div>
           <NSelect
             size="small"
@@ -39,8 +56,17 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">显示播放列表数量</NText>
-            <NText :depth="3" class="setting-desc">在播放列表图标上显示歌曲数量</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              显示播放列表数量
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+              >在播放列表图标上显示歌曲数量</NText
+            >
           </div>
           <NSwitch v-model:value="settingStore.showPlaylistCount" />
         </div>
@@ -63,8 +89,53 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">音量淡入淡出</NText>
-            <NText :depth="3" class="setting-desc">播放和暂停时启用音量渐变效果</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              歌曲列表添加到播放列表
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              播放歌曲时将整个歌曲列表添加到本地播放列表
+            </NText>
+          </div>
+          <NSwitch v-model:value="settingStore.addSongsToPlaylist" />
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              替换本地播放列表
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              歌单/专辑等在点击播放全部歌曲时用当前的歌曲列表替换本地播放列表
+            </NText>
+          </div>
+          <NSwitch v-model:value="settingStore.replacePlaylist" />
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              音量淡入淡出
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+              >播放和暂停时启用音量渐变效果</NText
+            >
           </div>
           <NSwitch v-model:value="settingStore.volumeFade" />
         </div>
@@ -73,8 +144,18 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">淡入淡出时间</NText>
-            <NText :depth="3" class="setting-desc">音量渐变效果的持续时间</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              淡入淡出时间
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              音量渐变效果的持续时间
+            </NText>
           </div>
           <div class="setting-control">
             <NSlider
@@ -98,8 +179,18 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">播放错误时自动下一首</NText>
-            <NText :depth="3" class="setting-desc">歌曲无法播放时自动跳到下一首</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              播放错误时自动下一首
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              歌曲无法播放时自动跳到下一首
+            </NText>
           </div>
           <NSwitch v-model:value="settingStore.autoNextOnError" />
         </div>
@@ -108,8 +199,18 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">自动跳转延迟</NText>
-            <NText :depth="3" class="setting-desc">播放错误后等待多长时间跳转</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              自动跳转延迟
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              播放错误后等待多长时间跳转
+            </NText>
           </div>
           <div class="setting-control">
             <NSlider
@@ -133,8 +234,18 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">解灰功能</NText>
-            <NText :depth="3" class="setting-desc">尝试播放无法正常播放的歌曲</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              解灰功能
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              尝试播放无法正常播放的歌曲
+            </NText>
           </div>
           <NSwitch v-model:value="settingStore.unblock" />
         </div>
@@ -143,8 +254,17 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">播放时防止系统休眠</NText>
-            <NText :depth="3" class="setting-desc">播放音乐时阻止系统进入休眠状态</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+              >播放时防止系统休眠</NText
+            >
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              播放音乐时阻止系统进入休眠状态
+            </NText>
           </div>
           <NSwitch
             v-model:value="settingStore.preventSleep"
@@ -170,8 +290,17 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">兼容模式</NText>
-            <NText :depth="3" class="setting-desc">当首选音质无法获取时，自动尝试备选音质和兼容播放</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+              >兼容模式</NText
+            >
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              当首选音质无法获取时，自动尝试备选音质和兼容播放
+            </NText>
           </div>
           <NSwitch
             v-model:value="settingStore.compatibilityMode"
@@ -183,8 +312,17 @@
 
         <div class="setting-item">
           <div class="setting-info">
-            <NText :depth="1" class="setting-title">备选音质</NText>
-            <NText :depth="3" class="setting-desc">兼容模式下的备选音质选择</NText>
+            <NText
+              :depth="1"
+              class="setting-title"
+              >备选音质</NText
+            >
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              兼容模式下的备选音质选择
+            </NText>
           </div>
           <NSelect
             size="small"
@@ -214,9 +352,22 @@
 
         <div class="about-content">
           <div class="app-info">
-            <NText tag="h3" :depth="1" class="app-title">EchoMusic</NText>
-            <NText :depth="2" class="app-version">版本 1.0.0</NText>
-            <NText :depth="2" class="app-description">一个现代化的音乐播放器</NText>
+            <NText
+              tag="h3"
+              :depth="1"
+              class="app-title"
+              >EchoMusic</NText
+            >
+            <NText
+              :depth="2"
+              class="app-version"
+              >版本 1.0.0</NText
+            >
+            <NText
+              :depth="2"
+              class="app-description"
+              >一个现代化的音乐播放器</NText
+            >
           </div>
 
           <div class="links">

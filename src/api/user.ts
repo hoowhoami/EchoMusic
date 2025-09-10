@@ -92,3 +92,9 @@ export const youthMonthVipRecord = () => {
 export const youthUnionVip = () => {
   return api.get('/youth/union/vip');
 };
+
+// 获取用户关注的歌手/用户
+// 说明：登录后调用此接口，可以获取用户的所有关注的歌手/用户
+export const getUserFollow = () => {
+  return api.get('/user/follow');
+};

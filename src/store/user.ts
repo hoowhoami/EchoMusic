@@ -1,6 +1,17 @@
-import { addPlaylist, deletePlaylist, dfid, getPlaylist, userDetail, userVipDetail } from '@/api';
-import type { Playlist, VipReceive } from '@/types';
+import {
+  addPlaylist,
+  deletePlaylist,
+  dfid,
+  followSinger,
+  getPlaylist,
+  getUserFollow,
+  unfollowSinger,
+  userDetail,
+  userVipDetail,
+} from '@/api';
+import type { Playlist, Singer, VipReceive } from '@/types';
 import { isToday } from '@/utils';
+import { isArray } from 'lodash-es';
 import { defineStore } from 'pinia';
 
 interface User {
@@ -11,8 +22,10 @@ interface User {
   pic?: string;
   // 扩展信息
   extends?: any;
-  // 用户歌单
+  // 用户创建或收藏的歌单
   playlist?: Playlist[];
+  // 用户关注的歌手
+  follow?: Singer[];
   // VIP领取
   vipReceive?: VipReceive;
   vipReceiveNextTime?: number;
@@ -28,6 +41,7 @@ export const useUserStore = defineStore('user', {
     pic: undefined,
     extends: undefined,
     playlist: undefined,
+    follow: undefined,
     vipReceive: undefined,
     vipReceiveNextTime: undefined,
   }),
@@ -87,6 +101,9 @@ export const useUserStore = defineStore('user', {
           ?.filter(item => item.list_create_userid !== state.userid && !item.authors)
           ?.some(item => item.list_create_gid === id) ?? false
       );
+    },
+    isFollowedSinger: state => (id: number) => {
+      return state.follow?.some(item => item.singerid === id && item.source === 7) ?? false;
     },
     isVipReceiveCompleted(state) {
       if (!state.vipReceive) {
@@ -173,6 +190,26 @@ export const useUserStore = defineStore('user', {
     async unlikePlaylist(id: number) {
       await deletePlaylist(id);
       await this.fetchPlaylist();
+    },
+    async fetchUserFollow() {
+      if (!this.isAuthenticated) {
+        return;
+      }
+      this.follow = undefined;
+      const res = await getUserFollow();
+      const lists = res?.lists;
+      if (lists && !isArray(lists)) {
+        return;
+      }
+      this.follow = res.lists;
+    },
+    async followSinger(id: number) {
+      await followSinger(id);
+      await this.fetchUserFollow();
+    },
+    async unfollowSinger(id: number) {
+      await unfollowSinger(id);
+      await this.fetchUserFollow();
     },
     setVipReceive(vipReceive: VipReceive) {
       const timestamp = new Date().getTime();

@@ -21,20 +21,21 @@
         v-if="props.showLike"
         :focusable="false"
         round
-        @click="handleLike(props.playlist)"
+        @click="handleLike"
       >
         <template #icon>
           <NIcon :size="20">
-            <Heart />
+            <Heart v-if="!props.isLiked" />
+            <HeartDislike v-else />
           </NIcon>
         </template>
-        {{ props.isLiked ? '取消收藏' : '收藏歌单' }}
+        {{ likeTitle }}
       </NButton>
 
       <!-- 删除 -->
       <NPopconfirm
         v-if="props.showDelete"
-        @positive-click="$emit('delete')"
+        @positive-click="handleDelete"
       >
         <template #trigger>
           <NButton
@@ -131,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Song, Playlist } from '@/types';
+import type { Song, Playlist, Album, Singer } from '@/types';
 import {
   NBadge,
   NButton,
@@ -143,7 +144,7 @@ import {
 } from 'naive-ui';
 import { computed, ref } from 'vue';
 import { PlayArrowRound, BatchPredictionRound } from '@vicons/material';
-import { Search, Heart } from '@vicons/ionicons5';
+import { Search, Heart, HeartDislike } from '@vicons/ionicons5';
 import { ListCheck, List, Trash, CurrentLocation } from '@vicons/tabler';
 import player from '@/utils/player';
 import { useUserStore } from '@/store';
@@ -157,7 +158,9 @@ interface Props {
   // 数据相关
   songs: Song[];
   batchMode: boolean;
-  playlist?: Playlist;
+
+  type: 'playlist' | 'album' | 'singer';
+  instance?: Playlist | Album | Singer;
 
   // 状态相关
   isLiked?: boolean;
@@ -170,23 +173,31 @@ interface Props {
 
 type Emits = {
   'play-all': [songs: Song[]];
-  like: [playlist?: Playlist];
-  delete: [];
+  like: [instance?: Playlist | Album | Singer];
+  delete: [instance?: Playlist | Album | Singer];
   'toggle-batch-mode': [];
   'locate-current': [];
-  'batch-operation-complete': [];
-  'add-to-playlist': [];
-  'add-to-my-playlist': [];
   'delete-from-playlist': [songs: Song[]];
 };
 
 const emit = defineEmits<Emits>();
 
 const props = withDefaults(defineProps<Props>(), {
+  type: 'playlist',
   isLiked: false,
   showLike: true,
   showDelete: true,
   showBatch: true,
+});
+
+const likeTitle = computed(() => {
+  if (props.type === 'playlist' || props.type === 'album') {
+    return props.isLiked ? '取消收藏' : '立即收藏';
+  }
+  if (props.type === 'singer') {
+    return props.isLiked ? '取消关注' : '立即关注';
+  }
+  return '';
 });
 
 const selectedSongs = defineModel<Song[]>('selectedSongs', { default: () => [] });
@@ -196,8 +207,12 @@ const userStore = useUserStore();
 
 const searchValue = ref(searchKeyword.value);
 
-const handleLike = (playlist?: Playlist) => {
-  emit('like', playlist);
+const handleLike = () => {
+  emit('like', props.instance);
+};
+
+const handleDelete = () => {
+  emit('delete', props.instance);
 };
 
 // 批量操作选项
@@ -211,7 +226,12 @@ const batchOptions = computed<DropdownOption[]>(() => {
       label: '添加到我的歌单',
       key: 'addToMyPlaylist',
       children: userStore.getCreatedPlaylist
-        .filter(playlist => !props.playlist || playlist.listid !== props.playlist.listid)
+        .filter(playlist => {
+          if (props.type === 'playlist') {
+            return !props.instance || playlist.listid !== (props.instance as Playlist).listid;
+          }
+          return true;
+        })
         .map(playlist => ({
           label: playlist.name,
           key: `playlist-${playlist.listid}`,
@@ -224,9 +244,10 @@ const batchOptions = computed<DropdownOption[]>(() => {
 
   // 只有当是用户创建的歌单时才显示删除选项
   if (
-    props.playlist &&
+    props.instance &&
+    props.type === 'playlist' &&
     userStore.isAuthenticated &&
-    userStore.isCreatedPlaylist(props.playlist.list_create_gid)
+    userStore.isCreatedPlaylist((props.instance as Playlist).list_create_gid)
   ) {
     options.push({
       label: '从当前歌单删除',
@@ -241,9 +262,11 @@ const batchOptions = computed<DropdownOption[]>(() => {
 const handleBatchSelect = async (key: string) => {
   switch (key) {
     case 'addToPlaylist':
-      emit('add-to-playlist');
-      player.updatePlayList(selectedSongs.value);
+      player.updatePlayList(selectedSongs.value, undefined, {
+        replace: false,
+      });
       resetBatchSelection();
+      window.$message.success('已添加到播放列表');
       break;
     case 'deleteFromPlaylist':
       await handleDeleteFromPlaylist();
@@ -321,7 +344,9 @@ const handleAddToPlaylist = async (playlist: { listid: number; name: string }) =
 
 // 从当前歌单删除
 const handleDeleteFromPlaylist = async () => {
-  if (!selectedSongs.value.length || !props.playlist) return;
+  if (!selectedSongs.value.length || !props.instance || props.type !== 'playlist') {
+    return;
+  }
 
   const totalSongs = selectedSongs.value.length;
   const BATCH_SIZE = 50;
@@ -345,7 +370,7 @@ const handleDeleteFromPlaylist = async () => {
       const fileids = batchSongs.map(song => song.fileid).join(',');
 
       // 调用删除接口
-      await deletePlaylistTrack(props.playlist.listid, fileids);
+      await deletePlaylistTrack((props.instance as Playlist).listid, fileids);
 
       // 添加小延迟，避免请求过于频繁
       if (i < totalBatches - 1) {
@@ -382,7 +407,6 @@ const handleDeleteFromPlaylist = async () => {
 // 重置批量选择
 const resetBatchSelection = () => {
   selectedSongs.value = [];
-  emit('batch-operation-complete');
 };
 </script>
 

@@ -6,8 +6,9 @@
     </div>
     <SongListContainer
       ref="songListContainerRef"
+      type="playlist"
       :songs="songs"
-      :playlist="playlistInfo"
+      :instance="playlistInfo"
       virtual-scroll
       :max-height="maxHeight"
       :loading="loading"
@@ -16,7 +17,6 @@
       :show-delete="userStore.isAuthenticated && isCreatedPlaylist && !isDefaultPlaylist"
       @like="handleLikePlaylist"
       @delete="handleDeletePlaylist"
-      @add-to-playlist="handleAddToPlaylist"
       @song-removed="handleSongRemoved"
       @deleted-songs="handleDeletedSongs"
     />
@@ -53,9 +53,10 @@ const maxHeight = computed(() => {
 const loading = ref(false);
 const songs = ref<Song[]>([]);
 
-const handleDeletePlaylist = () => {
+const handleDeletePlaylist = (data: any) => {
+  const playlist = data as Playlist;
   userStore
-    .deletePlaylist(playlistInfo.value.listid)
+    .deletePlaylist(playlist.listid)
     .then(async () => {
       window.$message.success('删除成功');
       router.back();
@@ -65,13 +66,14 @@ const handleDeletePlaylist = () => {
     });
 };
 
-const handleLikePlaylist = async (playlist?: Playlist) => {
+const handleLikePlaylist = async (playlist: any) => {
   if (!playlist) {
     return;
   }
+  const data = playlist as Playlist;
   if (isLikedPlaylist.value) {
     const likedPlaylist = userStore.playlist?.filter(
-      item => item.list_create_gid === playlist.list_create_gid,
+      item => item.list_create_gid === data.list_create_gid,
     )?.[0];
     if (!likedPlaylist) {
       return;
@@ -79,26 +81,24 @@ const handleLikePlaylist = async (playlist?: Playlist) => {
     await userStore.unlikePlaylist(likedPlaylist.listid);
     window.$message.success('已取消收藏');
   } else {
-    await userStore.likePlaylist(playlist);
+    await userStore.likePlaylist(data);
     window.$message.success('已添加收藏');
   }
 };
 
-const handleAddToPlaylist = () => {
-  window.$message.success('已添加到播放列表');
-};
-
-const handleDeletedSongs = (deletedSongs: Song[]) => {
+const handleDeletedSongs = async (deletedSongs: Song[]) => {
   songs.value = songs.value.filter(
     song => !deletedSongs.some(deleted => deleted.hash === song.hash),
   );
+  await getPlaylistInfo();
 };
 
-const handleSongRemoved = (removedSong?: Song) => {
+const handleSongRemoved = async (removedSong?: Song) => {
   if (!removedSong) {
     return;
   }
   songs.value = songs.value.filter(song => removedSong.hash !== song.hash);
+  await getPlaylistInfo();
 };
 
 const isCreatedPlaylist = computed(() => {

@@ -14,6 +14,8 @@ interface Setting {
   compatibilityMode: boolean;
   backupQuality: AudioQuality;
   preventSleep: boolean;
+  addSongsToPlaylist: boolean;
+  replacePlaylist: boolean;
 }
 
 // 默认音质设置
@@ -28,12 +30,14 @@ export const useSettingStore = defineStore('setting', {
     unblock: false,
     volumeFade: true,
     volumeFadeTime: 1000,
-    showPlaylistCount: true,
+    showPlaylistCount: false,
     autoNextOnError: false,
     autoNextOnErrorTime: 3000,
     compatibilityMode: true,
     backupQuality: DEFAULT_AUDIO_QUALITY,
     preventSleep: false,
+    addSongsToPlaylist: false,
+    replacePlaylist: false,
   }),
   getters: {
     getTheme: state => state.theme,
