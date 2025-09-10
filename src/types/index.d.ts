@@ -242,15 +242,15 @@ export type MusicEffect =
   | 'subwoofer' // 骨笛音效，仅部分音乐支持
   | 'ancient' // 尤克里里音效，仅部分音乐支持
   | 'surnay' // 唢呐音效，仅部分音乐支持
-  | 'dj' // DJ音效，仅部分音乐支持
-  | 'viper_atmos' // 蝰蛇全景声，仅部分音乐支持
-  | 'viper_clear'; // 蝰蛇超清音质
+  | 'dj'; // DJ音效，仅部分音乐支持
 
 export type AudioQuality =
   | '128' // 128码率MP3格式
   | '320' // 320码率MP3格式
   | 'flac' // FLAC格式音频
-  | 'high'; // 无损格式音频
+  | 'viper_clear' // 蝰蛇超清音质
+  | 'viper_tape' //蝰蛇母带
+  | 'viper_atmos'; // 蝰蛇全景声，仅部分音乐支持
 
 /**
  * 音乐转换参数类型

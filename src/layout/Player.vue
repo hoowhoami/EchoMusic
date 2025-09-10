@@ -620,7 +620,7 @@ const handleScrollToCurrent = () => {
 const handleQualitySelect = (quality: string) => {
   playerStore.setAudioQuality(quality as any);
   window.$message.success(
-    `已切换到音质：${QUALITY_NAMES[quality as keyof typeof QUALITY_NAMES] || quality}`,
+    `已切换到音质/音效：${QUALITY_NAMES[quality as keyof typeof QUALITY_NAMES] || quality}`,
   );
 
   // 立即应用新音质，不管当前播放器状态

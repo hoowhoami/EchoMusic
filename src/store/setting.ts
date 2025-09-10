@@ -17,7 +17,7 @@ interface Setting {
 }
 
 // 默认音质设置
-const DEFAULT_AUDIO_QUALITY: AudioQuality = 'high';
+const DEFAULT_AUDIO_QUALITY: AudioQuality = 'flac';
 
 export const useSettingStore = defineStore('setting', {
   persist: true,

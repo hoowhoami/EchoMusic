@@ -1,5 +1,13 @@
 import { api } from '@/utils/request';
 
+// 获取音乐详情
+// 说明：调用此接口，可以获取音乐详情
+// 必选参数：
+// hash: 歌曲 hash, 可以传多个，每个以逗号分开
+export const getSongPrivilege = (hash: string) => {
+  return api.get('/privilege/lite', { hash });
+};
+
 // 获取音乐 URL
 // hash: 音乐 hash
 // album_id: 专辑 id

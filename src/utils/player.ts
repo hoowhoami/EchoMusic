@@ -2,10 +2,11 @@ import type { Song, PlayMode } from '@/types';
 import { Howl, Howler } from 'howler';
 import { cloneDeep } from 'lodash-es';
 import { usePlayerStore, useSettingStore } from '@/store';
-import { getSongClimax, getSongUrl } from '@/api';
+import { getSongClimax, getSongPrivilege, getSongUrl } from '@/api';
 import { calculateProgress } from './time';
 import { getCover } from './music';
 import { isDev } from './common';
+import { MUSIC_EFFECT_OPTIONS } from '@/constants';
 
 // 播放器核心
 // Howler.js
@@ -127,6 +128,10 @@ class Player {
     const playerStore = usePlayerStore();
     const settingStore = useSettingStore();
 
+    // 获取音乐详情
+    const privilege = await getSongPrivilege(id);
+    const qualities = privilege?.[0].relate_goods;
+
     // 音质列表（首选音质 + 备选音质）
     const qualityList = settingStore.compatibilityMode
       ? [playerStore.audioQuality, settingStore.backupQuality]
@@ -137,28 +142,40 @@ class Player {
 
     for (const quality of uniqueQualities) {
       try {
-        console.log(`🎵 尝试获取音质: ${quality}`);
-        const res = await getSongUrl(id, quality);
+        console.log(`🎵 尝试获取音质/音效: ${quality}`);
+        const effect = !!MUSIC_EFFECT_OPTIONS.filter(item => item.value === quality);
+        let hash = id;
+        if (!effect) {
+          // 获取音质对应的歌曲hash
+          hash = qualities.find((item: { quality: string }) => item.quality === quality)?.hash;
+          if (!hash) {
+            console.warn(`❌ 未找到音质 ${quality} 的 hash`);
+            continue;
+          }
+        }
+        const res = await getSongUrl(hash, quality);
         if (res.status === 1) {
           if (res.url && res.url[0]) {
             console.log(`✅ 成功获取音质 ${quality} 的播放链接`);
             return res.url[0];
           }
         } else if (res.status === 2) {
-          console.warn(`💰 音质 ${quality} 需要购买，尝试下一个音质`);
+          console.warn(`💰 音质/音效 ${quality} 需要购买，尝试下一个音质`);
         } else if (res.status === 3) {
-          console.warn(`🚫 音质 ${quality} 暂无版权，尝试下一个音质`);
+          console.warn(`🚫 音质/音效 ${quality} 暂无版权，尝试下一个音质`);
         } else {
-          console.warn(`⚠️ 音质 ${quality} 获取失败 (status: ${res.status})，尝试下一个音质`);
+          console.warn(
+            `⚠️ 音质/音效 ${quality} 获取失败 (status: ${res.status})，尝试下一个音质/音效`,
+          );
         }
       } catch (error) {
-        console.error(`❌ 获取音质 ${quality} 时出错:`, error);
+        console.error(`❌ 获取音质/音效 ${quality} 时出错:`, error);
       }
     }
 
-    // 所有音质都失败，尝试不带音质参数作为最后备选
+    // 所有音质/音效都失败，尝试不带音质/音效参数作为最后备选
     if (settingStore.compatibilityMode) {
-      console.log('🔄 所有音质获取失败，尝试兼容模式');
+      console.log('🔄 所有音质/音效获取失败，尝试兼容模式');
       try {
         const res = await getSongUrl(id);
         if (res.status === 1 && res.url && res.url[0]) {
@@ -167,11 +184,11 @@ class Player {
           return res.url[0];
         }
       } catch (error) {
-        console.error('❌ 兼容模式也失败:', error);
+        console.error('❌ 兼容模式失败:', error);
       }
     }
 
-    console.error('❌ 所有音质获取尝试均失败');
+    console.error('❌ 所有音质/音效获取尝试均失败');
     return null;
   }
   /**

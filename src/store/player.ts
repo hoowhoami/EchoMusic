@@ -2,7 +2,7 @@ import type { PlayMode, Song, SongQuality } from '@/types';
 import { defineStore } from 'pinia';
 
 // 默认音质设置
-const DEFAULT_AUDIO_QUALITY: SongQuality = 'high';
+const DEFAULT_AUDIO_QUALITY: SongQuality = 'flac';
 
 interface Player {
   loading: boolean;
