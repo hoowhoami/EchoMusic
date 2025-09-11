@@ -5,8 +5,9 @@
         tag="h1"
         :depth="1"
         class="header-title"
-        >偏好设置</NText
       >
+        偏好设置
+      </NText>
       <NText
         :depth="3"
         class="header-desc"
@@ -35,13 +36,15 @@
             <NText
               :depth="1"
               class="setting-title"
-              >主题模式</NText
             >
+              主题模式
+            </NText>
             <NText
               :depth="3"
               class="setting-desc"
-              >选择您喜欢的主题外观</NText
             >
+              选择您喜欢的主题外观
+            </NText>
           </div>
           <NSelect
             size="small"
@@ -65,8 +68,9 @@
             <NText
               :depth="3"
               class="setting-desc"
-              >在播放列表图标上显示歌曲数量</NText
             >
+              在播放列表图标上显示歌曲数量
+            </NText>
           </div>
           <NSwitch v-model:value="settingStore.showPlaylistCount" />
         </div>
@@ -134,8 +138,9 @@
             <NText
               :depth="3"
               class="setting-desc"
-              >播放和暂停时启用音量渐变效果</NText
             >
+              播放和暂停时启用音量渐变效果
+            </NText>
           </div>
           <NSwitch v-model:value="settingStore.volumeFade" />
         </div>
@@ -170,8 +175,9 @@
             <NText
               :depth="2"
               class="fade-time-text"
-              >{{ (settingStore.volumeFadeTime / 1000).toFixed(1) }}s</NText
             >
+              {{ (settingStore.volumeFadeTime / 1000).toFixed(1) }}s
+            </NText>
           </div>
         </div>
 
@@ -225,8 +231,9 @@
             <NText
               :depth="2"
               class="fade-time-text"
-              >{{ (settingStore.autoNextOnErrorTime / 1000).toFixed(1) }}s</NText
             >
+              {{ (settingStore.autoNextOnErrorTime / 1000).toFixed(1) }}s
+            </NText>
           </div>
         </div>
 
@@ -238,27 +245,8 @@
               :depth="1"
               class="setting-title"
             >
-              解灰功能
+              播放时防止系统休眠
             </NText>
-            <NText
-              :depth="3"
-              class="setting-desc"
-            >
-              尝试播放无法正常播放的歌曲
-            </NText>
-          </div>
-          <NSwitch v-model:value="settingStore.unblock" />
-        </div>
-
-        <NDivider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <NText
-              :depth="1"
-              class="setting-title"
-              >播放时防止系统休眠</NText
-            >
             <NText
               :depth="3"
               class="setting-desc"
@@ -266,10 +254,7 @@
               播放音乐时阻止系统进入休眠状态
             </NText>
           </div>
-          <NSwitch
-            v-model:value="settingStore.preventSleep"
-            @update:value="settingStore.setPreventSleep"
-          />
+          <NSwitch v-model:value="settingStore.preventSleep" />
         </div>
       </NCard>
 
@@ -293,8 +278,9 @@
             <NText
               :depth="1"
               class="setting-title"
-              >兼容模式</NText
             >
+              兼容模式
+            </NText>
             <NText
               :depth="3"
               class="setting-desc"
@@ -302,10 +288,7 @@
               当首选音质无法获取时，自动尝试备选音质和兼容播放
             </NText>
           </div>
-          <NSwitch
-            v-model:value="settingStore.compatibilityMode"
-            @update:value="settingStore.setCompatibilityMode"
-          />
+          <NSwitch v-model:value="settingStore.compatibilityMode" />
         </div>
 
         <NDivider />
@@ -315,8 +298,9 @@
             <NText
               :depth="1"
               class="setting-title"
-              >备选音质</NText
             >
+              备选音质
+            </NText>
             <NText
               :depth="3"
               class="setting-desc"
@@ -330,7 +314,83 @@
             :options="audioQualityOptions"
             style="width: 150px"
             :disabled="!settingStore.compatibilityMode"
-            @update:value="settingStore.setBackupQuality"
+          />
+        </div>
+      </NCard>
+
+      <!-- 实验功能 -->
+      <NCard
+        class="setting-group"
+        title="实验功能"
+        size="small"
+      >
+        <template #header-extra>
+          <NIcon
+            :size="20"
+            :color="themeVars.primaryColor"
+          >
+            <DeviceAudioTape />
+          </NIcon>
+        </template>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              自动签到
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              自动签到领取畅听VIP解锁听歌权限
+            </NText>
+          </div>
+          <NSwitch v-model:value="settingStore.autoSign" />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              自动领取VIP
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              自动领取概念VIP解锁音质/音效
+            </NText>
+          </div>
+          <NSwitch v-model:value="settingStore.autoReceiveVip" />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              解灰功能
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              尝试播放无法正常播放的歌曲
+            </NText>
+          </div>
+          <NSwitch
+            v-model:value="settingStore.unblock"
+            disabled
           />
         </div>
       </NCard>
@@ -361,13 +421,15 @@
             <NText
               :depth="2"
               class="app-version"
-              >版本 1.0.0</NText
             >
+              版本 1.0.0
+            </NText>
             <NText
               :depth="2"
               class="app-description"
-              >一个现代化的音乐播放器</NText
             >
+              一个现代化的音乐播放器
+            </NText>
           </div>
 
           <div class="links">

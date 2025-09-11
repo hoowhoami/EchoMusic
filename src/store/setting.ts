@@ -2,20 +2,28 @@ import { defineStore } from 'pinia';
 import type { AudioQuality } from '@/types';
 
 interface Setting {
+  // 主内容高度
   mainHeight: number;
+  // 主题
   theme: 'light' | 'dark' | 'auto';
-  keepAlive: boolean;
-  unblock: boolean;
+  // 展示播放列表歌曲数量
+  showPlaylistCount: boolean;
+  // 播放设置
   volumeFade: boolean;
   volumeFadeTime: number;
-  showPlaylistCount: boolean;
   autoNextOnError: boolean;
   autoNextOnErrorTime: number;
-  compatibilityMode: boolean;
-  backupQuality: AudioQuality;
   preventSleep: boolean;
   addSongsToPlaylist: boolean;
   replacePlaylist: boolean;
+  // 音质设置
+  compatibilityMode: boolean;
+  backupQuality: AudioQuality;
+  // 实验功能
+  unblock: boolean;
+  keepAlive: boolean;
+  autoSign: boolean;
+  autoReceiveVip: boolean;
 }
 
 // 默认音质设置
@@ -26,18 +34,23 @@ export const useSettingStore = defineStore('setting', {
   state: (): Setting => ({
     mainHeight: 0,
     theme: 'auto',
-    keepAlive: false,
-    unblock: false,
-    volumeFade: true,
-    volumeFadeTime: 1000,
     showPlaylistCount: false,
-    autoNextOnError: false,
-    autoNextOnErrorTime: 3000,
-    compatibilityMode: true,
-    backupQuality: DEFAULT_AUDIO_QUALITY,
+
     preventSleep: false,
     addSongsToPlaylist: false,
     replacePlaylist: false,
+    volumeFade: true,
+    volumeFadeTime: 1000,
+    autoNextOnError: false,
+    autoNextOnErrorTime: 3000,
+
+    compatibilityMode: true,
+    backupQuality: DEFAULT_AUDIO_QUALITY,
+
+    keepAlive: false,
+    unblock: false,
+    autoSign: false,
+    autoReceiveVip: false,
   }),
   getters: {
     getTheme: state => state.theme,
@@ -49,18 +62,6 @@ export const useSettingStore = defineStore('setting', {
     },
     setTheme(theme: 'light' | 'dark' | 'auto') {
       this.theme = theme;
-    },
-    setKeepAlive(keepAlive: boolean) {
-      this.keepAlive = keepAlive;
-    },
-    setCompatibilityMode(enabled: boolean) {
-      this.compatibilityMode = enabled;
-    },
-    setBackupQuality(quality: AudioQuality) {
-      this.backupQuality = quality;
-    },
-    setPreventSleep(prevent: boolean) {
-      this.preventSleep = prevent;
     },
   },
 });
