@@ -159,7 +159,7 @@ interface Props {
   songs: Song[];
   batchMode: boolean;
 
-  type: 'playlist' | 'album' | 'singer';
+  type: 'playlist' | 'album' | 'singer' | 'history';
   instance?: Playlist | Album | Singer;
 
   // 状态相关

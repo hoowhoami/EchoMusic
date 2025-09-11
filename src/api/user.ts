@@ -99,6 +99,14 @@ export const getUserFollow = () => {
   return api.get('/user/follow');
 };
 
+// 获取用户最近听歌历史
+// 说明：登录后调用此接口，可以近期的听歌历史记录(需要登陆)
+// 可选参数：
+// bp: 可以更加上一次返回值传入
+export const getUserPlayHistory = (bp?: number) => {
+  return api.get('/user/history', { bp });
+};
+
 // 提交听歌历史
 // 说明：提交听歌历史后，支持在其他设备上查看听歌历史
 // 必选参数

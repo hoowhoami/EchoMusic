@@ -2,7 +2,7 @@ import type { Song, PlayMode } from '@/types';
 import { Howl, Howler } from 'howler';
 import { cloneDeep } from 'lodash-es';
 import { usePlayerStore, useSettingStore } from '@/store';
-import { getSongClimax, getSongPrivilege, getSongUrl } from '@/api';
+import { getSongClimax, getSongPrivilege, getSongUrl, uploadPlayHistory } from '@/api';
 import { calculateProgress } from './time';
 import { getCover } from './music';
 import { isDev } from './common';
@@ -191,6 +191,7 @@ class Player {
     console.error('❌ 所有音质/音效获取尝试均失败');
     return null;
   }
+
   /**
    * 创建播放器
    * @param src 播放地址
@@ -215,23 +216,28 @@ class Player {
       volume: playerStore.volume,
       rate: playerStore.rate,
     });
+
     // 播放器事件
     this.playerEvent({ seek, autoPlay });
     // 获取歌曲附加信息 - 非电台和本地 TODO
 
     // 定时获取状态
     this.handlePlayStatus();
-    // 新增播放历史 TODO
-    console.log('add history', playerStore.current);
+
+    // 上传播放历史
+    this.uploadPlayHistory(playerStore.current);
+
     // 获取歌曲封面主色 TODO
 
     // 更新 MediaSession
     this.updateMediaSession();
+
     // 开发模式
     if (isDev) {
       window.player = this.player;
     }
   }
+
   /**
    * 播放器事件
    */
@@ -289,6 +295,7 @@ class Player {
       console.error('❌ song error:', sourceid, playSongData, err);
     });
   }
+
   /**
    * 初始化 MediaSession
    */
@@ -389,6 +396,17 @@ class Player {
       }
       playerStore.setClimax(climaxs);
     }
+  }
+
+  /**
+   * 上传播放历史
+   * @param song 歌曲
+   */
+  private async uploadPlayHistory(song?: Song) {
+    if (!song || !song.mixsongid) {
+      return;
+    }
+    await uploadPlayHistory(song.mixsongid);
   }
 
   /**
