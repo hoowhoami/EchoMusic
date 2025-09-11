@@ -329,7 +329,7 @@
             :size="20"
             :color="themeVars.primaryColor"
           >
-            <DeviceAudioTape />
+            <Pacman />
           </NIcon>
         </template>
 
@@ -470,6 +470,7 @@ import {
   Mail,
   DeviceAudioTape,
   BrandGithub,
+  Pacman,
 } from '@vicons/tabler';
 import { useTheme } from '@/hooks';
 import { AUDIO_QUALITY_OPTIONS } from '@/constants';
