@@ -323,7 +323,7 @@ import {
   NText,
   useThemeVars,
 } from 'naive-ui';
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import {
   RefreshRound,
   AccessTimeRound,
@@ -331,7 +331,7 @@ import {
   CheckCircleRound,
 } from '@vicons/material';
 import { ref } from 'vue';
-import { youthDayVip, youthMonthVipRecord, youthVip } from '@/api';
+import { autoSignService, signUtils, type VipMonthRecord } from '@/utils/sign';
 
 defineOptions({
   name: 'Profile',
@@ -434,7 +434,7 @@ const tvip = computed(() => {
 });
 
 // 会员当月领取记录
-const vipMonthRecord = ref([]);
+const vipMonthRecord = ref<VipMonthRecord[]>([]);
 
 // 会员当天领取进度
 const vipReceiveStep = computed(() => {
@@ -456,14 +456,13 @@ const vipReceiveStepStatus = computed(() => {
   return 'wait';
 });
 
-const toTimestamp = (year: number, month: number, day: number) => {
-  return new Date(year, month - 1, day).getTime();
-};
+const toTimestamp = signUtils.toTimestamp;
 
 const isSigned = (year: number, month: number, day: number): boolean => {
   const timestamp = toTimestamp(year, month, day);
-  return vipMonthRecord.value?.some(
-    (item: { day: string }) => item.day === formatTimestamp(timestamp),
+  return (
+    vipMonthRecord.value?.some((item: VipMonthRecord) => item.day === formatTimestamp(timestamp)) ||
+    false
   );
 };
 
@@ -502,11 +501,13 @@ const handleSign = async (
       return;
     }
     loading.value = true;
-    await youthDayVip();
+    await autoSignService.manualSign();
     await getVipReceiveResult();
-    await userStore.fetchUserExtends();
   } catch (error) {
     console.error('签到失败', error);
+    if (window.$message) {
+      window.$message.error((error as Error).message || '签到失败');
+    }
   } finally {
     loading.value = false;
   }
@@ -516,8 +517,8 @@ const getVipReceiveResult = async () => {
   try {
     loading.value = true;
     vipMonthRecord.value = [];
-    const monthRecord = await youthMonthVipRecord();
-    vipMonthRecord.value = monthRecord.list;
+    const monthRecord = await autoSignService.getVipMonthRecord();
+    vipMonthRecord.value = monthRecord;
   } catch (error) {
     console.error('获取用户VIP领取结果失败', error);
   } finally {
@@ -527,39 +528,37 @@ const getVipReceiveResult = async () => {
 
 const handleReceiveVip = async () => {
   try {
-    if (userStore.isVipReceiveCompleted) {
-      window.$message.warning('今日会员已经领取完成');
-      return;
-    }
-    if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
-      window.$message.warning(
-        `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
-      );
-      return;
-    }
     loading.value = true;
-    const res = await youthVip();
+    const res = await autoSignService.manualReceiveVip();
     console.log('领取结果', res);
-    userStore.setVipReceive(res);
-    await userStore.fetchUserExtends();
+    if (window.$message) {
+      window.$message.success('领取VIP成功');
+    }
   } catch (error) {
     console.error('领取失败', error);
+    if (window.$message) {
+      window.$message.error((error as Error).message || '领取失败');
+    }
   } finally {
     loading.value = false;
   }
 };
 
-const handleTabChange = (tab: string) => {
+const handleTabChange = async (tab: string) => {
   if (tab === 'detail') {
-    userStore.fetchUserExtends();
-  }
-  if (tab === 'svip') {
-    getVipReceiveResult();
+    await userStore.fetchUserExtends();
   }
   if (tab === 'tvip') {
+    await getVipReceiveResult();
+  }
+  if (tab === 'svip') {
     // try
   }
 };
+
+onMounted(async () => {
+  await userStore.fetchUserExtends();
+});
 </script>
 
 <style scoped lang="scss">
