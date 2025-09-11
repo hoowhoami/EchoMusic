@@ -53,7 +53,6 @@
               :speed="0.2"
               class="name"
             />
-            <!-- 喜欢 -->
 
             <!-- 更多操作 -->
           </div>
@@ -79,8 +78,6 @@
     </div>
     <!-- 控制 -->
     <div class="play-control">
-      <!-- 不喜欢 -->
-
       <!-- 上一曲 -->
       <NButton
         :focusable="false"

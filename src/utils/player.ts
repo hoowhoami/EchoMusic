@@ -442,6 +442,7 @@ class Player {
       }, settingStore.autoNextOnErrorTime);
     }
   }
+
   /**
    * 获取 Audio Dom
    */

@@ -26,3 +26,13 @@ export const getSongUrl = (hash: string, quality: string = '') => {
 export const getSongClimax = (hash: string) => {
   return api.get('/song/climax', { hash });
 };
+
+// 获取歌曲 MV
+// 说明 : 传入 album_audio_id/MixSongID 获取歌曲 相对应的 mv
+// 必选参数：
+// album_audio_id: 专辑音乐 id (album_audio_id/MixSongID 均可以), 可以传多个，每个以逗号分开,
+// 可选参数：
+// fields: 支持多个，每个以逗号分隔，支持的值有：mkv,tags,h264,h265,authors
+export const getSongMv = (album_audio_id: number) => {
+  return api.get('/kmr/audio/mv', { album_audio_id });
+};

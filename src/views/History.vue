@@ -44,16 +44,14 @@ const getPlayHistory = async () => {
   try {
     loading.value = true;
     const res = await getUserPlayHistory();
-    console.log(res);
     const list = res?.songs
       ?.filter((item: any) => item.info)
       .map((item: any) => {
         return item.info;
       });
     songs.value = list || [];
-    console.log(songs.value);
   } catch (error) {
-    console.log(error);
+    console.log('获取播放历史失败', error);
   } finally {
     loading.value = false;
   }

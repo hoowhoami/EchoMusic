@@ -166,6 +166,7 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: 'Cloud',
           link: 'cloud',
           label: '云盘',
+          disabled: true,
           icon: renderIcon(CloudOutline),
         },
       ],
@@ -278,11 +279,16 @@ const likedPlaylist = computed<MenuOption[]>(() => {
 
 // 渲染菜单路由
 const renderMenuLabel = (option: MenuOption) => {
+  const label = typeof option.label === 'function' ? option.label() : (option.label as string);
+  // 禁用菜单
+  if (option.disabled) {
+    return label;
+  }
   // 路由链接
   if ('link' in option) {
-    return h(RouterLink, { to: { path: option.link as string } }, () => option.label as string);
+    return h(RouterLink, { to: { path: option.link as string } }, () => label);
   }
-  return typeof option.label === 'function' ? option.label() : (option.label as string);
+  return label;
 };
 
 // 菜单项更改
