@@ -11,6 +11,8 @@ export class AutoSignService {
   private signIntervalId: number | null = null;
   private vipIntervalId: number | null = null;
   private isRunning = false;
+  private isSignInProgress = false;
+  private isVipInProgress = false;
 
   constructor() {
     this.bindMethods();
@@ -97,7 +99,13 @@ export class AutoSignService {
 
   // 执行自动签到
   private async performAutoSign() {
+    if (this.isSignInProgress) {
+      console.log('签到正在进行中，跳过此次执行');
+      return;
+    }
+
     try {
+      this.isSignInProgress = true;
       const userStore = useUserStore();
       const settingStore = useSettingStore();
 
@@ -124,12 +132,20 @@ export class AutoSignService {
       }
     } catch (error) {
       console.error('自动签到失败:', error);
+    } finally {
+      this.isSignInProgress = false;
     }
   }
 
   // 执行自动领取VIP
   private async performAutoReceiveVip() {
+    if (this.isVipInProgress) {
+      console.log('VIP领取正在进行中，跳过此次执行');
+      return;
+    }
+
     try {
+      this.isVipInProgress = true;
       const userStore = useUserStore();
       const settingStore = useSettingStore();
 
@@ -138,10 +154,12 @@ export class AutoSignService {
       }
 
       if (userStore.isVipReceiveCompleted) {
+        console.log('今日VIP已领取完成，跳过自动领取');
         return;
       }
 
       if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
+        console.log('VIP领取时间未到，跳过自动领取');
         return;
       }
 
@@ -157,6 +175,8 @@ export class AutoSignService {
       }
     } catch (error) {
       console.error('自动领取VIP失败:', error);
+    } finally {
+      this.isVipInProgress = false;
     }
   }
 

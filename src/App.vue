@@ -30,15 +30,8 @@ watch(() => userStore.isAuthenticated, (isAuthenticated) => {
   }
 });
 
-// 监听自动签到配置变化
-watch(() => settingStore.autoSign, () => {
-  if (userStore.isAuthenticated) {
-    autoSignService.restart();
-  }
-});
-
-// 监听自动领取VIP配置变化
-watch(() => settingStore.autoReceiveVip, () => {
+// 监听自动签到和自动领取VIP配置变化
+watch(() => [settingStore.autoSign, settingStore.autoReceiveVip], () => {
   if (userStore.isAuthenticated) {
     autoSignService.restart();
   }
