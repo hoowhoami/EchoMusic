@@ -219,5 +219,14 @@ export const useUserStore = defineStore('user', {
         vipReceive,
       });
     },
+    setVipReceiveCompleted() {
+      this.$patch({
+        vipReceive: {
+          remain: 0,
+          day: new Date().getTime(),
+        },
+      });
+      this.vipReceiveNextTime = undefined;
+    },
   },
 });

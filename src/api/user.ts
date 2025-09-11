@@ -98,3 +98,14 @@ export const youthUnionVip = () => {
 export const getUserFollow = () => {
   return api.get('/user/follow');
 };
+
+// 提交听歌历史
+// 说明：提交听歌历史后，支持在其他设备上查看听歌历史
+// 必选参数
+// mxid： 专辑音乐 id (album_audio_id/MixSongID 均可以)
+// 可选参数：
+// ot：当前时间戳, 秒级，不要传入毫秒级，否者会返回错误，或者从 获取服务器时间 中获取
+// pc: 当前播放次数，更新播放次数，当服务器的值大于传入值时，将维持服务最大值，否则更新
+export const uploadPlayHistory = (mxid: number) => {
+  return api.get('/playhistory/upload', { mxid });
+};
