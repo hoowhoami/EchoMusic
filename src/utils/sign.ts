@@ -91,10 +91,10 @@ export class AutoSignService {
     // 立即执行一次
     this.performAutoReceiveVip();
     
-    // 每10分钟检查一次
+    // 每3分钟检查一次
     this.vipIntervalId = window.setInterval(() => {
       this.performAutoReceiveVip();
-    }, 10 * 60 * 1000);
+    }, 3 * 60 * 1000);
   }
 
   // 执行自动签到
