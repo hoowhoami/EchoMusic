@@ -76,6 +76,7 @@
                       size="small"
                     >
                       <NListItem
+                        class="cursor-pointer"
                         v-for="(item, index) in searchHot"
                         :key="item"
                         @click="handleSearchItemClick(item)"
@@ -105,6 +106,7 @@
                         {{ suggest.LableName || '综合' }}
                       </template>
                       <NListItem
+                        class="cursor-pointer"
                         v-for="(item, index) in suggest.RecordDatas"
                         :key="item.HintInfo"
                         @click="handleSearchItemClick(item.HintInfo)"
