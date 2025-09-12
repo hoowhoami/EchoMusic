@@ -1,6 +1,6 @@
 import { api } from '@/utils/request';
 
-//
+// 默认搜索词
 export const getSearchDefault = () => {
   return api.get('/search/default');
 };

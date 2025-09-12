@@ -12,6 +12,70 @@ const isDev = process.env.NODE_ENV !== 'production';
 let serverProcess: ChildProcess | null = null;
 
 let mainWindow: any;
+let lyricsWindow: any = null;
+
+// 创建桌面歌词窗口
+function createLyricsWindow() {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.show();
+    lyricsWindow.focus();
+    return;
+  }
+
+  lyricsWindow = new BrowserWindow({
+    width: 800,
+    height: 200,
+    x: Math.round((require('electron').screen.getPrimaryDisplay().workAreaSize.width - 800) / 2),
+    y: 100,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    hasShadow: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    closable: true,
+    focusable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      backgroundThrottling: false,
+      zoomFactor: 1.0,
+      sandbox: false,
+    },
+  });
+
+  // 加载歌词窗口页面
+  const lyricsUrl = isDev
+    ? 'http://localhost:3000/desktop-lyrics.html'
+    : `file://${path.join(__dirname, '../dist/public/desktop-lyrics.html')}`;
+
+  lyricsWindow.loadURL(lyricsUrl);
+
+  lyricsWindow.once('ready-to-show', () => {
+    console.log('[Main] 歌词窗口准备完成，开始显示');
+    lyricsWindow.show();
+    lyricsWindow.webContents.send('lyrics-window-created');
+  });
+
+  lyricsWindow.on('closed', () => {
+    console.log('[Main] 歌词窗口已关闭');
+    lyricsWindow = null;
+    // 通知渲染进程窗口已关闭
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics-window-closed');
+    }
+  });
+
+  // 开发模式下打开开发者工具
+  if (isDev) {
+    lyricsWindow.webContents.openDevTools();
+  }
+
+  console.log('[Main] 歌词窗口创建完成');
+}
 
 // 启动服务器
 function startServer() {
@@ -100,7 +164,7 @@ function createWindow() {
   }
 
   // 监听窗口关闭事件，隐藏而不是关闭
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', event => {
     if (!mainWindow?.isDestroyed()) {
       event.preventDefault();
       mainWindow.hide();
@@ -124,7 +188,7 @@ app.whenReady().then(async () => {
   createWindow();
 
   // IPC 处理程序 - 防止系统休眠
-  ipcMain.on('prevent-sleep', (event) => {
+  ipcMain.on('prevent-sleep', event => {
     const id = powerSaveBlocker.start('prevent-display-sleep');
     console.log('Prevented system sleep with ID:', id);
     event.returnValue = id;
@@ -136,6 +200,64 @@ app.whenReady().then(async () => {
       powerSaveBlocker.stop(id);
       console.log('Allowed system sleep for ID:', id);
     }
+  });
+
+  // IPC 处理程序 - 创建桌面歌词窗口
+  ipcMain.on('create-lyrics-window', () => {
+    console.log('[Main] 收到创建歌词窗口请求');
+    createLyricsWindow();
+  });
+
+  // IPC 处理程序 - 关闭桌面歌词窗口
+  ipcMain.on('close-lyrics-window', () => {
+    console.log('[Main] 收到关闭歌词窗口请求');
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.close();
+    }
+  });
+
+  // IPC 处理程序 - 歌词数据更新
+  ipcMain.on('lyrics-data-update', (event, data) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('lyrics-data-update', data);
+    }
+  });
+
+  // IPC 处理程序 - 歌词窗口控制事件
+  ipcMain.on('lyrics-control', (event, action) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics-control', action);
+    }
+  });
+
+  // IPC 处理程序 - 歌词窗口准备就绪
+  ipcMain.on('lyrics-window-ready', () => {
+    console.log('[Main] 歌词窗口渲染完成，发送创建完成事件');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics-window-created');
+    }
+  });
+
+  // IPC 处理程序 - 窗口拖动相关
+  let initialWindowPosition = { x: 0, y: 0 };
+
+  ipcMain.on('start-window-drag', () => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      const bounds = lyricsWindow.getBounds();
+      initialWindowPosition = { x: bounds.x, y: bounds.y };
+    }
+  });
+
+  ipcMain.on('move-window', (event, { deltaX, deltaY }) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      const newX = initialWindowPosition.x + deltaX;
+      const newY = initialWindowPosition.y + deltaY;
+      lyricsWindow.setPosition(newX, newY);
+    }
+  });
+
+  ipcMain.on('end-window-drag', () => {
+    // 拖动结束，可以在这里保存位置等
   });
 });
 
@@ -177,38 +299,15 @@ if (!gotTheLock) {
       mainWindow.focus();
     }
   });
-
-  // 只有在获得锁的情况下才创建窗口
-  app.whenReady().then(async () => {
-    // 先启动服务器
-    if (!isDev) {
-      console.log('启动API服务器...');
-      startServer();
-      // 等待服务器启动
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-
-    createWindow();
-
-    // IPC 处理程序 - 防止系统休眠
-    ipcMain.on('prevent-sleep', (event) => {
-      const id = powerSaveBlocker.start('prevent-display-sleep');
-      console.log('Prevented system sleep with ID:', id);
-      event.returnValue = id;
-    });
-
-    // IPC 处理程序 - 允许系统休眠
-    ipcMain.on('allow-sleep', (event, id) => {
-      if (powerSaveBlocker.isStarted(id)) {
-        powerSaveBlocker.stop(id);
-        console.log('Allowed system sleep for ID:', id);
-      }
-    });
-  });
 }
 
 // 处理应用退出
 app.on('before-quit', () => {
+  // 确保歌词窗口被关闭
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.close();
+    lyricsWindow = null;
+  }
   // 确保服务器进程被关闭
   if (serverProcess) {
     serverProcess.kill();
@@ -227,11 +326,3 @@ if (process.platform === 'darwin') {
     }
   });
 }
-
-app.on('before-quit', () => {
-  // 确保服务器进程被关闭
-  if (serverProcess) {
-    serverProcess.kill();
-    serverProcess = null;
-  }
-});

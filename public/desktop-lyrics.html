@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>桌面歌词</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body, html {
+      background-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      /* 保持鼠标交互用于拖动 */
+    }
+
+    .lyrics-window {
+      width: 100vw;
+      height: 100vh;
+      background: transparent;
+      position: fixed;
+      top: 0;
+      left: 0;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      /* 整个窗口可以接收鼠标事件用于拖动 */
+    }
+
+    .lyrics-container {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      background: transparent;
+      border-radius: 12px;
+      padding: 20px;
+      transition: all 0.3s ease;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      pointer-events: auto;
+    }
+
+    .lyrics-container.hovering {
+      background: rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .lyrics-container.hovering .control-btn {
+      cursor: pointer; /* 确保按钮有正确的指针 */
+    }
+
+    /* 整个窗口拖动时的样式 */
+    .lyrics-window {
+      cursor: move; /* 整个窗口显示可拖动 */
+    }
+
+    .lyrics-window.locked {
+      cursor: default; /* 锁定状态下使用默认光标 */
+    }
+
+    .lyrics-window .control-btn {
+      cursor: pointer !important; /* 按钮区域覆盖拖动样式 */
+    }
+
+    .controls-overlay {
+      margin-bottom: 20px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: auto;
+    }
+
+    .lyrics-container.hovering .controls-overlay {
+      opacity: 1;
+    }
+
+    .lyrics-container.locked .controls-overlay {
+      opacity: 0;
+    }
+
+    /* 锁定状态下悬停时显示解锁按钮 */
+    .lyrics-container.locked:hover .controls-overlay {
+      opacity: 1;
+    }
+
+    .controls-wrapper {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 8px 16px;
+      border-radius: 20px;
+      backdrop-filter: blur(5px);
+    }
+
+    .controls-wrapper.locked-controls {
+      padding: 8px;
+      border-radius: 50%;
+    }
+
+    #fullControls, #lockedControls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .control-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 14px;
+    }
+
+    .control-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.1);
+    }
+
+    .icon {
+      font-style: normal;
+      font-size: 12px;
+    }
+
+    .lyrics-content {
+      color: white;
+      font-weight: bold;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      line-height: 1.5;
+    }
+
+    .lyrics-line {
+      margin: 10px 0;
+      transition: all 0.3s ease;
+    }
+
+    .current-line {
+      font-size: 1.2em;
+      font-weight: bold;
+    }
+
+    .next-line, .translated-line {
+      opacity: 0.7;
+      font-size: 0.9em;
+    }
+
+    .no-lyrics {
+      color: #999;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="lyrics-window">
+    <div class="lyrics-container" id="lyricsContainer">
+      <div class="controls-overlay" id="controlsOverlay">
+        <div class="controls-wrapper" id="controlsWrapper">
+          <!-- 完整控制栏（非锁定状态） -->
+          <div id="fullControls">
+            <button onclick="changeFontSize(-2)" class="control-btn" title="减小字体">
+              <i class="icon">A-</i>
+            </button>
+            <button onclick="sendControl('previous-song')" class="control-btn" title="上一首">
+              <i class="icon">⏮</i>
+            </button>
+            <button onclick="sendControl('toggle-play')" class="control-btn" id="playButton" title="播放/暂停">
+              <i class="icon">▶</i>
+            </button>
+            <button onclick="sendControl('next-song')" class="control-btn" title="下一首">
+              <i class="icon">⏭</i>
+            </button>
+            <button onclick="changeFontSize(2)" class="control-btn" title="增大字体">
+              <i class="icon">A+</i>
+            </button>
+            <button onclick="toggleLock()" class="control-btn" id="lockButton" title="锁定">
+              <i class="icon">🔓</i>
+            </button>
+            <button onclick="closeLyrics()" class="control-btn" title="关闭歌词">
+              <i class="icon">✕</i>
+            </button>
+          </div>
+          
+          <!-- 锁定状态下的简化控制栏 -->
+          <div id="lockedControls" style="display: none;">
+            <button onclick="toggleLock()" class="control-btn" id="lockButtonLocked" title="解锁">
+              <i class="icon">🔒</i>
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="lyrics-content" id="lyricsContent">
+        <div class="lyrics-line no-lyrics">暂无歌词</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 检查是否在 Electron 环境中
+    const isElectron = typeof window !== 'undefined' && window.require;
+    
+    // 状态变量
+    let isPlaying = false;
+    let isLocked = false;
+    let isHovering = false;
+    let currentTime = 0;
+    let lyrics = [];
+    let fontSize = 32;
+    let defaultColor = '#999999';
+    let highlightColor = '#409eff';
+    let songTips = '暂无歌词';
+    let currentLineIndex = 0;
+
+    // IPC 通信方法
+    function sendControl(action) {
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.send('lyrics-control', { type: action });
+      }
+    }
+
+    function changeFontSize(delta) {
+      fontSize = Math.max(12, Math.min(72, fontSize + delta));
+      localStorage.setItem('lyrics-font-size', fontSize.toString());
+      document.getElementById('lyricsContent').style.fontSize = fontSize + 'px';
+      
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.send('lyrics-control', { type: 'font-size-change', value: fontSize });
+      }
+    }
+
+    function toggleLock() {
+      isLocked = !isLocked;
+      localStorage.setItem('lyrics-lock', isLocked.toString());
+      
+      const container = document.getElementById('lyricsContainer');
+      const wrapper = document.getElementById('controlsWrapper');
+      const lyricsWindow = document.querySelector('.lyrics-window');
+      const fullControls = document.getElementById('fullControls');
+      const lockedControls = document.getElementById('lockedControls');
+      
+      if (isLocked) {
+        // 锁定状态
+        container.classList.add('locked');
+        wrapper.classList.add('locked-controls');
+        lyricsWindow.classList.add('locked');
+        
+        // 切换控制栏显示
+        fullControls.style.display = 'none';
+        lockedControls.style.display = 'flex';
+      } else {
+        // 解锁状态
+        container.classList.remove('locked');
+        wrapper.classList.remove('locked-controls');
+        lyricsWindow.classList.remove('locked');
+        
+        // 切换控制栏显示
+        fullControls.style.display = 'flex';
+        lockedControls.style.display = 'none';
+      }
+      
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.send('lyrics-control', { type: 'lock-toggle', value: isLocked });
+      }
+    }
+
+    function closeLyrics() {
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        ipcRenderer.send('close-lyrics-window');
+      } else {
+        window.close();
+      }
+    }
+
+    // 处理歌词数据更新
+    function handleLyricsDataUpdate(data) {
+      console.log('[Lyrics] 收到歌词数据:', data);
+      
+      if (data.lyrics) {
+        lyrics = data.lyrics;
+        updateLyricsDisplay();
+      }
+      
+      if (data.currentTime !== undefined) {
+        currentTime = data.currentTime;
+        updateCurrentLineIndex();
+        updateLyricsDisplay();
+      }
+      
+      if (data.songTips) {
+        songTips = data.songTips;
+        if (!lyrics.length) {
+          document.getElementById('lyricsContent').innerHTML = `<div class="lyrics-line no-lyrics">${songTips}</div>`;
+        }
+      }
+      
+      if (data.settings) {
+        if (data.settings.isPlaying !== undefined) {
+          isPlaying = data.settings.isPlaying;
+          const playButton = document.getElementById('playButton');
+          if (playButton) {
+            playButton.querySelector('.icon').textContent = isPlaying ? '⏸' : '▶';
+          }
+        }
+        if (data.settings.fontSize) {
+          fontSize = data.settings.fontSize;
+          document.getElementById('lyricsContent').style.fontSize = fontSize + 'px';
+        }
+        if (data.settings.defaultColor) {
+          defaultColor = data.settings.defaultColor;
+        }
+        if (data.settings.highlightColor) {
+          highlightColor = data.settings.highlightColor;
+        }
+        if (data.settings.isLocked !== undefined) {
+          isLocked = data.settings.isLocked;
+          const container = document.getElementById('lyricsContainer');
+          const wrapper = document.getElementById('controlsWrapper');
+          const lyricsWindow = document.querySelector('.lyrics-window');
+          const fullControls = document.getElementById('fullControls');
+          const lockedControls = document.getElementById('lockedControls');
+          
+          if (isLocked) {
+            container.classList.add('locked');
+            wrapper.classList.add('locked-controls');
+            lyricsWindow.classList.add('locked');
+            fullControls.style.display = 'none';
+            lockedControls.style.display = 'flex';
+          } else {
+            container.classList.remove('locked');
+            wrapper.classList.remove('locked-controls');
+            lyricsWindow.classList.remove('locked');
+            fullControls.style.display = 'flex';
+            lockedControls.style.display = 'none';
+          }
+        }
+      }
+    }
+
+    function updateCurrentLineIndex() {
+      const currentTimeMs = currentTime;
+      
+      for (let i = 0; i < lyrics.length; i++) {
+        const line = lyrics[i];
+        if (!line?.characters?.length) continue;
+        
+        const lineStartTime = line.characters[0].startTime;
+        const lineEndTime = line.characters[line.characters.length - 1].endTime;
+        
+        if (currentTimeMs >= lineStartTime && currentTimeMs <= lineEndTime) {
+          currentLineIndex = i;
+          break;
+        }
+      }
+    }
+
+    function updateLyricsDisplay() {
+      const lyricsContent = document.getElementById('lyricsContent');
+      
+      if (!lyrics.length) {
+        lyricsContent.innerHTML = `<div class="lyrics-line no-lyrics">${songTips}</div>`;
+        return;
+      }
+
+      const currentLine = lyrics[currentLineIndex] || null;
+      const nextLine = lyrics[currentLineIndex + 1] || null;
+
+      if (currentLine) {
+        let html = '';
+        
+        // 当前行
+        const currentStyle = getLineHighlightStyle(currentLine);
+        const currentText = currentLine.text || currentLine.characters?.map(char => char.char).join('') || '';
+        html += `<div class="lyrics-line current-line" style="${currentStyle}">${currentText}</div>`;
+        
+        // 翻译或下一行
+        if (currentLine.translated) {
+          html += `<div class="lyrics-line translated-line" style="color: ${defaultColor};">${currentLine.translated}</div>`;
+        } else if (nextLine) {
+          const nextText = nextLine.text || nextLine.characters?.map(char => char.char).join('') || '';
+          html += `<div class="lyrics-line next-line" style="color: ${defaultColor};">${nextText}</div>`;
+        }
+        
+        lyricsContent.innerHTML = html;
+      }
+    }
+
+    function getLineHighlightStyle(line) {
+      if (!line || !line.characters || !line.characters.length) {
+        return `color: ${defaultColor};`;
+      }
+      
+      const characters = line.characters;
+      const lineStartTime = characters[0].startTime;
+      const lineEndTime = characters[characters.length - 1].endTime;
+      
+      if (currentTime < lineStartTime) {
+        return `color: ${defaultColor};`;
+      }
+      
+      if (currentTime >= lineEndTime) {
+        return `
+          background: linear-gradient(to right, ${highlightColor} 0%, ${highlightColor} 100%);
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: transparent;
+        `;
+      }
+      
+      const text = line.characters.map(char => char.char).join('');
+      let highlightPosition = 0;
+      
+      for (let i = 0; i < characters.length; i++) {
+        const char = characters[i];
+        if (currentTime >= char.startTime && currentTime <= char.endTime) {
+          const progress = (currentTime - char.startTime) / (char.endTime - char.startTime);
+          highlightPosition = ((i + progress) / text.length) * 100;
+          break;
+        }
+        if (currentTime > char.endTime) {
+          highlightPosition = ((i + 1) / text.length) * 100;
+        }
+      }
+      
+      highlightPosition = Math.max(0, Math.min(100, highlightPosition));
+      
+      return `
+        background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, ${defaultColor} ${highlightPosition}%);
+        background-clip: text;
+        -webkit-background-clip: text;
+        color: transparent;
+      `;
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('[Lyrics] 桌面歌词页面加载完成');
+      
+      // 加载保存的设置
+      isLocked = localStorage.getItem('lyrics-lock') === 'true';
+      fontSize = parseInt(localStorage.getItem('lyrics-font-size') || '32');
+      defaultColor = localStorage.getItem('lyrics-default-color') || '#999999';
+      highlightColor = localStorage.getItem('lyrics-highlight-color') || '#409eff';
+      
+      // 应用设置
+      document.getElementById('lyricsContent').style.fontSize = fontSize + 'px';
+      
+      // 应用锁定状态
+      const container = document.getElementById('lyricsContainer');
+      const wrapper = document.getElementById('controlsWrapper');
+      const lyricsWindow = document.querySelector('.lyrics-window');
+      const fullControls = document.getElementById('fullControls');
+      const lockedControls = document.getElementById('lockedControls');
+      
+      if (isLocked) {
+        container.classList.add('locked');
+        wrapper.classList.add('locked-controls');
+        lyricsWindow.classList.add('locked');
+        fullControls.style.display = 'none';
+        lockedControls.style.display = 'flex';
+      } else {
+        container.classList.remove('locked');
+        wrapper.classList.remove('locked-controls');
+        lyricsWindow.classList.remove('locked');
+        fullControls.style.display = 'flex';
+        lockedControls.style.display = 'none';
+      }
+      
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        
+        // 监听歌词数据更新
+        ipcRenderer.on('lyrics-data-update', (event, data) => {
+          handleLyricsDataUpdate(data);
+        });
+        
+        // 通知主进程窗口已准备好
+        ipcRenderer.send('lyrics-window-ready');
+        console.log('[Lyrics] 通知主进程窗口已准备好');
+      }
+      
+      // 添加鼠标事件处理
+      if (container && lyricsWindow) {
+        let isDragging = false;
+        let startX, startY;
+
+        // 悬停效果处理（锁定状态下仍然可以悬停显示解锁按钮）
+        container.addEventListener('mouseenter', () => {
+          isHovering = true;
+          if (!isLocked) {
+            container.classList.add('hovering');
+          }
+        });
+        
+        container.addEventListener('mouseleave', () => {
+          isHovering = false;
+          if (!isLocked) {
+            container.classList.remove('hovering');
+          }
+        });
+
+        // 整个窗口都可以拖动（除非是按钮点击）
+        lyricsWindow.addEventListener('mousedown', (e) => {
+          if (isLocked) return;
+          
+          // 检查是否点击在按钮上，如果是则不启动拖动
+          if (e.target.closest('.control-btn')) {
+            return;
+          }
+          
+          isDragging = true;
+          startX = e.screenX;
+          startY = e.screenY;
+          
+          // 通知 Electron 开始拖动
+          if (isElectron) {
+            const { ipcRenderer } = window.require('electron');
+            ipcRenderer.send('start-window-drag');
+          }
+          
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging || isLocked) return;
+          
+          // 通知 Electron 移动窗口
+          if (isElectron) {
+            const { ipcRenderer } = window.require('electron');
+            const deltaX = e.screenX - startX;
+            const deltaY = e.screenY - startY;
+            ipcRenderer.send('move-window', { deltaX, deltaY });
+          }
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            
+            // 通知 Electron 结束拖动
+            if (isElectron) {
+              const { ipcRenderer } = window.require('electron');
+              ipcRenderer.send('end-window-drag');
+            }
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>

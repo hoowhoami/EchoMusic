@@ -2,11 +2,17 @@ import type { Song, PlayMode } from '@/types';
 import { Howl, Howler } from 'howler';
 import { cloneDeep } from 'lodash-es';
 import { usePlayerStore, useSettingStore } from '@/store';
-import { getSongClimax, getSongPrivilege, getSongUrl, uploadPlayHistory } from '@/api';
+import {
+  getSongClimax,
+  getSongPrivilege,
+  getSongUrl,
+  uploadPlayHistory,
+} from '@/api';
 import { calculateProgress } from './time';
 import { getCover } from './music';
 import { isDev } from './common';
 import { MUSIC_EFFECT_OPTIONS } from '@/constants';
+import { lyricsHandler } from './lyrics';
 
 // 播放器核心
 // Howler.js
@@ -112,7 +118,8 @@ class Player {
       const duration = this.player.duration();
       // 计算进度条距离
       const progress = calculateProgress(currentTime, duration);
-      // 计算歌词索引 TODO
+      // 更新歌词高亮
+      lyricsHandler.highlightCurrentChar(currentTime);
 
       // 更新状态
       playerStore.$patch({ currentTime, duration, progress });
@@ -399,6 +406,18 @@ class Player {
   }
 
   /**
+   * 获取歌词
+   * @param song 歌曲
+   */
+  private async getSongLyric(song: Song) {
+    try {
+      await lyricsHandler.getLyrics(song.hash);
+    } catch (error) {
+      console.error('获取歌词失败:', error);
+    }
+  }
+
+  /**
    * 上传播放历史
    * @param song 歌曲
    */
@@ -505,6 +524,8 @@ class Player {
         if (url) {
           // 获取歌曲高潮部分
           this.getClimax(playSongData);
+          // 获取歌词
+          this.getSongLyric(playSongData);
           // 创建播放器
           await this.createPlayer(url, autoPlay, seek);
         }
@@ -974,7 +995,62 @@ class Player {
     Howler.unload();
     // 清空数据
     this.resetStatus();
+    // 清空歌词
+    lyricsHandler.clearLyrics();
     window.$message.success('已清空播放列表');
+  }
+
+  // 歌词相关方法
+  /**
+   * 获取歌词处理器
+   */
+  getLyricsHandler() {
+    return lyricsHandler;
+  }
+
+  /**
+   * 切换歌词显示
+   */
+  toggleLyrics() {
+    const current = this.getPlaySongData();
+    const currentTime = this.getSeek();
+    return lyricsHandler.toggleLyrics(current?.hash, currentTime);
+  }
+
+  /**
+   * 切换歌词模式
+   */
+  toggleLyricsMode() {
+    return lyricsHandler.toggleLyricsMode();
+  }
+
+  /**
+   * 获取当前行歌词
+   */
+  getCurrentLyricText() {
+    const currentTime = this.getSeek();
+    return lyricsHandler.getCurrentLineText(currentTime);
+  }
+
+  /**
+   * 切换桌面歌词
+   */
+  toggleDesktopLyrics() {
+    return lyricsHandler.toggleDesktopLyrics();
+  }
+
+  /**
+   * 开启桌面歌词
+   */
+  enableDesktopLyrics() {
+    lyricsHandler.enableDesktopLyrics();
+  }
+
+  /**
+   * 关闭桌面歌词
+   */
+  disableDesktopLyrics() {
+    lyricsHandler.disableDesktopLyrics();
   }
 }
 

@@ -288,3 +288,19 @@ export interface VipReceive {
   award_vip_hour: number;
   day: number;
 }
+
+// 歌词相关类型定义
+export interface LyricsCharacter {
+  char: string;
+  startTime: number;
+  endTime: number;
+  highlighted: boolean;
+}
+
+export interface LyricsLine {
+  characters: LyricsCharacter[];
+  translated?: string;
+  romanized?: string;
+}
+
+export type LyricsMode = 'translation' | 'romanization';

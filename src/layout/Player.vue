@@ -44,7 +44,7 @@
           :key="playerStore.current?.hash"
           class="info"
         >
-          <div class="data">
+          <div class="data flex items-center space-x-4">
             <!-- 名称 -->
             <TextContainer
               style="font-size: 12px"
@@ -55,22 +55,52 @@
             />
 
             <!-- 更多操作 -->
+
+            <div class="flex items-center space-x-2">
+              <!-- 歌词按钮 -->
+              <NButton
+                :focusable="false"
+                ghost
+                text
+                size="small"
+                @click.stop="toggleDesktopLyrics"
+              >
+                <template #icon>
+                  <NIcon :size="16">
+                    <MusicVideoRound />
+                  </NIcon>
+                </template>
+              </NButton>
+
+              <!-- MV按钮 -->
+              <NButton
+                :focusable="false"
+                ghost
+                text
+                size="small"
+              >
+                <template #icon>
+                  <NIcon :size="18">
+                    <VideocamRound />
+                  </NIcon>
+                </template>
+              </NButton>
+            </div>
           </div>
           <Transition
             name="fade"
             mode="out-in"
           >
-            <!-- 歌词 -->
-
-            <!-- 歌手 -->
-            <div class="artists">
-              <TextContainer
-                class="ar-item"
-                style="font-size: 10px"
-                :key="singer"
-                :text="singer"
-                :speed="0.2"
-              />
+            <div :key="singer">
+              <!-- 歌手 -->
+              <div class="artists">
+                <TextContainer
+                  class="ar-item"
+                  style="font-size: 10px"
+                  :text="singer"
+                  :speed="0.2"
+                />
+              </div>
             </div>
           </Transition>
         </div>
@@ -145,7 +175,6 @@
           <NText depth="2">{{ secondsToTime(playerStore.currentTime) }}</NText>
           <NText depth="2">{{ secondsToTime(playerStore.duration) }}</NText>
         </div>
-        <!-- 桌面歌词 -->
 
         <!-- 播放模式 -->
         <NDropdown
@@ -436,6 +465,8 @@ import {
   PlayArrowRound,
   SpeedRound,
   HighQualityRound,
+  MusicVideoRound,
+  VideocamRound,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
@@ -627,6 +658,16 @@ const handleQualitySelect = (quality: string) => {
     player.initPlayer(true, 0);
   }
 };
+
+// 切换桌面歌词
+const toggleDesktopLyrics = () => {
+  const isEnabled = player.toggleDesktopLyrics();
+  if (isEnabled) {
+    window.$message.success('已开启桌面歌词');
+  } else {
+    window.$message.info('已关闭桌面歌词');
+  }
+};
 </script>
 
 <style scoped lang="scss">
@@ -777,9 +818,6 @@ const handleQualitySelect = (quality: string) => {
             }
           }
         }
-      }
-      .lyric {
-        margin-top: 2px;
       }
     }
   }

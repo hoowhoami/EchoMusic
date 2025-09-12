@@ -47,8 +47,17 @@ request.interceptors.response.use(
   (response: AxiosResponse<ApiResult<any>>) => {
     if ('error_code' in response.data || 'errcode' in response.data || 'code' in response.data) {
       const { status, error_code, errcode, code, data } = response.data;
-      if ((status === 1 && (error_code === 0 || errcode === 0)) || code === 200) {
-        return data;
+      if (
+        (status === 1 && (error_code === 0 || errcode === 0)) ||
+        code === 200 ||
+        (status === 200 && errcode === 200) ||
+        (status === 200 && error_code === 0)
+      ) {
+        if (data) {
+          return data;
+        } else {
+          return response.data;
+        }
       }
       // 业务错误不统一提示而是交给调用者处理
       return Promise.reject(response.data);

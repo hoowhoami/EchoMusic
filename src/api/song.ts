@@ -36,3 +36,27 @@ export const getSongClimax = (hash: string) => {
 export const getSongMv = (album_audio_id: number) => {
   return api.get('/kmr/audio/mv', { album_audio_id });
 };
+
+// 歌词搜索
+// 说明: 调用此接口, 可以搜索歌词，该接口需配合 /lyric 使用。
+// 必选参数：
+// keyword: 关键词，与 hash 二选一
+// hash: 歌曲 hash，与 keyword 二选一
+// 可选参数：
+// album_audio_id: 专辑音乐 id,
+// man: 是否返回多个歌词，yes：返回多个， no：返回一个。 默认为no
+export const searchLyric = ({ keyword = '', hash = '' }) => {
+  return api.get('/search/lyric', { keyword, hash });
+};
+
+// 获取歌词
+// 说明 : 调用此接口，可以获取歌词，调用该接口前则需要调用/search/lyric 获取完整参数
+// 必选参数：
+// id: 歌词 id, 可以从 /search/lyric 接口中获取
+// accesskey: 歌词 accesskey, 可以从 /search/lyric 接口中获取
+// 可选参数：
+// fmt: 歌词类型，lrc 为普通歌词，krc 为逐字歌词
+// decode: 是否解码，传入该参数这返回解码后的歌词
+export const getLyric = ({ id = '', accesskey = '', fmt = 'lrc', decode = 'true' }) => {
+  return api.get('/lyric', { id, accesskey, fmt, decode });
+};
