@@ -14,17 +14,10 @@ import Playlist from '@/views/Playlist.vue';
 import Album from '@/views/Album.vue';
 import Singer from '@/views/Singer.vue';
 import Error from '@/views/Error.vue';
-import Lyrics from '@/views/Lyrics.vue';
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // 桌面歌词独立页面 - 放在第一位避免被其他路由匹配
-    {
-      path: '/desktop-lyrics',
-      name: 'DesktopLyrics',
-      component: Lyrics,
-    },
     {
       path: '/',
       name: 'Layout',
