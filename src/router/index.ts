@@ -41,15 +41,8 @@ const router = createRouter({
   ],
 });
 
-// 全局前置守卫
 router.beforeEach(async (to, from, next) => {
   console.log('from:', from.fullPath, 'to:', to.fullPath);
-
-  // 桌面歌词页面直接通过，不需要任何检查
-  if (to.name === 'DesktopLyrics') {
-    next();
-    return;
-  }
 
   const userStore = useUserStore();
   const isAuthenticated = userStore.isAuthenticated;

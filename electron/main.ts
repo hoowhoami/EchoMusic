@@ -235,29 +235,123 @@ app.whenReady().then(async () => {
     console.log('[Main] 歌词窗口渲染完成，发送创建完成事件');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('lyrics-window-created');
+      // 请求主窗口发送当前歌曲信息
+      mainWindow.webContents.send('request-current-song-info');
     }
   });
 
-  // IPC 处理程序 - 窗口拖动相关
-  let initialWindowPosition = { x: 0, y: 0 };
+  // IPC 处理程序 - 播放歌曲变化
+  ipcMain.on('play-song-change', (event, title) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('play-song-change', title);
+    }
+  });
 
-  ipcMain.on('start-window-drag', () => {
+
+  // IPC 处理程序 - 播放状态变化
+  ipcMain.on('play-status-change', (event, status) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('play-status-change', status);
+    }
+  });
+
+  // IPC 处理程序 - 桌面歌词选项变化
+  ipcMain.on('desktop-lyric-option-change', (event, options) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('desktop-lyric-option-change', options);
+    }
+  });
+
+  // IPC 处理程序 - 切换桌面歌词锁定状态
+  ipcMain.on('toggleDesktopLyricLock', (event, lock) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('toggleDesktopLyricLock', lock);
+    }
+  });
+
+  // IPC 处理程序 - 关闭桌面歌词
+  ipcMain.on('closeDesktopLyric', () => {
+    console.log('[Main] 收到关闭桌面歌词请求');
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.close();
+    }
+  });
+
+  // IPC 处理程序 - 显示应用主窗口
+  ipcMain.on('win-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  // IPC 处理程序 - 发送主窗口事件
+  ipcMain.on('send-main-event', (event, action) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('player-control', action);
+    }
+  });
+
+  // IPC 处理程序 - 获取桌面歌词选项
+  ipcMain.handle('get-desktop-lyric-option', () => {
+    // 返回默认选项，可以从配置文件读取
+    return {
+      fontSize: 30,
+      mainColor: '#fff',
+      shadowColor: 'rgba(0, 0, 0, 0.5)',
+    };
+  });
+
+  // IPC 处理程序 - 设置桌面歌词选项
+  ipcMain.on('set-desktop-lyric-option', (event, options) => {
+    console.log('[Main] 设置桌面歌词选项:', options);
+    // 这里可以保存选项到配置文件
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.webContents.send('desktop-lyric-option-change', options);
+    }
+  });
+
+  // IPC 处理程序 - 获取窗口边界
+  ipcMain.handle('get-window-bounds', () => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      return lyricsWindow.getBounds();
+    }
+    return { x: 0, y: 0, width: 800, height: 200 };
+  });
+
+  // IPC 处理程序 - 获取屏幕尺寸
+  ipcMain.handle('get-screen-size', () => {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    return {
+      width: primaryDisplay.workAreaSize.width,
+      height: primaryDisplay.workAreaSize.height,
+    };
+  });
+
+  // IPC 处理程序 - 更新窗口高度
+  ipcMain.on('update-window-height', (event, height) => {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       const bounds = lyricsWindow.getBounds();
-      initialWindowPosition = { x: bounds.x, y: bounds.y };
+      lyricsWindow.setBounds({ ...bounds, height: Math.max(100, height + 20) });
     }
   });
 
-  ipcMain.on('move-window', (event, { deltaX, deltaY }) => {
+
+  // IPC 处理程序 - 移动窗口
+  ipcMain.on('move-window', (_event, x: number, y: number, width: number, height: number) => {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
-      const newX = initialWindowPosition.x + deltaX;
-      const newY = initialWindowPosition.y + deltaY;
-      lyricsWindow.setPosition(newX, newY);
+      lyricsWindow.setBounds({ x, y, width, height });
     }
   });
 
-  ipcMain.on('end-window-drag', () => {
-    // 拖动结束，可以在这里保存位置等
+  // IPC 处理程序 - 设置窗口位置
+  ipcMain.handle('set-window-position', (_event, position: { x: number; y: number }) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.setPosition(position.x, position.y);
+      return true;
+    }
+    return false;
   });
 });
 

@@ -487,7 +487,40 @@ const playlistHeight = computed(() => {
 onMounted(() => {
   console.log('🎵 Player component mounted');
   initializePlayer();
+  setupElectronListeners();
 });
+
+// 设置Electron IPC监听器
+const setupElectronListeners = () => {
+  if (typeof window !== 'undefined' && window.require) {
+    try {
+      const { ipcRenderer } = window.require('electron');
+
+      // 监听来自桌面歌词的播放控制事件
+      ipcRenderer.on('player-control', (_event: any, action: string) => {
+        console.log('[Player] Received player-control event:', action);
+        switch (action) {
+          case 'play':
+            player.play();
+            break;
+          case 'pause':
+            player.pause();
+            break;
+          case 'playPrev':
+            player.nextOrPrev('prev');
+            break;
+          case 'playNext':
+            player.nextOrPrev('next');
+            break;
+        }
+      });
+
+      console.log('[Player] Electron IPC listeners set up');
+    } catch (error) {
+      console.warn('[Player] Failed to set up Electron IPC listeners:', error);
+    }
+  }
+};
 
 // 监听播放器状态变化
 watch(

@@ -36,6 +36,8 @@ class Player {
     this.initMediaSession();
     // 初始化后恢复状态
     this.initPlayerOnAppStart();
+    // 设置事件监听器
+    this.setupEventListeners();
   }
   /**
    * 洗牌数组（Fisher-Yates）
@@ -47,6 +49,24 @@ class Player {
       [copy[i], copy[j]] = [copy[j], copy[i]];
     }
     return copy;
+  }
+
+  /**
+   * 设置事件监听器
+   */
+  private setupEventListeners() {
+    // 监听来自桌面歌词的当前歌曲信息请求
+    if (typeof window !== 'undefined') {
+      window.addEventListener('request-current-song-for-lyrics', () => {
+        const currentSong = this.getPlaySongData();
+        if (currentSong) {
+          const songInfo = this.getPlayerInfo(currentSong);
+          if (songInfo) {
+            this.notifyDesktopLyrics('song', songInfo);
+          }
+        }
+      });
+    }
   }
   /**
    * 应用启动时初始化播放器
@@ -280,15 +300,17 @@ class Player {
     });
     // 播放
     this.player.on('play', () => {
-      window.document.title = this.getPlayerInfo() || 'SPlayer';
+      window.document.title = this.getPlayerInfo() || 'EchoMusic';
       // 更新播放状态
       playerStore.isPlaying = true;
-      // ipc
+      // 通知桌面歌词播放状态变化
+      this.notifyDesktopLyrics('status', true);
       console.log('▶️ song play:', playSongData?.name);
     });
     // 暂停
     this.player.on('pause', () => {
-      // ipc
+      // 通知桌面歌词播放状态变化
+      this.notifyDesktopLyrics('status', false);
       console.log('⏸️ song pause:', playSongData?.name);
     });
     // 结束
@@ -301,6 +323,24 @@ class Player {
       this.errorNext(err);
       console.error('❌ song error:', sourceid, playSongData, err);
     });
+  }
+
+  /**
+   * 通知桌面歌词
+   */
+  private notifyDesktopLyrics(type: 'song' | 'status', data: any) {
+    if (typeof window !== 'undefined' && window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        if (type === 'song') {
+          ipcRenderer.send('play-song-change', data);
+        } else if (type === 'status') {
+          ipcRenderer.send('play-status-change', data);
+        }
+      } catch (error) {
+        console.warn('Failed to notify desktop lyrics:', error);
+      }
+    }
   }
 
   /**
@@ -511,6 +551,8 @@ class Player {
       const { hash } = playSongData;
       // 更改当前播放歌曲
       playerStore.current = playSongData;
+      // 通知桌面歌词歌曲变化
+      this.notifyDesktopLyrics('song', this.getPlayerInfo(playSongData));
       // 更改状态
       playerStore.loading = true;
       // 重置播放状态，防止状态不一致
