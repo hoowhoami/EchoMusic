@@ -1,833 +1,963 @@
 <!doctype html>
 <html lang="zh-CN">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EchoMusic - 桌面歌词</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      box-sizing: border-box;
-      -webkit-user-drag: none;
-    }
-
-    :root {
-      --font-size: 30;
-      --main-color: #fff;
-      --shadow-color: rgba(0, 0, 0, 0.5);
-    }
-
-    body {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      width: 100%;
-      height: 100%;
-      padding: 12px;
-      cursor: pointer;
-      color: var(--main-color);
-      overflow: hidden;
-      transition: opacity 0.3s;
-
-      &::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border-radius: 16px;
-        background-color: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
-        z-index: 0;
-        opacity: 0;
-        cursor: move;
-        transition: opacity 0.3s;
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="X-UA-Compatible"
+      content="IE=edge"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>EchoMusic - 桌面歌词</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        box-sizing: border-box;
+        -webkit-user-drag: none;
       }
 
-      &:hover {
-        &::after {
-          opacity: 1;
-        }
-
-        header {
-          .meta {
-            opacity: 0;
-          }
-
-          .tools {
-            opacity: 1;
-          }
-        }
+      :root {
+        --font-size: 30;
+        --main-color: #fff;
+        --shadow-color: rgba(0, 0, 0, 0.5);
       }
 
-      &.lock-lyric {
-        cursor: none;
-
-        &::after {
-          opacity: 0;
-        }
-
-        &:hover {
-          opacity: 1;
-        }
-
-        header {
-          .meta {
-            opacity: 1;
-          }
-
-          .tools {
-            opacity: 0;
-            pointer-events: none;
-
-            #lock-lyric {
-              opacity: 1;
-              pointer-events: auto;
-              background-color: rgba(255, 0, 0, 0.3);
-              border: 1px solid rgba(255, 0, 0, 0.5);
-            }
-          }
-
-          &:hover .tools {
-            opacity: 1;
-            pointer-events: auto;
-
-            .item:not(#lock-lyric) {
-              opacity: 0.2;
-              pointer-events: none;
-            }
-
-            #lock-lyric {
-              opacity: 1;
-              pointer-events: auto;
-              background-color: rgba(255, 0, 0, 0.5);
-            }
-          }
-        }
-
-        main {
-          pointer-events: none;
-        }
-      }
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      z-index: 1;
-
-      .meta {
+      body {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
-        font-size: 14px;
-        opacity: 0.9;
+        width: 100%;
+        height: 100%;
+        padding: 12px;
+        cursor: pointer;
+        color: var(--main-color);
+        overflow: hidden;
         transition: opacity 0.3s;
-      }
 
-      .tools {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: absolute;
-        opacity: 0;
-        transition: opacity 0.3s;
-        gap: 8px;
+        &::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          border-radius: 16px;
+          background-color: rgba(0, 0, 0, 0.8);
+          backdrop-filter: blur(10px);
+          z-index: 0;
+          opacity: 0;
+          cursor: move;
+          transition: opacity 0.3s;
+        }
 
-        .item {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 6px;
-          border-radius: 8px;
-          cursor: pointer;
-          transition:
-            transform 0.3s,
-            background-color 0.3s;
+        &:hover {
+          &::after {
+            opacity: 1;
+          }
 
-          &.hidden {
-            display: none;
+          header {
+            .meta {
+              opacity: 0;
+            }
+
+            .tools {
+              opacity: 1;
+            }
+          }
+        }
+
+        &.lock-lyric {
+          cursor: none;
+
+          &::after {
+            opacity: 0;
           }
 
           &:hover {
-            background-color: rgba(0, 0, 0, 0.4);
+            opacity: 1;
           }
 
-          &:active {
-            transform: scale(0.95);
+          header {
+            .meta {
+              opacity: 1;
+            }
+
+            .tools {
+              opacity: 0;
+              pointer-events: none;
+
+              #lock-lyric {
+                opacity: 1;
+                pointer-events: auto;
+                background-color: rgba(255, 0, 0, 0.3);
+                border: 1px solid rgba(255, 0, 0, 0.5);
+              }
+            }
+
+            &:hover .tools {
+              opacity: 1;
+              pointer-events: auto;
+
+              .item:not(#lock-lyric) {
+                opacity: 0.2;
+                pointer-events: none;
+              }
+
+              #lock-lyric {
+                opacity: 1;
+                pointer-events: auto;
+                background-color: rgba(255, 0, 0, 0.5);
+              }
+            }
           }
 
-          svg {
-            width: 24px;
-            height: 24px;
+          main {
+            pointer-events: none;
           }
         }
       }
 
-      #song-artist {
-        margin-top: 4px;
-        font-size: 12px;
-        opacity: 0.8;
-      }
-    }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 1;
 
-    main {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 0 12px;
-      margin: 12px;
-      z-index: 1;
-      max-width: 100%;
-      pointer-events: auto;
+        .meta {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          font-size: 14px;
+          opacity: 0.9;
+          transition: opacity 0.3s;
+        }
 
-      #lyric-text {
-        font-size: calc(var(--font-size) * 1px);
-        font-weight: bold;
-      }
+        .tools {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: absolute;
+          opacity: 0;
+          transition: opacity 0.3s;
+          gap: 8px;
 
-      #lyric-tran {
-        font-size: calc(var(--font-size) * 1px - 5px);
-        margin-top: 8px;
-        opacity: 0.6;
-      }
-    }
+          .item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition:
+              transform 0.3s,
+              background-color 0.3s;
 
-    span {
-      padding: 0 4px;
-      max-width: 100%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      text-shadow: 0 0 4px var(--shadow-color);
-      transition: opacity 0.3s;
-    }
+            &.hidden {
+              display: none;
+            }
 
-    @keyframes wordsLoop {
-      0% {
-        transform: translateX(0px);
-      }
+            &:hover {
+              background-color: rgba(0, 0, 0, 0.4);
+            }
 
-      100% {
-        transform: translateX(-100%);
-      }
-    }
-  </style>
-</head>
+            &:active {
+              transform: scale(0.95);
+            }
 
-<body>
-  <header>
-    <div class="meta">
-      <span id="song-name">EchoMusic</span>
-      <span id="song-artist">未知艺术家</span>
-    </div>
-    <div class="tools" id="tools">
-      <div id="show-app" class="item" title="打开应用">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor" d="M10 20v-6h4v6h5v-8h3L12 3L2 12h3v8h5z" />
-        </svg>
-      </div>
-      <div id="font-size-reduce" class="item" title="缩小字体">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor" d="M10.5 7h-2L3 21h2.2l1.1-3h6.2l1.1 3H16zm-3.4 9l2.4-6.3l2.4 6.3zM22 7h-8V5h8z" />
-        </svg>
-      </div>
-      <div id="font-size-add" class="item" title="放大字体">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M8.5 7h2L16 21h-2.4l-1.1-3H6.3l-1.1 3H3zm-1.4 9h4.8L9.5 9.7zM22 5v2h-3v3h-2V7h-3V5h3V2h2v3z" />
-        </svg>
-      </div>
-      <div id="play-prev" class="item" title="上一首">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M7 6c.55 0 1 .45 1 1v10c0 .55-.45 1-1 1s-1-.45-1-1V7c0-.55.45-1 1-1m3.66 6.82l5.77 4.07c.66.47 1.58-.01 1.58-.82V7.93c0-.81-.91-1.28-1.58-.82l-5.77 4.07a1 1 0 0 0 0 1.64" />
-        </svg>
-      </div>
-      <div id="pause" class="item hidden" title="暂停">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M8 19c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2s-2 .9-2 2v10c0 1.1.9 2 2 2m6-12v10c0 1.1.9 2 2 2s2-.9 2-2V7c0-1.1-.9-2-2-2s-2 .9-2 2" />
-        </svg>
-      </div>
-      <div id="play" class="item" title="播放">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18a1 1 0 0 0 0-1.69L9.54 5.98A.998.998 0 0 0 8 6.82" />
-        </svg>
-      </div>
-      <div id="play-next" class="item" title="下一首">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="m7.58 16.89l5.77-4.07c.56-.4.56-1.24 0-1.63L7.58 7.11C6.91 6.65 6 7.12 6 7.93v8.14c0 .81.91 1.28 1.58.82M16 7v10c0 .55.45 1 1 1s1-.45 1-1V7c0-.55-.45-1-1-1s-1 .45-1 1" />
-        </svg>
-      </div>
-      <div id="lock-lyric" class="item" title="锁定/解锁">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2M9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9zm9 14H6V10h12zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2" />
-        </svg>
-      </div>
-      <div id="close-lyric" class="item" title="关闭">
-        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24">
-          <path fill="currentColor"
-            d="M13.46 12L19 17.54V19h-1.46L12 13.46L6.46 19H5v-1.46L10.54 12L5 6.46V5h1.46L12 10.54L17.54 5H19v1.46z" />
-        </svg>
-      </div>
-    </div>
-  </header>
-  <main id="lyric-content">
-    <span id="lyric-text">该歌曲暂无歌词</span>
-    <span id="lyric-tran"></span>
-  </main>
-  <script>
-    class LyricsWindow {
-      constructor() {
-        console.log('[Desktop Lyrics] Initializing LyricsWindow');
-
-        // Check Electron availability
-        console.log('[Desktop Lyrics] Checking Electron availability...');
-        console.log('[Desktop Lyrics] window.require available:', typeof window.require);
-        console.log('[Desktop Lyrics] window.electron available:', typeof window.electron);
-
-        if (typeof window.require !== 'undefined') {
-          try {
-            const { ipcRenderer } = window.require('electron');
-            console.log('[Desktop Lyrics] ipcRenderer from require:', !!ipcRenderer);
-            // Store ipcRenderer for use
-            window.electron = { ipcRenderer };
-          } catch (error) {
-            console.error('[Desktop Lyrics] Failed to get ipcRenderer from require:', error);
+            svg {
+              width: 24px;
+              height: 24px;
+            }
           }
         }
 
-        this.songNameDom = document.getElementById("song-name");
-        this.songArtistDom = document.getElementById("song-artist");
-        this.lyricContentDom = document.getElementById("lyric-content");
-        this.lyricTextDom = document.getElementById("lyric-text");
-        this.lyricTranDom = document.getElementById("lyric-tran");
-        this.pauseDom = document.getElementById("pause");
-        this.playDom = document.getElementById("play");
-
-        console.log('[Desktop Lyrics] DOM elements found:', {
-          songNameDom: !!this.songNameDom,
-          songArtistDom: !!this.songArtistDom,
-          lyricContentDom: !!this.lyricContentDom,
-          lyricTextDom: !!this.lyricTextDom,
-          lyricTranDom: !!this.lyricTranDom
-        });
-
-        this.isDragging = false;
-        this.startX = 0;
-        this.startY = 0;
-        this.startWinX = 0;
-        this.startWinY = 0;
-        this.winWidth = 0;
-        this.winHeight = 0;
-
-        this.loadSettings();
-        this.restoreOptions();
-        this.menuClick();
-        this.setupIPCListeners();
-        this.setupWindowDragListeners();
-        this.setupMutationObserver();
-
-        // 通知主进程窗口已准备好
-        if (window.electron?.ipcRenderer) {
-          console.log('[Desktop Lyrics] Notifying main process that window is ready');
-          window.electron.ipcRenderer.send('lyrics-window-ready');
-
-          // 恢复窗口位置
-          this.restoreWindowPosition();
+        #song-artist {
+          margin-top: 4px;
+          font-size: 12px;
+          opacity: 0.8;
         }
-
-        console.log('[Desktop Lyrics] LyricsWindow initialization complete');
       }
 
-      loadSettings() {
-        const settings = this.getStoredSettings();
+      main {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 0 12px;
+        margin: 12px;
+        z-index: 1;
+        max-width: 100%;
+        pointer-events: auto;
 
-        if (settings.fontSize) {
-          document.documentElement.style.setProperty("--font-size", settings.fontSize);
-        }
-        if (settings.mainColor) {
-          document.documentElement.style.setProperty("--main-color", settings.mainColor);
-        }
-        if (settings.shadowColor) {
-          document.documentElement.style.setProperty("--shadow-color", settings.shadowColor);
-        }
-        if (settings.highlightColor) {
-          document.documentElement.style.setProperty("--highlight-color", settings.highlightColor);
-        }
-        if (settings.locked !== undefined) {
-          this.setLockState(settings.locked);
+        #lyric-text {
+          font-size: calc(var(--font-size) * 1px);
+          font-weight: bold;
         }
 
-        console.log('[Desktop Lyrics] Settings loaded:', settings);
+        #lyric-tran {
+          font-size: calc(var(--font-size) * 1px - 5px);
+          margin-top: 8px;
+          opacity: 0.6;
+        }
       }
 
-      getStoredSettings() {
-        try {
-          const storedSettings = localStorage.getItem('lyrics-setting');
-          if (storedSettings) {
-            const parsed = JSON.parse(storedSettings);
-            return {
-              fontSize: parsed.fontSize || 30,
-              mainColor: parsed.mainColor || '#fff',
-              shadowColor: parsed.shadowColor || 'rgba(0, 0, 0, 0.5)',
-              highlightColor: parsed.highlightColor || '#ffdd00',
-              locked: parsed.locked === true,
-              windowPosition: parsed.windowPosition || null
-            };
+      span {
+        padding: 0 4px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-shadow: 0 0 4px var(--shadow-color);
+        transition: opacity 0.3s;
+      }
+
+      @keyframes wordsLoop {
+        0% {
+          transform: translateX(0px);
+        }
+
+        100% {
+          transform: translateX(-100%);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div class="meta">
+        <span id="song-name">EchoMusic</span>
+        <span id="song-artist">未知艺术家</span>
+      </div>
+      <div
+        class="tools"
+        id="tools"
+      >
+        <div
+          id="show-app"
+          class="item"
+          style="margin-top: 2px"
+          title="打开应用"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="28"
+            height="28"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M10 20v-6h4v6h5v-8h3L12 3L2 12h3v8h5z"
+            />
+          </svg>
+        </div>
+        <div
+          id="font-size-reduce"
+          class="item"
+          title="缩小字体"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M10.5 7h-2L3 21h2.2l1.1-3h6.2l1.1 3H16zm-3.4 9l2.4-6.3l2.4 6.3zM22 7h-8V5h8z"
+            />
+          </svg>
+        </div>
+        <div
+          id="font-size-add"
+          class="item"
+          title="放大字体"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M8.5 7h2L16 21h-2.4l-1.1-3H6.3l-1.1 3H3zm-1.4 9h4.8L9.5 9.7zM22 5v2h-3v3h-2V7h-3V5h3V2h2v3z"
+            />
+          </svg>
+        </div>
+        <div
+          id="play-prev"
+          class="item"
+          title="上一首"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M7 6c.55 0 1 .45 1 1v10c0 .55-.45 1-1 1s-1-.45-1-1V7c0-.55.45-1 1-1m3.66 6.82l5.77 4.07c.66.47 1.58-.01 1.58-.82V7.93c0-.81-.91-1.28-1.58-.82l-5.77 4.07a1 1 0 0 0 0 1.64"
+            />
+          </svg>
+        </div>
+        <div
+          id="pause"
+          class="item hidden"
+          title="暂停"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M8 19c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2s-2 .9-2 2v10c0 1.1.9 2 2 2m6-12v10c0 1.1.9 2 2 2s2-.9 2-2V7c0-1.1-.9-2-2-2s-2 .9-2 2"
+            />
+          </svg>
+        </div>
+        <div
+          id="play"
+          class="item"
+          title="播放"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18a1 1 0 0 0 0-1.69L9.54 5.98A.998.998 0 0 0 8 6.82"
+            />
+          </svg>
+        </div>
+        <div
+          id="play-next"
+          class="item"
+          title="下一首"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="m7.58 16.89l5.77-4.07c.56-.4.56-1.24 0-1.63L7.58 7.11C6.91 6.65 6 7.12 6 7.93v8.14c0 .81.91 1.28 1.58.82M16 7v10c0 .55.45 1 1 1s1-.45 1-1V7c0-.55-.45-1-1-1s-1 .45-1 1"
+            />
+          </svg>
+        </div>
+        <div
+          id="lock-lyric"
+          class="item"
+          title="锁定/解锁"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2M9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9zm9 14H6V10h12zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2s-2 .9-2 2s.9 2 2 2"
+            />
+          </svg>
+        </div>
+        <div
+          id="close-lyric"
+          class="item"
+          title="关闭"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M13.46 12L19 17.54V19h-1.46L12 13.46L6.46 19H5v-1.46L10.54 12L5 6.46V5h1.46L12 10.54L17.54 5H19v1.46z"
+            />
+          </svg>
+        </div>
+      </div>
+    </header>
+    <main id="lyric-content">
+      <span id="lyric-text">该歌曲暂无歌词</span>
+      <span id="lyric-tran"></span>
+    </main>
+    <script>
+      class LyricsWindow {
+        constructor() {
+          console.log('[Desktop Lyrics] Initializing LyricsWindow');
+
+          // Check Electron availability
+          console.log('[Desktop Lyrics] Checking Electron availability...');
+          console.log('[Desktop Lyrics] window.require available:', typeof window.require);
+          console.log('[Desktop Lyrics] window.electron available:', typeof window.electron);
+
+          if (typeof window.require !== 'undefined') {
+            try {
+              const { ipcRenderer } = window.require('electron');
+              console.log('[Desktop Lyrics] ipcRenderer from require:', !!ipcRenderer);
+              // Store ipcRenderer for use
+              window.electron = { ipcRenderer };
+            } catch (error) {
+              console.error('[Desktop Lyrics] Failed to get ipcRenderer from require:', error);
+            }
           }
-        } catch (error) {
-          console.warn('[Desktop Lyrics] Failed to parse stored settings:', error);
+
+          this.songNameDom = document.getElementById('song-name');
+          this.songArtistDom = document.getElementById('song-artist');
+          this.lyricContentDom = document.getElementById('lyric-content');
+          this.lyricTextDom = document.getElementById('lyric-text');
+          this.lyricTranDom = document.getElementById('lyric-tran');
+          this.pauseDom = document.getElementById('pause');
+          this.playDom = document.getElementById('play');
+
+          console.log('[Desktop Lyrics] DOM elements found:', {
+            songNameDom: !!this.songNameDom,
+            songArtistDom: !!this.songArtistDom,
+            lyricContentDom: !!this.lyricContentDom,
+            lyricTextDom: !!this.lyricTextDom,
+            lyricTranDom: !!this.lyricTranDom,
+          });
+
+          this.isDragging = false;
+          this.startX = 0;
+          this.startY = 0;
+          this.startWinX = 0;
+          this.startWinY = 0;
+          this.winWidth = 0;
+          this.winHeight = 0;
+
+          this.loadSettings();
+          this.restoreOptions();
+          this.menuClick();
+          this.setupIPCListeners();
+          this.setupWindowDragListeners();
+          this.setupMutationObserver();
+
+          // 通知主进程窗口已准备好
+          if (window.electron?.ipcRenderer) {
+            console.log('[Desktop Lyrics] Notifying main process that window is ready');
+            window.electron.ipcRenderer.send('lyrics-window-ready');
+
+            // 恢复窗口位置
+            this.restoreWindowPosition();
+          }
+
+          console.log('[Desktop Lyrics] LyricsWindow initialization complete');
         }
 
-        // 默认设置
-        return {
-          fontSize: 30,
-          mainColor: '#fff',
-          shadowColor: 'rgba(0, 0, 0, 0.5)',
-          highlightColor: '#ffdd00',
-          locked: false,
-          windowPosition: null
-        };
-      }
-
-      saveSettings(settings) {
-        try {
-          const currentSettings = this.getStoredSettings();
-          const newSettings = { ...currentSettings, ...settings };
-          localStorage.setItem('lyrics-setting', JSON.stringify(newSettings));
-          console.log('[Desktop Lyrics] Settings saved:', newSettings);
-        } catch (error) {
-          console.error('[Desktop Lyrics] Failed to save settings:', error);
-        }
-      }
-
-      async restoreWindowPosition() {
-        try {
+        loadSettings() {
           const settings = this.getStoredSettings();
-          if (settings.windowPosition && window.electron?.ipcRenderer) {
-            await window.electron.ipcRenderer.invoke("set-window-position", settings.windowPosition);
-            console.log('[Desktop Lyrics] Window position restored:', settings.windowPosition);
+
+          if (settings.fontSize) {
+            document.documentElement.style.setProperty('--font-size', settings.fontSize);
           }
-        } catch (error) {
-          console.warn('[Desktop Lyrics] Failed to restore window position:', error);
-        }
-      }
+          if (settings.mainColor) {
+            document.documentElement.style.setProperty('--main-color', settings.mainColor);
+          }
+          if (settings.shadowColor) {
+            document.documentElement.style.setProperty('--shadow-color', settings.shadowColor);
+          }
+          if (settings.highlightColor) {
+            document.documentElement.style.setProperty(
+              '--highlight-color',
+              settings.highlightColor,
+            );
+          }
+          if (settings.locked !== undefined) {
+            this.setLockState(settings.locked);
+          }
 
-      setLockState(locked) {
-        document.body.classList.toggle("lock-lyric", locked);
-        this.saveSettings({ locked });
-      }
-
-      updateLyrics(content = "纯音乐，请欣赏", translation = "") {
-        if (this.lyricTextDom && this.lyricTranDom) {
-          this.lyricTextDom.innerHTML = content;
-          this.lyricTranDom.innerHTML = translation;
-        }
-      }
-
-      updateLyricsWithHighlight(line, currentTime) {
-        if (!line || !line.characters || !line.characters.length) {
-          this.updateLyrics("该歌曲暂无歌词");
-          return;
+          console.log('[Desktop Lyrics] Settings loaded:', settings);
         }
 
-        const highlightStyle = this.getLineHighlightStyle(line, currentTime);
-        const lineText = this.formatLyricsLineText(line);
+        getStoredSettings() {
+          try {
+            const storedSettings = localStorage.getItem('lyrics-setting');
+            if (storedSettings) {
+              const parsed = JSON.parse(storedSettings);
+              return {
+                fontSize: parsed.fontSize || 30,
+                mainColor: parsed.mainColor || '#fff',
+                shadowColor: parsed.shadowColor || 'rgba(0, 0, 0, 0.5)',
+                highlightColor: parsed.highlightColor || '#ffdd00',
+                locked: parsed.locked === true,
+                windowPosition: parsed.windowPosition || null,
+              };
+            }
+          } catch (error) {
+            console.warn('[Desktop Lyrics] Failed to parse stored settings:', error);
+          }
 
-        if (this.lyricTextDom) {
-          this.lyricTextDom.innerHTML = `<span style="${highlightStyle}">${lineText}</span>`;
+          // 默认设置
+          return {
+            fontSize: 30,
+            mainColor: '#fff',
+            shadowColor: 'rgba(0, 0, 0, 0.5)',
+            highlightColor: '#ffdd00',
+            locked: false,
+            windowPosition: null,
+          };
         }
 
-        if (this.lyricTranDom && line.translated) {
-          this.lyricTranDom.innerHTML = line.translated;
-        } else if (this.lyricTranDom) {
-          this.lyricTranDom.innerHTML = "";
-        }
-      }
-
-      getLineHighlightStyle(line, currentTime) {
-        if (!line || !line.characters || !line.characters.length) {
-          return `color: var(--main-color);`;
-        }
-
-        const characters = line.characters;
-        const currentTimeMs = currentTime;
-        const lineStartTime = characters[0].startTime;
-        const lineEndTime = characters[characters.length - 1].endTime;
-        const settings = this.getStoredSettings();
-        const highlightColor = settings.highlightColor || '#ffdd00';
-
-        if (currentTimeMs < lineStartTime) {
-          return `color: var(--main-color);`;
+        saveSettings(settings) {
+          try {
+            const currentSettings = this.getStoredSettings();
+            const newSettings = { ...currentSettings, ...settings };
+            localStorage.setItem('lyrics-setting', JSON.stringify(newSettings));
+            console.log('[Desktop Lyrics] Settings saved:', newSettings);
+          } catch (error) {
+            console.error('[Desktop Lyrics] Failed to save settings:', error);
+          }
         }
 
-        if (currentTimeMs >= lineEndTime) {
-          return `
+        async restoreWindowPosition() {
+          try {
+            const settings = this.getStoredSettings();
+            if (settings.windowPosition && window.electron?.ipcRenderer) {
+              await window.electron.ipcRenderer.invoke(
+                'set-window-position',
+                settings.windowPosition,
+              );
+              console.log('[Desktop Lyrics] Window position restored:', settings.windowPosition);
+            }
+          } catch (error) {
+            console.warn('[Desktop Lyrics] Failed to restore window position:', error);
+          }
+        }
+
+        setLockState(locked) {
+          document.body.classList.toggle('lock-lyric', locked);
+          this.saveSettings({ locked });
+        }
+
+        updateLyrics(content = '纯音乐，请欣赏', translation = '') {
+          if (this.lyricTextDom && this.lyricTranDom) {
+            this.lyricTextDom.innerHTML = content;
+            this.lyricTranDom.innerHTML = translation;
+          }
+        }
+
+        updateLyricsWithHighlight(line, currentTime) {
+          if (!line || !line.characters || !line.characters.length) {
+            this.updateLyrics('该歌曲暂无歌词');
+            return;
+          }
+
+          const highlightStyle = this.getLineHighlightStyle(line, currentTime);
+          const lineText = this.formatLyricsLineText(line);
+
+          if (this.lyricTextDom) {
+            this.lyricTextDom.innerHTML = `<span style="${highlightStyle}">${lineText}</span>`;
+          }
+
+          if (this.lyricTranDom && line.translated) {
+            this.lyricTranDom.innerHTML = line.translated;
+          } else if (this.lyricTranDom) {
+            this.lyricTranDom.innerHTML = '';
+          }
+        }
+
+        getLineHighlightStyle(line, currentTime) {
+          if (!line || !line.characters || !line.characters.length) {
+            return `color: var(--main-color);`;
+          }
+
+          const characters = line.characters;
+          const currentTimeMs = currentTime;
+          const lineStartTime = characters[0].startTime;
+          const lineEndTime = characters[characters.length - 1].endTime;
+          const settings = this.getStoredSettings();
+          const highlightColor = settings.highlightColor || '#ffdd00';
+
+          if (currentTimeMs < lineStartTime) {
+            return `color: var(--main-color);`;
+          }
+
+          if (currentTimeMs >= lineEndTime) {
+            return `
             background: linear-gradient(to right, ${highlightColor} 0%, ${highlightColor} 100%);
             background-clip: text;
             -webkit-background-clip: text;
             color: transparent;
           `;
-        }
-
-        const text = line.characters.map(char => char.char).join('');
-        let highlightPosition = 0;
-
-        for (let i = 0; i < characters.length; i++) {
-          const char = characters[i];
-          if (currentTimeMs >= char.startTime && currentTimeMs <= char.endTime) {
-            const progress = (currentTimeMs - char.startTime) / (char.endTime - char.startTime);
-            highlightPosition = ((i + progress) / text.length) * 100;
-            break;
           }
-          if (currentTimeMs > char.endTime) {
-            highlightPosition = ((i + 1) / text.length) * 100;
+
+          const text = line.characters.map(char => char.char).join('');
+          let highlightPosition = 0;
+
+          for (let i = 0; i < characters.length; i++) {
+            const char = characters[i];
+            if (currentTimeMs >= char.startTime && currentTimeMs <= char.endTime) {
+              const progress = (currentTimeMs - char.startTime) / (char.endTime - char.startTime);
+              highlightPosition = ((i + progress) / text.length) * 100;
+              break;
+            }
+            if (currentTimeMs > char.endTime) {
+              highlightPosition = ((i + 1) / text.length) * 100;
+            }
           }
-        }
 
-        highlightPosition = Math.max(0, Math.min(100, highlightPosition));
+          highlightPosition = Math.max(0, Math.min(100, highlightPosition));
 
-        return `
+          return `
           background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, var(--main-color) ${highlightPosition}%);
           background-clip: text;
           -webkit-background-clip: text;
           color: transparent;
         `;
-      }
-
-      async restoreOptions() {
-        try {
-          // 先检查是否有本地保存的设置
-          const localSettings = localStorage.getItem('lyrics-setting');
-          if (localSettings) {
-            console.log('[Desktop Lyrics] Using local settings, skipping restore from main process');
-            return JSON.parse(localSettings);
-          }
-
-          // 如果没有本地设置，则从主进程获取默认设置
-          const defaultOptions = await window.electron?.ipcRenderer?.invoke("get-desktop-lyric-option");
-          if (defaultOptions) {
-            console.log('[Desktop Lyrics] Using default options from main process:', defaultOptions);
-            this.changeOptions(defaultOptions);
-          }
-          return defaultOptions;
-        } catch (error) {
-          console.error("Failed to restore options:", error);
-        }
-      }
-
-      changeOptions(options, callback = true) {
-        if (!options) return;
-        const { fontSize, mainColor, shadowColor } = options;
-
-        if (fontSize) {
-          document.documentElement.style.setProperty("--font-size", fontSize);
-          this.saveSettings({ fontSize });
-        }
-        if (mainColor) {
-          document.documentElement.style.setProperty("--main-color", mainColor);
-          this.saveSettings({ mainColor });
-        }
-        if (shadowColor) {
-          document.documentElement.style.setProperty("--shadow-color", shadowColor);
-          this.saveSettings({ shadowColor });
         }
 
-        if (callback && window.electron?.ipcRenderer) {
-          window.electron.ipcRenderer.send("set-desktop-lyric-option", options);
-        }
-      }
-
-      menuClick() {
-        const toolsDom = document.getElementById("tools");
-        if (!toolsDom) return;
-
-        toolsDom.addEventListener("click", async (event) => {
-          const target = event.target.closest("div");
-          if (!target) return;
-
-          const id = target.id;
-          if (!id) return;
-
-          const options = await this.restoreOptions() || this.getStoredSettings();
-
-          switch (id) {
-            case "show-app": {
-              window.electron?.ipcRenderer?.send("win-show");
-              break;
-            }
-            case "font-size-add": {
-              const currentSettings = this.getStoredSettings();
-              let fontSize = parseInt(currentSettings.fontSize) || 30;
-              if (fontSize < 60) {
-                fontSize++;
-                this.changeOptions({ ...currentSettings, fontSize });
-              }
-              break;
-            }
-            case "font-size-reduce": {
-              const currentSettings = this.getStoredSettings();
-              let fontSize = parseInt(currentSettings.fontSize) || 30;
-              if (fontSize > 12) {
-                fontSize--;
-                this.changeOptions({ ...currentSettings, fontSize });
-              }
-              break;
-            }
-            case "play": {
-              window.electron?.ipcRenderer?.send("send-main-event", "play");
-              break;
-            }
-            case "pause": {
-              window.electron?.ipcRenderer?.send("send-main-event", "pause");
-              break;
-            }
-            case "play-prev": {
-              window.electron?.ipcRenderer?.send("send-main-event", "playPrev");
-              break;
-            }
-            case "play-next": {
-              window.electron?.ipcRenderer?.send("send-main-event", "playNext");
-              break;
-            }
-            case "close-lyric": {
-              window.electron?.ipcRenderer?.send("closeDesktopLyric");
-              break;
-            }
-            case "lock-lyric": {
-              const isLocked = !document.body.classList.contains("lock-lyric");
-              this.setLockState(isLocked);
-              window.electron?.ipcRenderer?.send("toggleDesktopLyricLock", isLocked);
-              break;
-            }
-            default:
-              break;
-          }
-        });
-      }
-
-      setupIPCListeners() {
-        console.log('[Desktop Lyrics] Setting up IPC listeners...');
-
-        // Function to setup listeners when ipcRenderer becomes available
-        const setupListeners = () => {
-          if (!window.electron?.ipcRenderer) {
-            console.error('[Desktop Lyrics] window.electron.ipcRenderer still not available!');
-            return false;
-          }
-
-          console.log('[Desktop Lyrics] window.electron.ipcRenderer available, setting up listeners');
-
-          window.electron.ipcRenderer.on("play-song-change", (_, title) => {
-            if (!title) return;
-            const [songName, songArtist] = title.split(" - ");
-            this.songNameDom.innerHTML = songName || title;
-            this.songArtistDom.innerHTML = songArtist || "未知艺术家";
-          });
-
-          // 监听歌词数据更新
-          window.electron.ipcRenderer.on("lyrics-data-update", (_, lyricData) => {
-            if (!lyricData) {
-              return;
-            }
-            this.parsedLyricsData(lyricData);
-          });
-
-          window.electron.ipcRenderer.on("play-status-change", (_, status) => {
-            this.playDom.classList.toggle("hidden", status);
-            this.pauseDom.classList.toggle("hidden", !status);
-          });
-
-          window.electron.ipcRenderer.on("desktop-lyric-option-change", (_, options) => {
-            this.changeOptions(options, false);
-          });
-
-          window.electron.ipcRenderer.on("toggleDesktopLyricLock", (_, lock) => {
-            this.setLockState(lock);
-          });
-
-          console.log('[Desktop Lyrics] All IPC listeners registered');
-          return true;
-        };
-
-        // Try to setup listeners immediately
-        if (!setupListeners()) {
-          // If not available, retry after a short delay
-          console.log('[Desktop Lyrics] IPC not ready, retrying in 500ms...');
-          setTimeout(() => {
-            if (!setupListeners()) {
-              console.log('[Desktop Lyrics] IPC still not ready, retrying in 1000ms...');
-              setTimeout(() => {
-                setupListeners();
-              }, 1000);
-            }
-          }, 500);
-        }
-      }
-
-      parsedLyricsData(lyricData) {
-        if (!this.lyricContentDom || !this.lyricTextDom) {
-          return;
-        }
-
-        if (!lyricData) {
-          this.updateLyrics("该歌曲暂无歌词");
-          return;
-        }
-
-        const { lyrics, currentTime, songTips } = lyricData;
-
-        if (!lyrics || lyrics.length === 0) {
-          this.updateLyrics(songTips || "该歌曲暂无歌词");
-          return;
-        }
-
-        const currentLineIndex = this.getCurrentLineIndex(lyrics, currentTime);
-
-        if (currentLineIndex >= 0 && lyrics[currentLineIndex]) {
-          const currentLine = lyrics[currentLineIndex];
-          this.updateLyricsWithHighlight(currentLine, currentTime);
-        } else if (lyrics.length > 0) {
-          // 如果没有找到当前行，但有歌词，显示第一行
-          const firstLine = lyrics[0];
-          this.updateLyricsWithHighlight(firstLine, currentTime);
-        } else {
-          this.updateLyrics("该歌曲暂无歌词");
-        }
-      }
-
-      getCurrentLineIndex(lyrics, currentTime) {
-        if (!lyrics || lyrics.length === 0 || currentTime === undefined) return -1;
-
-        // 确保时间是毫秒格式
-        const currentTimeMs = currentTime;
-
-        // 先尝试找到时间范围内的行
-        for (let i = 0; i < lyrics.length; i++) {
-          const line = lyrics[i];
-          if (!line?.characters?.length) continue;
-
-          const lineStartTime = line.characters[0].startTime;
-          const lineEndTime = line.characters[line.characters.length - 1].endTime;
-
-          if (currentTimeMs >= lineStartTime && currentTimeMs <= lineEndTime) {
-            return i;
-          }
-        }
-
-        // 如果没有找到精确匹配，找最接近的行
-        let closestLineIndex = -1;
-        let minDistance = Infinity;
-
-        for (let i = 0; i < lyrics.length; i++) {
-          const line = lyrics[i];
-          if (!line?.characters?.length) continue;
-
-          const lineStartTime = line.characters[0].startTime;
-          const distance = Math.abs(currentTimeMs - lineStartTime);
-
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestLineIndex = i;
-          }
-        }
-
-        return closestLineIndex;
-      }
-
-      formatLyricsLineText(line) {
-        if (!line || !line.characters || !line.characters.length) return '';
-        return line.characters.map(char => char.char).join('');
-      }
-
-      setupWindowDragListeners() {
-        document.addEventListener("mousedown", this.startDrag.bind(this));
-        document.addEventListener("mousemove", this.dragWindow.bind(this));
-        document.addEventListener("mouseup", this.endDrag.bind(this));
-      }
-
-      async startDrag(event) {
-        if (document.body.classList.contains("lock-lyric")) return;
-
-        this.isDragging = true;
-        const { screenX, screenY } = event;
-
-        if (window.electron?.ipcRenderer) {
-          const bounds = await window.electron.ipcRenderer.invoke("get-window-bounds");
-          this.startX = screenX;
-          this.startY = screenY;
-          this.startWinX = bounds.x;
-          this.startWinY = bounds.y;
-          this.winWidth = bounds.width;
-          this.winHeight = bounds.height;
-        }
-      }
-
-      async dragWindow(event) {
-        if (!this.isDragging || document.body.classList.contains("lock-lyric")) return;
-
-        const { screenX, screenY } = event;
-        let newWinX = this.startWinX + (screenX - this.startX);
-        let newWinY = this.startWinY + (screenY - this.startY);
-
-        if (window.electron?.ipcRenderer) {
-          const { width: screenWidth, height: screenHeight } =
-            await window.electron.ipcRenderer.invoke("get-screen-size");
-
-          newWinX = Math.max(0, Math.min(screenWidth - this.winWidth, newWinX));
-          newWinY = Math.max(0, Math.min(screenHeight - this.winHeight, newWinY));
-
-          window.electron.ipcRenderer.send("move-window", newWinX, newWinY, this.winWidth, this.winHeight);
-        }
-      }
-
-      async endDrag() {
-        this.isDragging = false;
-
-        // 保存窗口位置
-        if (window.electron?.ipcRenderer) {
+        async restoreOptions() {
           try {
-            const bounds = await window.electron.ipcRenderer.invoke("get-window-bounds");
-            const settings = this.getStoredSettings();
-            settings.windowPosition = {
-              x: bounds.x,
-              y: bounds.y
-            };
-            this.saveSettings(settings);
+            // 先检查是否有本地保存的设置
+            const localSettings = localStorage.getItem('lyrics-setting');
+            if (localSettings) {
+              console.log(
+                '[Desktop Lyrics] Using local settings, skipping restore from main process',
+              );
+              return JSON.parse(localSettings);
+            }
+
+            // 如果没有本地设置，则从主进程获取默认设置
+            const defaultOptions = await window.electron?.ipcRenderer?.invoke(
+              'get-desktop-lyric-option',
+            );
+            if (defaultOptions) {
+              console.log(
+                '[Desktop Lyrics] Using default options from main process:',
+                defaultOptions,
+              );
+              this.changeOptions(defaultOptions);
+            }
+            return defaultOptions;
           } catch (error) {
-            console.warn('[Desktop Lyrics] Failed to save window position:', error);
+            console.error('Failed to restore options:', error);
           }
+        }
+
+        changeOptions(options, callback = true) {
+          if (!options) return;
+          const { fontSize, mainColor, shadowColor } = options;
+
+          if (fontSize) {
+            document.documentElement.style.setProperty('--font-size', fontSize);
+            this.saveSettings({ fontSize });
+          }
+          if (mainColor) {
+            document.documentElement.style.setProperty('--main-color', mainColor);
+            this.saveSettings({ mainColor });
+          }
+          if (shadowColor) {
+            document.documentElement.style.setProperty('--shadow-color', shadowColor);
+            this.saveSettings({ shadowColor });
+          }
+
+          if (callback && window.electron?.ipcRenderer) {
+            window.electron.ipcRenderer.send('set-desktop-lyric-option', options);
+          }
+        }
+
+        menuClick() {
+          const toolsDom = document.getElementById('tools');
+          if (!toolsDom) return;
+
+          toolsDom.addEventListener('click', async event => {
+            const target = event.target.closest('div');
+            if (!target) return;
+
+            const id = target.id;
+            if (!id) return;
+
+            const options = (await this.restoreOptions()) || this.getStoredSettings();
+
+            switch (id) {
+              case 'show-app': {
+                window.electron?.ipcRenderer?.send('win-show');
+                break;
+              }
+              case 'font-size-add': {
+                const currentSettings = this.getStoredSettings();
+                let fontSize = parseInt(currentSettings.fontSize) || 30;
+                if (fontSize < 60) {
+                  fontSize++;
+                  this.changeOptions({ ...currentSettings, fontSize });
+                }
+                break;
+              }
+              case 'font-size-reduce': {
+                const currentSettings = this.getStoredSettings();
+                let fontSize = parseInt(currentSettings.fontSize) || 30;
+                if (fontSize > 12) {
+                  fontSize--;
+                  this.changeOptions({ ...currentSettings, fontSize });
+                }
+                break;
+              }
+              case 'play': {
+                window.electron?.ipcRenderer?.send('send-main-event', 'play');
+                break;
+              }
+              case 'pause': {
+                window.electron?.ipcRenderer?.send('send-main-event', 'pause');
+                break;
+              }
+              case 'play-prev': {
+                window.electron?.ipcRenderer?.send('send-main-event', 'playPrev');
+                break;
+              }
+              case 'play-next': {
+                window.electron?.ipcRenderer?.send('send-main-event', 'playNext');
+                break;
+              }
+              case 'close-lyric': {
+                window.electron?.ipcRenderer?.send('closeDesktopLyric');
+                break;
+              }
+              case 'lock-lyric': {
+                const isLocked = !document.body.classList.contains('lock-lyric');
+                this.setLockState(isLocked);
+                window.electron?.ipcRenderer?.send('toggleDesktopLyricLock', isLocked);
+                break;
+              }
+              default:
+                break;
+            }
+          });
+        }
+
+        setupIPCListeners() {
+          console.log('[Desktop Lyrics] Setting up IPC listeners...');
+
+          // Function to setup listeners when ipcRenderer becomes available
+          const setupListeners = () => {
+            if (!window.electron?.ipcRenderer) {
+              console.error('[Desktop Lyrics] window.electron.ipcRenderer still not available!');
+              return false;
+            }
+
+            console.log(
+              '[Desktop Lyrics] window.electron.ipcRenderer available, setting up listeners',
+            );
+
+            window.electron.ipcRenderer.on('play-song-change', (_, title) => {
+              if (!title) return;
+              const [songName, songArtist] = title.split(' - ');
+              this.songNameDom.innerHTML = songName || title;
+              this.songArtistDom.innerHTML = songArtist || '未知艺术家';
+            });
+
+            // 监听歌词数据更新
+            window.electron.ipcRenderer.on('lyrics-data-update', (_, lyricData) => {
+              if (!lyricData) {
+                return;
+              }
+              this.parsedLyricsData(lyricData);
+            });
+
+            window.electron.ipcRenderer.on('play-status-change', (_, status) => {
+              this.playDom.classList.toggle('hidden', status);
+              this.pauseDom.classList.toggle('hidden', !status);
+            });
+
+            window.electron.ipcRenderer.on('desktop-lyric-option-change', (_, options) => {
+              this.changeOptions(options, false);
+            });
+
+            window.electron.ipcRenderer.on('toggleDesktopLyricLock', (_, lock) => {
+              this.setLockState(lock);
+            });
+
+            console.log('[Desktop Lyrics] All IPC listeners registered');
+            return true;
+          };
+
+          // Try to setup listeners immediately
+          if (!setupListeners()) {
+            // If not available, retry after a short delay
+            console.log('[Desktop Lyrics] IPC not ready, retrying in 500ms...');
+            setTimeout(() => {
+              if (!setupListeners()) {
+                console.log('[Desktop Lyrics] IPC still not ready, retrying in 1000ms...');
+                setTimeout(() => {
+                  setupListeners();
+                }, 1000);
+              }
+            }, 500);
+          }
+        }
+
+        parsedLyricsData(lyricData) {
+          if (!this.lyricContentDom || !this.lyricTextDom) {
+            return;
+          }
+
+          if (!lyricData) {
+            this.updateLyrics('该歌曲暂无歌词');
+            return;
+          }
+
+          const { lyrics, currentTime, songTips } = lyricData;
+
+          if (!lyrics || lyrics.length === 0) {
+            this.updateLyrics(songTips || '该歌曲暂无歌词');
+            return;
+          }
+
+          const currentLineIndex = this.getCurrentLineIndex(lyrics, currentTime);
+
+          if (currentLineIndex >= 0 && lyrics[currentLineIndex]) {
+            const currentLine = lyrics[currentLineIndex];
+            this.updateLyricsWithHighlight(currentLine, currentTime);
+          } else if (lyrics.length > 0) {
+            // 如果没有找到当前行，但有歌词，显示第一行
+            const firstLine = lyrics[0];
+            this.updateLyricsWithHighlight(firstLine, currentTime);
+          } else {
+            this.updateLyrics('该歌曲暂无歌词');
+          }
+        }
+
+        getCurrentLineIndex(lyrics, currentTime) {
+          if (!lyrics || lyrics.length === 0 || currentTime === undefined) return -1;
+
+          // 确保时间是毫秒格式
+          const currentTimeMs = currentTime;
+
+          // 先尝试找到时间范围内的行
+          for (let i = 0; i < lyrics.length; i++) {
+            const line = lyrics[i];
+            if (!line?.characters?.length) continue;
+
+            const lineStartTime = line.characters[0].startTime;
+            const lineEndTime = line.characters[line.characters.length - 1].endTime;
+
+            if (currentTimeMs >= lineStartTime && currentTimeMs <= lineEndTime) {
+              return i;
+            }
+          }
+
+          // 如果没有找到精确匹配，找最接近的行
+          let closestLineIndex = -1;
+          let minDistance = Infinity;
+
+          for (let i = 0; i < lyrics.length; i++) {
+            const line = lyrics[i];
+            if (!line?.characters?.length) continue;
+
+            const lineStartTime = line.characters[0].startTime;
+            const distance = Math.abs(currentTimeMs - lineStartTime);
+
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestLineIndex = i;
+            }
+          }
+
+          return closestLineIndex;
+        }
+
+        formatLyricsLineText(line) {
+          if (!line || !line.characters || !line.characters.length) return '';
+          return line.characters.map(char => char.char).join('');
+        }
+
+        setupWindowDragListeners() {
+          document.addEventListener('mousedown', this.startDrag.bind(this));
+          document.addEventListener('mousemove', this.dragWindow.bind(this));
+          document.addEventListener('mouseup', this.endDrag.bind(this));
+        }
+
+        async startDrag(event) {
+          if (document.body.classList.contains('lock-lyric')) return;
+
+          this.isDragging = true;
+          const { screenX, screenY } = event;
+
+          if (window.electron?.ipcRenderer) {
+            const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+            this.startX = screenX;
+            this.startY = screenY;
+            this.startWinX = bounds.x;
+            this.startWinY = bounds.y;
+            this.winWidth = bounds.width;
+            this.winHeight = bounds.height;
+          }
+        }
+
+        async dragWindow(event) {
+          if (!this.isDragging || document.body.classList.contains('lock-lyric')) return;
+
+          const { screenX, screenY } = event;
+          let newWinX = this.startWinX + (screenX - this.startX);
+          let newWinY = this.startWinY + (screenY - this.startY);
+
+          if (window.electron?.ipcRenderer) {
+            const { width: screenWidth, height: screenHeight } =
+              await window.electron.ipcRenderer.invoke('get-screen-size');
+
+            newWinX = Math.max(0, Math.min(screenWidth - this.winWidth, newWinX));
+            newWinY = Math.max(0, Math.min(screenHeight - this.winHeight, newWinY));
+
+            window.electron.ipcRenderer.send(
+              'move-window',
+              newWinX,
+              newWinY,
+              this.winWidth,
+              this.winHeight,
+            );
+          }
+        }
+
+        async endDrag() {
+          this.isDragging = false;
+
+          // 保存窗口位置
+          if (window.electron?.ipcRenderer) {
+            try {
+              const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+              const settings = this.getStoredSettings();
+              settings.windowPosition = {
+                x: bounds.x,
+                y: bounds.y,
+              };
+              this.saveSettings(settings);
+            } catch (error) {
+              console.warn('[Desktop Lyrics] Failed to save window position:', error);
+            }
+          }
+        }
+
+        updateWindowHeight() {
+          const bodyHeight = document.body.scrollHeight;
+          window.electron?.ipcRenderer?.send('update-window-height', bodyHeight);
+        }
+
+        setupMutationObserver() {
+          const observer = new MutationObserver(this.updateWindowHeight.bind(this));
+          observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+          this.updateWindowHeight();
         }
       }
 
-      updateWindowHeight() {
-        const bodyHeight = document.body.scrollHeight;
-        window.electron?.ipcRenderer?.send("update-window-height", bodyHeight);
-      }
-
-      setupMutationObserver() {
-        const observer = new MutationObserver(this.updateWindowHeight.bind(this));
-        observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-        this.updateWindowHeight();
-      }
-    }
-
-    new LyricsWindow();
-  </script>
-</body>
-
+      new LyricsWindow();
+    </script>
+  </body>
 </html>

@@ -80,8 +80,8 @@
                 size="small"
               >
                 <template #icon>
-                  <NIcon :size="18">
-                    <VideocamRound />
+                  <NIcon :size="20">
+                    <VideocamOutlined />
                   </NIcon>
                 </template>
               </NButton>
@@ -466,7 +466,7 @@ import {
   SpeedRound,
   HighQualityRound,
   MusicVideoRound,
-  VideocamRound,
+  VideocamOutlined,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
