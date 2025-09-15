@@ -236,7 +236,7 @@
             >
               <template #icon>
                 <NIcon :size="20">
-                  <HighQualityRound />
+                  <HighQualityOutlined />
                 </NIcon>
               </template>
             </NButton>
@@ -465,7 +465,7 @@ import {
   PauseRound,
   PlayArrowRound,
   SpeedRound,
-  HighQualityRound,
+  HighQualityOutlined,
   MusicVideoRound,
   VideocamOutlined,
 } from '@vicons/material';
