@@ -7,7 +7,8 @@ import { spawn, ChildProcess } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isDev = process.env.NODE_ENV !== 'production';
+// 使用更可靠的方法检测生产环境：检查是否是打包后的应用
+const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 
 let serverProcess: ChildProcess | null = null;
 
@@ -44,13 +45,15 @@ function createLyricsWindow() {
       backgroundThrottling: false,
       zoomFactor: 1.0,
       sandbox: false,
+      webSecurity: false, // 允许加载本地文件
+      allowRunningInsecureContent: true, // 允许运行不安全内容
     },
   });
 
   // 加载歌词窗口页面
   const lyricsUrl = isDev
     ? 'http://localhost:3000/desktop-lyrics.html'
-    : `file://${path.join(__dirname, '../dist/public/desktop-lyrics.html')}`;
+    : `file://${path.join(__dirname, '../dist/desktop-lyrics.html')}`;
 
   lyricsWindow.loadURL(lyricsUrl);
 
@@ -87,8 +90,45 @@ function startServer() {
 
   // 生产环境 - 启动打包后的服务器
   try {
-    const serverPath = path.join(__dirname, '../server/bin/api_js/app.js');
-    console.log('启动服务器:', serverPath);
+    console.log('=== 服务器启动调试信息 ===');
+    console.log('app.isPackaged:', app.isPackaged);
+    console.log('process.resourcesPath:', process.resourcesPath);
+    console.log('__dirname:', __dirname);
+
+    // 在打包后的应用中，服务器文件位于 extraResources 中
+    const serverPath = path.join(process.resourcesPath, 'server', 'bin', 'api_js', 'app.js');
+
+    console.log('计算的服务器路径:', serverPath);
+    console.log('文件是否存在:', require('fs').existsSync(serverPath));
+
+    // 列出 resourcesPath 目录内容
+    console.log('Resources 目录内容:');
+    try {
+      const resourcesContent = require('fs').readdirSync(process.resourcesPath);
+      console.log(resourcesContent);
+
+      // 检查是否有 server 目录
+      const serverDir = path.join(process.resourcesPath, 'server');
+      if (require('fs').existsSync(serverDir)) {
+        console.log('Server 目录内容:');
+        console.log(require('fs').readdirSync(serverDir));
+
+        const binDir = path.join(serverDir, 'bin');
+        if (require('fs').existsSync(binDir)) {
+          console.log('Bin 目录内容:');
+          console.log(require('fs').readdirSync(binDir));
+        }
+      }
+    } catch (error) {
+      console.error('读取目录失败:', error);
+    }
+
+    if (!require('fs').existsSync(serverPath)) {
+      console.error('服务器文件不存在，无法启动服务器');
+      return;
+    }
+
+    console.log('启动服务器命令: node', serverPath);
 
     serverProcess = spawn('node', [serverPath], {
       stdio: 'inherit',
@@ -103,13 +143,15 @@ function startServer() {
       console.log(`服务器进程退出，代码: ${code}`);
       serverProcess = null;
     });
+
+    console.log('服务器进程已启动，PID:', serverProcess.pid);
   } catch (error) {
     console.error('启动服务器时出错:', error);
   }
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions = {
     minWidth: 1000,
     width: 1000,
     minHeight: 700,
@@ -117,13 +159,17 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
+      webSecurity: false, // 允许加载本地文件
+      allowRunningInsecureContent: true, // 允许运行不安全内容
     },
     show: false,
     // remove the default titlebar
     titleBarStyle: 'hidden',
     // expose window controls in Windows/Linux
     ...(process.platform !== 'darwin' ? { titleBarOverlay: true } : {}),
-  });
+  } as any;
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   const startUrl = isDev
     ? 'http://localhost:3000'
@@ -247,7 +293,6 @@ app.whenReady().then(async () => {
     }
   });
 
-
   // IPC 处理程序 - 播放状态变化
   ipcMain.on('play-status-change', (event, status) => {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
@@ -336,7 +381,6 @@ app.whenReady().then(async () => {
       lyricsWindow.setBounds({ ...bounds, height: Math.max(100, height + 20) });
     }
   });
-
 
   // IPC 处理程序 - 移动窗口
   ipcMain.on('move-window', (_event, x: number, y: number, width: number, height: number) => {

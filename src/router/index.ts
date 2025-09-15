@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHashHistory } from 'vue-router';
 import { useUserStore } from '@/store';
 
 import Layout from '@/layout/Layout.vue';
@@ -16,7 +16,7 @@ import Singer from '@/views/Singer.vue';
 import Error from '@/views/Error.vue';
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHashHistory(),
   routes: [
     {
       path: '/',

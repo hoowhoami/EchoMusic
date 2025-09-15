@@ -1,26 +1,28 @@
 {
   "type": "module",
-  "name": "mixmusic",
+  "name": "echomusic",
   "version": "1.0.0",
   "main": "electron/main.ts",
-  "homepage": "./",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
     "electron": "cross-env NODE_ENV=development electronmon .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && npm run electron\"",
-    "electron:build": "npm run build && electron:builder",
-    "dist": "npm run build && electron:builder --publish=never",
+    "electron:build": "npm run build && npx electron-builder",
+    "dist": "npm run build && npx electron-builder --publish=never",
     "install:all": "npm install && cd server && pnpm install",
     "install:server": "cd server && pnpm install",
     "server:dev": "cd server && pnpm run dev",
     "server:start": "cd server && pnpm start",
     "server:build": "cd server && pnpm run pkgjs",
-    "server:pkg": "cd server && pnpm run pkgmacos",
+    "server:pkg:all": "cd server && pnpm run pkg:all",
+    "server:pkg:win": "cd server && pnpm run pkgwin",
+    "server:pkg:linux": "cd server && pnpm run pkglinux",
+    "server:pkg:macos": "cd server && pnpm run pkgmacos",
     "dev:all": "concurrently \"npm run server:dev\" \"npm run dev\" \"wait-on http://localhost:3000 http://localhost:10086 && npm run electron\"",
     "build:all": "npm run build && npm run server:build",
-    "dist:all": "npm run build:all && electron:builder --publish=never",
+    "dist:all": "npm run build:all && cross-env NODE_ENV=production npx electron-builder --publish=never",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
   },
@@ -80,18 +82,30 @@
     "vue-router": "^4.5.1"
   },
   "build": {
-    "appId": "com.mixmusic.app",
-    "productName": "MixMusic",
+    "appId": "com.echomusic.app",
+    "productName": "EchoMusic",
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "server/bin/**/*"
+      "app/icons/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/assets",
+        "to": "assets"
+      },
+      {
+        "from": "server/bin",
+        "to": "server/bin"
+      }
     ],
     "mac": {
+      "icon": "app/icons/icon.icns",
       "category": "public.app-category.music",
+      "identity": null,
       "target": [
         {
           "target": "dmg",
@@ -103,6 +117,7 @@
       ]
     },
     "win": {
+      "icon": "app/icons/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -113,6 +128,7 @@
       ]
     },
     "linux": {
+      "icon": "app/icons/icon.png",
       "target": [
         {
           "target": "AppImage",
