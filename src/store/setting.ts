@@ -21,6 +21,7 @@ interface Setting {
   backupQuality: AudioQuality;
   // 实验功能
   unblock: boolean;
+  enabledMV: boolean;
   keepAlive: boolean;
   autoSign: boolean;
   autoReceiveVip: boolean;
@@ -49,6 +50,7 @@ export const useSettingStore = defineStore('setting', {
 
     keepAlive: false,
     unblock: false,
+    enabledMV: false,
     autoSign: false,
     autoReceiveVip: false,
   }),

@@ -74,6 +74,7 @@
 
               <!-- MV按钮 -->
               <NButton
+                v-if="settingStore.enabledMV"
                 :focusable="false"
                 ghost
                 text

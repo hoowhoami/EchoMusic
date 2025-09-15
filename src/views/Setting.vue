@@ -379,6 +379,29 @@
               :depth="1"
               class="setting-title"
             >
+              歌曲MV
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              获取播放歌曲的MV
+            </NText>
+          </div>
+          <NSwitch
+            v-model:value="settingStore.enabledMV"
+            disabled
+          />
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
               解灰功能
             </NText>
             <NText

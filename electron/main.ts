@@ -297,8 +297,8 @@ app.whenReady().then(async () => {
     // 返回默认选项，可以从配置文件读取
     return {
       fontSize: 30,
-      mainColor: '#fff',
-      shadowColor: 'rgba(0, 0, 0, 0.5)',
+      mainColor: '#333333', // 改为深色文字，适合浅色背景
+      shadowColor: 'rgba(255, 255, 255, 0.8)', // 白色阴影适合浅色背景
     };
   });
 
