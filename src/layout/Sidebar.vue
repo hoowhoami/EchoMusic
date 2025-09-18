@@ -166,7 +166,6 @@ const menuOptions = computed<MenuOption[] | MenuGroupOption[]>(() => {
           key: 'Cloud',
           link: 'cloud',
           label: '云盘',
-          disabled: true,
           icon: renderIcon(CloudOutline),
         },
       ],

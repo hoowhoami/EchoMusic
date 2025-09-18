@@ -53,7 +53,7 @@ interface Props {
   // 数据相关
   songs: Song[];
 
-  type: 'playlist' | 'album' | 'singer' | 'history';
+  type: 'playlist' | 'album' | 'singer' | 'history' | 'cloud';
   instance?: Playlist | Album | Singer;
 
   // 配置相关

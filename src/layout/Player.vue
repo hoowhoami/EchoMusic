@@ -318,7 +318,6 @@
     >
       <NDrawerContent
         :native-scrollbar="false"
-        :title="`播放列表 (${playerStore.playlist.length})`"
         :closable="false"
         @close="playlistShow = false"
       >

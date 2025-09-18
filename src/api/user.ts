@@ -117,3 +117,12 @@ export const getUserPlayHistory = (bp?: number) => {
 export const uploadPlayHistory = (mxid: number) => {
   return api.get('/playhistory/upload', { mxid });
 };
+
+// 获取用户云盘
+// 说明：登录后调用此接口可以获取用户上传到云盘的音乐（需要登录）
+// 可选参数
+// page : 页数
+// pagesize : 每页页数, 默认为 30
+export const getUserCloud = (page?: number, pagesize: number = 30) => {
+  return api.get('/user/cloud', { page, pagesize });
+};
