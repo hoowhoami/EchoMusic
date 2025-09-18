@@ -153,6 +153,7 @@ export type Song = {
     avatar: string;
     type: number;
   }>;
+  source: 'cloud' | undefined;
 };
 
 // Album

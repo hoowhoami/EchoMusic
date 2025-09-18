@@ -57,6 +57,10 @@
             <!-- 更多操作 -->
 
             <div class="flex items-center space-x-2">
+              <!-- 云盘标识 -->
+              <NIcon :size="16">
+                <CloudOutlined />
+              </NIcon>
               <!-- 歌词按钮 -->
               <NButton
                 :focusable="false"
@@ -227,12 +231,14 @@
           v-model:value="playerStore.audioQuality"
           @update:value="handleQualitySelect"
           scrollable
+          :disabled="playerStore.current?.source === 'cloud'"
         >
           <div class="menu-icon">
             <NButton
               :focusable="false"
               ghost
               text
+              :disabled="playerStore.current?.source === 'cloud'"
             >
               <template #icon>
                 <NIcon :size="20">
@@ -467,6 +473,7 @@ import {
   HighQualityOutlined,
   MusicVideoRound,
   VideocamOutlined,
+  CloudOutlined,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';

@@ -3,6 +3,7 @@ import { Howl, Howler } from 'howler';
 import { cloneDeep } from 'lodash-es';
 import { usePlayerStore, useSettingStore } from '@/store';
 import {
+  getCloudSongUrl,
   getSongClimax,
   getSongPrivilege,
   getSongUrl,
@@ -148,15 +149,27 @@ class Player {
 
   /**
    * 获取在线播放链接（支持音质降级）
-   * @param id 歌曲id
+   * @param song 歌曲
    * @returns 播放链接
    */
-  private async getOnlineUrl(id: string): Promise<string | null> {
+  private async getOnlineUrl(song: Song): Promise<string | null> {
+    if (song.source === 'cloud') {
+      try {
+        const res = await getCloudSongUrl(song.hash);
+        if (res.url) {
+          return res.url;
+        }
+      } catch (error) {
+        console.error('❌ 获取云盘歌曲URL失败:', error);
+      }
+      return null;
+    }
+
     const playerStore = usePlayerStore();
     const settingStore = useSettingStore();
 
     // 获取音乐详情
-    const privilege = await getSongPrivilege(id);
+    const privilege = await getSongPrivilege(song.hash);
     const qualities = privilege?.[0].relate_goods;
 
     // 音质列表（首选音质 + 备选音质）
@@ -171,7 +184,7 @@ class Player {
       try {
         console.log(`🎵 尝试获取音质/音效: ${quality}`);
         const effect = !!MUSIC_EFFECT_OPTIONS.filter(item => item.value === quality);
-        let hash = id;
+        let hash = song.hash;
         if (!effect) {
           // 获取音质对应的歌曲hash
           hash = qualities.find((item: { quality: string }) => item.quality === quality)?.hash;
@@ -204,7 +217,7 @@ class Player {
     if (settingStore.compatibilityMode) {
       console.log('🔄 所有音质/音效获取失败，尝试兼容模式');
       try {
-        const res = await getSongUrl(id);
+        const res = await getSongUrl(song.hash);
         if (res.status === 1 && res.url && res.url[0]) {
           console.log('🎵 兼容模式获取成功');
           window.$message.warning('该歌曲使用兼容模式播放');
@@ -561,7 +574,7 @@ class Player {
       if (hash && playerStore.playlist.length) {
         // 歌曲信息
         console.log('歌曲信息', playSongData.name, 'hash', hash);
-        const url = await this.getOnlineUrl(hash);
+        const url = await this.getOnlineUrl(playSongData);
         // 正常播放地址
         if (url) {
           // 获取歌曲高潮部分

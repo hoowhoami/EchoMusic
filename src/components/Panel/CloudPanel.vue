@@ -45,19 +45,6 @@
         </div>
       </template>
       <div class="flex flex-col justify-between space-y-2">
-        <div
-          v-if="tags"
-          class="tags flex items-center space-x-2"
-        >
-          <NTag
-            v-for="tag in tags"
-            :key="tag"
-            size="small"
-            round
-          >
-            {{ tag }}
-          </NTag>
-        </div>
         <div class="count flex items-center space-x-2">
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
@@ -73,20 +60,29 @@
         </div>
       </div>
       <template #footer>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 12px"
-        >
-          人生总是聚少离多，我至今仍然无法习惯。
-        </NEllipsis>
+        <div class="flex flex-col space-y-1">
+          <NProgress
+            :color="{ stops: ['gray', 'red'] }"
+            :percentage="percentage"
+          >
+            <div style="font-size: 12px">
+              <NText :depth="3"> {{ percentage }}% </NText>
+            </div>
+          </NProgress>
+          <div style="font-size: 12px">
+            <NText :depth="3">
+              {{ usedSize }} / {{ capacitySize }} [可用 {{ availableSize }}]
+            </NText>
+          </div>
+        </div>
       </template>
     </NThing>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { getCover } from '@/utils';
-import { NEllipsis, NIcon, NImage, NThing } from 'naive-ui';
+import { formatBytes, getCover } from '@/utils';
+import { NEllipsis, NIcon, NImage, NProgress, NText, NThing } from 'naive-ui';
 import { computed } from 'vue';
 import { MusicNoteFilled } from '@vicons/material';
 import { useUserStore } from '@/store';
@@ -97,6 +93,8 @@ defineOptions({
 
 const props = defineProps<{
   count: number;
+  capacity: number;
+  available: number;
 }>();
 
 const userStore = useUserStore();
@@ -107,7 +105,21 @@ const avatar = computed(() => getCover(userStore.pic || '', 50));
 
 const creator = computed(() => userStore.nickname || 'unknown');
 
-const tags = computed(() => ['默认']);
+const percentage = computed(() => {
+  return Number((((props.capacity - props.available) / props.capacity) * 100).toFixed(2));
+});
+
+const usedSize = computed(() => {
+  return formatBytes(props.capacity - props.available);
+});
+
+const capacitySize = computed(() => {
+  return formatBytes(props.capacity);
+});
+
+const availableSize = computed(() => {
+  return formatBytes(props.available);
+});
 </script>
 
 <style lang="scss" scoped>

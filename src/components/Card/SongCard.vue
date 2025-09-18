@@ -64,7 +64,7 @@
     </div>
 
     <div class="flex items-center justify-between w-full">
-      <div class="song-info flex items-center space-x-4">
+      <div class="song-info flex items-center space-x-2">
         <div class="flex flex-col space-y-1">
           <NEllipsis :line-clamp="1">
             <div
@@ -102,6 +102,11 @@
               </div>
             </NTag>
           </div>
+          <div v-if="cloud">
+            <NIcon :size="14">
+              <CloudOutlined />
+            </NIcon>
+          </div>
         </div>
       </div>
 
@@ -135,7 +140,7 @@ import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
 import { NEllipsis, NImage, NIcon, useThemeVars, NText, NTag } from 'naive-ui';
 import { computed, ref } from 'vue';
-import { PlayArrowRound } from '@vicons/material';
+import { CloudOutlined, PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
 import player from '@/utils/player';
 
@@ -203,6 +208,10 @@ const quality = computed(() => {
     }
   }
   return '';
+});
+
+const cloud = computed(() => {
+  return props.song.source === 'cloud';
 });
 
 const album = computed(() => {

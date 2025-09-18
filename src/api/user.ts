@@ -126,3 +126,15 @@ export const uploadPlayHistory = (mxid: number) => {
 export const getUserCloud = (page?: number, pagesize: number = 30) => {
   return api.get('/user/cloud', { page, pagesize });
 };
+
+// 获取用户云盘音乐 URL
+// 说明：登录后调用此接口可以获取用户上传到云盘的音乐 URL，部分可以直接用 /song/url 直接获取 URL（需要登录，目前获取到的文件大小都约为 10M 左右）
+// 必选参数：
+// hash: 音乐 hash
+// 可选参数：
+// album_id: 专辑 id
+// name: 云盘音乐名称
+// album_audio_id：专辑音频 id
+export const getCloudSongUrl = (hash: string) => {
+  return api.get('/user/cloud/url', { hash });
+};
