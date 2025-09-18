@@ -172,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   NAvatar,
   NButton,
@@ -235,6 +235,51 @@ const searchSuggest = ref<
     },
   ]
 >();
+
+// 搜索词轮换相关
+const placeholderTimer = ref<NodeJS.Timeout | null>(null);
+const currentPlaceholderIndex = ref(0);
+
+// 默认搜索词
+const predefinedKeywords = ref(['流行', '摇滚', '电音', '爵士', '古典']);
+
+// 开始搜索词轮换
+const startPlaceholderRotation = () => {
+  if (placeholderTimer.value) {
+    clearInterval(placeholderTimer.value);
+  }
+
+  placeholderTimer.value = setInterval(() => {
+    // 只有在搜索框没有内容时才轮换
+    if (!searchKeyword.value) {
+      currentPlaceholderIndex.value =
+        (currentPlaceholderIndex.value + 1) % predefinedKeywords.value.length;
+      searchDefault.value = predefinedKeywords.value[currentPlaceholderIndex.value];
+    }
+  }, 30000); // 30秒轮换一次
+};
+
+// 停止搜索词轮换
+const stopPlaceholderRotation = () => {
+  if (placeholderTimer.value) {
+    clearInterval(placeholderTimer.value);
+    placeholderTimer.value = null;
+  }
+};
+
+// 重置搜索词轮换
+const resetPlaceholderRotation = () => {
+  if (!searchKeyword.value) {
+    // 从服务器获取的关键词优先，如果没有则使用预设关键词
+    const keywords =
+      searchDefaultKeywords.value.length > 0
+        ? searchDefaultKeywords.value
+        : predefinedKeywords.value;
+    currentPlaceholderIndex.value = 0;
+    searchDefault.value = keywords[0];
+    startPlaceholderRotation();
+  }
+};
 
 const generateIndexColor = () => {
   const colors = [];
@@ -326,12 +371,29 @@ const logout = () => {
 };
 
 const getDefaultSearchKeyword = async () => {
-  getSearchDefault().then(res => {
-    searchDefaultKeywords.value =
-      res.fallback?.map((item: { main_title: string }) => item.main_title) ||
-      searchDefaultKeywords.value;
-    searchDefault.value = searchDefaultKeywords.value[0];
-  });
+  try {
+    const res = await getSearchDefault();
+    const serverKeywords =
+      res.fallback?.map((item: { main_title: string }) => item.main_title) || [];
+
+    if (serverKeywords.length > 0) {
+      searchDefaultKeywords.value = serverKeywords;
+      // 合并服务器关键词和预设关键词，服务器关键词优先
+      const combinedKeywords = [...serverKeywords, ...predefinedKeywords.value];
+      // 更新预设关键词数组为合并后的数组，最多30个
+      predefinedKeywords.value = combinedKeywords.slice(0, 30);
+    }
+
+    // 设置初始搜索词并开始轮换
+    currentPlaceholderIndex.value = 0;
+    searchDefault.value = predefinedKeywords.value[0];
+    startPlaceholderRotation();
+  } catch (error) {
+    console.error('获取默认搜索词失败:', error);
+    // 失败时使用预设关键词
+    searchDefault.value = predefinedKeywords.value[0];
+    startPlaceholderRotation();
+  }
 };
 
 // 先定义防抖后的函数
@@ -383,8 +445,11 @@ watch(
   () => searchKeyword.value,
   async newValue => {
     if (!newValue) {
-      await getDefaultSearchKeyword();
+      // 搜索框为空时，恢复轮换定时器
+      resetPlaceholderRotation();
     } else {
+      // 搜索框有内容时，停止轮换定时器
+      stopPlaceholderRotation();
       // 获取搜索建议 需要防抖
       await getSearchSuggestResult();
     }
@@ -393,6 +458,11 @@ watch(
 
 onMounted(async () => {
   await getDefaultSearchKeyword();
+});
+
+onUnmounted(() => {
+  // 清理定时器，防止内存泄漏
+  stopPlaceholderRotation();
 });
 </script>
 

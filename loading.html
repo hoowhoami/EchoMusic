@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoMusic - 启动中</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            overflow: hidden;
+        }
+
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            opacity: 0;
+            animation: fadeInDown 0.8s ease-out 0.2s forwards;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto 30px;
+            opacity: 0;
+            animation: spin 1s ease-in-out infinite, fadeIn 0.8s ease-out 0.4s forwards;
+        }
+
+        .loading-text {
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 10px;
+            opacity: 0;
+            animation: fadeInUp 0.8s ease-out 0.6s forwards;
+        }
+
+        .loading-status {
+            font-size: 14px;
+            opacity: 0.8;
+            color: rgba(255, 255, 255, 0.9);
+            opacity: 0;
+            animation: fadeInUp 0.8s ease-out 0.8s forwards;
+        }
+
+        .progress-bar {
+            width: 300px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            margin: 20px auto;
+            overflow: hidden;
+            opacity: 0;
+            animation: fadeIn 0.8s ease-out 1s forwards;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ffffff, #f0f0f0);
+            border-radius: 2px;
+            width: 0%;
+            transition: width 0.5s ease;
+            animation: progressAnimation 3s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes progressAnimation {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 0%; }
+        }
+
+        .music-notes {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .note {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.1);
+            font-size: 20px;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        .note:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .note:nth-child(2) { left: 20%; animation-delay: 1s; }
+        .note:nth-child(3) { left: 30%; animation-delay: 2s; }
+        .note:nth-child(4) { left: 40%; animation-delay: 3s; }
+        .note:nth-child(5) { left: 50%; animation-delay: 4s; }
+        .note:nth-child(6) { left: 60%; animation-delay: 5s; }
+        .note:nth-child(7) { left: 70%; animation-delay: 0.5s; }
+        .note:nth-child(8) { left: 80%; animation-delay: 1.5s; }
+        .note:nth-child(9) { left: 90%; animation-delay: 2.5s; }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10%, 90% {
+                opacity: 1;
+            }
+            50% {
+                transform: translateY(-100px) rotate(180deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="music-notes">
+        <div class="note">♪</div>
+        <div class="note">♫</div>
+        <div class="note">♪</div>
+        <div class="note">♫</div>
+        <div class="note">♪</div>
+        <div class="note">♫</div>
+        <div class="note">♪</div>
+        <div class="note">♫</div>
+        <div class="note">♪</div>
+    </div>
+
+    <div class="loading-container">
+        <div class="logo">🎵 EchoMusic</div>
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在启动音乐服务...</div>
+        <div class="loading-status" id="status">初始化中</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress"></div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        const statusElement = document.getElementById('status');
+        const progressElement = document.getElementById('progress');
+
+        let currentStep = 0;
+        const steps = [
+            '初始化应用...',
+            '启动音乐服务...',
+            '检查服务状态...',
+            '准备就绪!'
+        ];
+
+        function updateStatus(step, progress = 0) {
+            if (statusElement) {
+                statusElement.textContent = steps[step] || '加载中...';
+            }
+            if (progressElement) {
+                progressElement.style.width = progress + '%';
+            }
+        }
+
+        // 监听来自主进程的状态更新
+        ipcRenderer.on('loading-progress', (event, data) => {
+            updateStatus(data.step, data.progress);
+        });
+
+        ipcRenderer.on('server-ready', () => {
+            updateStatus(3, 100);
+            setTimeout(() => {
+                // 通知主进程可以显示主窗口了
+                ipcRenderer.send('loading-complete');
+            }, 1000);
+        });
+
+        // 初始状态
+        updateStatus(0, 10);
+    </script>
+</body>
+</html>

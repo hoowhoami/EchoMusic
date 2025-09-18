@@ -21,7 +21,7 @@
     "server:pkg:linux": "cd server && pnpm run pkglinux",
     "server:pkg:macos": "cd server && pnpm run pkgmacos",
     "dev:all": "concurrently \"npm run server:dev\" \"npm run dev\" \"wait-on http://localhost:3000 http://localhost:10086 && npm run electron\"",
-    "build:all": "npm run build && npm run server:build",
+    "build:all": "npm run build && npm run server:pkg:macos",
     "dist:all": "npm run build:all && cross-env NODE_ENV=production npx electron-builder --publish=never",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
@@ -90,7 +90,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "app/icons/**/*"
+      "app/icons/**/*",
+      "loading.html"
     ],
     "extraResources": [
       {
@@ -98,12 +99,15 @@
         "to": "assets"
       },
       {
-        "from": "server/bin",
-        "to": "server/bin"
+        "from": "server/bin/app_macos",
+        "to": "server/bin/app_macos"
+      },
+      {
+        "from": "server/.env",
+        "to": "server/.env"
       }
     ],
     "mac": {
-      "icon": "app/icons/icon.icns",
       "category": "public.app-category.music",
       "identity": null,
       "target": [
@@ -117,7 +121,6 @@
       ]
     },
     "win": {
-      "icon": "app/icons/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -128,7 +131,6 @@
       ]
     },
     "linux": {
-      "icon": "app/icons/icon.png",
       "target": [
         {
           "target": "AppImage",
