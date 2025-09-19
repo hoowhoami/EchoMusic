@@ -1,5 +1,5 @@
 <template>
-  <div class="album flex flex-col space-y-4">
+  <div ref="pageRef" class="album flex flex-col space-y-4">
     <div class="info">
       <AlbumPanel
         :album="albumInfo"
@@ -7,6 +7,7 @@
       />
     </div>
     <SongListContainer
+      ref="songListContainerRef"
       type="album"
       virtual-scroll
       :max-height="maxHeight"
@@ -16,7 +17,8 @@
       :is-liked="isLikedAlbum"
       :show-like="userStore.isAuthenticated"
       @like="handleAlbumLike"
-      v-model:list-scrolling="listScrolling"
+      v-model:leave-top="leaveTop"
+      v-model:scrolling="isScrolling"
     />
   </div>
 </template>
@@ -29,6 +31,7 @@ import AlbumPanel from '@/components/Panel/AlbumPanel.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore, useUserStore } from '@/store';
+import { useWheelScroll } from '@/hooks';
 
 defineOptions({
   name: 'Album',
@@ -37,10 +40,21 @@ defineOptions({
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
-const listScrolling = ref(false);
+const leaveTop = ref(false);
+const songListContainerRef = ref();
+const pageRef = ref();
+
+const { isScrolling } = useWheelScroll({
+  direction: 'both',
+  containerRef: () => pageRef.value,
+  excludeSelector: '.n-data-table',
+  onScroll: (deltaY) => {
+    songListContainerRef.value?.songListRef?.scrollBy(deltaY);
+  },
+});
 
 const size = computed(() => {
-  return listScrolling.value ? 'small' : undefined;
+  return leaveTop.value ? 'small' : undefined;
 });
 
 // 延迟更新的高度，避免动画期间滚动条闪烁

@@ -33,7 +33,8 @@
         v-model:checked-songs="checkedSongs"
         @song-removed="handleSongRemoved"
         @scroll="handleScroll"
-        v-model:list-scrolling="listScrolling"
+        v-model:leave-top="leaveTop"
+        v-model:scrolling="scrolling"
       />
     </div>
   </div>
@@ -91,7 +92,8 @@ const props = withDefaults(defineProps<Props>(), {
   showBatch: true,
 });
 
-const listScrolling = defineModel<boolean>('listScrolling', { default: false });
+const leaveTop = defineModel<boolean>('leaveTop', { default: false });
+const scrolling = defineModel<boolean>('scrolling', { default: false });
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -187,6 +189,7 @@ const handleScrollToCurrent = () => {
 defineExpose({
   scrollToCurrent: handleScrollToCurrent,
   resetBatchMode,
+  songListRef,
 });
 </script>
 

@@ -1,5 +1,8 @@
 <template>
-  <div class="cloud flex flex-col space-y-4">
+  <div
+    ref="pageRef"
+    class="cloud flex flex-col space-y-4"
+  >
     <div class="info">
       <CloudPanel
         :size="size"
@@ -9,12 +12,14 @@
       />
     </div>
     <SongListContainer
+      ref="songListContainerRef"
       virtual-scroll
       :max-height="maxHeight"
       type="cloud"
       :songs="songs"
       :loading="loading"
-      v-model:list-scrolling="listScrolling"
+      v-model:leave-top="leaveTop"
+      v-model:scrolling="isScrolling"
     />
   </div>
 </template>
@@ -27,6 +32,7 @@ import { useSettingStore } from '@/store';
 import { Song } from '@/types';
 import { isArray } from 'lodash-es';
 import { computed, onMounted, ref, watch } from 'vue';
+import { useWheelScroll } from '@/hooks';
 
 defineOptions({
   name: 'Cloud',
@@ -34,10 +40,21 @@ defineOptions({
 
 const settingStore = useSettingStore();
 
-const listScrolling = ref(false);
+const leaveTop = ref(false);
+const songListContainerRef = ref();
+const pageRef = ref();
+
+const { isScrolling } = useWheelScroll({
+  direction: 'both',
+  containerRef: () => pageRef.value,
+  excludeSelector: '.n-data-table',
+  onScroll: deltaY => {
+    songListContainerRef.value?.songListRef?.scrollBy(deltaY);
+  },
+});
 
 const size = computed(() => {
-  return listScrolling.value ? 'small' : undefined;
+  return leaveTop.value ? 'small' : undefined;
 });
 
 // 延迟更新的高度，避免动画期间滚动条闪烁
@@ -106,10 +123,6 @@ const getUserCloudInfo = async () => {
           };
         })
       : [];
-    for (let i = 0; i < 10; i++) {
-      songs.value.push(...songs.value);
-    }
-    console.log(res);
   } catch (error) {
     console.log('获取云盘数据失败', error);
   } finally {

@@ -15,6 +15,9 @@
       v-model:checked-row-keys="checkedRowKeys"
       :row-props="rowProps"
       @scroll="handleScroll"
+      :scrollbar-props="{
+        trigger: scrolling ? 'none' : 'hover',
+      }"
     />
 
     <!-- 右键菜单 -->
@@ -23,7 +26,7 @@
       :x="contextMenu.x"
       :y="contextMenu.y"
       :song="contextMenu.song!"
-      :playlist="playlist"
+      :playlist="props.playlist"
       @close="closeContextMenu"
       @song-played="handleSongPlayed"
       @song-removed="(song?: Song) => emit('song-removed', song)"
@@ -61,7 +64,8 @@ const props = defineProps<{
   playlist?: Playlist;
 }>();
 
-const listScrolling = defineModel<boolean>('listScrolling', { default: false });
+const leaveTop = defineModel<boolean>('leaveTop', { default: false });
+const scrolling = defineModel<boolean>('scrolling', { default: false });
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -110,10 +114,16 @@ const handleSongPlayed = (song?: Song) => {
   player.playSong(song);
 };
 
+const currentScrollTop = ref(0);
+
 // 处理列表滚动
 const handleScroll = (e: Event) => {
   const scrollTop = (e.target as HTMLElement).scrollTop;
-  listScrolling.value = scrollTop > 10;
+  leaveTop.value = scrollTop > 10;
+
+  // 同步外部滚动的 currentScrollTop
+  currentScrollTop.value = scrollTop;
+
   emit('scroll', e);
 };
 
@@ -266,9 +276,31 @@ const scrollToCurrent = () => {
   return false;
 };
 
+// 手动滚动方法
+const scrollBy = (deltaY: number) => {
+  if (!dataTableRef.value?.scrollTo || !songs.value?.length) return;
+
+  const sensitivity = 1; // 滚动灵敏度
+  const scrollAmount = deltaY * sensitivity;
+
+  // 累加滚动位置
+  currentScrollTop.value = Math.max(0, currentScrollTop.value + scrollAmount);
+
+  // 使用 NDataTable 的 scrollTo 方法滚动到指定位置
+  dataTableRef.value.scrollTo({
+    top: currentScrollTop.value,
+    behavior: 'auto', // 使用 auto 获得更好的性能
+  });
+};
+
+// 获取当前滚动位置
+const getCurrentScrollTop = () => currentScrollTop.value;
+
 // 暴露方法给父组件
 defineExpose({
   scrollToCurrent,
+  scrollBy,
+  getCurrentScrollTop,
 });
 </script>
 

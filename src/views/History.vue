@@ -1,5 +1,5 @@
 <template>
-  <div class="history flex flex-col space-y-4">
+  <div ref="pageRef" class="history flex flex-col space-y-4">
     <div class="info">
       <PlayHistoryPanel
         :count="count"
@@ -7,12 +7,14 @@
       />
     </div>
     <SongListContainer
+      ref="songListContainerRef"
       type="history"
       virtual-scroll
       :max-height="maxHeight"
       :songs="songs"
       :loading="loading"
-      v-model:list-scrolling="listScrolling"
+      v-model:leave-top="leaveTop"
+      v-model:scrolling="isScrolling"
     />
   </div>
 </template>
@@ -26,6 +28,7 @@ import { Song } from '@/types';
 import { computed, watch } from 'vue';
 import { ref } from 'vue';
 import { onMounted } from 'vue';
+import { useWheelScroll } from '@/hooks';
 
 defineOptions({
   name: 'History',
@@ -33,10 +36,21 @@ defineOptions({
 
 const settingStore = useSettingStore();
 
-const listScrolling = ref(false);
+const leaveTop = ref(false);
+const songListContainerRef = ref();
+const pageRef = ref();
+
+const { isScrolling } = useWheelScroll({
+  direction: 'both',
+  containerRef: () => pageRef.value,
+  excludeSelector: '.n-data-table',
+  onScroll: (deltaY) => {
+    songListContainerRef.value?.songListRef?.scrollBy(deltaY);
+  },
+});
 
 const size = computed(() => {
-  return listScrolling.value ? 'small' : undefined;
+  return leaveTop.value ? 'small' : undefined;
 });
 
 // 延迟更新的高度，避免动画期间滚动条闪烁

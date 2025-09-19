@@ -1,6 +1,9 @@
 <!-- 歌单列表 -->
 <template>
-  <div class="playlist flex flex-col space-y-4">
+  <div
+    ref="pageRef"
+    class="playlist flex flex-col space-y-4"
+  >
     <div class="info">
       <PlaylistPanel
         :playlist="playlistInfo"
@@ -22,7 +25,8 @@
       @delete="handleDeletePlaylist"
       @song-removed="handleSongRemoved"
       @deleted-songs="handleDeletedSongs"
-      v-model:list-scrolling="listScrolling"
+      v-model:leave-top="leaveTop"
+      v-model:scrolling="isScrolling"
     />
   </div>
 </template>
@@ -35,6 +39,7 @@ import { useRoute, useRouter } from 'vue-router';
 import SongListContainer from '@/components/Container/SongListContainer.vue';
 import PlaylistPanel from '@/components/Panel/PlaylistPanel.vue';
 import { useSettingStore, useUserStore } from '@/store';
+import { useWheelScroll } from '@/hooks';
 
 defineOptions({
   name: 'Playlist',
@@ -45,14 +50,24 @@ const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
-const listScrolling = ref(false);
+const leaveTop = ref(false);
 const songListContainerRef = ref();
+const pageRef = ref();
+
+const { isScrolling } = useWheelScroll({
+  direction: 'both',
+  containerRef: () => pageRef.value,
+  excludeSelector: '.n-data-table', // 排除表格内部滚动
+  onScroll: deltaY => {
+    songListContainerRef.value?.songListRef?.scrollBy(deltaY);
+  },
+});
 
 const playlistId = ref('');
 const playlistInfo = ref();
 
 const size = computed(() => {
-  return listScrolling.value ? 'small' : undefined;
+  return leaveTop.value ? 'small' : undefined;
 });
 
 // 延迟更新的高度，避免动画期间滚动条闪烁
