@@ -1,7 +1,10 @@
 <template>
   <div class="flex flex-col space-y-4">
     <div class="info">
-      <SingerPanel :singer="singerInfo" />
+      <SingerPanel
+        :singer="singerInfo"
+        :size="size"
+      />
     </div>
     <SongListContainer
       type="singer"
@@ -13,6 +16,7 @@
       :show-like="userStore.isAuthenticated"
       :is-liked="isLikedSinger"
       @like="handleLikeSinger"
+      v-model:list-scrolling="listScrolling"
     />
   </div>
 </template>
@@ -33,8 +37,14 @@ defineOptions({
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
+const listScrolling = ref(false);
+
+const size = computed(() => {
+  return listScrolling.value ? 'small' : undefined;
+});
+
 const maxHeight = computed(() => {
-  return settingStore.mainHeight - 290;
+  return settingStore.mainHeight - (size.value === 'small' ? 200 : 290);
 });
 
 const route = useRoute();

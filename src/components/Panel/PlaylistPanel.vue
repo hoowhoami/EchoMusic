@@ -1,5 +1,8 @@
 <template>
-  <div class="playlist-panel">
+  <div
+    class="playlist-panel"
+    :class="{ small: props.size === 'small' }"
+  >
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -10,11 +13,10 @@
         />
       </template>
       <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 16px; font-weight: 800"
-        >
-          {{ props.playlist?.name }}
+        <NEllipsis :line-clamp="1">
+          <div class="name">
+            {{ props.playlist?.name }}
+          </div>
         </NEllipsis>
       </template>
       <template #description>
@@ -46,7 +48,7 @@
       </template>
       <div class="flex flex-col justify-between space-y-2">
         <div
-          v-if="playlistTags"
+          v-if="playlistTags && props.size !== 'small'"
           class="tags flex items-center space-x-2"
         >
           <NTag
@@ -58,7 +60,10 @@
             {{ tag }}
           </NTag>
         </div>
-        <div class="count flex items-center space-x-2">
+        <div
+          class="count flex items-center space-x-2"
+          v-if="props.size !== 'small'"
+        >
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
               <MusicNoteFilled />
@@ -94,7 +99,10 @@
           </div>
         </div>
       </div>
-      <template #footer>
+      <template
+        #footer
+        v-if="props.size !== 'small'"
+      >
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
@@ -128,6 +136,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+  size?: 'small' | undefined;
   playlist?: Playlist;
 }>();
 
@@ -179,6 +188,19 @@ const playlistTags = computed(() => {
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+  }
+  .name {
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  &.small {
+    .cover {
+      width: 60px;
+    }
+    .name {
+      font-size: 14px !important;
+    }
   }
 }
 </style>

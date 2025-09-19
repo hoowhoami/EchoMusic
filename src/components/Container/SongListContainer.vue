@@ -32,6 +32,8 @@
         v-model="filteredSongs"
         v-model:checked-songs="checkedSongs"
         @song-removed="handleSongRemoved"
+        @scroll="handleScroll"
+        v-model:list-scrolling="listScrolling"
       />
     </div>
   </div>
@@ -71,6 +73,7 @@ interface Props {
 }
 
 type Emits = {
+  scroll: [e: Event];
   like: [data?: Playlist | Album | Singer];
   delete: [data?: Playlist | Album | Singer];
   'song-removed': [song?: Song];
@@ -87,6 +90,8 @@ const props = withDefaults(defineProps<Props>(), {
   showDelete: false,
   showBatch: true,
 });
+
+const listScrolling = defineModel<boolean>('listScrolling', { default: false });
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -154,6 +159,10 @@ const handleDeletedSongs = (deletedSongs: Song[]) => {
 
 const handleSongRemoved = (removedSong?: Song) => {
   emit('song-removed', removedSong);
+};
+
+const handleScroll = (e: Event) => {
+  emit('scroll', e);
 };
 
 const handleScrollToCurrent = () => {

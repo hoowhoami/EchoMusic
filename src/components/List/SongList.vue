@@ -14,6 +14,7 @@
       :data="songs"
       v-model:checked-row-keys="checkedRowKeys"
       :row-props="rowProps"
+      @scroll="handleScroll"
     />
 
     <!-- 右键菜单 -->
@@ -48,6 +49,7 @@ defineOptions({
 });
 
 const emit = defineEmits<{
+  scroll: [e: Event];
   'song-removed': [song?: Song];
 }>();
 
@@ -58,6 +60,8 @@ const props = defineProps<{
   batchMode?: boolean;
   playlist?: Playlist;
 }>();
+
+const listScrolling = defineModel<boolean>('listScrolling', { default: false });
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
@@ -104,6 +108,13 @@ const handleSongPlayed = (song?: Song) => {
     return;
   }
   player.playSong(song);
+};
+
+// 处理列表滚动
+const handleScroll = (e: Event) => {
+  const scrollTop = (e.target as HTMLElement).scrollTop;
+  listScrolling.value = scrollTop > 10;
+  emit('scroll', e);
 };
 
 const columns = computed<DataTableColumns>(() => {

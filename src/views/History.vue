@@ -1,7 +1,10 @@
 <template>
   <div class="history flex flex-col space-y-4">
     <div class="info">
-      <PlayHistoryPanel :count="count" />
+      <PlayHistoryPanel
+        :count="count"
+        :size="size"
+      />
     </div>
     <SongListContainer
       type="history"
@@ -9,6 +12,7 @@
       :max-height="maxHeight"
       :songs="songs"
       :loading="loading"
+      v-model:list-scrolling="listScrolling"
     />
   </div>
 </template>
@@ -29,8 +33,14 @@ defineOptions({
 
 const settingStore = useSettingStore();
 
+const listScrolling = ref(false);
+
+const size = computed(() => {
+  return listScrolling.value ? 'small' : undefined;
+});
+
 const maxHeight = computed(() => {
-  return settingStore.mainHeight - 290;
+  return settingStore.mainHeight - (size.value === 'small' ? 200 : 290);
 });
 
 const loading = ref(false);

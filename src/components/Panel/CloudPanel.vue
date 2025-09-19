@@ -1,5 +1,8 @@
 <template>
-  <div class="play-history-panel">
+  <div
+    class="play-history-panel"
+    :class="{ small: props.size === 'small' }"
+  >
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -10,14 +13,14 @@
         />
       </template>
       <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 16px; font-weight: 800"
-        >
-          用户云盘
+        <NEllipsis :line-clamp="1">
+          <div class="name">用户云盘</div>
         </NEllipsis>
       </template>
-      <template #description>
+      <template
+        #description
+        v-if="props.size !== 'small'"
+      >
         <div
           class="flex items-center space-x-2"
           style="margin-top: -5px"
@@ -59,7 +62,10 @@
           </div>
         </div>
       </div>
-      <template #footer>
+      <template
+        #footer
+        v-if="props.size !== 'small'"
+      >
         <div class="flex flex-col space-y-1">
           <NProgress
             :color="{ stops: ['gray', 'red'] }"
@@ -92,6 +98,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+  size?: 'small' | undefined;
   count: number;
   capacity: number;
   available: number;
@@ -128,6 +135,21 @@ const availableSize = computed(() => {
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+  }
+
+  .name {
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  &.small {
+    .cover {
+      width: 60px;
+    }
+
+    .name {
+      font-size: 14px !important;
+    }
   }
 }
 </style>

@@ -2,7 +2,10 @@
 <template>
   <div class="playlist flex flex-col space-y-4">
     <div class="info">
-      <PlaylistPanel :playlist="playlistInfo" />
+      <PlaylistPanel
+        :playlist="playlistInfo"
+        :size="size"
+      />
     </div>
     <SongListContainer
       ref="songListContainerRef"
@@ -19,6 +22,7 @@
       @delete="handleDeletePlaylist"
       @song-removed="handleSongRemoved"
       @deleted-songs="handleDeletedSongs"
+      v-model:list-scrolling="listScrolling"
     />
   </div>
 </template>
@@ -41,13 +45,18 @@ const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
+const listScrolling = ref(false);
 const songListContainerRef = ref();
 
 const playlistId = ref('');
 const playlistInfo = ref();
 
+const size = computed(() => {
+  return listScrolling.value ? 'small' : undefined;
+});
+
 const maxHeight = computed(() => {
-  return settingStore.mainHeight - 290;
+  return settingStore.mainHeight - (size.value === 'small' ? 200 : 290);
 });
 
 const loading = ref(false);

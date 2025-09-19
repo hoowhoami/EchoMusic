@@ -111,6 +111,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+  size?: 'small' | undefined;
   album?: Album;
 }>();
 

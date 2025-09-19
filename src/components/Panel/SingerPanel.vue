@@ -1,5 +1,8 @@
 <template>
-  <div class="singer-panel">
+  <div
+    class="singer-panel"
+    :class="{ small: props.size === 'small' }"
+  >
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -10,17 +13,16 @@
         />
       </template>
       <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 16px; font-weight: 800"
-        >
-          {{ props.singer?.singername }}
+        <NEllipsis :line-clamp="1">
+          <div class="name">
+            {{ props.singer?.singername }}
+          </div>
         </NEllipsis>
       </template>
       <template #description>
         <div
-          class="flex flex-col"
-          style="margin-top: -5px; font-size: 12px"
+          class="flex flex-col birthday"
+          v-if="props.size !== 'small'"
         >
           生日 {{ props.singer?.birthday }}
         </div>
@@ -61,7 +63,10 @@
             </NText>
           </div>
         </div>
-        <div class="count flex items-center space-x-2">
+        <div
+          class="count flex items-center space-x-2"
+          v-if="props.size !== 'small'"
+        >
           <div class="flex items-center space-x-1">
             <NIcon :size="16">
               <PeopleRound />
@@ -86,7 +91,10 @@
           </div>
         </div>
       </div>
-      <template #footer>
+      <template
+        #footer
+        v-if="props.size !== 'small'"
+      >
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
@@ -126,6 +134,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+  size?: 'small' | undefined;
   singer?: Singer;
 }>();
 
@@ -144,6 +153,25 @@ const intro = computed(() => {
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+  }
+
+  .name {
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  .birthday {
+    margin-top: -5px;
+    font-size: 12px;
+  }
+
+  &.small {
+    .cover {
+      width: 60px;
+    }
+    .name {
+      font-size: 14px !important;
+    }
   }
 }
 </style>

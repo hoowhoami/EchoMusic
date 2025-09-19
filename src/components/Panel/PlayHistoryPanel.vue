@@ -1,5 +1,8 @@
 <template>
-  <div class="play-history-panel">
+  <div
+    class="play-history-panel"
+    :class="{ small: props.size === 'small' }"
+  >
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -10,14 +13,14 @@
         />
       </template>
       <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 16px; font-weight: 800"
-        >
-          最近播放
+        <NEllipsis :line-clamp="1">
+          <div class="name">最近播放</div>
         </NEllipsis>
       </template>
-      <template #description>
+      <template
+        #description
+        v-if="props.size !== 'small'"
+      >
         <div
           class="flex items-center space-x-2"
           style="margin-top: -5px"
@@ -46,7 +49,7 @@
       </template>
       <div class="flex flex-col justify-between space-y-2">
         <div
-          v-if="tags"
+          v-if="tags && props.size !== 'small'"
           class="tags flex items-center space-x-2"
         >
           <NTag
@@ -72,7 +75,10 @@
           </div>
         </div>
       </div>
-      <template #footer>
+      <template
+        #footer
+        v-if="props.size !== 'small'"
+      >
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
@@ -96,6 +102,7 @@ defineOptions({
 });
 
 const props = defineProps<{
+  size?: 'small' | undefined;
   count: number;
 }>();
 
@@ -116,6 +123,20 @@ const tags = computed(() => ['最近播放']);
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+  }
+
+  .name {
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  &.small {
+    .cover {
+      width: 60px;
+    }
+    .name {
+      font-size: 14px !important;
+    }
   }
 }
 </style>
