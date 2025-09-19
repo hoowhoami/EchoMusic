@@ -8,13 +8,13 @@ export const renderIcon = (icon: Component, size: number = 18) => {
   return () => h(NIcon, { size, style }, { default: () => h(icon) });
 };
 
-export const formatBytes = (bytes: number, space: boolean = true) => {
+export const formatBytes = (bytes: number, separator: string = ' ') => {
   if (!bytes) {
-    return '0' + (space ? ' ' : '') + 'B';
+    return '0' + separator + 'B';
   }
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + (space ? ' ' : '') + sizes[i];
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + separator + sizes[i];
 };
 
 // 环境判断
