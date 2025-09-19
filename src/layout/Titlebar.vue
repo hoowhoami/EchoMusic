@@ -31,6 +31,7 @@
             ghost
             text
             :focusable="false"
+            @click="refreshCurrentPage"
           >
             <template #icon>
               <NIcon :size="25">
@@ -202,6 +203,19 @@ import { debounce } from 'lodash-es';
 
 const router = useRouter();
 const userStore = useUserStore();
+
+// 刷新当前页面
+const refreshCurrentPage = () => {
+  // 获取当前路由
+  const currentRoute = router.currentRoute.value;
+
+  // 使用路由参数变化来触发组件重新渲染，而不刷新整个页面
+  const timestamp = Date.now();
+  router.replace({
+    path: currentRoute.path,
+    query: { ...currentRoute.query, _t: timestamp },
+  });
+};
 
 const { currentColor, getNextColor } = useGradientColor({
   steps: 5,
