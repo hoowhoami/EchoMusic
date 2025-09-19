@@ -58,7 +58,10 @@
 
             <div class="flex items-center space-x-2">
               <!-- 云盘标识 -->
-              <NIcon :size="16">
+              <NIcon
+                :size="16"
+                v-if="playerStore.current?.source === 'cloud'"
+              >
                 <CloudOutlined />
               </NIcon>
               <!-- 歌词按钮 -->
@@ -518,6 +521,9 @@ const setupElectronListeners = () => {
             break;
           case 'playNext':
             player.nextOrPrev('next');
+            break;
+          case 'toggleLyricsMode':
+            player.toggleLyricsMode();
             break;
         }
       });

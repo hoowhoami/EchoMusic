@@ -211,6 +211,19 @@
           font-size: calc(var(--font-size) * 1px);
           font-weight: bold;
           color: var(--lyrics-text-color);
+
+          span {
+            display: inline-block;
+            position: relative;
+            background-clip: text;
+            -webkit-background-clip: text;
+            font-weight: bold;
+            transform: translateZ(0);
+            will-change: background-position;
+            white-space: pre;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            letter-spacing: 0.5px;
+          }
         }
 
         #lyric-tran {
@@ -439,6 +452,23 @@
           </svg>
         </div>
         <div
+          id="toggle-translation"
+          class="item"
+          title="切换翻译/音译"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"
+            />
+          </svg>
+        </div>
+        <div
           id="lock-lyric"
           class="item"
           title="锁定/解锁"
@@ -535,6 +565,10 @@
           this.winWidth = 0;
           this.winHeight = 0;
 
+          // 防抖定时器
+          this.resizeTimeout = null;
+          this.contentChangeTimeout = null;
+
           this.loadSettings();
           this.applyInitialColors();
           this.applySongInfoColors();
@@ -543,6 +577,7 @@
           this.setupColorPicker();
           this.setupIPCListeners();
           this.setupWindowDragListeners();
+          this.setupWindowResizeListeners(); // 添加窗口大小变化监听
           this.setupMutationObserver();
 
           // 通知主进程窗口已准备好
@@ -620,6 +655,7 @@
                 highlightColor: parsed.highlightColor || '#ffdd00', // 高亮色独立设置
                 locked: parsed.locked === true,
                 windowPosition: parsed.windowPosition || null,
+                windowSize: parsed.windowSize || null, // 添加窗口大小字段
               };
             }
           } catch (error) {
@@ -637,6 +673,7 @@
             highlightColor: '#ffdd00', // 高亮色使用黄色作为默认
             locked: false,
             windowPosition: null,
+            windowSize: null, // 添加窗口大小字段
           };
         }
 
@@ -666,15 +703,27 @@
         async restoreWindowPosition() {
           try {
             const settings = this.getStoredSettings();
-            if (settings.windowPosition && window.electron?.ipcRenderer) {
-              await window.electron.ipcRenderer.invoke(
-                'set-window-position',
-                settings.windowPosition,
-              );
-              console.log('[Desktop Lyrics] Window position restored:', settings.windowPosition);
+            if (window.electron?.ipcRenderer) {
+              // 恢复窗口位置
+              if (settings.windowPosition) {
+                await window.electron.ipcRenderer.invoke(
+                  'set-window-position',
+                  settings.windowPosition,
+                );
+                console.log('[Desktop Lyrics] Window position restored:', settings.windowPosition);
+              }
+
+              // 恢复窗口大小
+              if (settings.windowSize) {
+                await window.electron.ipcRenderer.invoke(
+                  'set-window-size',
+                  settings.windowSize,
+                );
+                console.log('[Desktop Lyrics] Window size restored:', settings.windowSize);
+              }
             }
           } catch (error) {
-            console.warn('[Desktop Lyrics] Failed to restore window position:', error);
+            console.warn('[Desktop Lyrics] Failed to restore window position/size:', error);
           }
         }
 
@@ -690,7 +739,7 @@
           }
         }
 
-        updateLyricsWithHighlight(line, currentTime) {
+        updateLyricsWithHighlight(line, currentTime, lyricsMode = 'translation') {
           if (!line || !line.characters || !line.characters.length) {
             this.updateLyrics('该歌曲暂无歌词');
             return;
@@ -703,10 +752,17 @@
             this.lyricTextDom.innerHTML = `<span style="${highlightStyle}">${lineText}</span>`;
           }
 
-          if (this.lyricTranDom && line.translated) {
-            this.lyricTranDom.innerHTML = line.translated;
-          } else if (this.lyricTranDom) {
-            this.lyricTranDom.innerHTML = '';
+          // 根据 lyricsMode 决定显示翻译还是音译
+          if (this.lyricTranDom) {
+            let translationText = '';
+
+            if (lyricsMode === 'translation' && line.translated) {
+              translationText = line.translated;
+            } else if (lyricsMode === 'romanization' && line.romanized) {
+              translationText = line.romanized;
+            }
+
+            this.lyricTranDom.innerHTML = translationText;
           }
         }
 
@@ -719,45 +775,67 @@
           const currentTimeMs = currentTime;
           const lineStartTime = characters[0].startTime;
           const lineEndTime = characters[characters.length - 1].endTime;
+          const lineDuration = lineEndTime - lineStartTime;
           const settings = this.getStoredSettings();
           const highlightColor = settings.highlightColor || '#ffdd00';
+          const defaultColor = settings.lyricsTextColor || 'var(--lyrics-text-color)';
 
+          // 如果当前时间还没到这一行，不高亮
           if (currentTimeMs < lineStartTime) {
-            return `color: var(--lyrics-text-color);`;
+            return `color: ${defaultColor};`;
           }
 
+          // 如果当前时间已经超过这一行的结束时间，完全高亮
           if (currentTimeMs >= lineEndTime) {
             return `
-            background: linear-gradient(to right, ${highlightColor} 0%, ${highlightColor} 100%);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-          `;
+              background: linear-gradient(to right, ${highlightColor} 0%, ${highlightColor} 100%);
+              background-clip: text;
+              -webkit-background-clip: text;
+              color: transparent;
+              text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+              font-weight: bold;
+            `;
           }
 
+          // 计算基于字符时间的高亮位置
+          let charBasedPosition = 0;
           const text = line.characters.map(char => char.char).join('');
-          let highlightPosition = 0;
 
           for (let i = 0; i < characters.length; i++) {
             const char = characters[i];
-            if (currentTimeMs >= char.startTime && currentTimeMs <= char.endTime) {
-              const progress = (currentTimeMs - char.startTime) / (char.endTime - char.startTime);
-              highlightPosition = ((i + progress) / text.length) * 100;
+            const startTime = char.startTime;
+            const endTime = char.endTime;
+
+            if (currentTimeMs >= startTime && currentTimeMs <= endTime) {
+              const progress = (currentTimeMs - startTime) / (endTime - startTime);
+              const charWidth = 1 / text.length * 100;
+              charBasedPosition = (i / text.length * 100) + (progress * charWidth);
               break;
             }
-            if (currentTimeMs > char.endTime) {
-              highlightPosition = ((i + 1) / text.length) * 100;
+
+            if (currentTimeMs > endTime) {
+              charBasedPosition = (i + 1) / text.length * 100;
             }
           }
 
+          // 计算基于整行时间的高亮位置（作为补偿机制）
+          const lineProgress = (currentTimeMs - lineStartTime) / lineDuration;
+          const lineBasedPosition = Math.min(100, lineProgress * 100);
+
+          // 使用两种计算方式中较大的值，确保高亮不会太慢
+          let highlightPosition = Math.max(charBasedPosition, lineBasedPosition);
+
+          // 确保高亮位置在合理范围内
           highlightPosition = Math.max(0, Math.min(100, highlightPosition));
 
           return `
-          background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, var(--lyrics-text-color) ${highlightPosition}%);
-          background-clip: text;
-          -webkit-background-clip: text;
-          color: transparent;
-        `;
+            background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, ${defaultColor} ${highlightPosition}%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            font-weight: bold;
+          `;
         }
 
         async restoreOptions() {
@@ -868,6 +946,10 @@
               }
               case 'play-next': {
                 window.electron?.ipcRenderer?.send('send-main-event', 'playNext');
+                break;
+              }
+              case 'toggle-translation': {
+                window.electron?.ipcRenderer?.send('send-main-event', 'toggleLyricsMode');
                 break;
               }
               case 'close-lyric': {
@@ -1025,7 +1107,7 @@
             return;
           }
 
-          const { lyrics, currentTime, songTips } = lyricData;
+          const { lyrics, currentTime, songTips, lyricsMode } = lyricData;
 
           if (!lyrics || lyrics.length === 0) {
             this.updateLyrics(songTips || '该歌曲暂无歌词');
@@ -1036,11 +1118,11 @@
 
           if (currentLineIndex >= 0 && lyrics[currentLineIndex]) {
             const currentLine = lyrics[currentLineIndex];
-            this.updateLyricsWithHighlight(currentLine, currentTime);
+            this.updateLyricsWithHighlight(currentLine, currentTime, lyricsMode);
           } else if (lyrics.length > 0) {
             // 如果没有找到当前行，但有歌词，显示第一行
             const firstLine = lyrics[0];
-            this.updateLyricsWithHighlight(firstLine, currentTime);
+            this.updateLyricsWithHighlight(firstLine, currentTime, lyricsMode);
           } else {
             this.updateLyrics('该歌曲暂无歌词');
           }
@@ -1184,8 +1266,44 @@
           window.electron?.ipcRenderer?.send('update-window-height', bodyHeight);
         }
 
+        // 保存当前窗口大小到本地存储
+        async saveCurrentWindowSize() {
+          try {
+            if (window.electron?.ipcRenderer) {
+              const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+              const settings = this.getStoredSettings();
+              settings.windowSize = {
+                width: bounds.width,
+                height: bounds.height,
+              };
+              this.saveSettings(settings);
+              console.log('[Desktop Lyrics] Window size saved:', settings.windowSize);
+            }
+          } catch (error) {
+            console.warn('[Desktop Lyrics] Failed to save window size:', error);
+          }
+        }
+
+        setupWindowResizeListeners() {
+          // 监听窗口大小变化
+          window.addEventListener('resize', () => {
+            // 使用防抖避免频繁保存
+            clearTimeout(this.resizeTimeout);
+            this.resizeTimeout = setTimeout(() => {
+              this.saveCurrentWindowSize();
+            }, 500); // 500ms后保存
+          });
+        }
+
         setupMutationObserver() {
-          const observer = new MutationObserver(this.updateWindowHeight.bind(this));
+          const observer = new MutationObserver(() => {
+            this.updateWindowHeight();
+            // 内容变化时也保存窗口大小（使用防抖）
+            clearTimeout(this.contentChangeTimeout);
+            this.contentChangeTimeout = setTimeout(() => {
+              this.saveCurrentWindowSize();
+            }, 1000); // 1秒后保存
+          });
           observer.observe(document.body, { childList: true, subtree: true, attributes: true });
           this.updateWindowHeight();
         }

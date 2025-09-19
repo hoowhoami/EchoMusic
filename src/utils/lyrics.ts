@@ -19,6 +19,10 @@ export class LyricsHandler {
   private currentTime = ref<number>(0);
   private currentSongHash = '';
 
+  // 性能优化：缓存上次高亮的字符索引
+  private lastHighlightedLineIndex = -1;
+  private lastHighlightedCharIndex = -1;
+
   // 获取响应式数据的getter
   get data() {
     return {
@@ -66,7 +70,6 @@ export class LyricsHandler {
       // 如果桌面歌词已启用，则应该获取歌词，不管其他设置如何
       if (!this.showLyrics.value && !this.isDesktopLyricsEnabled.value) {
         if (settings?.desktopLyrics === 'off' && settings?.apiMode === 'off') {
-          console.log('[LyricsHandler] 歌词获取被设置阻止');
           return false;
         }
       }
@@ -99,7 +102,7 @@ export class LyricsHandler {
         return false;
       }
 
-      this.parseLyrics(lyricResponse.decodeContent, settings?.lyricsTranslation === 'on');
+      this.parseLyrics(lyricResponse.decodeContent, true); // 始终解析翻译
       this.originalLyrics.value = lyricResponse.decodeContent;
       this.centerFirstLine();
 
@@ -128,17 +131,18 @@ export class LyricsHandler {
 
     try {
       const languageLine = lines.find(line => line.match(/\[language:(.*)\]/));
+
       if (parseTranslation && languageLine) {
         const languageCode = languageLine.slice(10, -2);
+
         if (languageCode) {
           try {
             // 确保 languageCode 是有效的 Base64 编码
             const cleanedCode = languageCode.replace(/[^A-Za-z0-9+/=]/g, '');
-            const paddedCode = cleanedCode.padEnd(
-              cleanedCode.length + ((4 - (cleanedCode.length % 4)) % 4),
-              '=',
-            );
-            const decodedData = decodeURIComponent(atob(paddedCode));
+            // 添加缺失的填充字符
+            const paddedCode = cleanedCode.padEnd(cleanedCode.length + (4 - cleanedCode.length % 4) % 4, '=');
+            // 使用参考代码的解码方式
+            const decodedData = decodeURIComponent(escape(atob(paddedCode)));
             const languageData = JSON.parse(decodedData);
 
             // 获取翻译歌词 (type === 1)
@@ -233,6 +237,10 @@ export class LyricsHandler {
     }
 
     this.lyricsData.value = parsedLyrics;
+
+    // 重置性能优化缓存
+    this.lastHighlightedLineIndex = -1;
+    this.lastHighlightedCharIndex = -1;
   }
 
   /**
@@ -283,19 +291,25 @@ export class LyricsHandler {
    * 高亮当前字符
    */
   highlightCurrentChar(currentTime: number, scroll = true): void {
-    const currentTimeMs = currentTime * 1000 - 500; // 减少500ms延迟，提前高亮
-    this.currentTime.value = currentTimeMs + 500; // 保存实际时间用于桌面歌词计算
+    const currentTimeMs = currentTime * 1000;
+    this.currentTime.value = currentTimeMs; // 保存实际时间用于桌面歌词计算
+    let currentActiveLineIndex = -1;
+
+    // 如果没有歌词数据，直接返回
+    if (!this.lyricsData.value.length) return;
 
     this.lyricsData.value.forEach((lineData, lineIndex) => {
+      let isLineActive = false;
       let hasHighlightedChar = false;
 
-      lineData.characters.forEach(charData => {
+      lineData.characters.forEach((charData) => {
         // 更精确的时间判断
         if (currentTimeMs >= charData.startTime && currentTimeMs <= charData.endTime) {
           if (!charData.highlighted) {
             charData.highlighted = true;
             hasHighlightedChar = true;
           }
+          isLineActive = true;
         } else if (currentTimeMs > charData.endTime) {
           // 已经播放过的字符保持高亮
           if (!charData.highlighted) {
@@ -307,11 +321,32 @@ export class LyricsHandler {
         }
       });
 
+      // 如果当前行有活跃字符，记录为当前行
+      if (isLineActive) {
+        currentActiveLineIndex = lineIndex;
+      }
+
       // 处理滚动
       if (scroll && hasHighlightedChar) {
         this.scrollToCurrentLine(lineIndex);
       }
     });
+
+    // 如果没有找到活跃行，尝试找到最接近的行
+    if (currentActiveLineIndex === -1 && this.lyricsData.value.length > 0) {
+      for (let i = 0; i < this.lyricsData.value.length; i++) {
+        const lineData = this.lyricsData.value[i];
+        const firstChar = lineData.characters[0];
+        const lastChar = lineData.characters[lineData.characters.length - 1];
+
+        if (firstChar && lastChar &&
+            currentTimeMs >= firstChar.startTime &&
+            currentTimeMs <= lastChar.endTime) {
+          currentActiveLineIndex = i;
+          break;
+        }
+      }
+    }
 
     // 更新桌面歌词
     this.updateDesktopLyrics();
@@ -436,6 +471,11 @@ export class LyricsHandler {
     this.scrollAmount.value = null;
     this.songTips.value = '暂无歌词';
     this.currentLineIndex = 0;
+
+    // 重置性能优化缓存
+    this.lastHighlightedLineIndex = -1;
+    this.lastHighlightedCharIndex = -1;
+
     this.clearDesktopLyricsContent();
   }
 

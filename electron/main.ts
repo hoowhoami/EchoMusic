@@ -546,6 +546,15 @@ app.whenReady().then(async () => {
     }
     return false;
   });
+
+  // IPC 处理程序 - 设置窗口大小
+  ipcMain.handle('set-window-size', (_event: any, size: { width: number; height: number }) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.setSize(size.width, size.height);
+      return true;
+    }
+    return false;
+  });
 });
 
 app.on('window-all-closed', () => {
