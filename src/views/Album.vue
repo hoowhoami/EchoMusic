@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col space-y-4">
+  <div class="album flex flex-col space-y-4">
     <div class="info">
       <AlbumPanel
         :album="albumInfo"
@@ -26,7 +26,7 @@ import type { Album, Song } from '@/types';
 import { getAlbumDetail, getAlbumSongs } from '@/api';
 import SongListContainer from '@/components/Container/SongListContainer.vue';
 import AlbumPanel from '@/components/Panel/AlbumPanel.vue';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore, useUserStore } from '@/store';
 
@@ -43,8 +43,29 @@ const size = computed(() => {
   return listScrolling.value ? 'small' : undefined;
 });
 
+// 延迟更新的高度，避免动画期间滚动条闪烁
+const delayedSize = ref<'small' | undefined>(undefined);
+let heightUpdateTimer: NodeJS.Timeout | null = null;
+
+// 监听size变化，延迟更新高度
+watch(size, newSize => {
+  if (heightUpdateTimer) {
+    clearTimeout(heightUpdateTimer);
+  }
+
+  if (newSize === 'small') {
+    // 缩小时延迟300ms（等动画完成）
+    heightUpdateTimer = setTimeout(() => {
+      delayedSize.value = newSize;
+    }, 300);
+  } else {
+    // 放大时立即更新
+    delayedSize.value = newSize;
+  }
+});
+
 const maxHeight = computed(() => {
-  return settingStore.mainHeight - (size.value === 'small' ? 200 : 290);
+  return settingStore.mainHeight - (delayedSize.value === 'small' ? 200 : 290);
 });
 
 const route = useRoute();
@@ -115,4 +136,8 @@ onMounted(async () => {
 });
 </script>
 
-<style scoped></style>
+<style lang="scss" scoped>
+.info {
+  transition: height 0.3s ease-in-out;
+}
+</style>

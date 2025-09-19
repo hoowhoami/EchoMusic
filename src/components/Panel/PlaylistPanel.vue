@@ -21,7 +21,7 @@
       </template>
       <template #description>
         <div
-          class="flex flex-col"
+          class="flex flex-col description-content"
           style="margin-top: -5px"
         >
           <div class="creator flex items-center space-x-2">
@@ -188,10 +188,17 @@ const playlistTags = computed(() => {
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+    transition: width 0.3s ease-in-out;
   }
+
   .name {
     font-size: 16px;
     font-weight: 800;
+    transition: font-size 0.3s ease-in-out;
+  }
+
+  .tags {
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
   }
 
   &.small {
@@ -200,6 +207,11 @@ const playlistTags = computed(() => {
     }
     .name {
       font-size: 14px !important;
+    }
+
+    .tags {
+      opacity: 0;
+      transform: translateY(-5px);
     }
   }
 }

@@ -22,7 +22,7 @@
         v-if="props.size !== 'small'"
       >
         <div
-          class="flex items-center space-x-2"
+          class="flex items-center space-x-2 description-content"
           style="margin-top: -5px"
         >
           <div class="creator flex items-center space-x-2">
@@ -123,11 +123,17 @@ const tags = computed(() => ['最近播放']);
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+    transition: width 0.3s ease-in-out;
   }
 
   .name {
     font-size: 16px;
     font-weight: 800;
+    transition: font-size 0.3s ease-in-out;
+  }
+
+  .description-content {
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
   }
 
   &.small {
@@ -136,6 +142,11 @@ const tags = computed(() => ['最近播放']);
     }
     .name {
       font-size: 14px !important;
+    }
+
+    .description-content {
+      opacity: 0;
+      transform: translateY(-5px);
     }
   }
 }

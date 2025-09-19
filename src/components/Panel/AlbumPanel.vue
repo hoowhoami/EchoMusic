@@ -1,5 +1,8 @@
 <template>
-  <div class="album-panel">
+  <div
+    class="album-panel"
+    :class="{ small: props.size === 'small' }"
+  >
     <NThing content-indented>
       <template #avatar>
         <NImage
@@ -10,16 +13,15 @@
         />
       </template>
       <template #header>
-        <NEllipsis
-          :line-clamp="1"
-          style="font-size: 16px; font-weight: 800"
-        >
-          {{ props.album?.albumname }}
+        <NEllipsis :line-clamp="1">
+          <div class="name">
+            {{ props.album?.albumname }}
+          </div>
         </NEllipsis>
       </template>
       <template #description>
         <div
-          class="flex flex-col"
+          class="flex flex-col description-content"
           style="margin-top: -5px"
         >
           <div class="creator flex items-center space-x-2">
@@ -40,7 +42,7 @@
       </template>
       <div class="flex flex-col justify-between space-y-2">
         <div
-          v-if="tags"
+          v-if="tags && props.size !== 'small'"
           class="tags flex items-center space-x-2"
         >
           <NTag
@@ -64,7 +66,10 @@
               {{ props.album?.songcount || 0 }}
             </NText>
           </div>
-          <div class="flex items-center space-x-1">
+          <div
+            class="flex items-center space-x-1"
+            v-if="props.size !== 'small'"
+          >
             <NIcon :size="16">
               <WhatshotRound />
             </NIcon>
@@ -77,7 +82,10 @@
           </div>
         </div>
       </div>
-      <template #footer>
+      <template
+        #footer
+        v-if="props.size !== 'small'"
+      >
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
@@ -151,6 +159,33 @@ const tags = computed(() => {
     flex-shrink: 0;
     width: 150px;
     border-radius: 8px;
+    transition: width 0.3s ease-in-out;
+  }
+
+  .name {
+    font-size: 16px;
+    font-weight: 800;
+    transition: font-size 0.3s ease-in-out;
+  }
+
+  .description-content,
+  .tags {
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  }
+
+  &.small {
+    .cover {
+      width: 60px;
+    }
+    .name {
+      font-size: 14px !important;
+    }
+
+    .description-content,
+    .tags {
+      opacity: 0;
+      transform: translateY(-5px);
+    }
   }
 }
 </style>
