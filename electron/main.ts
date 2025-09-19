@@ -77,6 +77,8 @@ function createLyricsWindow() {
     maximizable: false,
     closable: true,
     focusable: false,
+    type: 'panel', // 使用panel类型确保在全屏窗口上方
+    level: 'screen-saver', // 设置最高层级
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -94,6 +96,14 @@ function createLyricsWindow() {
     : `file://${path.join(__dirname, '../dist/desktop-lyrics.html')}`;
 
   lyricsWindow.loadURL(lyricsUrl);
+
+  // 设置窗口层级，确保在全屏窗口上方显示
+  lyricsWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  // 在macOS上设置额外的层级属性
+  if (process.platform === 'darwin') {
+    lyricsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
 
   lyricsWindow.once('ready-to-show', () => {
     lyricsWindow.show();
