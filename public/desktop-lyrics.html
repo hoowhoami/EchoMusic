@@ -774,7 +774,9 @@
 
         getLineHighlightStyle(line, currentTime) {
           if (!line || !line.characters || !line.characters.length) {
-            return `color: var(--lyrics-text-color);`;
+            const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const fallbackColor = isDarkTheme ? '#ffffff' : '#333333';
+            return `color: ${fallbackColor}; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);`;
           }
 
           const characters = line.characters;
@@ -788,7 +790,9 @@
 
           // 如果当前时间还没到这一行，不高亮
           if (currentTimeMs < lineStartTime) {
-            return `color: ${defaultColor};`;
+            const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const adjustedColor = this.getContrastColor(defaultColor, isDarkTheme);
+            return `color: ${adjustedColor}; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);`;
           }
 
           // 如果当前时间已经超过这一行的结束时间，完全高亮
@@ -798,7 +802,7 @@
               background-clip: text;
               -webkit-background-clip: text;
               color: transparent;
-              text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+              text-shadow: none;
               font-weight: bold;
             `;
           }
@@ -834,14 +838,54 @@
           // 确保高亮位置在合理范围内
           highlightPosition = Math.max(0, Math.min(100, highlightPosition));
 
+          // 确保未高亮部分在亮色主题下有足够的对比度
+          const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const adjustedDefaultColor = this.getContrastColor(defaultColor, isDarkTheme);
+
           return `
-            background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, ${defaultColor} ${highlightPosition}%);
+            background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, ${adjustedDefaultColor} ${highlightPosition}%);
             background-clip: text;
             -webkit-background-clip: text;
             color: transparent;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            text-shadow: none;
             font-weight: bold;
           `;
+        }
+
+        getContrastColor(color, isDarkTheme) {
+          // 确保颜色在不同主题下有足够的对比度
+          if (!color || color === 'var(--lyrics-text-color)') {
+            // 如果是CSS变量，根据主题返回适当的颜色
+            return isDarkTheme ? '#ffffff' : '#000000';
+          }
+
+          // 如果是hex颜色，检查其亮度
+          if (color.startsWith('#')) {
+            const brightness = this.getColorBrightness(color);
+
+            // 在亮色主题下，如果颜色太亮（接近白色），使其更暗
+            if (!isDarkTheme && brightness > 200) {
+              return '#333333';
+            }
+
+            // 在暗色主题下，如果颜色太暗（接近黑色），使其更亮
+            if (isDarkTheme && brightness < 100) {
+              return '#ffffff';
+            }
+          }
+
+          return color;
+        }
+
+        getColorBrightness(hexColor) {
+          // 计算hex颜色的亮度值
+          const hex = hexColor.replace('#', '');
+          const r = parseInt(hex.substr(0, 2), 16);
+          const g = parseInt(hex.substr(2, 2), 16);
+          const b = parseInt(hex.substr(4, 2), 16);
+
+          // 使用相对亮度公式
+          return (r * 299 + g * 587 + b * 114) / 1000;
         }
 
         async restoreOptions() {
