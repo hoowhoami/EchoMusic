@@ -187,12 +187,16 @@
         #song-artist {
           margin-top: 4px;
           font-size: 12px;
-          opacity: 0.8;
-          color: var(--lyrics-text-color);
+          opacity: 0.9;
+          color: var(--highlight-color);
+          font-weight: bold;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         #song-name {
-          color: var(--lyrics-text-color);
+          color: var(--highlight-color);
+          font-weight: bold;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
       }
 
@@ -244,9 +248,11 @@
         transition: opacity 0.3s;
       }
 
-      /* 确保歌曲信息使用正确的颜色 */
+      /* 确保歌曲信息使用高亮颜色 */
       .meta span {
-        color: var(--lyrics-text-color) !important;
+        color: var(--highlight-color) !important;
+        font-weight: bold !important;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
       }
 
       /* 颜色控制面板样式 */
@@ -1012,16 +1018,16 @@
 
         applySongInfoColors() {
           const settings = this.getStoredSettings();
-          const color = settings.lyricsTextColor;
+          const highlightColor = settings.highlightColor;
 
           if (this.songNameDom) {
-            this.songNameDom.style.color = color;
+            this.songNameDom.style.color = highlightColor;
           }
           if (this.songArtistDom) {
-            this.songArtistDom.style.color = color;
+            this.songArtistDom.style.color = highlightColor;
           }
 
-          console.log('[Desktop Lyrics] Song info colors applied:', color);
+          console.log('[Desktop Lyrics] Song info colors applied with highlight color:', highlightColor);
         }
 
         hexToColor(color) {
