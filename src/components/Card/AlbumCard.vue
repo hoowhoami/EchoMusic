@@ -10,7 +10,15 @@
           :src="cover"
           :preview-disabled="true"
           object-fit="fill"
-        />
+        >
+          <template #placeholder>
+            <div class="w-[198px] h-[198px] flex items-center justify-center">
+              <NIcon :size="24">
+                <MusicNoteFilled />
+              </NIcon>
+            </div>
+          </template>
+        </NImage>
       </template>
       <div class="flex flex-col space-y-1">
         <div class="name">

@@ -30,7 +30,15 @@
             :alt="cover"
             class="cover-img"
             preview-disabled
-          />
+          >
+            <template #placeholder>
+              <div class="w-[198px] h-[198px] flex items-center justify-center">
+                <NIcon :size="24">
+                  <MusicNoteFilled />
+                </NIcon>
+              </div>
+            </template>
+          </NImage>
 
           <!-- 打开播放器 -->
         </div>
@@ -477,6 +485,7 @@ import {
   MusicVideoRound,
   VideocamOutlined,
   CloudOutlined,
+  MusicNoteFilled,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';

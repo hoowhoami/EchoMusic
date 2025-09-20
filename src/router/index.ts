@@ -4,6 +4,8 @@ import { useUserStore } from '@/store';
 import Layout from '@/layout/Layout.vue';
 import Login from '@/views/Login.vue';
 import Home from '@/views/Home.vue';
+import Recommend from '@/views/Recommend.vue';
+import Rank from '@/views/Rank.vue';
 import Discover from '@/views/Discover.vue';
 import Search from '@/views/Search.vue';
 import Profile from '@/views/Profile.vue';
@@ -25,6 +27,8 @@ const router = createRouter({
       redirect: '/home',
       children: [
         { path: '/home', name: 'Home', component: Home },
+        { path: '/recommend', name: 'Recommend', component: Recommend },
+        { path: '/rank', name: 'Rank', component: Rank },
         { path: '/discover', name: 'Discover', component: Discover },
         { path: '/search', name: 'SearchResult', component: Search },
         { path: '/login', name: 'Login', component: Login },

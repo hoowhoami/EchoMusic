@@ -184,8 +184,8 @@ const cover = computed(() => {
 });
 
 const name = computed(() => {
-  const nameParts = props.song.name.split(' - ');
-  return nameParts.length > 1 ? nameParts[1] : props.song.name;
+  const nameParts = props.song?.name?.split(' - ');
+  return nameParts?.length > 1 ? nameParts?.[1] : props.song.name;
 });
 
 const singer = computed(() => {

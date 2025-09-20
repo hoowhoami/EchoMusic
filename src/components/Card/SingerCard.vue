@@ -12,7 +12,15 @@
               :src="cover"
               :preview-disabled="true"
               object-fit="cover"
-            />
+            >
+              <template #placeholder>
+                <div class="w-[198px] h-[198px] flex items-center justify-center">
+                  <NIcon :size="24">
+                    <MusicNoteFilled />
+                  </NIcon>
+                </div>
+              </template>
+            </NImage>
           </div>
           <div class="circle-overlay">
             <NImage

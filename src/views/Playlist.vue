@@ -178,7 +178,7 @@ const getSongs = async () => {
     loading.value = true;
     do {
       const res = await getPlaylistTrackAll(playlistId.value, page, size);
-      songs.value.push(...res.songs);
+      songs.value.push(...res.songs.filter((song: Song) => song.hash));
       fetchCount = res.songs.length;
       page++;
     } while (fetchCount > 0);

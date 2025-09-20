@@ -1,6 +1,6 @@
 <template>
   <div class="home-container">
-    <div class="top flex flex-col space-y-2">
+    <div class="top flex flex-col space-y-4">
       <div class="greeting">
         <div class="title">
           {{ greeting }}
@@ -19,8 +19,9 @@
           <NCard
             size="small"
             hoverable
+            @click="handleRecommendClick"
           >
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-2 cursor-pointer">
               <div
                 class="cover border border-gray-300 rounded-lg flex items-center justify-center w-[50px] h-[50px]"
               >
@@ -39,12 +40,13 @@
           <NCard
             size="small"
             hoverable
+            @click="handleRankClick"
           >
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-2 cursor-pointer">
               <div
                 class="cover border border-gray-300 rounded-lg flex items-center justify-center w-[50px] h-[50px]"
               >
-                <div>TOP</div>
+                <div class="content">TOP</div>
               </div>
               <div class="info">
                 <div class="title">排行榜</div>
@@ -56,19 +58,66 @@
           </NCard>
         </div>
       </div>
+      <div>
+        <NCard
+          size="small"
+          hoverable
+        >
+          <template #header>
+            <div class="flex justify-between">
+              <div>推荐歌单</div>
+            </div>
+          </template>
+          <template #header-extra>
+            <div>
+              <NButton
+                :focusable="false"
+                text
+                :loading="loading"
+                @click="handleRefresh"
+              >
+                <template #icon>
+                  <NIcon>
+                    <RefreshRound />
+                  </NIcon>
+                </template>
+              </NButton>
+            </div>
+          </template>
+          <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 h-[3780px]">
+            <PlaylistCard
+              class="w-[200px] h-[300px]"
+              :playlist="item as Playlist"
+              v-for="item in playlist"
+              :key="item.listid"
+              @click="handleOpenPlaylist(item as Playlist)"
+            />
+          </div>
+        </NCard>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { getEverydayRecommend } from '@/api';
+import { getPlaylistByCategory } from '@/api';
+import PlaylistCard from '@/components/Card/PlaylistCard.vue';
+import { Playlist } from '@/types';
 import { formatTimestamp, getGreeting } from '@/utils';
+import { RefreshRound } from '@vicons/material';
 import { NCard, NText } from 'naive-ui';
-import { computed, onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
+import { computed } from 'vue';
+import { useRouter } from 'vue-router';
 
 defineOptions({
   name: 'Home',
 });
+
+const router = useRouter();
+
+const loading = ref(false);
+const playlist = ref<Playlist[]>([]);
 
 const greeting = computed(() => {
   return getGreeting();
@@ -78,13 +127,60 @@ const day = computed(() => {
   return formatTimestamp(new Date().getTime(), 'D');
 });
 
-const getDailyRecommend = async () => {
-  const res = await getEverydayRecommend();
-  console.log(res);
+const handleRecommendClick = () => {
+  router.push({
+    name: 'Recommend',
+  });
+};
+
+const handleRankClick = () => {
+  router.push({
+    name: 'Rank',
+  });
+};
+
+const handleOpenPlaylist = async (playlist: Playlist) => {
+  await router.push({
+    name: 'Playlist',
+    query: {
+      id: playlist.global_collection_id,
+      t: new Date().getTime(),
+    },
+  });
+};
+
+const handleRefresh = async () => {
+  await getRecommendPlaylist();
+};
+
+const getRecommendPlaylist = async () => {
+  try {
+    playlist.value = [];
+    loading.value = true;
+    const res = await getPlaylistByCategory({
+      category_id: 0,
+    });
+    playlist.value =
+      res?.special_list?.map((item: any) => {
+        return {
+          ...item,
+          name: item.specialname,
+          pic: item.flexible_cover,
+          create_user_pic: item.pic,
+          list_create_username: item.nickname,
+          publish_date: item.publishtime?.split(' ')?.[0],
+          heat: item.collectcount,
+        };
+      }) || [];
+  } catch (error) {
+    console.log('获取推荐歌单失败:', error);
+  } finally {
+    loading.value = false;
+  }
 };
 
 onMounted(async () => {
-  await getDailyRecommend();
+  await getRecommendPlaylist();
 });
 </script>
 
@@ -107,6 +203,9 @@ onMounted(async () => {
     .cover {
       font-size: 20px;
       font-weight: 800;
+      .content {
+        font-size: 1rem;
+      }
     }
     .info {
       .title {

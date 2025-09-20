@@ -55,3 +55,20 @@ export const getPlaylistDetail = (ids: string) => {
 export const getPlaylistTrackAll = (id: string, page: number = 1, pagesize: number = 30) => {
   return api.get('/playlist/track/all', { id, page, pagesize });
 };
+
+// 歌单分类
+// 说明 : 调用此接口,可获取歌单分类,包含 category 信息
+export const getPlaylistCategory = () => {
+  return api.get('/playlist/tags');
+};
+
+// 获取歌单
+// 说明 : 调用此接口 , 可获取歌单
+// 必选参数：
+// category_id: tag，0：推荐，11292：HI-RES，其他可以从 /playlist/tags 接口中获取（接口下的 tag_id 为 category_id的值）
+// 可选参数：
+// withsong: 是否返回歌曲列表（不全），0：不返回，1：返回
+// withtag: 是否返回歌单分类，0：不返回，1：返回
+export const getPlaylistByCategory = ({ category_id = 0, withsong = 0, withtag = 1 }) => {
+  return api.get('/top/playlist', { category_id, withsong, withtag });
+};

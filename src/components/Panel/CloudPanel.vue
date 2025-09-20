@@ -10,7 +10,15 @@
           :src="cover"
           :preview-disabled="true"
           object-fit="fill"
-        />
+        >
+          <template #placeholder>
+            <div class="flex items-center justify-center h-full">
+              <NIcon :size="32">
+                <MusicNoteFilled />
+              </NIcon>
+            </div>
+          </template>
+        </NImage>
       </template>
       <template #header>
         <NEllipsis :line-clamp="1">
@@ -145,7 +153,9 @@ const availableSize = computed(() => {
   }
 
   .description-content {
-    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+    transition:
+      opacity 0.2s ease-in-out,
+      transform 0.2s ease-in-out;
   }
 
   &.small {

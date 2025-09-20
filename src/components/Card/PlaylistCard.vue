@@ -1,6 +1,9 @@
 <template>
   <div class="playlist-card">
-    <NCard size="small" class="card-container">
+    <NCard
+      size="small"
+      class="card-container"
+    >
       <template #cover>
         <div class="cover-container">
           <NImage
@@ -8,10 +11,21 @@
             :src="cover"
             :preview-disabled="true"
             object-fit="fill"
-          />
+          >
+            <template #placeholder>
+              <div class="w-[198px] h-[198px] flex items-center justify-center">
+                <NIcon :size="24">
+                  <MusicNoteFilled />
+                </NIcon>
+              </div>
+            </template>
+          </NImage>
           <div class="play-button-overlay">
             <div class="play-button">
-              <NIcon :size="24" color="white">
+              <NIcon
+                :size="24"
+                color="white"
+              >
                 <PlayArrowRound />
               </NIcon>
             </div>
@@ -39,7 +53,10 @@
           </NEllipsis>
         </div>
         <div class="count flex items-center space-x-2">
-          <div class="flex items-center space-x-1">
+          <div
+            class="flex items-center space-x-1"
+            v-if="props.playlist?.count"
+          >
             <NIcon :size="16">
               <MusicNoteFilled />
             </NIcon>
@@ -47,7 +64,18 @@
               depth="3"
               style="font-size: 12px"
             >
-              {{ props.playlist?.count || 0 }}
+              {{ props.playlist?.count }}
+            </NText>
+          </div>
+          <div class="flex items-center space-x-1">
+            <NIcon :size="16">
+              <FavoriteRound />
+            </NIcon>
+            <NText
+              depth="3"
+              style="font-size: 12px"
+            >
+              {{ props.playlist?.heat || 0 }}
             </NText>
           </div>
           <div class="flex items-center space-x-1">
@@ -72,7 +100,12 @@ import type { Playlist } from '@/types';
 import { getCover } from '@/utils';
 import { NCard, NEllipsis, NImage } from 'naive-ui';
 import { computed } from 'vue';
-import { MusicNoteFilled, SmartDisplayRound, PlayArrowRound } from '@vicons/material';
+import {
+  MusicNoteFilled,
+  SmartDisplayRound,
+  PlayArrowRound,
+  FavoriteRound,
+} from '@vicons/material';
 
 defineOptions({
   name: 'PlaylistCard',
@@ -98,9 +131,11 @@ const publishTime = computed(() => {
 <style lang="scss" scoped>
 .playlist-card {
   .card-container {
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    transition:
+      transform 0.3s ease,
+      box-shadow 0.3s ease;
     cursor: pointer;
-    
+
     &:hover {
       transform: translateY(-4px);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
@@ -109,11 +144,11 @@ const publishTime = computed(() => {
 
   .cover-container {
     position: relative;
-    
+
     .cover {
       width: 100%;
     }
-    
+
     .play-button-overlay {
       position: absolute;
       top: 0;
@@ -126,7 +161,7 @@ const publishTime = computed(() => {
       background: rgba(0, 0, 0, 0.4);
       opacity: 0;
       transition: opacity 0.3s ease;
-      
+
       .play-button {
         background: rgba(255, 255, 255, 0.2);
         border-radius: 50%;
@@ -137,14 +172,14 @@ const publishTime = computed(() => {
         justify-content: center;
         backdrop-filter: blur(10px);
         transition: all 0.3s ease;
-        
+
         &:hover {
           background: rgba(255, 255, 255, 0.3);
           transform: scale(1.1);
         }
       }
     }
-    
+
     &:hover .play-button-overlay {
       opacity: 1;
     }
