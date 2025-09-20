@@ -25,7 +25,7 @@
                 class="cover border border-gray-300 rounded-lg flex items-center justify-center w-[50px] h-[50px]"
               >
                 <div>
-                  {{ 27 }}
+                  {{ day }}
                 </div>
               </div>
               <div class="info">
@@ -62,7 +62,7 @@
 
 <script setup lang="ts">
 import { getEverydayRecommend } from '@/api';
-import { getGreeting } from '@/utils';
+import { formatTimestamp, getGreeting } from '@/utils';
 import { NCard, NText } from 'naive-ui';
 import { computed, onMounted } from 'vue';
 
@@ -72,6 +72,10 @@ defineOptions({
 
 const greeting = computed(() => {
   return getGreeting();
+});
+
+const day = computed(() => {
+  return formatTimestamp(new Date().getTime(), 'D');
 });
 
 const getDailyRecommend = async () => {
