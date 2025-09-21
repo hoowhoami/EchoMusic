@@ -41,7 +41,6 @@ const getDailyRecommend = async () => {
   try {
     loading.value = true;
     const res = await getEverydayRecommend();
-    console.log(res);
     recommend.value =
       res?.song_list?.map((item: any) => {
         return {

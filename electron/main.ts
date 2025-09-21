@@ -61,6 +61,11 @@ function createLyricsWindow() {
     return;
   }
 
+  // 在macOS上确保dock图标保持可见
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.show();
+  }
+
   lyricsWindow = new BrowserWindow({
     width: 800,
     height: 200,
@@ -69,7 +74,7 @@ function createLyricsWindow() {
     frame: false,
     transparent: true,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: process.platform !== 'darwin', // 在macOS上不跳过任务栏，避免影响dock
     resizable: true,
     hasShadow: false,
     movable: true,
@@ -362,7 +367,16 @@ function createWindow() {
     // 检查是否是应用完全退出，如果不是则隐藏窗口
     if (!app.isQuitting && !mainWindow?.isDestroyed()) {
       event.preventDefault();
-      mainWindow.hide();
+      if (process.platform === 'darwin') {
+        // 在macOS上，保持dock图标显示
+        mainWindow.hide();
+        // 确保dock图标保持可见
+        if (app.dock) {
+          app.dock.show();
+        }
+      } else {
+        mainWindow.hide();
+      }
     }
   });
 
@@ -372,6 +386,11 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // 在macOS上确保dock图标可见
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.show();
+  }
+
   // 先创建加载窗口
   createLoadingWindow();
 
@@ -582,6 +601,10 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   // 在 macOS 上点击 dock 图标时重新显示窗口
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.show();
+  }
+
   if (mainWindow === null || mainWindow.isDestroyed()) {
     createWindow();
   } else {
@@ -624,14 +647,3 @@ app.on('before-quit', () => {
   }
 });
 
-// 在 macOS 上，当 dock 图标被点击时显示窗口
-if (process.platform === 'darwin') {
-  app.on('activate', () => {
-    if (mainWindow === null || mainWindow.isDestroyed()) {
-      createWindow();
-    } else {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
-}
