@@ -305,3 +305,46 @@ export interface LyricsLine {
 }
 
 export type LyricsMode = 'translation' | 'romanization';
+
+// Rank
+export interface Rank {
+  album_cover_color: string;
+  album_img_9: string;
+  banner7url: string;
+  banner_9: string;
+  bannerurl: string;
+  base_img: string;
+  children: any[]; // 空数组，可根据实际子元素类型具体化
+  classify: number;
+  count_down: number;
+  custom_type: number;
+  extra: any;
+  haschildren: number;
+  id: number;
+  img_9: string;
+  img_cover: string;
+  imgurl: string;
+  intro: string;
+  is_timing: number;
+  issue: number;
+  isvol: number;
+  jump_title: string;
+  jump_url: string;
+  new_cycle: number;
+  play_times: number;
+  rank_cid: number;
+  rank_id_publish_date: string;
+  rankid: number;
+  rankname: string;
+  ranktype: number;
+  share_bg: string;
+  share_logo: string;
+  show_play_button: number;
+  show_play_count: number;
+  songinfo: any;
+  table_plaque: string;
+  update_frequency: string;
+  update_frequency_type: number;
+  video_ending: string;
+  zone: string;
+}

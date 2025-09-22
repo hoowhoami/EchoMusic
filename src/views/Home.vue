@@ -105,7 +105,7 @@ import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { Playlist } from '@/types';
 import { formatTimestamp, getGreeting } from '@/utils';
 import { RefreshRound } from '@vicons/material';
-import { NCard, NText } from 'naive-ui';
+import { NButton, NCard, NText } from 'naive-ui';
 import { onMounted, ref } from 'vue';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
