@@ -17,7 +17,7 @@ export const getRankList = () => {
 // page： 页码
 // pagesize: 每页页数, 默认为 30
 export const getRankSongList = ({ rankid = 0, rank_cid = undefined, page = 1, pagesize = 30 }) => {
-  return api.get('/rank/songlist', {
+  return api.get('/rank/audio', {
     rankid,
     rank_cid,
     page,
