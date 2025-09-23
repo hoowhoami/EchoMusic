@@ -84,7 +84,9 @@
               </NButton>
             </div>
           </template>
-          <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 h-[3780px]">
+          <div
+            class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 max-h-[3780px]"
+          >
             <PlaylistCard
               class="w-[200px] h-[300px]"
               :playlist="item as Playlist"
@@ -158,7 +160,7 @@ const getRecommendPlaylist = async () => {
     playlist.value = [];
     loading.value = true;
     const res = await getPlaylistByCategory({
-      category_id: 0,
+      category_id: '0',
     });
     playlist.value =
       res?.special_list?.map((item: any) => {

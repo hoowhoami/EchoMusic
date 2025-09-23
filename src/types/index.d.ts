@@ -264,50 +264,50 @@ export type SongQuality = MusicEffect | AudioQuality;
 /**
  * 音质选项配置
  */
-export interface QualityOption {
+export type QualityOption = {
   label: string;
   value: AudioQuality | MusicEffect;
-}
+};
 
-export interface QualityOptionGroup {
+export type QualityOptionGroup = {
   label: string;
   key: string;
   type: 'group';
   children: QualityOption[];
   // 添加 naive-ui SelectGroupOption 需要的属性
   [key: string]: any;
-}
+};
 
 export type QualitySelectOption = QualityOptionGroup;
 
 // VIP领取
-export interface VipReceive {
+export type VipReceive = {
   remain_vip_hour: number;
   total: number;
   done: number;
   remain: number;
   award_vip_hour: number;
   day: number;
-}
+};
 
 // 歌词相关类型定义
-export interface LyricsCharacter {
+export type LyricsCharacter = {
   char: string;
   startTime: number;
   endTime: number;
   highlighted: boolean;
-}
+};
 
-export interface LyricsLine {
+export type LyricsLine = {
   characters: LyricsCharacter[];
   translated?: string;
   romanized?: string;
-}
+};
 
 export type LyricsMode = 'translation' | 'romanization';
 
 // Rank
-export interface Rank {
+export type Rank = {
   album_cover_color: string;
   album_img_9: string;
   banner7url: string;
@@ -347,4 +347,13 @@ export interface Rank {
   update_frequency_type: number;
   video_ending: string;
   zone: string;
-}
+};
+
+// Playlist Tag
+export type PlaylistTag = {
+  parent_id: string;
+  son: PlaylistTag[];
+  sort: string;
+  tag_id: string;
+  tag_name: string;
+};

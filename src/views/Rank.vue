@@ -21,17 +21,21 @@
           </NButton>
         </div>
       </template>
-      <div class="grid grid-cols-[repeat(auto-fit,130px)] justify-center gap-4 p-2">
-        <NTag
-          v-for="rank in ranks"
-          :key="rank.rankid"
-          checkable
-          v-model:checked="rank.checked"
-          @update-checked="handleTagChecked($event, rank)"
-        >
-          {{ rank.rankname }}
-        </NTag>
-      </div>
+      <NRadioGroup
+        class="w-full"
+        v-model:value="checkedRankId"
+        @update-value="handleChecked"
+      >
+        <div class="grid grid-cols-[repeat(auto-fit,150px)] gap-3 p-2">
+          <NRadio
+            v-for="rank in ranks"
+            :key="rank.rankid"
+            :value="rank.rankid"
+          >
+            {{ rank.rankname }}
+          </NRadio>
+        </div>
+      </NRadioGroup>
     </NCard>
 
     <div
@@ -82,8 +86,8 @@
 <script lang="ts" setup>
 import type { Rank, Song } from '@/types';
 import { getRankList, getRankSongList } from '@/api';
-import { NButton, NCard, NIcon, NTag } from 'naive-ui';
-import { nextTick, onMounted, ref } from 'vue';
+import { NButton, NCard, NIcon, NRadio, NRadioGroup } from 'naive-ui';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { RefreshRound } from '@vicons/material';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
@@ -92,21 +96,22 @@ defineOptions({
   name: 'Rank',
 });
 
-interface CheckableRank extends Rank {
-  checked: boolean;
-}
-
 const loading = ref(false);
-const ranks = ref<CheckableRank[]>([]);
-const checkedRank = ref<CheckableRank>();
+const ranks = ref<Rank[]>([]);
+const checkedRankId = ref<number | null>(null);
+
 const rankSongs = ref<Song[]>([]);
+
+const checkedRank = computed(() => {
+  return ranks.value.find(rank => rank.rankid === checkedRankId.value);
+});
 
 const getRank = async () => {
   try {
     loading.value = true;
     ranks.value = [];
     rankSongs.value = [];
-    checkedRank.value = undefined;
+    checkedRankId.value = null;
     const res = await getRankList();
     ranks.value = res?.info?.map((rank: Rank) => ({ ...rank, checked: false })) || [];
   } catch (error) {
@@ -118,12 +123,12 @@ const getRank = async () => {
 
 const getRankSongs = async () => {
   try {
-    if (!checkedRank.value) {
+    if (!checkedRankId.value) {
       return;
     }
     loading.value = true;
     rankSongs.value = [];
-    const res = await getRankSongList({ rankid: checkedRank.value.rankid });
+    const res = await getRankSongList({ rankid: checkedRankId.value });
     rankSongs.value =
       res?.songlist?.map((item: any) => {
         const singerinfo =
@@ -156,25 +161,15 @@ const getRankSongs = async () => {
   }
 };
 
-const uncheckOther = (checkedRank: CheckableRank) => {
-  ranks.value.forEach(item => {
-    if (item.rankid !== checkedRank.rankid) {
-      item.checked = false;
-    }
-  });
-};
-
 const handlePlaySong = (song: Song) => {
   player.addNextSong(song, true);
 };
 
-const handleTagChecked = async (checked: boolean, rank: CheckableRank) => {
-  if (checked) {
-    checkedRank.value = rank;
-    uncheckOther(rank);
+const handleChecked = async (rankid: number) => {
+  if (rankid) {
     await getRankSongs();
   } else {
-    checkedRank.value = undefined;
+    checkedRankId.value = null;
     rankSongs.value = [];
   }
 };
@@ -191,8 +186,7 @@ onMounted(async () => {
   await getRank();
   nextTick(async () => {
     if (ranks.value.length > 0) {
-      ranks.value[0].checked = true;
-      checkedRank.value = ranks.value[0];
+      checkedRankId.value = ranks.value[0]?.rankid;
       await getRankSongs();
     }
   });

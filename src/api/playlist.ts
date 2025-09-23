@@ -69,6 +69,6 @@ export const getPlaylistCategory = () => {
 // 可选参数：
 // withsong: 是否返回歌曲列表（不全），0：不返回，1：返回
 // withtag: 是否返回歌单分类，0：不返回，1：返回
-export const getPlaylistByCategory = ({ category_id = 0, withsong = 0, withtag = 1 }) => {
+export const getPlaylistByCategory = ({ category_id = '', withsong = 0, withtag = 1 }) => {
   return api.get('/top/playlist', { category_id, withsong, withtag });
 };

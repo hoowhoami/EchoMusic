@@ -21,7 +21,7 @@
           </NButton>
         </div>
       </template>
-      <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 h-[600px]">
+      <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 max-h-[600px]">
         <SongCard
           v-for="item in recommend"
           :key="item.hash"
