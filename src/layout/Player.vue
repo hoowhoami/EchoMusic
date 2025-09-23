@@ -590,7 +590,9 @@ const initializePlayer = () => {
 };
 
 const handlePlaylistClearAll = () => {
+  player.resetStatus();
   playerStore.clearPlaylist();
+  window.$message.success('已清空播放列表');
 };
 
 const handlePlaylistDelete = (song: Song) => {

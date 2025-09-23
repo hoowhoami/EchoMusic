@@ -100,6 +100,8 @@ class Player {
     const playerStore = usePlayerStore();
     // 重置状态
     playerStore.resetPlaybackState();
+    // 重置播放器
+    this.player.unload();
   }
   /**
    * 获取当前播放歌曲
@@ -610,7 +612,6 @@ class Player {
         else if (settingStore.unblock) {
           // TODO
         } else {
-          this.player.pause();
           this.resetStatus();
           if (playerStore.playlist.length === 1) {
             window.$message.warning('当前播放列表已无可播放歌曲，请更换');
@@ -1068,13 +1069,13 @@ class Player {
    * 清空播放列表
    */
   async cleanPlayList() {
-    // 停止播放
-    Howler.unload();
     // 清空数据
     this.resetStatus();
     // 清空歌词
     lyricsHandler.clearLyrics();
-    window.$message.success('已清空播放列表');
+    // 清空播放列表
+    const playerStore = usePlayerStore();
+    playerStore.clearPlaylist();
   }
 
   // 歌词相关方法
