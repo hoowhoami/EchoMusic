@@ -14,6 +14,7 @@ import { getCover } from './music';
 import { isDev } from './common';
 import { MUSIC_EFFECT_OPTIONS } from '@/constants';
 import { lyricsHandler } from './lyrics';
+import { nextTick } from 'vue';
 
 // 播放器核心
 // Howler.js
@@ -75,22 +76,20 @@ class Player {
    */
   private initPlayerOnAppStart() {
     // 使用 nextTick 确保 DOM 已加载且 Pinia 状态已恢复
-    setTimeout(() => {
+    nextTick(() => {
       const playerStore = usePlayerStore();
-
       // 检查是否有播放列表和当前歌曲
       if (playerStore.playlist.length > 0 && playerStore.current && playerStore.index >= 0) {
         console.log('🎵 恢复播放器状态');
 
         // 重置播放状态，防止状态不一致
-        const wasPlaying = playerStore.isPlaying;
         playerStore.isPlaying = false;
         playerStore.loading = false;
 
         // 重新初始化播放器
-        this.initPlayer(wasPlaying, playerStore.currentTime);
+        this.initPlayer(false, playerStore.currentTime);
       }
-    }, 200); // 增加延迟时间确保 Pinia 完全恢复
+    });
   }
 
   /**

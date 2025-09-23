@@ -104,6 +104,7 @@
 <script setup lang="ts">
 import { getPlaylistByCategory } from '@/api';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
+import { useUserStore } from '@/store';
 import { Playlist } from '@/types';
 import { formatTimestamp, getGreeting } from '@/utils';
 import { RefreshRound } from '@vicons/material';
@@ -117,11 +118,15 @@ defineOptions({
 });
 
 const router = useRouter();
+const userStore = useUserStore();
 
 const loading = ref(false);
 const playlist = ref<Playlist[]>([]);
 
 const greeting = computed(() => {
+  if (userStore.nickname) {
+    return `Hi, ${userStore.nickname} ${getGreeting()}`;
+  }
   return getGreeting();
 });
 
