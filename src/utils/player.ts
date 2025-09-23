@@ -153,8 +153,12 @@ class Player {
    * @returns 播放链接
    */
   private async getOnlineUrl(song: Song): Promise<string | null> {
+    const userStore = useUserStore();
     if (song.source === 'cloud') {
       try {
+        if (!userStore.isAuthenticated) {
+          return null;
+        }
         const res = await getCloudSongUrl(song.hash);
         if (res.url) {
           return res.url;
@@ -220,11 +224,24 @@ class Player {
         const res = await getSongUrl(song.hash);
         if (res.status === 1 && res.url && res.url[0]) {
           console.log('🎵 兼容模式获取成功');
-          window.$message.warning('该歌曲使用兼容模式播放');
           return res.url[0];
         }
       } catch (error) {
         console.error('❌ 兼容模式失败:', error);
+      }
+    }
+
+    // 尝试试听
+    if (!userStore.isAuthenticated) {
+      try {
+        const res = await getSongUrl(song.hash, '', 'true');
+        if (res.url) {
+          console.log('🎵 获取试听成功');
+          return res.url;
+        }
+      } catch (error) {
+        console.error('❌ 获取试听失败:', error);
+        window.$message.warning('该歌曲暂时无法试听');
       }
     }
 
@@ -493,6 +510,7 @@ class Player {
     const playerStore = usePlayerStore();
     const settingStore = useSettingStore();
     if (settingStore.autoNextOnError) {
+      window.$message.error('该歌曲无法播放，跳至下一首');
       setTimeout(async () => {
         // 次数加一
         this.testNumber++;
@@ -592,12 +610,12 @@ class Player {
         else if (settingStore.unblock) {
           // TODO
         } else {
+          this.player.pause();
+          this.resetStatus();
           if (playerStore.playlist.length === 1) {
-            this.resetStatus();
             window.$message.warning('当前播放列表已无可播放歌曲，请更换');
             return;
           } else {
-            window.$message.error('该歌曲无法播放，跳至下一首');
             this.errorNext();
             return;
           }

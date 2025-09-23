@@ -14,10 +14,11 @@ export const getSongPrivilege = (hash: string) => {
 // free_part: 是否返回试听部分（仅部分歌曲）
 // album_audio_id：专辑音频 id
 // quality：获取不同音质的 url
-export const getSongUrl = (hash: string, quality: string = '') => {
+export const getSongUrl = (hash: string, quality: string = '', free_part = '') => {
   return api.get('/song/url', {
     hash,
     quality,
+    free_part,
   });
 };
 

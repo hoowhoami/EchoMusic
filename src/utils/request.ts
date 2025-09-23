@@ -5,6 +5,7 @@ interface ApiResult<T> {
   status?: number;
   error_code?: number;
   errcode?: number;
+  error?: string;
   code?: number;
   data?: T;
 }
@@ -67,6 +68,10 @@ request.interceptors.response.use(
   (error: AxiosError) => {
     // HTTP 状态码错误处理
     if (error.response) {
+      const data = error.response.data as { error_code: number; error: string };
+      if (data?.error_code === 31863 && data?.error === 'no free part info') {
+        return Promise.reject(error.response.data);
+      }
       const userStore = useUserStore();
       const status = error.response.status;
       switch (status) {
