@@ -19,10 +19,6 @@ export class LyricsHandler {
   private currentTime = ref<number>(0);
   private currentSongHash = '';
 
-  // 性能优化：缓存上次高亮的字符索引
-  private lastHighlightedLineIndex = -1;
-  private lastHighlightedCharIndex = -1;
-
   // 获取响应式数据的getter
   get data() {
     return {
@@ -140,7 +136,10 @@ export class LyricsHandler {
             // 确保 languageCode 是有效的 Base64 编码
             const cleanedCode = languageCode.replace(/[^A-Za-z0-9+/=]/g, '');
             // 添加缺失的填充字符
-            const paddedCode = cleanedCode.padEnd(cleanedCode.length + (4 - cleanedCode.length % 4) % 4, '=');
+            const paddedCode = cleanedCode.padEnd(
+              cleanedCode.length + ((4 - (cleanedCode.length % 4)) % 4),
+              '=',
+            );
             // 使用参考代码的解码方式
             const decodedData = decodeURIComponent(escape(atob(paddedCode)));
             const languageData = JSON.parse(decodedData);
@@ -302,7 +301,7 @@ export class LyricsHandler {
       let isLineActive = false;
       let hasHighlightedChar = false;
 
-      lineData.characters.forEach((charData) => {
+      lineData.characters.forEach(charData => {
         // 更精确的时间判断
         if (currentTimeMs >= charData.startTime && currentTimeMs <= charData.endTime) {
           if (!charData.highlighted) {
@@ -339,9 +338,12 @@ export class LyricsHandler {
         const firstChar = lineData.characters[0];
         const lastChar = lineData.characters[lineData.characters.length - 1];
 
-        if (firstChar && lastChar &&
-            currentTimeMs >= firstChar.startTime &&
-            currentTimeMs <= lastChar.endTime) {
+        if (
+          firstChar &&
+          lastChar &&
+          currentTimeMs >= firstChar.startTime &&
+          currentTimeMs <= lastChar.endTime
+        ) {
           currentActiveLineIndex = i;
           break;
         }
