@@ -88,7 +88,7 @@ class Player {
         playerStore.loading = false;
 
         // 重新初始化播放器
-        this.initPlayer(wasPlaying);
+        this.initPlayer(wasPlaying, playerStore.currentTime);
       }
     }, 200); // 增加延迟时间确保 Pinia 完全恢复
   }
