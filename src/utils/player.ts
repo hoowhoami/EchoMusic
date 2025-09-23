@@ -87,7 +87,8 @@ class Player {
         playerStore.loading = false;
 
         // 重新初始化播放器
-        this.initPlayer(false, playerStore.currentTime);
+        const seek = playerStore.currentTime || 0;
+        this.initPlayer(false, seek);
       }
     });
   }

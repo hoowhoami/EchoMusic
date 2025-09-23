@@ -90,6 +90,9 @@
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
+          :tooltip="{
+            scrollable: true,
+          }"
         >
           人生总是聚少离多，我至今仍然无法习惯。
         </NEllipsis>

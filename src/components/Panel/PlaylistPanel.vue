@@ -114,10 +114,13 @@
         <NEllipsis
           :line-clamp="1"
           style="font-size: 12px"
+          :tooltip="{
+            scrollable: true,
+          }"
         >
           <template #tooltip>
             <div
-              class="intro w-[500px]"
+              class="intro max-w-[500px] max-h-[400px]"
               style="font-size: 11px"
             >
               {{ playlistIntro }}

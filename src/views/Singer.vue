@@ -1,5 +1,8 @@
 <template>
-  <div ref="pageRef" class="flex flex-col space-y-4">
+  <div
+    ref="pageRef"
+    class="flex flex-col space-y-4"
+  >
     <div class="info">
       <SingerPanel
         :singer="singerInfo"
@@ -48,7 +51,7 @@ const { isScrolling } = useWheelScroll({
   direction: 'both',
   containerRef: () => pageRef.value,
   excludeSelector: '.n-data-table',
-  onScroll: (deltaY) => {
+  onScroll: deltaY => {
     songListContainerRef.value?.songListRef?.scrollBy(deltaY);
   },
 });
@@ -121,7 +124,6 @@ const getSingerInfo = async () => {
     res.descibe = res.long_intro;
   }
   singerInfo.value = res;
-  console.log(singerInfo.value);
 };
 
 const getSongs = async () => {
