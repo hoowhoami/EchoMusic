@@ -1,7 +1,7 @@
 import type { Song, PlayMode } from '@/types';
 import { Howl, Howler } from 'howler';
 import { cloneDeep } from 'lodash-es';
-import { usePlayerStore, useSettingStore } from '@/store';
+import { usePlayerStore, useSettingStore, useUserStore } from '@/store';
 import {
   getCloudSongUrl,
   getSongClimax,
@@ -475,6 +475,10 @@ class Player {
    * @param song 歌曲
    */
   private async uploadPlayHistory(song?: Song) {
+    const userStore = useUserStore();
+    if (!userStore.isAuthenticated) {
+      return;
+    }
     if (!song || !song.mixsongid) {
       return;
     }
