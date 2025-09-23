@@ -236,10 +236,6 @@ export class LyricsHandler {
     }
 
     this.lyricsData.value = parsedLyrics;
-
-    // 重置性能优化缓存
-    this.lastHighlightedLineIndex = -1;
-    this.lastHighlightedCharIndex = -1;
   }
 
   /**
@@ -473,10 +469,6 @@ export class LyricsHandler {
     this.scrollAmount.value = null;
     this.songTips.value = '暂无歌词';
     this.currentLineIndex = 0;
-
-    // 重置性能优化缓存
-    this.lastHighlightedLineIndex = -1;
-    this.lastHighlightedCharIndex = -1;
 
     this.clearDesktopLyricsContent();
   }
