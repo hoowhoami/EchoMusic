@@ -5,6 +5,22 @@
       size="small"
       hoverable
     >
+      <template #header-extra>
+        <div>
+          <NButton
+            :focusable="false"
+            text
+            :loading="loading"
+            @click="handleRefresh"
+          >
+            <template #icon>
+              <NIcon>
+                <RefreshRound />
+              </NIcon>
+            </template>
+          </NButton>
+        </div>
+      </template>
       <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 h-[600px]">
         <SongCard
           v-for="item in recommend"
@@ -22,9 +38,10 @@
 import type { Song } from '@/types';
 import { getEverydayRecommend } from '@/api';
 import SongCard from '@/components/Card/SongCard.vue';
-import { NCard } from 'naive-ui';
+import { NButton, NCard, NIcon } from 'naive-ui';
 import { onMounted, ref } from 'vue';
 import player from '@/utils/player';
+import { RefreshRound } from '@vicons/material';
 
 defineOptions({
   name: 'Recommend',
@@ -37,9 +54,14 @@ const handlePlay = (song: Song) => {
   player.addNextSong(song, true);
 };
 
+const handleRefresh = async () => {
+  await getDailyRecommend();
+};
+
 const getDailyRecommend = async () => {
   try {
     loading.value = true;
+    recommend.value = [];
     const res = await getEverydayRecommend();
     recommend.value =
       res?.song_list?.map((item: any) => {
