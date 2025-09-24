@@ -85,7 +85,7 @@
             </div>
           </template>
           <div
-            class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 max-h-[3780px]"
+            class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2 max-h-[3780px]"
           >
             <PlaylistCard
               class="w-[200px] h-[300px]"
