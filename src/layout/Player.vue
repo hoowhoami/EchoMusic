@@ -32,7 +32,7 @@
             preview-disabled
           >
             <template #placeholder>
-              <div class="w-[198px] h-[198px] flex items-center justify-center">
+              <div class="w-[50px] h-[50px] flex items-center justify-center">
                 <NIcon :size="24">
                   <MusicNoteFilled />
                 </NIcon>
@@ -85,7 +85,7 @@
         <div class="toolbar flex items-center space-x-2">
           <!-- 云盘标识 -->
           <NIcon
-            :size="16"
+            :size="18"
             v-if="playerStore.current?.source === 'cloud'"
           >
             <CloudOutlined />
@@ -99,7 +99,7 @@
             size="small"
           >
             <template #icon>
-              <NIcon :size="20">
+              <NIcon :size="22">
                 <VideocamOutlined />
               </NIcon>
             </template>
