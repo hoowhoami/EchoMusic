@@ -1,5 +1,8 @@
 <template>
-  <div ref="pageRef" class="album flex flex-col space-y-4">
+  <div
+    ref="pageRef"
+    class="album flex flex-col space-y-4"
+  >
     <div class="info">
       <AlbumPanel
         :album="albumInfo"
@@ -14,9 +17,12 @@
       :songs="songs"
       :instance="albumInfo"
       :loading="loading"
+      :has-more="hasMore"
+      :page-size="pageSize"
       :is-liked="isLikedAlbum"
       :show-like="userStore.isAuthenticated"
       @like="handleAlbumLike"
+      @load-more="handleLoadMore"
       v-model:leave-top="leaveTop"
       v-model:scrolling="isScrolling"
     />
@@ -48,7 +54,7 @@ const { isScrolling } = useWheelScroll({
   direction: 'both',
   containerRef: () => pageRef.value,
   excludeSelector: '.n-data-table',
-  onScroll: (deltaY) => {
+  onScroll: deltaY => {
     songListContainerRef.value?.songListRef?.scrollBy(deltaY);
   },
 });
@@ -87,6 +93,8 @@ const albumId = ref();
 const albumInfo = ref();
 const songs = ref<Song[]>([]);
 const loading = ref(false);
+const hasMore = ref(true);
+const pageSize = 30;
 
 const isLikedAlbum = ref(false);
 
@@ -126,18 +134,38 @@ const getSongs = async () => {
   if (!albumId.value) {
     return;
   }
-  let page = 1;
-  const size = 300;
-  let fetchCount = 0;
+
   songs.value = [];
+  hasMore.value = true;
+
   try {
     loading.value = true;
-    do {
-      const res = await getAlbumSongs(albumId.value, page, size);
-      songs.value.push(...res.songs);
-      fetchCount = res.songs.length;
-      page++;
-    } while (fetchCount > 0);
+    // 只加载第一页数据
+    const res = await getAlbumSongs(albumId.value, 1, pageSize);
+    songs.value = res.songs || [];
+
+    // 如果返回的数据少于每页数量，说明没有更多数据了
+    hasMore.value = (res.songs?.length || 0) === pageSize;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleLoadMore = async (page: number, currentPageSize: number) => {
+  if (!albumId.value || loading.value) {
+    return;
+  }
+
+  try {
+    loading.value = true;
+    const res = await getAlbumSongs(albumId.value, page, currentPageSize);
+    const newSongs = res.songs || [];
+
+    // 追加新数据到现有数据
+    songs.value = [...songs.value, ...newSongs];
+
+    // 更新hasMore状态
+    hasMore.value = newSongs.length === currentPageSize;
   } finally {
     loading.value = false;
   }

@@ -54,6 +54,7 @@ defineOptions({
 const emit = defineEmits<{
   scroll: [e: Event];
   'song-removed': [song?: Song];
+  'load-more': [page: number, pageSize: number];
 }>();
 
 const props = defineProps<{
@@ -62,6 +63,8 @@ const props = defineProps<{
   loading?: boolean;
   batchMode?: boolean;
   playlist?: Playlist;
+  hasMore?: boolean;
+  pageSize?: number;
 }>();
 
 const leaveTop = defineModel<boolean>('leaveTop', { default: false });
@@ -77,6 +80,10 @@ const songs = defineModel<Song[]>();
 const checkedSongs = defineModel<Song[]>('checked-songs');
 
 const checkedRowKeys = ref<string[]>([]);
+
+// 分页相关状态
+const currentPage = ref(1);
+const isLoadingMore = ref(false);
 
 // 右键菜单状态
 const contextMenu = ref({
@@ -118,13 +125,52 @@ const currentScrollTop = ref(0);
 
 // 处理列表滚动
 const handleScroll = (e: Event) => {
-  const scrollTop = (e.target as HTMLElement).scrollTop;
+  const target = e.target as HTMLElement;
+  const scrollTop = target.scrollTop;
+  const scrollHeight = target.scrollHeight;
+  const clientHeight = target.clientHeight;
+
   leaveTop.value = scrollTop > 10;
 
   // 同步外部滚动的 currentScrollTop
   currentScrollTop.value = scrollTop;
 
+  // 检测是否滚动到底部
+  const threshold = 100; // 距离底部100px时开始加载
+  const isNearBottom = scrollHeight - scrollTop - clientHeight <= threshold;
+
+  if (isNearBottom && !isLoadingMore.value && props.hasMore && !props.loading) {
+    handleLoadMore();
+  }
+
   emit('scroll', e);
+};
+
+// 处理加载更多数据
+const handleLoadMore = async () => {
+  if (isLoadingMore.value || !props.hasMore || props.loading) {
+    return;
+  }
+
+  isLoadingMore.value = true;
+  const nextPage = currentPage.value + 1;
+  const pageSize = props.pageSize || 30;
+
+  try {
+    emit('load-more', nextPage, pageSize);
+    currentPage.value = nextPage;
+  } finally {
+    // 延迟重置加载状态，避免重复触发
+    setTimeout(() => {
+      isLoadingMore.value = false;
+    }, 500);
+  }
+};
+
+// 重置分页状态
+const resetPagination = () => {
+  currentPage.value = 1;
+  isLoadingMore.value = false;
 };
 
 const columns = computed<DataTableColumns>(() => {
@@ -206,11 +252,18 @@ const firstColumns = computed<DataTableColumns>(() => {
 
 watch(
   songs,
-  newSongs => {
+  (newSongs, oldSongs) => {
     if (!newSongs) {
       checkedRowKeys.value = [];
+      resetPagination();
       return;
     }
+
+    // 如果是全新的数据（长度从有变无或从大变小），重置分页
+    if (!oldSongs || newSongs.length < (oldSongs.length || 0)) {
+      resetPagination();
+    }
+
     if (checkedRowKeys.value.length) {
       checkedRowKeys.value = checkedRowKeys.value.filter(item =>
         newSongs.some(song => song.hash === item),
@@ -301,6 +354,7 @@ defineExpose({
   scrollToCurrent,
   scrollBy,
   getCurrentScrollTop,
+  resetPagination,
 });
 </script>
 

@@ -18,6 +18,8 @@
       virtual-scroll
       :max-height="maxHeight"
       :loading="loading"
+      :has-more="hasMore"
+      :page-size="pageSize"
       :is-liked="isLikedPlaylist"
       :show-like="userStore.isAuthenticated && !isCreatedPlaylist"
       :show-delete="userStore.isAuthenticated && isCreatedPlaylist && !isDefaultPlaylist"
@@ -25,6 +27,7 @@
       @delete="handleDeletePlaylist"
       @song-removed="handleSongRemoved"
       @deleted-songs="handleDeletedSongs"
+      @load-more="handleLoadMore"
       v-model:leave-top="leaveTop"
       v-model:scrolling="isScrolling"
     />
@@ -97,11 +100,13 @@ const maxHeight = computed(() => {
 
 const loading = ref(false);
 const songs = ref<Song[]>([]);
+const hasMore = ref(true);
+const pageSize = 30;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const handleDeletePlaylist = (data: any) => {
-  const playlist = data as Playlist;
   userStore
-    .deletePlaylist(playlist.listid)
+    .deletePlaylist(data.listid)
     .then(async () => {
       window.$message.success('删除成功');
       router.back();
@@ -111,14 +116,15 @@ const handleDeletePlaylist = (data: any) => {
     });
 };
 
-const handleLikePlaylist = async (playlist: any) => {
-  if (!playlist) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const handleLikePlaylist = async (data?: any) => {
+  if (!data) {
     return;
   }
-  const data = playlist as Playlist;
+  const playlist = data as Playlist;
   if (isLikedPlaylist.value) {
     const likedPlaylist = userStore.playlist?.filter(
-      item => item.list_create_gid === data.list_create_gid,
+      item => item.list_create_gid === playlist.list_create_gid,
     )?.[0];
     if (!likedPlaylist) {
       return;
@@ -126,7 +132,7 @@ const handleLikePlaylist = async (playlist: any) => {
     await userStore.unlikePlaylist(likedPlaylist.listid);
     window.$message.success('已取消收藏');
   } else {
-    await userStore.likePlaylist(data);
+    await userStore.likePlaylist(playlist);
     window.$message.success('已添加收藏');
   }
 };
@@ -170,18 +176,38 @@ const getSongs = async () => {
   if (!playlistId.value) {
     return;
   }
-  let page = 1;
-  const size = 300;
-  let fetchCount = 0;
-  songs.value = [];
+
   try {
     loading.value = true;
-    do {
-      const res = await getPlaylistTrackAll(playlistId.value, page, size);
-      songs.value.push(...res.songs.filter((song: Song) => song.hash));
-      fetchCount = res.songs.length;
-      page++;
-    } while (fetchCount > 0);
+    songs.value = [];
+    hasMore.value = true;
+
+    // 只加载第一页数据
+    const res = await getPlaylistTrackAll(playlistId.value, 1, pageSize);
+    songs.value = res.songs.filter((song: Song) => song.hash);
+
+    // 如果返回的数据少于每页数量，说明没有更多数据了
+    hasMore.value = res.songs.length === pageSize;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleLoadMore = async (page: number, currentPageSize: number) => {
+  if (!playlistId.value || loading.value) {
+    return;
+  }
+
+  try {
+    loading.value = true;
+    const res = await getPlaylistTrackAll(playlistId.value, page, currentPageSize);
+    const newSongs = res.songs.filter((song: Song) => song.hash);
+
+    // 追加新数据到现有数据
+    songs.value = [...songs.value, ...newSongs];
+
+    // 更新hasMore状态
+    hasMore.value = newSongs.length === currentPageSize;
   } finally {
     loading.value = false;
   }

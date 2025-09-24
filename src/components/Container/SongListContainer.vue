@@ -28,11 +28,14 @@
         :max-height="maxHeight"
         :loading="loading"
         :batch-mode="batchMode"
+        :has-more="hasMore"
+        :page-size="pageSize"
         :playlist="instance && type === 'playlist' ? (instance as Playlist) : undefined"
         v-model="filteredSongs"
         v-model:checked-songs="checkedSongs"
         @song-removed="handleSongRemoved"
         @scroll="handleScroll"
+        @load-more="handleLoadMore"
         v-model:leave-top="leaveTop"
         v-model:scrolling="scrolling"
       />
@@ -64,6 +67,10 @@ interface Props {
   maxHeight?: number;
   loading?: boolean;
 
+  // 分页相关
+  hasMore?: boolean;
+  pageSize?: number;
+
   // 状态相关
   isLiked?: boolean;
 
@@ -79,6 +86,7 @@ type Emits = {
   delete: [data?: Playlist | Album | Singer];
   'song-removed': [song?: Song];
   'deleted-songs': [songs: Song[]];
+  'load-more': [page: number, pageSize: number];
 };
 
 const emit = defineEmits<Emits>();
@@ -86,6 +94,8 @@ const emit = defineEmits<Emits>();
 const props = withDefaults(defineProps<Props>(), {
   virtualScroll: false,
   loading: false,
+  hasMore: true,
+  pageSize: 30,
   isLiked: false,
   showLike: false,
   showDelete: false,
@@ -165,6 +175,10 @@ const handleSongRemoved = (removedSong?: Song) => {
 
 const handleScroll = (e: Event) => {
   emit('scroll', e);
+};
+
+const handleLoadMore = (page: number, pageSize: number) => {
+  emit('load-more', page, pageSize);
 };
 
 const handleScrollToCurrent = () => {

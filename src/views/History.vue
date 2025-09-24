@@ -1,5 +1,8 @@
 <template>
-  <div ref="pageRef" class="history flex flex-col space-y-4">
+  <div
+    ref="pageRef"
+    class="history flex flex-col space-y-4"
+  >
     <div class="info">
       <PlayHistoryPanel
         :count="count"
@@ -13,6 +16,9 @@
       :max-height="maxHeight"
       :songs="songs"
       :loading="loading"
+      :has-more="hasMore"
+      :page-size="pageSize"
+      @load-more="handleLoadMore"
       v-model:leave-top="leaveTop"
       v-model:scrolling="isScrolling"
     />
@@ -44,7 +50,7 @@ const { isScrolling } = useWheelScroll({
   direction: 'both',
   containerRef: () => pageRef.value,
   excludeSelector: '.n-data-table',
-  onScroll: (deltaY) => {
+  onScroll: deltaY => {
     songListContainerRef.value?.songListRef?.scrollBy(deltaY);
   },
 });
@@ -58,7 +64,7 @@ const delayedSize = ref<'small' | undefined>(undefined);
 let heightUpdateTimer: NodeJS.Timeout | null = null;
 
 // 监听size变化，延迟更新高度
-watch(size, (newSize) => {
+watch(size, newSize => {
   if (heightUpdateTimer) {
     clearTimeout(heightUpdateTimer);
   }
@@ -80,6 +86,9 @@ const maxHeight = computed(() => {
 
 const loading = ref(false);
 const songs = ref<Song[]>([]);
+const hasMore = ref(true);
+const pageSize = 30;
+const lastBp = ref<number | undefined>(undefined);
 
 const count = computed(() => {
   return songs.value?.length || 0;
@@ -88,13 +97,21 @@ const count = computed(() => {
 const getPlayHistory = async () => {
   try {
     loading.value = true;
+    songs.value = [];
+    hasMore.value = true;
+    lastBp.value = undefined;
+
     const res = await getUserPlayHistory();
     const list = res?.songs
       ?.filter((item: any) => item.info)
       .map((item: any) => {
         return item.info;
       });
+
     songs.value = list || [];
+
+    // History API 通常返回所有数据，暂时设置为没有更多数据
+    hasMore.value = false;
   } catch (error) {
     console.log('获取播放历史失败', error);
   } finally {
@@ -102,8 +119,12 @@ const getPlayHistory = async () => {
   }
 };
 
+const handleLoadMore = async (page: number, currentPageSize: number) => {
+  // History API 不支持分页，暂时不实现
+  console.log('History does not support pagination yet', page, currentPageSize);
+};
+
 onMounted(async () => {
-  console.log('History');
   await getPlayHistory();
 });
 </script>

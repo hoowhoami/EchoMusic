@@ -18,6 +18,9 @@
       type="cloud"
       :songs="songs"
       :loading="loading"
+      :has-more="hasMore"
+      :page-size="pageSize"
+      @load-more="handleLoadMore"
       v-model:leave-top="leaveTop"
       v-model:scrolling="isScrolling"
     />
@@ -87,6 +90,8 @@ const count = ref(0);
 const songs = ref<Song[]>([]);
 const capacity = ref(0);
 const available = ref(0);
+const hasMore = ref(true);
+const pageSize = 30;
 
 const getUserCloudInfo = async () => {
   try {
@@ -95,11 +100,15 @@ const getUserCloudInfo = async () => {
     songs.value = [];
     capacity.value = 0;
     available.value = 0;
-    const res = await getUserCloud();
+    hasMore.value = true;
+
+    // 只加载第一页数据
+    const res = await getUserCloud(1, pageSize);
     count.value = res.list_count || 0;
     capacity.value = res.max_size || 0;
     available.value = res.availble_size || 0;
-    songs.value = isArray(res.list)
+
+    const songList = isArray(res.list)
       ? res.list?.map((item: any) => {
           const singerinfo =
             item?.authors?.map((it: any) => {
@@ -123,8 +132,58 @@ const getUserCloudInfo = async () => {
           };
         })
       : [];
+
+    songs.value = songList;
+    // 如果返回的数据少于每页数量，说明没有更多数据了
+    hasMore.value = songList.length <= pageSize;
   } catch (error) {
     console.log('获取云盘数据失败', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleLoadMore = async (page: number, currentPageSize: number) => {
+  if (loading.value) {
+    return;
+  }
+
+  try {
+    loading.value = true;
+    const res = await getUserCloud(page, currentPageSize);
+
+    const newSongs = isArray(res.list)
+      ? res.list?.map((item: any) => {
+          const singerinfo =
+            item?.authors?.map((it: any) => {
+              return {
+                id: it?.author_id,
+                name: it?.author_name,
+                avatar: it?.sizable_avatar,
+                publish: it?.is_publish,
+              };
+            }) || [];
+          return {
+            ...item,
+            cover: item?.album_info?.sizable_cover,
+            albuminfo: {
+              id: item?.album_info?.album_id,
+              name: item?.album_info?.album_name,
+              publish: item?.album_info?.is_publish,
+            },
+            singerinfo: singerinfo,
+            source: 'cloud',
+          };
+        })
+      : [];
+
+    // 追加新数据到现有数据
+    songs.value = [...songs.value, ...newSongs];
+
+    // 更新hasMore状态
+    hasMore.value = newSongs.length === currentPageSize;
+  } catch (error) {
+    console.log('获取更多云盘数据失败', error);
   } finally {
     loading.value = false;
   }

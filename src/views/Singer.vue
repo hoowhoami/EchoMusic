@@ -17,9 +17,12 @@
       :songs="songs"
       :instance="singerInfo"
       :loading="loading"
+      :has-more="hasMore"
+      :page-size="pageSize"
       :show-like="userStore.isAuthenticated"
       :is-liked="isLikedSinger"
       @like="handleLikeSinger"
+      @load-more="handleLoadMore"
       v-model:leave-top="leaveTop"
       v-model:scrolling="isScrolling"
     />
@@ -90,6 +93,8 @@ const singerId = ref();
 const singerInfo = ref();
 const songs = ref<Song[]>([]);
 const loading = ref(false);
+const hasMore = ref(true);
+const pageSize = 30;
 const isLikedSinger = computed(() => {
   if (!singerId.value) {
     return false;
@@ -97,6 +102,7 @@ const isLikedSinger = computed(() => {
   return userStore.isFollowedSinger(Number(singerId.value));
 });
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const handleLikeSinger = async (data: any) => {
   const singer = data as Singer;
   if (isLikedSinger.value) {
@@ -130,56 +136,119 @@ const getSongs = async () => {
   if (!singerId.value) {
     return;
   }
-  let page = 1;
-  const size = 300;
-  let fetchCount = 0;
+
   songs.value = [];
+  hasMore.value = true;
+
   try {
     loading.value = true;
-    do {
-      let res = await getSingerSongs({
-        id: singerId.value,
-        page,
-        pagesize: size,
-      });
-      res = res?.map((item: any) => {
-        const relate_goods = [];
-        if (item.hash_320) {
-          relate_goods.push({
-            hash: item.hash_320,
-            quality: '320',
-          });
-        }
-        if (item.hash_flac) {
-          relate_goods.push({
-            hash: item.hash_flac,
-            quality: 'flac',
-          });
-        }
-        return {
-          ...item,
-          album_id: item.album_id,
-          albuminfo: {
-            id: item.album_id,
-            name: item.album_name,
+    // 只加载第一页数据
+    let res = await getSingerSongs({
+      id: singerId.value,
+      page: 1,
+      pagesize: pageSize,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    res = res?.map((item: any) => {
+      const relate_goods = [];
+      if (item.hash_320) {
+        relate_goods.push({
+          hash: item.hash_320,
+          quality: '320',
+        });
+      }
+      if (item.hash_flac) {
+        relate_goods.push({
+          hash: item.hash_flac,
+          quality: 'flac',
+        });
+      }
+      return {
+        ...item,
+        album_id: item.album_id,
+        albuminfo: {
+          id: item.album_id,
+          name: item.album_name,
+        },
+        name: item.author_name + ' - ' + item.audio_name,
+        singerinfo: [
+          {
+            id: singerId.value,
+            name: item.author_name,
           },
-          name: item.author_name + ' - ' + item.audio_name,
-          singerinfo: [
-            {
-              id: singerId.value,
-              name: item.author_name,
-            },
-          ],
-          publish_time: item.publish_date,
-          cover: item.trans_param?.union_cover,
-          relate_goods: relate_goods,
-          timelen: item.timelength || 0,
-        };
-      });
-      songs.value.push(...res);
-      fetchCount = res.length;
-      page++;
-    } while (fetchCount > 0);
+        ],
+        publish_time: item.publish_date,
+        cover: item.trans_param?.union_cover,
+        relate_goods: relate_goods,
+        timelen: item.timelength || 0,
+      };
+    });
+
+    songs.value = res || [];
+    // 如果返回的数据少于每页数量，说明没有更多数据了
+    hasMore.value = (res?.length || 0) === pageSize;
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleLoadMore = async (page: number, currentPageSize: number) => {
+  if (!singerId.value || loading.value) {
+    return;
+  }
+
+  try {
+    loading.value = true;
+    let res = await getSingerSongs({
+      id: singerId.value,
+      page,
+      pagesize: currentPageSize,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    res = res?.map((item: any) => {
+      const relate_goods = [];
+      if (item.hash_320) {
+        relate_goods.push({
+          hash: item.hash_320,
+          quality: '320',
+        });
+      }
+      if (item.hash_flac) {
+        relate_goods.push({
+          hash: item.hash_flac,
+          quality: 'flac',
+        });
+      }
+      return {
+        ...item,
+        album_id: item.album_id,
+        albuminfo: {
+          id: item.album_id,
+          name: item.album_name,
+        },
+        name: item.author_name + ' - ' + item.audio_name,
+        singerinfo: [
+          {
+            id: singerId.value,
+            name: item.author_name,
+          },
+        ],
+        publish_time: item.publish_date,
+        cover: item.trans_param?.union_cover,
+        relate_goods: relate_goods,
+        timelen: item.timelength || 0,
+      };
+    });
+
+    const newSongs = res || [];
+
+    // 追加新数据到现有数据
+    songs.value = [...songs.value, ...newSongs];
+
+    // 更新hasMore状态
+    hasMore.value = newSongs.length === currentPageSize;
   } finally {
     loading.value = false;
   }
