@@ -103,6 +103,11 @@ const songs = ref<Song[]>([]);
 const hasMore = ref(true);
 const pageSize = 30;
 
+// 抽取歌曲过滤逻辑
+const filterValidSongs = (songs: Song[]) => {
+  return songs.filter((song: Song) => song.hash);
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const handleDeletePlaylist = (data: any) => {
   userStore
@@ -184,7 +189,7 @@ const getSongs = async () => {
 
     // 只加载第一页数据
     const res = await getPlaylistTrackAll(playlistId.value, 1, pageSize);
-    songs.value = res.songs.filter((song: Song) => song.hash);
+    songs.value = filterValidSongs(res.songs);
 
     // 如果返回的数据少于每页数量，说明没有更多数据了
     hasMore.value = res.songs.length === pageSize;
@@ -201,7 +206,7 @@ const handleLoadMore = async (page: number, currentPageSize: number) => {
   try {
     loading.value = true;
     const res = await getPlaylistTrackAll(playlistId.value, page, currentPageSize);
-    const newSongs = res.songs.filter((song: Song) => song.hash);
+    const newSongs = filterValidSongs(res.songs);
 
     // 追加新数据到现有数据
     songs.value = [...songs.value, ...newSongs];

@@ -93,6 +93,30 @@ const available = ref(0);
 const hasMore = ref(true);
 const pageSize = 30;
 
+// 抽取云盘歌曲数据转换逻辑
+const transformCloudSong = (item: any) => {
+  const singerinfo =
+    item?.authors?.map((it: any) => {
+      return {
+        id: it?.author_id,
+        name: it?.author_name,
+        avatar: it?.sizable_avatar,
+        publish: it?.is_publish,
+      };
+    }) || [];
+  return {
+    ...item,
+    cover: item?.album_info?.sizable_cover,
+    albuminfo: {
+      id: item?.album_info?.album_id,
+      name: item?.album_info?.album_name,
+      publish: item?.album_info?.is_publish,
+    },
+    singerinfo: singerinfo,
+    source: 'cloud',
+  };
+};
+
 const getUserCloudInfo = async () => {
   try {
     loading.value = true;
@@ -109,28 +133,7 @@ const getUserCloudInfo = async () => {
     available.value = res.availble_size || 0;
 
     const songList = isArray(res.list)
-      ? res.list?.map((item: any) => {
-          const singerinfo =
-            item?.authors?.map((it: any) => {
-              return {
-                id: it?.author_id,
-                name: it?.author_name,
-                avatar: it?.sizable_avatar,
-                publish: it?.is_publish,
-              };
-            }) || [];
-          return {
-            ...item,
-            cover: item?.album_info?.sizable_cover,
-            albuminfo: {
-              id: item?.album_info?.album_id,
-              name: item?.album_info?.album_name,
-              publish: item?.album_info?.is_publish,
-            },
-            singerinfo: singerinfo,
-            source: 'cloud',
-          };
-        })
+      ? res.list?.map((item: any) => transformCloudSong(item))
       : [];
 
     songs.value = songList;
@@ -153,28 +156,7 @@ const handleLoadMore = async (page: number, currentPageSize: number) => {
     const res = await getUserCloud(page, currentPageSize);
 
     const newSongs = isArray(res.list)
-      ? res.list?.map((item: any) => {
-          const singerinfo =
-            item?.authors?.map((it: any) => {
-              return {
-                id: it?.author_id,
-                name: it?.author_name,
-                avatar: it?.sizable_avatar,
-                publish: it?.is_publish,
-              };
-            }) || [];
-          return {
-            ...item,
-            cover: item?.album_info?.sizable_cover,
-            albuminfo: {
-              id: item?.album_info?.album_id,
-              name: item?.album_info?.album_name,
-              publish: item?.album_info?.is_publish,
-            },
-            singerinfo: singerinfo,
-            source: 'cloud',
-          };
-        })
+      ? res.list?.map((item: any) => transformCloudSong(item))
       : [];
 
     // 追加新数据到现有数据

@@ -132,6 +132,42 @@ const getSingerInfo = async () => {
   singerInfo.value = res;
 };
 
+// 抽取数据转换逻辑
+const transformSingerSong = (item: any) => {
+  const relate_goods = [];
+  if (item.hash_320) {
+    relate_goods.push({
+      hash: item.hash_320,
+      quality: '320',
+    });
+  }
+  if (item.hash_flac) {
+    relate_goods.push({
+      hash: item.hash_flac,
+      quality: 'flac',
+    });
+  }
+  return {
+    ...item,
+    album_id: item.album_id,
+    albuminfo: {
+      id: item.album_id,
+      name: item.album_name,
+    },
+    name: item.author_name + ' - ' + item.audio_name,
+    singerinfo: [
+      {
+        id: singerId.value,
+        name: item.author_name,
+      },
+    ],
+    publish_time: item.publish_date,
+    cover: item.trans_param?.union_cover,
+    relate_goods: relate_goods,
+    timelen: item.timelength || 0,
+  };
+};
+
 const getSongs = async () => {
   if (!singerId.value) {
     return;
@@ -150,40 +186,7 @@ const getSongs = async () => {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    res = res?.map((item: any) => {
-      const relate_goods = [];
-      if (item.hash_320) {
-        relate_goods.push({
-          hash: item.hash_320,
-          quality: '320',
-        });
-      }
-      if (item.hash_flac) {
-        relate_goods.push({
-          hash: item.hash_flac,
-          quality: 'flac',
-        });
-      }
-      return {
-        ...item,
-        album_id: item.album_id,
-        albuminfo: {
-          id: item.album_id,
-          name: item.album_name,
-        },
-        name: item.author_name + ' - ' + item.audio_name,
-        singerinfo: [
-          {
-            id: singerId.value,
-            name: item.author_name,
-          },
-        ],
-        publish_time: item.publish_date,
-        cover: item.trans_param?.union_cover,
-        relate_goods: relate_goods,
-        timelen: item.timelength || 0,
-      };
-    });
+    res = res?.map((item: any) => transformSingerSong(item));
 
     songs.value = res || [];
     // 如果返回的数据少于每页数量，说明没有更多数据了
@@ -207,40 +210,7 @@ const handleLoadMore = async (page: number, currentPageSize: number) => {
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    res = res?.map((item: any) => {
-      const relate_goods = [];
-      if (item.hash_320) {
-        relate_goods.push({
-          hash: item.hash_320,
-          quality: '320',
-        });
-      }
-      if (item.hash_flac) {
-        relate_goods.push({
-          hash: item.hash_flac,
-          quality: 'flac',
-        });
-      }
-      return {
-        ...item,
-        album_id: item.album_id,
-        albuminfo: {
-          id: item.album_id,
-          name: item.album_name,
-        },
-        name: item.author_name + ' - ' + item.audio_name,
-        singerinfo: [
-          {
-            id: singerId.value,
-            name: item.author_name,
-          },
-        ],
-        publish_time: item.publish_date,
-        cover: item.trans_param?.union_cover,
-        relate_goods: relate_goods,
-        timelen: item.timelength || 0,
-      };
-    });
+    res = res?.map((item: any) => transformSingerSong(item));
 
     const newSongs = res || [];
 
