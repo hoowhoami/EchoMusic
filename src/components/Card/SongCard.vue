@@ -3,6 +3,7 @@
     class="song-card flex items-center space-x-2 group"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
+    @contextmenu="handleContextMenu"
   >
     <div
       class="song-cover-wrapper relative rounded-lg overflow-hidden border cursor-pointer"
@@ -131,11 +132,23 @@
         </div>
       </div>
     </div>
+
+    <!-- 右键菜单 -->
+    <SongMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :song="song"
+      :playlist="playlist"
+      @close="closeContextMenu"
+      @song-played="handleMenuPlay"
+      @song-removed="(song) => $emit('song-removed', song)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Song } from '@/types';
+import type { Song, Playlist } from '@/types';
 import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
 import { NEllipsis, NImage, NIcon, useThemeVars, NText, NTag } from 'naive-ui';
@@ -143,6 +156,7 @@ import { computed, ref } from 'vue';
 import { CloudOutlined, PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
 import player from '@/utils/player';
+import SongMenu from '@/components/Menu/SongMenu.vue';
 
 defineOptions({
   name: 'SongCard',
@@ -153,15 +167,45 @@ const props = defineProps<{
   showCover?: boolean;
   coverSize?: number;
   showMore?: boolean;
+  playlist?: Playlist;
 }>();
 
 const emit = defineEmits<{
   play: [song: Song];
+  'song-removed': [song?: Song];
 }>();
 
 const playerStore = usePlayerStore();
 const themeVars = useThemeVars();
 const isHovered = ref(false);
+
+// 右键菜单状态
+const contextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+});
+
+// 处理右键菜单
+const handleContextMenu = (e: MouseEvent) => {
+  e.preventDefault();
+  contextMenu.value = {
+    show: true,
+    x: e.clientX,
+    y: e.clientY,
+  };
+};
+
+// 关闭右键菜单
+const closeContextMenu = () => {
+  contextMenu.value.show = false;
+};
+
+// 处理菜单中的播放
+const handleMenuPlay = (song?: Song) => {
+  if (!song) return;
+  player.playSong(song);
+};
 
 // 检查是否正在播放
 const isPlaying = computed(() => {

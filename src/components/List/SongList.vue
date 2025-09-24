@@ -19,18 +19,6 @@
         trigger: scrolling ? 'none' : 'hover',
       }"
     />
-
-    <!-- 右键菜单 -->
-    <SongListMenu
-      :show="contextMenu.show"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :song="contextMenu.song!"
-      :playlist="props.playlist"
-      @close="closeContextMenu"
-      @song-played="handleSongPlayed"
-      @song-removed="(song?: Song) => emit('song-removed', song)"
-    />
   </div>
 </template>
 
@@ -42,7 +30,6 @@ import { msToTime } from '@/utils';
 import { NDataTable, NEllipsis } from 'naive-ui';
 import { computed, h, ref, watch } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
-import SongListMenu from '@/components/Menu/SongListMenu.vue';
 import player from '@/utils/player';
 import { isEqual } from 'lodash-es';
 import { usePlayerStore, useSettingStore } from '@/store';
@@ -85,40 +72,9 @@ const checkedRowKeys = ref<string[]>([]);
 const currentPage = ref(1);
 const isLoadingMore = ref(false);
 
-// 右键菜单状态
-const contextMenu = ref({
-  show: false,
-  x: 0,
-  y: 0,
-  song: null as Song | null,
-});
-
-// 行属性配置，添加右键事件
-const rowProps = (row: Song) => {
-  return {
-    onContextmenu: (e: MouseEvent) => {
-      e.preventDefault();
-      contextMenu.value = {
-        show: true,
-        x: e.clientX,
-        y: e.clientY,
-        song: row,
-      };
-    },
-  };
-};
-
-// 关闭右键菜单
-const closeContextMenu = () => {
-  contextMenu.value.show = false;
-};
-
-// 处理播放歌曲
-const handleSongPlayed = (song?: Song) => {
-  if (!song) {
-    return;
-  }
-  player.playSong(song);
+// 行属性配置
+const rowProps = () => {
+  return {};
 };
 
 const currentScrollTop = ref(0);
@@ -185,6 +141,7 @@ const columns = computed<DataTableColumns>(() => {
         return h(SongCard, {
           song,
           coverSize: 40,
+          playlist: props.playlist,
           onPlay: (song: Song) => {
             if (settingStore.addSongsToPlaylist) {
               player.updatePlayList(songs.value || [], song, {
@@ -194,6 +151,7 @@ const columns = computed<DataTableColumns>(() => {
               player.playSong(song);
             }
           },
+          onSongRemoved: (song?: Song) => emit('song-removed', song),
         });
       },
       sorter: 'default',

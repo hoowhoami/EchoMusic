@@ -61,47 +61,6 @@
               :speed="0.2"
               class="name"
             />
-
-            <!-- 更多操作 -->
-
-            <div class="flex items-center space-x-2">
-              <!-- 云盘标识 -->
-              <NIcon
-                :size="16"
-                v-if="playerStore.current?.source === 'cloud'"
-              >
-                <CloudOutlined />
-              </NIcon>
-              <!-- 歌词按钮 -->
-              <NButton
-                :focusable="false"
-                ghost
-                text
-                size="small"
-                @click.stop="toggleDesktopLyrics"
-              >
-                <template #icon>
-                  <NIcon :size="16">
-                    <MusicVideoRound />
-                  </NIcon>
-                </template>
-              </NButton>
-
-              <!-- MV按钮 -->
-              <NButton
-                v-if="settingStore.enabledMV"
-                :focusable="false"
-                ghost
-                text
-                size="small"
-              >
-                <template #icon>
-                  <NIcon :size="20">
-                    <VideocamOutlined />
-                  </NIcon>
-                </template>
-              </NButton>
-            </div>
           </div>
           <Transition
             name="fade"
@@ -119,6 +78,42 @@
               </div>
             </div>
           </Transition>
+        </div>
+      </Transition>
+      <!-- toolbar -->
+      <Transition>
+        <div class="toolbar flex items-center space-x-2">
+          <!-- 云盘标识 -->
+          <NIcon
+            :size="16"
+            v-if="playerStore.current?.source === 'cloud'"
+          >
+            <CloudOutlined />
+          </NIcon>
+          <!-- MV按钮 -->
+          <NButton
+            v-if="settingStore.enabledMV"
+            :focusable="false"
+            ghost
+            text
+            size="small"
+          >
+            <template #icon>
+              <NIcon :size="20">
+                <VideocamOutlined />
+              </NIcon>
+            </template>
+          </NButton>
+          <!-- 歌词按钮 -->
+          <NButton
+            :focusable="false"
+            ghost
+            text
+            size="small"
+            @click.stop="toggleDesktopLyrics"
+          >
+            <div style="font-size: 14px; font-weight: 800">词</div>
+          </NButton>
         </div>
       </Transition>
     </div>
@@ -482,7 +477,6 @@ import {
   PlayArrowRound,
   SpeedRound,
   HighQualityOutlined,
-  MusicVideoRound,
   VideocamOutlined,
   CloudOutlined,
   MusicNoteFilled,
@@ -874,6 +868,20 @@ const toggleDesktopLyrics = () => {
               color: var(--n-close-icon-color);
             }
           }
+        }
+      }
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      .n-icon {
+        font-size: 22px;
+        color: var(--primary-hex);
+        transition: color 0.3s;
+        cursor: pointer;
+        &:hover {
+          color: var(--primary-hex);
         }
       }
     }

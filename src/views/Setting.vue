@@ -388,10 +388,7 @@
               获取播放歌曲的MV
             </NText>
           </div>
-          <NSwitch
-            v-model:value="settingStore.enabledMV"
-            disabled
-          />
+          <NSwitch v-model:value="settingStore.enabledMV" />
         </div>
 
         <NDivider />

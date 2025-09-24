@@ -19,7 +19,7 @@ import { useUserStore } from '@/store';
 import { addPlaylistTrack, deletePlaylistTrack } from '@/api';
 
 defineOptions({
-  name: 'SongListMenu',
+  name: 'SongMenu',
 });
 
 interface Props {

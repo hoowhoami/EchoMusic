@@ -235,7 +235,7 @@ async function startServer() {
     }
 
     if (serverProcess.stderr) {
-      serverProcess.stderr.on('data', (data) => {
+      serverProcess.stderr.on('data', data => {
         console.error('服务器错误:', data.toString());
       });
     }
@@ -253,7 +253,6 @@ async function startServer() {
 
     // 等待服务器完全启动
     await waitForServer();
-
   } catch (error) {
     console.error('❌ 启动服务器时出错:', error);
   }
@@ -300,10 +299,10 @@ async function waitForServer() {
 
 function createWindow() {
   const windowOptions = {
-    minWidth: 1000,
-    width: 1000,
-    minHeight: 700,
-    height: 700,
+    minWidth: 1080,
+    width: 1080,
+    minHeight: 768,
+    height: 768,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -646,4 +645,3 @@ app.on('before-quit', () => {
     serverProcess = null;
   }
 });
-
