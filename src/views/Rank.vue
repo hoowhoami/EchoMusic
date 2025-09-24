@@ -5,22 +5,6 @@
       hoverable
     >
       <template #header> 排行榜 </template>
-      <template #header-extra>
-        <div>
-          <NButton
-            :focusable="false"
-            text
-            :loading="loading"
-            @click="handleRankListRefresh"
-          >
-            <template #icon>
-              <NIcon>
-                <RefreshRound />
-              </NIcon>
-            </template>
-          </NButton>
-        </div>
-      </template>
       <NRadioGroup
         class="w-full"
         v-model:value="checkedRankId"
@@ -69,6 +53,13 @@
         </template>
         <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 h-[600px]">
           <div
+            v-if="loading"
+            class="h-[600px] flex items-center justify-center"
+          >
+            <NSpin :show="loading" />
+          </div>
+          <div
+            v-else
             v-for="song in rankSongs"
             :key="song.hash"
           >
@@ -172,10 +163,6 @@ const handleChecked = async (rankid: number) => {
     checkedRankId.value = null;
     rankSongs.value = [];
   }
-};
-
-const handleRankListRefresh = async () => {
-  await getRank();
 };
 
 const handleRankSongListRefresh = async () => {

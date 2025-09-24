@@ -22,7 +22,14 @@
         </div>
       </template>
       <div class="grid grid-cols-[repeat(auto-fit,200px)] justify-center gap-4 p-2 max-h-[600px]">
+        <div
+          v-if="loading"
+          class="h-[600px] flex items-center justify-center"
+        >
+          <NSpin :show="loading" />
+        </div>
         <SongCard
+          v-else
           v-for="item in recommend"
           :key="item.hash"
           :song="item"

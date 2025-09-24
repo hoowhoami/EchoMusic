@@ -69,7 +69,14 @@
         <div
           class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2 max-h-[3780px]"
         >
+          <div
+            v-if="loading"
+            class="h-[3780px] flex items-center justify-center"
+          >
+            <NSpin :show="loading" />
+          </div>
           <PlaylistCard
+            v-else
             class="w-[200px] h-[300px]"
             :playlist="item as Playlist"
             v-for="item in playlist"
@@ -85,7 +92,7 @@
 <script setup lang="ts">
 import type { Playlist, PlaylistTag } from '@/types';
 import { getPlaylistByCategory, getPlaylistCategory } from '@/api';
-import { NButton, NCard, NDivider, NIcon, NRadio, NRadioGroup } from 'naive-ui';
+import { NButton, NCard, NDivider, NIcon, NRadio, NRadioGroup, NSpin } from 'naive-ui';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { useRouter } from 'vue-router';
@@ -132,6 +139,7 @@ const getPlaylistTags = async () => {
 const getPlaylist = async (subTagId: string) => {
   try {
     loading.value = true;
+    playlist.value = [];
     const res = await getPlaylistByCategory({
       category_id: subTagId,
     });
@@ -156,7 +164,7 @@ const getPlaylist = async (subTagId: string) => {
 
 const handleTagChecked = (tagId: string) => {
   subTags.value = tags.value.find(tag => tag.tag_id === tagId)?.son || [];
-  checkedSubTagId.value = null;
+  checkedSubTagId.value = subTags.value?.[0]?.tag_id;
 };
 
 const handleSubTagChecked = async (tagId: string) => {

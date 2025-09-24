@@ -87,7 +87,14 @@
           <div
             class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2 max-h-[3780px]"
           >
+            <div
+              v-if="loading"
+              class="h-[3780px] flex items-center justify-center"
+            >
+              <NSpin :show="loading" />
+            </div>
             <PlaylistCard
+              v-else
               class="w-[200px] h-[300px]"
               :playlist="item as Playlist"
               v-for="item in playlist"
