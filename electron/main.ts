@@ -270,7 +270,7 @@ async function waitForServer() {
 
   while (retries < maxRetries) {
     try {
-      const response = await fetch('http://localhost:10086/');
+      await fetch('http://localhost:10086/');
       console.log('✅ 音乐服务已就绪');
 
       // 通知加载窗口服务器已准备就绪
