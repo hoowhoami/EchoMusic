@@ -536,6 +536,8 @@ class Player {
           this.cleanPlayList();
         }
       }, settingStore.autoNextOnErrorTime);
+    } else {
+      window.$message.error('该歌曲暂无法播放');
     }
   }
 
@@ -614,7 +616,7 @@ class Player {
         } else {
           this.resetStatus();
           if (playerStore.playlist.length === 1) {
-            window.$message.warning('当前播放列表已无可播放歌曲，请更换');
+            window.$message.warning('当前播放列表已无可播放歌曲');
             return;
           } else {
             this.errorNext();
@@ -624,7 +626,7 @@ class Player {
       }
     } catch (error) {
       console.error('❌ 初始化音乐播放器出错：', error);
-      window.$message.error('播放器遇到错误，请尝试软件热重载');
+      window.$message.error('播放器遇到错误，请尝试重启应用');
       this.errorNext();
     } finally {
       playerStore.loading = false;

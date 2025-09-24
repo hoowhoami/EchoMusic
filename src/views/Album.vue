@@ -90,6 +90,7 @@ const maxHeight = computed(() => {
 
 const route = useRoute();
 const albumId = ref();
+const songCount = ref(0);
 const albumInfo = ref();
 const songs = ref<Song[]>([]);
 const loading = ref(false);
@@ -117,7 +118,6 @@ const getAlbumInfo = async () => {
   }
   const res = await getAlbumDetail(albumId.value);
   albumInfo.value = res?.map((item: any) => {
-    console.log(item);
     return {
       ...item,
       albumid: item.album_id,
@@ -125,9 +125,9 @@ const getAlbumInfo = async () => {
       singer: item.author_name,
       publish_time: item.publish_date,
       img: item.sizable_cover,
+      songcount: item.songcount || songCount.value || 0,
     };
   })?.[0];
-  console.log(albumInfo.value);
 };
 
 const getSongs = async () => {
@@ -142,7 +142,8 @@ const getSongs = async () => {
     loading.value = true;
     // 只加载第一页数据
     const res = await getAlbumSongs(albumId.value, 1, pageSize);
-    songs.value = res.songs || [];
+
+    songs.value = res?.songs.map(transformAlbumSong) || [];
 
     // 如果返回的数据少于每页数量，说明没有更多数据了
     hasMore.value = (res.songs?.length || 0) === pageSize;
@@ -159,7 +160,7 @@ const handleLoadMore = async (page: number, currentPageSize: number) => {
   try {
     loading.value = true;
     const res = await getAlbumSongs(albumId.value, page, currentPageSize);
-    const newSongs = res.songs || [];
+    const newSongs = res.songs.map(transformAlbumSong) || [];
 
     // 追加新数据到现有数据
     songs.value = [...songs.value, ...newSongs];
@@ -171,8 +172,53 @@ const handleLoadMore = async (page: number, currentPageSize: number) => {
   }
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const transformAlbumSong = (item: any): Song => {
+  const singerinfo =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    item.authors?.map((item: any) => {
+      return {
+        id: item.author_id,
+        name: item.author_name,
+        avatar: item.sizable_avatar,
+        publish: item.is_publish,
+      };
+    }) || [];
+  const relate_goods = [];
+  if (item.audio_info?.hash_320) {
+    relate_goods.push({
+      hash: item.hash_320,
+      quality: '320',
+    });
+  }
+  if (item.audio_info?.hash_flac) {
+    relate_goods.push({
+      hash: item.hash_flac,
+      quality: 'flac',
+    });
+  }
+  return {
+    ...item,
+    hash: item.audio_info?.hash || item.audio_info?.hash_128,
+    name: item.base?.audio_name,
+    cover: item.trans_param?.union_cover,
+    timelen: item.audio_info?.duration,
+    audio_id: item.base?.audio_id,
+    album_id: item.base?.album_id,
+    singerinfo: singerinfo,
+    albuminfo: {
+      id: item.album_info?.album_id,
+      name: item.album_info?.album_name,
+      cover: item.album_info?.sizable_cover,
+    },
+    relate_goods: relate_goods,
+    privilege: item.copyright?.privilege,
+  };
+};
+
 onMounted(async () => {
   albumId.value = route.query.id;
+  songCount.value = Number(route.query.count);
   getAlbumInfo();
   getSongs();
 });

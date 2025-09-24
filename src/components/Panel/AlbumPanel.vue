@@ -27,7 +27,10 @@
           </div>
         </NEllipsis>
       </template>
-      <template #description>
+      <template
+        #description
+        v-if="props.size !== 'small'"
+      >
         <div
           class="flex flex-col description-content"
           style="margin-top: -5px"
@@ -103,7 +106,7 @@
         >
           <template #tooltip>
             <div
-              class="intro max-w-[500px] max-h-[400px]"
+              class="intro max-w-[500px] max-h-[200px]"
               style="font-size: 11px"
             >
               {{ intro }}

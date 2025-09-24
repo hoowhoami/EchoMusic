@@ -68,8 +68,11 @@ request.interceptors.response.use(
   (error: AxiosError) => {
     // HTTP 状态码错误处理
     if (error.response) {
-      const data = error.response.data as { error_code: number; error: string };
+      const data = error.response.data as { error_code: number; error: string; error_msg: string };
       if (data?.error_code === 31863 && data?.error === 'no free part info') {
+        return Promise.reject(error.response.data);
+      }
+      if (data?.error_code === 30002 && data?.error_msg === '今天次数已用光') {
         return Promise.reject(error.response.data);
       }
       const userStore = useUserStore();

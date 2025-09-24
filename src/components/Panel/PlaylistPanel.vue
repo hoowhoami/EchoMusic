@@ -120,7 +120,7 @@
         >
           <template #tooltip>
             <div
-              class="intro max-w-[500px] max-h-[400px]"
+              class="intro max-w-[500px] max-h-[200px]"
               style="font-size: 11px"
             >
               {{ playlistIntro }}

@@ -140,7 +140,6 @@ const handlePlaySong = (song: Song) => {
 };
 
 const handleOpenPlaylist = async (playlist: Playlist) => {
-  console.log(playlist);
   await router.push({
     name: 'Playlist',
     query: {
@@ -155,6 +154,7 @@ const handleOpenAlbum = async (album: Album) => {
     name: 'Album',
     query: {
       id: album.albumid,
+      count: album.songcount,
       t: new Date().getTime(),
     },
   });
@@ -247,7 +247,6 @@ const searchAlbum = async (
   pageSize: number,
 ): Promise<{ list: any[]; total: number }> => {
   const res = await getSearchResult(keyword.value, 'album', page, pageSize);
-  console.log(res);
   const list = res?.lists?.map((item: any) => {
     return {
       ...item,
@@ -264,7 +263,6 @@ const searchSinger = async (
   pageSize: number,
 ): Promise<{ list: any[]; total: number }> => {
   const res = await getSearchResult(keyword.value, 'author', page, pageSize);
-  console.log(res);
   const list = res?.lists?.map((item: any) => {
     return {
       ...item,
