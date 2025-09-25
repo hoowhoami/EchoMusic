@@ -16,7 +16,7 @@
         <VideoPlayer
           v-if="videoUrl"
           :width="400"
-          :height="height - 25"
+          :height="playerHeight"
           :src="videoUrl"
           :volume="0.4"
           autoplay
@@ -28,9 +28,11 @@
         <div
           v-else
           class="w-[400px]"
-          :style="{ height: `${height}px` }"
+          :style="{ height: `${playerHeight}px` }"
         >
-          <div class="tip flex justify-center items-center h-full">
+          <div
+            class="tip flex justify-center items-center h-full rounded-lg overflow-hidden border cursor-pointer"
+          >
             <NText :depth="3">请选择MV播放</NText>
           </div>
         </div>
@@ -59,7 +61,8 @@ const props = defineProps<{
   song: Song;
 }>();
 
-const height = 225;
+const height = 200;
+const playerHeight = height - 10;
 
 const loading = ref(false);
 const list = ref<MV[]>([]);

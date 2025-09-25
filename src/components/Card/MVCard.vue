@@ -77,17 +77,30 @@
           class="name"
         />
       </div>
-      <div class="author flex items-center space-x-1">
-        <div class="avatar">
-          <NAvatar
-            round
-            bordered
-            :size="22"
-            :src="avatar"
-          />
-        </div>
-        <div class="name">
-          <NText :depth="3"> {{ props.mv.user_name }} {{ publishDate }} 发布 </NText>
+      <div class="author">
+        <div class="intro">
+          <NEllipsis
+            :line-clamp="1"
+            style="font-size: 11px"
+            :tooltip="{
+              scrollable: true,
+            }"
+          >
+            <template #tooltip>
+              <div
+                class="intro max-w-[500px] max-h-[200px]"
+                style="font-size: 10px"
+              >
+                <div>
+                  {{ intro }}
+                </div>
+                <div v-if="remark">
+                  {{ remark }}
+                </div>
+              </div>
+            </template>
+            {{ intro }}
+          </NEllipsis>
         </div>
       </div>
     </div>
@@ -98,7 +111,7 @@
 import type { MV } from '@/types';
 import { getCover } from '@/utils';
 import { MusicNoteFilled, PlayArrowRound } from '@vicons/material';
-import { NAvatar, NImage, NText, NIcon, useThemeVars } from 'naive-ui';
+import { NImage, NIcon, useThemeVars, NEllipsis } from 'naive-ui';
 import { computed, onMounted, ref } from 'vue';
 import TextContainer from '../Core/TextContainer.vue';
 import { getSongMVDetail } from '@/api';
@@ -135,12 +148,12 @@ const cover = computed(() => {
   return getCover(detail.value?.cover || props.mv?.thumb);
 });
 
-const avatar = computed(() => {
-  return getCover(props.mv?.user_avatar);
+const intro = computed(() => {
+  return detail.value?.intro || props.mv?.remark || '暂无简介';
 });
 
-const publishDate = computed(() => {
-  return props.mv?.publish_time?.split(' ')[0] || '-';
+const remark = computed(() => {
+  return detail.value?.other_description || props.mv?.other_desc;
 });
 
 onMounted(async () => {

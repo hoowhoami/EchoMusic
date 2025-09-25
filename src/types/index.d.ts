@@ -393,4 +393,6 @@ export type MV = {
   video_id: number;
   __status: number;
   cover: string;
+  intro: string;
+  other_description: string;
 };
