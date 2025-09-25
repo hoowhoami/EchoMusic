@@ -417,7 +417,7 @@
       draggable
       :mask-closable="false"
       :close-on-esc="false"
-      class="w-[500px]"
+      class="w-[800px]"
     >
       <template #header>
         <div>

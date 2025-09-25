@@ -38,6 +38,22 @@ export const getSongMV = (album_audio_id: number) => {
   return api.get('/kmr/audio/mv', { album_audio_id });
 };
 
+// 获取视频详情
+// 说明：调用此接口，可以获取视频详情，可以获取更高清的视频 hash
+// 必选参数：
+// id: 视频 id/video id
+export const getSongMVDetail = (id: number) => {
+  return api.get('/video/detail', { id });
+};
+
+// 获取视频 url
+// 说明 : 传入的视频的 hash, 可以获取对应的视频的 url
+// 必选参数：
+// hash: 视频 hash
+export const getVideoUrl = (hash: string) => {
+  return api.get('/video/url', { hash });
+};
+
 // 歌词搜索
 // 说明: 调用此接口, 可以搜索歌词，该接口需配合 /lyric 使用。
 // 必选参数：

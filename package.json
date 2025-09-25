@@ -34,6 +34,7 @@
     "@types/electron": "^1.4.38",
     "@types/howler": "^2.2.12",
     "@types/node": "^24.3.0",
+    "@types/video.js": "^7.3.58",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
     "@vitejs/plugin-vue": "^6.0.1",
@@ -78,6 +79,7 @@
     "naive-ui": "^2.42.0",
     "pinia": "^3.0.3",
     "pinia-plugin-persistedstate": "^4.5.0",
+    "video.js": "^8.23.4",
     "vue": "^3.5.19",
     "vue-router": "^4.5.1"
   },
