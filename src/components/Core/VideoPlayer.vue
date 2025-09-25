@@ -69,15 +69,32 @@ const initVideo = () => {
 // video初始化完成的回调函数
 const onPlayerReady = () => {};
 
-onMounted(() => {
+// 初始化播放器
+const initPlayer = () => {
   initVideo();
-});
+};
 
-onUnmounted(() => {
+// 销毁播放器
+const destroyPlayer = () => {
   if (videoPlayer) {
+    console.log(videoPlayer);
     videoPlayer.dispose();
     videoPlayer = null;
   }
+};
+
+onMounted(() => {
+  initPlayer();
+});
+
+onUnmounted(() => {
+  destroyPlayer();
+});
+
+defineExpose({
+  videoPlayer,
+  initPlayer,
+  destroyPlayer,
 });
 </script>
 <style lang="scss" scoped></style>

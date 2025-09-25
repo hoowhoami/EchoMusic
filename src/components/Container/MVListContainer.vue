@@ -14,6 +14,7 @@
       </div>
       <div class="player">
         <VideoPlayer
+          ref="videoPlayer"
           v-if="videoUrl"
           :width="400"
           :height="height - 25"
@@ -58,6 +59,7 @@ const list = ref<MV[]>([]);
 
 const playing = ref(false);
 const videoUrl = ref('');
+const videoPlayer = ref<InstanceType<typeof VideoPlayer>>();
 
 const getSongMVList = async (song: Song) => {
   list.value = [];
@@ -99,9 +101,11 @@ const getSongMVInfo = async (mv: MV) => {
 };
 
 const handlePlay = async (mv: MV) => {
-  playing.value = true;
+  videoPlayer.value?.destroyPlayer();
   console.log(mv);
   await getSongMVInfo(mv);
+  videoPlayer.value?.initPlayer();
+  playing.value = true;
 };
 
 onMounted(async () => {
