@@ -207,8 +207,9 @@ const searchSong = async (
         };
       }),
       cover: item.Image,
-      privilege: item.HQ?.Privilege,
+      privilege: item.AlbumPrivilege,
       relate_goods: relate_goods,
+      mixsongid: item.MixSongID,
     };
   });
   return {
