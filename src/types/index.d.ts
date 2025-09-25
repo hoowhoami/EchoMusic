@@ -153,6 +153,7 @@ export type Song = {
     avatar: string;
     type: number;
   }>;
+  album_audio_id: number;
   source: 'cloud' | undefined;
 };
 
@@ -356,4 +357,39 @@ export type PlaylistTag = {
   sort: string;
   tag_id: string;
   tag_name: string;
+};
+
+// MV
+export type MV = {
+  album_audio_id: number;
+  audio_id: number;
+  collection_total: number;
+  desc: string;
+  download_total: number;
+  duration: number;
+  have_mp4: number;
+  hdpic: string;
+  hit: number;
+  hot: number;
+  is_other: number;
+  is_publish: number;
+  is_recommend: number;
+  is_short: number;
+  is_ugc: number;
+  music_trac: number;
+  mv_name: string;
+  other_desc: string;
+  play_times: number;
+  publish_time: string;
+  remark: string;
+  singer: string;
+  songid: number;
+  thumb: string;
+  topic: string;
+  type: number;
+  user_avatar: string;
+  user_id: number;
+  user_name: string;
+  video_id: number;
+  __status: number;
 };

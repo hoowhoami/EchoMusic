@@ -34,7 +34,7 @@ export const getSongClimax = (hash: string) => {
 // album_audio_id: 专辑音乐 id (album_audio_id/MixSongID 均可以), 可以传多个，每个以逗号分开,
 // 可选参数：
 // fields: 支持多个，每个以逗号分隔，支持的值有：mkv,tags,h264,h265,authors
-export const getSongMv = (album_audio_id: number) => {
+export const getSongMV = (album_audio_id: number) => {
   return api.get('/kmr/audio/mv', { album_audio_id });
 };
 

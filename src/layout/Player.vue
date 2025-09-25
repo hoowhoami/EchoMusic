@@ -92,11 +92,12 @@
           </NIcon>
           <!-- MV按钮 -->
           <NButton
-            v-if="settingStore.enabledMV"
+            v-if="settingStore.enabledMV && playerStore.current"
             :focusable="false"
             ghost
             text
             size="small"
+            @click.stop="handleMVClick"
           >
             <template #icon>
               <NIcon :size="22">
@@ -410,6 +411,23 @@
         </div>
       </NDrawerContent>
     </NDrawer>
+    <NModal
+      v-model:show="mvModalShow"
+      preset="card"
+      draggable
+      :mask-closable="false"
+      :close-on-esc="false"
+      class="w-[500px]"
+    >
+      <template #header>
+        <div>
+          {{ playerStore.current?.name }}
+        </div>
+      </template>
+      <div>
+        <MVListContainer :song="playerStore.current as Song" />
+      </div>
+    </NModal>
   </div>
 </template>
 
@@ -425,6 +443,7 @@ import {
   NFlex,
   NIcon,
   NImage,
+  NModal,
   NPopover,
   NPopselect,
   NSlider,
@@ -444,21 +463,6 @@ import {
 } from '@/constants';
 import { computed, ref, onMounted, watch } from 'vue';
 
-// 组合音质和音效选项
-const qualityOptions = computed(() => [
-  {
-    label: '音质',
-    key: 'quality',
-    type: 'group' as const,
-    children: AUDIO_QUALITY_OPTIONS,
-  },
-  {
-    label: '音效',
-    key: 'effect',
-    type: 'group' as const,
-    children: MUSIC_EFFECT_OPTIONS,
-  },
-]);
 import {
   Repeat,
   RepeatOnce,
@@ -484,12 +488,30 @@ import {
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';
 import SongCard from '@/components/Card/SongCard.vue';
+import MVListContainer from '@/components/Container/MVListContainer.vue';
+
+// 组合音质和音效选项
+const qualityOptions = computed(() => [
+  {
+    label: '音质',
+    key: 'quality',
+    type: 'group' as const,
+    children: AUDIO_QUALITY_OPTIONS,
+  },
+  {
+    label: '音效',
+    key: 'effect',
+    type: 'group' as const,
+    children: MUSIC_EFFECT_OPTIONS,
+  },
+]);
 
 const playerStore = usePlayerStore();
-
 const settingStore = useSettingStore();
 
 const playlistShow = ref(false);
+const mvModalShow = ref(false);
+
 const virtualListInst = ref<VirtualListInst>();
 
 const playlistHeight = computed(() => {
@@ -718,6 +740,11 @@ const toggleDesktopLyrics = () => {
   } else {
     window.$message.info('已关闭桌面歌词');
   }
+};
+
+// 打开MV模态框
+const handleMVClick = () => {
+  mvModalShow.value = true;
 };
 </script>
 

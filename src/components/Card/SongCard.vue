@@ -16,7 +16,15 @@
         :src="cover"
         :preview-disabled="true"
         :alt="song.name"
-      />
+      >
+        <template #placeholder>
+          <div class="w-full h-full flex items-center justify-center">
+            <NIcon :size="24">
+              <MusicNoteFilled />
+            </NIcon>
+          </div>
+        </template>
+      </NImage>
 
       <!-- 播放状态遮罩层 -->
       <div
@@ -142,7 +150,7 @@
       :playlist="playlist"
       @close="closeContextMenu"
       @song-played="handleMenuPlay"
-      @song-removed="(song) => $emit('song-removed', song)"
+      @song-removed="song => $emit('song-removed', song)"
     />
   </div>
 </template>
@@ -153,7 +161,7 @@ import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
 import { NEllipsis, NImage, NIcon, useThemeVars, NText, NTag } from 'naive-ui';
 import { computed, ref } from 'vue';
-import { CloudOutlined, PlayArrowRound } from '@vicons/material';
+import { CloudOutlined, MusicNoteFilled, PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
 import player from '@/utils/player';
 import SongMenu from '@/components/Menu/SongMenu.vue';
