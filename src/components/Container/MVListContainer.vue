@@ -46,6 +46,7 @@ import { onMounted, ref } from 'vue';
 import MVList from '../List/MVList.vue';
 import { NEmpty, NText } from 'naive-ui';
 import VideoPlayer from '../Core/VideoPlayer.vue';
+import player from '@/utils/player';
 
 defineOptions({
   name: 'MVListContainer',
@@ -103,7 +104,7 @@ const getSongMVInfo = async (mv: MV) => {
 const handlePlay = async (mv: MV) => {
   await getSongMVInfo(mv);
   videoPlayer.value?.load(videoUrl.value);
-  playing.value = true;
+  player.pause(true);
 };
 
 onMounted(async () => {
