@@ -1,16 +1,18 @@
 <template>
   <div class="mv-list flex flex-col space-y-2">
-    <div
-      class="item"
-      v-for="item in props.list"
-      :key="item.video_id"
-    >
-      <MVCard
-        :mv="item"
-        :playing="playing && current?.video_id === item.video_id"
-        @play="handlePlay"
-      />
-    </div>
+    <NScrollbar :content-style="{ height: props.height ? props.height + 'px' : 'auto' }">
+      <div
+        class="item"
+        v-for="item in props.list"
+        :key="item.video_id"
+      >
+        <MVCard
+          :mv="item"
+          :playing="playing && current?.video_id === item.video_id"
+          @play="handlePlay"
+        />
+      </div>
+    </NScrollbar>
   </div>
 </template>
 
@@ -18,6 +20,7 @@
 import type { MV } from '@/types';
 import MVCard from '../Card/MVCard.vue';
 import { ref } from 'vue';
+import { NScrollbar } from 'naive-ui';
 
 defineOptions({
   name: 'MVList',
@@ -32,6 +35,7 @@ const current = ref<MV>();
 const props = defineProps<{
   list: MV[];
   playing?: boolean;
+  height?: number;
 }>();
 
 const handlePlay = (mv: MV) => {

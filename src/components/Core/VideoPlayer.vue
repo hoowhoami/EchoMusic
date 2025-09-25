@@ -4,11 +4,12 @@
     :style="videoWrapperStyles"
   >
     <video
+      v-if="props.src"
       id="video-player"
       ref="videoRef"
       class="video-js w-full h-full"
     >
-      <source :src="src" />
+      <source :src="props.src" />
     </video>
   </div>
 </template>

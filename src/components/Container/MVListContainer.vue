@@ -6,13 +6,18 @@
     >
       <div class="list">
         <MVList
+          :height="300"
           :list="list"
           :playing="playing"
           @play="handlePlay"
         />
       </div>
       <div class="player">
-        <VideoPlayer :src="videoUrl" />
+        <VideoPlayer
+          width="400px"
+          height="300px"
+          :src="videoUrl"
+        />
       </div>
     </div>
 
