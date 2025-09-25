@@ -68,8 +68,8 @@
         </div>
       </div>
     </div>
-    <div class="info flex flex-col justify-center">
-      <div class="name">
+    <div class="info flex flex-col w-full space-y-2">
+      <div class="flex items-center mt-[5px]">
         <TextContainer
           :key="props.mv.mv_name"
           :text="props.mv.mv_name"
@@ -99,8 +99,9 @@ import type { MV } from '@/types';
 import { getCover } from '@/utils';
 import { MusicNoteFilled, PlayArrowRound } from '@vicons/material';
 import { NAvatar, NImage, NText, NIcon, useThemeVars } from 'naive-ui';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import TextContainer from '../Core/TextContainer.vue';
+import { getSongMVDetail } from '@/api';
 
 defineOptions({
   name: 'MVCard',
@@ -114,6 +115,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   play: [mv: MV];
 }>();
+
+const detail = ref<MV>();
 
 const themeVars = useThemeVars();
 const isHovered = ref(false);
@@ -129,7 +132,7 @@ const handlePlay = () => {
 };
 
 const cover = computed(() => {
-  return getCover(props.mv?.thumb);
+  return getCover(detail.value?.cover || props.mv?.thumb);
 });
 
 const avatar = computed(() => {
@@ -138,6 +141,11 @@ const avatar = computed(() => {
 
 const publishDate = computed(() => {
   return props.mv?.publish_time?.split(' ')[0] || '-';
+});
+
+onMounted(async () => {
+  const res = await getSongMVDetail(props.mv.video_id);
+  detail.value = res?.[0];
 });
 </script>
 <style lang="scss" scoped>
@@ -173,6 +181,9 @@ const publishDate = computed(() => {
   .info {
     .name {
       font-size: 12px;
+      width: max-content;
+      max-width: calc(100% - 100px);
+      transition: color 0.3s;
     }
 
     .author {

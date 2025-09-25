@@ -392,4 +392,5 @@ export type MV = {
   user_name: string;
   video_id: number;
   __status: number;
+  cover: string;
 };
