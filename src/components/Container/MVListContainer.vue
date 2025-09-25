@@ -6,7 +6,7 @@
     >
       <div class="list">
         <MVList
-          :height="300"
+          :height="height"
           :list="list"
           :playing="playing"
           @play="handlePlay"
@@ -14,10 +14,20 @@
       </div>
       <div class="player">
         <VideoPlayer
-          width="400px"
-          height="300px"
+          v-if="videoUrl"
+          :width="400"
+          :height="height - 25"
           :src="videoUrl"
         />
+        <div
+          v-else
+          class="w-[400px]"
+          :style="{ height: `${height}px` }"
+        >
+          <div class="tip flex justify-center items-center h-full">
+            <NText :depth="3">请选择MV播放</NText>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -30,7 +40,7 @@ import type { MV, Song } from '@/types';
 import { getSongMV, getSongMVDetail, getVideoUrl } from '@/api';
 import { onMounted, ref } from 'vue';
 import MVList from '../List/MVList.vue';
-import { NEmpty } from 'naive-ui';
+import { NEmpty, NText } from 'naive-ui';
 import VideoPlayer from '../Core/VideoPlayer.vue';
 
 defineOptions({
@@ -40,6 +50,8 @@ defineOptions({
 const props = defineProps<{
   song: Song;
 }>();
+
+const height = 225;
 
 const loading = ref(false);
 const list = ref<MV[]>([]);
@@ -96,4 +108,18 @@ onMounted(async () => {
   await getSongMVList(props.song);
 });
 </script>
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.mv-list-container {
+  .mv-list {
+    .list {
+      flex: 1;
+    }
+    .player {
+      width: 400px;
+      .tip {
+        font-size: 14px;
+      }
+    }
+  }
+}
+</style>

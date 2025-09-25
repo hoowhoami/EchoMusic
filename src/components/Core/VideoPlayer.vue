@@ -29,20 +29,20 @@ const videoRef = ref<HTMLElement | null>(null);
 
 const props = withDefaults(
   defineProps<{
-    width?: string;
-    height?: string;
+    width?: number;
+    height?: number;
     src: string;
   }>(),
   {
-    width: '100%',
-    height: '100%',
+    width: 200,
+    height: 100,
   },
 );
 
 const videoWrapperStyles = computed<CSSProperties>(() => {
   return {
-    width: props.width || '100%',
-    height: props.height || '100%',
+    width: props.width || 200 + 'px',
+    height: props.height || 100 + 'px',
   };
 });
 

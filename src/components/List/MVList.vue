@@ -1,16 +1,18 @@
 <template>
-  <div class="mv-list flex flex-col space-y-2">
+  <div class="mv-list">
     <NScrollbar :content-style="{ height: props.height ? props.height + 'px' : 'auto' }">
-      <div
-        class="item"
-        v-for="item in props.list"
-        :key="item.video_id"
-      >
-        <MVCard
-          :mv="item"
-          :playing="playing && current?.video_id === item.video_id"
-          @play="handlePlay"
-        />
+      <div class="flex flex-col space-y-2 p-2">
+        <div
+          class="item"
+          v-for="item in props.list"
+          :key="item.video_id"
+        >
+          <MVCard
+            :mv="item"
+            :playing="playing && current?.video_id === item.video_id"
+            @play="handlePlay"
+          />
+        </div>
       </div>
     </NScrollbar>
   </div>
