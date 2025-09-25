@@ -24,6 +24,15 @@ defineOptions({
   name: 'VideoPlayer',
 });
 
+const emit = defineEmits<{
+  ended: [];
+  play: [];
+  pause: [];
+  ready: [player: videojs.Player];
+  loaded: [];
+  error: [error: any];
+}>();
+
 // video标签
 const videoRef = ref<HTMLElement | null>(null);
 
@@ -67,11 +76,45 @@ const initVideo = () => {
 };
 
 // video初始化完成的回调函数
-const onPlayerReady = () => {};
+const onPlayerReady = (player: videojs.Player) => {
+  emit('ready', player);
+};
+
+const setupEventListeners = () => {
+  if (!videoPlayer) {
+    return;
+  }
+
+  // 1. 播放完成事件（最常用）
+  videoPlayer.on('ended', () => {
+    emit('ended');
+  });
+
+  // 2. 开始播放事件
+  videoPlayer.on('play', () => {
+    emit('play');
+  });
+
+  // 3. 暂停事件
+  videoPlayer.on('pause', () => {
+    emit('pause');
+  });
+
+  // 4. 视频加载完成事件（可播放）
+  videoPlayer.on('loadedmetadata', () => {
+    emit('loaded');
+  });
+
+  // 5. 播放出错事件
+  videoPlayer.on('error', () => {
+    emit('error', videoPlayer.error());
+  });
+};
 
 // 初始化播放器
 const initPlayer = () => {
   initVideo();
+  setupEventListeners();
 };
 
 // 加载视频

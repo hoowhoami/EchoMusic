@@ -19,6 +19,9 @@
           :width="400"
           :height="height - 25"
           :src="videoUrl"
+          @play="playing = true"
+          @pause="playing = false"
+          @ended="playing = false"
         />
         <div
           v-else
@@ -88,7 +91,6 @@ const getSongMVInfo = async (mv: MV) => {
       const url = ret?.data?.[key]?.downurl;
       if (url) {
         videoUrl.value = url;
-        playing.value = true;
       }
     }
   } catch (error) {
