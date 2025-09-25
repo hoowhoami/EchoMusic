@@ -17,7 +17,6 @@
 <script lang="ts" setup>
 import { computed, CSSProperties, onMounted, onUnmounted, ref } from 'vue';
 import videojs from 'video.js';
-import type { VideoJsPlayerOptions } from 'video.js';
 import 'video.js/dist/video-js.min.css';
 
 defineOptions({
@@ -32,6 +31,8 @@ const emit = defineEmits<{
   loaded: [];
   error: [error: any];
 }>();
+
+type VideoJsPlayerOptions = Parameters<typeof videojs>[1];
 
 // video标签
 const videoRef = ref<HTMLElement | null>(null);
@@ -56,7 +57,7 @@ const videoWrapperStyles = computed<CSSProperties>(() => {
 });
 
 // video实例对象
-let videoPlayer: videojs.Player | null = null;
+let player: videojs.Player | null = null;
 
 // 初始化video.js
 const initVideo = () => {
@@ -71,7 +72,7 @@ const initVideo = () => {
   };
   if (videoRef.value) {
     // 创建 video 实例
-    videoPlayer = videojs(videoRef.value, options, onPlayerReady);
+    player = videojs(videoRef.value, options, onPlayerReady);
   }
 };
 
@@ -81,33 +82,33 @@ const onPlayerReady = (player: videojs.Player) => {
 };
 
 const setupEventListeners = () => {
-  if (!videoPlayer) {
+  if (!player) {
     return;
   }
 
   // 1. 播放完成事件（最常用）
-  videoPlayer.on('ended', () => {
+  player.on('ended', () => {
     emit('ended');
   });
 
   // 2. 开始播放事件
-  videoPlayer.on('play', () => {
+  player.on('play', () => {
     emit('play');
   });
 
   // 3. 暂停事件
-  videoPlayer.on('pause', () => {
+  player.on('pause', () => {
     emit('pause');
   });
 
   // 4. 视频加载完成事件（可播放）
-  videoPlayer.on('loadedmetadata', () => {
+  player.on('loadedmetadata', () => {
     emit('loaded');
   });
 
   // 5. 播放出错事件
-  videoPlayer.on('error', () => {
-    emit('error', videoPlayer.error());
+  player.on('error', () => {
+    emit('error', player.error());
   });
 };
 
@@ -119,18 +120,17 @@ const initPlayer = () => {
 
 // 加载视频
 const load = (src: string) => {
-  if (src && videoPlayer) {
-    videoPlayer.src(src);
-    videoPlayer.load();
+  if (src && player) {
+    player.src(src);
+    player.load();
   }
 };
 
 // 销毁播放器
 const destroyPlayer = () => {
-  if (videoPlayer) {
-    console.log(videoPlayer);
-    videoPlayer.dispose();
-    videoPlayer = null;
+  if (player) {
+    player.dispose();
+    player = null;
   }
 };
 
@@ -143,7 +143,7 @@ onUnmounted(() => {
 });
 
 defineExpose({
-  videoPlayer,
+  player,
   initPlayer,
   load,
   destroyPlayer,
