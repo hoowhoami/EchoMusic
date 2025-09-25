@@ -107,6 +107,7 @@
           </NButton>
           <!-- 歌词按钮 -->
           <NButton
+            v-if="playerStore.current"
             :focusable="false"
             ghost
             text

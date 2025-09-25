@@ -213,6 +213,7 @@ const transformAlbumSong = (item: any): Song => {
     },
     relate_goods: relate_goods,
     privilege: item.copyright?.privilege,
+    album_audio_id: item.base?.album_audio_id,
   };
 };
 
