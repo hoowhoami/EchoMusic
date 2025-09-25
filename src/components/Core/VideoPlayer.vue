@@ -74,6 +74,14 @@ const initPlayer = () => {
   initVideo();
 };
 
+// 加载视频
+const load = (src: string) => {
+  if (src && videoPlayer) {
+    videoPlayer.src(src);
+    videoPlayer.load();
+  }
+};
+
 // 销毁播放器
 const destroyPlayer = () => {
   if (videoPlayer) {
@@ -94,6 +102,7 @@ onUnmounted(() => {
 defineExpose({
   videoPlayer,
   initPlayer,
+  load,
   destroyPlayer,
 });
 </script>

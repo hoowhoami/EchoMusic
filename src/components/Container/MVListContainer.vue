@@ -81,11 +81,9 @@ const getSongMVInfo = async (mv: MV) => {
   try {
     loading.value = true;
     const res = await getSongMVDetail(mv.video_id);
-    console.log(res);
     const hash = res?.[0]?.hd_hash || '';
     if (hash) {
       const ret = await getVideoUrl(hash);
-      console.log(ret);
       const key = hash?.toLowerCase();
       const url = ret?.data?.[key]?.downurl;
       if (url) {
@@ -101,10 +99,8 @@ const getSongMVInfo = async (mv: MV) => {
 };
 
 const handlePlay = async (mv: MV) => {
-  videoPlayer.value?.destroyPlayer();
-  console.log(mv);
   await getSongMVInfo(mv);
-  videoPlayer.value?.initPlayer();
+  videoPlayer.value?.load(videoUrl.value);
   playing.value = true;
 };
 
