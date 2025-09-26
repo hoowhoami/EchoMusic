@@ -3,6 +3,9 @@
     <NInfiniteScroll
       @load="handleThrottleLoad"
       :style="{ height: `${props.height}px` }"
+      :scrollbarProps="{
+        contentStyle: props.scrollbarContentStyle,
+      }"
     >
       <slot
         :list="loadedList"
@@ -45,6 +48,7 @@ const loadedList = ref<any[]>([]);
 
 const props = withDefaults(
   defineProps<{
+    scrollbarContentStyle?: string;
     height?: number;
     distance?: number;
     pageSize?: number;
@@ -53,6 +57,7 @@ const props = withDefaults(
     loader: (page: number, pageSize: number) => Promise<{ list: any[]; total: number }>;
   }>(),
   {
+    scrollbarContentStyle: 'padding: 15px;',
     height: 300,
     distance: 0,
     pageSize: 30,

@@ -3,10 +3,14 @@ import { useUserStore } from '@/store';
 
 import Layout from '@/layout/Layout.vue';
 import Login from '@/views/Login.vue';
-import Home from '@/views/Home.vue';
-import Recommend from '@/views/Recommend.vue';
-import Rank from '@/views/Rank.vue';
-import Discover from '@/views/Discover.vue';
+import Home from '@/views/Home/index.vue';
+import DailySong from '@/views/Home/DailySong.vue';
+import Rank from '@/views/Home/Rank.vue';
+import Discover from '@/views/Discover/index.vue';
+import DiscoverPlaylist from '@/views/Discover/playlist.vue';
+import DiscoverRank from '@/views/Discover/rank.vue';
+import DiscoverAlbum from '@/views/Discover/album.vue';
+import DiscoverSong from '@/views/Discover/song.vue';
 import Search from '@/views/Search.vue';
 import Profile from '@/views/Profile.vue';
 import Setting from '@/views/Setting.vue';
@@ -27,9 +31,19 @@ const router = createRouter({
       redirect: '/home',
       children: [
         { path: '/home', name: 'Home', component: Home },
-        { path: '/recommend', name: 'Recommend', component: Recommend },
+        { path: '/daily-song', name: 'DailySong', component: DailySong },
         { path: '/rank', name: 'Rank', component: Rank },
-        { path: '/discover', name: 'Discover', component: Discover },
+        {
+          path: '/discover',
+          name: 'Discover',
+          component: Discover,
+          children: [
+            { path: 'playlist', name: 'DiscoverPlaylist', component: DiscoverPlaylist },
+            { path: 'rank', name: 'DiscoverRank', component: DiscoverRank },
+            { path: 'album', name: 'DiscoverAlbum', component: DiscoverAlbum },
+            { path: 'song', name: 'DiscoverSong', component: DiscoverSong },
+          ],
+        },
         { path: '/search', name: 'SearchResult', component: Search },
         { path: '/login', name: 'Login', component: Login },
         { path: '/setting', name: 'Setting', component: Setting },

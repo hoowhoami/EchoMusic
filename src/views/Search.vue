@@ -46,9 +46,9 @@
             :loader="searchPlaylist"
           >
             <template #default="{ list }">
-              <div class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2">
+              <div class="flex flex-wrap flex-start justify-stretch gap-4">
                 <PlaylistCard
-                  class="w-[200px] h-[300px]"
+                  class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
                   :playlist="item as Playlist"
                   v-for="item in list"
                   :key="item.listid"
@@ -68,9 +68,9 @@
             :loader="searchAlbum"
           >
             <template #default="{ list }">
-              <div class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2">
+              <div class="flex flex-wrap flex-start justify-stretch gap-4">
                 <AlbumCard
-                  class="w-[200px] h-[310px]"
+                  class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
                   :album="album as Album"
                   v-for="album in list"
                   :key="(album as Album).albumid"
@@ -89,9 +89,9 @@
             :loader="searchSinger"
           >
             <template #default="{ list }">
-              <div class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2">
+              <div class="flex flex-wrap flex-start justify-stretch gap-4">
                 <SingerCard
-                  class="w-[200px] h-[300px]"
+                  class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
                   :singer="singer as Singer"
                   v-for="singer in list"
                   :key="(singer as Singer).singerid"

@@ -58,51 +58,22 @@
           </NCard>
         </div>
       </div>
-      <div>
-        <NCard
-          size="small"
-          hoverable
+      <div>推荐歌单</div>
+      <div class="flex flex-wrap flex-start justify-stretch gap-4 max-h-[4780px]">
+        <div
+          v-if="loading"
+          class="h-[3780px] flex items-center justify-center"
         >
-          <template #header>
-            <div class="flex justify-between">
-              <div>推荐歌单</div>
-            </div>
-          </template>
-          <template #header-extra>
-            <div>
-              <NButton
-                :focusable="false"
-                text
-                :loading="loading"
-                @click="handleRefresh"
-              >
-                <template #icon>
-                  <NIcon>
-                    <RefreshRound />
-                  </NIcon>
-                </template>
-              </NButton>
-            </div>
-          </template>
-          <div
-            class="grid grid-cols-[repeat(auto-fit,220px)] justify-center gap-4 p-2 max-h-[3780px]"
-          >
-            <div
-              v-if="loading"
-              class="h-[3780px] flex items-center justify-center"
-            >
-              <NSpin :show="loading" />
-            </div>
-            <PlaylistCard
-              v-else
-              class="w-[200px] h-[300px]"
-              :playlist="item as Playlist"
-              v-for="item in playlist"
-              :key="item.listid"
-              @click="handleOpenPlaylist(item as Playlist)"
-            />
-          </div>
-        </NCard>
+          <NSpin :show="loading" />
+        </div>
+        <PlaylistCard
+          v-else
+          class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
+          :playlist="item as Playlist"
+          v-for="item in playlist"
+          :key="item.listid"
+          @click="handleOpenPlaylist(item as Playlist)"
+        />
       </div>
     </div>
   </div>
@@ -114,8 +85,7 @@ import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { useUserStore } from '@/store';
 import { Playlist } from '@/types';
 import { formatTimestamp, getGreeting } from '@/utils';
-import { RefreshRound } from '@vicons/material';
-import { NButton, NCard, NText } from 'naive-ui';
+import { NCard, NText } from 'naive-ui';
 import { onMounted, ref } from 'vue';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -143,7 +113,7 @@ const day = computed(() => {
 
 const handleRecommendClick = () => {
   router.push({
-    name: 'Recommend',
+    name: 'DailySong',
   });
 };
 
@@ -163,10 +133,6 @@ const handleOpenPlaylist = async (playlist: Playlist) => {
   });
 };
 
-const handleRefresh = async () => {
-  await getRecommendPlaylist();
-};
-
 const getRecommendPlaylist = async () => {
   try {
     playlist.value = [];
@@ -175,6 +141,7 @@ const getRecommendPlaylist = async () => {
       category_id: '0',
     });
     playlist.value =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       res?.special_list?.map((item: any) => {
         return {
           ...item,
