@@ -43,8 +43,7 @@
                 :key="sub.tag_id"
                 :bordered="false"
                 class="cursor-pointer"
-                :class="{ choose: checkedSubTagId === sub.tag_id }"
-                size="large"
+                :type="sub.tag_id === checkedSubTagId ? 'primary' : 'default'"
                 round
                 @click="changeTag(tag.tag_id, sub.tag_id)"
               >
@@ -58,7 +57,7 @@
       </NModal>
     </div>
     <div class="mt-4">
-      <div class="flex flex-wrap flex-start justify-stretch gap-4 max-h-[3780px]">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
         <div
           v-if="loading"
           class="h-[3780px] flex items-center justify-center"
@@ -67,7 +66,7 @@
         </div>
         <PlaylistCard
           v-else
-          class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
+          class="max-w-[250px] h-[300px]"
           :playlist="item as Playlist"
           v-for="item in playlist"
           :key="item.listid"
@@ -85,7 +84,7 @@ import type { Playlist, PlaylistTag } from '@/types';
 import { KeyboardArrowRightRound } from '@vicons/material';
 import { NButton, NIcon, NModal, NTabPane, NTabs, NTag } from 'naive-ui';
 import { computed, onMounted, ref } from 'vue';
-import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 defineOptions({
   name: 'DiscoverPlaylist',
@@ -170,12 +169,10 @@ const handleOpenPlaylist = async (playlist: Playlist) => {
 };
 
 // 分类切换
-const changeTag = (tag: string, sub: string) => {
+const changeTag = async (tag: string, sub: string) => {
   tagChangeShow.value = false;
-  router.push({
-    name: 'DiscoverPlaylist',
-    query: { tag, sub, t: new Date().getTime() },
-  });
+  //
+  await init(tag, sub);
 };
 
 const init = async (tag: string, sub: string) => {
@@ -187,15 +184,6 @@ const init = async (tag: string, sub: string) => {
   await getPlaylist(checkedSubTagId.value as string);
 };
 
-onBeforeRouteUpdate(async to => {
-  if (to.name !== 'DiscoverPlaylist') {
-    return;
-  }
-  checkedTagId.value = tags.value?.[0]?.tag_id;
-  subTags.value = tags.value?.find(item => item.tag_id === checkedTagId.value)?.son || [];
-  checkedSubTagId.value = subTags.value?.[0]?.tag_id;
-});
-
 onMounted(async () => {
   await getPlaylistTags();
   await init(route.query.tag as string, route.query.sub as string);
@@ -205,7 +193,6 @@ onMounted(async () => {
 <style lang="scss" scoped>
 .discover-playlists {
   .menu {
-    margin-top: 20px;
     .n-button {
       height: 40px;
     }

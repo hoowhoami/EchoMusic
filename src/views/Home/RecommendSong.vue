@@ -1,7 +1,7 @@
 <template>
-  <div class="daily-song flex flex-col space-y-4">
+  <div class="recommend-song flex flex-col space-y-4">
     <div class="title">根据你的音乐口味每日歌曲推荐</div>
-    <div class="flex flex-wrap flex-start justify-stretch gap-4 max-h-[600px]">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
       <div
         v-if="loading"
         class="h-[600px] flex items-center justify-center"
@@ -11,7 +11,7 @@
       <SongCard
         v-else
         v-for="item in recommend"
-        class="flex-1 min-w-[200px] max-w-[250px]"
+        class="max-w-[200px]"
         :key="item.hash"
         :song="item"
         :loading="loading"
@@ -29,7 +29,7 @@ import { onMounted, ref } from 'vue';
 import player from '@/utils/player';
 
 defineOptions({
-  name: 'DailySong',
+  name: 'RecommendSong',
 });
 
 const loading = ref(false);
@@ -66,7 +66,7 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
-.daily-song {
+.recommend-song {
   .title {
     font-size: 1.2rem;
     font-weight: bold;

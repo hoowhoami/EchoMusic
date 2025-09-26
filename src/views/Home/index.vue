@@ -59,7 +59,7 @@
         </div>
       </div>
       <div>推荐歌单</div>
-      <div class="flex flex-wrap flex-start justify-stretch gap-4 max-h-[4780px]">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
         <div
           v-if="loading"
           class="h-[3780px] flex items-center justify-center"
@@ -68,7 +68,7 @@
         </div>
         <PlaylistCard
           v-else
-          class="flex-1 min-w-[200px] max-w-[250px] h-[350px]"
+          class="max-w-[250px] h-[300px]"
           :playlist="item as Playlist"
           v-for="item in playlist"
           :key="item.listid"
@@ -113,13 +113,13 @@ const day = computed(() => {
 
 const handleRecommendClick = () => {
   router.push({
-    name: 'DailySong',
+    name: 'RecommendSong',
   });
 };
 
 const handleRankClick = () => {
   router.push({
-    name: 'Rank',
+    name: 'RecommendRank',
   });
 };
 

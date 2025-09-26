@@ -6,46 +6,50 @@
         type="segment"
         animated
         v-model:value="discoverType"
-        @update:value="handleTabChanged"
       >
-        <NTab name="DiscoverPlaylist"> 歌单 </NTab>
-        <NTab name="DiscoverRank"> 排行榜 </NTab>
-        <NTab name="DiscoverAlbum"> 新碟上架 </NTab>
-        <NTab name="DiscoverSong"> 新歌速递 </NTab>
-      </NTabs>
-      <!-- 路由 -->
-      <RouterView v-slot="{ Component }">
-        <Transition
-          :name="`router-${$route.fullPath}`"
-          mode="out-in"
+        <NTabPane
+          name="DiscoverPlaylist"
+          tab="歌单"
         >
-          <component
-            :is="Component"
-            class="router-view"
-          />
-        </Transition>
-      </RouterView>
+          <DiscoverPlaylist />
+        </NTabPane>
+        <NTabPane
+          name="DiscoverRank"
+          tab="排行榜"
+        >
+          <DiscoverRank />
+        </NTabPane>
+        <NTabPane
+          name="DiscoverAlbum"
+          tab="新碟上架"
+        >
+          <DiscoverAlbum />
+        </NTabPane>
+        <NTabPane
+          name="DiscoverSong"
+          tab="新歌速递"
+        >
+          <DiscoverSong />
+        </NTabPane>
+      </NTabs>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { NTab, NTabs } from 'naive-ui';
+import { NTabPane, NTabs } from 'naive-ui';
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import DiscoverPlaylist from './Playlist.vue';
+import DiscoverRank from './Rank.vue';
+import DiscoverAlbum from './Album.vue';
+import DiscoverSong from './Song.vue';
 
 defineOptions({
   name: 'Discover',
 });
 
-const router = useRouter();
-
 // 发现路由
-const discoverType = ref<string>();
-
-const handleTabChanged = async (name: string) => {
-  await router.push({ name });
-};
+const discoverType = ref<string>('DiscoverPlaylist');
 </script>
 
 <style lang="scss" scoped>

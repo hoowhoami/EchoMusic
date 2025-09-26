@@ -1,5 +1,6 @@
 <template>
-  <div class="discover-rank">
+  <div class="recommend-rank flex flex-col space-y-4">
+    <div class="title">推荐排行榜</div>
     <div class="menu">
       <NButton
         :focusable="false"
@@ -24,7 +25,7 @@
         display-directive="show"
         style="width: 600px"
         preset="card"
-        title="排行榜列表"
+        title="热门排行榜"
       >
         <div class="tag-list flex flex-wrap items-center justify-stretch gap-4 p-2">
           <NTag
@@ -66,7 +67,7 @@
 
 <script lang="ts" setup>
 import type { Rank, Song } from '@/types';
-import { getRankList, getRankSongList } from '@/api';
+import { getRankTop, getRankSongList } from '@/api';
 import { NButton, NIcon, NModal, NTag } from 'naive-ui';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
@@ -74,7 +75,7 @@ import player from '@/utils/player';
 import { KeyboardArrowRightRound } from '@vicons/material';
 
 defineOptions({
-  name: 'DiscoverRank',
+  name: 'RecommendRank',
 });
 
 const loading = ref(false);
@@ -99,10 +100,10 @@ const getRank = async () => {
     ranks.value = [];
     rankSongs.value = [];
     checkedRankId.value = null;
-    const res = await getRankList();
-    ranks.value = res?.info?.map((rank: Rank) => ({ ...rank, checked: false })) || [];
+    const res = await getRankTop();
+    ranks.value = res?.list?.map((rank: Rank) => ({ ...rank, checked: false })) || [];
   } catch (error) {
-    console.log('获取排行榜列表失败', error);
+    console.log('获取推荐排行榜列表失败', error);
   } finally {
     loading.value = false;
   }
@@ -169,4 +170,11 @@ onMounted(async () => {
 });
 </script>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.recommend-rank {
+  .title {
+    font-size: 1.2rem;
+    font-weight: bold;
+  }
+}
+</style>

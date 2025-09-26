@@ -24,3 +24,9 @@ export const getRankSongList = ({ rankid = 0, rank_cid = undefined, page = 1, pa
     pagesize,
   });
 };
+
+// 排行榜推荐列表
+// 说明：调用此接口，可以获取排行榜推荐列表
+export const getRankTop = () => {
+  return api.get('/rank/top');
+};
