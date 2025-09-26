@@ -87,6 +87,7 @@ const getSongMVList = async (song: Song) => {
 };
 
 // QHD（2K） > FHD（1080P） > HD（720P） > SD（标清） > LD（低清）
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getQualityVideoUrl = async (detail: any) => {
   try {
     const hashList = [];
