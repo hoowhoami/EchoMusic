@@ -39,7 +39,13 @@
       </div>
     </div>
 
-    <NEmpty v-else />
+    <div
+      v-else
+      class="flex justify-center items-center"
+      :style="{ height: `${height}px` }"
+    >
+      <NEmpty />
+    </div>
   </div>
 </template>
 
