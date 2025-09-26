@@ -77,3 +77,9 @@ export const searchLyric = ({ keyword = '', hash = '' }) => {
 export const getLyric = ({ id = '', accesskey = '', fmt = 'lrc', decode = 'true' }) => {
   return api.get('/lyric', { id, accesskey, fmt, decode });
 };
+
+// 新歌速递
+// 说明：调用此接口，可以获取新歌速递
+export const getSongTop = () => {
+  return api.get('/top/song');
+};

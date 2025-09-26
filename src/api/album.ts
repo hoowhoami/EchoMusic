@@ -18,3 +18,13 @@ export const getAlbumDetail = (id: number) => {
 export const getAlbumSongs = (id: number, page = 1, pagesize = 30) => {
   return api.get('/album/songs', { id, page, pagesize });
 };
+
+// 新碟上架
+// 说明: 调用此接口 , 可获取新碟上架列表
+// 可选参数：
+// type : 1：华语；2：欧美；3：日本；4：韩国；推荐为空，默认为空
+// page : 页数
+// pagesize : 每页页数, 默认为 30
+export const getAlbumTop = () => {
+  return api.get('/top/album');
+};

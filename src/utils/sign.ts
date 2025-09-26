@@ -183,7 +183,7 @@ export class AutoSignService {
       }
     } catch (error: any) {
       console.error('自动领取VIP失败:', error);
-      if (error?.response?.data?.error_code === 30002) {
+      if (error?.error_code === 30002) {
         console.error('今天次数已用光');
         userStore.setVipReceiveCompleted();
       }

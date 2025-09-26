@@ -15,6 +15,7 @@
       <NTabs
         type="segment"
         v-model:value="activeKey"
+        animated
       >
         <NTabPane
           name="song"

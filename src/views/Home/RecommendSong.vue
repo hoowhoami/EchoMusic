@@ -1,6 +1,6 @@
 <template>
   <div class="recommend-song flex flex-col space-y-4">
-    <div class="title">根据你的音乐口味每日歌曲推荐</div>
+    <div class="title">根据你的音乐口味推荐</div>
     <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
       <div
         v-if="loading"
