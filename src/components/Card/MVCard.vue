@@ -15,11 +15,10 @@
         :alt="props.mv.mv_name"
       >
         <template #placeholder>
-          <div class="w-full h-full flex items-center justify-center">
-            <NIcon :size="24">
-              <MusicNoteFilled />
-            </NIcon>
-          </div>
+          <img
+            class="w-full h-full object-cover"
+            :src="cover"
+          />
         </template>
       </NImage>
 
@@ -110,7 +109,7 @@
 <script lang="ts" setup>
 import type { MV } from '@/types';
 import { getCover } from '@/utils';
-import { MusicNoteFilled, PlayArrowRound } from '@vicons/material';
+import { PlayArrowRound } from '@vicons/material';
 import { NImage, NIcon, useThemeVars, NEllipsis } from 'naive-ui';
 import { computed, onMounted, ref } from 'vue';
 import TextContainer from '../Core/TextContainer.vue';

@@ -1,6 +1,11 @@
 <template>
-  <div class="recommend-rank flex flex-col space-y-4">
-    <div class="title">推荐排行榜</div>
+  <div class="recommend-rank flex flex-col space-y-3">
+    <div class="flex flex-col space-y-1">
+      <div class="title">发现你的专属好歌</div>
+      <div class="tips">
+        <NText depth="3">该推荐生成于 {{ createAt }} 每日更新</NText>
+      </div>
+    </div>
     <div class="menu">
       <NButton
         :focusable="false"
@@ -25,7 +30,7 @@
         display-directive="show"
         style="width: 600px"
         preset="card"
-        title="热门排行榜"
+        title="推荐排行榜"
       >
         <div class="tag-list flex flex-wrap items-center justify-stretch gap-4 p-2">
           <NTag
@@ -68,11 +73,12 @@
 <script lang="ts" setup>
 import type { Rank, Song } from '@/types';
 import { getRankTop, getRankSongList } from '@/api';
-import { NButton, NIcon, NModal, NTag } from 'naive-ui';
+import { NButton, NIcon, NModal, NTag, NText } from 'naive-ui';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import SongCard from '@/components/Card/SongCard.vue';
 import player from '@/utils/player';
 import { KeyboardArrowRightRound } from '@vicons/material';
+import { formatTimestamp } from '@/utils';
 
 defineOptions({
   name: 'RecommendRank',
@@ -92,6 +98,10 @@ const checkedRank = computed(() => {
 
 const title = computed(() => {
   return checkedRank.value?.rankname || '请选择';
+});
+
+const createAt = computed(() => {
+  return formatTimestamp(new Date().getTime());
 });
 
 const getRank = async () => {
@@ -175,6 +185,9 @@ onMounted(async () => {
   .title {
     font-size: 1.2rem;
     font-weight: bold;
+  }
+  .tips {
+    font-size: 0.8rem;
   }
 }
 </style>

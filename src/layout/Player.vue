@@ -32,11 +32,10 @@
             preview-disabled
           >
             <template #placeholder>
-              <div class="w-[50px] h-[50px] flex items-center justify-center">
-                <NIcon :size="24">
-                  <MusicNoteFilled />
-                </NIcon>
-              </div>
+              <img
+                class="w-full h-full object-cover"
+                :src="cover"
+              />
             </template>
           </NImage>
 
@@ -484,7 +483,6 @@ import {
   HighQualityOutlined,
   VideocamOutlined,
   CloudOutlined,
-  MusicNoteFilled,
 } from '@vicons/material';
 import TextContainer from '@/components/Core/TextContainer.vue';
 import { isArray } from 'lodash-es';

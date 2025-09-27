@@ -12,11 +12,10 @@
           object-fit="fill"
         >
           <template #placeholder>
-            <div class="h-full w-full flex items-center justify-center">
-              <NIcon :size="32">
-                <MusicNoteFilled />
-              </NIcon>
-            </div>
+            <img
+              class="w-full h-full object-cover"
+              :src="cover"
+            />
           </template>
         </NImage>
       </template>

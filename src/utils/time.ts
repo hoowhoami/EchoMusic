@@ -244,3 +244,17 @@ export const formatMinutesToHM = (minutes: number) => {
 
   return parts.join('');
 };
+
+// 日期字符串转换函数
+export const convertDateFormat = (inputDate: string, inputFormat: string, outputFormat: string) => {
+  // 解析输入日期（如果知道输入格式，建议指定以提高准确性）
+  const date = inputFormat ? dayjs(inputDate, inputFormat) : dayjs(inputDate);
+
+  // 检查日期是否有效
+  if (!date.isValid()) {
+    throw new Error('无效的日期格式');
+  }
+
+  // 转换为目标格式并返回
+  return date.format(outputFormat);
+};

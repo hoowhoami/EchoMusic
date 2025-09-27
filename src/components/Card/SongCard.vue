@@ -18,11 +18,10 @@
         :alt="song.name"
       >
         <template #placeholder>
-          <div class="w-full h-full flex items-center justify-center">
-            <NIcon :size="14">
-              <MusicNoteFilled />
-            </NIcon>
-          </div>
+          <img
+            class="w-full h-full object-cover"
+            :src="cover"
+          />
         </template>
       </NImage>
 
@@ -161,7 +160,7 @@ import { getCover, msToTime } from '@/utils';
 import { isArray } from 'lodash-es';
 import { NEllipsis, NImage, NIcon, useThemeVars, NText, NTag } from 'naive-ui';
 import { computed, ref } from 'vue';
-import { CloudOutlined, MusicNoteFilled, PlayArrowRound } from '@vicons/material';
+import { CloudOutlined, PlayArrowRound } from '@vicons/material';
 import { usePlayerStore } from '@/store';
 import player from '@/utils/player';
 import SongMenu from '@/components/Menu/SongMenu.vue';

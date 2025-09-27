@@ -1,5 +1,5 @@
 <template>
-  <div class="recommend-song flex flex-col space-y-4">
+  <div class="recommend-song flex flex-col space-y-3">
     <div class="flex flex-col space-y-1">
       <div
         class="title"
@@ -41,6 +41,7 @@ import SongCard from '@/components/Card/SongCard.vue';
 import { onMounted, ref } from 'vue';
 import player from '@/utils/player';
 import { NText } from 'naive-ui';
+import { convertDateFormat } from '@/utils';
 
 defineOptions({
   name: 'RecommendSong',
@@ -60,7 +61,7 @@ const getDailyRecommend = async () => {
     loading.value = true;
     recommend.value = [];
     const res = await getEverydayRecommend();
-    createAt.value = res?.creation_date;
+    createAt.value = convertDateFormat(res?.creation_date, 'YYYYMMDD', 'YYYY-MM-DD');
     count.value = res?.song_list_size || 0;
     recommend.value =
       res?.song_list?.map((item: any) => {
