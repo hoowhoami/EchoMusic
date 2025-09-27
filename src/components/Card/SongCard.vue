@@ -19,7 +19,7 @@
       >
         <template #placeholder>
           <div class="w-full h-full flex items-center justify-center">
-            <NIcon :size="24">
+            <NIcon :size="14">
               <MusicNoteFilled />
             </NIcon>
           </div>

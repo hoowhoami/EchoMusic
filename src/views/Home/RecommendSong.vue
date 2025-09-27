@@ -1,6 +1,19 @@
 <template>
   <div class="recommend-song flex flex-col space-y-4">
-    <div class="title">根据你的音乐口味推荐</div>
+    <div class="flex flex-col space-y-1">
+      <div
+        class="title"
+        v-show="recommend.length"
+      >
+        根据你的音乐口味推荐 {{ count }} 首歌曲
+      </div>
+      <div
+        class="tips"
+        v-show="createAt"
+      >
+        <NText :depth="3"> 该推荐生成于 {{ createAt }} 每日更新 </NText>
+      </div>
+    </div>
     <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
       <div
         v-if="loading"
@@ -27,12 +40,15 @@ import { getEverydayRecommend } from '@/api';
 import SongCard from '@/components/Card/SongCard.vue';
 import { onMounted, ref } from 'vue';
 import player from '@/utils/player';
+import { NText } from 'naive-ui';
 
 defineOptions({
   name: 'RecommendSong',
 });
 
 const loading = ref(false);
+const createAt = ref('');
+const count = ref(0);
 const recommend = ref<Song[]>([]);
 
 const handlePlay = (song: Song) => {
@@ -44,6 +60,8 @@ const getDailyRecommend = async () => {
     loading.value = true;
     recommend.value = [];
     const res = await getEverydayRecommend();
+    createAt.value = res?.creation_date;
+    count.value = res?.song_list_size || 0;
     recommend.value =
       res?.song_list?.map((item: any) => {
         return {
@@ -70,6 +88,9 @@ onMounted(() => {
   .title {
     font-size: 1.2rem;
     font-weight: bold;
+  }
+  .tips {
+    font-size: 0.8rem;
   }
 }
 </style>
