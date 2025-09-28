@@ -66,11 +66,19 @@ function createLyricsWindow() {
     app.dock.show();
   }
 
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // 设置更合适的窗口尺寸
+  const windowWidth = 400; // 设置为400px宽度
+  const windowHeight = 120; // 减小高度
+
   lyricsWindow = new BrowserWindow({
-    width: 800,
-    height: 200,
-    x: Math.round((require('electron').screen.getPrimaryDisplay().workAreaSize.width - 800) / 2),
-    y: 100,
+    width: windowWidth,
+    height: windowHeight,
+    x: Math.round((screenWidth - windowWidth) / 2),
+    y: screenHeight - windowHeight - 50, // 距离底部50像素
     frame: false,
     transparent: true,
     alwaysOnTop: true,

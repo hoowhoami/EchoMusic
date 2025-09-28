@@ -1267,8 +1267,11 @@
               const { width: screenWidth, height: screenHeight } =
                 await window.electron.ipcRenderer.invoke('get-screen-size');
 
-              const constrainedX = Math.max(0, Math.min(screenWidth - winWidth, newWinX));
-              const constrainedY = Math.max(0, Math.min(screenHeight - winHeight, newWinY));
+              // 添加边界限制，确保窗口不会完全超出屏幕边界
+              // 保留一定的边距，特别是底部考虑任务栏/dock的存在
+              const margin = 50; // 底部边距
+              const constrainedX = Math.max(-winWidth + 100, Math.min(screenWidth - 100, newWinX)); // 左右保留100px可见区域
+              const constrainedY = Math.max(0, Math.min(screenHeight - winHeight - margin, newWinY)); // 底部保留50px边距
 
               window.electron.ipcRenderer.send(
                 'move-window',
