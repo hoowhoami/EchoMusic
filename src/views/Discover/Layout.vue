@@ -39,13 +39,13 @@
 <script setup lang="ts">
 import { NTabPane, NTabs } from 'naive-ui';
 import { ref } from 'vue';
-import DiscoverPlaylist from './Playlist.vue';
-import DiscoverRank from './Rank.vue';
-import DiscoverAlbum from './Album.vue';
-import DiscoverSong from './Song.vue';
+import DiscoverPlaylist from './DiscoverPlaylist.vue';
+import DiscoverRank from './DiscoverRank.vue';
+import DiscoverAlbum from './DiscoverAlbum.vue';
+import DiscoverSong from './DiscoverSong.vue';
 
 defineOptions({
-  name: 'Discover',
+  name: 'DiscoverLayout',
 });
 
 // 发现路由

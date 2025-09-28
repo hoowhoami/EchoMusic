@@ -3,10 +3,10 @@ import { useUserStore } from '@/store';
 
 import Layout from '@/layout/Layout.vue';
 import Login from '@/views/Login.vue';
-import Home from '@/views/Home/Index.vue';
+import Home from '@/views/Home/Layout.vue';
 import RecommendSong from '@/views/Home/RecommendSong.vue';
 import RecommendRank from '@/views/Home/RecommendRank.vue';
-import Discover from '@/views/Discover/Index.vue';
+import Discover from '@/views/Discover/Layout.vue';
 import Search from '@/views/Search.vue';
 import Profile from '@/views/Profile.vue';
 import Setting from '@/views/Setting.vue';
