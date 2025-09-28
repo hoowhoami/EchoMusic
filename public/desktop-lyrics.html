@@ -1267,13 +1267,13 @@
                   await window.electron.ipcRenderer.invoke('get-screen-size');
 
                 // 添加边界限制，确保窗口不会完全超出屏幕边界
-                // 保留一定的边距，特别是底部考虑任务栏/dock的存在
-                const margin = 50; // 底部边距
+                // 允许窗口拖动到dock以下，只要窗口顶部还在屏幕内
+                const headerHeight = 40; // 预留窗口顶部标题栏区域可见
                 const constrainedX = Math.max(-winWidth + 100, Math.min(screenWidth - 100, newWinX)); // 左右保留100px可见区域
                 const constrainedY = Math.max(
-                  0,
-                  Math.min(screenHeight - winHeight - margin, newWinY),
-                ); // 底部保留50px边距
+                  -winHeight + headerHeight, // 允许窗口向下拖动，只要顶部40px还可见
+                  Math.min(screenHeight - headerHeight, newWinY), // 允许拖动到屏幕底部以下
+                );
 
                 window.electron.ipcRenderer.send(
                   'move-window',
