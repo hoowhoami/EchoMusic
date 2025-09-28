@@ -430,6 +430,23 @@
           </svg>
         </div>
         <div
+          id="drag-handle"
+          class="item"
+          title="拖动窗口"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+          >
+            <path
+              fill="currentColor"
+              d="M12 2L8 6h3v4H7V7L3 11l4 4v-3h4v4H8l4 4l4-4h-3v-4h4v3l4-4l-4-4v3h-4V6h3l-4-4z"
+            />
+          </svg>
+        </div>
+        <div
           id="lock-lyric"
           class="item"
           title="锁定/解锁"
@@ -507,61 +524,6 @@
           this.initializeAsync().catch(error => {
             console.error('[Desktop Lyrics] Initialization failed:', error);
           });
-
-          this.setupBasicDrag();
-        }
-
-        setupBasicDrag() {
-          const lyricContent = document.getElementById('lyric-content');
-
-          if (lyricContent) {
-            lyricContent.addEventListener('mousedown', async (event) => {
-              event.preventDefault();
-
-              let isDragging = false;
-              const startX = event.screenX;
-              const startY = event.screenY;
-              let initialWindowX = 0;
-              let initialWindowY = 0;
-
-              // 获取窗口初始位置
-              if (window.electron?.ipcRenderer) {
-                try {
-                  const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
-                  initialWindowX = bounds.x;
-                  initialWindowY = bounds.y;
-                  isDragging = true;
-                } catch (error) {
-                  console.error('[Desktop Lyrics] Failed to get initial window bounds:', error);
-                  return;
-                }
-              }
-
-              const handleMouseMove = (moveEvent) => {
-                if (!isDragging) return;
-
-                const deltaX = moveEvent.screenX - startX;
-                const deltaY = moveEvent.screenY - startY;
-                const newX = initialWindowX + deltaX;
-                const newY = initialWindowY + deltaY;
-
-                if (window.electron?.ipcRenderer) {
-                  window.electron.ipcRenderer.send('set-window-position-direct', { x: newX, y: newY });
-                }
-              };
-
-              const handleMouseUp = () => {
-                isDragging = false;
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-              };
-
-              document.addEventListener('mousemove', handleMouseMove);
-              document.addEventListener('mouseup', handleMouseUp);
-            });
-          } else {
-            console.error('[Desktop Lyrics] lyric-content element not found for basic drag');
-          }
         }
 
         async initializeAsync() {
@@ -569,8 +531,6 @@
             await this.loadSettings();
             await this.applyInitialColors();
             await this.applySongInfoColors();
-            // 注释掉 restoreOptions，因为 loadSettings 已经从Pinia获取了正确的设置
-            // await this.restoreOptions();
 
             this.menuClick();
             this.setupIPCListeners();
@@ -1219,25 +1179,15 @@
           let winWidth = 0;
           let winHeight = 0;
 
-          // 只在特定区域绑定拖拽开始事件
-          const lyricContent = document.getElementById('lyric-content');
-          const meta = document.querySelector('.meta');
+          // 只在拖动手柄上绑定拖拽功能
+          const dragHandle = document.getElementById('drag-handle');
 
           const handleMouseDown = async event => {
             if (document.body.classList.contains('lock-lyric')) {
               return;
             }
 
-            // 严格检查是否点击在工具栏、按钮上
-            const target = event.target;
-            if (
-              target.closest('.tools') ||
-              target.closest('.item') ||
-              target.closest('input')
-            ) {
-              return;
-            }
-
+            event.preventDefault();
             isDragging = true;
             startX = event.screenX;
             startY = event.screenY;
@@ -1317,15 +1267,11 @@
             }
           };
 
-          if (lyricContent) {
-            lyricContent.addEventListener('mousedown', handleMouseDown);
+          // 只在拖动手柄上绑定事件
+          if (dragHandle) {
+            dragHandle.addEventListener('mousedown', handleMouseDown);
           } else {
-            console.warn('[Desktop Lyrics] lyricContent element not found for drag');
-          }
-          if (meta) {
-            meta.addEventListener('mousedown', handleMouseDown);
-          } else {
-            console.warn('[Desktop Lyrics] meta element not found for drag');
+            console.warn('[Desktop Lyrics] Drag handle element not found');
           }
 
           document.addEventListener('mousemove', handleMouseMove);

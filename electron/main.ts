@@ -21,7 +21,7 @@ let lyricsWindowState = {
   x: null as number | null,
   y: null as number | null,
   width: 400,
-  height: 150
+  height: 150,
 };
 
 // 创建加载窗口
@@ -691,12 +691,15 @@ app.whenReady().then(async () => {
   });
 
   // IPC 处理程序 - 更新主进程中的窗口位置状态
-  ipcMain.on('update-lyrics-window-state', (_event: any, state: { x: number; y: number; width?: number; height?: number }) => {
-    if (state.x !== undefined) lyricsWindowState.x = state.x;
-    if (state.y !== undefined) lyricsWindowState.y = state.y;
-    if (state.width !== undefined) lyricsWindowState.width = state.width;
-    if (state.height !== undefined) lyricsWindowState.height = state.height;
-  });
+  ipcMain.on(
+    'update-lyrics-window-state',
+    (_event: any, state: { x: number; y: number; width?: number; height?: number }) => {
+      if (state.x !== undefined) lyricsWindowState.x = state.x;
+      if (state.y !== undefined) lyricsWindowState.y = state.y;
+      if (state.width !== undefined) lyricsWindowState.width = state.width;
+      if (state.height !== undefined) lyricsWindowState.height = state.height;
+    },
+  );
 });
 
 app.on('window-all-closed', () => {
