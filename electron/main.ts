@@ -16,6 +16,14 @@ let mainWindow: any;
 let lyricsWindow: any = null;
 let loadingWindow: any = null;
 
+// 保存桌面歌词窗口的位置和大小
+let lyricsWindowState = {
+  x: null as number | null,
+  y: null as number | null,
+  width: 400,
+  height: 150
+};
+
 // 创建加载窗口
 function createLoadingWindow() {
   loadingWindow = new BrowserWindow({
@@ -47,14 +55,10 @@ function createLoadingWindow() {
   loadingWindow.on('closed', () => {
     loadingWindow = null;
   });
-
-  if (isDev) {
-    loadingWindow.webContents.openDevTools();
-  }
 }
 
 // 创建桌面歌词窗口
-function createLyricsWindow() {
+async function createLyricsWindow() {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     lyricsWindow.show();
     lyricsWindow.focus();
@@ -70,20 +74,57 @@ function createLyricsWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
-  // 设置更合适的窗口尺寸
-  const windowWidth = 400; // 设置为400px宽度
-  const windowHeight = 120; // 减小高度
+  // 尝试从主窗口获取桌面歌词设置
+  let windowWidth = 400; // 默认宽度
+  let windowHeight = 150; // 默认高度
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      // 请求主窗口的桌面歌词设置
+      const settings = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout')), 2000);
+
+        mainWindow.webContents.send('get-pinia-desktop-lyrics-settings-request');
+        ipcMain.once('get-pinia-desktop-lyrics-settings-response', (_event: any, data: any) => {
+          clearTimeout(timeout);
+          resolve(data);
+        });
+      });
+
+      if (settings && typeof settings === 'object') {
+        windowWidth = settings.windowWidth || 400;
+        windowHeight = settings.windowHeight || 150;
+
+        // 更新保存的状态
+        lyricsWindowState.width = windowWidth;
+        lyricsWindowState.height = windowHeight;
+      }
+    }
+  } catch (error) {
+    console.warn('[Main] Failed to get desktop lyrics settings, using defaults:', error);
+  }
+
+  // 使用保存的位置或默认位置
+  let windowX, windowY;
+  if (lyricsWindowState.x !== null && lyricsWindowState.y !== null) {
+    windowX = lyricsWindowState.x;
+    windowY = lyricsWindowState.y;
+  } else {
+    // 默认位置
+    windowX = Math.round((screenWidth - windowWidth) / 2);
+    windowY = screenHeight - windowHeight - 50; // 距离底部50像素
+  }
 
   lyricsWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
-    x: Math.round((screenWidth - windowWidth) / 2),
-    y: screenHeight - windowHeight - 50, // 距离底部50像素
+    x: windowX,
+    y: windowY,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: process.platform !== 'darwin', // 在macOS上不跳过任务栏，避免影响dock
-    resizable: true,
+    resizable: true, // 窗口大小调整
     hasShadow: false,
     movable: true,
     minimizable: false,
@@ -92,6 +133,7 @@ function createLyricsWindow() {
     focusable: false,
     type: 'panel', // 使用panel类型确保在全屏窗口上方
     level: 'screen-saver', // 设置最高层级
+    show: false, // 先不显示，等待位置恢复后再显示
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -119,8 +161,19 @@ function createLyricsWindow() {
   }
 
   lyricsWindow.once('ready-to-show', () => {
-    lyricsWindow.show();
+    // 不立即显示，等待桌面歌词窗口内部初始化完成
     lyricsWindow.webContents.send('lyrics-window-created');
+  });
+
+  lyricsWindow.on('close', () => {
+    // 在窗口关闭前保存位置
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      const bounds = lyricsWindow.getBounds();
+      lyricsWindowState.x = bounds.x;
+      lyricsWindowState.y = bounds.y;
+      lyricsWindowState.width = bounds.width;
+      lyricsWindowState.height = bounds.height;
+    }
   });
 
   lyricsWindow.on('closed', () => {
@@ -438,8 +491,8 @@ app.whenReady().then(async () => {
   });
 
   // IPC 处理程序 - 创建桌面歌词窗口
-  ipcMain.on('create-lyrics-window', () => {
-    createLyricsWindow();
+  ipcMain.on('create-lyrics-window', async () => {
+    await createLyricsWindow();
   });
 
   // IPC 处理程序 - 关闭桌面歌词窗口
@@ -469,6 +522,14 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('lyrics-window-created');
       // 请求主窗口发送当前歌曲信息
       mainWindow.webContents.send('request-current-song-info');
+    }
+  });
+
+  // IPC 处理程序 - 歌词窗口位置恢复完成
+  ipcMain.on('lyrics-window-position-restored', () => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.show();
+      lyricsWindow.focus();
     }
   });
 
@@ -526,7 +587,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-desktop-lyric-option', () => {
     // 返回默认选项，可以从配置文件读取
     return {
-      fontSize: 30,
+      fontSize: 24,
       mainColor: '#333333', // 改为深色文字，适合浅色背景
       shadowColor: 'rgba(255, 255, 255, 0.8)', // 白色阴影适合浅色背景
     };
@@ -534,7 +595,6 @@ app.whenReady().then(async () => {
 
   // IPC 处理程序 - 设置桌面歌词选项
   ipcMain.on('set-desktop-lyric-option', (_event: any, options: any) => {
-    console.log('[Main] 设置桌面歌词选项:', options);
     // 这里可以保存选项到配置文件
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.webContents.send('desktop-lyric-option-change', options);
@@ -574,6 +634,21 @@ app.whenReady().then(async () => {
     }
   });
 
+  // IPC 处理程序 - 相对移动窗口
+  ipcMain.on('move-window-relative', (_event: any, deltaX: number, deltaY: number) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      const bounds = lyricsWindow.getBounds();
+      lyricsWindow.setPosition(bounds.x + deltaX, bounds.y + deltaY);
+    }
+  });
+
+  // IPC 处理程序 - 直接设置窗口位置（用于拖动）
+  ipcMain.on('set-window-position-direct', (_event: any, position: { x: number; y: number }) => {
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.setPosition(position.x, position.y);
+    }
+  });
+
   // IPC 处理程序 - 设置窗口位置
   ipcMain.handle('set-window-position', (_event: any, position: { x: number; y: number }) => {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
@@ -590,6 +665,37 @@ app.whenReady().then(async () => {
       return true;
     }
     return false;
+  });
+
+  // IPC 处理程序 - 更新Pinia桌面歌词设置
+  ipcMain.on(
+    'update-pinia-desktop-lyrics-setting',
+    (_event: any, data: { key: string; value: any }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-pinia-desktop-lyrics-setting', data);
+      }
+    },
+  );
+
+  // IPC 处理程序 - 获取Pinia桌面歌词设置
+  ipcMain.handle('get-pinia-desktop-lyrics-settings', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      return new Promise(resolve => {
+        mainWindow.webContents.send('get-pinia-desktop-lyrics-settings-request');
+        ipcMain.once('get-pinia-desktop-lyrics-settings-response', (_event: any, settings: any) => {
+          resolve(settings);
+        });
+      });
+    }
+    return null;
+  });
+
+  // IPC 处理程序 - 更新主进程中的窗口位置状态
+  ipcMain.on('update-lyrics-window-state', (_event: any, state: { x: number; y: number; width?: number; height?: number }) => {
+    if (state.x !== undefined) lyricsWindowState.x = state.x;
+    if (state.y !== undefined) lyricsWindowState.y = state.y;
+    if (state.width !== undefined) lyricsWindowState.width = state.width;
+    if (state.height !== undefined) lyricsWindowState.height = state.height;
   });
 });
 

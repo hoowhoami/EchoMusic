@@ -91,7 +91,7 @@
           </NIcon>
           <!-- MV按钮 -->
           <NButton
-            v-if="settingStore.enabledMV && playerStore.current"
+            v-if="playerStore.current"
             :focusable="false"
             ghost
             text

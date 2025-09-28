@@ -21,13 +21,13 @@
       }
 
       :root {
-        --font-size: 30;
+        --font-size: 24;
         --main-color: #fff;
         --lyrics-text-color: #333333;
-        --lyrics-shadow-color: rgba(255, 255, 255, 0.8);
+        --lyrics-shadow-color: rgba(0, 0, 0, 0.8);
         --control-color: #fff;
         --shadow-color: rgba(0, 0, 0, 0.8);
-        --highlight-color: #ffdd00;
+        --highlight-color: #EF0CDCFF;
       }
 
       body {
@@ -71,6 +71,16 @@
 
             .tools {
               opacity: 1;
+            }
+          }
+
+          main {
+            #lyric-text {
+              color: #ffffff !important;
+            }
+
+            #lyric-tran {
+              color: #ffffff !important;
             }
           }
         }
@@ -205,28 +215,36 @@
         display: flex;
         flex-direction: column;
         align-items: center;
+        justify-content: center;
         padding: 0 12px;
         margin: 12px;
         z-index: 1;
         max-width: 100%;
         pointer-events: auto;
+        /* 预留两行歌词的固定高度，防止换行时跳动 */
+        min-height: calc(var(--font-size) * 1px * 2 + var(--font-size) * 1px * 0.4 + 20px); /* 主歌词2行 + 行距 + 翻译间距 */
+        box-sizing: border-box;
 
         #lyric-text {
           font-size: calc(var(--font-size) * 1px);
           font-weight: bold;
           color: var(--lyrics-text-color);
+          max-width: 100%;
+          padding: 0 4px;
+          transition: opacity 0.3s;
+          text-align: center;
+          line-height: 1.2;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
 
+          /* 内部的span（实际歌词） */
           span {
-            display: inline-block;
-            position: relative;
-            background-clip: text;
-            -webkit-background-clip: text;
-            font-weight: bold;
-            transform: translateZ(0);
-            will-change: background-position;
-            white-space: pre;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-            letter-spacing: 0.5px;
+            display: inline;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
           }
         }
 
@@ -235,17 +253,14 @@
           margin-top: 8px;
           opacity: 0.6;
           color: var(--lyrics-text-color);
+          max-width: 100%;
+          padding: 0 4px;
+          text-align: center;
+          line-height: 1.3;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
-      }
-
-      span {
-        padding: 0 4px;
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        text-shadow: 0 0 4px var(--lyrics-shadow-color);
-        transition: opacity 0.3s;
       }
 
       /* 确保歌曲信息使用高亮颜色 */
@@ -253,66 +268,6 @@
         color: var(--highlight-color) !important;
         font-weight: bold !important;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
-      }
-
-      /* 颜色控制面板样式 */
-      .color-controls {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-        justify-content: center;
-        padding: 8px 16px;
-        margin-top: 8px;
-        background-color: rgba(0, 0, 0, 0.6);
-        border-radius: 20px;
-        opacity: 0;
-        transition: opacity 0.3s;
-        z-index: 2;
-        backdrop-filter: blur(10px);
-      }
-
-      body:hover .color-controls {
-        opacity: 1;
-      }
-
-      body.lock-lyric .color-controls {
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      .color-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .color-item label {
-        font-size: 11px;
-        color: var(--control-color);
-        opacity: 0.8;
-        white-space: nowrap;
-      }
-
-      .color-item input[type="color"] {
-        width: 32px;
-        height: 24px;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        background: none;
-        padding: 0;
-      }
-
-      .color-item input[type="color"]::-webkit-color-swatch-wrapper {
-        padding: 0;
-        border-radius: 6px;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-      }
-
-      .color-item input[type="color"]::-webkit-color-swatch {
-        border: none;
-        border-radius: 5px;
       }
 
       @keyframes wordsLoop {
@@ -514,33 +469,12 @@
       <span id="lyric-text">该歌曲暂无歌词</span>
       <span id="lyric-tran"></span>
     </main>
-
-    <!-- 颜色控制面板 -->
-    <div id="color-controls" class="color-controls">
-      <div class="color-item">
-        <label for="text-color-picker">文字</label>
-        <input type="color" id="text-color-picker" value="#333333" />
-      </div>
-      <div class="color-item">
-        <label for="highlight-color-picker">高亮</label>
-        <input type="color" id="highlight-color-picker" value="#ffdd00" />
-      </div>
-    </div>
     <script>
       class LyricsWindow {
         constructor() {
-          console.log('[Desktop Lyrics] Initializing LyricsWindow');
-
-          // Check Electron availability
-          console.log('[Desktop Lyrics] Checking Electron availability...');
-          console.log('[Desktop Lyrics] window.require available:', typeof window.require);
-          console.log('[Desktop Lyrics] window.electron available:', typeof window.electron);
-
           if (typeof window.require !== 'undefined') {
             try {
               const { ipcRenderer } = window.require('electron');
-              console.log('[Desktop Lyrics] ipcRenderer from require:', !!ipcRenderer);
-              // Store ipcRenderer for use
               window.electron = { ipcRenderer };
             } catch (error) {
               console.error('[Desktop Lyrics] Failed to get ipcRenderer from require:', error);
@@ -555,14 +489,6 @@
           this.pauseDom = document.getElementById('pause');
           this.playDom = document.getElementById('play');
 
-          console.log('[Desktop Lyrics] DOM elements found:', {
-            songNameDom: !!this.songNameDom,
-            songArtistDom: !!this.songArtistDom,
-            lyricContentDom: !!this.lyricContentDom,
-            lyricTextDom: !!this.lyricTextDom,
-            lyricTranDom: !!this.lyricTranDom,
-          });
-
           this.isDragging = false;
           this.startX = 0;
           this.startY = 0;
@@ -571,50 +497,125 @@
           this.winWidth = 0;
           this.winHeight = 0;
 
-          // 防抖定时器
           this.resizeTimeout = null;
           this.contentChangeTimeout = null;
 
-          this.loadSettings();
-          this.applyInitialColors();
-          this.applySongInfoColors();
-          this.restoreOptions();
-          this.menuClick();
-          this.setupColorPicker();
-          this.setupIPCListeners();
-          this.setupWindowDragListeners();
-          this.setupWindowResizeListeners(); // 添加窗口大小变化监听
-          this.setupMutationObserver();
+          // 添加防抖机制来减少DOM更新频率
+          this.lastContentUpdate = '';
+          this.updateDebounceTimeout = null;
 
-          // 通知主进程窗口已准备好
-          if (window.electron?.ipcRenderer) {
-            console.log('[Desktop Lyrics] Notifying main process that window is ready');
-            window.electron.ipcRenderer.send('lyrics-window-ready');
+          this.initializeAsync().catch(error => {
+            console.error('[Desktop Lyrics] Initialization failed:', error);
+          });
 
-            // 恢复窗口位置
-            this.restoreWindowPosition();
-          }
-
-          console.log('[Desktop Lyrics] LyricsWindow initialization complete');
+          this.setupBasicDrag();
         }
 
-        loadSettings() {
-          const settings = this.getStoredSettings();
+        setupBasicDrag() {
+          const lyricContent = document.getElementById('lyric-content');
+
+          if (lyricContent) {
+            lyricContent.addEventListener('mousedown', async (event) => {
+              event.preventDefault();
+
+              let isDragging = false;
+              const startX = event.screenX;
+              const startY = event.screenY;
+              let initialWindowX = 0;
+              let initialWindowY = 0;
+
+              // 获取窗口初始位置
+              if (window.electron?.ipcRenderer) {
+                try {
+                  const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+                  initialWindowX = bounds.x;
+                  initialWindowY = bounds.y;
+                  isDragging = true;
+                } catch (error) {
+                  console.error('[Desktop Lyrics] Failed to get initial window bounds:', error);
+                  return;
+                }
+              }
+
+              const handleMouseMove = (moveEvent) => {
+                if (!isDragging) return;
+
+                const deltaX = moveEvent.screenX - startX;
+                const deltaY = moveEvent.screenY - startY;
+                const newX = initialWindowX + deltaX;
+                const newY = initialWindowY + deltaY;
+
+                if (window.electron?.ipcRenderer) {
+                  window.electron.ipcRenderer.send('set-window-position-direct', { x: newX, y: newY });
+                }
+              };
+
+              const handleMouseUp = () => {
+                isDragging = false;
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+              };
+
+              document.addEventListener('mousemove', handleMouseMove);
+              document.addEventListener('mouseup', handleMouseUp);
+            });
+          } else {
+            console.error('[Desktop Lyrics] lyric-content element not found for basic drag');
+          }
+        }
+
+        async initializeAsync() {
+          try {
+            await this.loadSettings();
+            await this.applyInitialColors();
+            await this.applySongInfoColors();
+            // 注释掉 restoreOptions，因为 loadSettings 已经从Pinia获取了正确的设置
+            // await this.restoreOptions();
+
+            this.menuClick();
+            this.setupIPCListeners();
+            this.setupWindowDragListeners();
+            this.setupWindowResizeListeners();
+            this.setupMutationObserver();
+
+            // 通知主进程窗口已准备好
+            if (window.electron?.ipcRenderer) {
+              window.electron.ipcRenderer.send('lyrics-window-ready');
+
+              // 恢复窗口位置
+              await this.restoreWindowPosition();
+
+              // 位置恢复完成后显示窗口
+              window.electron.ipcRenderer.send('lyrics-window-position-restored');
+            } else {
+              console.error('[Desktop Lyrics] window.electron.ipcRenderer not available!');
+              // 如果没有ipcRenderer，延迟一点时间后直接显示窗口
+              setTimeout(() => {
+                if (window.electron?.ipcRenderer) {
+                  window.electron.ipcRenderer.send('lyrics-window-position-restored');
+                }
+              }, 1000);
+            }
+          } catch (error) {
+            console.error('[Desktop Lyrics] Error during initialization:', error);
+            // 出错时也要显示窗口，避免窗口一直隐藏
+            if (window.electron?.ipcRenderer) {
+              window.electron.ipcRenderer.send('lyrics-window-position-restored');
+            }
+          }
+        }
+
+        async loadSettings() {
+          const settings = await this.getStoredSettings();
 
           if (settings.fontSize) {
             document.documentElement.style.setProperty('--font-size', settings.fontSize);
           }
           if (settings.lyricsTextColor) {
-            document.documentElement.style.setProperty('--lyrics-text-color', settings.lyricsTextColor);
-          }
-          if (settings.lyricsShadowColor) {
-            document.documentElement.style.setProperty('--lyrics-shadow-color', settings.lyricsShadowColor);
-          }
-          if (settings.mainColor) {
-            document.documentElement.style.setProperty('--main-color', settings.mainColor);
-          }
-          if (settings.shadowColor) {
-            document.documentElement.style.setProperty('--shadow-color', settings.shadowColor);
+            document.documentElement.style.setProperty(
+              '--lyrics-text-color',
+              settings.lyricsTextColor,
+            );
           }
           if (settings.highlightColor) {
             document.documentElement.style.setProperty(
@@ -626,89 +627,184 @@
             this.setLockState(settings.locked);
           }
 
-          console.log('[Desktop Lyrics] Settings loaded:', settings);
+          // 应用窗口大小设置
+          if (settings.windowWidth || settings.windowHeight) {
+            if (window.electron?.ipcRenderer) {
+              try {
+                const currentBounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+                const newSize = {
+                  width: settings.windowWidth || currentBounds.width,
+                  height: settings.windowHeight || currentBounds.height
+                };
+                console.log('[Desktop Lyrics] Applying window size from settings:', newSize);
+                await window.electron.ipcRenderer.invoke('set-window-size', newSize);
+              } catch (error) {
+                console.error('[Desktop Lyrics] Failed to apply window size:', error);
+              }
+            }
+          }
         }
 
-        applyInitialColors() {
+        async applyInitialColors() {
           // 强制应用初始颜色设置
-          const settings = this.getStoredSettings();
+          const settings = await this.getStoredSettings();
 
           // 应用到CSS变量
-          document.documentElement.style.setProperty('--lyrics-text-color', settings.lyricsTextColor);
-          document.documentElement.style.setProperty('--lyrics-shadow-color', settings.lyricsShadowColor);
-          document.documentElement.style.setProperty('--main-color', settings.mainColor);
-          document.documentElement.style.setProperty('--shadow-color', settings.shadowColor);
+          document.documentElement.style.setProperty(
+            '--lyrics-text-color',
+            settings.lyricsTextColor,
+          );
           document.documentElement.style.setProperty('--highlight-color', settings.highlightColor);
-
-          console.log('[Desktop Lyrics] Initial colors applied:', {
-            lyricsTextColor: settings.lyricsTextColor,
-            lyricsShadowColor: settings.lyricsShadowColor
-          });
         }
 
-        getStoredSettings() {
+        async getStoredSettings() {
           try {
-            const storedSettings = localStorage.getItem('lyrics-setting');
-            if (storedSettings) {
-              const parsed = JSON.parse(storedSettings);
-              const lyricsTextColor = parsed.lyricsTextColor || this.getAdaptiveTextColor();
-              return {
-                fontSize: parsed.fontSize || 30,
-                lyricsTextColor: lyricsTextColor,
-                lyricsShadowColor: parsed.lyricsShadowColor || this.getAdaptiveShadowColor(),
-                mainColor: parsed.mainColor || '#fff',
-                shadowColor: parsed.shadowColor || 'rgba(0, 0, 0, 0.8)',
-                highlightColor: parsed.highlightColor || '#ffdd00', // 高亮色独立设置
-                locked: parsed.locked === true,
-                windowPosition: parsed.windowPosition || null,
-                windowSize: parsed.windowSize || null, // 添加窗口大小字段
-              };
+            // 从主进程获取Pinia存储的设置
+            if (window.electron?.ipcRenderer) {
+              try {
+                // 添加超时机制
+                const piniaSettings = await Promise.race([
+                  window.electron.ipcRenderer.invoke('get-pinia-desktop-lyrics-settings'),
+                  new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout getting Pinia settings')), 3000)
+                  )
+                ]);
+
+                if (piniaSettings) {
+                  const isDarkTheme = this.isDarkTheme();
+
+                  // 根据主题选择颜色
+                  const currentThemeColors = isDarkTheme ? piniaSettings.darkTheme : piniaSettings.lightTheme;
+
+                  // 获取窗口特定状态
+                  const windowState = this.getWindowState();
+
+                  const settings = {
+                    fontSize: piniaSettings.fontSize,
+                    windowWidth: piniaSettings.windowWidth,
+                    windowHeight: piniaSettings.windowHeight,
+                    lyricsTextColor: currentThemeColors.lyricsTextColor,
+                    highlightColor: currentThemeColors.lyricsHighlightColor,
+                    songInfoColor: currentThemeColors.songInfoColor,
+                    locked: windowState.locked || false,
+                    windowPosition: windowState.windowPosition || null,
+                    windowSize: windowState.windowSize || null,
+                  };
+                  return settings;
+                }
+              } catch (error) {
+                console.warn('[Desktop Lyrics] Failed to get Pinia settings (will use defaults):', error);
+              }
             }
+
+            // 检测当前主题
+            const isDarkTheme = this.isDarkTheme();
+
+            // 使用默认设置 - 这些应该与Pinia中的默认值保持一致
+            const defaultSettings = {
+              fontSize: 24,
+              windowWidth: 400,
+              windowHeight: 150, // 增加高度以容纳两行歌词
+              lightTheme: {
+                lyricsTextColor: '#333333',
+                lyricsHighlightColor: '#EF0CDCFF',
+                songInfoColor: '#249C09FF'
+              },
+              darkTheme: {
+                lyricsTextColor: '#ffffff',
+                lyricsHighlightColor: '#EF0CDCFF',
+                songInfoColor: '#249C09FF'
+              }
+            };
+
+            // 根据主题选择颜色
+            const currentThemeColors = isDarkTheme ?
+              {
+                lyricsTextColor: defaultSettings.darkTheme.lyricsTextColor,
+                lyricsHighlightColor: defaultSettings.darkTheme.lyricsHighlightColor,
+                songInfoColor: defaultSettings.darkTheme.songInfoColor
+              } :
+              {
+                lyricsTextColor: defaultSettings.lightTheme.lyricsTextColor,
+                lyricsHighlightColor: defaultSettings.lightTheme.lyricsHighlightColor,
+                songInfoColor: defaultSettings.lightTheme.songInfoColor
+              };
+
+            // 获取窗口特定状态
+            const windowState = this.getWindowState();
+
+            return {
+              fontSize: defaultSettings.fontSize,
+              windowWidth: defaultSettings.windowWidth,
+              windowHeight: defaultSettings.windowHeight,
+              lyricsTextColor: currentThemeColors.lyricsTextColor,
+              highlightColor: currentThemeColors.lyricsHighlightColor,
+              songInfoColor: currentThemeColors.songInfoColor,
+              locked: windowState.locked || false,
+              windowPosition: windowState.windowPosition || null,
+              windowSize: windowState.windowSize || null,
+            };
           } catch (error) {
-            console.warn('[Desktop Lyrics] Failed to parse stored settings:', error);
+            console.warn('[Desktop Lyrics] Failed to get settings:', error);
           }
 
           // 默认设置 - 自适应颜色
-          const adaptiveTextColor = this.getAdaptiveTextColor();
+          const isDarkTheme = this.isDarkTheme();
+          const windowState = this.getWindowState();
+
           return {
-            fontSize: 30,
-            lyricsTextColor: adaptiveTextColor,
-            lyricsShadowColor: this.getAdaptiveShadowColor(),
-            mainColor: '#fff',
-            shadowColor: 'rgba(0, 0, 0, 0.8)',
-            highlightColor: '#ffdd00', // 高亮色使用黄色作为默认
-            locked: false,
-            windowPosition: null,
-            windowSize: null, // 添加窗口大小字段
+            fontSize: 24,
+            windowWidth: 400,
+            windowHeight: 150, // 增加高度以容纳两行歌词
+            lyricsTextColor: isDarkTheme ? '#ffffff' : '#333333',
+            highlightColor: isDarkTheme ? '#EF0CDCFF' : '#EF0CDCFF',
+            songInfoColor: isDarkTheme ? '#249C09FF' : '#249C09FF',
+            locked: windowState.locked || false,
+            windowPosition: windowState.windowPosition || null,
+            windowSize: windowState.windowSize || null,
           };
         }
 
-        getAdaptiveTextColor() {
-          // 检测系统主题或背景亮度来选择合适的文字颜色
-          const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          return isDark ? '#ffffff' : '#333333';
+        getWindowState() {
+          try {
+            const windowStateStr = localStorage.getItem('lyrics-window-state');
+            if (windowStateStr) {
+              return JSON.parse(windowStateStr);
+            }
+          } catch (error) {
+            console.warn('[Desktop Lyrics] Failed to parse window state:', error);
+          }
+          return {};
         }
 
-        getAdaptiveShadowColor() {
-          // 根据主题选择合适的阴影颜色
-          const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          return isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+        isDarkTheme() {
+          return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         }
+
 
         saveSettings(settings) {
+          // 桌面歌词窗口不再直接保存设置到localStorage
+          // 设置应该通过主应用的Pinia store管理
+          // 这里只保留一些窗口特定的设置，如锁定状态、窗口位置等
           try {
-            const currentSettings = this.getStoredSettings();
-            const newSettings = { ...currentSettings, ...settings };
-            localStorage.setItem('lyrics-setting', JSON.stringify(newSettings));
-            console.log('[Desktop Lyrics] Settings saved:', newSettings);
+            if (settings.locked !== undefined || settings.windowPosition || settings.windowSize) {
+              // 只保存窗口特定的状态到localStorage
+              const windowState = {
+                locked: settings.locked,
+                windowPosition: settings.windowPosition,
+                windowSize: settings.windowSize
+              };
+              localStorage.setItem('lyrics-window-state', JSON.stringify(windowState));
+            }
           } catch (error) {
-            console.error('[Desktop Lyrics] Failed to save settings:', error);
+            console.error('[Desktop Lyrics] Failed to save window state:', error);
           }
         }
 
         async restoreWindowPosition() {
           try {
-            const settings = this.getStoredSettings();
+            const settings = await this.getStoredSettings();
+
             if (window.electron?.ipcRenderer) {
               // 恢复窗口位置
               if (settings.windowPosition) {
@@ -716,16 +812,11 @@
                   'set-window-position',
                   settings.windowPosition,
                 );
-                console.log('[Desktop Lyrics] Window position restored:', settings.windowPosition);
               }
 
               // 恢复窗口大小
               if (settings.windowSize) {
-                await window.electron.ipcRenderer.invoke(
-                  'set-window-size',
-                  settings.windowSize,
-                );
-                console.log('[Desktop Lyrics] Window size restored:', settings.windowSize);
+                await window.electron.ipcRenderer.invoke('set-window-size', settings.windowSize);
               }
             }
           } catch (error) {
@@ -740,152 +831,56 @@
 
         updateLyrics(content = '纯音乐，请欣赏', translation = '') {
           if (this.lyricTextDom && this.lyricTranDom) {
-            this.lyricTextDom.innerHTML = content;
+            this.lyricTextDom.innerHTML = `<span>${content}</span>`;
             this.lyricTranDom.innerHTML = translation;
           }
         }
 
-        updateLyricsWithHighlight(line, currentTime, lyricsMode = 'translation') {
+        async updateLyricsWithHighlight(line, currentTime, lyricsMode = 'translation') {
           if (!line || !line.characters || !line.characters.length) {
             this.updateLyrics('该歌曲暂无歌词');
             return;
           }
 
-          const highlightStyle = this.getLineHighlightStyle(line, currentTime);
           const lineText = this.formatLyricsLineText(line);
+          const settings = await this.getStoredSettings();
+
+          // 创建高亮HTML
+          let highlightedHtml = '';
+          const characters = line.characters;
+
+          for (let i = 0; i < characters.length; i++) {
+            const char = characters[i];
+            const isHighlighted = currentTime >= char.startTime && currentTime <= char.endTime;
+
+            if (isHighlighted) {
+              highlightedHtml += `<span style="color: ${settings.highlightColor}; font-weight: bold;">${char.char}</span>`;
+            } else if (currentTime > char.endTime) {
+              highlightedHtml += `<span style="color: ${settings.highlightColor}; font-weight: bold;">${char.char}</span>`;
+            } else {
+              highlightedHtml += `<span style="color: ${settings.lyricsTextColor};">${char.char}</span>`;
+            }
+          }
 
           if (this.lyricTextDom) {
-            this.lyricTextDom.innerHTML = `<span style="${highlightStyle}">${lineText}</span>`;
+            this.lyricTextDom.innerHTML = highlightedHtml;
           }
 
           // 根据 lyricsMode 决定显示翻译还是音译
           if (this.lyricTranDom) {
             let translationText = '';
-
             if (lyricsMode === 'translation' && line.translated) {
               translationText = line.translated;
             } else if (lyricsMode === 'romanization' && line.romanized) {
               translationText = line.romanized;
             }
-
             this.lyricTranDom.innerHTML = translationText;
           }
         }
 
-        getLineHighlightStyle(line, currentTime) {
-          if (!line || !line.characters || !line.characters.length) {
-            const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            const fallbackColor = isDarkTheme ? '#ffffff' : '#333333';
-            return `color: ${fallbackColor}; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);`;
-          }
-
-          const characters = line.characters;
-          const currentTimeMs = currentTime;
-          const lineStartTime = characters[0].startTime;
-          const lineEndTime = characters[characters.length - 1].endTime;
-          const lineDuration = lineEndTime - lineStartTime;
-          const settings = this.getStoredSettings();
-          const highlightColor = settings.highlightColor || '#ffdd00';
-          const defaultColor = settings.lyricsTextColor || 'var(--lyrics-text-color)';
-
-          // 如果当前时间还没到这一行，不高亮
-          if (currentTimeMs < lineStartTime) {
-            const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            const adjustedColor = this.getContrastColor(defaultColor, isDarkTheme);
-            return `color: ${adjustedColor}; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);`;
-          }
-
-          // 如果当前时间已经超过这一行的结束时间，完全高亮
-          if (currentTimeMs >= lineEndTime) {
-            return `
-              background: linear-gradient(to right, ${highlightColor} 0%, ${highlightColor} 100%);
-              background-clip: text;
-              -webkit-background-clip: text;
-              color: transparent;
-              text-shadow: none;
-              font-weight: bold;
-            `;
-          }
-
-          // 计算基于字符时间的高亮位置
-          let charBasedPosition = 0;
-          const text = line.characters.map(char => char.char).join('');
-
-          for (let i = 0; i < characters.length; i++) {
-            const char = characters[i];
-            const startTime = char.startTime;
-            const endTime = char.endTime;
-
-            if (currentTimeMs >= startTime && currentTimeMs <= endTime) {
-              const progress = (currentTimeMs - startTime) / (endTime - startTime);
-              const charWidth = 1 / text.length * 100;
-              charBasedPosition = (i / text.length * 100) + (progress * charWidth);
-              break;
-            }
-
-            if (currentTimeMs > endTime) {
-              charBasedPosition = (i + 1) / text.length * 100;
-            }
-          }
-
-          // 计算基于整行时间的高亮位置（作为补偿机制）
-          const lineProgress = (currentTimeMs - lineStartTime) / lineDuration;
-          const lineBasedPosition = Math.min(100, lineProgress * 100);
-
-          // 使用两种计算方式中较大的值，确保高亮不会太慢
-          let highlightPosition = Math.max(charBasedPosition, lineBasedPosition);
-
-          // 确保高亮位置在合理范围内
-          highlightPosition = Math.max(0, Math.min(100, highlightPosition));
-
-          // 确保未高亮部分在亮色主题下有足够的对比度
-          const isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          const adjustedDefaultColor = this.getContrastColor(defaultColor, isDarkTheme);
-
-          return `
-            background: linear-gradient(to right, ${highlightColor} ${highlightPosition}%, ${adjustedDefaultColor} ${highlightPosition}%);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-            text-shadow: none;
-            font-weight: bold;
-          `;
-        }
-
-        getContrastColor(color, isDarkTheme) {
-          // 确保颜色在不同主题下有足够的对比度
-          if (!color || color === 'var(--lyrics-text-color)') {
-            // 如果是CSS变量，根据主题返回适当的颜色
-            return isDarkTheme ? '#ffffff' : '#000000';
-          }
-
-          // 如果是hex颜色，检查其亮度
-          if (color.startsWith('#')) {
-            const brightness = this.getColorBrightness(color);
-
-            // 在亮色主题下，如果颜色太亮（接近白色），使其更暗
-            if (!isDarkTheme && brightness > 200) {
-              return '#333333';
-            }
-
-            // 在暗色主题下，如果颜色太暗（接近黑色），使其更亮
-            if (isDarkTheme && brightness < 100) {
-              return '#ffffff';
-            }
-          }
-
-          return color;
-        }
-
-        getColorBrightness(hexColor) {
-          // 计算hex颜色的亮度值
-          const hex = hexColor.replace('#', '');
-          const r = parseInt(hex.substr(0, 2), 16);
-          const g = parseInt(hex.substr(2, 2), 16);
-          const b = parseInt(hex.substr(4, 2), 16);
-
-          // 使用相对亮度公式
-          return (r * 299 + g * 587 + b * 114) / 1000;
+        formatLyricsLineText(line) {
+          if (!line || !line.characters || !line.characters.length) return '';
+          return line.characters.map(char => char.char).join('');
         }
 
         async restoreOptions() {
@@ -893,52 +888,75 @@
             // 先检查是否有本地保存的设置
             const localSettings = localStorage.getItem('lyrics-setting');
             if (localSettings) {
-              console.log(
-                '[Desktop Lyrics] Using local settings, skipping restore from main process',
-              );
               return JSON.parse(localSettings);
             }
 
-            // 如果没有本地设置，则从主进程获取默认设置
-            const defaultOptions = await window.electron?.ipcRenderer?.invoke(
-              'get-desktop-lyric-option',
-            );
-            if (defaultOptions) {
-              console.log(
-                '[Desktop Lyrics] Using default options from main process:',
-                defaultOptions,
-              );
-              this.changeOptions(defaultOptions);
+            // 如果没有本地设置，则从主进程获取默认设置（添加超时）
+            if (window.electron?.ipcRenderer) {
+              try {
+                const defaultOptions = await Promise.race([
+                  window.electron.ipcRenderer.invoke('get-desktop-lyric-option'),
+                  new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout getting default options')), 2000)
+                  )
+                ]);
+
+                if (defaultOptions) {
+                  this.changeOptions(defaultOptions);
+                  return defaultOptions;
+                }
+              } catch (error) {
+                console.warn('[Desktop Lyrics] Failed to get default options (will skip):', error);
+              }
             }
-            return defaultOptions;
+
+            return null;
           } catch (error) {
             console.error('Failed to restore options:', error);
+            return null;
           }
         }
 
         changeOptions(options, callback = true) {
           if (!options) return;
-          const { fontSize, mainColor, shadowColor, lyricsTextColor, lyricsShadowColor } = options;
+          const { fontSize, mainColor, shadowColor, lyricsTextColor, lyricsShadowColor, windowWidth, windowHeight } = options;
 
           if (fontSize) {
             document.documentElement.style.setProperty('--font-size', fontSize);
-            this.saveSettings({ fontSize });
           }
           if (mainColor) {
             document.documentElement.style.setProperty('--main-color', mainColor);
-            this.saveSettings({ mainColor });
           }
           if (shadowColor) {
             document.documentElement.style.setProperty('--shadow-color', shadowColor);
-            this.saveSettings({ shadowColor });
           }
           if (lyricsTextColor) {
             document.documentElement.style.setProperty('--lyrics-text-color', lyricsTextColor);
-            this.saveSettings({ lyricsTextColor });
           }
           if (lyricsShadowColor) {
             document.documentElement.style.setProperty('--lyrics-shadow-color', lyricsShadowColor);
-            this.saveSettings({ lyricsShadowColor });
+          }
+
+          // 处理窗口大小变化
+          if (windowWidth || windowHeight) {
+            if (window.electron?.ipcRenderer) {
+              // 获取当前窗口大小作为基础
+              window.electron.ipcRenderer.invoke('get-window-bounds').then(currentBounds => {
+                const newSize = {
+                  width: windowWidth || currentBounds.width,
+                  height: windowHeight || currentBounds.height
+                };
+
+                // 更新窗口大小
+                window.electron.ipcRenderer.invoke('set-window-size', newSize).then(() => {
+                  // Window size updated successfully
+                }).catch(error => {
+                  console.error('[Desktop Lyrics] Failed to update window size:', error);
+                });
+              }).catch(error => {
+                console.error('[Desktop Lyrics] Failed to get current bounds:', error);
+              });
+            }
           }
 
           if (callback && window.electron?.ipcRenderer) {
@@ -948,37 +966,57 @@
 
         menuClick() {
           const toolsDom = document.getElementById('tools');
-          if (!toolsDom) return;
+          if (!toolsDom) {
+            console.error('[Desktop Lyrics] Tools element not found');
+            return;
+          }
 
           toolsDom.addEventListener('click', async event => {
             const target = event.target.closest('div');
-            if (!target) return;
+            if (!target) {
+              return;
+            }
 
             const id = target.id;
             if (!id) return;
 
-            const options = (await this.restoreOptions()) || this.getStoredSettings();
-
-            switch (id) {
-              case 'show-app': {
-                window.electron?.ipcRenderer?.send('win-show');
-                break;
-              }
+            try {
+              switch (id) {
+                case 'show-app': {
+                  window.electron?.ipcRenderer?.send('win-show');
+                  break;
+                }
               case 'font-size-add': {
-                const currentSettings = this.getStoredSettings();
-                let fontSize = parseInt(currentSettings.fontSize) || 30;
-                if (fontSize < 60) {
+                const currentSettings = await this.getStoredSettings();
+                let fontSize = parseInt(currentSettings.fontSize) || 24;
+                if (fontSize < 30) {
                   fontSize++;
-                  this.changeOptions({ ...currentSettings, fontSize });
+                  // 更新CSS变量
+                  document.documentElement.style.setProperty('--font-size', fontSize);
+                  // 通知主进程更新Pinia设置
+                  if (window.electron?.ipcRenderer) {
+                    window.electron.ipcRenderer.send('update-pinia-desktop-lyrics-setting', {
+                      key: 'fontSize',
+                      value: fontSize
+                    });
+                  }
                 }
                 break;
               }
               case 'font-size-reduce': {
-                const currentSettings = this.getStoredSettings();
-                let fontSize = parseInt(currentSettings.fontSize) || 30;
-                if (fontSize > 12) {
+                const currentSettings = await this.getStoredSettings();
+                let fontSize = parseInt(currentSettings.fontSize) || 24;
+                if (fontSize > 24) {
                   fontSize--;
-                  this.changeOptions({ ...currentSettings, fontSize });
+                  // 更新CSS变量
+                  document.documentElement.style.setProperty('--font-size', fontSize);
+                  // 通知主进程更新Pinia设置
+                  if (window.electron?.ipcRenderer) {
+                    window.electron.ipcRenderer.send('update-pinia-desktop-lyrics-setting', {
+                      key: 'fontSize',
+                      value: fontSize
+                    });
+                  }
                 }
                 break;
               }
@@ -1015,63 +1053,22 @@
               default:
                 break;
             }
+            } catch (error) {
+              console.error('[Desktop Lyrics] Error handling button click:', error);
+            }
           });
         }
 
-        setupColorPicker() {
-          const textColorPicker = document.getElementById('text-color-picker');
-          const highlightColorPicker = document.getElementById('highlight-color-picker');
-
-          if (textColorPicker) {
-            // 设置初始颜色
-            const currentSettings = this.getStoredSettings();
-            textColorPicker.value = this.hexToColor(currentSettings.lyricsTextColor);
-
-            textColorPicker.addEventListener('change', (event) => {
-              const newColor = event.target.value;
-              const settings = this.getStoredSettings();
-              const newSettings = {
-                ...settings,
-                lyricsTextColor: newColor
-              };
-              this.saveSettings(newSettings);
-              document.documentElement.style.setProperty('--lyrics-text-color', newColor);
-              this.applySongInfoColors();
-              console.log('[Desktop Lyrics] Text color changed to:', newColor);
-            });
-          }
-
-          if (highlightColorPicker) {
-            // 设置初始高亮颜色
-            const currentSettings = this.getStoredSettings();
-            highlightColorPicker.value = this.hexToColor(currentSettings.highlightColor);
-
-            highlightColorPicker.addEventListener('change', (event) => {
-              const newColor = event.target.value;
-              const settings = this.getStoredSettings();
-              const newSettings = {
-                ...settings,
-                highlightColor: newColor
-              };
-              this.saveSettings(newSettings);
-              document.documentElement.style.setProperty('--highlight-color', newColor);
-              console.log('[Desktop Lyrics] Highlight color changed to:', newColor);
-            });
-          }
-        }
-
-        applySongInfoColors() {
-          const settings = this.getStoredSettings();
-          const highlightColor = settings.highlightColor;
+        async applySongInfoColors() {
+          const settings = await this.getStoredSettings();
+          const songInfoColor = settings.songInfoColor;
 
           if (this.songNameDom) {
-            this.songNameDom.style.color = highlightColor;
+            this.songNameDom.style.color = songInfoColor;
           }
           if (this.songArtistDom) {
-            this.songArtistDom.style.color = highlightColor;
+            this.songArtistDom.style.color = songInfoColor;
           }
-
-          console.log('[Desktop Lyrics] Song info colors applied with highlight color:', highlightColor);
         }
 
         hexToColor(color) {
@@ -1084,8 +1081,6 @@
         }
 
         setupIPCListeners() {
-          console.log('[Desktop Lyrics] Setting up IPC listeners...');
-
           // Function to setup listeners when ipcRenderer becomes available
           const setupListeners = () => {
             if (!window.electron?.ipcRenderer) {
@@ -1093,18 +1088,14 @@
               return false;
             }
 
-            console.log(
-              '[Desktop Lyrics] window.electron.ipcRenderer available, setting up listeners',
-            );
-
-            window.electron.ipcRenderer.on('play-song-change', (_, title) => {
+            window.electron.ipcRenderer.on('play-song-change', async (_, title) => {
               if (!title) return;
               const [songName, songArtist] = title.split(' - ');
               this.songNameDom.innerHTML = songName || title;
               this.songArtistDom.innerHTML = songArtist || '未知艺术家';
 
               // 强制应用颜色
-              this.applySongInfoColors();
+              await this.applySongInfoColors();
             });
 
             // 监听歌词数据更新
@@ -1128,17 +1119,14 @@
               this.setLockState(lock);
             });
 
-            console.log('[Desktop Lyrics] All IPC listeners registered');
             return true;
           };
 
           // Try to setup listeners immediately
           if (!setupListeners()) {
             // If not available, retry after a short delay
-            console.log('[Desktop Lyrics] IPC not ready, retrying in 500ms...');
             setTimeout(() => {
               if (!setupListeners()) {
-                console.log('[Desktop Lyrics] IPC still not ready, retrying in 1000ms...');
                 setTimeout(() => {
                   setupListeners();
                 }, 1000);
@@ -1147,7 +1135,7 @@
           }
         }
 
-        parsedLyricsData(lyricData) {
+        async parsedLyricsData(lyricData) {
           if (!this.lyricContentDom || !this.lyricTextDom) {
             return;
           }
@@ -1168,11 +1156,11 @@
 
           if (currentLineIndex >= 0 && lyrics[currentLineIndex]) {
             const currentLine = lyrics[currentLineIndex];
-            this.updateLyricsWithHighlight(currentLine, currentTime, lyricsMode);
+            await this.updateLyricsWithHighlight(currentLine, currentTime, lyricsMode);
           } else if (lyrics.length > 0) {
             // 如果没有找到当前行，但有歌词，显示第一行
             const firstLine = lyrics[0];
-            this.updateLyricsWithHighlight(firstLine, currentTime, lyricsMode);
+            await this.updateLyricsWithHighlight(firstLine, currentTime, lyricsMode);
           } else {
             this.updateLyrics('该歌曲暂无歌词');
           }
@@ -1235,12 +1223,18 @@
           const lyricContent = document.getElementById('lyric-content');
           const meta = document.querySelector('.meta');
 
-          const handleMouseDown = async (event) => {
-            if (document.body.classList.contains('lock-lyric')) return;
+          const handleMouseDown = async event => {
+            if (document.body.classList.contains('lock-lyric')) {
+              return;
+            }
 
-            // 严格检查是否点击在工具栏、按钮或颜色控制面板上
+            // 严格检查是否点击在工具栏、按钮上
             const target = event.target;
-            if (target.closest('.tools') || target.closest('.item') || target.closest('input') || target.closest('.color-controls')) {
+            if (
+              target.closest('.tools') ||
+              target.closest('.item') ||
+              target.closest('input')
+            ) {
               return;
             }
 
@@ -1249,37 +1243,48 @@
             startY = event.screenY;
 
             if (window.electron?.ipcRenderer) {
-              const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
-              startWinX = bounds.x;
-              startWinY = bounds.y;
-              winWidth = bounds.width;
-              winHeight = bounds.height;
+              try {
+                const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
+                startWinX = bounds.x;
+                startWinY = bounds.y;
+                winWidth = bounds.width;
+                winHeight = bounds.height;
+              } catch (error) {
+                console.error('[Desktop Lyrics] Failed to get window bounds:', error);
+              }
             }
           };
 
-          const handleMouseMove = async (event) => {
+          const handleMouseMove = async event => {
             if (!isDragging || document.body.classList.contains('lock-lyric')) return;
 
             const newWinX = startWinX + (event.screenX - startX);
             const newWinY = startWinY + (event.screenY - startY);
 
             if (window.electron?.ipcRenderer) {
-              const { width: screenWidth, height: screenHeight } =
-                await window.electron.ipcRenderer.invoke('get-screen-size');
+              try {
+                const { width: screenWidth, height: screenHeight } =
+                  await window.electron.ipcRenderer.invoke('get-screen-size');
 
-              // 添加边界限制，确保窗口不会完全超出屏幕边界
-              // 保留一定的边距，特别是底部考虑任务栏/dock的存在
-              const margin = 50; // 底部边距
-              const constrainedX = Math.max(-winWidth + 100, Math.min(screenWidth - 100, newWinX)); // 左右保留100px可见区域
-              const constrainedY = Math.max(0, Math.min(screenHeight - winHeight - margin, newWinY)); // 底部保留50px边距
+                // 添加边界限制，确保窗口不会完全超出屏幕边界
+                // 保留一定的边距，特别是底部考虑任务栏/dock的存在
+                const margin = 50; // 底部边距
+                const constrainedX = Math.max(-winWidth + 100, Math.min(screenWidth - 100, newWinX)); // 左右保留100px可见区域
+                const constrainedY = Math.max(
+                  0,
+                  Math.min(screenHeight - winHeight - margin, newWinY),
+                ); // 底部保留50px边距
 
-              window.electron.ipcRenderer.send(
-                'move-window',
-                constrainedX,
-                constrainedY,
-                winWidth,
-                winHeight,
-              );
+                window.electron.ipcRenderer.send(
+                  'move-window',
+                  constrainedX,
+                  constrainedY,
+                  winWidth,
+                  winHeight,
+                );
+              } catch (error) {
+                console.error('[Desktop Lyrics] Failed to move window:', error);
+              }
             }
           };
 
@@ -1290,12 +1295,21 @@
               if (window.electron?.ipcRenderer) {
                 try {
                   const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
-                  const settings = this.getStoredSettings();
-                  settings.windowPosition = {
+
+                  // 直接保存窗口位置到localStorage，不需要获取完整设置
+                  const windowPosition = {
                     x: bounds.x,
                     y: bounds.y,
                   };
-                  this.saveSettings(settings);
+                  this.saveSettings({ windowPosition });
+
+                  // 同时通知主进程更新窗口状态
+                  window.electron.ipcRenderer.send('update-lyrics-window-state', {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height
+                  });
                 } catch (error) {
                   console.warn('[Desktop Lyrics] Failed to save window position:', error);
                 }
@@ -1305,9 +1319,13 @@
 
           if (lyricContent) {
             lyricContent.addEventListener('mousedown', handleMouseDown);
+          } else {
+            console.warn('[Desktop Lyrics] lyricContent element not found for drag');
           }
           if (meta) {
             meta.addEventListener('mousedown', handleMouseDown);
+          } else {
+            console.warn('[Desktop Lyrics] meta element not found for drag');
           }
 
           document.addEventListener('mousemove', handleMouseMove);
@@ -1315,8 +1333,9 @@
         }
 
         updateWindowHeight() {
-          const bodyHeight = document.body.scrollHeight;
-          window.electron?.ipcRenderer?.send('update-window-height', bodyHeight);
+          // 使用固定高度，不再动态调整
+          // const bodyHeight = document.body.scrollHeight;
+          // window.electron?.ipcRenderer?.send('update-window-height', bodyHeight);
         }
 
         // 保存当前窗口大小到本地存储
@@ -1324,13 +1343,12 @@
           try {
             if (window.electron?.ipcRenderer) {
               const bounds = await window.electron.ipcRenderer.invoke('get-window-bounds');
-              const settings = this.getStoredSettings();
+              const settings = await this.getStoredSettings();
               settings.windowSize = {
                 width: bounds.width,
                 height: bounds.height,
               };
               this.saveSettings(settings);
-              console.log('[Desktop Lyrics] Window size saved:', settings.windowSize);
             }
           } catch (error) {
             console.warn('[Desktop Lyrics] Failed to save window size:', error);

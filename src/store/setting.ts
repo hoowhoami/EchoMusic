@@ -19,9 +19,24 @@ interface Setting {
   // 音质设置
   compatibilityMode: boolean;
   backupQuality: AudioQuality;
+  // 桌面歌词设置
+  desktopLyrics: {
+    fontSize: number;
+    windowWidth: number;
+    windowHeight: number;
+    lightTheme: {
+      lyricsTextColor: string; // 未高亮歌词颜色
+      lyricsHighlightColor: string; // 高亮歌词颜色
+      songInfoColor: string; // 歌曲信息颜色
+    };
+    darkTheme: {
+      lyricsTextColor: string; // 未高亮歌词颜色
+      lyricsHighlightColor: string; // 高亮歌词颜色
+      songInfoColor: string; // 歌曲信息颜色
+    };
+  };
   // 实验功能
   unblock: boolean;
-  enabledMV: boolean;
   keepAlive: boolean;
   autoSign: boolean;
   autoReceiveVip: boolean;
@@ -48,9 +63,25 @@ export const useSettingStore = defineStore('setting', {
     compatibilityMode: true,
     backupQuality: DEFAULT_AUDIO_QUALITY,
 
+    // 桌面歌词默认设置
+    desktopLyrics: {
+      fontSize: 24,
+      windowWidth: 400,
+      windowHeight: 150, // 增加高度以容纳两行歌词
+      lightTheme: {
+        lyricsTextColor: '#333333', // 亮色主题下未高亮歌词颜色
+        lyricsHighlightColor: '#EF0CDCFF', // 亮色主题下高亮歌词颜色
+        songInfoColor: '#249C09FF', // 亮色主题下歌曲信息颜色
+      },
+      darkTheme: {
+        lyricsTextColor: '#ffffff', // 暗色主题下未高亮歌词颜色
+        lyricsHighlightColor: '#EF0CDCFF', // 暗色主题下高亮歌词颜色
+        songInfoColor: '#249C09FF', // 暗色主题下歌曲信息颜色
+      },
+    },
+
     keepAlive: false,
     unblock: false,
-    enabledMV: false,
     autoSign: false,
     autoReceiveVip: false,
   }),
