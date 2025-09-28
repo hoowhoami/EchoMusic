@@ -118,6 +118,7 @@ async function createLyricsWindow() {
   lyricsWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
+    minWidth: 600, // 设置最小宽度为600px
     x: windowX,
     y: windowY,
     frame: false,

@@ -28,6 +28,7 @@
         --control-color: #fff;
         --shadow-color: rgba(0, 0, 0, 0.8);
         --highlight-color: #EF0CDCFF;
+        --song-info-color: #249C09FF;
       }
 
       body {
@@ -198,13 +199,13 @@
           margin-top: 4px;
           font-size: 12px;
           opacity: 0.9;
-          color: var(--highlight-color);
+          color: var(--song-info-color);
           font-weight: bold;
           text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         #song-name {
-          color: var(--highlight-color);
+          color: var(--song-info-color);
           font-weight: bold;
           text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
@@ -263,9 +264,9 @@
         }
       }
 
-      /* 确保歌曲信息使用高亮颜色 */
+      /* 确保歌曲信息使用歌曲信息颜色 */
       .meta span {
-        color: var(--highlight-color) !important;
+        color: var(--song-info-color) !important;
         font-weight: bold !important;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
       }
@@ -583,6 +584,12 @@
               settings.highlightColor,
             );
           }
+          if (settings.songInfoColor) {
+            document.documentElement.style.setProperty(
+              '--song-info-color',
+              settings.songInfoColor,
+            );
+          }
           if (settings.locked !== undefined) {
             this.setLockState(settings.locked);
           }
@@ -615,6 +622,7 @@
             settings.lyricsTextColor,
           );
           document.documentElement.style.setProperty('--highlight-color', settings.highlightColor);
+          document.documentElement.style.setProperty('--song-info-color', settings.songInfoColor);
         }
 
         async getStoredSettings() {
@@ -663,7 +671,7 @@
             // 使用默认设置 - 这些应该与Pinia中的默认值保持一致
             const defaultSettings = {
               fontSize: 24,
-              windowWidth: 400,
+              windowWidth: 600, // 更新默认窗口宽度为600
               windowHeight: 150, // 增加高度以容纳两行歌词
               lightTheme: {
                 lyricsTextColor: '#333333',
@@ -714,7 +722,7 @@
 
           return {
             fontSize: 24,
-            windowWidth: 400,
+            windowWidth: 600, // 更新默认窗口宽度为600
             windowHeight: 150, // 增加高度以容纳两行歌词
             lyricsTextColor: isDarkTheme ? '#ffffff' : '#333333',
             highlightColor: isDarkTheme ? '#EF0CDCFF' : '#EF0CDCFF',
@@ -966,7 +974,7 @@
               case 'font-size-reduce': {
                 const currentSettings = await this.getStoredSettings();
                 let fontSize = parseInt(currentSettings.fontSize) || 24;
-                if (fontSize > 24) {
+                if (fontSize > 20) { // 更新最小字体大小限制为20
                   fontSize--;
                   // 更新CSS变量
                   document.documentElement.style.setProperty('--font-size', fontSize);
@@ -1023,12 +1031,8 @@
           const settings = await this.getStoredSettings();
           const songInfoColor = settings.songInfoColor;
 
-          if (this.songNameDom) {
-            this.songNameDom.style.color = songInfoColor;
-          }
-          if (this.songArtistDom) {
-            this.songArtistDom.style.color = songInfoColor;
-          }
+          // 更新CSS变量而不是直接设置style属性
+          document.documentElement.style.setProperty('--song-info-color', songInfoColor);
         }
 
         hexToColor(color) {

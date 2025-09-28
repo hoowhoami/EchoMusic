@@ -351,7 +351,7 @@
           <div class="setting-control">
             <NSlider
               v-model:value="settingStore.desktopLyrics.fontSize"
-              :min="24"
+              :min="20"
               :max="30"
               :step="1"
               style="width: 200px"
@@ -387,7 +387,7 @@
           <div class="setting-control">
             <NSlider
               v-model:value="settingStore.desktopLyrics.windowWidth"
-              :min="400"
+              :min="600"
               :max="1200"
               :step="50"
               style="width: 200px"

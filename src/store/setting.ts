@@ -66,7 +66,7 @@ export const useSettingStore = defineStore('setting', {
     // 桌面歌词默认设置
     desktopLyrics: {
       fontSize: 24,
-      windowWidth: 400,
+      windowWidth: 600, // 更新默认窗口宽度为600
       windowHeight: 150, // 增加高度以容纳两行歌词
       lightTheme: {
         lyricsTextColor: '#333333', // 亮色主题下未高亮歌词颜色
