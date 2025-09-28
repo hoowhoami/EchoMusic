@@ -22,7 +22,11 @@
     "server:pkg:macos": "cd server && pnpm run pkgmacos",
     "dev:all": "concurrently \"npm run server:dev\" \"npm run dev\" \"wait-on http://localhost:3000 http://localhost:10086 && npm run electron\"",
     "build:all": "npm run build && npm run server:pkg:macos",
+    "build:all:win": "npm run build && npm run server:pkg:win",
+    "build:all:linux": "npm run build && npm run server:pkg:linux",
     "dist:all": "npm run build:all && cross-env NODE_ENV=production npx electron-builder --publish=never",
+    "dist:all:win": "npm run build:all:win && cross-env NODE_ENV=production npx electron-builder --win --publish=never",
+    "dist:all:linux": "npm run build:all:linux && cross-env NODE_ENV=production npx electron-builder --linux --publish=never",
     "lint": "eslint . --fix",
     "format": "prettier --write src/"
   },
@@ -100,10 +104,6 @@
         "to": "assets"
       },
       {
-        "from": "server/bin/app_macos",
-        "to": "server/bin/app_macos"
-      },
-      {
         "from": "server/.env",
         "to": "server/.env"
       }
@@ -111,6 +111,12 @@
     "mac": {
       "category": "public.app-category.music",
       "identity": null,
+      "extraResources": [
+        {
+          "from": "server/bin/app_macos",
+          "to": "server/bin/app_macos"
+        }
+      ],
       "target": [
         {
           "target": "dmg",
@@ -122,6 +128,12 @@
       ]
     },
     "win": {
+      "extraResources": [
+        {
+          "from": "server/bin/app_win.exe",
+          "to": "server/bin/app_win.exe"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -132,6 +144,12 @@
       ]
     },
     "linux": {
+      "extraResources": [
+        {
+          "from": "server/bin/app_linux",
+          "to": "server/bin/app_linux"
+        }
+      ],
       "target": [
         {
           "target": "AppImage",

@@ -227,8 +227,24 @@ async function startServer() {
     let serverPath: string;
 
     if (app.isPackaged) {
-      // 打包环境：使用二进制文件，无需Node.js环境
-      serverPath = path.join(process.resourcesPath, 'server', 'bin', 'app_macos');
+      // 打包环境：根据平台选择对应的二进制文件，无需Node.js环境
+      const platform = process.platform;
+      let binaryName: string;
+
+      switch (platform) {
+        case 'win32':
+          binaryName = 'app_win.exe';
+          break;
+        case 'linux':
+          binaryName = 'app_linux';
+          break;
+        case 'darwin':
+        default:
+          binaryName = 'app_macos';
+          break;
+      }
+
+      serverPath = path.join(process.resourcesPath, 'server', 'bin', binaryName);
     } else {
       // 开发环境：使用JS文件需要Node.js
       serverPath = path.join(__dirname, '..', 'server', 'app.js');
