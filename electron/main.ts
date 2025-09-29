@@ -91,9 +91,14 @@ async function createLyricsWindow() {
         });
       });
 
-      if (settings && typeof settings === 'object') {
-        windowWidth = settings.windowWidth || 400;
-        windowHeight = settings.windowHeight || 150;
+      if (
+        settings &&
+        typeof settings === 'object' &&
+        'windowWidth' in settings &&
+        'windowHeight' in settings
+      ) {
+        windowWidth = (settings.windowWidth as number) || 400;
+        windowHeight = (settings.windowHeight as number) || 150;
 
         // 更新保存的状态
         lyricsWindowState.width = windowWidth;
@@ -417,6 +422,11 @@ function createWindow() {
       });
     },
   );
+
+  // 忽略webContents的证书错误
+  mainWindow.webContents.session.setCertificateVerifyProc((_request: any, callback: any) => {
+    callback(0);
+  });
 
   mainWindow.loadURL(startUrl);
 

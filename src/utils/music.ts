@@ -1,11 +1,12 @@
 import { Song } from '@/types';
 
-export const getCover = (coverUrl: string, size: number = 200) => {
+export const getCover = (coverUrl: string, size: number = 200, https = true) => {
   if (!coverUrl) return 'https://imge.kugou.com/soft/collection/default.jpg';
-  return coverUrl
-    .replace('{size}', `${size}`)
-    .replace('http://', 'https://')
-    .replace('c1.kgimg.com', 'imge.kugou.com');
+  let cover = coverUrl;
+  if (https) {
+    cover = cover.replace('http://', 'https://');
+  }
+  return cover.replace(/{size}/g, `${size}`).replace('c1.kgimg.com', 'imge.kugou.com');
 };
 
 // 模糊搜索

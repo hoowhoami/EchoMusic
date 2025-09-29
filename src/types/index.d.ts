@@ -396,3 +396,25 @@ export type MV = {
   intro: string;
   other_description: string;
 };
+
+// IP
+export type IP = {
+  extra: IPExtraInfo;
+  id: number;
+  image_shape: number;
+  image_url: string;
+  position: number;
+  sizable_image_url: string;
+  sub_title: string;
+  subscript: number;
+  title: string;
+  type: number;
+};
+
+export type IPExtraInfo = {
+  play_count: number;
+  specialid: number;
+  global_collection_id: string;
+  global_special_id: string;
+  suid: number;
+};

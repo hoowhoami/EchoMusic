@@ -58,7 +58,14 @@
           </NCard>
         </div>
       </div>
-      <div>推荐歌单</div>
+      <div class="item">
+        <NH5
+          class="title"
+          prefix="bar"
+        >
+          推荐歌单
+        </NH5>
+      </div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
         <div
           v-if="loading"
@@ -75,17 +82,41 @@
           @click="handleOpenPlaylist(item as Playlist)"
         />
       </div>
+      <div class="item">
+        <NH5
+          class="title"
+          prefix="bar"
+        >
+          编辑精选
+        </NH5>
+      </div>
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+        <div
+          v-if="loading"
+          class="h-[1000px] flex items-center justify-center"
+        >
+          <NSpin :show="loading" />
+        </div>
+        <IPCard
+          v-else
+          class="max-w-[250px] h-[280px]"
+          v-for="item in ipList"
+          :key="item.id"
+          :ip="item"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { getPlaylistByCategory } from '@/api';
+import type { IP, Playlist } from '@/types';
+import { getPlaylistByCategory, getTopIP } from '@/api';
+import IPCard from '@/components/Card/IPCard.vue';
 import PlaylistCard from '@/components/Card/PlaylistCard.vue';
 import { useUserStore } from '@/store';
-import { Playlist } from '@/types';
 import { formatTimestamp, getGreeting } from '@/utils';
-import { NCard, NText } from 'naive-ui';
+import { NCard, NH5, NSpin, NText } from 'naive-ui';
 import { onMounted, ref } from 'vue';
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -99,6 +130,7 @@ const userStore = useUserStore();
 
 const loading = ref(false);
 const playlist = ref<Playlist[]>([]);
+const ipList = ref<IP[]>([]);
 
 const greeting = computed(() => {
   if (userStore.nickname) {
@@ -160,8 +192,23 @@ const getRecommendPlaylist = async () => {
   }
 };
 
+const getTopIPList = async () => {
+  try {
+    ipList.value = [];
+    loading.value = true;
+    const res = await getTopIP();
+    console.log('top ip:', res);
+    ipList.value = res?.list || [];
+  } catch (error) {
+    console.log('获取编辑精选失败:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
 onMounted(async () => {
   await getRecommendPlaylist();
+  await getTopIPList();
 });
 </script>
 
@@ -197,6 +244,12 @@ onMounted(async () => {
       .desc {
         font-size: 0.8rem;
       }
+    }
+  }
+
+  .item {
+    .title {
+      margin: 0;
     }
   }
 }
