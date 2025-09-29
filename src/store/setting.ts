@@ -22,6 +22,7 @@ interface Setting {
   // 桌面歌词设置
   desktopLyrics: {
     fontSize: number;
+    songInfoFontSize: number; // 歌曲信息字体大小
     windowWidth: number;
     windowHeight: number;
     lightTheme: {
@@ -66,6 +67,7 @@ export const useSettingStore = defineStore('setting', {
     // 桌面歌词默认设置
     desktopLyrics: {
       fontSize: 24,
+      songInfoFontSize: 24, // 歌曲信息默认字体大小，与歌词字体大小一致
       windowWidth: 600, // 更新默认窗口宽度为600
       windowHeight: 150, // 增加高度以容纳两行歌词
       lightTheme: {

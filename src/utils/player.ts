@@ -62,10 +62,7 @@ class Player {
       window.addEventListener('request-current-song-for-lyrics', () => {
         const currentSong = this.getPlaySongData();
         if (currentSong) {
-          const songInfo = this.getPlayerInfo(currentSong);
-          if (songInfo) {
-            this.notifyDesktopLyrics('song', songInfo);
-          }
+          this.notifyDesktopLyrics('song', currentSong);
         }
       });
     }
@@ -365,7 +362,14 @@ class Player {
       try {
         const { ipcRenderer } = window.require('electron');
         if (type === 'song') {
-          ipcRenderer.send('play-song-change', data);
+          // 直接发送歌曲对象，桌面歌词只使用name字段
+          const playSongData = typeof data === 'string' ? this.getPlaySongData() : data;
+          if (playSongData) {
+            const songInfo = {
+              name: playSongData.name || '未知歌曲',
+            };
+            ipcRenderer.send('play-song-change', songInfo);
+          }
         } else if (type === 'status') {
           ipcRenderer.send('play-status-change', data);
         }
@@ -591,7 +595,7 @@ class Player {
       // 更改当前播放歌曲
       playerStore.current = playSongData;
       // 通知桌面歌词歌曲变化
-      this.notifyDesktopLyrics('song', this.getPlayerInfo(playSongData));
+      this.notifyDesktopLyrics('song', playSongData);
       // 更改状态
       playerStore.loading = true;
       // 重置播放状态，防止状态不一致

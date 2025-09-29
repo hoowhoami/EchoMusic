@@ -22,6 +22,7 @@
 
       :root {
         --font-size: 24;
+        --song-info-font-size: 24;
         --main-color: #fff;
         --lyrics-text-color: #333333;
         --lyrics-shadow-color: rgba(0, 0, 0, 0.8);
@@ -150,7 +151,7 @@
           display: flex;
           flex-direction: column;
           align-items: center;
-          font-size: 14px;
+          font-size: calc(var(--song-info-font-size) * 1px);
           opacity: 0.9;
           transition: opacity 0.3s;
           color: var(--lyrics-text-color);
@@ -195,18 +196,10 @@
           }
         }
 
-        #song-artist {
-          margin-top: 4px;
-          font-size: 12px;
-          opacity: 0.9;
-          color: var(--song-info-color);
-          font-weight: bold;
-          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-        }
-
         #song-name {
           color: var(--song-info-color);
           font-weight: bold;
+          font-size: calc(var(--song-info-font-size) * 1px);
           text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
       }
@@ -222,8 +215,7 @@
         z-index: 1;
         max-width: 100%;
         pointer-events: auto;
-        /* 预留两行歌词的固定高度，防止换行时跳动 */
-        min-height: calc(var(--font-size) * 1px * 2 + var(--font-size) * 1px * 0.4 + 20px); /* 主歌词2行 + 行距 + 翻译间距 */
+        min-height: calc(var(--font-size) + var(--font-size) * 1px * 0.4 + 20px); /* 主歌词2行 + 行距 + 翻译间距 */
         box-sizing: border-box;
 
         #lyric-text {
@@ -252,7 +244,6 @@
         #lyric-tran {
           font-size: calc(var(--font-size) * 1px - 5px);
           margin-top: 8px;
-          opacity: 0.6;
           color: var(--lyrics-text-color);
           max-width: 100%;
           padding: 0 4px;
@@ -287,7 +278,6 @@
     <header>
       <div class="meta">
         <span id="song-name">EchoMusic</span>
-        <span id="song-artist">未知艺术家</span>
       </div>
       <div
         class="tools"
@@ -500,7 +490,6 @@
           }
 
           this.songNameDom = document.getElementById('song-name');
-          this.songArtistDom = document.getElementById('song-artist');
           this.lyricContentDom = document.getElementById('lyric-content');
           this.lyricTextDom = document.getElementById('lyric-text');
           this.lyricTranDom = document.getElementById('lyric-tran');
@@ -571,6 +560,9 @@
 
           if (settings.fontSize) {
             document.documentElement.style.setProperty('--font-size', settings.fontSize);
+          }
+          if (settings.songInfoFontSize) {
+            document.documentElement.style.setProperty('--song-info-font-size', settings.songInfoFontSize);
           }
           if (settings.lyricsTextColor) {
             document.documentElement.style.setProperty(
@@ -649,6 +641,7 @@
 
                   const settings = {
                     fontSize: piniaSettings.fontSize,
+                    songInfoFontSize: piniaSettings.songInfoFontSize,
                     windowWidth: piniaSettings.windowWidth,
                     windowHeight: piniaSettings.windowHeight,
                     lyricsTextColor: currentThemeColors.lyricsTextColor,
@@ -671,6 +664,7 @@
             // 使用默认设置 - 这些应该与Pinia中的默认值保持一致
             const defaultSettings = {
               fontSize: 24,
+              songInfoFontSize: 24,
               windowWidth: 600, // 更新默认窗口宽度为600
               windowHeight: 150, // 增加高度以容纳两行歌词
               lightTheme: {
@@ -703,6 +697,7 @@
 
             return {
               fontSize: defaultSettings.fontSize,
+              songInfoFontSize: defaultSettings.songInfoFontSize,
               windowWidth: defaultSettings.windowWidth,
               windowHeight: defaultSettings.windowHeight,
               lyricsTextColor: currentThemeColors.lyricsTextColor,
@@ -722,6 +717,7 @@
 
           return {
             fontSize: 24,
+            songInfoFontSize: 24,
             windowWidth: 600, // 更新默认窗口宽度为600
             windowHeight: 150, // 增加高度以容纳两行歌词
             lyricsTextColor: isDarkTheme ? '#ffffff' : '#333333',
@@ -887,10 +883,13 @@
 
         changeOptions(options, callback = true) {
           if (!options) return;
-          const { fontSize, mainColor, shadowColor, lyricsTextColor, lyricsShadowColor, windowWidth, windowHeight } = options;
+          const { fontSize, songInfoFontSize, mainColor, shadowColor, lyricsTextColor, lyricsShadowColor, windowWidth, windowHeight } = options;
 
           if (fontSize) {
             document.documentElement.style.setProperty('--font-size', fontSize);
+          }
+          if (songInfoFontSize) {
+            document.documentElement.style.setProperty('--song-info-font-size', songInfoFontSize);
           }
           if (mainColor) {
             document.documentElement.style.setProperty('--main-color', mainColor);
@@ -1052,11 +1051,16 @@
               return false;
             }
 
-            window.electron.ipcRenderer.on('play-song-change', async (_, title) => {
-              if (!title) return;
-              const [songName, songArtist] = title.split(' - ');
-              this.songNameDom.innerHTML = songName || title;
-              this.songArtistDom.innerHTML = songArtist || '未知艺术家';
+            window.electron.ipcRenderer.on('play-song-change', async (_, songInfo) => {
+              if (!songInfo) return;
+
+              // 直接使用歌曲对象的name字段，它已经包含了"艺术家 - 歌曲名称"格式
+              if (typeof songInfo === 'object' && songInfo.name) {
+                this.songNameDom.innerHTML = songInfo.name;
+              } else {
+                // 兼容旧格式
+                this.songNameDom.innerHTML = String(songInfo);
+              }
 
               // 强制应用颜色
               await this.applySongInfoColors();

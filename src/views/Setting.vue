@@ -109,6 +109,8 @@
           <NSwitch v-model:value="settingStore.addSongsToPlaylist" />
         </div>
 
+        <NDivider />
+
         <div class="setting-item">
           <div class="setting-info">
             <NText
@@ -126,6 +128,8 @@
           </div>
           <NSwitch v-model:value="settingStore.replacePlaylist" />
         </div>
+
+        <NDivider />
 
         <div class="setting-item">
           <div class="setting-info">
@@ -339,42 +343,6 @@
               :depth="1"
               class="setting-title"
             >
-              字体大小
-            </NText>
-            <NText
-              :depth="3"
-              class="setting-desc"
-            >
-              调整歌词显示的字体大小
-            </NText>
-          </div>
-          <div class="setting-control">
-            <NSlider
-              v-model:value="settingStore.desktopLyrics.fontSize"
-              :min="20"
-              :max="30"
-              :step="1"
-              style="width: 200px"
-              :tooltip="false"
-              @update:value="notifyDesktopLyricsSettingChange('fontSize', $event)"
-            />
-            <NText
-              :depth="2"
-              class="fade-time-text"
-            >
-              {{ settingStore.desktopLyrics.fontSize }}px
-            </NText>
-          </div>
-        </div>
-
-        <NDivider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <NText
-              :depth="1"
-              class="setting-title"
-            >
               窗口宽度
             </NText>
             <NText
@@ -435,6 +403,78 @@
               class="fade-time-text"
             >
               {{ settingStore.desktopLyrics.windowHeight }}px
+            </NText>
+          </div>
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              歌词字体大小
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              调整歌词显示的字体大小
+            </NText>
+          </div>
+          <div class="setting-control">
+            <NSlider
+              v-model:value="settingStore.desktopLyrics.fontSize"
+              :min="20"
+              :max="30"
+              :step="1"
+              style="width: 200px"
+              :tooltip="false"
+              @update:value="notifyDesktopLyricsSettingChange('fontSize', $event)"
+            />
+            <NText
+              :depth="2"
+              class="fade-time-text"
+            >
+              {{ settingStore.desktopLyrics.fontSize }}px
+            </NText>
+          </div>
+        </div>
+
+        <NDivider />
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <NText
+              :depth="1"
+              class="setting-title"
+            >
+              歌曲信息字体大小
+            </NText>
+            <NText
+              :depth="3"
+              class="setting-desc"
+            >
+              调整歌曲名称的字体大小
+            </NText>
+          </div>
+          <div class="setting-control">
+            <NSlider
+              v-model:value="settingStore.desktopLyrics.songInfoFontSize"
+              :min="20"
+              :max="30"
+              :step="1"
+              style="width: 200px"
+              :tooltip="false"
+              @update:value="notifyDesktopLyricsSettingChange('songInfoFontSize', $event)"
+            />
+            <NText
+              :depth="2"
+              class="fade-time-text"
+            >
+              {{ settingStore.desktopLyrics.songInfoFontSize }}px
             </NText>
           </div>
         </div>
@@ -796,6 +836,9 @@ const notifyDesktopLyricsSettingChange = (key: string, value: number) => {
       if (key === 'fontSize') {
         // 字体大小变化，只发送字体大小
         ipcRenderer.send('desktop-lyric-option-change', { fontSize: value });
+      } else if (key === 'songInfoFontSize') {
+        // 歌曲信息字体大小变化，发送歌曲信息字体大小
+        ipcRenderer.send('desktop-lyric-option-change', { songInfoFontSize: value });
       } else if (key === 'windowWidth' || key === 'windowHeight') {
         // 窗口大小变化，需要发送完整的窗口尺寸
         const currentSettings = {
