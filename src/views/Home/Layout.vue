@@ -103,6 +103,7 @@
           v-for="item in ipList"
           :key="item.id"
           :ip="item"
+          @click="handleOpenIPTopPlaylist(item)"
         />
       </div>
     </div>
@@ -165,6 +166,20 @@ const handleOpenPlaylist = async (playlist: Playlist) => {
   });
 };
 
+const handleOpenIPTopPlaylist = async (ip: IP) => {
+  const id = ip.extra?.global_collection_id;
+  if (!id) {
+    return;
+  }
+  await router.push({
+    name: 'Playlist',
+    query: {
+      id,
+      t: new Date().getTime(),
+    },
+  });
+};
+
 const getRecommendPlaylist = async () => {
   try {
     playlist.value = [];
@@ -198,7 +213,9 @@ const getTopIPList = async () => {
     loading.value = true;
     const res = await getTopIP();
     console.log('top ip:', res);
-    ipList.value = res?.list || [];
+    ipList.value =
+      // 只保留歌单
+      res?.list?.filter((item: IP) => item.type === 1 && item.extra?.global_collection_id) || [];
   } catch (error) {
     console.log('获取编辑精选失败:', error);
   } finally {
