@@ -136,7 +136,7 @@ const getAlbums = async () => {
       }
     }
   } catch (error) {
-    console.log('获取新碟上架列表失败', error);
+    console.error('获取新碟上架列表失败', error);
   } finally {
     loading.value = false;
   }

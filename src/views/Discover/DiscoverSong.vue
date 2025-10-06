@@ -81,7 +81,7 @@ const getTopSongs = async () => {
         };
       }) || [];
   } catch (error) {
-    console.log('获取新歌速递歌曲失败: ', error);
+    console.error('获取新歌速递歌曲失败: ', error);
   } finally {
     loading.value = false;
   }

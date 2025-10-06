@@ -142,7 +142,7 @@ const getRankSongs = async () => {
         };
       }) || [];
   } catch (error) {
-    console.log('获取排行榜歌曲失败: ', error);
+    console.error('获取排行榜歌曲失败: ', error);
   } finally {
     loading.value = false;
   }

@@ -152,7 +152,7 @@ const getPlaylist = async (subTagId: string) => {
         };
       }) || [];
   } catch (error) {
-    console.log('获取歌单失败: ', error);
+    console.error('获取歌单失败: ', error);
   } finally {
     loading.value = false;
   }

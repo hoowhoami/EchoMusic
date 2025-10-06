@@ -201,7 +201,7 @@ const getRecommendPlaylist = async () => {
         };
       }) || [];
   } catch (error) {
-    console.log('获取推荐歌单失败:', error);
+    console.error('获取推荐歌单失败:', error);
   } finally {
     loading.value = false;
   }
@@ -212,12 +212,11 @@ const getTopIPList = async () => {
     ipList.value = [];
     loading.value = true;
     const res = await getTopIP();
-    console.log('top ip:', res);
     ipList.value =
       // 只保留歌单
       res?.list?.filter((item: IP) => item.type === 1 && item.extra?.global_collection_id) || [];
   } catch (error) {
-    console.log('获取编辑精选失败:', error);
+    console.error('获取编辑精选失败:', error);
   } finally {
     loading.value = false;
   }
