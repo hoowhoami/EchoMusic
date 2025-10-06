@@ -251,7 +251,7 @@
               style="font-size: 12px"
               depth="3"
             >
-              每天累计可领取一天会员时长,需要领取8次,每次增加3小时
+              每天累计可领取一日会员时长
             </NText>
           </template>
           <div class="flex justify-between">
@@ -262,13 +262,35 @@
               :status="vipReceiveStepStatus"
             >
               <NStep
-                :title="`第${i}次`"
                 v-for="i in 8"
-                :description="vipReceiveStep === i ? '时长+3h' : ''"
                 :key="i"
-              ></NStep>
+              >
+                <template #title>
+                  <div class="flex flex-col space-y-1">
+                    <NText
+                      depth="2"
+                      style="font-size: 14px"
+                    >
+                      第{{ i }}次
+                    </NText>
+                    <NText
+                      v-if="vipReceiveStep >= i"
+                      depth="3"
+                      style="font-size: 12px"
+                    >
+                      时长+3h
+                    </NText>
+                  </div>
+                </template>
+              </NStep>
             </NSteps>
             <div class="w-[500px] flex flex-col items-end space-y-2">
+              <NText
+                :depth="3"
+                style="font-size: 12px"
+              >
+                需要领取8次, 每次增加3小时
+              </NText>
               <NButton
                 size="small"
                 :focusable="false"
