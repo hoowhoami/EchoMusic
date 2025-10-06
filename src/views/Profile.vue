@@ -115,6 +115,47 @@
         </div>
       </div>
     </NCard>
+    <div class="item">
+      <NH5
+        class="title"
+        prefix="bar"
+      >
+        账号信息
+      </NH5>
+    </div>
+    <NCard size="small">
+      <NDescriptions
+        label-placement="left"
+        :column="2"
+      >
+        <NDescriptionsItem label="用户ID">
+          {{ userStore.userid }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="用户性别">
+          {{ gender }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="听歌时长">
+          {{ duration }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="用户乐龄">
+          {{ rtime }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="所在城市">
+          {{ city }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="IP属地">
+          {{ location }}
+        </NDescriptionsItem>
+      </NDescriptions>
+    </NCard>
+    <div class="item">
+      <NH5
+        class="title"
+        prefix="bar"
+      >
+        会员信息
+      </NH5>
+    </div>
     <NTabs
       type="segment"
       animated
@@ -122,41 +163,12 @@
       @update:value="handleTabChange"
     >
       <NTabPane
-        name="detail"
-        tab="个人信息"
-      >
-        <NCard size="small">
-          <NDescriptions
-            label-placement="left"
-            :column="2"
-          >
-            <NDescriptionsItem label="用户ID">
-              {{ userStore.userid }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="用户性别">
-              {{ gender }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="听歌时长">
-              {{ duration }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="用户乐龄">
-              {{ rtime }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="所在城市">
-              {{ city }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="IP属地">
-              {{ location }}
-            </NDescriptionsItem>
-          </NDescriptions>
-        </NCard>
-      </NTabPane>
-      <NTabPane
         name="tvip"
         tab="畅听会员"
       >
         <NCard
           size="small"
+          style="height: 570px"
           :title="`${formatTimestamp(new Date().getTime(), 'YYYY-MM')}`"
         >
           <template #header-extra>
@@ -231,6 +243,7 @@
       >
         <NCard
           size="small"
+          style="height: 570px"
           :title="formatTimestamp(new Date().getTime(), 'YYYY-MM-DD')"
         >
           <template #header-extra>
@@ -251,7 +264,7 @@
               <NStep
                 :title="`第${i}次`"
                 v-for="i in 8"
-                description="时长+3"
+                :description="vipReceiveStep === i ? '时长+3h' : ''"
                 :key="i"
               ></NStep>
             </NSteps>
@@ -281,7 +294,8 @@
                   style="font-size: 12px"
                 >
                   下一次领取时间为
-                  {{ formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss') }} 之后
+                  {{ formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss') }}
+                  之后
                 </NText>
               </div>
             </div>
@@ -313,6 +327,7 @@ import {
   NDivider,
   NEllipsis,
   NGradientText,
+  NH5,
   NIcon,
   NPopover,
   NStep,
@@ -345,7 +360,7 @@ const loading = ref(false);
 
 const themeVars = useThemeVars();
 
-const activeTab = ref('detail');
+const activeTab = ref('tvip');
 
 // 头像
 const avatar = computed(() => {
@@ -545,9 +560,6 @@ const handleReceiveVip = async () => {
 };
 
 const handleTabChange = async (tab: string) => {
-  if (tab === 'detail') {
-    await userStore.fetchUserExtends();
-  }
   if (tab === 'tvip') {
     await getVipReceiveResult();
   }
@@ -558,6 +570,7 @@ const handleTabChange = async (tab: string) => {
 
 onMounted(async () => {
   await userStore.fetchUserExtends();
+  await getVipReceiveResult();
 });
 </script>
 
@@ -565,6 +578,12 @@ onMounted(async () => {
 .profile {
   .nickname {
     font-size: 18px;
+  }
+
+  .item {
+    .title {
+      margin: 0;
+    }
   }
 }
 
