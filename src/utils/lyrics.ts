@@ -251,7 +251,9 @@ export class LyricsHandler {
    * 居中显示第一行歌词
    */
   private centerFirstLine(): void {
-    const lyricsContainer = document.getElementById('lyrics-container');
+    // 优先使用 lyrics-scroll-area，如果不存在则使用 lyrics-container
+    const scrollArea = document.querySelector('.lyrics-scroll-area') as HTMLElement;
+    const lyricsContainer = scrollArea || document.getElementById('lyrics-container');
     if (!lyricsContainer) return;
 
     const containerHeight = lyricsContainer.offsetHeight;
@@ -269,16 +271,23 @@ export class LyricsHandler {
     if (this.currentLineIndex === lineIndex) return false;
 
     this.currentLineIndex = lineIndex;
-    const lyricsContainer = document.getElementById('lyrics-container');
-    if (!lyricsContainer) return false;
+    // 优先使用 lyrics-scroll-area，如果不存在则使用 lyrics-container
+    const scrollArea = document.querySelector('.lyrics-scroll-area') as HTMLElement;
+    const lyricsContainer = scrollArea || document.getElementById('lyrics-container');
+    if (!lyricsContainer) {
+      console.warn('[Lyrics] Scroll container not found!');
+      return false;
+    }
 
     const containerHeight = lyricsContainer.offsetHeight;
     const lineElement = document.querySelectorAll('.line-group')[lineIndex] as HTMLElement;
     if (lineElement) {
       const lineHeight = lineElement.offsetHeight;
-      this.scrollAmount.value = -lineElement.offsetTop + containerHeight / 2 - lineHeight / 2;
+      const newScrollAmount = -lineElement.offsetTop + containerHeight / 2 - lineHeight / 2;
+      this.scrollAmount.value = newScrollAmount;
       return true;
     }
+    console.warn(`[Lyrics] Line element ${lineIndex} not found!`);
     return false;
   }
 
@@ -295,23 +304,13 @@ export class LyricsHandler {
 
     this.lyricsData.value.forEach((lineData, lineIndex) => {
       let isLineActive = false;
-      let hasHighlightedChar = false;
 
       lineData.characters.forEach(charData => {
-        // 更精确的时间判断
+        // 只高亮当前正在播放的字符（在时间范围内）
         if (currentTimeMs >= charData.startTime && currentTimeMs <= charData.endTime) {
-          if (!charData.highlighted) {
-            charData.highlighted = true;
-            hasHighlightedChar = true;
-          }
+          charData.highlighted = true;
           isLineActive = true;
-        } else if (currentTimeMs > charData.endTime) {
-          // 已经播放过的字符保持高亮
-          if (!charData.highlighted) {
-            charData.highlighted = true;
-          }
         } else {
-          // 还未播放的字符取消高亮
           charData.highlighted = false;
         }
       });
@@ -320,30 +319,23 @@ export class LyricsHandler {
       if (isLineActive) {
         currentActiveLineIndex = lineIndex;
       }
-
-      // 处理滚动
-      if (scroll && hasHighlightedChar) {
-        this.scrollToCurrentLine(lineIndex);
-      }
     });
 
-    // 如果没有找到活跃行，尝试找到最接近的行
-    if (currentActiveLineIndex === -1 && this.lyricsData.value.length > 0) {
-      for (let i = 0; i < this.lyricsData.value.length; i++) {
-        const lineData = this.lyricsData.value[i];
-        const firstChar = lineData.characters[0];
-        const lastChar = lineData.characters[lineData.characters.length - 1];
+    // 只有当找到活跃行且需要滚动且行索引变化时才滚动和输出日志
+    if (scroll && currentActiveLineIndex !== -1 && currentActiveLineIndex !== this.currentLineIndex) {
+      const activeLine = this.lyricsData.value[currentActiveLineIndex];
+      const lineText = activeLine.characters.map(c => c.char).join('');
 
-        if (
-          firstChar &&
-          lastChar &&
-          currentTimeMs >= firstChar.startTime &&
-          currentTimeMs <= lastChar.endTime
-        ) {
-          currentActiveLineIndex = i;
-          break;
-        }
-      }
+      // 调试：检查高亮字符的时间范围
+      const highlightedChars = activeLine.characters.filter(c => c.highlighted);
+      const charTimeInfo = highlightedChars.length > 0
+        ? `[${highlightedChars[0].startTime}ms - ${highlightedChars[highlightedChars.length - 1].endTime}ms]`
+        : 'None';
+
+      console.log(
+        `[Lyrics] Scrolling to Line ${currentActiveLineIndex} | Time: ${currentTime.toFixed(2)}s (${currentTimeMs}ms) | Text: "${lineText}" | Highlighted: ${highlightedChars.length} chars ${charTimeInfo}`,
+      );
+      this.scrollToCurrentLine(currentActiveLineIndex);
     }
 
     // 更新桌面歌词
@@ -357,28 +349,30 @@ export class LyricsHandler {
     if (!this.lyricsData.value) return;
 
     const currentTimeMs = currentTime * 1000;
+    let currentActiveLineIndex = -1;
 
     this.lyricsData.value.forEach((lineData, lineIndex) => {
       let isCurrentLine = false;
 
       lineData.characters.forEach(charData => {
-        // 更精确的时间判断
+        // 只高亮当前正在播放的字符（在时间范围内）
         if (currentTimeMs >= charData.startTime && currentTimeMs <= charData.endTime) {
           charData.highlighted = true;
           isCurrentLine = true;
-        } else if (currentTimeMs > charData.endTime) {
-          // 已经播放过的字符保持高亮
-          charData.highlighted = true;
         } else {
-          // 还未播放的字符取消高亮
           charData.highlighted = false;
         }
       });
 
       if (isCurrentLine) {
-        this.scrollToCurrentLine(lineIndex);
+        currentActiveLineIndex = lineIndex;
       }
     });
+
+    // 只有当找到活跃行时才滚动
+    if (currentActiveLineIndex !== -1) {
+      this.scrollToCurrentLine(currentActiveLineIndex);
+    }
   }
 
   /**
@@ -388,21 +382,43 @@ export class LyricsHandler {
     if (!this.lyricsData.value || this.lyricsData.value.length === 0) return -1;
 
     const currentTimeMs = currentTime * 1000;
-    for (let index = 0; index < this.lyricsData.value.length; index++) {
-      const lineData = this.lyricsData.value[index];
-      const nextLineData = this.lyricsData.value[index + 1];
-      const firstChar = lineData.characters[0];
-      const nextFirstChar = nextLineData?.characters[0];
 
-      if (
-        firstChar &&
-        nextFirstChar &&
-        currentTimeMs >= firstChar.startTime &&
-        currentTimeMs <= nextFirstChar.startTime
-      )
-        return index + 1;
+    // 先尝试找到时间范围内的行(正在播放的行)
+    for (let i = 0; i < this.lyricsData.value.length; i++) {
+      const line = this.lyricsData.value[i];
+      if (!line?.characters?.length) continue;
+
+      const lineStartTime = line.characters[0].startTime;
+      const lineEndTime = line.characters[line.characters.length - 1].endTime;
+
+      // 如果当前时间在这一行的时间范围内，返回这一行
+      if (currentTimeMs >= lineStartTime && currentTimeMs <= lineEndTime) {
+        return i;
+      }
     }
-    return this.lyricsData.value.length - 1;
+
+    // 如果没有找到精确匹配，找最接近的已播放行
+    let closestLineIndex = -1;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < this.lyricsData.value.length; i++) {
+      const line = this.lyricsData.value[i];
+      if (!line?.characters?.length) continue;
+
+      const lineStartTime = line.characters[0].startTime;
+
+      // 只考虑已经开始的行
+      if (currentTimeMs >= lineStartTime) {
+        const distance = Math.abs(currentTimeMs - lineStartTime);
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestLineIndex = i;
+        }
+      }
+    }
+
+    return closestLineIndex;
   }
 
   /**

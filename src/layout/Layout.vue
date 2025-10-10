@@ -43,6 +43,9 @@
     >
       <Player />
     </NLayoutFooter>
+
+    <!-- 全屏歌词组件 -->
+    <Lyrics />
   </NLayout>
 </template>
 
@@ -52,6 +55,7 @@ import Sidebar from './Sidebar.vue';
 import Titlebar from './Titlebar.vue';
 import Main from './Main.vue';
 import Player from './Player.vue';
+import Lyrics from './Lyrics.vue';
 import { ref, watchEffect } from 'vue';
 import { useElementSize } from '@vueuse/core';
 import { useSettingStore } from '@/store';

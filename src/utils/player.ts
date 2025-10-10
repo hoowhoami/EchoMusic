@@ -138,8 +138,9 @@ class Player {
       const duration = this.player.duration();
       // 计算进度条距离
       const progress = calculateProgress(currentTime, duration);
-      // 更新歌词高亮
-      lyricsHandler.highlightCurrentChar(currentTime);
+      // 更新歌词高亮（全屏歌词打开时才滚动）
+      const shouldScroll = lyricsHandler.data.showLyrics.value;
+      lyricsHandler.highlightCurrentChar(currentTime, shouldScroll);
 
       // 更新状态
       playerStore.$patch({ currentTime, duration, progress });

@@ -24,6 +24,7 @@
         <div
           :key="cover"
           class="cover"
+          @click="openFullscreenLyrics"
         >
           <NImage
             :src="cover"
@@ -739,6 +740,12 @@ const toggleDesktopLyrics = () => {
   } else {
     window.$message.info('已关闭桌面歌词');
   }
+};
+
+// 打开全屏歌词
+const openFullscreenLyrics = () => {
+  // 触发全局事件，通知歌词组件打开
+  window.dispatchEvent(new CustomEvent('open-fullscreen-lyrics'));
 };
 
 // 打开MV模态框
