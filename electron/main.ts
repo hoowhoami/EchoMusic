@@ -191,9 +191,9 @@ async function createLyricsWindow() {
   });
 
   // 开发模式下打开开发者工具
-  if (isDev) {
-    lyricsWindow.webContents.openDevTools();
-  }
+  // if (isDev) {
+  //   lyricsWindow.webContents.openDevTools();
+  // }
 }
 
 // 启动服务器
