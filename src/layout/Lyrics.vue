@@ -5,7 +5,7 @@
     :height="'100%'"
     :placement="'top'"
     :trap-focus="false"
-    :block-scroll="false"
+    block-scroll
     :show-mask="true"
     :mask-closable="true"
     class="fullscreen-lyrics-drawer"
@@ -93,7 +93,7 @@
             >
               <template #icon>
                 <NIcon :size="24">
-                  <CloseRound />
+                  <KeyboardArrowDownRound />
                 </NIcon>
               </template>
             </NButton>
@@ -202,14 +202,15 @@
             <!-- 进度条 -->
             <div class="progress-section">
               <span class="time-text">{{ formatTime(currentTime) }}</span>
-              <div class="progress-bar-wrapper">
-                <div class="progress-bar">
-                  <div
-                    class="progress-bar-filled"
-                    :style="{ width: `${(currentTime / duration) * 100}%` }"
-                  ></div>
-                </div>
-              </div>
+              <NSlider
+                v-model:value="playerStore.currentTime"
+                :max="duration"
+                :step="0.1"
+                :tooltip="false"
+                @dragstart="handleSeekDragStart"
+                @dragend="handleSeekDragEnd"
+                class="progress-slider"
+              />
               <span class="time-text">{{ formatTime(duration) }}</span>
             </div>
           </div>
@@ -221,14 +222,14 @@
 
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { NDrawer, NDrawerContent, NButton, NIcon, NImage } from 'naive-ui';
+import { NDrawer, NDrawerContent, NButton, NIcon, NImage, NSlider } from 'naive-ui';
 import {
-  CloseRound,
   SkipPreviousRound,
   SkipNextRound,
   PauseRound,
   PlayArrowRound,
   AlbumOutlined,
+  KeyboardArrowDownRound,
 } from '@vicons/material';
 import { PersonOutline } from '@vicons/ionicons5';
 import { usePlayerStore } from '@/store';
@@ -329,6 +330,16 @@ const handleNextSong = () => {
   player.nextOrPrev('next');
 };
 
+// 进度条拖动
+const handleSeekDragStart = () => {
+  player.pause(false);
+};
+
+const handleSeekDragEnd = () => {
+  player.setSeek(currentTime.value);
+  player.play();
+};
+
 // 打开歌词
 const openLyrics = () => {
   showLyrics.value = true;
@@ -348,7 +359,7 @@ const openLyrics = () => {
 };
 
 // 监听全屏歌词显示状态，通知 lyricsHandler
-watch(showLyrics, (isShow) => {
+watch(showLyrics, isShow => {
   // 通知 lyricsHandler 全屏歌词是否打开
   lyricsHandler.data.showLyrics.value = isShow;
 });
@@ -397,7 +408,7 @@ defineExpose({
     backdrop-filter: blur(20px);
   }
 
-  :deep(.n-drawer-body-content-wrapper) {
+  :deep(.n-drawer .n-drawer-content .n-drawer-body-content-wrapper) {
     padding: 0;
     overflow: hidden;
   }
@@ -582,7 +593,6 @@ defineExpose({
     &:hover {
       background: rgba(255, 255, 255, 0.15);
       color: #ffffff;
-      transform: rotate(90deg);
     }
   }
 }
@@ -599,7 +609,6 @@ defineExpose({
 .lyrics-wrapper {
   width: 100%;
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  min-height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -607,8 +616,8 @@ defineExpose({
 
 .line-group {
   text-align: center;
-  margin: 24px 0;
-  padding: 12px 0;
+  margin: 12px 0;
+  padding: 6px 0;
   transition: all 0.4s ease;
   opacity: 0.5;
 
@@ -703,30 +712,29 @@ defineExpose({
       text-align: center;
     }
 
-    .progress-bar-wrapper {
+    .progress-slider {
       flex: 1;
       min-width: 0;
-      height: 6px;
 
-      .progress-bar {
-        width: 100%;
-        height: 100%;
+      :deep(.n-slider-rail) {
         background: rgba(255, 255, 255, 0.2);
-        border-radius: 3px;
-        overflow: hidden;
-        position: relative;
+        height: 6px;
+      }
 
-        .progress-bar-filled {
-          height: 100%;
-          background: linear-gradient(90deg, #ffffff 0%, rgba(255, 255, 255, 0.95) 100%);
-          border-radius: 3px;
-          transition: width 0.3s ease;
-          box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
-        }
+      :deep(.n-slider-rail__fill) {
+        background: linear-gradient(90deg, #ffffff 0%, rgba(255, 255, 255, 0.95) 100%);
+        box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+      }
+
+      :deep(.n-slider-handle) {
+        width: 12px;
+        height: 12px;
+        border: 2px solid #ffffff;
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
       }
 
       &:hover {
-        .progress-bar {
+        :deep(.n-slider-rail) {
           background: rgba(255, 255, 255, 0.25);
         }
       }

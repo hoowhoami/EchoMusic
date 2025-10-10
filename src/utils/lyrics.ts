@@ -280,14 +280,33 @@ export class LyricsHandler {
     }
 
     const containerHeight = lyricsContainer.offsetHeight;
-    const lineElement = document.querySelectorAll('.line-group')[lineIndex] as HTMLElement;
+    const lineElements = document.querySelectorAll('.line-group');
+    const lineElement = lineElements[lineIndex] as HTMLElement;
+
     if (lineElement) {
       const lineHeight = lineElement.offsetHeight;
-      const newScrollAmount = -lineElement.offsetTop + containerHeight / 2 - lineHeight / 2;
+      const lineOffsetTop = lineElement.offsetTop;
+
+      // 获取 lyrics-wrapper 的当前位置
+      const lyricsWrapper = document.getElementById('lyrics');
+      const wrapperOffsetTop = lyricsWrapper ? lyricsWrapper.offsetTop : 0;
+
+      // 计算滚动量：目标是让当前行居中显示
+      // 公式：容器中心位置 - (wrapper初始位置 + 行相对wrapper的位置 + 行高度的一半)
+      const newScrollAmount = containerHeight / 2 - (wrapperOffsetTop + lineOffsetTop + lineHeight / 2);
+
+      console.log(
+        `[Lyrics] Scroll calc: lineIndex=${lineIndex}, total=${lineElements.length}, ` +
+          `containerH=${containerHeight}, wrapperTop=${wrapperOffsetTop}, lineTop=${lineOffsetTop}, lineH=${lineHeight}, ` +
+          `scrollAmount=${newScrollAmount.toFixed(2)}`,
+      );
+
       this.scrollAmount.value = newScrollAmount;
       return true;
     }
-    console.warn(`[Lyrics] Line element ${lineIndex} not found!`);
+    console.warn(
+      `[Lyrics] Line element ${lineIndex} not found! Total elements: ${lineElements.length}`,
+    );
     return false;
   }
 
@@ -322,15 +341,20 @@ export class LyricsHandler {
     });
 
     // 只有当找到活跃行且需要滚动且行索引变化时才滚动和输出日志
-    if (scroll && currentActiveLineIndex !== -1 && currentActiveLineIndex !== this.currentLineIndex) {
+    if (
+      scroll &&
+      currentActiveLineIndex !== -1 &&
+      currentActiveLineIndex !== this.currentLineIndex
+    ) {
       const activeLine = this.lyricsData.value[currentActiveLineIndex];
       const lineText = activeLine.characters.map(c => c.char).join('');
 
       // 调试：检查高亮字符的时间范围
       const highlightedChars = activeLine.characters.filter(c => c.highlighted);
-      const charTimeInfo = highlightedChars.length > 0
-        ? `[${highlightedChars[0].startTime}ms - ${highlightedChars[highlightedChars.length - 1].endTime}ms]`
-        : 'None';
+      const charTimeInfo =
+        highlightedChars.length > 0
+          ? `[${highlightedChars[0].startTime}ms - ${highlightedChars[highlightedChars.length - 1].endTime}ms]`
+          : 'None';
 
       console.log(
         `[Lyrics] Scrolling to Line ${currentActiveLineIndex} | Time: ${currentTime.toFixed(2)}s (${currentTimeMs}ms) | Text: "${lineText}" | Highlighted: ${highlightedChars.length} chars ${charTimeInfo}`,
