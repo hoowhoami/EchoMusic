@@ -10,6 +10,21 @@ const __dirname = path.dirname(__filename);
 // 使用更可靠的方法检测生产环境：检查是否是打包后的应用
 const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 
+// GPU 优化：添加命令行开关（修复闪屏问题）
+app.commandLine.appendSwitch('disable-software-rasterizer'); // 禁用软件光栅化
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache'); // 禁用GPU着色器磁盘缓存
+app.commandLine.appendSwitch('num-raster-threads', '4'); // 限制光栅化线程数
+app.commandLine.appendSwitch('enable-gpu-rasterization'); // 启用GPU光栅化
+app.commandLine.appendSwitch('ignore-gpu-blocklist'); // 忽略GPU黑名单
+app.commandLine.appendSwitch('disable-background-timer-throttling'); // 禁用后台定时器节流
+// 修复闪屏的关键配置
+app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder'); // 启用视频解码加速
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled'); // 禁用自动化控制
+app.commandLine.appendSwitch('enable-smooth-scrolling'); // 启用平滑滚动
+
+// 如果想完全禁用硬件加速（会降低性能但减少GPU占用）
+// app.disableHardwareAcceleration();
+
 let serverProcess: ChildProcess | null = null;
 
 let mainWindow: any;
@@ -148,6 +163,9 @@ async function createLyricsWindow() {
       sandbox: false,
       webSecurity: false, // 允许加载本地文件
       allowRunningInsecureContent: true, // 允许运行不安全内容
+      offscreen: false, // 禁用离屏渲染以减少GPU占用
+      enableWebSQL: false,
+      spellcheck: false,
     },
   });
 
@@ -391,8 +409,15 @@ function createWindow() {
       contextIsolation: false,
       webSecurity: false, // 允许加载本地文件
       allowRunningInsecureContent: true, // 允许运行不安全内容
+      backgroundThrottling: false, // 禁用后台节流
+      enableWebSQL: false, // 禁用 WebSQL（提升性能）
+      spellcheck: false, // 禁用拼写检查（提升性能）
+      offscreen: false, // 禁用离屏渲染
+      enableBlinkFeatures: '', // 禁用不必要的 Blink 特性
+      hardwareAcceleration: true, // 确保硬件加速启用（修复闪屏）
     },
     show: false,
+    backgroundColor: '#ffffff', // 设置背景色避免闪烁
     // remove the default titlebar
     titleBarStyle: 'hidden',
     // expose window controls in Windows/Linux

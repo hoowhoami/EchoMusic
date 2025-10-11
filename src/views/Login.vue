@@ -1,5 +1,8 @@
 <template>
-  <div class="login-container">
+  <div
+    class="login-container"
+    :style="{ height: `${height}px` }"
+  >
     <NCard class="login-card">
       <div class="flex flex-col items-center">
         <div>
@@ -149,7 +152,7 @@ import {
 } from 'naive-ui';
 import { ref, reactive, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useUserStore } from '@/store';
+import { useSettingStore, useUserStore } from '@/store';
 
 import { captchaSent, loginCellphone, loginQrKey, loginQrCreate, loginQrCheck } from '@/api';
 
@@ -157,6 +160,7 @@ defineOptions({
   name: 'Login',
 });
 
+const settingStore = useSettingStore();
 const router = useRouter();
 const userStore = useUserStore();
 
@@ -187,6 +191,10 @@ const rules: FormRules = {
     },
   ],
 };
+
+const height = computed(() => {
+  return settingStore.mainHeight - 25 || 300;
+});
 
 const countdown = ref(0);
 const captchaTimer = ref();
@@ -403,7 +411,6 @@ onUnmounted(() => {
 
 <style scoped>
 .login-container {
-  height: calc(100vh - 140px);
   display: flex;
   justify-content: center;
   align-items: center;

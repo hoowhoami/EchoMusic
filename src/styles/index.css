@@ -1,3 +1,20 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 基础字体优化 */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 优化滚动性能 - 仅在必要时启用 */
+.scrollable,
+.n-scrollbar-container {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 图片渲染优化 */
+img {
+  image-rendering: -webkit-optimize-contrast;
+}
