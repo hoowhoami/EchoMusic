@@ -5,7 +5,7 @@
     :height="'100%'"
     :placement="'top'"
     :trap-focus="false"
-    block-scroll
+    :block-scroll="false"
     :show-mask="true"
     :mask-closable="true"
     class="fullscreen-lyrics-drawer"
@@ -162,6 +162,7 @@
                 text
                 circle
                 @click="handlePrevSong"
+                class="prev-btn"
               >
                 <template #icon>
                   <NIcon :size="24">
@@ -190,6 +191,7 @@
                 text
                 circle
                 @click="handleNextSong"
+                class="next-btn"
               >
                 <template #icon>
                   <NIcon :size="24">
@@ -365,13 +367,23 @@ watch(showLyrics, isShow => {
 });
 
 // 监听当前歌曲变化
-watch(currentSong, (newSong, oldSong) => {
+watch(currentSong, async (newSong, oldSong) => {
   if (newSong && newSong !== oldSong && showLyrics.value) {
-    // 清空现有歌词
-    lyricsHandler.clearLyrics();
+    // 清空现有歌词，但保持全屏歌词打开状态
+    lyricsHandler.clearLyrics(false);
     // 获取新歌曲的歌词
     if (newSong.hash) {
-      lyricsHandler.getLyrics(newSong.hash);
+      const success = await lyricsHandler.getLyrics(newSong.hash);
+
+      // 歌词加载成功后，重置高亮并滚动到当前播放位置
+      if (success) {
+        // 使用多个 nextTick 确保 DOM 完全渲染
+        await nextTick();
+        await nextTick();
+
+        // 重置歌词高亮状态并滚动到当前位置
+        lyricsHandler.resetLyricsHighlight(currentTime.value);
+      }
     }
   }
 });
@@ -408,15 +420,26 @@ defineExpose({
     backdrop-filter: blur(20px);
   }
 
-  :deep(.n-drawer .n-drawer-content .n-drawer-body-content-wrapper) {
-    padding: 0;
-    overflow: hidden;
+  // 尝试多种选择器组合
+  :deep(.n-drawer-body-content-wrapper) {
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  :deep(.n-drawer-content) {
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  :deep(.n-drawer-body) {
+    padding: 0 !important;
+    overflow: hidden !important;
   }
 }
 
 .lyrics-content {
   height: 100vh;
-  overflow: hidden;
+  overflow: hidden !important;
   padding: 0 !important;
   position: relative;
 
@@ -441,6 +464,16 @@ defineExpose({
   }
 
   :deep(.n-scrollbar-container) {
+    overflow: hidden !important;
+  }
+
+  // 添加更多选择器确保覆盖
+  :deep(.n-drawer-body-content-wrapper) {
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  :deep(.n-scrollbar-content) {
     overflow: hidden !important;
   }
 }
@@ -577,12 +610,6 @@ defineExpose({
       border: 1px solid rgba(255, 255, 255, 0.25);
       border-radius: 20px;
       transition: all 0.3s ease;
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: rgba(255, 255, 255, 0.5);
-        color: #ffffff;
-      }
     }
   }
 
@@ -591,8 +618,7 @@ defineExpose({
     transition: all 0.3s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.15);
-      color: #ffffff;
+      transform: scale(1.15);
     }
   }
 }
@@ -686,7 +712,25 @@ defineExpose({
       color: rgba(255, 255, 255, 0.9);
       transition: all 0.3s ease;
 
+      &.prev-btn {
+        width: 56px;
+        height: 56px;
+
+        &:hover {
+          transform: scale(1.15);
+        }
+      }
+
       &.play-btn {
+        width: 56px;
+        height: 56px;
+
+        &:hover {
+          transform: scale(1.15);
+        }
+      }
+
+      &.next-btn {
         width: 56px;
         height: 56px;
 

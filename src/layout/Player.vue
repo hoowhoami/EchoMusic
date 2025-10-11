@@ -1,5 +1,8 @@
 <template>
-  <div class="player">
+  <div
+    class="player"
+    @wheel.prevent
+  >
     <div class="player-slider">
       <NSlider
         v-model:value="playerStore.progress"

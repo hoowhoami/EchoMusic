@@ -293,13 +293,8 @@ export class LyricsHandler {
 
       // 计算滚动量：目标是让当前行居中显示
       // 公式：容器中心位置 - (wrapper初始位置 + 行相对wrapper的位置 + 行高度的一半)
-      const newScrollAmount = containerHeight / 2 - (wrapperOffsetTop + lineOffsetTop + lineHeight / 2);
-
-      console.log(
-        `[Lyrics] Scroll calc: lineIndex=${lineIndex}, total=${lineElements.length}, ` +
-          `containerH=${containerHeight}, wrapperTop=${wrapperOffsetTop}, lineTop=${lineOffsetTop}, lineH=${lineHeight}, ` +
-          `scrollAmount=${newScrollAmount.toFixed(2)}`,
-      );
+      const newScrollAmount =
+        containerHeight / 2 - (wrapperOffsetTop + lineOffsetTop + lineHeight / 2);
 
       this.scrollAmount.value = newScrollAmount;
       return true;
@@ -346,19 +341,6 @@ export class LyricsHandler {
       currentActiveLineIndex !== -1 &&
       currentActiveLineIndex !== this.currentLineIndex
     ) {
-      const activeLine = this.lyricsData.value[currentActiveLineIndex];
-      const lineText = activeLine.characters.map(c => c.char).join('');
-
-      // 调试：检查高亮字符的时间范围
-      const highlightedChars = activeLine.characters.filter(c => c.highlighted);
-      const charTimeInfo =
-        highlightedChars.length > 0
-          ? `[${highlightedChars[0].startTime}ms - ${highlightedChars[highlightedChars.length - 1].endTime}ms]`
-          : 'None';
-
-      console.log(
-        `[Lyrics] Scrolling to Line ${currentActiveLineIndex} | Time: ${currentTime.toFixed(2)}s (${currentTimeMs}ms) | Text: "${lineText}" | Highlighted: ${highlightedChars.length} chars ${charTimeInfo}`,
-      );
       this.scrollToCurrentLine(currentActiveLineIndex);
     }
 
@@ -502,10 +484,12 @@ export class LyricsHandler {
   /**
    * 清空歌词数据
    */
-  clearLyrics(): void {
+  clearLyrics(resetShowLyrics = true): void {
     this.lyricsData.value = [];
     this.originalLyrics.value = '';
-    this.showLyrics.value = false;
+    if (resetShowLyrics) {
+      this.showLyrics.value = false;
+    }
     this.scrollAmount.value = null;
     this.songTips.value = '暂无歌词';
     this.currentLineIndex = 0;

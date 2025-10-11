@@ -1,99 +1,52 @@
 <template>
-  <div>
-    <NLayout class="layout overflow-hidden select-none">
-      <!-- Header -->
-      <NLayoutHeader
-        class="header"
+  <NLayout class="layout overflow-hidden select-none">
+    <!-- Header -->
+    <NLayoutHeader
+      class="header"
+      bordered
+    >
+      <Titlebar />
+    </NLayoutHeader>
+    <NLayout
+      id="main-layout"
+      position="absolute"
+      style="top: 50px; bottom: 70px"
+      has-sider
+      :native-scrollbar="false"
+    >
+      <!-- Sidebar -->
+      <NLayoutSider
+        :width="280"
         bordered
-      >
-        <Titlebar />
-      </NLayoutHeader>
-      <NLayout
-        id="main-layout"
-        position="absolute"
-        style="top: 50px; bottom: 70px"
-        has-sider
+        class="sidebar"
+        content-style="padding: 12px; overflow: hidden;"
         :native-scrollbar="false"
       >
-        <!-- Sidebar -->
-        <NLayoutSider
-          :width="280"
-          bordered
-          class="sidebar"
-          content-style="padding: 12px; overflow: hidden;"
-          :native-scrollbar="false"
-        >
-          <Sidebar />
-        </NLayoutSider>
-        <!-- Main Content -->
-        <NLayout
-          ref="mainRef"
-          class="content"
-          :native-scrollbar="false"
-          content-style="padding: 12px; overflow: hidden;"
-          embedded
-        >
-          <Main />
-        </NLayout>
-      </NLayout>
-      <!-- Footer -->
-      <NLayoutFooter
-        class="footer"
-        position="absolute"
-        bordered
+        <Sidebar />
+      </NLayoutSider>
+      <!-- Main Content -->
+      <NLayout
+        ref="mainRef"
+        class="content"
+        :native-scrollbar="false"
+        content-style="padding: 12px; overflow: hidden;"
+        embedded
       >
-        <Player />
-      </NLayoutFooter>
+        <Main />
+      </NLayout>
     </NLayout>
-    <NLayout class="layout overflow-hidden select-none">
-      <!-- Header -->
-      <NLayoutHeader
-        class="header"
-        bordered
-      >
-        <Titlebar />
-      </NLayoutHeader>
-      <NLayout
-        id="main-layout"
-        position="absolute"
-        style="top: 50px; bottom: 70px"
-        has-sider
-        :native-scrollbar="false"
-      >
-        <!-- Sidebar -->
-        <NLayoutSider
-          :width="280"
-          bordered
-          class="sidebar"
-          content-style="padding: 12px; overflow: hidden;"
-          :native-scrollbar="false"
-        >
-          <Sidebar />
-        </NLayoutSider>
-        <!-- Main Content -->
-        <NLayout
-          ref="mainRef"
-          class="content"
-          :native-scrollbar="false"
-          content-style="padding: 12px; overflow: hidden;"
-          embedded
-        >
-          <Main />
-        </NLayout>
-      </NLayout>
-      <!-- Footer -->
-      <NLayoutFooter
-        class="footer"
-        position="absolute"
-        bordered
-      >
-        <Player />
-      </NLayoutFooter>
+    <!-- Footer -->
+    <NLayoutFooter
+      class="footer"
+      position="absolute"
+      bordered
+    >
+      <Player />
+    </NLayoutFooter>
 
-      <!-- 全屏歌词组件 -->
-      <Lyrics />
-    </NLayout>
-  </div>
+    <!-- 全屏歌词组件 -->
+    <Lyrics />
+  </NLayout>
 </template>
 
 <script setup lang="ts">
