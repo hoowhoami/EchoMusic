@@ -67,7 +67,7 @@ const props = defineProps<{
   song: Song;
 }>();
 
-const height = 200;
+const height = 300;
 const playerHeight = height - 10;
 
 const loading = ref(false);
