@@ -26,3 +26,4 @@ dist-ssr
 # Electron
 release
 build
+.ace-tool/
