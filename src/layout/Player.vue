@@ -64,6 +64,41 @@
               :speed="0.2"
               class="name"
             />
+            <div class="toolbar flex items-center space-x-2">
+              <!-- 云盘标识 -->
+              <NIcon
+                :size="18"
+                v-if="playerStore.current?.source === 'cloud'"
+              >
+                <CloudOutlined />
+              </NIcon>
+              <!-- MV按钮 -->
+              <NButton
+                v-if="playerStore.current"
+                :focusable="false"
+                ghost
+                text
+                size="small"
+                @click.stop="handleMVClick"
+              >
+                <template #icon>
+                  <NIcon :size="22">
+                    <VideocamOutlined />
+                  </NIcon>
+                </template>
+              </NButton>
+              <!-- 歌词按钮 -->
+              <NButton
+                v-if="playerStore.current"
+                :focusable="false"
+                ghost
+                text
+                size="small"
+                @click.stop="toggleDesktopLyrics"
+              >
+                <div style="font-size: 14px; font-weight: 800">词</div>
+              </NButton>
+            </div>
           </div>
           <Transition
             name="fade"
@@ -81,44 +116,6 @@
               </div>
             </div>
           </Transition>
-        </div>
-      </Transition>
-      <!-- toolbar -->
-      <Transition>
-        <div class="toolbar flex items-center space-x-2">
-          <!-- 云盘标识 -->
-          <NIcon
-            :size="18"
-            v-if="playerStore.current?.source === 'cloud'"
-          >
-            <CloudOutlined />
-          </NIcon>
-          <!-- MV按钮 -->
-          <NButton
-            v-if="playerStore.current"
-            :focusable="false"
-            ghost
-            text
-            size="small"
-            @click.stop="handleMVClick"
-          >
-            <template #icon>
-              <NIcon :size="22">
-                <VideocamOutlined />
-              </NIcon>
-            </template>
-          </NButton>
-          <!-- 歌词按钮 -->
-          <NButton
-            v-if="playerStore.current"
-            :focusable="false"
-            ghost
-            text
-            size="small"
-            @click.stop="toggleDesktopLyrics"
-          >
-            <div style="font-size: 14px; font-weight: 800">词</div>
-          </NButton>
         </div>
       </Transition>
     </div>

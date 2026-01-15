@@ -66,10 +66,10 @@
           推荐歌单
         </NH5>
       </div>
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div
           v-if="loading"
-          class="h-[3780px] flex items-center justify-center"
+          class="flex items-center justify-center"
         >
           <NSpin :show="loading" />
         </div>
@@ -90,10 +90,10 @@
           编辑精选
         </NH5>
       </div>
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div
           v-if="loading"
-          class="h-[1000px] flex items-center justify-center"
+          class="flex items-center justify-center"
         >
           <NSpin :show="loading" />
         </div>

@@ -44,10 +44,10 @@
       </NModal>
     </div>
     <div class="mt-4">
-      <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-4">
         <div
           v-if="loading"
-          class="h-[3780px] flex items-center justify-center"
+          class="flex items-center justify-center"
         >
           <NSpin :show="loading" />
         </div>

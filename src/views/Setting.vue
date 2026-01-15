@@ -749,22 +749,12 @@
             <NButton
               text
               type="primary"
-              @click="openLink('https://github.com')"
+              @click="openLink('https://github.com/hoowhoami/EchoMusic.git')"
             >
               <template #icon>
                 <NIcon><BrandGithub /></NIcon>
               </template>
               GitHub
-            </NButton>
-            <NButton
-              text
-              type="primary"
-              @click="openLink('mailto:support@example.com')"
-            >
-              <template #icon>
-                <NIcon><Mail /></NIcon>
-              </template>
-              反馈建议
             </NButton>
           </div>
         </div>
@@ -790,7 +780,6 @@ import {
   Palette,
   PlayerPlay,
   InfoCircle,
-  Mail,
   DeviceAudioTape,
   BrandGithub,
   Pacman,

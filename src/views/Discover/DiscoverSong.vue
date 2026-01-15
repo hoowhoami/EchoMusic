@@ -1,10 +1,10 @@
 <template>
   <div class="discover-song flex flex-col space-y-4">
     <div class="title"></div>
-    <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
       <div
         v-if="loading"
-        class="h-[600px] flex items-center justify-center"
+        class="flex items-center justify-center"
       >
         <NSpin :show="loading" />
       </div>

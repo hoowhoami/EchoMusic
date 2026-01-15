@@ -6,7 +6,7 @@
     <NCard class="login-card">
       <div class="flex flex-col items-center">
         <div>
-          <NH1>欢迎访问 MixMusic</NH1>
+          <NH1>欢迎访问 EchoMusic</NH1>
         </div>
         <div>
           <NText
@@ -30,7 +30,7 @@
     </NCard>
     <NModal
       style="width: 400px"
-      title="登录 MixMusic"
+      title="登录 EchoMusic"
       preset="dialog"
       v-model:show="showModal"
     >

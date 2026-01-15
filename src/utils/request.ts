@@ -30,8 +30,8 @@ request.interceptors.request.use(
     // 添加用户信息
     const userStore = useUserStore();
     if (userStore.isAuthenticated) {
-      // 添加 Token 和 userid
-      const cookieParams = `cookie=token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
+      // 添加 dfid、Token 和 userid
+      const cookieParams = `cookie=dfid=${encodeURIComponent(userStore.extends?.dfid || '')};token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
       config.url += config.url?.includes('?') ? `&${cookieParams}` : `?${cookieParams}`;
     }
     return config;
