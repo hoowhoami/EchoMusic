@@ -1,6 +1,33 @@
 <template>
   <div class="titlebar drag">
     <div class="content flex items-center justify-between">
+      <!-- 左侧侧边栏区域，宽度 280px -->
+      <div class="sidebar-area no-drag">
+        <!-- 非 Mac 系统：用户头像放在这里 -->
+        <div v-if="isWindowsOrLinux">
+          <NDropdown
+            trigger="click"
+            size="small"
+            :options="menuOptions"
+            @select="handleSelect"
+          >
+            <NTag
+              class="cursor-pointer"
+              round
+              :bordered="false"
+            >
+              <template #avatar>
+                <NAvatar
+                  round
+                  :size="25"
+                  :src="userStore.isAuthenticated ? userStore.pic : undefined"
+                />
+              </template>
+              {{ userStore.isAuthenticated ? userStore.nickname : '未登录' }}
+            </NTag>
+          </NDropdown>
+        </div>
+      </div>
       <div class="no-drag nav">
         <div class="flex items-center space-x-4">
           <NButton
@@ -145,7 +172,10 @@
           </div>
         </div>
       </div>
-      <div class="no-drag flex justify-center">
+      <div
+        class="no-drag flex justify-center"
+        v-if="!isWindowsOrLinux"
+      >
         <NDropdown
           trigger="click"
           size="small"
@@ -205,6 +235,9 @@ import player from '@/utils/player';
 const router = useRouter();
 const userStore = useUserStore();
 const playerStore = usePlayerStore();
+
+// 判断是否为 Windows 或 Linux 平台
+const isWindowsOrLinux = process.platform === 'win32' || process.platform === 'linux';
 
 // 刷新当前页面
 const refreshCurrentPage = () => {
@@ -506,7 +539,14 @@ onUnmounted(() => {
 }
 
 .nav {
-  margin-left: 280px;
+  flex: 1;
+}
+
+.sidebar-area {
+  width: 280px;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
 }
 
 :deep(.n-list) {

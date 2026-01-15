@@ -1,6 +1,14 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, ipcMain, powerSaveBlocker } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  powerSaveBlocker,
+  Tray,
+  Menu,
+  nativeImage,
+} = require('electron');
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, ChildProcess } from 'child_process';
@@ -30,6 +38,7 @@ let serverProcess: ChildProcess | null = null;
 let mainWindow: any;
 let lyricsWindow: any = null;
 let loadingWindow: any = null;
+let tray: any = null;
 
 // 保存桌面歌词窗口的位置和大小
 let lyricsWindowState = {
@@ -53,6 +62,9 @@ function createLoadingWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       webSecurity: false,
+      sandbox: false,
+      allowRunningInsecureContent: true, // 允许混合内容
+      zoomFactor: 1.0,
     },
     show: false,
   });
@@ -323,6 +335,8 @@ async function startServer() {
         ...(envPath && require('fs').existsSync(envPath) ? { DOTENV_CONFIG_PATH: envPath } : {}),
       },
       cwd: app.isPackaged ? path.dirname(envPath || process.resourcesPath) : currentWorkingDir,
+      // Windows 下隐藏命令行窗口
+      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
     });
 
     // 监听服务器输出
@@ -476,25 +490,71 @@ function createWindow() {
 
   // 监听窗口关闭事件
   mainWindow.on('close', (event: any) => {
-    // 检查是否是应用完全退出，如果不是则隐藏窗口
-    if (!app.isQuitting && !mainWindow?.isDestroyed()) {
+    // 检查是否是应用完全退出
+    if (!(app as any).isQuitting) {
       event.preventDefault();
-      if (process.platform === 'darwin') {
-        // 在macOS上，保持dock图标显示
-        mainWindow.hide();
-        // 确保dock图标保持可见
-        if (app.dock) {
-          app.dock.show();
-        }
-      } else {
-        mainWindow.hide();
-      }
+      mainWindow.hide();
     }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+// 创建系统托盘
+function createTray() {
+  // 在 Windows 和 Linux 上创建系统托盘
+  if (process.platform !== 'darwin') {
+    try {
+      // 创建一个 16x16 白底黑字 "E" 图标，带黑色边框
+      const iconBase64 =
+        'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAKklEQVR42mNgIAP8JxpQQwN++7ELkWwD7TXgCUAqaRjkniYccbRJSyQBADkE9hh2iJFaAAAAAElFTkSuQmCC';
+      const icon = nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`);
+      tray = new Tray(icon);
+
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: '显示主窗口',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          },
+        },
+        {
+          type: 'separator',
+        },
+        {
+          label: '退出',
+          click: () => {
+            (app as any).isQuitting = true;
+            app.quit();
+          },
+        },
+      ]);
+
+      tray.setToolTip('EchoMusic');
+      tray.setContextMenu(contextMenu);
+
+      // 点击托盘图标显示窗口
+      tray.on('click', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          if (mainWindow.isVisible()) {
+            mainWindow.hide();
+          } else {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        }
+      });
+
+      console.log('✅ 系统托盘创建成功');
+    } catch (error) {
+      console.error('❌ 创建系统托盘失败:', error);
+    }
+  }
 }
 
 app.whenReady().then(async () => {
@@ -516,6 +576,9 @@ app.whenReady().then(async () => {
     // 开发环境也启动服务器检查
     await startServer();
   }
+
+  // 创建系统托盘（仅 Windows 和 Linux）- 在窗口创建后
+  createTray();
 
   // IPC 处理程序 - 加载完成，显示主窗口
   ipcMain.on('loading-complete', () => {
