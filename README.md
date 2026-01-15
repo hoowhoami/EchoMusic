@@ -58,8 +58,9 @@ npm run dist:all
 
 本项目受到以下优秀开源项目的启发：
 
-- [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 API
-- [SPlayer](https://github.com/imsyy/SPlayer) - 现代化音乐播放器
+- [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
+- [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
+- [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端
 
 ## 📄 许可证
 
