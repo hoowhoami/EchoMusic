@@ -142,10 +142,7 @@ onMounted(() => {
 
   ipcRenderer.on('update-not-available', () => {
     updateStatus.value = 'not-available';
-    // 延长显示时间，让用户有足够时间看到消息
-    setTimeout(() => {
-      showModal.value = false;
-    }, 3000);
+    // 不自动关闭，让用户手动关闭
   });
 
   ipcRenderer.on('update-download-progress', (_event: any, progress: any) => {

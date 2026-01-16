@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "echomusic",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "electron/main.ts",
   "scripts": {
     "dev": "vite",
