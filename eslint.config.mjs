@@ -7,7 +7,7 @@ import vueParser from 'vue-eslint-parser';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'electron/dist/**', 'server/**'],
+    ignores: ['dist/**', 'node_modules/**', 'electron/dist/**', 'server/**', 'release/**'],
   },
   js.configs.recommended,
   {
