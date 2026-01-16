@@ -589,6 +589,10 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('update-available', info);
     });
 
+    autoUpdater.on('update-not-available', () => {
+      mainWindow?.webContents.send('update-not-available');
+    });
+
     autoUpdater.on('error', (error: any) => {
       console.error('Update check error:', error);
     });
