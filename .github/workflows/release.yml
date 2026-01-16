@@ -6,7 +6,67 @@ on:
       - 'v*'
 
 jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: dist/
+
+  build-server:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            script: pkgmacos
+          - os: ubuntu-latest
+            script: pkglinux
+          - os: windows-latest
+            script: pkgwin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install server dependencies
+        run: cd server && pnpm install
+
+      - name: Build server
+        run: cd server && pnpm run ${{ matrix.script }}
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.script }}
+          path: server/bin/
+
   release:
+    needs: [build-frontend, build-server]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -15,17 +75,15 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            build_script: npm run build:all
+            script: pkgmacos
           - os: ubuntu-latest
-            build_script: npm run build:all:linux
+            script: pkglinux
           - os: windows-latest
-            build_script: npm run build:all:win
+            script: pkgwin
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -33,24 +91,20 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
         with:
-          version: 8
+          name: frontend-dist
+          path: dist/
 
-      - name: Install dependencies with retry
-        uses: nick-invision/retry@v3
+      - name: Download server artifact
+        uses: actions/download-artifact@v4
         with:
-          timeout_minutes: 10
-          max_attempts: 3
-          retry_on: error
-          command: npm install
-
-      - name: Install server dependencies
-        run: cd server && pnpm install
-
-      - name: Build server and app
-        run: ${{ matrix.build_script }}
+          name: server-${{ matrix.script }}
+          path: server/bin/
 
       - name: Release
         env:
