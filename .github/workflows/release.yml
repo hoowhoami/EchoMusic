@@ -30,8 +30,18 @@ jobs:
           name: frontend-dist
           path: dist/
 
-  install-server-deps:
-    runs-on: ubuntu-latest
+  build-server:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: win
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,39 +56,13 @@ jobs:
       - name: Install server dependencies
         run: cd server && pnpm install
 
-      - name: Upload server directory
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-deps
-          path: server/
-
-  build-server:
-    needs: install-server-deps
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            script: pkgmacos
-          - os: ubuntu-latest
-            script: pkglinux
-          - os: windows-latest
-            script: pkgwin
-
-    steps:
-      - name: Download server with deps
-        uses: actions/download-artifact@v4
-        with:
-          name: server-deps
-          path: server/
-
       - name: Build server
-        run: cd server && npx pkg . -t node14-${{ matrix.os == 'macos-latest' && 'macos' || matrix.os == 'ubuntu-latest' && 'linux' || 'win' }}-x64 -C GZip -o bin/app_${{ matrix.os == 'macos-latest' && 'macos' || matrix.os == 'ubuntu-latest' && 'linux' || 'win' }} --no-bytecode
+        run: cd server && npx pkg . -t node14-${{ matrix.target }}-x64 -C GZip -o bin/app_${{ matrix.target }} --no-bytecode
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
         with:
-          name: server-${{ matrix.script }}
+          name: server-${{ matrix.target }}
           path: server/bin/
 
   release:
@@ -91,11 +75,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            script: pkgmacos
+            target: macos
           - os: ubuntu-latest
-            script: pkglinux
+            target: linux
           - os: windows-latest
-            script: pkgwin
+            target: win
 
     steps:
       - name: Checkout code
@@ -119,7 +103,7 @@ jobs:
       - name: Download server artifact
         uses: actions/download-artifact@v4
         with:
-          name: server-${{ matrix.script }}
+          name: server-${{ matrix.target }}
           path: server/bin/
 
       - name: Release
