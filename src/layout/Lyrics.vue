@@ -249,7 +249,6 @@ const playerStore = usePlayerStore();
 
 // 响应式数据
 const showLyrics = ref(false);
-const lyricsScrollRef = ref<HTMLElement>();
 
 // 从 lyricsHandler 获取数据
 const lyricsData = computed(() => lyricsHandler.data.lyricsData.value);
