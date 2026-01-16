@@ -56,3 +56,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --publish=always
+
+  publish-release:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Publish GitHub Release
+        run: |
+          # 获取 tag 名称
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          # 使用 gh CLI 将 draft release 发布为正式版本
+          gh release edit $TAG_NAME --draft=false --prerelease=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

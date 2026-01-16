@@ -105,9 +105,12 @@
         "provider": "github",
         "owner": "hoowhoami",
         "repo": "EchoMusic",
-        "releaseType": "release"
+        "releaseType": "release",
+        "publishAutoUpdate": true
       }
     ],
+    "afterSign": null,
+    "afterPack": null,
     "files": [
       "dist/**/*",
       "electron/**/*",
