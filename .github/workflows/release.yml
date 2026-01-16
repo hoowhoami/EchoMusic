@@ -107,7 +107,8 @@ jobs:
           path: server/bin/
 
       - name: Verify server binary
-        run: ls -la server/bin/
+        run: ls -R server/bin/
+        shell: bash
 
       - name: Release
         env:
