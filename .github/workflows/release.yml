@@ -46,11 +46,11 @@ jobs:
       - name: Install server dependencies
         run: cd server && pnpm install
 
-      - name: Upload node_modules
+      - name: Upload server directory
         uses: actions/upload-artifact@v4
         with:
-          name: server-node-modules
-          path: server/node_modules/
+          name: server-deps
+          path: server/
 
   build-server:
     needs: install-server-deps
@@ -66,21 +66,11 @@ jobs:
             script: pkgwin
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Download server node_modules
+      - name: Download server with deps
         uses: actions/download-artifact@v4
         with:
-          name: server-node-modules
-          path: server/node_modules/
+          name: server-deps
+          path: server/
 
       - name: Build server
         run: cd server && npx pkg . -t node14-${{ matrix.os == 'macos-latest' && 'macos' || matrix.os == 'ubuntu-latest' && 'linux' || 'win' }}-x64 -C GZip -o bin/app_${{ matrix.os == 'macos-latest' && 'macos' || matrix.os == 'ubuntu-latest' && 'linux' || 'win' }} --no-bytecode
