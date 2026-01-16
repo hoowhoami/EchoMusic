@@ -86,15 +86,30 @@ const formatSpeed = (bytesPerSecond: number) => {
   return formatBytes(bytesPerSecond) + '/s';
 };
 
+const getIpcRenderer = () => {
+  if (typeof window !== 'undefined' && window.require) {
+    try {
+      const { ipcRenderer } = window.require('electron');
+      return ipcRenderer;
+    } catch (error) {
+      console.error('Failed to get ipcRenderer:', error);
+      return null;
+    }
+  }
+  return null;
+};
+
 const downloadUpdate = () => {
-  if (window.ipcRenderer) {
-    window.ipcRenderer.send('download-update');
+  const ipcRenderer = getIpcRenderer();
+  if (ipcRenderer) {
+    ipcRenderer.send('download-update');
   }
 };
 
 const quitAndInstall = () => {
-  if (window.ipcRenderer) {
-    window.ipcRenderer.send('quit-and-install');
+  const ipcRenderer = getIpcRenderer();
+  if (ipcRenderer) {
+    ipcRenderer.send('quit-and-install');
   }
 };
 
@@ -103,59 +118,62 @@ const closeModal = () => {
 };
 
 const checkForUpdates = () => {
-  if (window.ipcRenderer) {
+  const ipcRenderer = getIpcRenderer();
+  if (ipcRenderer) {
     showModal.value = true;
     updateStatus.value = 'checking';
-    window.ipcRenderer.send('check-for-updates');
+    ipcRenderer.send('check-for-updates');
   }
 };
 
 onMounted(() => {
-  if (!window.ipcRenderer) return;
+  const ipcRenderer = getIpcRenderer();
+  if (!ipcRenderer) return;
 
-  window.ipcRenderer.on('update-checking', () => {
+  ipcRenderer.on('update-checking', () => {
     showModal.value = true;
     updateStatus.value = 'checking';
   });
 
-  window.ipcRenderer.on('update-available', (_event: any, info: any) => {
+  ipcRenderer.on('update-available', (_event: any, info: any) => {
     updateStatus.value = 'available';
     updateInfo.value = info;
   });
 
-  window.ipcRenderer.on('update-not-available', () => {
+  ipcRenderer.on('update-not-available', () => {
     updateStatus.value = 'not-available';
     setTimeout(() => {
       showModal.value = false;
     }, 2000);
   });
 
-  window.ipcRenderer.on('update-download-progress', (_event: any, progress: any) => {
+  ipcRenderer.on('update-download-progress', (_event: any, progress: any) => {
     updateStatus.value = 'downloading';
     progressInfo.value = progress;
     downloadProgress.value = Math.round(progress.percent);
   });
 
-  window.ipcRenderer.on('update-downloaded', (_event: any, info: any) => {
+  ipcRenderer.on('update-downloaded', (_event: any, info: any) => {
     updateStatus.value = 'downloaded';
     updateInfo.value = info;
   });
 
-  window.ipcRenderer.on('update-error', (_event: any, error: string) => {
+  ipcRenderer.on('update-error', (_event: any, error: string) => {
     updateStatus.value = 'error';
     errorMessage.value = error;
   });
 });
 
 onUnmounted(() => {
-  if (!window.ipcRenderer) return;
+  const ipcRenderer = getIpcRenderer();
+  if (!ipcRenderer) return;
 
-  window.ipcRenderer.removeAllListeners('update-checking');
-  window.ipcRenderer.removeAllListeners('update-available');
-  window.ipcRenderer.removeAllListeners('update-not-available');
-  window.ipcRenderer.removeAllListeners('update-download-progress');
-  window.ipcRenderer.removeAllListeners('update-downloaded');
-  window.ipcRenderer.removeAllListeners('update-error');
+  ipcRenderer.removeAllListeners('update-checking');
+  ipcRenderer.removeAllListeners('update-available');
+  ipcRenderer.removeAllListeners('update-not-available');
+  ipcRenderer.removeAllListeners('update-download-progress');
+  ipcRenderer.removeAllListeners('update-downloaded');
+  ipcRenderer.removeAllListeners('update-error');
 });
 
 defineExpose({
