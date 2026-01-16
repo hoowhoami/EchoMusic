@@ -55,6 +55,7 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        timeout-minutes: 30
         run: npx electron-builder --publish=always
 
   publish-release:
