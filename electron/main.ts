@@ -585,6 +585,8 @@ app.whenReady().then(async () => {
   if (!isDev) {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = true; // 允许预发布版本
+    autoUpdater.allowDowngrade = false; // 不允许降级
 
     autoUpdater.on('checking-for-update', () => {
       mainWindow?.webContents.send('update-checking');

@@ -104,7 +104,8 @@
       {
         "provider": "github",
         "owner": "hoowhoami",
-        "repo": "EchoMusic"
+        "repo": "EchoMusic",
+        "releaseType": "release"
       }
     ],
     "files": [
