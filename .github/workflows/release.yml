@@ -106,6 +106,9 @@ jobs:
           name: server-${{ matrix.target }}
           path: server/bin/
 
+      - name: Verify server binary
+        run: ls -la server/bin/
+
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
