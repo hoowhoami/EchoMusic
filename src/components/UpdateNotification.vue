@@ -159,6 +159,6 @@ onUnmounted(() => {
 });
 
 defineExpose({
-  checkForUpdates
+  checkForUpdates,
 });
 </script>
