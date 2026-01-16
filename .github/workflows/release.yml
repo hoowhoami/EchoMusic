@@ -31,14 +31,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
           version: 8
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies with retry
+        uses: nick-fields/retry-action@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: npm install
 
       - name: Install server dependencies
         run: cd server && pnpm install
