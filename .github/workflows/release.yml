@@ -30,7 +30,30 @@ jobs:
           name: frontend-dist
           path: dist/
 
+  install-server-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install server dependencies
+        run: cd server && pnpm install
+
+      - name: Upload node_modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-node-modules
+          path: server/node_modules/
+
   build-server:
+    needs: install-server-deps
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -48,16 +71,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+      - name: Download server node_modules
+        uses: actions/download-artifact@v4
         with:
-          version: 8
-
-      - name: Install server dependencies
-        run: cd server && pnpm install
+          name: server-node-modules
+          path: server/node_modules/
 
       - name: Build server
-        run: cd server && pnpm run ${{ matrix.script }}
+        run: cd server && npm run ${{ matrix.script }}
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
@@ -109,7 +130,7 @@ jobs:
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        timeout-minutes: 30
+        timeout-minutes: 60
         run: npx electron-builder --publish=always
 
   publish-release:

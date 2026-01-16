@@ -581,35 +581,16 @@ app.whenReady().then(async () => {
   // 创建系统托盘（仅 Windows 和 Linux）- 在窗口创建后
   createTray();
 
-  // 初始化自动更新
+  // 初始化自动更新检测
   if (!isDev) {
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
-    autoUpdater.allowPrerelease = true; // 允许预发布版本
-    autoUpdater.allowDowngrade = false; // 不允许降级
-
-    autoUpdater.on('checking-for-update', () => {
-      mainWindow?.webContents.send('update-checking');
-    });
 
     autoUpdater.on('update-available', (info: any) => {
       mainWindow?.webContents.send('update-available', info);
     });
 
-    autoUpdater.on('update-not-available', () => {
-      mainWindow?.webContents.send('update-not-available');
-    });
-
-    autoUpdater.on('download-progress', (progress: any) => {
-      mainWindow?.webContents.send('update-download-progress', progress);
-    });
-
-    autoUpdater.on('update-downloaded', (info: any) => {
-      mainWindow?.webContents.send('update-downloaded', info);
-    });
-
     autoUpdater.on('error', (error: any) => {
-      mainWindow?.webContents.send('update-error', error.message);
+      console.error('Update check error:', error);
     });
 
     setTimeout(() => {
@@ -856,16 +837,6 @@ app.whenReady().then(async () => {
   // IPC 处理程序 - 检查更新
   ipcMain.on('check-for-updates', () => {
     if (!isDev) autoUpdater.checkForUpdates();
-  });
-
-  // IPC 处理程序 - 下载更新
-  ipcMain.on('download-update', () => {
-    if (!isDev) autoUpdater.downloadUpdate();
-  });
-
-  // IPC 处理程序 - 退出并安装
-  ipcMain.on('quit-and-install', () => {
-    if (!isDev) autoUpdater.quitAndInstall(false, true);
   });
 
   // IPC 处理程序 - 退出应用
