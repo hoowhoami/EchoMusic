@@ -11,7 +11,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            build_script: npm run build:all
+          - os: ubuntu-latest
+            build_script: npm run build:all:linux
+          - os: windows-latest
+            build_script: npm run build:all:win
 
     steps:
       - name: Checkout code
@@ -33,19 +39,10 @@ jobs:
       - name: Install server dependencies
         run: cd server && pnpm install
 
-      - name: Build server (macOS)
-        if: matrix.os == 'macos-latest'
-        run: npm run server:pkg:macos
+      - name: Build server and app
+        run: ${{ matrix.build_script }}
 
-      - name: Build server (Windows)
-        if: matrix.os == 'windows-latest'
-        run: npm run server:pkg:win
-
-      - name: Build server (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run server:pkg:linux
-
-      - name: Build and release
+      - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist:all -- --publish=always
+        run: npx electron-builder --publish=always
