@@ -110,6 +110,10 @@ jobs:
         run: ls -R server/bin/
         shell: bash
 
+      - name: Set executable permission
+        run: chmod +x server/bin/app_${{ matrix.target }}*
+        shell: bash
+
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
