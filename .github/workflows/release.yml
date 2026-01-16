@@ -6,50 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Install server dependencies
-        run: cd server && pnpm install
-
-      - name: Build server for all platforms
-        run: |
-          cd server
-          npm run pkgwin
-          npm run pkglinux
-          npm run pkgmacos
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          path: |
-            dist/
-            server/bin/
-
   release:
-    needs: build
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -58,11 +15,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            platform: mac
+            build_script: npm run build:all
           - os: ubuntu-latest
-            platform: linux
+            build_script: npm run build:all:linux
           - os: windows-latest
-            platform: win
+            build_script: npm run build:all:win
 
     steps:
       - name: Checkout code
@@ -76,6 +33,11 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Install dependencies with retry
         uses: nick-invision/retry@v3
         with:
@@ -84,25 +46,13 @@ jobs:
           retry_on: error
           command: npm install
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
+      - name: Install server dependencies
+        run: cd server && pnpm install
 
-      - name: Package for macOS
-        if: matrix.platform == 'mac'
-        run: npx electron-builder --mac --publish=always
+      - name: Build server and app
+        run: ${{ matrix.build_script }}
+
+      - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Package for Linux
-        if: matrix.platform == 'linux'
-        run: npx electron-builder --linux --publish=always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Package for Windows
-        if: matrix.platform == 'win'
-        run: npx electron-builder --win --publish=always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --publish=always
