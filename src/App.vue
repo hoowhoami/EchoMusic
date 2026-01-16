@@ -6,6 +6,7 @@
   >
     <n-global-style />
     <router-view />
+    <UserAgreementDialog />
   </NConfigProvider>
 </template>
 
@@ -14,6 +15,7 @@ import { NConfigProvider, NGlobalStyle } from 'naive-ui';
 import { zhCN, dateZhCN } from 'naive-ui';
 import { useTheme, useSign, useLyrics } from '@/hooks';
 import { onMounted, onUnmounted } from 'vue';
+import UserAgreementDialog from '@/components/UserAgreementDialog.vue';
 
 const { naiveTheme } = useTheme();
 const { initAutoSign, cleanup } = useSign();

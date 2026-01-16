@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "echomusic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "electron/main.ts",
   "scripts": {
     "dev": "vite",
@@ -78,6 +78,7 @@
     "@vueuse/core": "^13.7.0",
     "color2k": "^2.0.3",
     "dayjs": "^1.11.13",
+    "electron-updater": "^6.7.3",
     "howler": "^2.2.4",
     "lodash-es": "^4.17.21",
     "mitt": "^3.0.1",
@@ -99,6 +100,13 @@
     "directories": {
       "output": "release"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hoowhoami",
+        "repo": "EchoMusic"
+      }
+    ],
     "files": [
       "dist/**/*",
       "electron/**/*",

@@ -1,0 +1,51 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install server dependencies
+        run: cd server && pnpm install
+
+      - name: Build server (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run server:pkg:macos
+
+      - name: Build server (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run server:pkg:win
+
+      - name: Build server (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run server:pkg:linux
+
+      - name: Build and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist:all -- --publish=always

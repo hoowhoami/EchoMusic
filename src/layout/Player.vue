@@ -622,10 +622,12 @@ const handlePlaylistDelete = (song: Song) => {
 // 进度条拖拽结束
 const sliderDragend = () => {
   const seek = calculateCurrentTime(playerStore.progress, playerStore.duration);
-  playerStore.isPlaying = true;
   // 调整进度
   player.setSeek(seek);
-  player.play();
+  // 如果之前是播放状态，则继续播放
+  if (playerStore.isPlaying) {
+    player.play();
+  }
 };
 
 // 播放模式数据

@@ -9,6 +9,7 @@ const {
   Menu,
   nativeImage,
 } = require('electron');
+const { autoUpdater } = require('electron-updater');
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn, ChildProcess } from 'child_process';
@@ -580,6 +581,40 @@ app.whenReady().then(async () => {
   // 创建系统托盘（仅 Windows 和 Linux）- 在窗口创建后
   createTray();
 
+  // 初始化自动更新
+  if (!isDev) {
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+      mainWindow?.webContents.send('update-checking');
+    });
+
+    autoUpdater.on('update-available', (info: any) => {
+      mainWindow?.webContents.send('update-available', info);
+    });
+
+    autoUpdater.on('update-not-available', () => {
+      mainWindow?.webContents.send('update-not-available');
+    });
+
+    autoUpdater.on('download-progress', (progress: any) => {
+      mainWindow?.webContents.send('update-download-progress', progress);
+    });
+
+    autoUpdater.on('update-downloaded', (info: any) => {
+      mainWindow?.webContents.send('update-downloaded', info);
+    });
+
+    autoUpdater.on('error', (error: any) => {
+      mainWindow?.webContents.send('update-error', error.message);
+    });
+
+    setTimeout(() => {
+      autoUpdater.checkForUpdates();
+    }, 5000);
+  }
+
   // IPC 处理程序 - 加载完成，显示主窗口
   ipcMain.on('loading-complete', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -815,6 +850,33 @@ app.whenReady().then(async () => {
       if (state.height !== undefined) lyricsWindowState.height = state.height;
     },
   );
+
+  // IPC 处理程序 - 检查更新
+  ipcMain.on('check-for-updates', () => {
+    if (!isDev) autoUpdater.checkForUpdates();
+  });
+
+  // IPC 处理程序 - 下载更新
+  ipcMain.on('download-update', () => {
+    if (!isDev) autoUpdater.downloadUpdate();
+  });
+
+  // IPC 处理程序 - 退出并安装
+  ipcMain.on('quit-and-install', () => {
+    if (!isDev) autoUpdater.quitAndInstall(false, true);
+  });
+
+  // IPC 处理程序 - 退出应用
+  ipcMain.on('quit-app', () => {
+    // 关闭服务器进程
+    if (serverProcess) {
+      console.log('关闭服务器进程...');
+      serverProcess.kill('SIGTERM');
+      serverProcess = null;
+    }
+    // 退出应用
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => {

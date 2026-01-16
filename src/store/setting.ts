@@ -41,6 +41,9 @@ interface Setting {
   keepAlive: boolean;
   autoSign: boolean;
   autoReceiveVip: boolean;
+  // 用户条款
+  userAgreementAccepted: boolean;
+  userAgreementAcceptedTime: string;
 }
 
 // 默认音质设置
@@ -86,6 +89,10 @@ export const useSettingStore = defineStore('setting', {
     unblock: false,
     autoSign: false,
     autoReceiveVip: false,
+
+    // 用户条款默认设置
+    userAgreementAccepted: false,
+    userAgreementAcceptedTime: '',
   }),
   getters: {
     getTheme: state => state.theme,
@@ -97,6 +104,10 @@ export const useSettingStore = defineStore('setting', {
     },
     setTheme(theme: 'light' | 'dark' | 'auto') {
       this.theme = theme;
+    },
+    acceptUserAgreement() {
+      this.userAgreementAccepted = true;
+      this.userAgreementAcceptedTime = new Date().toISOString();
     },
   },
 });

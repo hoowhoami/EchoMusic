@@ -735,7 +735,7 @@
               :depth="2"
               class="app-version"
             >
-              版本 1.0.0
+              版本 v{{ appVersion }}
             </NText>
             <NText
               :depth="2"
@@ -756,10 +756,36 @@
               </template>
               GitHub
             </NButton>
+            <NButton
+              text
+              type="primary"
+              @click="checkForUpdates"
+            >
+              <template #icon>
+                <NIcon><CloudDownloadOutline /></NIcon>
+              </template>
+              检查更新
+            </NButton>
+            <NButton
+              text
+              type="primary"
+              @click="showDisclaimer = true"
+            >
+              <template #icon>
+                <NIcon><AlertCircle /></NIcon>
+              </template>
+              免责声明
+            </NButton>
           </div>
         </div>
       </NCard>
     </div>
+
+    <!-- 免责声明弹窗 -->
+    <DisclaimerDialog v-model:show="showDisclaimer" />
+
+    <!-- 更新通知 -->
+    <UpdateNotification ref="updateNotificationRef" />
   </div>
 </template>
 
@@ -784,10 +810,15 @@ import {
   BrandGithub,
   Pacman,
   Typography,
+  AlertCircle,
 } from '@vicons/tabler';
+import { CloudDownloadOutline } from '@vicons/ionicons5';
 import { useTheme } from '@/hooks';
 import { AUDIO_QUALITY_OPTIONS } from '@/constants';
 import { useThemeVars } from 'naive-ui';
+import { ref, onMounted } from 'vue';
+import DisclaimerDialog from '@/components/DisclaimerDialog.vue';
+import UpdateNotification from '@/components/UpdateNotification.vue';
 
 defineOptions({
   name: 'Setting',
@@ -797,6 +828,29 @@ const { switchTheme } = useTheme();
 
 const settingStore = useSettingStore();
 const themeVars = useThemeVars();
+
+// 免责声明弹窗显示状态
+const showDisclaimer = ref(false);
+
+// 应用版本号
+const appVersion = ref('1.0.0');
+
+// 更新通知组件引用
+const updateNotificationRef = ref<InstanceType<typeof UpdateNotification> | null>(null);
+
+// 获取应用版本号
+onMounted(() => {
+  if (window.require) {
+    try {
+      const { app } = window.require('@electron/remote') || window.require('electron').remote;
+      if (app) {
+        appVersion.value = app.getVersion();
+      }
+    } catch (error) {
+      console.warn('Failed to get app version:', error);
+    }
+  }
+});
 
 // 主题选项
 const themeOptions = [
@@ -814,6 +868,11 @@ const audioQualityOptions = AUDIO_QUALITY_OPTIONS.map(option => ({
 // 打开链接
 const openLink = (url: string) => {
   window.open(url, '_blank');
+};
+
+// 检查更新
+const checkForUpdates = () => {
+  updateNotificationRef.value?.checkForUpdates();
 };
 
 // 通知桌面歌词设置变化
