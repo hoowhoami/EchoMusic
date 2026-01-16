@@ -71,6 +71,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Download server node_modules
         uses: actions/download-artifact@v4
         with:
@@ -78,7 +83,7 @@ jobs:
           path: server/node_modules/
 
       - name: Build server
-        run: cd server && npm run ${{ matrix.script }}
+        run: cd server && pnpm run ${{ matrix.script }}
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
