@@ -386,14 +386,18 @@ async function waitForServer() {
 
   while (retries < maxRetries) {
     try {
-      await fetch('http://localhost:10086/');
-      console.log('✅ 音乐服务已就绪');
+      const response = await fetch('http://localhost:10086/');
+      if (response.ok) {
+        // 额外等待1秒确保服务器完全就绪
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('✅ 音乐服务已就绪');
 
-      // 通知加载窗口服务器已准备就绪
-      if (loadingWindow && !loadingWindow.isDestroyed()) {
-        loadingWindow.webContents.send('server-ready');
+        // 通知加载窗口服务器已准备就绪
+        if (loadingWindow && !loadingWindow.isDestroyed()) {
+          loadingWindow.webContents.send('server-ready');
+        }
+        return;
       }
-      return;
     } catch {
       retries++;
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -603,13 +607,6 @@ app.whenReady().then(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
-
-      // 主窗口显示后延迟检查更新，确保组件已挂载
-      if (!isDev) {
-        setTimeout(() => {
-          autoUpdater.checkForUpdates();
-        }, 3000);
-      }
     }
     // 关闭加载窗口
     if (loadingWindow && !loadingWindow.isDestroyed()) {

@@ -7,6 +7,7 @@
     <n-global-style />
     <router-view />
     <UserAgreementDialog />
+    <UpdateNotification ref="updateNotificationRef" />
   </NConfigProvider>
 </template>
 
@@ -14,12 +15,19 @@
 import { NConfigProvider, NGlobalStyle } from 'naive-ui';
 import { zhCN, dateZhCN } from 'naive-ui';
 import { useTheme, useSign, useLyrics } from '@/hooks';
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import UserAgreementDialog from '@/components/UserAgreementDialog.vue';
+import UpdateNotification from '@/components/UpdateNotification.vue';
 
 const { naiveTheme } = useTheme();
 const { initAutoSign, cleanup } = useSign();
 const { setupDesktopLyricsIPC } = useLyrics();
+const updateNotificationRef = ref<InstanceType<typeof UpdateNotification> | null>(null);
+
+// 检查是否在 Electron 环境中
+const isElectron = () => {
+  return typeof window !== 'undefined' && window.require;
+};
 
 onMounted(() => {
   // 初始化自动签到
@@ -27,6 +35,13 @@ onMounted(() => {
 
   // 设置桌面歌词IPC监听器
   setupDesktopLyricsIPC();
+
+  // 在 Electron 环境中自动检查更新
+  if (isElectron()) {
+    setTimeout(() => {
+      updateNotificationRef.value?.checkForUpdates();
+    }, 3000);
+  }
 });
 
 onUnmounted(() => {
