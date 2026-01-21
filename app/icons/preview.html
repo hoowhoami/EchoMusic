@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoMusic 图标预览</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .icon-display {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .icon-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .icon-item img {
+            border-radius: 20%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .icon-label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+        .description {
+            margin-top: 30px;
+            color: #666;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 EchoMusic 图标预览</h1>
+        <div class="icon-display">
+            <div class="icon-item">
+                <img src="icon.svg" width="256" height="256" alt="Large Icon">
+                <span class="icon-label">256x256</span>
+            </div>
+            <div class="icon-item">
+                <img src="icon.svg" width="128" height="128" alt="Medium Icon">
+                <span class="icon-label">128x128</span>
+            </div>
+            <div class="icon-item">
+                <img src="icon.svg" width="64" height="64" alt="Small Icon">
+                <span class="icon-label">64x64</span>
+            </div>
+            <div class="icon-item">
+                <img src="icon.svg" width="32" height="32" alt="Tiny Icon">
+                <span class="icon-label">32x32</span>
+            </div>
+        </div>
+        <div class="description">
+            <p><strong>设计说明：</strong></p>
+            <p>• 渐变紫色背景代表音乐的优雅与神秘</p>
+            <p>• 同心圆波纹象征"Echo"回声效果</p>
+            <p>• 双音符图标突出音乐主题</p>
+            <p>• 底部"ECHO"文字强化品牌识别</p>
+        </div>
+    </div>
+</body>
+</html>

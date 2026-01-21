@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "echomusic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "electron/main.ts",
   "scripts": {
     "dev": "vite",
@@ -55,9 +55,11 @@
     "eslint-plugin-vue": "^10.4.0",
     "esno": "^4.8.0",
     "globals": "^16.3.0",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "prettier": "^3.6.2",
     "sass": "^1.91.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
     "terser": "^5.44.0",
     "tsx": "^4.20.4",
