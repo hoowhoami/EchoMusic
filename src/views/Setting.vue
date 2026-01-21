@@ -816,9 +816,10 @@ import { CloudDownloadOutline } from '@vicons/ionicons5';
 import { useTheme } from '@/hooks';
 import { AUDIO_QUALITY_OPTIONS } from '@/constants';
 import { useThemeVars } from 'naive-ui';
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import DisclaimerDialog from '@/components/DisclaimerDialog.vue';
 import UpdateNotification from '@/components/UpdateNotification.vue';
+import { version } from '../../package.json';
 
 defineOptions({
   name: 'Setting',
@@ -833,24 +834,10 @@ const themeVars = useThemeVars();
 const showDisclaimer = ref(false);
 
 // 应用版本号
-const appVersion = ref('1.0.0');
+const appVersion = ref(version);
 
 // 更新通知组件引用
 const updateNotificationRef = ref<InstanceType<typeof UpdateNotification> | null>(null);
-
-// 获取应用版本号
-onMounted(() => {
-  if (window.require) {
-    try {
-      const { app } = window.require('@electron/remote') || window.require('electron').remote;
-      if (app) {
-        appVersion.value = app.getVersion();
-      }
-    } catch (error) {
-      console.warn('Failed to get app version:', error);
-    }
-  }
-});
 
 // 主题选项
 const themeOptions = [

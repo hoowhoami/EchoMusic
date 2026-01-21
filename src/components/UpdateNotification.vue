@@ -13,7 +13,7 @@
         <template v-else>
           <p v-if="hasUpdate">发现新版本 {{ updateInfo?.version }}</p>
           <p v-else>当前已是最新版本</p>
-          <p v-if="hasUpdate && updateInfo?.releaseNotes" class="text-sm text-gray-500 mt-2">{{ updateInfo.releaseNotes }}</p>
+          <div v-if="hasUpdate && updateInfo?.releaseNotes" class="text-sm text-gray-500 mt-2" v-html="updateInfo.releaseNotes"></div>
         </template>
       </div>
 
