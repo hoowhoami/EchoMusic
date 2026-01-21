@@ -596,10 +596,6 @@ app.whenReady().then(async () => {
     autoUpdater.on('error', (error: any) => {
       console.error('Update check error:', error);
     });
-
-    setTimeout(() => {
-      autoUpdater.checkForUpdates();
-    }, 5000);
   }
 
   // IPC 处理程序 - 加载完成，显示主窗口
@@ -607,6 +603,13 @@ app.whenReady().then(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
+
+      // 主窗口显示后延迟检查更新，确保组件已挂载
+      if (!isDev) {
+        setTimeout(() => {
+          autoUpdater.checkForUpdates();
+        }, 3000);
+      }
     }
     // 关闭加载窗口
     if (loadingWindow && !loadingWindow.isDestroyed()) {

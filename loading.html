@@ -18,6 +18,7 @@
             align-items: center;
             height: 100vh;
             transition: background-color 0.3s, color 0.3s;
+            overflow: hidden;
         }
 
         @media (prefers-color-scheme: light) {
@@ -28,6 +29,9 @@
             .spinner {
                 border-color: rgba(0, 0, 0, 0.1);
                 border-top-color: #000000;
+            }
+            .dot {
+                background-color: #000000;
             }
         }
 
@@ -40,10 +44,14 @@
                 border-color: rgba(255, 255, 255, 0.1);
                 border-top-color: #ffffff;
             }
+            .dot {
+                background-color: #ffffff;
+            }
         }
 
         .container {
             text-align: center;
+            animation: fadeIn 0.5s ease-in;
         }
 
         .logo {
@@ -51,6 +59,7 @@
             font-weight: 300;
             margin-bottom: 40px;
             letter-spacing: 2px;
+            animation: pulse 2s ease-in-out infinite;
         }
 
         .spinner {
@@ -59,11 +68,64 @@
             border: 2px solid;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 0 auto 20px;
+        }
+
+        .dots {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .dot:nth-child(2) {
+            animation-delay: -0.16s;
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
     </style>
 </head>
@@ -71,6 +133,11 @@
     <div class="container">
         <div class="logo">EchoMusic</div>
         <div class="spinner"></div>
+        <div class="dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
     </div>
 
     <script>
