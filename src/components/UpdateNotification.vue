@@ -35,6 +35,7 @@ const showModal = ref(false);
 const checking = ref(false);
 const hasUpdate = ref(false);
 const updateInfo = ref<any>(null);
+const isSilent = ref(false); // 是否静默检查
 
 const title = computed(() => {
   if (checking.value) return '检查更新';
@@ -66,11 +67,26 @@ const closeModal = () => {
   checking.value = false;
 };
 
+// 手动检查更新（设置页面点击）
 const checkForUpdates = () => {
   const ipcRenderer = getIpcRenderer();
   if (ipcRenderer) {
+    isSilent.value = false;
     showModal.value = true;
     checking.value = true;
+    hasUpdate.value = false;
+    updateInfo.value = null;
+    ipcRenderer.send('check-for-updates');
+  }
+};
+
+// 静默检查更新（App启动时）
+const checkForUpdatesSilently = () => {
+  const ipcRenderer = getIpcRenderer();
+  if (ipcRenderer) {
+    isSilent.value = true;
+    showModal.value = false;
+    checking.value = false;
     hasUpdate.value = false;
     updateInfo.value = null;
     ipcRenderer.send('check-for-updates');
@@ -85,7 +101,8 @@ onMounted(() => {
     checking.value = false;
     hasUpdate.value = true;
     updateInfo.value = info;
-    if (!showModal.value) {
+    // 只有在非静默模式或发现更新时才显示弹窗
+    if (!isSilent.value || hasUpdate.value) {
       showModal.value = true;
     }
   });
@@ -93,6 +110,10 @@ onMounted(() => {
   ipcRenderer.on('update-not-available', () => {
     checking.value = false;
     hasUpdate.value = false;
+    // 静默模式下不显示"已是最新版本"的弹窗
+    if (!isSilent.value) {
+      showModal.value = true;
+    }
   });
 });
 
@@ -106,5 +127,6 @@ onUnmounted(() => {
 
 defineExpose({
   checkForUpdates,
+  checkForUpdatesSilently,
 });
 </script>

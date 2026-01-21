@@ -36,10 +36,10 @@ onMounted(() => {
   // 设置桌面歌词IPC监听器
   setupDesktopLyricsIPC();
 
-  // 在 Electron 环境中自动检查更新
+  // 在 Electron 环境中静默检查更新
   if (isElectron()) {
     setTimeout(() => {
-      updateNotificationRef.value?.checkForUpdates();
+      updateNotificationRef.value?.checkForUpdatesSilently();
     }, 3000);
   }
 });
