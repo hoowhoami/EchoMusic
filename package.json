@@ -130,6 +130,7 @@
       }
     ],
     "mac": {
+      "icon": "app/icons/icon.icns",
       "category": "public.app-category.music",
       "identity": null,
       "extraResources": [
@@ -149,6 +150,7 @@
       ]
     },
     "win": {
+      "icon": "app/icons/icon.ico",
       "extraResources": [
         {
           "from": "server/bin/app_win.exe",
@@ -165,6 +167,7 @@
       ]
     },
     "linux": {
+      "icon": "app/icons/512x512.png",
       "extraResources": [
         {
           "from": "server/bin/app_linux",
