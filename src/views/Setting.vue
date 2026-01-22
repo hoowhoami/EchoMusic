@@ -683,29 +683,6 @@
           </div>
           <NSwitch v-model:value="settingStore.autoReceiveVip" />
         </div>
-
-        <NDivider />
-
-        <div class="setting-item">
-          <div class="setting-info">
-            <NText
-              :depth="1"
-              class="setting-title"
-            >
-              解灰功能
-            </NText>
-            <NText
-              :depth="3"
-              class="setting-desc"
-            >
-              尝试播放无法正常播放的歌曲
-            </NText>
-          </div>
-          <NSwitch
-            v-model:value="settingStore.unblock"
-            disabled
-          />
-        </div>
       </NCard>
 
       <!-- 关于 -->

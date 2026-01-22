@@ -296,7 +296,11 @@ const handlePhoneLogin = () => {
         .then(response => {
           handleLoginSuccess(response);
         })
-        .catch(() => {
+        .catch((error: any) => {
+          if (error?.error_code === 34182) {
+            window.$message.error('该手机号未注册, 请先使用酷狗概念版APP注册后再使用');
+            return;
+          }
           window.$message.error('登录失败');
         })
         .finally(() => {

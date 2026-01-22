@@ -37,7 +37,6 @@ interface Setting {
     };
   };
   // 实验功能
-  unblock: boolean;
   keepAlive: boolean;
   autoSign: boolean;
   autoReceiveVip: boolean;
@@ -86,7 +85,6 @@ export const useSettingStore = defineStore('setting', {
     },
 
     keepAlive: false,
-    unblock: false,
     autoSign: false,
     autoReceiveVip: false,
 

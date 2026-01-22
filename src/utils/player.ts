@@ -585,7 +585,6 @@ class Player {
    */
   async initPlayer(autoPlay: boolean = true, seek: number = 0) {
     const playerStore = usePlayerStore();
-    const settingStore = useSettingStore();
     try {
       // 获取播放数据
       const playSongData = this.getPlaySongData();
@@ -614,10 +613,6 @@ class Player {
           this.getSongLyric(playSongData);
           // 创建播放器
           await this.createPlayer(url, autoPlay, seek);
-        }
-        // 尝试解灰
-        else if (settingStore.unblock) {
-          // TODO
         } else {
           this.resetStatus();
           if (playerStore.playlist.length === 1) {

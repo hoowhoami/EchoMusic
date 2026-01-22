@@ -70,10 +70,13 @@ request.interceptors.response.use(
     if (error.response) {
       const data = error.response.data as { error_code: number; error: string; error_msg: string };
       if (data?.error_code === 31863 && data?.error === 'no free part info') {
-        return Promise.reject(error.response.data);
+        return Promise.reject(data);
       }
       if (data?.error_code === 30002 && data?.error_msg === '今天次数已用光') {
-        return Promise.reject(error.response.data);
+        return Promise.reject(data);
+      }
+      if (data?.error_code === 34182) {
+        return Promise.reject(data);
       }
       const userStore = useUserStore();
       const status = error.response.status;
