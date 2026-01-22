@@ -643,6 +643,17 @@ class Player {
    */
   async play() {
     const playerStore = usePlayerStore();
+    if (this.player.state() === 'loaded' && !this.player.playing()) {
+      this.player.play();
+      playerStore.isPlaying = true;
+      await new Promise<void>(resolve => {
+        this.player.once('play', () => {
+          this.player.fade(0, playerStore.volume, this.getFadeTime());
+          resolve();
+        });
+      });
+      return;
+    }
     // 已在播放
     if (this.player.playing()) {
       playerStore.isPlaying = true;
@@ -651,6 +662,18 @@ class Player {
     // 如果播放器未正确初始化，重新初始化
     if (!playerStore.current || playerStore.index < 0) {
       console.warn('⚠️ 播放器未正确初始化，重新初始化');
+      const playlist = playerStore.playlist;
+      if (playlist.length > 0 && playerStore.index < 0) {
+        const currentIndex = playerStore.current
+          ? playlist.findIndex(item => item.hash === playerStore.current?.hash)
+          : -1;
+        if (currentIndex >= 0) {
+          playerStore.index = currentIndex;
+        } else {
+          playerStore.index =
+            playerStore.mode === 'shuffle' ? Math.floor(Math.random() * playlist.length) : 0;
+        }
+      }
       await this.initPlayer(true);
       return;
     }

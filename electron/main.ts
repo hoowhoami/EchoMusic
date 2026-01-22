@@ -40,6 +40,9 @@ let mainWindow: any;
 let lyricsWindow: any = null;
 let loadingWindow: any = null;
 let tray: any = null;
+let mainWindowUrl: string | null = null;
+let mainWindowLoaded = false;
+let mainWindowStartedLoading = false;
 
 // 保存桌面歌词窗口的位置和大小
 let lyricsWindowState = {
@@ -448,6 +451,7 @@ function createWindow() {
   const startUrl = isDev
     ? 'http://localhost:3000'
     : `file://${path.join(__dirname, '../dist/index.html')}`;
+  mainWindowUrl = startUrl;
 
   // 配置 webRequest 拦截器处理跨域
   const session = mainWindow.webContents.session;
@@ -472,8 +476,6 @@ function createWindow() {
     callback(0);
   });
 
-  mainWindow.loadURL(startUrl);
-
   mainWindow.webContents.on(
     'did-fail-load',
     (event: any, errorCode: any, errorDescription: any) => {
@@ -485,13 +487,13 @@ function createWindow() {
     // 页面加载完成
   });
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindowLoaded = true;
+  });
+
   mainWindow.once('ready-to-show', () => {
     // 不立即显示主窗口，等待服务器启动完成
   });
-
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
 
   // 监听窗口关闭事件
   mainWindow.on('close', (event: any) => {
@@ -505,6 +507,20 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function loadMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (!mainWindowUrl || mainWindowLoaded || mainWindowStartedLoading) {
+    return;
+  }
+  mainWindowStartedLoading = true;
+  mainWindow.loadURL(mainWindowUrl);
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 }
 
 // 创建系统托盘
@@ -604,6 +620,7 @@ app.whenReady().then(async () => {
 
   // IPC 处理程序 - 加载完成，显示主窗口
   ipcMain.on('loading-complete', () => {
+    loadMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
