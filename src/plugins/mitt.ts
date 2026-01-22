@@ -4,11 +4,14 @@ import mitt, { Emitter } from 'mitt';
 type Events = {
   // 主内容区域滚动事件
   mainContentScrolled: Event;
+  // 触发更新检查
+  checkUpdates: void;
 };
 
 // 2. 定义事件名称常量（与 Events 类型对应）
 export const EventNames = {
   MAIN_CONTENT_SCROLLED: 'mainContentScrolled' as const,
+  CHECK_UPDATES: 'checkUpdates' as const,
 };
 
 // 3. 创建类型安全的事件总线实例

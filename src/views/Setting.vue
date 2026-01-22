@@ -761,8 +761,6 @@
     <!-- 免责声明弹窗 -->
     <DisclaimerDialog v-model:show="showDisclaimer" />
 
-    <!-- 更新通知 -->
-    <UpdateNotification ref="updateNotificationRef" />
   </div>
 </template>
 
@@ -794,8 +792,8 @@ import { useTheme } from '@/hooks';
 import { AUDIO_QUALITY_OPTIONS } from '@/constants';
 import { useThemeVars } from 'naive-ui';
 import { ref } from 'vue';
+import { eventBus } from '@/plugins';
 import DisclaimerDialog from '@/components/DisclaimerDialog.vue';
-import UpdateNotification from '@/components/UpdateNotification.vue';
 import { version } from '../../package.json';
 
 defineOptions({
@@ -812,9 +810,6 @@ const showDisclaimer = ref(false);
 
 // 应用版本号
 const appVersion = ref(version);
-
-// 更新通知组件引用
-const updateNotificationRef = ref<InstanceType<typeof UpdateNotification> | null>(null);
 
 // 主题选项
 const themeOptions = [
@@ -836,7 +831,7 @@ const openLink = (url: string) => {
 
 // 检查更新
 const checkForUpdates = () => {
-  updateNotificationRef.value?.checkForUpdates();
+  eventBus.emit('checkUpdates');
 };
 
 // 通知桌面歌词设置变化

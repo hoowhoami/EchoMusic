@@ -29,6 +29,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { eventBus } from '@/plugins';
 import { CloudDownloadOutline } from '@vicons/ionicons5';
 
 const showModal = ref(false);
@@ -67,6 +68,8 @@ const closeModal = () => {
   checking.value = false;
 };
 
+const handleCheckUpdates = () => checkForUpdates();
+
 // 手动检查更新（设置页面点击）
 const checkForUpdates = () => {
   const ipcRenderer = getIpcRenderer();
@@ -97,6 +100,8 @@ onMounted(() => {
   const ipcRenderer = getIpcRenderer();
   if (!ipcRenderer) return;
 
+  eventBus.on('checkUpdates', handleCheckUpdates as never);
+
   ipcRenderer.on('update-available', (_event: any, info: any) => {
     checking.value = false;
     hasUpdate.value = true;
@@ -120,6 +125,8 @@ onMounted(() => {
 onUnmounted(() => {
   const ipcRenderer = getIpcRenderer();
   if (!ipcRenderer) return;
+
+  eventBus.off('checkUpdates', handleCheckUpdates as never);
 
   ipcRenderer.removeAllListeners('update-available');
   ipcRenderer.removeAllListeners('update-not-available');
