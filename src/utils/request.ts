@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
-import { useUserStore } from '@/store';
+import { useAppStore, usePlayerStore, useUserStore } from '@/store';
 
 interface ApiResult<T> {
   status?: number;
@@ -28,12 +28,15 @@ request.interceptors.request.use(
       timestamp: Date.now(),
     };
     // 添加用户信息
+    const appStore = useAppStore();
     const userStore = useUserStore();
+    // 添加 dfid
+    let cookieParams = `cookie=dfid=${encodeURIComponent(appStore?.dfid || '')}`;
     if (userStore.isAuthenticated) {
-      // 添加 dfid、Token 和 userid
-      const cookieParams = `cookie=dfid=${encodeURIComponent(userStore?.dfid || '')};token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
-      config.url += config.url?.includes('?') ? `&${cookieParams}` : `?${cookieParams}`;
+      // 添加 Token 和 userid
+      cookieParams += `;token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
     }
+    config.url += config.url?.includes('?') ? `&${cookieParams}` : `?${cookieParams}`;
     return config;
   },
   (error: AxiosError) => {
@@ -78,6 +81,17 @@ request.interceptors.response.use(
       if (data?.error_code === 34182) {
         return Promise.reject(data);
       }
+      if (data?.error_code === 20018) {
+        window.$message.error('登录已过期，请重新登录');
+        const appStore = useAppStore();
+        appStore.clearAppInfo();
+        const userStore = useUserStore();
+        userStore.clearUserInfo();
+        const playerStore = usePlayerStore();
+        playerStore.clearPlaylist();
+        playerStore.resetPlaybackState();
+        return Promise.reject(data);
+      }
       const userStore = useUserStore();
       const status = error.response.status;
       switch (status) {
@@ -101,6 +115,7 @@ request.interceptors.response.use(
         default:
           window.$message.error(`请求失败（${status}）`);
       }
+      return Promise.reject(data);
     } else if (error.request) {
       // 无响应（如网络错误）
       window.$message.error('网络异常，请检查网络连接');

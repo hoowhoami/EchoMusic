@@ -1,10 +1,10 @@
 import {
   addPlaylist,
   deletePlaylist,
-  dfid,
   followSinger,
   getPlaylist,
   getUserFollow,
+  refreshToken,
   unfollowSinger,
   userDetail,
   userVipDetail,
@@ -20,7 +20,8 @@ interface User {
   username?: string;
   nickname?: string;
   pic?: string;
-  dfid?: string;
+  // token 过期时间
+  expires?: number;
   // 扩展信息
   extends?: any;
   // 用户创建或收藏的歌单
@@ -40,7 +41,7 @@ export const useUserStore = defineStore('user', {
     username: undefined,
     nickname: undefined,
     pic: undefined,
-    dfid: undefined,
+    expires: undefined,
     extends: undefined,
     playlist: undefined,
     follow: undefined,
@@ -51,8 +52,8 @@ export const useUserStore = defineStore('user', {
     isAuthenticated(state) {
       return !!state.token && !!state.userid;
     },
-    hasDfid(state) {
-      return !!state?.dfid;
+    isNeedRefreshToken(state) {
+      return !state.expires || state.expires - 3 * 60 * 60 * 1000 <= new Date().getTime();
     },
     hasExtends(state) {
       return !!state.extends?.detail && !!state.extends?.vip;
@@ -124,18 +125,18 @@ export const useUserStore = defineStore('user', {
     clearUserInfo() {
       this.$reset();
     },
-    async initDfid() {
+    async refreshUserToken() {
       if (!this.isAuthenticated) {
         return;
       }
-      if (this.hasDfid) {
-        return;
+      if (this.isNeedRefreshToken) {
+        const res = await refreshToken(this.userid as number, this.token as string);
+        if (res.t_expire_time) {
+          this.setUserInfo({
+            expires: res.t_expire_time * 1000,
+          });
+        }
       }
-      this.dfid = undefined;
-      const dfidResult = await dfid();
-      this.setUserInfo({
-        dfid: dfidResult.dfid,
-      });
     },
     async fetchUserExtends() {
       if (!this.isAuthenticated) {

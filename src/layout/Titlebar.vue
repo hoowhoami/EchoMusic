@@ -226,13 +226,14 @@ import {
 } from '@vicons/ionicons5';
 import { WhatshotTwotone } from '@vicons/material';
 import { useRouter } from 'vue-router';
-import { usePlayerStore, useUserStore } from '@/store';
+import { useAppStore, usePlayerStore, useUserStore } from '@/store';
 import { getSearchDefault, getSearchHot, getSearchSuggest } from '@/api';
 import { useGradientColor } from '@/hooks';
 import { debounce } from 'lodash-es';
 import player from '@/utils/player';
 
 const router = useRouter();
+const appStore = useAppStore();
 const userStore = useUserStore();
 const playerStore = usePlayerStore();
 
@@ -411,6 +412,7 @@ const logout = () => {
     negativeText: '取消',
     onPositiveClick: async () => {
       await player.pause();
+      appStore.clearAppInfo();
       userStore.clearUserInfo();
       playerStore.clearPlaylist();
       playerStore.resetPlaybackState();
