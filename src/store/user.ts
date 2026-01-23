@@ -20,6 +20,7 @@ interface User {
   username?: string;
   nickname?: string;
   pic?: string;
+  dfid?: string;
   // 扩展信息
   extends?: any;
   // 用户创建或收藏的歌单
@@ -39,6 +40,7 @@ export const useUserStore = defineStore('user', {
     username: undefined,
     nickname: undefined,
     pic: undefined,
+    dfid: undefined,
     extends: undefined,
     playlist: undefined,
     follow: undefined,
@@ -49,8 +51,11 @@ export const useUserStore = defineStore('user', {
     isAuthenticated(state) {
       return !!state.token && !!state.userid;
     },
+    hasDfid(state) {
+      return !!state?.dfid;
+    },
     hasExtends(state) {
-      return !!state.extends?.dfid && !!state.extends?.detail && !!state.extends?.vip;
+      return !!state.extends?.detail && !!state.extends?.vip;
     },
     getCreatedPlaylist(state) {
       return state.playlist?.filter(item => item.list_create_userid === state.userid) ?? [];
@@ -119,17 +124,24 @@ export const useUserStore = defineStore('user', {
     clearUserInfo() {
       this.$reset();
     },
+    async initDfid() {
+      if (!this.isAuthenticated) {
+        return;
+      }
+      if (this.hasDfid) {
+        return;
+      }
+      this.dfid = undefined;
+      const dfidResult = await dfid();
+      this.setUserInfo({
+        dfid: dfidResult.dfid,
+      });
+    },
     async fetchUserExtends() {
       if (!this.isAuthenticated) {
         return;
       }
       this.extends = undefined;
-      const dfidResult = await dfid();
-      this.setUserInfo({
-        extends: {
-          dfid: dfidResult.dfid,
-        },
-      });
       const detailResult = await userDetail();
       this.setUserInfo({
         extends: {

@@ -59,7 +59,7 @@ router.beforeEach(async (to, from, next) => {
   try {
     if (to.name === 'Login') {
       if (isAuthenticated) {
-        await userStore.initUserExtends();
+        await userStore.initDfid();
         const targetPath = from.fullPath && from.fullPath !== to.fullPath ? from.fullPath : '/';
         next({ path: targetPath, replace: true });
       } else {
@@ -70,7 +70,7 @@ router.beforeEach(async (to, from, next) => {
 
     if (to.meta.auth) {
       if (isAuthenticated) {
-        await userStore.initUserExtends();
+        await userStore.initDfid();
         next();
       } else {
         next({ path: '/login', replace: true });
@@ -79,7 +79,7 @@ router.beforeEach(async (to, from, next) => {
     }
 
     if (isAuthenticated) {
-      await userStore.initUserExtends();
+      await userStore.initDfid();
     }
     next();
   } finally {
