@@ -652,13 +652,13 @@
               :depth="1"
               class="setting-title"
             >
-              自动签到
+              自动领取畅听VIP
             </NText>
             <NText
               :depth="3"
               class="setting-desc"
             >
-              自动签到领取畅听VIP解锁听歌权限
+              每天自动领取畅听VIP解锁基础听歌权限
             </NText>
           </div>
           <NSwitch v-model:value="settingStore.autoSign" />
@@ -672,13 +672,13 @@
               :depth="1"
               class="setting-title"
             >
-              自动领取VIP
+              自动升级概念VIP
             </NText>
             <NText
               :depth="3"
               class="setting-desc"
             >
-              自动领取概念VIP解锁音质/音效
+              每天自动升级至概念VIP解锁顶级音质和音效（需先领取畅听VIP）
             </NText>
           </div>
           <NSwitch v-model:value="settingStore.autoReceiveVip" />

@@ -28,10 +28,11 @@ request.interceptors.request.use(
       timestamp: Date.now(),
     };
     // 添加用户信息
-    const appStore = useAppStore();
+    // const appStore = useAppStore();
     const userStore = useUserStore();
     // 添加 dfid
-    let cookieParams = `cookie=dfid=${encodeURIComponent(appStore?.dfid || '')}`;
+    // let cookieParams = `cookie=dfid=${encodeURIComponent(appStore?.dfid || '')}`;
+    let cookieParams = 'cookie=dfid=';
     if (userStore.isAuthenticated) {
       // 添加 Token 和 userid
       cookieParams += `;token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
@@ -72,13 +73,12 @@ request.interceptors.response.use(
     // HTTP 状态码错误处理
     if (error.response) {
       const data = error.response.data as { error_code: number; error: string; error_msg: string };
-      if (data?.error_code === 31863 && data?.error === 'no free part info') {
-        return Promise.reject(data);
-      }
-      if (data?.error_code === 30002 && data?.error_msg === '今天次数已用光') {
-        return Promise.reject(data);
-      }
-      if (data?.error_code === 34182) {
+      if (
+        data?.error_code === 31863 ||
+        data?.error_code === 30002 ||
+        data?.error_code === 34182 ||
+        data?.error_code === 297002
+      ) {
         return Promise.reject(data);
       }
       if (data?.error_code === 20018) {

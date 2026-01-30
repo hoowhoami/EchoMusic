@@ -283,12 +283,9 @@ export type QualitySelectOption = QualityOptionGroup;
 
 // VIP领取
 export type VipReceive = {
-  remain_vip_hour: number;
-  total: number;
-  done: number;
-  remain: number;
-  award_vip_hour: number;
-  day: number;
+  day: number;              // Timestamp of last claim
+  tvipClaimed: boolean;     // Whether TVIP was claimed today
+  svipClaimed: boolean;     // Whether SVIP upgrade was claimed today
 };
 
 // 歌词相关类型定义

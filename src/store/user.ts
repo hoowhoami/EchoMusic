@@ -30,7 +30,6 @@ interface User {
   follow?: Singer[];
   // VIP领取
   vipReceive?: VipReceive;
-  vipReceiveNextTime?: number;
 }
 
 export const useUserStore = defineStore('user', {
@@ -46,7 +45,6 @@ export const useUserStore = defineStore('user', {
     playlist: undefined,
     follow: undefined,
     vipReceive: undefined,
-    vipReceiveNextTime: undefined,
   }),
   getters: {
     isAuthenticated(state) {
@@ -115,7 +113,23 @@ export const useUserStore = defineStore('user', {
       if (!state.vipReceive) {
         return false;
       }
-      return isToday(state.vipReceive.day) && state.vipReceive.remain === 0;
+      return (
+        isToday(state.vipReceive.day) &&
+        state.vipReceive.tvipClaimed &&
+        state.vipReceive.svipClaimed
+      );
+    },
+    isTvipClaimedToday(state) {
+      if (!state.vipReceive) {
+        return false;
+      }
+      return isToday(state.vipReceive.day) && state.vipReceive.tvipClaimed;
+    },
+    isSvipClaimedToday(state) {
+      if (!state.vipReceive) {
+        return false;
+      }
+      return isToday(state.vipReceive.day) && state.vipReceive.svipClaimed;
     },
   },
   actions: {
@@ -227,19 +241,21 @@ export const useUserStore = defineStore('user', {
     setVipReceive(vipReceive: VipReceive) {
       const timestamp = new Date().getTime();
       vipReceive.day = timestamp;
-      this.vipReceiveNextTime = timestamp + 10 * 60 * 1000;
       this.$patch({
         vipReceive,
       });
     },
-    setVipReceiveCompleted() {
-      this.$patch({
-        vipReceive: {
-          remain: 0,
+    migrateVipReceiveData() {
+      // Check if old data structure exists (has 'done' field from old 8-step workflow)
+      if (this.vipReceive && 'done' in (this.vipReceive as any)) {
+        console.log('Migrating old VipReceive data structure...');
+        this.vipReceive = {
           day: new Date().getTime(),
-        },
-      });
-      this.vipReceiveNextTime = undefined;
+          tvipClaimed: false,
+          svipClaimed: false,
+        };
+        console.log('VipReceive data migration complete');
+      }
     },
   },
 });

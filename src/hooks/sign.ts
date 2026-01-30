@@ -35,6 +35,9 @@ export function useSign() {
    * 初始化自动签到服务
    */
   const initAutoSign = () => {
+    // 迁移旧的VipReceive数据结构
+    userStore.migrateVipReceiveData();
+
     // 如果用户已登录，启动自动签到服务
     if (userStore.isAuthenticated) {
       autoSignService.start();

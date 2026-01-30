@@ -70,6 +70,7 @@ export const userVipDetail = () => {
 // 领取 VIP（需要登陆，该接口为测试接口,仅限概念版使用）
 // 说明 : 调用此接口 , 每天可领取 1 天 VIP 时长，需要领取 8 次，每次增加 3 小时
 // 该接口来自 KG 概念版，非会员用户需要自行测试是否可用(尽量别频繁调用)
+// @deprecated 该接口已失效
 export const youthVip = () => {
   return api.get('/youth/vip');
 };
@@ -77,8 +78,14 @@ export const youthVip = () => {
 // 领取一天 VIP（需要登陆，该接口为测试接口,仅限概念版使用）
 // 说明 : 调用此接口 , 每天可领取 1 天 VIP 时长
 // 该接口来自 KG 概念版，非会员用户需要自行测试是否可用(尽量别频繁调用)
-export const youthDayVip = () => {
-  return api.get('/youth/day/vip');
+// receive_day: 领取的日期，格式为 YYYY-MM-DD
+export const youthDayVip = (receive_day: string) => {
+  return api.get('/youth/day/vip', { receive_day });
+};
+
+// 升级概念版 VIP（需要登录，需要先领取一天 VIP，该接口为测试接口,仅限概念版使用）
+export const youthDayVipUpgrade = () => {
+  return api.get('/youth/day/vip/upgrade');
 };
 
 // 获取当月已领取 VIP 天数（需要登陆，该接口为测试接口,仅限概念版使用）

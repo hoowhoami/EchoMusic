@@ -156,175 +156,154 @@
         会员信息
       </NH5>
     </div>
-    <NTabs
-      type="segment"
-      animated
-      v-model:value="activeTab"
-      @update:value="handleTabChange"
-    >
-      <NTabPane
-        name="tvip"
-        tab="畅听会员"
+      <NCard
+        size="small"
+        style="height: 570px"
+        :title="formatTimestamp(new Date().getTime(), 'YYYY-MM-DD')"
       >
-        <NCard
-          size="small"
-          style="height: 570px"
-          :title="`${formatTimestamp(new Date().getTime(), 'YYYY-MM')}`"
-        >
-          <template #header-extra>
-            <NText
-              style="font-size: 12px"
-              depth="3"
+        <template #header-extra>
+          <NText
+            style="font-size: 12px"
+            depth="3"
+          >
+            每天可领取畅听VIP并升级至概念VIP
+          </NText>
+        </template>
+          <div class="flex flex-col space-y-6 p-4">
+            <!-- Step 1: TVIP -->
+            <NCard
+              size="small"
+              :bordered="true"
+              class="vip-step-card"
             >
-              每天签到可领取一日会员
-            </NText>
-          </template>
-          <div class="calender">
-            <NCalendar
-              :is-date-disabled="isDateDisabled"
-              @update:value="handleSign"
-            >
-              <template #default="{ year, month, date }">
-                <div class="mt-[10px] flex flex-col items-center space-y-1">
-                  <div style="font-size: 12px">
-                    <NIcon
-                      v-if="isSigned(year, month, date)"
-                      :size="20"
-                      :color="themeVars.primaryColor"
-                    >
-                      <CheckCircleRound />
-                    </NIcon>
-                    <NIcon
-                      v-if="
-                        !isSigned(year, month, date) &&
-                        isBeforeToday(toTimestamp(year, month, date))
-                      "
-                      :size="20"
-                    >
-                      <CheckCircleOutlineRound />
-                    </NIcon>
-                    <NIcon
-                      :size="20"
-                      :color="themeVars.infoColor"
-                      v-if="!isSigned(year, month, date) && isToday(toTimestamp(year, month, date))"
-                    >
-                      <CheckCircleOutlineRound />
-                    </NIcon>
-                  </div>
-                  <div
-                    style="font-size: 12px"
-                    v-if="
-                      isBeforeToday(toTimestamp(year, month, date)) ||
-                      isToday(toTimestamp(year, month, date))
-                    "
+              <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                  <NIcon
+                    :size="32"
+                    :color="userStore.isTvipClaimedToday ? themeVars.successColor : themeVars.textColor3"
                   >
-                    <NGradientText
-                      depth="2"
-                      :type="isSigned(year, month, date) ? 'success' : 'info'"
+                    <CheckCircleRound v-if="userStore.isTvipClaimedToday" />
+                    <CheckCircleOutlineRound v-else />
+                  </NIcon>
+                  <div>
+                    <NText
+                      strong
+                      style="font-size: 15px"
                     >
-                      {{
-                        isSigned(year, month, date)
-                          ? '已签到'
-                          : isToday(toTimestamp(year, month, date))
-                            ? '点击签到'
-                            : '未签到'
-                      }}
-                    </NGradientText>
+                      步骤 1: 领取畅听VIP
+                    </NText>
+                    <NText
+                      depth="3"
+                      style="font-size: 12px; display: block; margin-top: 4px"
+                    >
+                      解锁基础听歌权限，普通音质
+                    </NText>
                   </div>
                 </div>
-              </template>
-            </NCalendar>
-          </div>
-        </NCard>
-      </NTabPane>
-      <NTabPane
-        name="svip"
-        tab="概念会员"
-      >
-        <NCard
-          size="small"
-          style="height: 570px"
-          :title="formatTimestamp(new Date().getTime(), 'YYYY-MM-DD')"
-        >
-          <template #header-extra>
-            <NText
-              style="font-size: 12px"
-              depth="3"
-            >
-              每天累计可领取一日会员时长
-            </NText>
-          </template>
-          <div class="flex justify-between">
-            <NSteps
-              size="small"
-              vertical
-              :current="vipReceiveStep"
-              :status="vipReceiveStepStatus"
-            >
-              <NStep
-                v-for="i in 8"
-                :key="i"
+                <NButton
+                  size="small"
+                  :type="userStore.isTvipClaimedToday ? 'success' : 'primary'"
+                  :disabled="userStore.isTvipClaimedToday || loading"
+                  :loading="loading"
+                  @click="handleClaimTvip"
+                >
+                  {{ userStore.isTvipClaimedToday ? '已领取' : '领取TVIP' }}
+                </NButton>
+              </div>
+            </NCard>
+
+            <!-- Arrow -->
+            <div class="flex justify-center">
+              <NIcon
+                :size="24"
+                :color="themeVars.textColor3"
               >
-                <template #title>
-                  <div class="flex flex-col space-y-1">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6l-6-6l1.41-1.41z"
+                  />
+                </svg>
+              </NIcon>
+            </div>
+
+            <!-- Step 2: SVIP -->
+            <NCard
+              size="small"
+              :bordered="true"
+              class="vip-step-card"
+            >
+              <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                  <NIcon
+                    :size="32"
+                    :color="userStore.isSvipClaimedToday ? themeVars.warningColor : themeVars.textColor3"
+                  >
+                    <CheckCircleRound v-if="userStore.isSvipClaimedToday" />
+                    <CheckCircleOutlineRound v-else />
+                  </NIcon>
+                  <div>
                     <NText
-                      depth="2"
-                      style="font-size: 14px"
+                      strong
+                      style="font-size: 15px"
                     >
-                      第{{ i }}次
+                      步骤 2: 升级至概念VIP
                     </NText>
                     <NText
-                      v-if="vipReceiveStep >= i"
                       depth="3"
-                      style="font-size: 12px"
+                      style="font-size: 12px; display: block; margin-top: 4px"
                     >
-                      时长+3h
+                      解锁顶级音质和音效特权
+                    </NText>
+                    <NText
+                      v-if="!userStore.isTvipClaimedToday"
+                      depth="3"
+                      type="warning"
+                      style="font-size: 11px; display: block; margin-top: 4px"
+                    >
+                      需要先完成步骤1
                     </NText>
                   </div>
-                </template>
-              </NStep>
-            </NSteps>
-            <div class="w-[500px] flex flex-col items-end space-y-2">
-              <NText
-                :depth="3"
-                style="font-size: 12px"
-              >
-                需要领取8次, 每次增加3小时
-              </NText>
-              <NButton
-                size="small"
-                :focusable="false"
-                :loading="loading"
-                :disabled="userStore.isVipReceiveCompleted"
-                @click="handleReceiveVip"
-              >
-                领取
-              </NButton>
-              <div
-                class="flex items-center space-x-1"
-                v-if="
-                  !userStore.isVipReceiveCompleted &&
-                  userStore.vipReceiveNextTime &&
-                  userStore.vipReceiveNextTime > new Date().getTime()
-                "
-              >
-                <NIcon :size="12">
-                  <AccessTimeRound />
+                </div>
+                <NButton
+                  size="small"
+                  :type="userStore.isSvipClaimedToday ? 'warning' : 'primary'"
+                  :disabled="!userStore.isTvipClaimedToday || userStore.isSvipClaimedToday || loading"
+                  :loading="loading"
+                  @click="handleClaimSvip"
+                >
+                  {{ userStore.isSvipClaimedToday ? '已升级' : '升级SVIP' }}
+                </NButton>
+              </div>
+            </NCard>
+
+            <!-- Status summary -->
+            <NCard
+              v-if="userStore.isVipReceiveCompleted"
+              size="small"
+              :bordered="false"
+              style="background-color: rgba(24, 160, 88, 0.1)"
+            >
+              <div class="flex items-center space-x-2">
+                <NIcon
+                  :size="20"
+                  :color="themeVars.successColor"
+                >
+                  <CheckCircleRound />
                 </NIcon>
                 <NText
-                  depth="3"
-                  style="font-size: 12px"
+                  :style="{ color: themeVars.successColor }"
+                  strong
                 >
-                  下一次领取时间为
-                  {{ formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss') }}
-                  之后
+                  今日VIP已全部领取完成！
                 </NText>
               </div>
-            </div>
+            </NCard>
           </div>
         </NCard>
-      </NTabPane>
-    </NTabs>
   </div>
 </template>
 
@@ -335,27 +314,18 @@ import {
   formatTimeDiff,
   formatTimestamp,
   getCover,
-  isAfterToday,
-  isBeforeToday,
-  isToday,
 } from '@/utils';
 import {
   NAvatar,
   NButton,
-  NCalendar,
   NCard,
   NDescriptions,
   NDescriptionsItem,
   NDivider,
   NEllipsis,
-  NGradientText,
   NH5,
   NIcon,
   NPopover,
-  NStep,
-  NSteps,
-  NTabPane,
-  NTabs,
   NTag,
   NText,
   useThemeVars,
@@ -363,12 +333,11 @@ import {
 import { computed, onMounted } from 'vue';
 import {
   RefreshRound,
-  AccessTimeRound,
   CheckCircleOutlineRound,
   CheckCircleRound,
 } from '@vicons/material';
 import { ref } from 'vue';
-import { autoSignService, signUtils, type VipMonthRecord } from '@/utils/sign';
+import { autoSignService } from '@/utils/sign';
 
 defineOptions({
   name: 'Profile',
@@ -381,8 +350,6 @@ const avatarSize = 100;
 const loading = ref(false);
 
 const themeVars = useThemeVars();
-
-const activeTab = ref('tvip');
 
 // 头像
 const avatar = computed(() => {
@@ -470,47 +437,6 @@ const tvip = computed(() => {
   )?.[0];
 });
 
-// 会员当月领取记录
-const vipMonthRecord = ref<VipMonthRecord[]>([]);
-
-// 会员当天领取进度
-const vipReceiveStep = computed(() => {
-  if (userStore.isVipReceiveCompleted) {
-    return 8;
-  }
-  if (userStore.vipReceive) {
-    if (isToday(userStore.vipReceive.day)) {
-      return userStore.vipReceive.done;
-    }
-  }
-  return 0;
-});
-
-const vipReceiveStepStatus = computed(() => {
-  if (vipReceiveStep.value > 0) {
-    return 'finish';
-  }
-  return 'wait';
-});
-
-const toTimestamp = signUtils.toTimestamp;
-
-const isSigned = (year: number, month: number, day: number): boolean => {
-  const timestamp = toTimestamp(year, month, day);
-  return (
-    vipMonthRecord.value?.some((item: VipMonthRecord) => item.day === formatTimestamp(timestamp)) ||
-    false
-  );
-};
-
-// 禁用日历日期
-const isDateDisabled = (timestamp: number) => {
-  if (isBeforeToday(timestamp) || isAfterToday(timestamp)) {
-    return true;
-  }
-  return false;
-};
-
 const handleRefresh = async () => {
   try {
     loading.value = true;
@@ -522,77 +448,83 @@ const handleRefresh = async () => {
   }
 };
 
-const handleSign = async (
-  timestamp: number,
-  info: { year: number; month: number; date: number },
-) => {
+const handleClaimTvip = async () => {
   try {
-    if (loading.value) {
-      return;
-    }
-    if (!isToday(timestamp)) {
-      return;
-    }
-    const { year, month, date } = info;
-    if (isSigned(year, month, date)) {
-      return;
-    }
     loading.value = true;
     await autoSignService.manualSign();
-    await getVipReceiveResult();
-  } catch (error) {
-    console.error('签到失败', error);
     if (window.$message) {
-      window.$message.error((error as Error).message || '签到失败');
-    }
-  } finally {
-    loading.value = false;
-  }
-};
-
-const getVipReceiveResult = async () => {
-  try {
-    loading.value = true;
-    vipMonthRecord.value = [];
-    const monthRecord = await autoSignService.getVipMonthRecord();
-    vipMonthRecord.value = monthRecord;
-  } catch (error) {
-    console.error('获取用户VIP领取结果失败', error);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const handleReceiveVip = async () => {
-  try {
-    loading.value = true;
-    const res = await autoSignService.manualReceiveVip();
-    console.log('领取结果', res);
-    if (window.$message) {
-      window.$message.success('领取VIP成功');
+      window.$message.success('领取畅听VIP成功');
     }
   } catch (error) {
     console.error('领取失败', error);
     if (window.$message) {
       window.$message.error((error as Error).message || '领取失败');
     }
+    // 如果提示已领取，同步状态
+    if ((error as Error).message === '今日已领取畅听VIP') {
+      await syncVipStatus();
+    }
   } finally {
     loading.value = false;
   }
 };
 
-const handleTabChange = async (tab: string) => {
-  if (tab === 'tvip') {
-    await getVipReceiveResult();
+// 同步VIP状态
+const syncVipStatus = async () => {
+  try {
+    const userStore = useUserStore();
+    // 通过检查月度记录来判断TVIP是否已领取
+    const monthRecord = await autoSignService.getVipMonthRecord();
+    const today = formatTimestamp(new Date().getTime());
+    const tvipClaimed = monthRecord?.some((item: any) => item.day === today) || false;
+
+    // 更新状态，保留SVIP的状态
+    userStore.setVipReceive({
+      day: new Date().getTime(),
+      tvipClaimed,
+      svipClaimed: userStore.vipReceive?.svipClaimed || false,
+    });
+  } catch (error) {
+    console.error('同步VIP状态失败', error);
   }
-  if (tab === 'svip') {
-    // try
+};
+
+const handleClaimSvip = async () => {
+  try {
+    loading.value = true;
+    await autoSignService.manualReceiveVip();
+    if (window.$message) {
+      window.$message.success('升级概念VIP成功');
+    }
+  } catch (error: any) {
+    console.error('升级失败', error);
+
+    // 如果错误码是297002，说明已经升级过，同步状态
+    if (error?.error_code === 297002 || error?.message === '今日概念VIP已升级') {
+      const userStore = useUserStore();
+      userStore.setVipReceive({
+        day: new Date().getTime(),
+        tvipClaimed: true,
+        svipClaimed: true,
+      });
+      if (window.$message) {
+        window.$message.info('已经升级过概念VIP');
+      }
+      return;
+    }
+
+    if (window.$message) {
+      window.$message.error(error?.message || '升级失败');
+    }
+  } finally {
+    loading.value = false;
   }
 };
 
 onMounted(async () => {
   await userStore.fetchUserExtends();
-  await getVipReceiveResult();
+  // 同步VIP状态
+  await syncVipStatus();
 });
 </script>
 

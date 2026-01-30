@@ -1,7 +1,6 @@
 import { useUserStore, useSettingStore } from '@/store';
-import { youthDayVip, youthMonthVipRecord, youthVip } from '@/api';
+import { youthDayVip, youthMonthVipRecord, youthDayVipUpgrade } from '@/api';
 import { formatTimestamp } from '@/utils';
-import type { VipReceive } from '@/types';
 
 export interface VipMonthRecord {
   day: string;
@@ -94,19 +93,19 @@ export class AutoSignService {
     // 立即执行一次
     this.performAutoReceiveVip();
 
-    // 每3分钟检查一次
+    // 每小时检查一次（与TVIP保持一致）
     this.vipIntervalId = window.setInterval(
       () => {
         this.performAutoReceiveVip();
       },
-      3 * 60 * 1000,
+      60 * 60 * 1000,
     );
   }
 
   // 执行自动签到
   private async performAutoSign() {
     if (this.isSignInProgress) {
-      console.log('签到正在进行中，跳过此次执行');
+      console.log('TVIP领取正在进行中，跳过此次执行');
       return;
     }
 
@@ -119,34 +118,50 @@ export class AutoSignService {
         return;
       }
 
-      // 检查今天是否已签到
+      // 检查今天是否已领取TVIP
       const isSigned = await this.checkTodayIsSigned();
 
       if (isSigned) {
-        console.log('今日已签到，跳过自动签到');
+        console.log('今日TVIP已领取，跳过自动领取');
+        // 更新状态
+        if (userStore.vipReceive) {
+          userStore.setVipReceive({
+            ...userStore.vipReceive,
+            tvipClaimed: true,
+          });
+        }
         return;
       }
 
-      console.log('执行自动签到...');
-      await youthDayVip();
+      console.log('执行自动领取TVIP...');
+      let receive_day = formatTimestamp(new Date().getTime());
+      await youthDayVip(receive_day);
+
+      // 更新状态
+      userStore.setVipReceive({
+        day: new Date().getTime(),
+        tvipClaimed: true,
+        svipClaimed: userStore.vipReceive?.svipClaimed || false,
+      });
+
       await userStore.fetchUserExtends();
-      console.log('自动签到成功');
+      console.log('自动领取TVIP成功');
 
       // 可选：显示通知
       if (window.$message) {
-        window.$message.success('自动签到成功');
+        window.$message.success('自动领取畅听VIP成功');
       }
     } catch (error) {
-      console.error('自动签到失败:', error);
+      console.error('自动领取TVIP失败:', error);
     } finally {
       this.isSignInProgress = false;
     }
   }
 
-  // 执行自动领取VIP
+  // 执行自动领取VIP（升级至SVIP）
   private async performAutoReceiveVip() {
     if (this.isVipInProgress) {
-      console.log('VIP领取正在进行中，跳过此次执行');
+      console.log('SVIP升级正在进行中，跳过此次执行');
       return;
     }
 
@@ -162,33 +177,65 @@ export class AutoSignService {
       }
 
       if (userStore.isVipReceiveCompleted) {
-        console.log('今日VIP已领取完成，跳过自动领取');
+        console.log('今日VIP已全部领取完成，跳过自动升级');
         return;
       }
 
-      if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
-        console.log('VIP领取时间未到，跳过自动领取');
+      // 检查SVIP是否已升级
+      if (userStore.isSvipClaimedToday) {
+        console.log('今日SVIP已升级，跳过自动升级');
         return;
       }
 
-      console.log('执行自动领取VIP...');
-      const res = await youthVip();
-      userStore.setVipReceive(res);
+      // 检查TVIP是否已领取
+      const tvipClaimed = await this.checkTvipClaimedToday();
+      if (!tvipClaimed) {
+        console.log('TVIP未领取，无法升级SVIP');
+        // 如果自动签到开启，尝试先领取TVIP
+        if (settingStore.autoSign) {
+          console.log('尝试先自动领取TVIP...');
+          await this.performAutoSign();
+          // 等待2秒让API处理完成
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          return;
+        }
+      }
+
+      console.log('执行自动升级SVIP...');
+      await youthDayVipUpgrade();
+
+      // 更新状态
+      userStore.setVipReceive({
+        day: new Date().getTime(),
+        tvipClaimed: true,
+        svipClaimed: true,
+      });
+
       await userStore.fetchUserExtends();
-      console.log('自动领取VIP成功');
+      console.log('自动升级SVIP成功');
 
       // 可选：显示通知
       if (window.$message) {
-        window.$message.success('自动领取VIP成功');
+        window.$message.success('自动升级概念VIP成功');
       }
     } catch (error: any) {
-      console.error('自动领取VIP失败:', error);
-      if (error?.error_code === 30002) {
-        console.error('今天次数已用光');
-        userStore.setVipReceiveCompleted();
-      }
+      console.error('自动升级SVIP失败:', error);
     } finally {
       this.isVipInProgress = false;
+    }
+  }
+
+  // 检查今天是否已领取TVIP
+  private async checkTvipClaimedToday(): Promise<boolean> {
+    try {
+      const monthRecord = await youthMonthVipRecord();
+      const today = formatTimestamp(new Date().getTime());
+
+      return monthRecord.list?.some((item: VipMonthRecord) => item.day === today) || false;
+    } catch (error) {
+      console.error('检查TVIP状态失败:', error);
+      return false;
     }
   }
 
@@ -215,15 +262,23 @@ export class AutoSignService {
 
     const isSigned = await this.checkTodayIsSigned();
     if (isSigned) {
-      throw new Error('今日已签到');
+      throw new Error('今日已领取畅听VIP');
     }
+    let receive_day = formatTimestamp(new Date().getTime());
+    await youthDayVip(receive_day);
 
-    await youthDayVip();
+    // 更新状态
+    userStore.setVipReceive({
+      day: new Date().getTime(),
+      tvipClaimed: true,
+      svipClaimed: userStore.vipReceive?.svipClaimed || false,
+    });
+
     await userStore.fetchUserExtends();
   }
 
-  // 手动领取VIP（供UI调用）
-  async manualReceiveVip(): Promise<VipReceive> {
+  // 手动领取VIP（供UI调用）- 升级至SVIP
+  async manualReceiveVip(): Promise<void> {
     const userStore = useUserStore();
 
     if (!userStore.isAuthenticated) {
@@ -231,20 +286,30 @@ export class AutoSignService {
     }
 
     if (userStore.isVipReceiveCompleted) {
-      throw new Error('今日会员已经领取完成');
+      throw new Error('今日会员已经全部领取完成');
     }
 
-    if (userStore.vipReceiveNextTime && userStore.vipReceiveNextTime > new Date().getTime()) {
-      throw new Error(
-        `下一次领取时间为 ${formatTimestamp(userStore.vipReceiveNextTime, 'YYYY-MM-DD HH:mm:ss')} 之后`,
-      );
+    // 检查TVIP是否已领取
+    const tvipClaimed = await this.checkTvipClaimedToday();
+    if (!tvipClaimed) {
+      throw new Error('请先领取畅听VIP');
     }
 
-    const res = await youthVip();
-    userStore.setVipReceive(res);
+    // 检查SVIP是否已升级
+    if (userStore.isSvipClaimedToday) {
+      throw new Error('今日概念VIP已升级');
+    }
+
+    await youthDayVipUpgrade();
+
+    // 更新状态
+    userStore.setVipReceive({
+      day: new Date().getTime(),
+      tvipClaimed: true,
+      svipClaimed: true,
+    });
+
     await userStore.fetchUserExtends();
-
-    return res;
   }
 
   // 获取VIP领取记录（供UI调用）
