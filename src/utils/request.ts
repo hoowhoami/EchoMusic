@@ -30,12 +30,10 @@ request.interceptors.request.use(
     // 添加用户信息
     // const appStore = useAppStore();
     const userStore = useUserStore();
-    // 添加 dfid
-    // let cookieParams = `cookie=dfid=${encodeURIComponent(appStore?.dfid || '')}`;
-    let cookieParams = 'cookie=dfid=';
+    let cookieParams = 'cookie=';
     if (userStore.isAuthenticated) {
       // 添加 Token 和 userid
-      cookieParams += `;token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
+      cookieParams += `token=${encodeURIComponent(userStore.token || '')};userid=${encodeURIComponent(userStore.userid || '')}`;
     }
     config.url += config.url?.includes('?') ? `&${cookieParams}` : `?${cookieParams}`;
     return config;

@@ -156,165 +156,164 @@
         会员信息
       </NH5>
     </div>
-      <NCard
-        size="small"
-        style="height: 570px"
-        :title="formatTimestamp(new Date().getTime(), 'YYYY-MM-DD')"
-      >
-        <template #header-extra>
-          <NText
-            style="font-size: 12px"
-            depth="3"
-          >
-            每天可领取畅听VIP并升级至概念VIP
-          </NText>
-        </template>
-          <div class="flex flex-col space-y-6 p-4">
-            <!-- Step 1: TVIP -->
-            <NCard
-              size="small"
-              :bordered="true"
-              class="vip-step-card"
-            >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                  <NIcon
-                    :size="32"
-                    :color="userStore.isTvipClaimedToday ? themeVars.successColor : themeVars.textColor3"
-                  >
-                    <CheckCircleRound v-if="userStore.isTvipClaimedToday" />
-                    <CheckCircleOutlineRound v-else />
-                  </NIcon>
-                  <div>
-                    <NText
-                      strong
-                      style="font-size: 15px"
-                    >
-                      步骤 1: 领取畅听VIP
-                    </NText>
-                    <NText
-                      depth="3"
-                      style="font-size: 12px; display: block; margin-top: 4px"
-                    >
-                      解锁基础听歌权限，普通音质
-                    </NText>
-                  </div>
-                </div>
-                <NButton
-                  size="small"
-                  :type="userStore.isTvipClaimedToday ? 'success' : 'primary'"
-                  :disabled="userStore.isTvipClaimedToday || loading"
-                  :loading="loading"
-                  @click="handleClaimTvip"
-                >
-                  {{ userStore.isTvipClaimedToday ? '已领取' : '领取TVIP' }}
-                </NButton>
-              </div>
-            </NCard>
-
-            <!-- Arrow -->
-            <div class="flex justify-center">
+    <NCard
+      size="small"
+      style="height: 570px"
+      :title="formatTimestamp(new Date().getTime(), 'YYYY-MM-DD')"
+    >
+      <template #header-extra>
+        <NText
+          style="font-size: 12px"
+          depth="3"
+        >
+          每天可领取畅听VIP并升级至概念VIP
+        </NText>
+      </template>
+      <div class="flex flex-col space-y-6 p-4">
+        <!-- Step 1: TVIP -->
+        <NCard
+          size="small"
+          :bordered="true"
+          class="vip-step-card"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
               <NIcon
-                :size="24"
-                :color="themeVars.textColor3"
+                :size="32"
+                :color="
+                  userStore.isTvipClaimedToday ? themeVars.successColor : themeVars.textColor3
+                "
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    fill="currentColor"
-                    d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6l-6-6l1.41-1.41z"
-                  />
-                </svg>
+                <CheckCircleRound v-if="userStore.isTvipClaimedToday" />
+                <CheckCircleOutlineRound v-else />
               </NIcon>
-            </div>
-
-            <!-- Step 2: SVIP -->
-            <NCard
-              size="small"
-              :bordered="true"
-              class="vip-step-card"
-            >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                  <NIcon
-                    :size="32"
-                    :color="userStore.isSvipClaimedToday ? themeVars.warningColor : themeVars.textColor3"
-                  >
-                    <CheckCircleRound v-if="userStore.isSvipClaimedToday" />
-                    <CheckCircleOutlineRound v-else />
-                  </NIcon>
-                  <div>
-                    <NText
-                      strong
-                      style="font-size: 15px"
-                    >
-                      步骤 2: 升级至概念VIP
-                    </NText>
-                    <NText
-                      depth="3"
-                      style="font-size: 12px; display: block; margin-top: 4px"
-                    >
-                      解锁顶级音质和音效特权
-                    </NText>
-                    <NText
-                      v-if="!userStore.isTvipClaimedToday"
-                      depth="3"
-                      type="warning"
-                      style="font-size: 11px; display: block; margin-top: 4px"
-                    >
-                      需要先完成步骤1
-                    </NText>
-                  </div>
-                </div>
-                <NButton
-                  size="small"
-                  :type="userStore.isSvipClaimedToday ? 'warning' : 'primary'"
-                  :disabled="!userStore.isTvipClaimedToday || userStore.isSvipClaimedToday || loading"
-                  :loading="loading"
-                  @click="handleClaimSvip"
-                >
-                  {{ userStore.isSvipClaimedToday ? '已升级' : '升级SVIP' }}
-                </NButton>
-              </div>
-            </NCard>
-
-            <!-- Status summary -->
-            <NCard
-              v-if="userStore.isVipReceiveCompleted"
-              size="small"
-              :bordered="false"
-              style="background-color: rgba(24, 160, 88, 0.1)"
-            >
-              <div class="flex items-center space-x-2">
-                <NIcon
-                  :size="20"
-                  :color="themeVars.successColor"
-                >
-                  <CheckCircleRound />
-                </NIcon>
+              <div>
                 <NText
-                  :style="{ color: themeVars.successColor }"
                   strong
+                  style="font-size: 15px"
                 >
-                  今日VIP已全部领取完成！
+                  步骤 1: 领取畅听VIP
+                </NText>
+                <NText
+                  depth="3"
+                  style="font-size: 12px; display: block; margin-top: 4px"
+                >
+                  解锁基础听歌权限，普通音质
                 </NText>
               </div>
-            </NCard>
+            </div>
+            <NButton
+              size="small"
+              :type="userStore.isTvipClaimedToday ? 'success' : 'primary'"
+              :disabled="userStore.isTvipClaimedToday || loading"
+              :loading="loading"
+              @click="handleClaimTvip"
+            >
+              {{ userStore.isTvipClaimedToday ? '已领取' : '领取TVIP' }}
+            </NButton>
           </div>
         </NCard>
+
+        <!-- Arrow -->
+        <div class="flex justify-center">
+          <NIcon
+            :size="24"
+            :color="themeVars.textColor3"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+            >
+              <path
+                fill="currentColor"
+                d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6l-6-6l1.41-1.41z"
+              />
+            </svg>
+          </NIcon>
+        </div>
+
+        <!-- Step 2: SVIP -->
+        <NCard
+          size="small"
+          :bordered="true"
+          class="vip-step-card"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <NIcon
+                :size="32"
+                :color="
+                  userStore.isSvipClaimedToday ? themeVars.warningColor : themeVars.textColor3
+                "
+              >
+                <CheckCircleRound v-if="userStore.isSvipClaimedToday" />
+                <CheckCircleOutlineRound v-else />
+              </NIcon>
+              <div>
+                <NText
+                  strong
+                  style="font-size: 15px"
+                >
+                  步骤 2: 升级至概念VIP
+                </NText>
+                <NText
+                  depth="3"
+                  style="font-size: 12px; display: block; margin-top: 4px"
+                >
+                  解锁顶级音质和音效特权
+                </NText>
+                <NText
+                  v-if="!userStore.isTvipClaimedToday"
+                  depth="3"
+                  type="warning"
+                  style="font-size: 11px; display: block; margin-top: 4px"
+                >
+                  需要先完成步骤1
+                </NText>
+              </div>
+            </div>
+            <NButton
+              size="small"
+              :type="userStore.isSvipClaimedToday ? 'warning' : 'primary'"
+              :disabled="!userStore.isTvipClaimedToday || userStore.isSvipClaimedToday || loading"
+              :loading="loading"
+              @click="handleClaimSvip"
+            >
+              {{ userStore.isSvipClaimedToday ? '已升级' : '升级SVIP' }}
+            </NButton>
+          </div>
+        </NCard>
+
+        <!-- Status summary -->
+        <NCard
+          v-if="userStore.isVipReceiveCompleted"
+          size="small"
+          :bordered="false"
+          style="background-color: rgba(24, 160, 88, 0.1)"
+        >
+          <div class="flex items-center space-x-2">
+            <NIcon
+              :size="20"
+              :color="themeVars.successColor"
+            >
+              <CheckCircleRound />
+            </NIcon>
+            <NText
+              :style="{ color: themeVars.successColor }"
+              strong
+            >
+              今日VIP已全部领取完成！
+            </NText>
+          </div>
+        </NCard>
+      </div>
+    </NCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useUserStore } from '@/store';
-import {
-  formatMinutesToHM,
-  formatTimeDiff,
-  formatTimestamp,
-  getCover,
-} from '@/utils';
+import { formatMinutesToHM, formatTimeDiff, formatTimestamp, getCover } from '@/utils';
 import {
   NAvatar,
   NButton,
@@ -331,11 +330,7 @@ import {
   useThemeVars,
 } from 'naive-ui';
 import { computed, onMounted } from 'vue';
-import {
-  RefreshRound,
-  CheckCircleOutlineRound,
-  CheckCircleRound,
-} from '@vicons/material';
+import { RefreshRound, CheckCircleOutlineRound, CheckCircleRound } from '@vicons/material';
 import { ref } from 'vue';
 import { autoSignService } from '@/utils/sign';
 

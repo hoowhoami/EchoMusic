@@ -80,7 +80,7 @@ export const youthVip = () => {
 // 该接口来自 KG 概念版，非会员用户需要自行测试是否可用(尽量别频繁调用)
 // receive_day: 领取的日期，格式为 YYYY-MM-DD
 export const youthDayVip = (receive_day: string) => {
-  return api.get('/youth/day/vip', { receive_day });
+  return api.get(`/youth/day/vip?receive_day=${receive_day}`);
 };
 
 // 升级概念版 VIP（需要登录，需要先领取一天 VIP，该接口为测试接口,仅限概念版使用）
