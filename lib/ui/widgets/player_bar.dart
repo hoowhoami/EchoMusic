@@ -8,15 +8,16 @@ import '../../theme/app_theme.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../screens/lyric_page.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'cover_image.dart';
 
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modernTheme = Theme.of(context).extension<AppModernTheme>()!;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final modernTheme = theme.extension<AppModernTheme>()!;
 
     return Consumer2<AudioProvider, PersistenceProvider>(
       builder: (context, audioProvider, persistenceProvider, child) {
@@ -27,14 +28,14 @@ class PlayerBar extends StatelessWidget {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: modernTheme.glassBlur!, sigmaY: modernTheme.glassBlur!),
             child: Container(
-              height: 80,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              height: 90,
+              padding: const EdgeInsets.symmetric(horizontal: 32),
               decoration: BoxDecoration(
                 color: modernTheme.playerBarColor,
                 border: Border(
                   top: BorderSide(
                     color: modernTheme.dividerColor!,
-                    width: 0.5,
+                    width: 0.8,
                   ),
                 ),
               ),
@@ -42,7 +43,7 @@ class PlayerBar extends StatelessWidget {
                 children: [
                   // Song Info
                   SizedBox(
-                    width: 280,
+                    width: 320,
                     child: InkWell(
                       onTap: () {
                         Navigator.push(
@@ -50,36 +51,23 @@ class PlayerBar extends StatelessWidget {
                           CupertinoPageRoute(builder: (_) => const LyricPage()),
                         );
                       },
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(16),
                       child: Padding(
-                        padding: const EdgeInsets.all(8.0),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         child: Row(
                           children: [
                             Hero(
                               tag: 'player_cover',
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(6),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withAlpha(40),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: CachedNetworkImage(
-                                    imageUrl: song.cover,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
+                              child: CoverImage(
+                                url: song.cover,
+                                width: 56,
+                                height: 56,
+                                borderRadius: 12,
+                                size: 100,
+                                showShadow: false,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -87,21 +75,21 @@ class PlayerBar extends StatelessWidget {
                                 children: [
                                   Text(
                                     song.name,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                      color: isDark ? Colors.white.withAlpha(220) : Colors.black.withAlpha(220),
-                                      letterSpacing: -0.2,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                      letterSpacing: -0.3,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  const SizedBox(height: 2),
+                                  const SizedBox(height: 4),
                                   Text(
                                     song.singerName,
                                     style: TextStyle(
                                       color: isDark ? Colors.white54 : Colors.black54,
                                       fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -127,53 +115,64 @@ class PlayerBar extends StatelessWidget {
                               icon: audioProvider.isShuffle ? CupertinoIcons.shuffle : CupertinoIcons.arrow_right,
                               isSelected: audioProvider.isShuffle,
                               onPressed: audioProvider.toggleShuffle,
-                              size: 16,
+                              size: 18,
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 24),
                             _PlayerIconButton(
                               icon: CupertinoIcons.backward_fill,
                               onPressed: audioProvider.previous,
-                              size: 22,
+                              size: 24,
                             ),
-                            const SizedBox(width: 20),
+                            const SizedBox(width: 28),
                             GestureDetector(
                               onTap: audioProvider.togglePlay,
                               child: Container(
-                                width: 36,
-                                height: 36,
+                                width: 44,
+                                height: 44,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: isDark ? Colors.white : Colors.black.withAlpha(230),
+                                  gradient: LinearGradient(
+                                    colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: theme.colorScheme.primary.withAlpha(80),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
                                 ),
                                 child: Icon(
                                   audioProvider.isPlaying
                                       ? CupertinoIcons.pause_fill
                                       : CupertinoIcons.play_fill,
-                                  size: 18,
-                                  color: isDark ? Colors.black : Colors.white,
+                                  size: 20,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 20),
+                            const SizedBox(width: 28),
                             _PlayerIconButton(
                               icon: CupertinoIcons.forward_fill,
                               onPressed: audioProvider.next,
-                              size: 22,
+                              size: 24,
                             ),
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 24),
                             _PlayerIconButton(
                               icon: audioProvider.loopMode == LoopMode.one
                                   ? CupertinoIcons.repeat_1
                                   : CupertinoIcons.repeat,
                               isSelected: audioProvider.loopMode != LoopMode.off,
                               onPressed: audioProvider.toggleLoopMode,
-                              size: 16,
+                              size: 18,
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         SizedBox(
-                          width: 460,
+                          width: 500,
                           child: StreamBuilder<Duration>(
                             stream: audioProvider.player.positionStream,
                             builder: (context, snapshot) {
@@ -182,11 +181,11 @@ class PlayerBar extends StatelessWidget {
                               return ProgressBar(
                                 progress: position,
                                 total: total,
-                                barHeight: 3,
-                                baseBarColor: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(20),
-                                progressBarColor: isDark ? Colors.white.withAlpha(200) : Colors.black.withAlpha(200),
-                                thumbColor: isDark ? Colors.white : Colors.black,
-                                thumbRadius: 4,
+                                barHeight: 4,
+                                baseBarColor: theme.colorScheme.primary.withAlpha(20),
+                                progressBarColor: theme.colorScheme.primary,
+                                thumbColor: theme.colorScheme.primary,
+                                thumbRadius: 6,
                                 thumbCanPaintOutsideBar: false,
                                 timeLabelLocation: TimeLabelLocation.none,
                                 onSeek: (duration) {
@@ -202,44 +201,48 @@ class PlayerBar extends StatelessWidget {
 
                   // Volume & Extras
                   SizedBox(
-                    width: 280,
+                    width: 320,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         _PlayerIconButton(
                           icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
                           isSelected: persistenceProvider.isFavorite(song),
-                          activeColor: CupertinoColors.systemRed,
+                          activeColor: Colors.redAccent,
                           onPressed: () => persistenceProvider.toggleFavorite(song),
-                          size: 18,
+                          size: 20,
                         ),
+                        const SizedBox(width: 20),
+                        Icon(CupertinoIcons.speaker_2_fill, size: 16, color: isDark ? Colors.white38 : Colors.black38),
                         const SizedBox(width: 12),
-                        Icon(CupertinoIcons.volume_down, size: 16, color: isDark ? Colors.white38 : Colors.black38),
-                        const SizedBox(width: 8),
                         SizedBox(
-                          width: 80,
+                          width: 100,
                           child: StreamBuilder<double>(
                             stream: audioProvider.player.volumeStream,
                             builder: (context, snapshot) {
-                              return CupertinoSlider(
-                                value: snapshot.data ?? 1.0,
-                                activeColor: isDark ? Colors.white70 : Colors.black87,
-                                onChanged: (value) {
-                                  audioProvider.player.setVolume(value);
-                                },
+                              return SliderTheme(
+                                data: theme.sliderTheme.copyWith(
+                                  trackHeight: 3,
+                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                                ),
+                                child: Slider(
+                                  value: snapshot.data ?? 1.0,
+                                  activeColor: theme.colorScheme.primary.withAlpha(200),
+                                  onChanged: (value) {
+                                    audioProvider.player.setVolume(value);
+                                  },
+                                ),
                               );
                             },
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Icon(CupertinoIcons.volume_up, size: 16, color: isDark ? Colors.white38 : Colors.black38),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 20),
                         _PlayerIconButton(
                           icon: CupertinoIcons.list_bullet,
                           onPressed: () {
                             // TODO: Show playlist
                           },
-                          size: 18,
+                          size: 20,
                         ),
                       ],
                     ),
@@ -274,14 +277,14 @@ class _PlayerIconButton extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final color = isSelected 
       ? (activeColor ?? (isDark ? Colors.white : Theme.of(context).primaryColor))
-      : (isDark ? Colors.white.withAlpha(120) : Colors.black.withAlpha(120));
+      : (isDark ? Colors.white.withAlpha(100) : Colors.black.withAlpha(100));
 
     return IconButton(
       icon: Icon(icon, size: size, color: color),
       onPressed: onPressed,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
-      splashRadius: 20,
+      splashRadius: 24,
     );
   }
 }

@@ -50,7 +50,6 @@ class MusicApi {
       },
       onResponse: (response, handler) {
         debugPrint('<-- ${response.statusCode} ${response.requestOptions.uri}');
-        debugPrint('Response: ${response.data}');
         return handler.next(response);
       },
       onError: (err, handler) {

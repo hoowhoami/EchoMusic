@@ -14,41 +14,39 @@ class DiscoverView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(100),
+          preferredSize: const Size.fromHeight(80),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+            padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '发现音乐',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : Colors.black,
-                    letterSpacing: -0.5,
-                  ),
+                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 TabBar(
                   isScrollable: true,
                   indicatorSize: TabBarIndicatorSize.label,
                   dividerColor: Colors.transparent,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w400, fontSize: 14),
+                  labelColor: theme.colorScheme.primary,
+                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   indicator: UnderlineTabIndicator(
                     borderSide: BorderSide(
-                      width: 3,
-                      color: isDark ? Colors.white : Theme.of(context).primaryColor,
+                      width: 2,
+                      color: theme.colorScheme.primary,
                     ),
-                    insets: const EdgeInsets.symmetric(horizontal: 0),
                   ),
                   tabs: const [
                     Tab(text: '歌单'),
@@ -62,6 +60,7 @@ class DiscoverView extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
+          physics: BouncingScrollPhysics(),
           children: [
             _DiscoverPlaylistTab(),
             RankView(),

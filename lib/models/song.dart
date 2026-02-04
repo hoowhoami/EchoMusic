@@ -39,17 +39,24 @@ class Song {
     var relateGoodsList = json['relate_goods'] as List?;
     List<Map<String, dynamic>>? relateGoods = relateGoodsList?.cast<Map<String, dynamic>>();
 
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return Song(
       hash: json['hash'] ?? '',
       name: json['name'] ?? json['songname'] ?? '',
       albumName: json['albuminfo']?['name'] ?? json['album_name'] ?? '',
       albumId: json['album_id']?.toString(),
       singers: singers,
-      duration: json['timelen'] != null ? (json['timelen'] / 1000).floor() : 0,
+      duration: json['timelen'] != null ? (parseInt(json['timelen']) / 1000).floor() : 0,
       cover: cover,
       mvHash: json['mvhash'],
-      mixSongId: json['mixsongid'] ?? 0,
-      privilege: json['privilege'],
+      mixSongId: parseInt(json['mixsongid']),
+      privilege: json['privilege'] is int ? json['privilege'] : (json['privilege'] != null ? int.tryParse(json['privilege'].toString()) : null),
       relateGoods: relateGoods,
       source: json['source'],
     );
@@ -79,8 +86,15 @@ class SingerInfo {
   });
 
   factory SingerInfo.fromJson(Map<String, dynamic> json) {
+    int parseInt(dynamic value) {
+      if (value == null) return 0;
+      if (value is int) return value;
+      if (value is String) return int.tryParse(value) ?? 0;
+      return 0;
+    }
+
     return SingerInfo(
-      id: json['id'] ?? 0,
+      id: parseInt(json['id']),
       name: json['name'] ?? json['author_name'] ?? '',
       avatar: json['avatar'],
     );

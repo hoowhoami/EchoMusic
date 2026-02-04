@@ -7,7 +7,7 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/cover_image.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'recommend_song_view.dart';
@@ -42,13 +42,15 @@ class _RecommendViewState extends State<RecommendView> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
     final greeting = userProvider.isAuthenticated 
         ? 'Hi, ${userProvider.user?.nickname} ${_getGreeting()}' 
         : _getGreeting();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -58,19 +60,12 @@ class _RecommendViewState extends State<RecommendView> {
             children: [
               Text(
                 greeting,
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.8,
-                ),
+                style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
               ),
-              const Text(
+              const SizedBox(height: 4),
+              Text(
                 '由此开启好心情 ~',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                  letterSpacing: -0.2,
-                ),
+                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12),
               ),
             ],
           ),
@@ -82,29 +77,31 @@ class _RecommendViewState extends State<RecommendView> {
               _buildLargeFeatureCard(
                 context,
                 title: '每日推荐',
-                subtitle: '根据你的音乐口味生成',
+                subtitle: '为你量身定制',
                 iconContent: DateTime.now().day.toString(),
                 onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RecommendSongView())),
+                color: Theme.of(context).colorScheme.primary,
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 16),
               _buildLargeFeatureCard(
                 context,
                 title: '排行榜',
-                subtitle: '发现你的专属好歌',
+                subtitle: '实时热门趋势',
                 iconContent: 'TOP',
                 onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RankView())),
+                color: Theme.of(context).colorScheme.secondary,
               ),
             ],
           ),
 
-          const SizedBox(height: 48),
+          const SizedBox(height: 40),
           _buildHeader(context, '推荐歌单'),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           _buildRecommendedPlaylists(),
 
-          const SizedBox(height: 48),
+          const SizedBox(height: 40),
           _buildHeader(context, '编辑精选'),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           _buildIPTopPlaylists(),
           
           const SizedBox(height: 100),
@@ -118,55 +115,72 @@ class _RecommendViewState extends State<RecommendView> {
     required String subtitle,
     required String iconContent,
     required VoidCallback onTap,
+    required Color color,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+      child: Container(
+        height: 72,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5)),
+        ),
+        child: Material(
+          color: isDark ? Colors.white.withAlpha(5) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white24 : Colors.black26, width: 2),
-                ),
-                child: Center(
-                  child: Text(
-                    iconContent,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [color, color.withAlpha(180)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(
+                      child: Text(
+                        iconContent,
+                        style: const TextStyle(
+                          fontSize: 16, 
+                          fontWeight: FontWeight.w900, 
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          subtitle,
+                          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.black54),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -174,13 +188,30 @@ class _RecommendViewState extends State<RecommendView> {
   }
 
   Widget _buildHeader(BuildContext context, String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontWeight: FontWeight.w700,
-        fontSize: 22,
-        letterSpacing: -0.5,
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 15),
+        ),
+        TextButton(
+          onPressed: () {},
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            '更多',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -188,18 +219,19 @@ class _RecommendViewState extends State<RecommendView> {
     return FutureBuilder<List<Playlist>>(
       future: _recommendedPlaylistsFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 240);
+        if (!snapshot.hasData) return const SizedBox(height: 200);
         final playlists = snapshot.data!;
         return SizedBox(
-          height: 250,
+          height: 210,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: playlists.length,
+            physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.zero,
             itemBuilder: (context, index) {
               final playlist = playlists[index];
               return Padding(
-                padding: const EdgeInsets.only(right: 24),
+                padding: const EdgeInsets.only(right: 20),
                 child: _buildPlaylistCard(playlist),
               );
             },
@@ -213,17 +245,17 @@ class _RecommendViewState extends State<RecommendView> {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _topIpFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 240);
-        // Legacy: res?.list?.filter((item: IP) => item.type === 1 && item.extra?.global_collection_id)
+        if (!snapshot.hasData) return const SizedBox(height: 200);
         final ipList = snapshot.data!.where((item) => 
           item['type'] == 1 && item['extra']?['global_collection_id'] != null
         ).toList();
 
         return SizedBox(
-          height: 250,
+          height: 210,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: ipList.length,
+            physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.zero,
             itemBuilder: (context, index) {
               final ip = ipList[index];
@@ -233,7 +265,7 @@ class _RecommendViewState extends State<RecommendView> {
                 'global_collection_id': ip['extra']['global_collection_id'],
               });
               return Padding(
-                padding: const EdgeInsets.only(right: 24),
+                padding: const EdgeInsets.only(right: 20),
                 child: _buildPlaylistCard(playlist, subtitle: '编辑精选'),
               );
             },
@@ -253,51 +285,34 @@ class _RecommendViewState extends State<RecommendView> {
           ),
         );
       },
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(30),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: CachedNetworkImage(
-                imageUrl: playlist.pic,
-                width: 170,
-                height: 170,
-                fit: BoxFit.cover,
-              ),
-            ),
+          CoverImage(
+            url: playlist.pic,
+            width: 140,
+            height: 140,
+            borderRadius: 12,
+            showShadow: false,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           SizedBox(
-            width: 170,
+            width: 140,
             child: Text(
               playlist.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
-                letterSpacing: -0.2,
+                fontSize: 13,
               ),
             ),
           ),
+          const SizedBox(height: 2),
           Text(
             subtitle,
-            style: TextStyle(
-              color: Theme.of(context).brightness == Brightness.dark ? Colors.white38 : Colors.black38,
-              fontSize: 12,
-            ),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 11),
           ),
         ],
       ),

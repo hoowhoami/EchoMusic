@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
+import 'cover_image.dart';
 
 class SongCard extends StatelessWidget {
   final Song song;
@@ -17,29 +17,31 @@ class SongCard extends StatelessWidget {
     required this.song,
     required this.playlist,
     this.showCover = true,
-    this.coverSize = 48,
+    this.coverSize = 52,
     this.showMore = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final audioProvider = context.watch<AudioProvider>();
-    final isPlaying = audioProvider.currentSong?.hash == song.hash && audioProvider.isPlaying;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final isCurrent = audioProvider.currentSong?.hash == song.hash;
+    final isPlaying = isCurrent && audioProvider.isPlaying;
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = theme.colorScheme.primary;
 
     return InkWell(
       onTap: () {
         context.read<AudioProvider>().playSong(song, playlist: playlist);
       },
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
             if (showCover)
-              _buildCover(context, isPlaying, accentColor),
-            const SizedBox(width: 12),
+              _buildCover(context, isCurrent, isPlaying, primaryColor),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,16 +55,17 @@ class SongCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isPlaying ? accentColor : (isDark ? Colors.white : Colors.black),
-                            fontWeight: isPlaying ? FontWeight.bold : FontWeight.w500,
-                            fontSize: 14,
+                            color: isCurrent ? primaryColor : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A)),
+                            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
+                            fontSize: 15,
+                            letterSpacing: -0.2,
                           ),
                         ),
                       ),
                       if (song.isVip)
-                        _buildTag(context, 'VIP', Colors.orange),
+                        _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
                       if (song.qualityTag.isNotEmpty)
-                        _buildTag(context, song.qualityTag, Colors.cyan),
+                        _buildTag(context, song.qualityTag, const Color(0xFF06B6D4)),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -72,36 +75,46 @@ class SongCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: isDark ? Colors.white38 : Colors.black38,
-                      fontSize: 12,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
               ),
             ),
             if (showMore) ...[
-              const SizedBox(width: 20),
+              const SizedBox(width: 24),
               SizedBox(
-                width: 150,
+                width: 180,
                 child: Text(
                   song.albumName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 12),
+                  style: TextStyle(
+                    color: isDark ? Colors.white38 : Colors.black38, 
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 24),
               Text(
                 _formatDuration(song.duration),
-                style: TextStyle(color: isDark ? Colors.white24 : Colors.black26, fontSize: 12),
+                style: TextStyle(
+                  color: isDark ? Colors.white30 : Colors.black26, 
+                  fontSize: 13,
+                  fontFamily: 'monospace',
+                ),
               ),
             ],
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             IconButton(
-              icon: const Icon(CupertinoIcons.ellipsis, size: 18),
+              icon: const Icon(CupertinoIcons.ellipsis, size: 20),
               onPressed: () {
                 // TODO: Context menu
               },
               color: isDark ? Colors.white24 : Colors.black26,
+              splashRadius: 24,
             ),
           ],
         ),
@@ -109,58 +122,52 @@ class SongCard extends StatelessWidget {
     );
   }
 
-  Widget _buildCover(BuildContext context, bool isPlaying, Color accentColor) {
-    return Container(
-      width: coverSize,
-      height: coverSize,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(20),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: CachedNetworkImage(
-              imageUrl: song.cover,
-              width: coverSize,
-              height: coverSize,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => const Icon(CupertinoIcons.music_note),
+  Widget _buildCover(BuildContext context, bool isCurrent, bool isPlaying, Color primaryColor) {
+    return Stack(
+      children: [
+        CoverImage(
+          url: song.cover,
+          width: coverSize,
+          height: coverSize,
+          borderRadius: 12,
+          size: 100,
+          showShadow: false,
+        ),
+        if (isCurrent)
+          Container(
+            width: coverSize,
+            height: coverSize,
+            decoration: BoxDecoration(
+              color: Colors.black.withAlpha(isPlaying ? 100 : 60),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: isPlaying 
+                ? _PlayingIndicator(color: Colors.white)
+                : const Icon(CupertinoIcons.play_fill, color: Colors.white, size: 18),
             ),
           ),
-          if (isPlaying)
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withAlpha(80),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: _PlayingIndicator(color: accentColor),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
   Widget _buildTag(BuildContext context, String text, Color color) {
     return Container(
-      margin: const EdgeInsets.only(left: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
+        color: color.withAlpha(20),
         border: Border.all(color: color.withAlpha(100), width: 0.5),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,
-        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color, 
+          fontSize: 9, 
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }
@@ -180,17 +187,25 @@ class _PlayingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(3, (index) {
-        return Container(
-          width: 3,
-          height: 12,
-          margin: const EdgeInsets.symmetric(horizontal: 1),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        );
-      }),
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _bar(8),
+        const SizedBox(width: 2),
+        _bar(14),
+        const SizedBox(width: 2),
+        _bar(10),
+      ],
+    );
+  }
+
+  Widget _bar(double height) {
+    return Container(
+      width: 3,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(1.5),
+      ),
     );
   }
 }

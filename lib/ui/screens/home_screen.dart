@@ -77,8 +77,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: isDark 
-                    ? [const Color(0xFF1E1E1E), const Color(0xFF000000), const Color(0xFF121212)]
-                    : [const Color(0xFFF5F5F7), const Color(0xFFFFFFFF), const Color(0xFFE5E5EA)],
+                    ? [const Color(0xFF0F172A), const Color(0xFF020617), const Color(0xFF1E1B4B)]
+                    : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9), const Color(0xFFEEF2FF)],
                 ),
               ),
             ),
@@ -94,13 +94,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: modernTheme.glassBlur!, sigmaY: modernTheme.glassBlur!),
                         child: Container(
-                          width: 240,
+                          width: 260,
                           decoration: BoxDecoration(
                             color: modernTheme.sidebarColor,
                             border: Border(
                               right: BorderSide(
                                 color: modernTheme.dividerColor!,
-                                width: 0.5,
+                                width: 0.8,
                               ),
                             ),
                           ),
@@ -120,9 +120,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     Expanded(
                       child: Column(
                         children: [
-                          // Top bar for dragging and title (Invisible on sidebar, visible here)
+                          // Top bar for dragging and title
                           SizedBox(
-                            height: 52,
+                            height: 48,
                             child: Row(
                               children: [
                                 Expanded(child: MoveWindow()),
@@ -135,7 +135,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Container(
                               color: Colors.transparent,
                               child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 300),
+                                duration: const Duration(milliseconds: 400),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
                                 child: _views[_selectedIndex],
                               ),
                             ),

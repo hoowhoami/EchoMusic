@@ -5,7 +5,7 @@ import '../../providers/user_provider.dart';
 import '../screens/login_screen.dart';
 import '../screens/playlist_detail_view.dart';
 import '../../models/playlist.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'cover_image.dart';
 import 'dart:io';
 
 import 'package:bitsdojo_window/bitsdojo_window.dart';
@@ -22,10 +22,11 @@ class Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
     final user = userProvider.user;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).primaryColor;
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.colorScheme.primary;
 
     return Column(
       children: [
@@ -37,7 +38,7 @@ class Sidebar extends StatelessWidget {
         
         // User Branding / Profile
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: InkWell(
             onTap: () {
               if (!userProvider.isAuthenticated) {
@@ -48,33 +49,45 @@ class Sidebar extends StatelessWidget {
                 onDestinationSelected(6);
               }
             },
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(
-                  colors: isDark 
-                    ? [Colors.white.withAlpha(15), Colors.white.withAlpha(5)]
-                    : [Colors.black.withAlpha(10), Colors.black.withAlpha(5)],
+                borderRadius: BorderRadius.circular(16),
+                color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
+                border: Border.all(
+                  color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                  width: 1,
                 ),
               ),
               child: Row(
                 children: [
                   Container(
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: accentColor.withAlpha(100), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accentColor.withAlpha(40),
+                          blurRadius: 10,
+                        ),
+                      ],
                     ),
-                    child: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.transparent,
-                      backgroundImage: user?.pic != null 
-                        ? CachedNetworkImageProvider(user!.pic!)
-                        : null,
-                      child: user?.pic == null 
-                        ? Icon(CupertinoIcons.person_alt_circle_fill, color: isDark ? Colors.white60 : Colors.black45, size: 20)
-                        : null,
+                    child: ClipOval(
+                      child: user?.pic != null 
+                        ? CoverImage(
+                            url: user!.pic!,
+                            width: 40,
+                            height: 40,
+                            borderRadius: 0,
+                            showShadow: false,
+                            size: 100,
+                          )
+                        : Container(
+                            color: accentColor.withAlpha(20),
+                            child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 20),
+                          ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -85,20 +98,21 @@ class Sidebar extends StatelessWidget {
                       children: [
                         Text(
                           user?.nickname ?? '未登录',
-                          style: TextStyle(
-                            color: isDark ? Colors.white : Colors.black,
+                          style: const TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                            fontSize: 14,
+                            letterSpacing: -0.2,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           userProvider.isAuthenticated ? '账号中心' : '登录发现更多',
                           style: TextStyle(
-                            color: isDark ? Colors.white54 : Colors.black45,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white38 : Colors.black38,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
@@ -114,7 +128,8 @@ class Sidebar extends StatelessWidget {
         
         Expanded(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 20),
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -123,15 +138,15 @@ class Sidebar extends StatelessWidget {
                 _buildNavItem(context, 1, CupertinoIcons.compass_fill, '发现音乐'),
                 _buildNavItem(context, 2, CupertinoIcons.search, '快速搜索'),
                 
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 _buildGroupTitle(context, '库'),
                 _buildNavItem(context, 3, CupertinoIcons.time_solid, '播放历史'),
                 _buildNavItem(context, 4, CupertinoIcons.cloud_upload_fill, '我的云盘'),
                 
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 _buildPlaylistSection(context, userProvider, isDark),
                 
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
                 _buildNavItem(context, 5, CupertinoIcons.slider_horizontal_3, '应用设置'),
               ],
             ),
@@ -142,16 +157,16 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildGroupTitle(BuildContext context, String title) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 24, right: 16, top: 8, bottom: 8),
+      padding: const EdgeInsets.only(left: 28, right: 16, top: 8, bottom: 8),
       child: Text(
-        title,
+        title.toUpperCase(),
         style: TextStyle(
-          color: isDark ? Colors.white24 : Colors.black26,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
+          color: theme.brightness == Brightness.dark ? Colors.white24 : Colors.black26,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
         ),
       ),
     );
@@ -174,10 +189,14 @@ class Sidebar extends StatelessWidget {
             _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, isDark, imageUrl: p['pic']),
         ] else
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
             child: Text(
               '登录同步歌单',
-              style: TextStyle(color: isDark ? Colors.white12 : Colors.black12, fontSize: 12),
+              style: TextStyle(
+                color: isDark ? Colors.white12 : Colors.black12, 
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
       ],
@@ -187,7 +206,7 @@ class Sidebar extends StatelessWidget {
   Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, bool isDark, {String? imageUrl}) {
     final playlist = Playlist.fromJson(playlistData);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -195,32 +214,29 @@ class Sidebar extends StatelessWidget {
             CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
           );
         },
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
-              if (imageUrl != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl.replaceAll('{size}', '40'),
-                    width: 22,
-                    height: 22,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Icon(icon, color: isDark ? Colors.white54 : Colors.black54, size: 16),
-                  ),
-                )
-              else
-                Icon(icon, color: isDark ? Colors.white54 : Colors.black54, size: 16),
-              const SizedBox(width: 12),
+              CoverImage(
+                url: imageUrl,
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                showShadow: false,
+                size: 100,
+                errorWidget: Icon(icon, color: isDark ? Colors.white38 : Colors.black38, size: 14),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   playlist.name,
                   style: TextStyle(
                     color: isDark ? Colors.white.withAlpha(180) : Colors.black.withAlpha(180), 
                     fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -235,42 +251,41 @@ class Sidebar extends StatelessWidget {
 
   Widget _buildNavItem(BuildContext context, int index, IconData icon, String label) {
     final isSelected = selectedIndex == index;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).primaryColor;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = theme.colorScheme.primary;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: InkWell(
         onTap: () => onDestinationSelected(index),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: isSelected 
-              ? accentColor.withAlpha(isDark ? 40 : 20)
+              ? accentColor.withAlpha(isDark ? 30 : 20)
               : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: isSelected 
-              ? Border.all(color: accentColor.withAlpha(60), width: 1)
-              : Border.all(color: Colors.transparent, width: 1),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
               Icon(
                 icon,
                 color: isSelected ? accentColor : (isDark ? Colors.white38 : Colors.black38),
-                size: 18,
+                size: 20,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               Text(
                 label,
                 style: TextStyle(
                   color: isSelected 
                     ? (isDark ? Colors.white : accentColor) 
                     : (isDark ? Colors.white.withAlpha(150) : Colors.black.withAlpha(150)),
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  fontSize: 14,
+                  letterSpacing: -0.2,
                 ),
               ),
             ],
