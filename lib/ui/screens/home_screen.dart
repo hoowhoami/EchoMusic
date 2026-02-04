@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'dart:ui';
 import 'package:provider/provider.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
@@ -12,12 +13,10 @@ import 'setting_view.dart';
 import 'history_view.dart';
 import 'cloud_view.dart';
 import 'profile_view.dart';
-import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../api/music_api.dart';
 import '../../theme/app_theme.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,12 +27,66 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final List<int> _navigationHistory = [0];
+  int _historyIndex = 0;
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
     _initDevice();
   }
+
+  void _navigateTo(int index) {
+    if (index == _selectedIndex) return;
+
+    setState(() {
+      // Remove forward history when navigating to a new page
+      if (_historyIndex < _navigationHistory.length - 1) {
+        _navigationHistory.removeRange(_historyIndex + 1, _navigationHistory.length);
+      }
+
+      _navigationHistory.add(index);
+      _historyIndex = _navigationHistory.length - 1;
+      _selectedIndex = index;
+
+      // Pop to root of nested navigator when changing views
+      _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    });
+  }
+
+  void _pushRoute(Widget page) {
+    _navigatorKey.currentState?.push(
+      CupertinoPageRoute(builder: (_) => page),
+    );
+  }
+
+  void _goBack() {
+    if (_historyIndex > 0) {
+      setState(() {
+        _historyIndex--;
+        _selectedIndex = _navigationHistory[_historyIndex];
+      });
+    }
+  }
+
+  void _goForward() {
+    if (_historyIndex < _navigationHistory.length - 1) {
+      setState(() {
+        _historyIndex++;
+        _selectedIndex = _navigationHistory[_historyIndex];
+      });
+    }
+  }
+
+  void _refresh() {
+    setState(() {
+      // Trigger rebuild to refresh current view
+    });
+  }
+
+  bool get canGoBack => _historyIndex > 0;
+  bool get canGoForward => _historyIndex < _navigationHistory.length - 1;
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
@@ -76,25 +129,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: isDark 
+                  colors: isDark
                     ? [const Color(0xFF0F172A), const Color(0xFF020617), const Color(0xFF1E1B4B)]
                     : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9), const Color(0xFFEEF2FF)],
                 ),
               ),
             ),
           ),
-          
+
           Column(
             children: [
               Expanded(
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Glass Sidebar (Extends to top)
+                    // Glass Sidebar (Extends to top, above player)
                     ClipRect(
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: modernTheme.glassBlur!, sigmaY: modernTheme.glassBlur!),
                         child: Container(
                           width: 260,
+                          height: double.infinity,
                           decoration: BoxDecoration(
                             color: modernTheme.sidebarColor,
                             border: Border(
@@ -104,18 +159,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                          child: Sidebar(
-                            selectedIndex: _selectedIndex,
-                            onDestinationSelected: (index) {
-                              setState(() {
-                                _selectedIndex = index;
-                              });
-                            },
+                          child: Column(
+                            children: [
+                              // Window Control & Drag Area
+                              SizedBox(
+                                height: 48,
+                                child: MoveWindow(),
+                              ),
+                              // Scrollable Sidebar Content
+                              Expanded(
+                                child: Sidebar(
+                                  selectedIndex: _selectedIndex,
+                                  onDestinationSelected: _navigateTo,
+                                  onPushRoute: _pushRoute,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ),
-                    
+
                     // Main Content area
                     Expanded(
                       child: Column(
@@ -125,20 +189,47 @@ class _HomeScreenState extends State<HomeScreen> {
                             height: 48,
                             child: Row(
                               children: [
+                                const SizedBox(width: 12),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.chevron_left,
+                                  onPressed: canGoBack ? _goBack : null,
+                                  tooltip: '后退',
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.chevron_right,
+                                  onPressed: canGoForward ? _goForward : null,
+                                  tooltip: '前进',
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.refresh,
+                                  onPressed: _refresh,
+                                  tooltip: '刷新',
+                                ),
                                 Expanded(child: MoveWindow()),
                                 if (!Platform.isMacOS)
                                   const WindowButtons(),
                               ],
                             ),
                           ),
+                          // Content View (scrollable via ScrollableContent in each view)
                           Expanded(
                             child: Container(
                               color: Colors.transparent,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 400),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                child: _views[_selectedIndex],
+                              child: Navigator(
+                                key: _navigatorKey,
+                                onGenerateRoute: (settings) {
+                                  return PageRouteBuilder(
+                                    pageBuilder: (context, animation, secondaryAnimation) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: _views[_selectedIndex],
+                                      );
+                                    },
+                                    transitionDuration: const Duration(milliseconds: 300),
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -148,12 +239,38 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              
-              // Bottom Player Bar
+
+              // Bottom Player Bar (Fixed at bottom)
               const PlayerBar(),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavButton({
+    required IconData icon,
+    required VoidCallback? onPressed,
+    required String tooltip,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isEnabled = onPressed != null;
+
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        icon: Icon(
+          icon,
+          size: 18,
+          color: isEnabled
+              ? (isDark ? Colors.white70 : Colors.black.withAlpha(180))
+              : (isDark ? Colors.white24 : Colors.black.withAlpha(60)),
+        ),
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        splashRadius: 18,
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/scrollable_content.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -33,7 +34,7 @@ class _ProfileViewState extends State<ProfileView> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SingleChildScrollView(
+      body: ScrollableContent(
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,7 +66,7 @@ class _ProfileViewState extends State<ProfileView> {
               ],
             ),
             const SizedBox(height: 32),
-            
+
             // Profile Card
             Container(
               padding: const EdgeInsets.all(24),
@@ -124,7 +125,7 @@ class _ProfileViewState extends State<ProfileView> {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 32),
             _buildSectionHeader('账号信息'),
             _buildInfoCard(isDark, [
@@ -134,7 +135,7 @@ class _ProfileViewState extends State<ProfileView> {
               _buildInfoItem('IP属地', detail['loc'] ?? '未知', isDark),
               _buildInfoItem('城市', detail['city'] ?? '未知', isDark),
             ]),
-            
+
             const SizedBox(height: 32),
             _buildSectionHeader('会员特权'),
             _buildInfoCard(isDark, [
@@ -145,7 +146,7 @@ class _ProfileViewState extends State<ProfileView> {
                 // TODO: Claim SVIP
               }),
             ]),
-            
+
             const SizedBox(height: 100),
           ],
         ),

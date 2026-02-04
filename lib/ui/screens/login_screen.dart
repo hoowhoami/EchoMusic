@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   String? qrUrl;
   int qrStatus = 1;
   Timer? _timer;
+  bool _isLoadingQr = false;
+  String? _errorMessage;
 
   // Mobile Login State
   final _mobileController = TextEditingController();
@@ -46,20 +49,45 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loadQrCode() async {
-    final res = await MusicApi.loginQrKey();
-    if (res != null && res['key'] != null) {
-      setState(() {
-        qrKey = res['key'];
-        qrStatus = 1;
-      });
-      
-      final qrRes = await MusicApi.loginQrCreate(qrKey!);
-      if (qrRes != null && qrRes['qrcode_url'] != null) {
+    setState(() {
+      _isLoadingQr = true;
+      _errorMessage = null;
+      qrUrl = null;
+    });
+
+    try {
+      final res = await MusicApi.loginQrKey();
+      if (res != null && res['key'] != null) {
         setState(() {
-          qrUrl = qrRes['qrcode_url'];
+          qrKey = res['key'];
+          qrStatus = 1;
         });
-        _startCheckStatus();
+
+        final qrRes = await MusicApi.loginQrCreate(qrKey!);
+        if (qrRes != null && qrRes['qrcode_url'] != null) {
+          setState(() {
+            qrUrl = qrRes['qrcode_url'];
+            _isLoadingQr = false;
+          });
+          _startCheckStatus();
+        } else {
+          setState(() {
+            _errorMessage = '生成二维码失败，请重试';
+            _isLoadingQr = false;
+          });
+        }
+      } else {
+        setState(() {
+          _errorMessage = '获取二维码Key失败，请重试';
+          _isLoadingQr = false;
+        });
       }
+    } catch (e) {
+      debugPrint('Load QR error: $e');
+      setState(() {
+        _errorMessage = '网络错误: $e';
+        _isLoadingQr = false;
+      });
     }
   }
 
@@ -67,10 +95,13 @@ class _LoginScreenState extends State<LoginScreen> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 3), (timer) async {
       if (qrKey == null || _loginMethod != 0) return;
-      
+
       final res = await MusicApi.loginQrCheck(qrKey!);
       if (res != null) {
-        final status = res['status'];
+        // 从嵌套的 data 中获取实际状态
+        final status = res['data']?['status'] ?? res['status'];
+        debugPrint('QR status: $status, full response: $res');
+
         setState(() {
           qrStatus = status;
         });
@@ -80,7 +111,10 @@ class _LoginScreenState extends State<LoginScreen> {
           if (mounted) {
             final data = res['data'];
             if (data != null) {
+              // 在 async 操作后再次检查 mounted
+              if (!mounted) return;
               await context.read<UserProvider>().handleQrLoginSuccess(data);
+              if (!mounted) return;
               Navigator.of(context).pop();
             }
           }
@@ -218,7 +252,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white, 
+            color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(color: Colors.black.withAlpha(20), blurRadius: 20, offset: const Offset(0, 10))
@@ -228,7 +262,18 @@ class _LoginScreenState extends State<LoginScreen> {
               ? Stack(
                   alignment: Alignment.center,
                   children: [
-                    QrImageView(data: qrUrl!, version: QrVersions.auto, size: 200.0),
+                    // 检查是否是 base64 图片数据
+                    qrUrl!.startsWith('data:image')
+                        ? Image.memory(
+                            base64Decode(qrUrl!.split(',').last),
+                            width: 200,
+                            height: 200,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(Icons.error, size: 48, color: Colors.red);
+                            },
+                          )
+                        : QrImageView(data: qrUrl!, version: QrVersions.auto, size: 200.0),
                     if (qrStatus == 0)
                       Container(
                         color: Colors.white.withAlpha(200),
@@ -256,7 +301,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                   ],
                 )
-              : const SizedBox(width: 200, height: 200, child: Center(child: CircularProgressIndicator())),
+              : _isLoadingQr
+                  ? const SizedBox(width: 200, height: 200, child: Center(child: CircularProgressIndicator()))
+                  : SizedBox(
+                      width: 200, height: 200,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          SizedBox(height: 12),
+                          Text(_errorMessage ?? '加载失败', style: TextStyle(color: Colors.black, fontSize: 12)),
+                          SizedBox(height: 8),
+                          TextButton(
+                            onPressed: _loadQrCode,
+                            child: const Text('重试', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ),
         ),
         const SizedBox(height: 32),
         Text(_getStatusText(), style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 13)),

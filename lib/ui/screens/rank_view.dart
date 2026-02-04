@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
+import '../widgets/batch_action_bar.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -12,17 +15,28 @@ class RankView extends StatefulWidget {
   State<RankView> createState() => _RankViewState();
 }
 
-class _RankViewState extends State<RankView> {
+class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> _ranks = [];
   List<Song> _rankSongs = [];
   int? _selectedRankId;
   bool _isLoadingRanks = true;
   bool _isLoadingSongs = false;
+  late TabController _tabController;
+
+  // Rank categories
+  final List<String> _categories = ['全部', '流行', '摇滚', '民谣', '电子', '说唱', '古风', '二次元'];
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: _categories.length, vsync: this);
     _loadRanks();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRanks() async {
@@ -57,40 +71,80 @@ class _RankViewState extends State<RankView> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accentColor = Theme.of(context).colorScheme.primary;
+    final selectionProvider = context.watch<SelectionProvider>();
 
     if (_isLoadingRanks) {
       return const Center(child: CupertinoActivityIndicator());
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                '排行榜',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: isDark ? Colors.white : Colors.black,
-                  letterSpacing: -0.5,
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '排行榜',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? Colors.white : Colors.black,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                        onPressed: () {
+                          selectionProvider.setSongList(_rankSongs);
+                          selectionProvider.enterSelectionMode();
+                        },
+                        color: isDark ? Colors.white54 : Colors.black54,
+                        tooltip: '批量选择',
+                      ),
+                    if (_ranks.isNotEmpty)
+                      _buildRankSelector(context),
+                  ],
                 ),
-              ),
-              const Spacer(),
-              if (_ranks.isNotEmpty)
-                _buildRankSelector(context),
-            ],
+                const SizedBox(height: 20),
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent,
+                  labelColor: accentColor,
+                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  indicator: UnderlineTabIndicator(
+                    borderSide: BorderSide(
+                      width: 2,
+                      color: accentColor,
+                    ),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  onTap: (index) {
+                    // Could filter ranks by category
+                  },
+                  tabs: _categories.map((cat) => Tab(text: cat)).toList(),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: _isLoadingSongs
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : _buildSongGrid(context),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: _isLoadingSongs
-                ? const Center(child: CupertinoActivityIndicator())
-                : _buildSongGrid(context),
-          ),
-        ],
-      ),
+        ),
+        const BatchActionBar(),
+      ],
     );
   }
 
@@ -220,13 +274,21 @@ class _RankViewState extends State<RankView> {
       return const Center(child: Text('暂无歌曲'));
     }
 
+    final selectionProvider = context.watch<SelectionProvider>();
+
     return ListView.builder(
       itemCount: _rankSongs.length,
       itemBuilder: (context, index) {
+        final song = _rankSongs[index];
         return SongCard(
-          song: _rankSongs[index],
+          song: song,
           playlist: _rankSongs,
           showMore: true,
+          isSelectionMode: selectionProvider.isSelectionMode,
+          isSelected: selectionProvider.isSelected(song.hash),
+          onSelectionChanged: (selected) {
+            selectionProvider.toggleSelection(song.hash);
+          },
         );
       },
     );

@@ -37,13 +37,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
           SliverAppBar(
             backgroundColor: Colors.transparent,
             expandedHeight: 380,
-            leading: IconButton(
-              icon: const Icon(CupertinoIcons.back),
-              onPressed: () => Navigator.pop(context),
-              style: IconButton.styleFrom(
-                backgroundColor: isDark ? Colors.black26 : Colors.white24,
-              ),
-            ),
+            automaticallyImplyLeading: false,
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 children: [
@@ -89,6 +83,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.end,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -113,6 +108,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                                   fontSize: 42,
                                   height: 1.1,
                                 ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 16),
                               if (widget.playlist.intro.isNotEmpty)

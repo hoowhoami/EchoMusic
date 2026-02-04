@@ -63,9 +63,22 @@ class Song {
   }
 
   String get singerName => singers.map((s) => s.name).join(', ');
-  
+
   bool get isVip => privilege == 10;
-  
+
+  bool get isPaid => privilege == 30;
+
+  bool get isUnavailable => privilege == 0 || privilege == 40;
+
+  bool get canPlay => !isUnavailable;
+
+  String get privilegeLabel {
+    if (isUnavailable) return '不可用';
+    if (isVip) return 'VIP';
+    if (isPaid) return '付费';
+    return '';
+  }
+
   String get qualityTag {
     if (relateGoods == null) return '';
     if (relateGoods!.length > 2) return 'SQ';

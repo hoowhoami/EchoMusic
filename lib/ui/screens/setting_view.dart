@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../theme/app_theme.dart';
+import '../widgets/scrollable_content.dart';
 
 class SettingView extends StatelessWidget {
   const SettingView({super.key});
@@ -15,7 +16,7 @@ class SettingView extends StatelessWidget {
     final subTextColor = isDark ? Colors.white54 : Colors.black54;
     final accentColor = Theme.of(context).colorScheme.primary;
 
-    return SingleChildScrollView(
+    return ScrollableContent(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -27,7 +28,7 @@ class SettingView extends StatelessWidget {
           const SizedBox(height: 6),
           Text('个性化您的音乐播放体验', style: TextStyle(color: subTextColor, fontSize: 13)),
           const SizedBox(height: 28),
-          
+
           _buildGroup(
             context,
             '外观设置',
@@ -60,7 +61,7 @@ class SettingView extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 24),
           _buildGroup(
             context,
@@ -159,6 +160,17 @@ class SettingView extends StatelessWidget {
             context,
             '音质设置',
             [
+              _buildItem(
+                context,
+                '播放音质',
+                '选择音乐播放的音质',
+                trailing: _buildDropdown(
+                  context,
+                  ['标准', '高品质', '无损'],
+                  settings['audioQuality'] ?? '无损',
+                  (v) => persistence.updateSetting('audioQuality', v),
+                ),
+              ),
               _buildItem(
                 context,
                 '兼容模式',

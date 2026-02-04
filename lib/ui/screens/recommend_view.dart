@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/scrollable_content.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'recommend_song_view.dart';
@@ -44,13 +45,11 @@ class _RecommendViewState extends State<RecommendView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
-    final greeting = userProvider.isAuthenticated 
-        ? 'Hi, ${userProvider.user?.nickname} ${_getGreeting()}' 
+    final greeting = userProvider.isAuthenticated
+        ? 'Hi, ${userProvider.user?.nickname} ${_getGreeting()}'
         : _getGreeting();
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+    return ScrollableContent(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -103,7 +102,7 @@ class _RecommendViewState extends State<RecommendView> {
           _buildHeader(context, '编辑精选'),
           const SizedBox(height: 16),
           _buildIPTopPlaylists(),
-          
+
           const SizedBox(height: 100),
         ],
       ),

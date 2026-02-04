@@ -28,6 +28,7 @@ class PersistenceProvider with ChangeNotifier {
     'preventSleep': true,
     'compatibilityMode': true,
     'backupQuality': '标准',
+    'audioQuality': '无损',
     'autoSign': false,
     'autoReceiveVip': false,
   };

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
+import '../../providers/selection_provider.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'album_detail_view.dart';
 import '../widgets/song_card.dart';
+import '../widgets/batch_action_bar.dart';
 
 class DiscoverView extends StatelessWidget {
   const DiscoverView({super.key});
@@ -460,21 +463,56 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
 
   @override
   Widget build(BuildContext context) {
+    final selectionProvider = context.watch<SelectionProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return FutureBuilder<List<Song>>(
       future: _songsFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CupertinoActivityIndicator());
         final songs = snapshot.data!;
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-          itemCount: songs.length,
-          itemBuilder: (context, index) {
-            return SongCard(
-              song: songs[index],
-              playlist: songs,
-              showMore: true,
-            );
-          },
+
+        return Column(
+          children: [
+            if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
+                child: Row(
+                  children: [
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                      onPressed: () {
+                        selectionProvider.setSongList(songs);
+                        selectionProvider.enterSelectionMode();
+                      },
+                      color: isDark ? Colors.white54 : Colors.black54,
+                      tooltip: '批量选择',
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+                itemCount: songs.length,
+                itemBuilder: (context, index) {
+                  final song = songs[index];
+                  return SongCard(
+                    song: song,
+                    playlist: songs,
+                    showMore: true,
+                    isSelectionMode: selectionProvider.isSelectionMode,
+                    isSelected: selectionProvider.isSelected(song.hash),
+                    onSelectionChanged: (selected) {
+                      selectionProvider.toggleSelection(song.hash);
+                    },
+                  );
+                },
+              ),
+            ),
+            const BatchActionBar(),
+          ],
         );
       },
     );

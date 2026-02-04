@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import '../../providers/selection_provider.dart';
 import '../widgets/cover_image.dart';
 import 'artist_detail_view.dart';
 import 'playlist_detail_view.dart';
 import 'album_detail_view.dart';
 import '../../models/playlist.dart';
 import '../widgets/song_card.dart';
+import '../widgets/batch_action_bar.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -19,18 +22,42 @@ class SearchView extends StatefulWidget {
 class _SearchViewState extends State<SearchView> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   late TabController _tabController;
-  
+
   List<Song> _songResults = [];
   List<Map<String, dynamic>> _albumResults = [];
   List<Map<String, dynamic>> _artistResults = [];
   List<Map<String, dynamic>> _playlistResults = [];
-  
+
+  List<String> _hotSearches = [];
+  String _defaultKeyword = '';
   bool _isLoading = false;
+  bool _isLoadingHot = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _loadHotSearches();
+  }
+
+  Future<void> _loadHotSearches() async {
+    setState(() {
+      _isLoadingHot = true;
+    });
+
+    try {
+      final hot = await MusicApi.getSearchHot();
+      final defaultKeyword = await MusicApi.getSearchDefault();
+      setState(() {
+        _hotSearches = hot;
+        _defaultKeyword = defaultKeyword;
+        _isLoadingHot = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoadingHot = false;
+      });
+    }
   }
 
   void _onSearch() async {
@@ -66,126 +93,166 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final selectionProvider = context.watch<SelectionProvider>();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '搜索',
-            style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            height: 44,
-            decoration: BoxDecoration(
-              color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
+    return Column(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(width: 12),
-                Icon(CupertinoIcons.search, color: isDark ? Colors.white38 : Colors.black38, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    decoration: InputDecoration(
-                      hintText: '搜索音乐、歌手、专辑',
-                      hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                Row(
+                  children: [
+                    Text(
+                      '搜索',
+                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
                     ),
-                    onSubmitted: (_) => _onSearch(),
+                    const Spacer(),
+                    if (_songResults.isNotEmpty &&
+                        _searchController.text.isNotEmpty &&
+                        !_isLoading &&
+                        !selectionProvider.isSelectionMode &&
+                        _tabController.index == 0)
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                        onPressed: () {
+                          selectionProvider.setSongList(_songResults);
+                          selectionProvider.enterSelectionMode();
+                        },
+                        color: isDark ? Colors.white54 : Colors.black54,
+                        tooltip: '批量选择',
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      Icon(CupertinoIcons.search, color: isDark ? Colors.white38 : Colors.black38, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                          decoration: InputDecoration(
+                            hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
+                            hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onChanged: (_) => setState(() {}),
+                          onSubmitted: (_) => _onSearch(),
+                        ),
+                      ),
+                      if (_searchController.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {});
+                          },
+                          color: isDark ? Colors.white24 : Colors.black26,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      const SizedBox(width: 8),
+                      Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: ElevatedButton(
+                          onPressed: _onSearch,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            minimumSize: const Size(0, 36),
+                          ),
+                          child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (_searchController.text.isNotEmpty)
-                  IconButton(
-                    icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() {});
-                    },
-                    color: isDark ? Colors.white24 : Colors.black26,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: ElevatedButton(
-                    onPressed: _onSearch,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      minimumSize: const Size(0, 36),
+                const SizedBox(height: 24),
+                TabBar(
+                  controller: _tabController,
+                  isScrollable: true,
+                  indicatorSize: TabBarIndicatorSize.label,
+                  dividerColor: Colors.transparent,
+                  labelColor: theme.colorScheme.primary,
+                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  indicator: UnderlineTabIndicator(
+                    borderSide: BorderSide(
+                      width: 2,
+                      color: theme.colorScheme.primary,
                     ),
-                    child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    borderRadius: BorderRadius.circular(2),
                   ),
+                  onTap: (_) => setState(() {}),
+                  tabs: const [
+                    Tab(text: '单曲'),
+                    Tab(text: '歌单'),
+                    Tab(text: '专辑'),
+                    Tab(text: '歌手'),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: _searchController.text.isEmpty
+                      ? _buildHotSearches()
+                      : _isLoading
+                          ? const Center(child: CupertinoActivityIndicator())
+                          : TabBarView(
+                              controller: _tabController,
+                              physics: const BouncingScrollPhysics(),
+                              children: [
+                                _buildSongList(),
+                                _buildPlaylistList(),
+                                _buildAlbumList(),
+                                _buildArtistList(),
+                              ],
+                            ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            indicatorSize: TabBarIndicatorSize.label,
-            dividerColor: Colors.transparent,
-            labelColor: theme.colorScheme.primary,
-            unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            indicator: UnderlineTabIndicator(
-              borderSide: BorderSide(
-                width: 2,
-                color: theme.colorScheme.primary,
-              ),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            tabs: const [
-              Tab(text: '单曲'),
-              Tab(text: '歌单'),
-              Tab(text: '专辑'),
-              Tab(text: '歌手'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CupertinoActivityIndicator())
-                : TabBarView(
-                    controller: _tabController,
-                    physics: const BouncingScrollPhysics(),
-                    children: [
-                      _buildSongList(),
-                      _buildPlaylistList(),
-                      _buildAlbumList(),
-                      _buildArtistList(),
-                    ],
-                  ),
-          ),
-        ],
-      ),
+        ),
+        const BatchActionBar(),
+      ],
     );
   }
 
   Widget _buildSongList() {
     if (_songResults.isEmpty) return _buildEmptyState();
+
+    final selectionProvider = context.watch<SelectionProvider>();
+
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       itemCount: _songResults.length,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
+        final song = _songResults[index];
         return SongCard(
-          song: _songResults[index],
+          song: song,
           playlist: _songResults,
           showMore: true,
+          isSelectionMode: selectionProvider.isSelectionMode,
+          isSelected: selectionProvider.isSelected(song.hash),
+          onSelectionChanged: (selected) {
+            selectionProvider.toggleSelection(song.hash);
+          },
         );
       },
     );
@@ -347,6 +414,66 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHotSearches() {
+    if (_isLoadingHot) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    if (_hotSearches.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: [
+        Text(
+          '热门搜索',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _hotSearches.map((keyword) {
+            return GestureDetector(
+              onTap: () {
+                _searchController.text = keyword;
+                _onSearch();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white.withAlpha(8)
+                      : Colors.black.withAlpha(5),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white.withAlpha(10)
+                        : Colors.black.withAlpha(8),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  keyword,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }

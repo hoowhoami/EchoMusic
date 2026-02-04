@@ -11,6 +11,9 @@ class SongCard extends StatelessWidget {
   final bool showCover;
   final double coverSize;
   final bool showMore;
+  final bool isSelected;
+  final bool isSelectionMode;
+  final ValueChanged<bool>? onSelectionChanged;
 
   const SongCard({
     super.key,
@@ -19,6 +22,9 @@ class SongCard extends StatelessWidget {
     this.showCover = true,
     this.coverSize = 52,
     this.showMore = false,
+    this.isSelected = false,
+    this.isSelectionMode = false,
+    this.onSelectionChanged,
   });
 
   @override
@@ -32,16 +38,44 @@ class SongCard extends StatelessWidget {
 
     return InkWell(
       onTap: () {
-        context.read<AudioProvider>().playSong(song, playlist: playlist);
+        if (isSelectionMode) {
+          onSelectionChanged?.call(!isSelected);
+        } else {
+          context.read<AudioProvider>().playSong(song, playlist: playlist);
+        }
+      },
+      onLongPress: () {
+        onSelectionChanged?.call(!isSelected);
       },
       borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            if (showCover)
-              _buildCover(context, isCurrent, isPlaying, primaryColor),
-            const SizedBox(width: 16),
+      child: Container(
+        decoration: isSelectionMode && isSelected
+            ? BoxDecoration(
+                color: primaryColor.withAlpha(isDark ? 20 : 10),
+                borderRadius: BorderRadius.circular(16),
+              )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              if (isSelectionMode)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Checkbox(
+                    value: isSelected,
+                    onChanged: (value) => onSelectionChanged?.call(value ?? false),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    side: BorderSide(
+                      color: isDark ? Colors.white24 : Colors.black26,
+                      width: 1.5,
+                    ),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              if (showCover)
+                _buildCover(context, isCurrent, isPlaying, primaryColor),
+              const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,16 +89,22 @@ class SongCard extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isCurrent ? primaryColor : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A)),
+                            color: song.isUnavailable
+                                ? (isDark ? Colors.white24 : Colors.black26)
+                                : (isCurrent ? primaryColor : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A))),
                             fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
                             fontSize: 15,
                             letterSpacing: -0.2,
                           ),
                         ),
                       ),
-                      if (song.isVip)
+                      if (song.isUnavailable)
+                        _buildTag(context, '不可用', const Color(0xFF9CA3AF))
+                      else if (song.isPaid)
+                        _buildTag(context, '付费', const Color(0xFF8B5CF6))
+                      else if (song.isVip)
                         _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
-                      if (song.qualityTag.isNotEmpty)
+                      if (song.qualityTag.isNotEmpty && !song.isUnavailable)
                         _buildTag(context, song.qualityTag, const Color(0xFF06B6D4)),
                     ],
                   ),
@@ -119,6 +159,7 @@ class SongCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

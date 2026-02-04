@@ -41,6 +41,8 @@ class MusicApi {
           options.headers['Authorization'] = authParts.join(';');
         }
 
+        options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
+
         debugPrint('--> ${options.method} ${options.uri}');
         debugPrint('Headers: ${options.headers}');
         debugPrint('Params: ${options.queryParameters}');
@@ -105,11 +107,13 @@ class MusicApi {
     }
   }
 
-  static Future<String?> getSongUrl(String hash) async {
+  static Future<String?> getSongUrl(String hash, {String quality = ''}) async {
     try {
-      final response = await _dio.get('/song/url', queryParameters: {
-        'hash': hash,
-      });
+      final params = <String, dynamic>{'hash': hash};
+      if (quality.isNotEmpty) {
+        params['quality'] = quality;
+      }
+      final response = await _dio.get('/song/url', queryParameters: params);
       if (response.data['status'] == 1) {
         return response.data['data']['url'];
       }
@@ -329,9 +333,33 @@ class MusicApi {
   static Future<Map<String, dynamic>?> loginQrKey() async {
     try {
       final response = await _dio.get('/login/qr/key');
-      if (response.data['status'] == 1) return response.data['data'];
+      debugPrint('loginQrKey response: ${response.data}');
+
+      // 检查响应格式
+      if (response.data != null && response.data['status'] == 1 && response.data['data'] != null) {
+        final data = response.data['data'];
+
+        // 实际API返回格式：{qrcode: "xxx", qrcode_img: "data:image/png;base64,..."}
+        // 转换为期望格式：{key: "xxx", qrcode_url: "xxx"}
+        if (data['qrcode'] != null) {
+          return {
+            'key': data['qrcode'],
+            'qrcode_url': data['qrcode_img'], // 直接使用 base64 图片
+          };
+        }
+
+        // 标准格式：{key: xxx, qrcode_url: xxx}
+        if (data['key'] != null) {
+          return data;
+        }
+
+        return data;
+      }
+
+      debugPrint('loginQrKey: 无法解析响应数据');
       return null;
     } catch (e) {
+      debugPrint('loginQrKey error: $e');
       return null;
     }
   }
@@ -339,9 +367,33 @@ class MusicApi {
   static Future<Map<String, dynamic>?> loginQrCreate(String key) async {
     try {
       final response = await _dio.get('/login/qr/create', queryParameters: {'key': key, 'qrimg': 'true'});
-      if (response.data['status'] == 1) return response.data['data'];
+      debugPrint('loginQrCreate response: ${response.data}');
+
+      if (response.data != null) {
+        // 格式1: {code: 200, data: {url: "xxx", base64: "xxx"}}
+        if (response.data['code'] == 200 && response.data['data'] != null) {
+          final data = response.data['data'];
+          if (data['base64'] != null || data['url'] != null) {
+            return {
+              'qrcode_url': data['base64'] ?? data['url'],
+            };
+          }
+        }
+
+        // 格式2: {status: 1, data: {qrcode_url: xxx}}
+        if (response.data['status'] == 1 && response.data['data'] != null) {
+          return response.data['data'];
+        }
+
+        // 格式3: 直接返回 {qrcode_url: xxx}
+        if (response.data['qrcode_url'] != null) {
+          return response.data;
+        }
+      }
+      debugPrint('loginQrCreate: 无法解析响应数据');
       return null;
     } catch (e) {
+      debugPrint('loginQrCreate error: $e');
       return null;
     }
   }
@@ -446,12 +498,21 @@ class MusicApi {
       };
       if (listCreateUserid != null) params['list_create_userid'] = listCreateUserid;
       if (listCreateListid != null) params['list_create_listid'] = listCreateListid;
-      
+
       final response = await _dio.get('/playlist/add', queryParameters: params);
       return response.data['status'] == 1;
     } catch (e) {
       return false;
     }
+  }
+
+  static Future<bool> copyPlaylist(int playlistId, String name, {bool isPrivate = false}) async {
+    return addPlaylist(
+      name,
+      isPri: isPrivate ? 1 : 0,
+      type: 8, // Type 8 indicates copied/imported playlist
+      listCreateListid: playlistId,
+    );
   }
 
   static Future<bool> deletePlaylist(int listid) async {
@@ -616,6 +677,19 @@ class MusicApi {
       if (response.data['status'] == 1) {
         List data = response.data['data'] ?? [];
         return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getSongClimaxRaw(String hash) async {
+    try {
+      final response = await _dio.get('/song/climax', queryParameters: {'hash': hash});
+      if (response.data['status'] == 1) {
+        List data = response.data['data'] ?? [];
+        return data.cast<Map<String, dynamic>>();
       }
       return [];
     } catch (e) {

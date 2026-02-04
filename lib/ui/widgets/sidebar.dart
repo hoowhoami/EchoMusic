@@ -8,16 +8,16 @@ import '../../models/playlist.dart';
 import 'cover_image.dart';
 import 'dart:io';
 
-import 'package:bitsdojo_window/bitsdojo_window.dart';
-
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
+  final void Function(Widget)? onPushRoute;
 
   const Sidebar({
     super.key,
     required this.selectedIndex,
     required this.onDestinationSelected,
+    this.onPushRoute,
   });
 
   @override
@@ -28,131 +28,121 @@ class Sidebar extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final accentColor = theme.colorScheme.primary;
 
-    return Column(
-      children: [
-        // Window Control & Drag Area
-        SizedBox(
-          height: 48,
-          child: MoveWindow(),
-        ),
-        
-        // User Branding / Profile
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: InkWell(
-            onTap: () {
-              if (!userProvider.isAuthenticated) {
-                Navigator.of(context).push(
-                  CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                );
-              } else {
-                onDestinationSelected(6);
-              }
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
-                border: Border.all(
-                  color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
-                  width: 1,
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 12),
+
+          // User Branding / Profile
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: InkWell(
+              onTap: () {
+                if (!userProvider.isAuthenticated) {
+                  Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                } else {
+                  onDestinationSelected(6);
+                }
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
+                  border: Border.all(
+                    color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: accentColor.withAlpha(40),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: user?.pic != null
+                          ? CoverImage(
+                              url: user!.pic!,
+                              width: 40,
+                              height: 40,
+                              borderRadius: 0,
+                              showShadow: false,
+                              size: 100,
+                            )
+                          : Container(
+                              color: accentColor.withAlpha(20),
+                              child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 20),
+                            ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            user?.nickname ?? '未登录',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            userProvider.isAuthenticated ? '账号中心' : '登录发现更多',
+                            style: TextStyle(
+                              color: isDark ? Colors.white38 : Colors.black38,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: accentColor.withAlpha(40),
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: user?.pic != null 
-                        ? CoverImage(
-                            url: user!.pic!,
-                            width: 40,
-                            height: 40,
-                            borderRadius: 0,
-                            showShadow: false,
-                            size: 100,
-                          )
-                        : Container(
-                            color: accentColor.withAlpha(20),
-                            child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 20),
-                          ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          user?.nickname ?? '未登录',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                            letterSpacing: -0.2,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          userProvider.isAuthenticated ? '账号中心' : '登录发现更多',
-                          style: TextStyle(
-                            color: isDark ? Colors.white38 : Colors.black38,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
-        ),
 
-        const SizedBox(height: 12),
-        
-        Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildGroupTitle(context, '发现'),
-                _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
-                _buildNavItem(context, 1, CupertinoIcons.compass_fill, '发现音乐'),
-                _buildNavItem(context, 2, CupertinoIcons.search, '快速搜索'),
-                
-                const SizedBox(height: 32),
-                _buildGroupTitle(context, '库'),
-                _buildNavItem(context, 3, CupertinoIcons.time_solid, '播放历史'),
-                _buildNavItem(context, 4, CupertinoIcons.cloud_upload_fill, '我的云盘'),
-                
-                const SizedBox(height: 32),
-                _buildPlaylistSection(context, userProvider, isDark),
-                
-                const SizedBox(height: 32),
-                _buildNavItem(context, 5, CupertinoIcons.slider_horizontal_3, '应用设置'),
-              ],
-            ),
-          ),
-        ),
-      ],
+          const SizedBox(height: 12),
+
+          _buildGroupTitle(context, '发现'),
+          _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
+          _buildNavItem(context, 1, CupertinoIcons.compass_fill, '发现音乐'),
+          _buildNavItem(context, 2, CupertinoIcons.search, '快速搜索'),
+
+          const SizedBox(height: 32),
+          _buildGroupTitle(context, '库'),
+          _buildNavItem(context, 3, CupertinoIcons.time_solid, '播放历史'),
+          _buildNavItem(context, 4, CupertinoIcons.cloud_upload_fill, '我的云盘'),
+
+          const SizedBox(height: 32),
+          _buildPlaylistSection(context, userProvider, isDark),
+
+          const SizedBox(height: 32),
+          _buildNavItem(context, 5, CupertinoIcons.slider_horizontal_3, '应用设置'),
+        ],
+      ),
     );
   }
 
@@ -209,10 +199,14 @@ class Sidebar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
-          );
+          if (onPushRoute != null) {
+            onPushRoute!(PlaylistDetailView(playlist: playlist));
+          } else {
+            Navigator.push(
+              context,
+              CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
+            );
+          }
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
