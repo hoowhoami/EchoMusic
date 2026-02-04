@@ -47,6 +47,8 @@ dependencies:
   flutter_spinkit: ^5.2.1
   google_fonts: ^6.2.1
   bitsdojo_window: ^0.1.6
+  qr_flutter: ^4.1.0
+  path: ^1.8.3
 
 dev_dependencies:
   flutter_test:

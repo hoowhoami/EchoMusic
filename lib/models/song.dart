@@ -8,6 +8,9 @@ class Song {
   final String cover;
   final String? mvHash;
   final int mixSongId;
+  final int? privilege;
+  final List<Map<String, dynamic>>? relateGoods;
+  final String? source;
 
   Song({
     required this.hash,
@@ -19,6 +22,9 @@ class Song {
     required this.cover,
     this.mvHash,
     required this.mixSongId,
+    this.privilege,
+    this.relateGoods,
+    this.source,
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -30,6 +36,9 @@ class Song {
     // replace {size} in cover url if needed
     cover = cover.replaceAll('{size}', '400');
 
+    var relateGoodsList = json['relate_goods'] as List?;
+    List<Map<String, dynamic>>? relateGoods = relateGoodsList?.cast<Map<String, dynamic>>();
+
     return Song(
       hash: json['hash'] ?? '',
       name: json['name'] ?? json['songname'] ?? '',
@@ -40,10 +49,22 @@ class Song {
       cover: cover,
       mvHash: json['mvhash'],
       mixSongId: json['mixsongid'] ?? 0,
+      privilege: json['privilege'],
+      relateGoods: relateGoods,
+      source: json['source'],
     );
   }
 
   String get singerName => singers.map((s) => s.name).join(', ');
+  
+  bool get isVip => privilege == 10;
+  
+  String get qualityTag {
+    if (relateGoods == null) return '';
+    if (relateGoods!.length > 2) return 'SQ';
+    if (relateGoods!.length > 1) return 'HQ';
+    return '';
+  }
 }
 
 class SingerInfo {

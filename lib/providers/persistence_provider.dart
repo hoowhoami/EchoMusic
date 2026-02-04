@@ -9,18 +9,35 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyVolume = 'volume';
   static const String _keyDevice = 'device_info';
   static const String _keyUserInfo = 'user_info';
+  static const String _keySettings = 'app_settings';
 
   List<Song> _favorites = [];
   List<Song> _history = [];
   double _volume = 1.0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
+  Map<String, dynamic> _settings = {
+    'theme': 'auto',
+    'volumeFade': true,
+    'volumeFadeTime': 1000,
+    'autoNext': true,
+    'autoNextTime': 3000,
+    'showPlaylistCount': true,
+    'addSongsToPlaylist': true,
+    'replacePlaylist': false,
+    'preventSleep': true,
+    'compatibilityMode': true,
+    'backupQuality': '标准',
+    'autoSign': false,
+    'autoReceiveVip': false,
+  };
 
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
   double get volume => _volume;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
+  Map<String, dynamic> get settings => _settings;
 
   PersistenceProvider() {
     _loadData();
@@ -28,6 +45,12 @@ class PersistenceProvider with ChangeNotifier {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Load settings
+    final settingsJson = prefs.getString(_keySettings);
+    if (settingsJson != null) {
+      _settings = {..._settings, ...jsonDecode(settingsJson)};
+    }
     
     // Load favorites
     final favsJson = prefs.getStringList(_keyFavorites) ?? [];
@@ -109,6 +132,13 @@ class PersistenceProvider with ChangeNotifier {
     _volume = volume;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_keyVolume, volume);
+  }
+
+  Future<void> updateSetting(String key, dynamic value) async {
+    _settings[key] = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keySettings, jsonEncode(_settings));
+    notifyListeners();
   }
 
   Map<String, dynamic> _songToMap(Song song) {

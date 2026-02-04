@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'providers/audio_provider.dart';
 import 'providers/lyric_provider.dart';
 import 'providers/persistence_provider.dart';
+import 'providers/user_provider.dart';
+import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'utils/server_orchestrator.dart';
 
@@ -33,6 +33,12 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PersistenceProvider()),
+        ChangeNotifierProxyProvider<PersistenceProvider, UserProvider>(
+          create: (_) => UserProvider(),
+          update: (context, persistence, user) {
+            return user!..setPersistenceProvider(persistence);
+          },
+        ),
         ChangeNotifierProvider(create: (_) => LyricProvider()),
         ChangeNotifierProxyProvider2<PersistenceProvider, LyricProvider, AudioProvider>(
           create: (_) => AudioProvider(),
@@ -46,14 +52,6 @@ void main() async {
       child: const WindowHandler(child: MyApp()),
     ),
   );
-
-  doWhenWindowReady(() {
-    final win = appWindow;
-    win.minSize = const Size(800, 600);
-    win.size = const Size(1000, 700);
-    win.alignment = Alignment.center;
-    win.show();
-  });
 }
 
 class WindowHandler extends StatefulWidget {
@@ -97,25 +95,24 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final persistence = context.watch<PersistenceProvider>();
+    final themeMode = _getThemeMode(persistence.settings['theme']);
+
     return MaterialApp(
       title: 'EchoMusic',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF050505),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.cyanAccent,
-          brightness: Brightness.dark,
-          primary: Colors.cyanAccent,
-          surface: const Color(0xFF121212),
-          surfaceVariant: const Color(0xFF1E1E1E),
-        ),
-        textTheme: GoogleFonts.plusJakartaSansTextTheme(
-          ThemeData.dark().textTheme,
-        ),
-      ),
-      home: const LoadingScreen(), // Start with LoadingScreen
+      themeMode: themeMode,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      home: const LoadingScreen(),
     );
+  }
+
+  ThemeMode _getThemeMode(String? theme) {
+    switch (theme) {
+      case 'light': return ThemeMode.light;
+      case 'dark': return ThemeMode.dark;
+      default: return ThemeMode.system;
+    }
   }
 }

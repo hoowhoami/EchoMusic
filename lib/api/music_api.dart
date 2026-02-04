@@ -74,13 +74,13 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> search(String keywords, {int page = 1, int pagesize = 30}) async {
+  static Future<List<Song>> search(String keywords, {int page = 1, int pagesize = 30, String type = 'song'}) async {
     try {
       final response = await _dio.get('/search', queryParameters: {
         'keywords': keywords,
         'page': page,
         'pagesize': pagesize,
-        'type': 'song',
+        'type': type,
       });
       if (response.data['status'] == 1) {
         List data = response.data['data']['lists'] ?? [];
@@ -89,6 +89,20 @@ class MusicApi {
       return [];
     } catch (e) {
       return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSearchResult(String keywords, {String type = 'song', int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/search', queryParameters: {
+        'keywords': keywords,
+        'page': page,
+        'pagesize': pagesize,
+        'type': type,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
     }
   }
 
@@ -202,6 +216,422 @@ class MusicApi {
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  // --- Artist ---
+  static Future<Map<String, dynamic>?> getSingerDetail(int id) async {
+    try {
+      final response = await _dio.get('/artist/detail', queryParameters: {'id': id});
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<Song>> getSingerSongs(int id, {int page = 1, int pagesize = 30, String sort = 'hot'}) async {
+    try {
+      final response = await _dio.get('/artist/audios', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'sort': sort,
+      });
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['info'] ?? [];
+        return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<bool> followSinger(int id) async {
+    try {
+      final response = await _dio.get('/artist/follow', queryParameters: {'id': id});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> unfollowSinger(int id) async {
+    try {
+      final response = await _dio.get('/artist/unfollow', queryParameters: {'id': id});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // --- Album ---
+  static Future<Map<String, dynamic>?> getAlbumDetail(int id) async {
+    try {
+      final response = await _dio.get('/album/detail', queryParameters: {'id': id});
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/album/songs', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['info'] ?? [];
+        return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getAlbumTop() async {
+    try {
+      final response = await _dio.get('/top/album');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['info'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // --- User / Auth ---
+  static Future<bool> captchaSent(String mobile) async {
+    try {
+      final response = await _dio.get('/captcha/sent', queryParameters: {'mobile': mobile});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> loginCellphone(String mobile, String code) async {
+    try {
+      final response = await _dio.get('/login/cellphone', queryParameters: {'mobile': mobile, 'code': code});
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> loginQrKey() async {
+    try {
+      final response = await _dio.get('/login/qr/key');
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> loginQrCreate(String key) async {
+    try {
+      final response = await _dio.get('/login/qr/create', queryParameters: {'key': key, 'qrimg': 'true'});
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> loginQrCheck(String key) async {
+    try {
+      final response = await _dio.get('/login/qr/check', queryParameters: {'key': key});
+      return response.data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> userDetail() async {
+    try {
+      final response = await _dio.get('/user/detail');
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> userVipDetail() async {
+    try {
+      final response = await _dio.get('/user/vip/detail');
+      if (response.data['status'] == 1) return response.data['data'];
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getUserFollow() async {
+    try {
+      final response = await _dio.get('/user/follow');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['lists'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Song>> getUserPlayHistory({int? bp}) async {
+    try {
+      final response = await _dio.get('/user/history', queryParameters: bp != null ? {'bp': bp} : {});
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['list'] ?? [];
+        return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<bool> uploadPlayHistory(int mixsongid) async {
+    try {
+      final response = await _dio.get('/playhistory/upload', queryParameters: {'mxid': mixsongid});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<List<Song>> getUserCloud({int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/user/cloud', queryParameters: {'page': page, 'pagesize': pagesize});
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['list'] ?? [];
+        return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // --- Playlist ---
+  static Future<List<Map<String, dynamic>>> getUserPlaylists({int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/user/playlist', queryParameters: {'page': page, 'pagesize': pagesize});
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['info'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? listCreateUserid, int? listCreateListid}) async {
+    try {
+      final params = {
+        'name': name,
+        'is_pri': isPri,
+        'type': type,
+      };
+      if (listCreateUserid != null) params['list_create_userid'] = listCreateUserid;
+      if (listCreateListid != null) params['list_create_listid'] = listCreateListid;
+      
+      final response = await _dio.get('/playlist/add', queryParameters: params);
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> deletePlaylist(int listid) async {
+    try {
+      final response = await _dio.get('/playlist/del', queryParameters: {'listid': listid});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> addPlaylistTrack(int listid, String data) async {
+    try {
+      final response = await _dio.get('/playlist/tracks/add', queryParameters: {'listid': listid, 'data': data});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> deletePlaylistTrack(int listid, String fileids) async {
+    try {
+      final response = await _dio.get('/playlist/tracks/del', queryParameters: {'listid': listid, 'fileids': fileids});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPlaylistCategory() async {
+    try {
+      final response = await _dio.get('/playlist/tags');
+      if (response.data['status'] == 1) {
+        List data = response.data['data'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Playlist>> getPlaylistByCategory(String categoryId, {int withsong = 0, int withtag = 1}) async {
+    try {
+      final response = await _dio.get('/top/playlist', queryParameters: {
+        'category_id': categoryId,
+        'withsong': withsong,
+        'withtag': withtag,
+      });
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['list'] ?? [];
+        return data.map((json) => Playlist.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // --- Search Expanded ---
+  static Future<String> getSearchDefault() async {
+    try {
+      final response = await _dio.get('/search/default');
+      if (response.data['status'] == 1) return response.data['data']['keyword'] ?? '';
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  static Future<List<String>> getSearchHot() async {
+    try {
+      final response = await _dio.get('/search/hot');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['info'] ?? [];
+        return data.map((e) => e['keyword'].toString()).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSearchSuggest(String keywords) async {
+    try {
+      final response = await _dio.get('/search/suggest', queryParameters: {'keywords': keywords});
+      if (response.data['status'] == 1) return response.data['data'] ?? {};
+      return {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<List<Song>> getEverydayRecommend() async {
+    try {
+      final response = await _dio.get('/everyday/recommend');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['song_list'] ?? [];
+        return data.map((json) {
+          return Song.fromJson({
+            ...json,
+            'songname': json['filename'] ?? json['songname'],
+            'timelen': (json['time_length'] ?? 0) * 1000, // legacy uses seconds?
+          });
+        }).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getTopIP() async {
+    try {
+      final response = await _dio.get('/top/ip');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['list'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getIPData(int id, {String type = '', int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/ip', queryParameters: {
+        'id': id,
+        'type': type,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      if (response.data['status'] == 1) {
+        return (response.data['data']['list'] as List).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getTopPlaylistByIP(int id, {int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/ip/playlist', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      if (response.data['status'] == 1) {
+        return (response.data['data']['list'] as List).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Song>> getSongClimax(String hash) async {
+    try {
+      final response = await _dio.get('/song/climax', queryParameters: {'hash': hash});
+      if (response.data['status'] == 1) {
+        List data = response.data['data'] ?? [];
+        return data.map((json) => Song.fromJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // --- Song Expanded ---
+  static Future<Map<String, dynamic>> getSongPrivilege(String hash) async {
+    try {
+      final response = await _dio.get('/privilege/lite', queryParameters: {'hash': hash});
+      if (response.data['status'] == 1) return response.data['data'] ?? {};
+      return {};
+    } catch (e) {
+      return {};
     }
   }
 }

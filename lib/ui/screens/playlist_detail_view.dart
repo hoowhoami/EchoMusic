@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
-import 'package:provider/provider.dart';
-import '../../providers/audio_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/song_card.dart';
 
 class PlaylistDetailView extends StatefulWidget {
   final Playlist playlist;
@@ -25,13 +25,15 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
             backgroundColor: Colors.transparent,
-            expandedHeight: 300,
+            expandedHeight: 320,
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 children: [
@@ -48,46 +50,71 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
+                          Theme.of(context).scaffoldBackgroundColor.withOpacity(0.4),
                           Theme.of(context).scaffoldBackgroundColor,
                         ],
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(20.0),
+                    padding: const EdgeInsets.all(40.0),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CachedNetworkImage(
-                            imageUrl: widget.playlist.pic,
-                            width: 200,
-                            height: 200,
-                            fit: BoxFit.cover,
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withAlpha(50),
+                                blurRadius: 20,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: CachedNetworkImage(
+                              imageUrl: widget.playlist.pic,
+                              width: 180,
+                              height: 180,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 24),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              const Text('歌单', style: TextStyle(color: Colors.white70)),
                               Text(
-                                widget.playlist.name,
-                                style: const TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                '歌单',
+                                style: TextStyle(
+                                  color: isDark ? Colors.white54 : Colors.black54,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 1.2,
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              Text(
+                                widget.playlist.name,
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.white : Colors.black,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
                               Text(
                                 widget.playlist.intro,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: Colors.white.withOpacity(0.6)),
+                                style: TextStyle(
+                                  color: isDark ? Colors.white70 : Colors.black.withOpacity(0.7),
+                                  fontSize: 14,
+                                ),
                               ),
                             ],
                           ),
@@ -106,7 +133,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                 return const SliverToBoxAdapter(
                   child: Center(child: Padding(
                     padding: EdgeInsets.all(40.0),
-                    child: CircularProgressIndicator(),
+                    child: CupertinoActivityIndicator(),
                   )),
                 );
               }
@@ -114,19 +141,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               return SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final song = songs[index];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                      leading: Text('${index + 1}', style: const TextStyle(color: Colors.white30)),
-                      title: Text(song.name, style: const TextStyle(color: Colors.white)),
-                      subtitle: Text(song.singerName, style: const TextStyle(color: Colors.white54)),
-                      trailing: Text(
-                        '${(song.duration ~/ 60).toString().padLeft(2, '0')}:${(song.duration % 60).toString().padLeft(2, '0')}',
-                        style: const TextStyle(color: Colors.white30),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: SongCard(
+                        song: songs[index],
+                        playlist: songs,
+                        showMore: true,
                       ),
-                      onTap: () {
-                        context.read<AudioProvider>().playSong(song, playlist: songs);
-                      },
                     );
                   },
                   childCount: songs.length,
@@ -134,6 +155,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               );
             },
           ),
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
     );

@@ -6,13 +6,22 @@ class CustomTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return WindowTitleBarBox(
       child: Container(
+        height: 52,
         color: Colors.transparent,
         child: Row(
           children: [
+            // Left area: Reserved for traffic lights on macOS or padding
+            const SizedBox(width: 80),
+            
+            // Middle Spacer / Move Window
             Expanded(child: MoveWindow()),
-            const WindowButtons(),
+            
+            // Right area: Native-looking window buttons
+            WindowButtons(isDark: isDark),
           ],
         ),
       ),
@@ -20,24 +29,25 @@ class CustomTitleBar extends StatelessWidget {
   }
 }
 
-final buttonColors = WindowButtonColors(
-    iconNormal: const Color(0xFF805306),
-    mouseOver: const Color(0xFFF6A00C),
-    mouseDown: const Color(0xFF805306),
-    iconMouseOver: const Color(0xFF805306),
-    iconMouseDown: const Color(0xFFFFD500));
-
-final closeButtonColors = WindowButtonColors(
-    mouseOver: const Color(0xFFD32F2F),
-    mouseDown: const Color(0xFFB71C1C),
-    iconNormal: const Color(0xFF805306),
-    iconMouseOver: Colors.white);
-
 class WindowButtons extends StatelessWidget {
-  const WindowButtons({super.key});
+  final bool isDark;
+  const WindowButtons({super.key, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
+    final buttonColors = WindowButtonColors(
+        iconNormal: isDark ? Colors.white54 : Colors.black54,
+        mouseOver: isDark ? Colors.white10 : Colors.black12,
+        mouseDown: isDark ? Colors.white24 : Colors.black26,
+        iconMouseOver: isDark ? Colors.white : Colors.black,
+        iconMouseDown: isDark ? Colors.white : Colors.black);
+
+    final closeButtonColors = WindowButtonColors(
+        mouseOver: const Color(0xFFD32F2F),
+        mouseDown: const Color(0xFFB71C1C),
+        iconNormal: isDark ? Colors.white54 : Colors.black54,
+        iconMouseOver: Colors.white);
+
     return Row(
       children: [
         MinimizeWindowButton(colors: buttonColors),
