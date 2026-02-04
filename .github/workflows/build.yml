@@ -1,0 +1,80 @@
+name: Build EchoMusic Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            platform: macos
+            server_bin: app_macos
+          - os: windows-latest
+            platform: windows
+            server_bin: app_win.exe
+          - os: ubuntu-latest
+            platform: linux
+            server_bin: app_linux
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node_version: '18'
+
+      - name: Install Server Dependencies and Build Server Executable
+        run: |
+          cd server
+          npm install
+          npx pkg . -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-x64 -o bin/${{ matrix.server_bin }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Flutter Desktop
+        run: flutter build ${{ matrix.platform }} --release
+
+      - name: Bundle Server (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server
+          cp server/bin/app_macos build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
+
+      - name: Bundle Server (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          mkdir -p build/windows/runner/Release/server
+          cp server/bin/app_win.exe build/windows/runner/Release/server/
+
+      - name: Bundle Server (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          mkdir -p build/linux/x64/release/bundle/server
+          cp server/bin/app_linux build/linux/x64/release/bundle/server/
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoMusic-${{ matrix.platform }}
+          path: |
+            build/macos/Build/Products/Release/EchoMusic.app
+            build/windows/runner/Release
+            build/linux/x64/release/bundle
