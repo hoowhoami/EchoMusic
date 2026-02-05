@@ -36,7 +36,7 @@ class _ProfileViewState extends State<ProfileView> {
     final gender = detail['gender'] == 1 ? '男' : (detail['gender'] == 0 ? '女' : '保密');
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: ScrollableContent(
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
         child: Column(

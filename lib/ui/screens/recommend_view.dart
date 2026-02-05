@@ -47,15 +47,15 @@ class _RecommendViewState extends State<RecommendView> {
         : _getGreeting();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: ScrollableContent(
-      child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-          // Greeting
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Greeting
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               Text(
                 greeting,
                 style: theme.textTheme.titleLarge?.copyWith(

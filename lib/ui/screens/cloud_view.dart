@@ -41,7 +41,7 @@ class _CloudViewState extends State<CloudView> {
     }
 
     return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: Stack(
         children: [
           Padding(

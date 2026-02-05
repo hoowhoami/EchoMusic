@@ -24,23 +24,20 @@ class PlayerBar extends StatelessWidget {
       builder: (context, audioProvider, persistenceProvider, child) {
         final song = audioProvider.currentSong;
 
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: modernTheme.glassBlur!, sigmaY: modernTheme.glassBlur!),
-            child: Container(
-              height: 80,
-              decoration: BoxDecoration(
-                color: modernTheme.playerBarColor,
-                border: Border(
-                  top: BorderSide(
-                    color: modernTheme.dividerColor!.withAlpha(30),
-                    width: 0.5,
-                  ),
-                ),
+        return Container(
+          height: 80,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(
+              top: BorderSide(
+                color: theme.dividerColor.withAlpha(40),
+                width: 0.5,
               ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
+            ),
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
                   // 主内容区
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -79,8 +76,6 @@ class PlayerBar extends StatelessWidget {
                     ),
                 ],
               ),
-            ),
-          ),
         );
       },
     );

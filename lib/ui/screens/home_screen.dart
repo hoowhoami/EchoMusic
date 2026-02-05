@@ -128,142 +128,121 @@ class _HomeScreenState extends State<HomeScreen> {
     final modernTheme = theme.extension<AppModernTheme>()!;
 
     return Scaffold(
-      body: Stack(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: Column(
         children: [
-          // Background Gradient
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    theme.scaffoldBackgroundColor,
-                    theme.colorScheme.surface,
-                    theme.colorScheme.surfaceContainerHighest.withAlpha(100),
-                  ],
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Solid Sidebar
+                Container(
+                  width: 260,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border(
+                      right: BorderSide(
+                        color: theme.dividerColor.withAlpha(40), // More subtle border
+                        width: 0.5,
+                      ),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Window Control & Drag Area
+                      SizedBox(
+                        height: 48,
+                        child: MoveWindow(),
+                      ),
+                      // Scrollable Sidebar Content
+                      Expanded(
+                        child: Sidebar(
+                          selectedIndex: _selectedIndex,
+                          onDestinationSelected: _navigateTo,
+                          onPushRoute: _pushRoute,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+
+                // Main Content area
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Redesigned Top bar
+                      Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: theme.scaffoldBackgroundColor,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: theme.dividerColor.withAlpha(30), // Even lighter top border
+                              width: 0.5,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_left,
+                              onPressed: canGoBack ? _goBack : null,
+                              tooltip: '后退',
+                            ),
+                            const SizedBox(width: 8),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_right,
+                              onPressed: canGoForward ? _goForward : null,
+                              tooltip: '前进',
+                            ),
+                            const SizedBox(width: 8),
+                            _buildNavButton(
+                              icon: CupertinoIcons.refresh,
+                              onPressed: _refresh,
+                              tooltip: '刷新',
+                            ),
+                            Expanded(child: MoveWindow()),
+                            if (!Platform.isMacOS)
+                              const WindowButtons(),
+                          ],
+                        ),
+                      ),
+                      // Content View
+                      Expanded(
+                        child: Navigator(
+                          key: _navigatorKey,
+                          observers: [
+                            _NavigationObserver(() {
+                              if (mounted) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted) setState(() {});
+                                });
+                              }
+                            }),
+                          ],
+                          onGenerateRoute: (settings) {
+                            return PageRouteBuilder(
+                              pageBuilder: (context, animation, secondaryAnimation) {
+                                return IndexedStack(
+                                  index: _selectedIndex,
+                                  children: _views,
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
 
-          Column(
-            children: [
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Glass Sidebar (Extends to top, above player)
-                    ClipRect(
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: modernTheme.glassBlur!, sigmaY: modernTheme.glassBlur!),
-                        child: Container(
-                          width: 260,
-                          height: double.infinity,
-                          decoration: BoxDecoration(
-                            color: modernTheme.sidebarColor,
-                            border: Border(
-                              right: BorderSide(
-                                color: modernTheme.dividerColor!,
-                                width: 0.8,
-                              ),
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              // Window Control & Drag Area
-                              SizedBox(
-                                height: 48,
-                                child: MoveWindow(),
-                              ),
-                              // Scrollable Sidebar Content
-                              Expanded(
-                                child: Sidebar(
-                                  selectedIndex: _selectedIndex,
-                                  onDestinationSelected: _navigateTo,
-                                  onPushRoute: _pushRoute,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // Main Content area
-                    Expanded(
-                      child: Column(
-                        children: [
-                          // Top bar for dragging and title
-                          SizedBox(
-                            height: 48,
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 12),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.chevron_left,
-                                  onPressed: canGoBack ? _goBack : null,
-                                  tooltip: '后退',
-                                ),
-                                const SizedBox(width: 8),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.chevron_right,
-                                  onPressed: canGoForward ? _goForward : null,
-                                  tooltip: '前进',
-                                ),
-                                const SizedBox(width: 8),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.refresh,
-                                  onPressed: _refresh,
-                                  tooltip: '刷新',
-                                ),
-                                Expanded(child: MoveWindow()),
-                                if (!Platform.isMacOS)
-                                  const WindowButtons(),
-                              ],
-                            ),
-                          ),
-                          // Content View
-                          Expanded(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: theme.scaffoldBackgroundColor,
-                              ),
-                              child: Navigator(
-                                key: _navigatorKey,
-                                observers: [
-                                  _NavigationObserver(() {
-                                    if (mounted) {
-                                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                                        if (mounted) setState(() {});
-                                      });
-                                    }
-                                  }),
-                                ],
-                                onGenerateRoute: (settings) {
-                                  return PageRouteBuilder(
-                                    pageBuilder: (context, animation, secondaryAnimation) {
-                                      return IndexedStack(
-                                        index: _selectedIndex,
-                                        children: _views,
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Bottom Player Bar (Fixed at bottom)
-              const PlayerBar(),
-            ],
-          ),
+          // Bottom Player Bar
+          const PlayerBar(),
         ],
       ),
     );

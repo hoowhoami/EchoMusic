@@ -18,7 +18,7 @@ class HistoryView extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: Stack(
         children: [
           Padding(

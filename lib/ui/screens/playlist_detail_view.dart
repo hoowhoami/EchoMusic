@@ -30,23 +30,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      color: theme.scaffoldBackgroundColor, // Ensure full opacity
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              theme.scaffoldBackgroundColor,
-              theme.colorScheme.surface,
-              theme.colorScheme.surfaceContainerHighest.withAlpha(100),
-            ],
-          ),
-        ),
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: CustomScrollView(
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           SliverAppBar(
@@ -233,7 +219,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
           const SliverToBoxAdapter(child: SizedBox(height: 120)),
         ],
       ),
-    ),),);
+    );
   }
 
   String _formatNumber(int number) {
