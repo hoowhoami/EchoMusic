@@ -19,6 +19,9 @@ class AppTheme {
     return base.copyWith(
       primaryColor: primaryAccent,
       scaffoldBackgroundColor: lightBg,
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryAccent,
         brightness: Brightness.light,
@@ -86,8 +89,10 @@ class AppTheme {
       ),
       extensions: [
         AppModernTheme(
-          sidebarColor: const Color(0xFFFFFFFF).withAlpha(245),
-          playerBarColor: const Color(0xFFFFFFFF).withAlpha(250),
+          sidebarColor: const Color(0xFFFFFFFF).withAlpha(200),
+          playerBarColor: const Color(0xFFFFFFFF).withAlpha(180),
+          titleBarColor: const Color(0xFFFFFFFF).withAlpha(150),
+          batchBarColor: const Color(0xFF0071E3).withAlpha(40),
           dividerColor: const Color(0xFFE5E5EA),
           sidebarBorder: const Color(0xFFE5E5EA),
           glassBlur: 25.0,
@@ -102,6 +107,9 @@ class AppTheme {
     return base.copyWith(
       primaryColor: primaryAccent,
       scaffoldBackgroundColor: darkBg,
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryAccent,
         brightness: Brightness.dark,
@@ -154,8 +162,10 @@ class AppTheme {
       ),
       extensions: [
         AppModernTheme(
-          sidebarColor: const Color(0xFF0C0C0E).withAlpha(240),
-          playerBarColor: const Color(0xFF1C1C1E).withAlpha(245),
+          sidebarColor: const Color(0xFF0C0C0E).withAlpha(180),
+          playerBarColor: const Color(0xFF1C1C1E).withAlpha(160),
+          titleBarColor: const Color(0xFF000000).withAlpha(120),
+          batchBarColor: const Color(0xFF0071E3).withAlpha(60),
           dividerColor: const Color(0xFF38383A),
           sidebarBorder: const Color(0xFF2C2C2E),
           glassBlur: 25.0,
@@ -169,6 +179,8 @@ class AppTheme {
 class AppModernTheme extends ThemeExtension<AppModernTheme> {
   final Color? sidebarColor;
   final Color? playerBarColor;
+  final Color? titleBarColor;
+  final Color? batchBarColor;
   final Color? dividerColor;
   final Color? sidebarBorder;
   final double? glassBlur;
@@ -177,6 +189,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
   AppModernTheme({
     this.sidebarColor,
     this.playerBarColor,
+    this.titleBarColor,
+    this.batchBarColor,
     this.dividerColor,
     this.sidebarBorder,
     this.glassBlur,
@@ -187,6 +201,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
   ThemeExtension<AppModernTheme> copyWith({
     Color? sidebarColor,
     Color? playerBarColor,
+    Color? titleBarColor,
+    Color? batchBarColor,
     Color? dividerColor,
     Color? sidebarBorder,
     double? glassBlur,
@@ -195,6 +211,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     return AppModernTheme(
       sidebarColor: sidebarColor ?? this.sidebarColor,
       playerBarColor: playerBarColor ?? this.playerBarColor,
+      titleBarColor: titleBarColor ?? this.titleBarColor,
+      batchBarColor: batchBarColor ?? this.batchBarColor,
       dividerColor: dividerColor ?? this.dividerColor,
       sidebarBorder: sidebarBorder ?? this.sidebarBorder,
       glassBlur: glassBlur ?? this.glassBlur,
@@ -208,6 +226,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     return AppModernTheme(
       sidebarColor: Color.lerp(sidebarColor, other.sidebarColor, t),
       playerBarColor: Color.lerp(playerBarColor, other.playerBarColor, t),
+      titleBarColor: Color.lerp(titleBarColor, other.titleBarColor, t),
+      batchBarColor: Color.lerp(batchBarColor, other.batchBarColor, t),
       dividerColor: Color.lerp(dividerColor, other.dividerColor, t),
       sidebarBorder: Color.lerp(sidebarBorder, other.sidebarBorder, t),
       glassBlur: _lerpDouble(glassBlur, other.glassBlur, t),

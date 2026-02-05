@@ -131,7 +131,7 @@ class AudioProvider with ChangeNotifier {
         _player.setSpeed(_playbackRate);
         _player.play();
       } catch (e) {
-        print('Error playing song: $e');
+        debugPrint('Error playing song: $e');
       }
     }
   }

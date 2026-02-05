@@ -33,6 +33,8 @@ class _ProfileViewState extends State<ProfileView> {
     final tvip = busiVip.firstWhere((v) => v['product_type'] == 'tvip' && v['is_vip'] == 1, orElse: () => null);
     final svip = busiVip.firstWhere((v) => v['product_type'] == 'svip' && v['is_vip'] == 1, orElse: () => null);
 
+    final gender = detail['gender'] == 1 ? '男' : (detail['gender'] == 0 ? '女' : '保密');
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: ScrollableContent(
@@ -43,7 +45,7 @@ class _ProfileViewState extends State<ProfileView> {
             Row(
               children: [
                 Text(
-                  '个人资料',
+                  '个人中心',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
@@ -59,7 +61,7 @@ class _ProfileViewState extends State<ProfileView> {
                     icon: const Icon(CupertinoIcons.refresh, size: 20),
                     onPressed: () async {
                       setState(() => _isLoading = true);
-                      await userProvider.fetchUserDetails();
+                      await userProvider.fetchAllUserData();
                       setState(() => _isLoading = false);
                     },
                     color: theme.colorScheme.onSurfaceVariant,
@@ -73,15 +75,16 @@ class _ProfileViewState extends State<ProfileView> {
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: theme.colorScheme.onSurface.withAlpha(10),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: theme.colorScheme.outlineVariant),
               ),
               child: Row(
                 children: [
                   CircleAvatar(
-                    radius: 40,
+                    radius: 44,
+                    backgroundColor: theme.colorScheme.primary.withAlpha(20),
                     backgroundImage: user?.pic != null ? CachedNetworkImageProvider(user!.pic!) : null,
-                    child: user?.pic == null ? const Icon(CupertinoIcons.person_fill, size: 40) : null,
+                    child: user?.pic == null ? Icon(CupertinoIcons.person_fill, size: 40, color: theme.colorScheme.primary) : null,
                   ),
                   const SizedBox(width: 24),
                   Expanded(
@@ -92,28 +95,29 @@ class _ProfileViewState extends State<ProfileView> {
                           children: [
                             Text(
                               user?.nickname ?? '',
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 12),
                             if (tvip != null)
                               _buildVipTag('TVIP', Colors.green),
+                            const SizedBox(width: 4),
                             if (svip != null)
                               _buildVipTag('SVIP', Colors.orange),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Lv.${detail['p_grade'] ?? 0} • ${detail['follows'] ?? 0} 关注 • ${detail['fans'] ?? 0} 粉丝',
-                          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
+                          'Lv.${detail['p_grade'] ?? 0} • ${detail['follows'] ?? 0} 关注 • ${detail['fans'] ?? 0} 粉丝 • ${detail['nvisitors'] ?? 0} 访客',
+                          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w600),
                         ),
-                        if (detail['descri'] != null)
+                        if (detail['descri'] != null && detail['descri'].toString().isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              detail['descri'],
+                              '个性签名: ${detail['descri']}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontSize: 12),
+                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontSize: 12, fontWeight: FontWeight.w500),
                             ),
                           ),
                       ],
@@ -121,7 +125,7 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   CupertinoButton(
                     onPressed: () => _showLogoutDialog(context, userProvider),
-                    child: Text('退出登录', style: TextStyle(color: theme.colorScheme.error)),
+                    child: Text('退出登录', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -131,26 +135,144 @@ class _ProfileViewState extends State<ProfileView> {
             _buildSectionHeader('账号信息'),
             _buildInfoCard(theme, [
               _buildInfoItem(theme, '用户ID', user?.userid.toString() ?? ''),
+              _buildInfoItem(theme, '性别', gender),
               _buildInfoItem(theme, '用户乐龄', _formatLeLing(detail['rtime'])),
               _buildInfoItem(theme, '听歌时长', _formatDuration(detail['duration'])),
               _buildInfoItem(theme, 'IP属地', detail['loc'] ?? '未知'),
-              _buildInfoItem(theme, '城市', detail['city'] ?? '未知'),
+              _buildInfoItem(theme, '所在城市', detail['city'] ?? '未知'),
             ]),
 
             const SizedBox(height: 32),
-            _buildSectionHeader('会员特权'),
-            _buildInfoCard(theme, [
-              _buildVipInfoItem(theme, '畅听VIP', tvip, Colors.green, () {
-                // TODO: Claim TVIP
-              }),
-              _buildVipInfoItem(theme, '概念VIP', svip, Colors.orange, () {
-                // TODO: Claim SVIP
-              }),
-            ]),
+            _buildSectionHeader('每日权益领取'),
+            _buildVipWorkflow(context, userProvider),
 
             const SizedBox(height: 100),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildVipWorkflow(BuildContext context, UserProvider provider) {
+    return Column(
+      children: [
+        _buildVipStepCard(
+          context,
+          step: 1,
+          title: '领取畅听VIP',
+          subtitle: '解锁基础听歌权限，普通音质',
+          isCompleted: provider.isTvipClaimedToday,
+          buttonText: provider.isTvipClaimedToday ? '已领取' : '立即领取',
+          onTap: () async {
+            setState(() => _isLoading = true);
+            final success = await provider.claimTvip();
+            setState(() => _isLoading = false);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(success ? '领取成功' : '领取失败，请稍后再试')),
+              );
+            }
+          },
+          color: Colors.green,
+        ),
+        const SizedBox(height: 16),
+        _buildVipStepCard(
+          context,
+          step: 2,
+          title: '升级至概念VIP',
+          subtitle: '解锁顶级音质和音效特权',
+          isCompleted: provider.isSvipClaimedToday,
+          isEnabled: provider.isTvipClaimedToday,
+          buttonText: provider.isSvipClaimedToday ? '已升级' : '立即升级',
+          onTap: () async {
+            setState(() => _isLoading = true);
+            final success = await provider.upgradeSvip();
+            setState(() => _isLoading = false);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(success ? '升级成功' : '升级失败，请确认是否已领取畅听VIP')),
+              );
+            }
+          },
+          color: Colors.orange,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVipStepCard(BuildContext context, {
+    required int step,
+    required String title,
+    required String subtitle,
+    required bool isCompleted,
+    bool isEnabled = true,
+    required String buttonText,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final bool active = isEnabled && !isCompleted;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withAlpha(8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isCompleted ? color.withAlpha(100) : theme.colorScheme.outlineVariant,
+          width: isCompleted ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: (isCompleted ? color : Colors.grey).withAlpha(30),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Icon(
+                isCompleted ? CupertinoIcons.check_mark_circled : CupertinoIcons.circle,
+                color: isCompleted ? color : Colors.grey,
+                size: 28,
+              ),
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '步骤 $step: $title',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            color: isCompleted ? color.withAlpha(30) : (active ? color : Colors.grey.withAlpha(100)),
+            borderRadius: BorderRadius.circular(20),
+            onPressed: active ? onTap : null,
+            child: Text(
+              buttonText,
+              style: TextStyle(
+                color: isCompleted ? color : (active ? Colors.white : Colors.grey),
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -208,45 +330,9 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  Widget _buildVipInfoItem(ThemeData theme, String label, dynamic vip, Color color, VoidCallback onTap) {
-    final bool isActive = vip != null;
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                if (isActive)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text('${vip['vip_begin_time']} ~ ${vip['vip_end_time']}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
-                  )
-                else
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
-                    child: Text('未激活', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  ),
-              ],
-            ),
-          ),
-          CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: isActive ? color.withAlpha(40) : color,
-            borderRadius: BorderRadius.circular(20),
-            onPressed: isActive ? null : onTap,
-            child: Text(isActive ? '已激活' : '立即领取', style: TextStyle(color: isActive ? color : Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
   String _formatLeLing(dynamic rtime) {
     if (rtime == null) return '未知';
-    final DateTime start = DateTime.fromMillisecondsSinceEpoch(rtime * 1000);
+    final DateTime start = DateTime.fromMillisecondsSinceEpoch(int.tryParse(rtime.toString())! * 1000);
     final Duration diff = DateTime.now().difference(start);
     if (diff.inDays > 365) return '${(diff.inDays / 365).floor()}年';
     if (diff.inDays > 30) return '${(diff.inDays / 30).floor()}个月';
@@ -255,7 +341,7 @@ class _ProfileViewState extends State<ProfileView> {
 
   String _formatDuration(dynamic minutes) {
     if (minutes == null) return '0小时';
-    final int m = minutes as int;
+    final int m = int.tryParse(minutes.toString()) ?? 0;
     if (m > 60) return '${(m / 60).floor()}小时${m % 60}分钟';
     return '$m分钟';
   }
@@ -274,4 +360,3 @@ class _ProfileViewState extends State<ProfileView> {
     });
   }
 }
-

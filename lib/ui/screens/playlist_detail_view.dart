@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:ui';
+import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
+import '../../providers/audio_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/cover_image.dart';
 
@@ -28,9 +30,21 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.scaffoldBackgroundColor,
+            theme.colorScheme.surface,
+            theme.colorScheme.surfaceContainerHighest.withAlpha(100),
+          ],
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           SliverAppBar(
@@ -124,9 +138,15 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  _buildInfoChip(context, Icons.music_note_rounded, 'Kugou Music'),
-                                  const SizedBox(width: 12),
-                                  _buildInfoChip(context, Icons.favorite_rounded, 'Saved'),
+                                  _buildInfoChip(context, Icons.play_arrow_rounded, _formatNumber(widget.playlist.playCount)),
+                                  if (widget.playlist.heat != null) ...[
+                                    const SizedBox(width: 12),
+                                    _buildInfoChip(context, Icons.favorite_rounded, _formatNumber(widget.playlist.heat!)),
+                                  ],
+                                  if (widget.playlist.publishDate != null) ...[
+                                    const SizedBox(width: 12),
+                                    _buildInfoChip(context, Icons.calendar_today_rounded, widget.playlist.publishDate!),
+                                  ],
                                 ],
                               ),
                             ],
@@ -145,7 +165,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
               child: Row(
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () {},
+                    onPressed: () async {
+                      final songs = await _songsFuture;
+                      if (songs.isNotEmpty) {
+                        context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                      }
+                    },
                     icon: const Icon(CupertinoIcons.play_fill, size: 18),
                     label: const Text('播放全部'),
                     style: ElevatedButton.styleFrom(
@@ -193,6 +218,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                       return SongCard(
                         song: songs[index],
                         playlist: songs,
+                        parentPlaylist: widget.playlist,
                         showMore: true,
                       );
                     },
@@ -205,7 +231,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
           const SliverToBoxAdapter(child: SizedBox(height: 120)),
         ],
       ),
-    );
+    ),);
+  }
+
+  String _formatNumber(int number) {
+    if (number < 10000) return number.toString();
+    return '${(number / 10000).toStringAsFixed(1)}万';
   }
 
   Widget _buildInfoChip(BuildContext context, IconData icon, String label) {

@@ -41,86 +41,84 @@ class _CloudViewState extends State<CloudView> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
+        backgroundColor: Colors.transparent,
+        body: Stack(
         children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        '音乐云盘',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.onSurface,
-                          letterSpacing: -0.6,
-                        ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '音乐云盘',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                        letterSpacing: -0.6,
                       ),
-                      const Spacer(),
-                      FutureBuilder<List<Song>>(
-                        future: _cloudSongsFuture,
-                        builder: (context, snapshot) {
-                          final songs = snapshot.data ?? [];
-                          if (songs.isEmpty || selectionProvider.isSelectionMode) {
-                            return const SizedBox.shrink();
-                          }
-                          return IconButton(
-                            icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                            onPressed: () {
-                              selectionProvider.setSongList(songs);
-                              selectionProvider.enterSelectionMode();
-                            },
-                            color: theme.colorScheme.onSurfaceVariant,
-                            tooltip: '批量选择',
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: FutureBuilder<List<Song>>(
+                    ),
+                    const Spacer(),
+                    FutureBuilder<List<Song>>(
                       future: _cloudSongsFuture,
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CupertinoActivityIndicator());
-                        }
                         final songs = snapshot.data ?? [];
-                        if (songs.isEmpty) {
-                          return Center(
-                            child: Text(
-                              '云盘暂无歌曲', 
-                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontWeight: FontWeight.w600),
-                            ),
-                          );
+                        if (songs.isEmpty || selectionProvider.isSelectionMode) {
+                          return const SizedBox.shrink();
                         }
-
-                        return ListView.builder(
-                          itemCount: songs.length,
-                          itemBuilder: (context, index) {
-                            final song = songs[index];
-                            return SongCard(
-                              song: song,
-                              playlist: songs,
-                              showMore: true,
-                              isSelectionMode: selectionProvider.isSelectionMode,
-                              isSelected: selectionProvider.isSelected(song.hash),
-                              onSelectionChanged: (selected) {
-                                selectionProvider.toggleSelection(song.hash);
-                              },
-                            );
+                        return IconButton(
+                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                          onPressed: () {
+                            selectionProvider.setSongList(songs);
+                            selectionProvider.enterSelectionMode();
                           },
+                          color: theme.colorScheme.onSurfaceVariant,
+                          tooltip: '批量选择',
                         );
                       },
                     ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Expanded(
+                  child: FutureBuilder<List<Song>>(
+                    future: _cloudSongsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CupertinoActivityIndicator());
+                      }
+                      final songs = snapshot.data ?? [];
+                      if (songs.isEmpty) {
+                        return Center(
+                          child: Text(
+                            '云盘暂无歌曲', 
+                            style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontWeight: FontWeight.w600),
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        itemCount: songs.length,
+                        itemBuilder: (context, index) {
+                          final song = songs[index];
+                          return SongCard(
+                            song: song,
+                            playlist: songs,
+                            showMore: true,
+                            isSelectionMode: selectionProvider.isSelectionMode,
+                            isSelected: selectionProvider.isSelected(song.hash),
+                            onSelectionChanged: (selected) {
+                              selectionProvider.toggleSelection(song.hash);
+                            },
+                          );
+                        },
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           const BatchActionBar(),

@@ -80,50 +80,48 @@ class _RankViewState extends State<RankView> {
     }
 
     return Scaffold(
-      backgroundColor: bgColor,
-      body: Column(
+        backgroundColor: Colors.transparent,
+        body: Stack(
         children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        '排行榜',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: theme.colorScheme.onSurface,
-                          letterSpacing: -0.5,
-                        ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '排行榜',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                        letterSpacing: -0.5,
                       ),
-                      const SizedBox(width: 16),
-                      if (_ranks.isNotEmpty)
-                        _buildRankSelector(context),
-                      const Spacer(),
-                      if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 20),
-                          onPressed: () {
-                            selectionProvider.setSongList(_rankSongs);
-                            selectionProvider.enterSelectionMode();
-                          },
-                          color: theme.colorScheme.onSurfaceVariant,
-                          tooltip: '批量选择',
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: _isLoadingSongs
-                        ? const Center(child: CupertinoActivityIndicator())
-                        : _buildSongGrid(context),
-                  ),
-                ],
-              ),
+                    ),
+                    const SizedBox(width: 16),
+                    if (_ranks.isNotEmpty)
+                      _buildRankSelector(context),
+                    const Spacer(),
+                    if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 20),
+                        onPressed: () {
+                          selectionProvider.setSongList(_rankSongs);
+                          selectionProvider.enterSelectionMode();
+                        },
+                        color: theme.colorScheme.onSurfaceVariant,
+                        tooltip: '批量选择',
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Expanded(
+                  child: _isLoadingSongs
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : _buildSongGrid(context),
+                ),
+              ],
             ),
           ),
           const BatchActionBar(),

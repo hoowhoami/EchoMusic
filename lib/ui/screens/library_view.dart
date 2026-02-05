@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
-import '../../models/song.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'artist_detail_view.dart';
 import 'login_screen.dart';

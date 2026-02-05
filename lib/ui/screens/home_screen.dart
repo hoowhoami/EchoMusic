@@ -69,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() {});
       return;
     }
-    
+
     if (_historyIndex > 0) {
       setState(() {
         _historyIndex--;
@@ -223,7 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           ),
-                          // Content View (scrollable via ScrollableContent in each view)
+                          // Content View
                           Expanded(
                             child: Container(
                               color: Colors.transparent,
@@ -241,12 +241,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onGenerateRoute: (settings) {
                                   return PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) {
-                                      return FadeTransition(
-                                        opacity: animation,
-                                        child: _views[_selectedIndex],
+                                      return AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 300),
+                                        child: KeyedSubtree(
+                                          key: ValueKey(_selectedIndex),
+                                          child: _views[_selectedIndex],
+                                        ),
                                       );
                                     },
-                                    transitionDuration: const Duration(milliseconds: 300),
                                   );
                                 },
                               ),

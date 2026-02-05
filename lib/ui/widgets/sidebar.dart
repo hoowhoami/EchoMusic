@@ -6,7 +6,6 @@ import '../screens/login_screen.dart';
 import '../screens/playlist_detail_view.dart';
 import '../../models/playlist.dart';
 import 'cover_image.dart';
-import 'dart:io';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;

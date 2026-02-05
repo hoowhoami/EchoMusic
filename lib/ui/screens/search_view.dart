@@ -265,13 +265,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final item = _playlistResults[index];
-        final playlist = Playlist.fromJson({
-          'specialid': item['specialid'],
-          'specialname': item['specialname'],
-          'img': item['img'],
-          'intro': item['intro'],
-          'song_count': item['song_count'],
-        });
+        final playlist = Playlist.fromJson(item);
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),

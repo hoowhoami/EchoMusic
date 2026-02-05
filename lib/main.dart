@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -10,15 +11,25 @@ import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'utils/server_orchestrator.dart';
 
+void _handleExit() {
+  debugPrint('[Main] Signal received, stopping server...');
+  ServerOrchestrator.stop();
+  exit(0);
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
   
-  // Server startup is now handled by LoadingScreen
+  // 监听进程终止信号，确保清理服务进程
+  if (!Platform.isWindows) {
+    ProcessSignal.sigint.watch().listen((_) => _handleExit());
+    ProcessSignal.sigterm.watch().listen((_) => _handleExit());
+  }
 
   WindowOptions windowOptions = const WindowOptions(
-    size: Size(1000, 700),
-    minimumSize: Size(800, 600),
+    size: Size(1100, 750),
+    minimumSize: Size(960, 700),
     center: true,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,

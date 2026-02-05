@@ -52,11 +52,9 @@ class ServerOrchestrator {
   static Future<bool> start() async {
     if (_serverProcess != null) return true;
 
-    debugPrint('[Server] Checking if server is already running...');
-    if (await isServerRunning()) {
-      debugPrint('[Server] Server is already running on port 10086');
-      return true;
-    }
+    // 无论如何，启动前先尝试清理端口占用，确保启动的是最新进程
+    debugPrint('[Server] Pre-start cleanup: killing any existing process on port 10086...');
+    await killPort();
 
     String? serverDir;
     final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];

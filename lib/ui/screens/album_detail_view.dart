@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import '../../providers/audio_provider.dart';
 import '../../providers/selection_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/song_card.dart';
@@ -174,41 +175,120 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                     ),
                   ),
                 ),
-                FutureBuilder<List<Song>>(
-                  future: _songsFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const SliverToBoxAdapter(
-                        child: Center(child: Padding(
-                          padding: EdgeInsets.all(40.0),
-                          child: CupertinoActivityIndicator(),
-                        )),
-                      );
-                    }
-                    final songs = snapshot.data ?? [];
-                    return SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final song = songs[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 28),
-                            child: SongCard(
-                              song: song,
-                              playlist: songs,
-                              showMore: true,
-                              isSelectionMode: selectionProvider.isSelectionMode,
-                              isSelected: selectionProvider.isSelected(song.hash),
-                              onSelectionChanged: (selected) {
-                                selectionProvider.toggleSelection(song.hash);
-                              },
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(40, 32, 40, 16),
+              child: FutureBuilder<Map<String, dynamic>?>(
+                future: _detailFuture,
+                builder: (context, snapshot) {
+                  final detail = snapshot.data;
+                  final String? intro = detail?['intro'];
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final songs = await _songsFuture;
+                              if (songs.isNotEmpty) {
+                                context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                              }
+                            },
+                            icon: const Icon(CupertinoIcons.play_fill, size: 18),
+                            label: const Text('播放全部'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: theme.colorScheme.primary,
+                              foregroundColor: theme.colorScheme.onPrimary,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              elevation: 8,
+                              shadowColor: theme.colorScheme.primary.withAlpha(100),
                             ),
-                          );
+                          ),
+                          const SizedBox(width: 16),
+                          OutlinedButton.icon(
+                            onPressed: () {},
+                            icon: const Icon(CupertinoIcons.heart, size: 18),
+                            label: const Text('收藏专辑'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              side: BorderSide(color: theme.colorScheme.outlineVariant),
+                              foregroundColor: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (intro != null && intro.isNotEmpty) ...[
+                        const SizedBox(height: 32),
+                        Text(
+                          '专辑介绍',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          intro,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.6,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 32),
+                      Text(
+                        '歌曲列表',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+          FutureBuilder<List<Song>>(
+            future: _songsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SliverToBoxAdapter(
+                  child: Center(child: Padding(
+                    padding: EdgeInsets.all(40.0),
+                    child: CupertinoActivityIndicator(),
+                  )),
+                );
+              }
+              final songs = snapshot.data ?? [];
+              return SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final song = songs[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: SongCard(
+                        song: song,
+                        playlist: songs,
+                        showMore: true,
+                        isSelectionMode: selectionProvider.isSelectionMode,
+                        isSelected: selectionProvider.isSelected(song.hash),
+                        onSelectionChanged: (selected) {
+                          selectionProvider.toggleSelection(song.hash);
                         },
-                        childCount: songs.length,
                       ),
                     );
                   },
+                  childCount: songs.length,
                 ),
+              );
+            },
+          ),
                 const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
             ),

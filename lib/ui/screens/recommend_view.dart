@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:intl/intl.dart';
 import '../../api/music_api.dart';
-import '../../models/song.dart';
 import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
-import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/scrollable_content.dart';
@@ -49,10 +46,12 @@ class _RecommendViewState extends State<RecommendView> {
         ? 'Hi, ${userProvider.user?.nickname} ${_getGreeting()}'
         : _getGreeting();
 
-    return ScrollableContent(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: ScrollableContent(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           // Greeting
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,6 +112,7 @@ class _RecommendViewState extends State<RecommendView> {
           const SizedBox(height: 100),
         ],
       ),
+    ),
     );
   }
 

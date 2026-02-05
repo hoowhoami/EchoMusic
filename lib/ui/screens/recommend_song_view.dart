@@ -29,74 +29,78 @@ class _RecommendSongViewState extends State<RecommendSongView> {
     final selectionProvider = context.watch<SelectionProvider>();
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        backgroundColor: Colors.transparent,
+        body: Stack(
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
-            child: Row(
-              children: [
-                Text(
-                  '每日推荐',
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 22),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+                child: Row(
+                  children: [
+                    Text(
+                      '每日推荐',
+                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 22),
+                    ),
+                    const Spacer(),
+                    FutureBuilder<List<Song>>(
+                      future: _recommendSongsFuture,
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
+                        if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
+
+                        return IconButton(
+                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                          onPressed: () {
+                            selectionProvider.setSongList(snapshot.data!);
+                            selectionProvider.enterSelectionMode();
+                          },
+                          color: theme.colorScheme.onSurfaceVariant,
+                          tooltip: '批量选择',
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                FutureBuilder<List<Song>>(
+              ),
+              Expanded(
+                child: FutureBuilder<List<Song>>(
                   future: _recommendSongsFuture,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
-                    if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CupertinoActivityIndicator());
+                    }
+                    if (snapshot.hasError || !snapshot.hasData) {
+                      return const Center(child: Text('加载失败'));
+                    }
+                    final songs = snapshot.data!;
+                    if (songs.isEmpty) {
+                      return const Center(child: Text('暂无推荐歌曲'));
+                    }
 
-                    return IconButton(
-                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                      onPressed: () {
-                        selectionProvider.setSongList(snapshot.data!);
-                        selectionProvider.enterSelectionMode();
+                    return ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+                      itemCount: songs.length,
+                      itemBuilder: (context, index) {
+                        final song = songs[index];
+                        return SongCard(
+                          song: song,
+                          playlist: songs,
+                          showMore: true,
+                          isSelectionMode: selectionProvider.isSelectionMode,
+                          isSelected: selectionProvider.isSelected(song.hash),
+                          onSelectionChanged: (selected) {
+                            selectionProvider.toggleSelection(song.hash);
+                          },
+                        );
                       },
-                      color: theme.colorScheme.onSurfaceVariant,
-                      tooltip: '批量选择',
                     );
                   },
                 ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: FutureBuilder<List<Song>>(
-              future: _recommendSongsFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CupertinoActivityIndicator());
-                }
-                if (snapshot.hasError || !snapshot.hasData) {
-                  return const Center(child: Text('加载失败'));
-                }
-                final songs = snapshot.data!;
-                if (songs.isEmpty) {
-                  return const Center(child: Text('暂无推荐歌曲'));
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                  itemCount: songs.length,
-                  itemBuilder: (context, index) {
-                    final song = songs[index];
-                    return SongCard(
-                      song: song,
-                      playlist: songs,
-                      showMore: true,
-                      isSelectionMode: selectionProvider.isSelectionMode,
-                      isSelected: selectionProvider.isSelected(song.hash),
-                      onSelectionChanged: (selected) {
-                        selectionProvider.toggleSelection(song.hash);
-                      },
-                    );
-                  },
-                );
-              },
-            ),
+              ),
+            ],
           ),
           const BatchActionBar(),
         ],

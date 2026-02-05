@@ -22,7 +22,7 @@ class DiscoverView extends StatelessWidget {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: theme.scaffoldBackgroundColor,
         appBar: PreferredSize(
           preferredSize: const Size.fromHeight(100),
           child: Padding(
@@ -615,44 +615,48 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
         if (!snapshot.hasData) return const Center(child: CupertinoActivityIndicator());
         final songs = snapshot.data!;
 
-        return Column(
+        return Stack(
           children: [
-            if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
-                child: Row(
-                  children: [
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                      onPressed: () {
-                        selectionProvider.setSongList(songs);
-                        selectionProvider.enterSelectionMode();
-                      },
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      tooltip: '批量选择',
+            Column(
+              children: [
+                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                          onPressed: () {
+                            selectionProvider.setSongList(songs);
+                            selectionProvider.enterSelectionMode();
+                          },
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          tooltip: '批量选择',
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                itemCount: songs.length,
-                itemBuilder: (context, index) {
-                  final song = songs[index];
-                  return SongCard(
-                    song: song,
-                    playlist: songs,
-                    showMore: true,
-                    isSelectionMode: selectionProvider.isSelectionMode,
-                    isSelected: selectionProvider.isSelected(song.hash),
-                    onSelectionChanged: (selected) {
-                      selectionProvider.toggleSelection(song.hash);
+                  ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+                    itemCount: songs.length,
+                    itemBuilder: (context, index) {
+                      final song = songs[index];
+                      return SongCard(
+                        song: song,
+                        playlist: songs,
+                        showMore: true,
+                        isSelectionMode: selectionProvider.isSelectionMode,
+                        isSelected: selectionProvider.isSelected(song.hash),
+                        onSelectionChanged: (selected) {
+                          selectionProvider.toggleSelection(song.hash);
+                        },
+                      );
                     },
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
             const BatchActionBar(),
           ],

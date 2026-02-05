@@ -112,22 +112,19 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                     widget.artistName,
                                     style: TextStyle(
                                       fontSize: 48,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w900,
                                       color: theme.colorScheme.onSurface,
-                                      letterSpacing: -1.8,
+                                      letterSpacing: -1.5,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
-                                  if (intro != null)
+                                  if (detail != null)
                                     Text(
-                                      intro,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                      '${detail['song_count'] ?? 0} 首歌曲 • ${detail['album_count'] ?? 0} 张专辑 • ${detail['fansnums'] ?? 0} 粉丝',
                                       style: TextStyle(
                                         color: theme.colorScheme.onSurfaceVariant,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        letterSpacing: -0.2,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   const SizedBox(height: 24),
@@ -148,7 +145,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                           children: [
                                             Icon(CupertinoIcons.play_fill, color: theme.colorScheme.onPrimary, size: 18),
                                             const SizedBox(width: 8),
-                                            Text('播放全部', style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.w800)),
+                                            Text('播放热门', style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.w800)),
                                           ],
                                         ),
                                       ),
@@ -181,6 +178,54 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                           ],
                         );
                       },
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 32, 40, 0),
+                    child: FutureBuilder<Map<String, dynamic>?>(
+                      future: _detailFuture,
+                      builder: (context, snapshot) {
+                        final detail = snapshot.data;
+                        final String? bio = detail?['long_intro'] ?? detail?['intro'];
+                        if (bio == null || bio.isEmpty) return const SizedBox.shrink();
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '歌手简介',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              bio,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.6,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 0, 40, 16),
+                    child: Text(
+                      '热门单曲',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
