@@ -143,23 +143,39 @@ class MusicApi {
         List data = response.data['data']['info'] ?? [];
         return data.cast<Map<String, dynamic>>();
       }
+      debugPrint('getRanks status != 1: ${response.data}');
       return [];
     } catch (e) {
+      debugPrint('getRanks error: $e');
       return [];
     }
   }
 
   static Future<List<Song>> getRankSongs(int rankId) async {
     try {
-      final response = await _dio.get('/rank/info', queryParameters: {
+      final response = await _dio.get('/rank/audio', queryParameters: {
         'rankid': rankId,
+        'pagesize': 100, // Fetch more songs
       });
       if (response.data['status'] == 1) {
-        List data = response.data['data']['songs']['list'] ?? [];
-        return data.map((json) => Song.fromJson(json)).toList();
+        var data = response.data['data'];
+        List? list;
+        if (data is Map) {
+          list = data['list'] ?? data['info'] ?? data['songs']?['list'] ?? data['songlist'];
+        } else if (data is List) {
+          list = data;
+        }
+        
+        if (list != null) {
+          return list.map((json) => Song.fromJson(json)).toList();
+        }
+        debugPrint('getRankSongs could not find song list in data: $data');
+      } else {
+        debugPrint('getRankSongs status != 1: ${response.data}');
       }
       return [];
     } catch (e) {
+      debugPrint('getRankSongs error: $e');
       return [];
     }
   }
@@ -168,7 +184,7 @@ class MusicApi {
     try {
       final response = await _dio.get('/playlist/recommend');
       if (response.data['status'] == 1) {
-        List data = response.data['data']['list'] ?? [];
+        List data = response.data['data']['list'] ?? response.data['data']['special_list'] ?? [];
         return data.map((json) => Playlist.fromJson(json)).toList();
       }
       return [];
@@ -177,16 +193,44 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getPlaylistSongs(int id) async {
+  static Future<Map<String, dynamic>?> getPlaylistDetail(String ids) async {
     try {
-      final response = await _dio.get('/playlist/info', queryParameters: {
-        'specialid': id,
+      final response = await _dio.get('/playlist/detail', queryParameters: {'ids': ids});
+      if (response.data['status'] == 1) {
+        List data = response.data['data'] ?? [];
+        return data.isNotEmpty ? data[0] : null;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, dynamic>> getPlaylistTrackAll(String id, {int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/playlist/track/all', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
       });
       if (response.data['status'] == 1) {
-        List data = response.data['data']['songs']['list'] ?? [];
-        return data.map((json) => Song.fromJson(json)).toList();
+        return response.data['data'] ?? {};
       }
-      return [];
+      return {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<List<Song>> getPlaylistSongs(dynamic id) async {
+    try {
+      final String playlistId = id.toString();
+      final data = await getPlaylistTrackAll(playlistId, pagesize: 100);
+      List songsData = data['songs'] ?? [];
+      return songsData
+          .where((json) => json['hash'] != null && json['hash'].toString().isNotEmpty)
+          .map((json) => Song.fromJson(json))
+          .toList();
     } catch (e) {
       return [];
     }
@@ -242,7 +286,8 @@ class MusicApi {
         'sort': sort,
       });
       if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
+        final rawData = response.data['data'];
+        final List data = rawData is List ? rawData : (rawData['info'] ?? rawData['list'] ?? []);
         return data.map((json) => Song.fromJson(json)).toList();
       }
       return [];
@@ -288,7 +333,8 @@ class MusicApi {
         'pagesize': pagesize,
       });
       if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
+        final rawData = response.data['data'];
+        final List data = rawData is List ? rawData : (rawData['songs'] ?? rawData['info'] ?? rawData['list'] ?? []);
         return data.map((json) => Song.fromJson(json)).toList();
       }
       return [];
@@ -564,8 +610,12 @@ class MusicApi {
         'withsong': withsong,
         'withtag': withtag,
       });
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['list'] ?? [];
+      final root = response.data is Map ? response.data : {};
+      if (root['status'] == 1) {
+        final List data = root['data']?['special_list'] ?? 
+                         root['data']?['list'] ?? 
+                         root['special_list'] ?? 
+                         root['list'] ?? [];
         return data.map((json) => Playlist.fromJson(json)).toList();
       }
       return [];
@@ -611,18 +661,25 @@ class MusicApi {
   static Future<List<Song>> getEverydayRecommend() async {
     try {
       final response = await _dio.get('/everyday/recommend');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['song_list'] ?? [];
+      final root = response.data is Map ? response.data : {};
+      debugPrint('getEverydayRecommend status: ${root['status']}');
+      if (root['status'] == 1) {
+        final List data = root['data']?['song_list'] ?? 
+                         root['song_list'] ?? 
+                         root['data'] ?? [];
+        debugPrint('getEverydayRecommend count: ${data.length}');
         return data.map((json) {
-          return Song.fromJson({
-            ...json,
-            'songname': json['filename'] ?? json['songname'],
-            'timelen': (json['time_length'] ?? 0) * 1000, // legacy uses seconds?
-          });
+          try {
+            return Song.fromJson(json);
+          } catch (e) {
+            debugPrint('Error parsing song: $e, json: $json');
+            rethrow;
+          }
         }).toList();
       }
       return [];
     } catch (e) {
+      debugPrint('getEverydayRecommend error: $e');
       return [];
     }
   }
@@ -630,8 +687,11 @@ class MusicApi {
   static Future<List<Map<String, dynamic>>> getTopIP() async {
     try {
       final response = await _dio.get('/top/ip');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['list'] ?? [];
+      final root = response.data is Map ? response.data : {};
+      if (root['status'] == 1) {
+        final List data = root['data']?['list'] ?? 
+                         root['data'] ?? 
+                         root['list'] ?? [];
         return data.cast<Map<String, dynamic>>();
       }
       return [];

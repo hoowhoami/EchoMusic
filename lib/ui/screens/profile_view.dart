@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/scrollable_content.dart';
+import '../widgets/custom_dialog.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -260,27 +261,17 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   void _showLogoutDialog(BuildContext context, UserProvider userProvider) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定要退出当前账号吗？'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () {
-              userProvider.logout();
-              Navigator.pop(context);
-            },
-            child: const Text('退出'),
-          ),
-        ],
-      ),
-    );
+    CustomDialog.show(
+      context,
+      title: '退出登录',
+      content: '确定要退出当前账号吗？',
+      confirmText: '退出登录',
+      isDestructive: true,
+    ).then((confirmed) {
+      if (confirmed == true) {
+        userProvider.logout();
+      }
+    });
   }
 }
 

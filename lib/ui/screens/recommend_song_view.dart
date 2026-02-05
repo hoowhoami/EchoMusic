@@ -29,37 +29,40 @@ class _RecommendSongViewState extends State<RecommendSongView> {
     final selectionProvider = context.watch<SelectionProvider>();
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: CupertinoNavigationBar(
-        backgroundColor: Colors.transparent,
-        border: null,
-        middle: Text(
-          '每日推荐',
-          style: TextStyle(color: theme.colorScheme.onSurface),
-        ),
-        trailing: FutureBuilder<List<Song>>(
-          future: _recommendSongsFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
-            if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
-
-            return CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () {
-                selectionProvider.setSongList(snapshot.data!);
-                selectionProvider.enterSelectionMode();
-              },
-              child: Icon(
-                CupertinoIcons.checkmark_circle,
-                size: 22,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            );
-          },
-        ),
-      ),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+            child: Row(
+              children: [
+                Text(
+                  '每日推荐',
+                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 22),
+                ),
+                const Spacer(),
+                FutureBuilder<List<Song>>(
+                  future: _recommendSongsFuture,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
+                    if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
+
+                    return IconButton(
+                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                      onPressed: () {
+                        selectionProvider.setSongList(snapshot.data!);
+                        selectionProvider.enterSelectionMode();
+                      },
+                      color: theme.colorScheme.onSurfaceVariant,
+                      tooltip: '批量选择',
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: FutureBuilder<List<Song>>(
               future: _recommendSongsFuture,

@@ -21,7 +21,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   @override
   void initState() {
     super.initState();
-    _songsFuture = MusicApi.getPlaylistSongs(widget.playlist.id);
+    _songsFuture = MusicApi.getPlaylistSongs(widget.playlist.id.toString());
   }
 
   @override

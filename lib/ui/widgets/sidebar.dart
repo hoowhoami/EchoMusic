@@ -153,7 +153,7 @@ class Sidebar extends StatelessWidget {
       child: Text(
         title.toUpperCase(),
         style: TextStyle(
-          color: theme.colorScheme.onSurface.withAlpha(100),
+          color: theme.colorScheme.onSurface.withAlpha(160),
           fontSize: 11,
           fontWeight: FontWeight.w900,
           letterSpacing: 1.5,
@@ -184,7 +184,7 @@ class Sidebar extends StatelessWidget {
             child: Text(
               '登录同步歌单',
               style: TextStyle(
-                color: theme.colorScheme.onSurface.withAlpha(60), 
+                color: theme.colorScheme.onSurface.withAlpha(120), 
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -229,7 +229,7 @@ class Sidebar extends StatelessWidget {
                 child: Text(
                   playlist.name,
                   style: TextStyle(
-                    color: theme.colorScheme.onSurface.withAlpha(200), 
+                    color: theme.colorScheme.onSurface, 
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.2,
@@ -277,7 +277,7 @@ class Sidebar extends StatelessWidget {
                 style: TextStyle(
                   color: isSelected 
                     ? accentColor 
-                    : theme.colorScheme.onSurface.withAlpha(200),
+                    : theme.colorScheme.onSurface,
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
                   fontSize: 14,
                   letterSpacing: -0.2,

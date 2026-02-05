@@ -352,6 +352,7 @@ class PlayerBar extends StatelessWidget {
   void _showQueueDrawer(BuildContext context) {
     showGeneralDialog(
       context: context,
+      barrierLabel: 'QueueDrawer',
       barrierColor: Colors.transparent,
       barrierDismissible: true,
       transitionDuration: const Duration(milliseconds: 300),

@@ -5,9 +5,17 @@ import '../../providers/selection_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
+import 'custom_dialog.dart';
 
-class BatchActionBar extends StatelessWidget {
+class BatchActionBar extends StatefulWidget {
   const BatchActionBar({super.key});
+
+  @override
+  State<BatchActionBar> createState() => _BatchActionBarState();
+}
+
+class _BatchActionBarState extends State<BatchActionBar> {
+  String? _hoveredButton;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +38,7 @@ class BatchActionBar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: theme.colorScheme.shadow.withOpacity(0.08),
+            color: theme.colorScheme.shadow.withValues(alpha: 0.08),
             blurRadius: 15,
             offset: const Offset(0, -5),
           ),
@@ -50,66 +58,126 @@ class BatchActionBar extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            _buildTextButton(
+              label: '取消',
+              onPressed: () => selectionProvider.exitSelectionMode(),
+              color: theme.colorScheme.error,
+              id: 'cancel',
+            ),
+            _buildTextButton(
+              label: '清空',
               onPressed: selectionProvider.hasSelection
                   ? () => selectionProvider.clearSelection()
                   : null,
-              child: Text(
-                '清空',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: selectionProvider.hasSelection
-                      ? theme.colorScheme.onSurfaceVariant
-                      : theme.colorScheme.onSurface.withAlpha(80),
-                ),
-              ),
+              color: theme.colorScheme.onSurfaceVariant,
+              id: 'clear',
             ),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              onPressed: selectionProvider.selectedCount < selectionProvider.selectedSongs.length
+            _buildTextButton(
+              label: '全选',
+              onPressed: selectionProvider.selectedCount < _getAvailableSongCount(selectionProvider)
                   ? () => selectionProvider.selectAll()
                   : null,
-              child: Text(
-                '全选',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: selectionProvider.selectedCount < selectionProvider.selectedSongs.length
-                      ? theme.colorScheme.onSurfaceVariant
-                      : theme.colorScheme.onSurface.withAlpha(80),
-                ),
-              ),
+              color: theme.colorScheme.onSurfaceVariant,
+              id: 'select_all',
             ),
             const SizedBox(width: 8),
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.circular(10),
+            _buildActionButton(
+              context,
               onPressed: selectionProvider.hasSelection
                   ? () => _showBatchActions(context, selectionProvider)
                   : null,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(CupertinoIcons.ellipsis, size: 16, color: theme.colorScheme.onPrimary),
-                  const SizedBox(width: 8),
-                  Text(
-                    '批量操作',
-                    style: TextStyle(
-                      color: theme.colorScheme.onPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
+              id: 'batch_actions',
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildTextButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required Color color,
+    required String id,
+  }) {
+    final theme = Theme.of(context);
+    final isHovered = _hoveredButton == id && onPressed != null;
+
+    return MouseRegion(
+      cursor: onPressed != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hoveredButton = id),
+      onExit: (_) => setState(() => _hoveredButton = null),
+      child: CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        onPressed: onPressed,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 200),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: onPressed != null
+                ? (isHovered ? color : color.withValues(alpha: 0.7))
+                : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+          ),
+          child: Text(label),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context, {
+    required VoidCallback? onPressed,
+    required String id,
+  }) {
+    final theme = Theme.of(context);
+    final isHovered = _hoveredButton == id && onPressed != null;
+
+    return MouseRegion(
+      cursor: onPressed != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hoveredButton = id),
+      onExit: (_) => setState(() => _hoveredButton = null),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: onPressed != null
+              ? (isHovered ? theme.colorScheme.primary : theme.colorScheme.primary.withValues(alpha: 0.85))
+              : theme.colorScheme.onSurface.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isHovered
+              ? [BoxShadow(color: theme.colorScheme.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
+              : [],
+        ),
+        child: CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          onPressed: onPressed,
+          minSize: 0,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                CupertinoIcons.ellipsis,
+                size: 16,
+                color: onPressed != null ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '批量操作',
+                style: TextStyle(
+                  color: onPressed != null ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _getAvailableSongCount(SelectionProvider provider) {
+    return provider.currentSongList.length;
   }
 
   void _showBatchActions(BuildContext context, SelectionProvider selectionProvider) {
@@ -209,17 +277,12 @@ class BatchActionBar extends StatelessWidget {
                         }
                         selectionProvider.exitSelectionMode();
                         if (context.mounted) {
-                          showCupertinoDialog(
-                            context: context,
-                            builder: (context) => CupertinoAlertDialog(
-                              title: const Text('添加成功'),
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
                               content: Text('已添加 ${selectionProvider.selectedCount} 首歌曲到我喜欢的'),
-                              actions: [
-                                CupertinoDialogAction(
-                                  child: const Text('确定'),
-                                  onPressed: () => Navigator.pop(context),
-                                ),
-                              ],
+                              behavior: SnackBarBehavior.floating,
+                              width: 320,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           );
                         }
@@ -304,28 +367,15 @@ class BatchActionBar extends StatelessWidget {
   }
 
   void _showAddToPlaylistDialog(BuildContext context, SelectionProvider selectionProvider) {
-    // TODO: Show user's playlists to select from
-    // This would need to fetch user playlists and display them
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('添加到歌单'),
-        content: Text('将 ${selectionProvider.selectedCount} 首歌曲添加到歌单'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('取消'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            child: const Text('创建新歌单'),
-            onPressed: () {
-              Navigator.pop(context);
-              // TODO: Create new playlist
-            },
-          ),
-        ],
-      ),
-    );
+    CustomDialog.show(
+      context,
+      title: '添加到歌单',
+      content: '确定要将 ${selectionProvider.selectedCount} 首歌曲添加到歌单吗？',
+      confirmText: '确定',
+    ).then((confirmed) {
+      if (confirmed == true) {
+        // TODO: Implement adding to playlist logic
+      }
+    });
   }
 }

@@ -39,7 +39,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Column(
         children: [
           Expanded(

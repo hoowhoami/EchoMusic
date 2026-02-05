@@ -5,6 +5,7 @@ import 'providers/audio_provider.dart';
 import 'providers/lyric_provider.dart';
 import 'providers/persistence_provider.dart';
 import 'providers/user_provider.dart';
+import 'providers/selection_provider.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'utils/server_orchestrator.dart';
@@ -40,6 +41,7 @@ void main() async {
           },
         ),
         ChangeNotifierProvider(create: (_) => LyricProvider()),
+        ChangeNotifierProvider(create: (_) => SelectionProvider()),
         ChangeNotifierProxyProvider2<PersistenceProvider, LyricProvider, AudioProvider>(
           create: (_) => AudioProvider(),
           update: (context, persistence, lyric, audio) {

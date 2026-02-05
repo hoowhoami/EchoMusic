@@ -11,6 +11,7 @@ class SelectionProvider with ChangeNotifier {
   List<Song> get selectedSongs {
     return _currentSongList.where((s) => _selectedHashes.contains(s.hash)).toList();
   }
+  List<Song> get currentSongList => _currentSongList;
   bool get isSelectionMode => _isSelectionMode;
   int get selectedCount => _selectedHashes.length;
   bool get hasSelection => _selectedHashes.isNotEmpty;

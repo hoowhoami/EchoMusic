@@ -9,34 +9,24 @@ import '../widgets/batch_action_bar.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
-  const RankView({super.key, this.initialRankId});
+  final Color? backgroundColor;
+  const RankView({super.key, this.initialRankId, this.backgroundColor});
 
   @override
   State<RankView> createState() => _RankViewState();
 }
 
-class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin {
+class _RankViewState extends State<RankView> {
   List<Map<String, dynamic>> _ranks = [];
   List<Song> _rankSongs = [];
   int? _selectedRankId;
   bool _isLoadingRanks = true;
   bool _isLoadingSongs = false;
-  late TabController _tabController;
-
-  // Rank categories
-  final List<String> _categories = ['全部', '流行', '摇滚', '民谣', '电子', '说唱', '古风', '二次元'];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: _categories.length, vsync: this);
     _loadRanks();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadRanks() async {
@@ -57,94 +47,88 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
     setState(() {
       _isLoadingSongs = true;
       _selectedRankId = rankId;
+      _rankSongs = [];
     });
-    final songs = await MusicApi.getRankSongs(rankId);
-    if (mounted) {
-      setState(() {
-        _rankSongs = songs;
-        _isLoadingSongs = false;
-      });
+    try {
+      final songs = await MusicApi.getRankSongs(rankId);
+      if (mounted) {
+        setState(() {
+          _rankSongs = songs;
+          _isLoadingSongs = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingSongs = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.primary;
     final selectionProvider = context.watch<SelectionProvider>();
+    final bgColor = widget.backgroundColor ?? theme.scaffoldBackgroundColor;
 
     if (_isLoadingRanks) {
-      return const Center(child: CupertinoActivityIndicator());
+      return Scaffold(
+        backgroundColor: bgColor,
+        body: const Center(child: CupertinoActivityIndicator()),
+      );
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '排行榜',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface,
-                        letterSpacing: -0.5,
+    return Scaffold(
+      backgroundColor: bgColor,
+      body: Column(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        '排行榜',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
+                          letterSpacing: -0.5,
+                        ),
                       ),
-                    ),
-                    const Spacer(),
-                    if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                        onPressed: () {
-                          selectionProvider.setSongList(_rankSongs);
-                          selectionProvider.enterSelectionMode();
-                        },
-                        color: theme.colorScheme.onSurfaceVariant,
-                        tooltip: '批量选择',
-                      ),
-                    if (_ranks.isNotEmpty)
-                      _buildRankSelector(context),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  labelColor: accentColor,
-                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                  indicator: UnderlineTabIndicator(
-                    borderSide: BorderSide(
-                      width: 2,
-                      color: accentColor,
-                    ),
-                    borderRadius: BorderRadius.circular(2),
+                      const SizedBox(width: 16),
+                      if (_ranks.isNotEmpty)
+                        _buildRankSelector(context),
+                      const Spacer(),
+                      if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 20),
+                          onPressed: () {
+                            selectionProvider.setSongList(_rankSongs);
+                            selectionProvider.enterSelectionMode();
+                          },
+                          color: theme.colorScheme.onSurfaceVariant,
+                          tooltip: '批量选择',
+                        ),
+                    ],
                   ),
-                  onTap: (index) {
-                    // Could filter ranks by category
-                  },
-                  tabs: _categories.map((cat) => Tab(text: cat)).toList(),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: _isLoadingSongs
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : _buildSongGrid(context),
-                ),
-              ],
+                  const SizedBox(height: 24),
+                  Expanded(
+                    child: _isLoadingSongs
+                        ? const Center(child: CupertinoActivityIndicator())
+                        : _buildSongGrid(context),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        const BatchActionBar(),
-      ],
+          const BatchActionBar(),
+        ],
+      ),
     );
   }
 
@@ -189,69 +173,97 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
       builder: (context) {
         final theme = Theme.of(context);
         return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
               Container(
-                width: 40,
+                width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.dividerColor.withAlpha(50),
+                  color: theme.colorScheme.onSurface.withAlpha(30),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Text(
-                  '选择排行榜',
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                child: Row(
+                  children: [
+                    Text(
+                      '选择排行榜',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '共 ${_ranks.length} 个',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Expanded(
+              Flexible(
                 child: GridView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                  shrinkWrap: true,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 3,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+                    crossAxisCount: 4,
+                    childAspectRatio: 2.8,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
                   ),
                   itemCount: _ranks.length,
                   itemBuilder: (context, index) {
                     final rank = _ranks[index];
                     final isSelected = rank['rankid'] == _selectedRankId;
-                    return InkWell(
-                      onTap: () {
-                        Navigator.pop(context);
-                        _loadRankSongs(rank['rankid']);
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: isSelected 
-                            ? theme.primaryColor.withAlpha(20)
-                            : theme.colorScheme.onSurface.withAlpha(5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.pop(context);
+                          if (!isSelected) {
+                            _loadRankSongs(rank['rankid']);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          decoration: BoxDecoration(
                             color: isSelected 
-                              ? theme.primaryColor.withAlpha(100)
-                              : Colors.transparent
+                              ? theme.colorScheme.primary.withAlpha(20)
+                              : theme.colorScheme.onSurface.withAlpha(8),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected 
+                                ? theme.colorScheme.primary.withAlpha(100)
+                                : Colors.transparent,
+                              width: 1,
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            rank['rankname'],
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
+                          child: Center(
+                            child: Text(
+                              rank['rankname'],
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected 
+                                  ? theme.colorScheme.primary 
+                                  : theme.colorScheme.onSurface.withAlpha(200),
+                              ),
                             ),
                           ),
                         ),
@@ -260,7 +272,6 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                   },
                 ),
               ),
-              const SizedBox(height: 24),
             ],
           ),
         );
@@ -275,14 +286,23 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
 
     final selectionProvider = context.watch<SelectionProvider>();
 
-    return ListView.builder(
+    return GridView.builder(
+      physics: const BouncingScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 400,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 16,
+        mainAxisExtent: 72,
+      ),
       itemCount: _rankSongs.length,
       itemBuilder: (context, index) {
         final song = _rankSongs[index];
         return SongCard(
           song: song,
           playlist: _rankSongs,
-          showMore: true,
+          showCover: true,
+          coverSize: 44,
+          showMore: false,
           isSelectionMode: selectionProvider.isSelectionMode,
           isSelected: selectionProvider.isSelected(song.hash),
           onSelectionChanged: (selected) {
@@ -293,4 +313,3 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
     );
   }
 }
-

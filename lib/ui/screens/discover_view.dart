@@ -24,12 +24,11 @@ class DiscoverView extends StatelessWidget {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(80),
+          preferredSize: const Size.fromHeight(100),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '发现音乐',
@@ -66,7 +65,7 @@ class DiscoverView extends StatelessWidget {
           physics: BouncingScrollPhysics(),
           children: [
             _DiscoverPlaylistTab(),
-            RankView(),
+            RankView(backgroundColor: Colors.transparent),
             _DiscoverAlbumTab(),
             _DiscoverSongTab(),
           ],
@@ -609,7 +608,6 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
   @override
   Widget build(BuildContext context) {
     final selectionProvider = context.watch<SelectionProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return FutureBuilder<List<Song>>(
       future: _songsFuture,

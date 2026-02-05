@@ -58,10 +58,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void _pushRoute(Widget page) {
     _navigatorKey.currentState?.push(
       CupertinoPageRoute(builder: (_) => page),
-    );
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _goBack() {
+    if (_navigatorKey.currentState?.canPop() ?? false) {
+      _navigatorKey.currentState?.pop();
+      if (mounted) setState(() {});
+      return;
+    }
+    
     if (_historyIndex > 0) {
       setState(() {
         _historyIndex--;
@@ -85,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  bool get canGoBack => _historyIndex > 0;
+  bool get canGoBack => (_navigatorKey.currentState?.canPop() ?? false) || _historyIndex > 0;
   bool get canGoForward => _historyIndex < _navigationHistory.length - 1;
 
   Future<void> _initDevice() async {
@@ -221,6 +229,15 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.transparent,
                               child: Navigator(
                                 key: _navigatorKey,
+                                observers: [
+                                  _NavigationObserver(() {
+                                    if (mounted) {
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        if (mounted) setState(() {});
+                                      });
+                                    }
+                                  }),
+                                ],
                                 onGenerateRoute: (settings) {
                                   return PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) {
@@ -305,5 +322,35 @@ class WindowButtons extends StatelessWidget {
         CloseWindowButton(colors: closeButtonColors),
       ],
     );
+  }
+}
+
+class _NavigationObserver extends NavigatorObserver {
+  final VoidCallback onStateChanged;
+
+  _NavigationObserver(this.onStateChanged);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    onStateChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    onStateChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didRemove(route, previousRoute);
+    onStateChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    onStateChanged();
   }
 }

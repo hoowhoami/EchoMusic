@@ -36,15 +36,6 @@ class _LyricPageState extends State<LyricPage> {
     });
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 36, color: theme.colorScheme.onSurface),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: Stack(
         children: [
           // Background Cover Blur
@@ -72,6 +63,19 @@ class _LyricPageState extends State<LyricPage> {
                     ],
                   ),
                 ),
+              ),
+            ),
+          ),
+
+          // Custom Top Bar / Back Button
+          Positioned(
+            top: 40,
+            left: 20,
+            child: Material(
+              color: Colors.transparent,
+              child: IconButton(
+                icon: Icon(Icons.keyboard_arrow_down_rounded, size: 40, color: theme.colorScheme.onSurface),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ),

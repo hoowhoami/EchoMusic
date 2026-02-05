@@ -28,16 +28,23 @@ class Song {
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
-    var singersList = json['singerinfo'] as List? ?? [];
+    var singersList = json['singerinfo'] as List? ?? json['authors'] as List? ?? [];
     List<SingerInfo> singers = singersList.map((i) => SingerInfo.fromJson(i)).toList();
     
-    // Sometimes cover is in trans_param
-    String cover = json['cover'] ?? json['trans_param']?['union_cover'] ?? '';
+    // Support multiple cover field names and nested album info
+    String cover = json['cover'] ?? 
+                   json['sizable_cover'] ?? 
+                   json['album_cover'] ??
+                   json['album_info']?['cover'] ??
+                   json['trans_param']?['union_cover'] ?? '';
     // replace {size} in cover url if needed
     cover = cover.replaceAll('{size}', '400');
 
-    var relateGoodsList = json['relate_goods'] as List?;
-    List<Map<String, dynamic>>? relateGoods = relateGoodsList?.cast<Map<String, dynamic>>();
+    var relateGoodsRaw = json['relate_goods'];
+    List<Map<String, dynamic>>? relateGoods;
+    if (relateGoodsRaw is List) {
+      relateGoods = relateGoodsRaw.cast<Map<String, dynamic>>();
+    }
 
     int parseInt(dynamic value) {
       if (value == null) return 0;
@@ -46,16 +53,25 @@ class Song {
       return 0;
     }
 
+    // Support multiple duration field names (some in ms, some in s) and nested audio info
+    int duration = 0;
+    dynamic timelen = json['timelen'] ?? json['timelength'] ?? json['audio_info']?['duration'] ?? json['audio_info']?['timelen'];
+    if (timelen != null) {
+      duration = (parseInt(timelen) / 1000).floor();
+    } else if (json['time_length'] != null) {
+      duration = parseInt(json['time_length']);
+    }
+
     return Song(
-      hash: (json['hash'] ?? '').toString(),
-      name: (json['name'] ?? json['songname'] ?? '').toString(),
-      albumName: (json['albuminfo']?['name'] ?? json['album_name'] ?? '').toString(),
-      albumId: json['album_id']?.toString(),
+      hash: (json['hash'] ?? json['audio_info']?['hash'] ?? '').toString(),
+      name: (json['name'] ?? json['songname'] ?? json['audio_name'] ?? json['base']?['audio_name'] ?? json['filename'] ?? '').toString(),
+      albumName: (json['albuminfo']?['name'] ?? json['album_name'] ?? json['album_info']?['album_name'] ?? '').toString(),
+      albumId: (json['album_id'] ?? json['base']?['album_id'] ?? json['album_audio_id'])?.toString(),
       singers: singers,
-      duration: json['timelen'] != null ? (parseInt(json['timelen']) / 1000).floor() : 0,
+      duration: duration,
       cover: cover.toString(),
-      mvHash: json['mvhash']?.toString(),
-      mixSongId: parseInt(json['mixsongid']),
+      mvHash: (json['mvhash'] ?? json['mv_hash'] ?? json['video_hash'])?.toString(),
+      mixSongId: parseInt(json['mixsongid'] ?? json['base']?['mixsongid'] ?? json['base']?['audio_id']),
       privilege: json['privilege'] is int ? json['privilege'] : (json['privilege'] != null ? int.tryParse(json['privilege'].toString()) : null),
       relateGoods: relateGoods,
       source: json['source']?.toString(),
@@ -108,7 +124,7 @@ class SingerInfo {
 
     return SingerInfo(
       id: parseInt(json['id']),
-      name: (json['name'] ?? json['author_name'] ?? '').toString(),
+      name: (json['name'] ?? json['author_name'] ?? json['singername'] ?? '').toString(),
       avatar: json['avatar']?.toString(),
     );
   }

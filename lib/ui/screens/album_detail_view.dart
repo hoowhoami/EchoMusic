@@ -35,7 +35,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Column(
         children: [
           Expanded(

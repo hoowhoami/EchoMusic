@@ -171,36 +171,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final accentColor = theme.colorScheme.primary;
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: const Text('登录'),
-        leadingWidth: 80,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 20),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _loginMethod = _loginMethod == 0 ? 1 : 0;
-                if (_loginMethod == 0) _loadQrCode();
-              });
-            },
-            child: Text(
-              _loginMethod == 0 ? '验证码登录' : '扫码登录', 
-              style: TextStyle(color: accentColor, fontWeight: FontWeight.w800)
-            ),
-          ),
-          const SizedBox(width: 10),
-        ],
-      ),
       body: Stack(
         children: [
-          // Background Gradient
+          // 1. Background Gradient
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -216,6 +189,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+          
+          // 2. Main Content
           SafeArea(
             child: Center(
               child: BackdropFilter(
@@ -244,6 +219,54 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+
+          // 3. Custom Top Bar (Last child to be on top of everything)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 100,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 40, left: 20, right: 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Back Button (Now positioned below the macOS traffic lights area)
+                  Material(
+                    color: Colors.transparent,
+                    child: IconButton(
+                      icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: theme.colorScheme.onSurface),
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: '返回',
+                    ),
+                  ),
+                  
+                  const Spacer(),
+                  
+                  // Login Method Switcher
+                  Material(
+                    color: Colors.transparent,
+                    child: TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _loginMethod = _loginMethod == 0 ? 1 : 0;
+                          if (_loginMethod == 0) _loadQrCode();
+                        });
+                      },
+                      child: Text(
+                        _loginMethod == 0 ? '验证码登录' : '扫码登录', 
+                        style: TextStyle(
+                          color: accentColor, 
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                        )
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

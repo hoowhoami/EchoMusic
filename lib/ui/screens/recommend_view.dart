@@ -27,7 +27,7 @@ class _RecommendViewState extends State<RecommendView> {
   @override
   void initState() {
     super.initState();
-    _recommendedPlaylistsFuture = MusicApi.getPlaylistByCategory('0');
+    _recommendedPlaylistsFuture = MusicApi.getPlaylistByCategory('0'); // Use category '0' for recommendation
     _topIpFuture = MusicApi.getTopIP();
   }
 
@@ -59,12 +59,19 @@ class _RecommendViewState extends State<RecommendView> {
             children: [
               Text(
                 greeting,
-                style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontSize: 22, 
+                  letterSpacing: -0.5,
+                  color: theme.colorScheme.onSurface, // Explicit color
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 '由此开启好心情 ~',
-                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 12,
+                  color: theme.colorScheme.onSurface.withAlpha(150), // Explicit color
+                ),
               ),
             ],
           ),
@@ -180,7 +187,10 @@ class _RecommendViewState extends State<RecommendView> {
                         ),
                         Text(
                           subtitle,
-                          style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface.withAlpha(150),
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -197,12 +207,16 @@ class _RecommendViewState extends State<RecommendView> {
   }
 
   Widget _buildHeader(BuildContext context, String title) {
+    final theme = Theme.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 15),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontSize: 15,
+            color: theme.colorScheme.onSurface, // Explicit color
+          ),
         ),
         TextButton(
           onPressed: () {},
@@ -214,7 +228,7 @@ class _RecommendViewState extends State<RecommendView> {
           child: Text(
             '更多',
             style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
+              color: theme.colorScheme.primary,
               fontWeight: FontWeight.w600,
               fontSize: 12,
             ),
@@ -230,21 +244,20 @@ class _RecommendViewState extends State<RecommendView> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 200);
         final playlists = snapshot.data!;
-        return SizedBox(
-          height: 210,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: playlists.length,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemBuilder: (context, index) {
-              final playlist = playlists[index];
-              return Padding(
-                padding: const EdgeInsets.only(right: 20),
-                child: _buildPlaylistCard(playlist),
-              );
-            },
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            mainAxisSpacing: 24,
+            crossAxisSpacing: 20,
+            mainAxisExtent: 210,
           ),
+          itemCount: playlists.length,
+          padding: EdgeInsets.zero,
+          itemBuilder: (context, index) {
+            return _buildPlaylistCard(playlists[index]);
+          },
         );
       },
     );
@@ -259,32 +272,33 @@ class _RecommendViewState extends State<RecommendView> {
           item['type'] == 1 && item['extra']?['global_collection_id'] != null
         ).toList();
 
-        return SizedBox(
-          height: 210,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: ipList.length,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemBuilder: (context, index) {
-              final ip = ipList[index];
-              final playlist = Playlist.fromJson({
-                'specialname': ip['title'],
-                'flexible_cover': ip['pic'],
-                'global_collection_id': ip['extra']['global_collection_id'],
-              });
-              return Padding(
-                padding: const EdgeInsets.only(right: 20),
-                child: _buildPlaylistCard(playlist, subtitle: '编辑精选'),
-              );
-            },
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            mainAxisSpacing: 24,
+            crossAxisSpacing: 20,
+            mainAxisExtent: 210,
           ),
+          itemCount: ipList.length,
+          padding: EdgeInsets.zero,
+          itemBuilder: (context, index) {
+            final ip = ipList[index];
+            final playlist = Playlist.fromJson({
+              'specialname': ip['title'],
+              'flexible_cover': ip['pic'],
+              'global_collection_id': ip['extra']['global_collection_id'],
+            });
+            return _buildPlaylistCard(playlist, subtitle: '编辑精选');
+          },
         );
       },
     );
   }
 
   Widget _buildPlaylistCard(Playlist playlist, {String subtitle = '为您推荐'}) {
+    final theme = Theme.of(context);
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -298,31 +312,32 @@ class _RecommendViewState extends State<RecommendView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CoverImage(
-            url: playlist.pic,
-            width: 140,
-            height: 140,
-            borderRadius: 12,
-            showShadow: false,
+          Expanded(
+            child: CoverImage(
+              url: playlist.pic,
+              width: double.infinity,
+              borderRadius: 12,
+              showShadow: false,
+            ),
           ),
           const SizedBox(height: 10),
-          SizedBox(
-            width: 140,
-            child: Text(
-              playlist.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
+          Text(
+            playlist.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: theme.colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface.withAlpha(120),
+            ),
           ),
         ],
       ),
