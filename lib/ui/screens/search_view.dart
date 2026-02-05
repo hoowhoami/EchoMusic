@@ -92,7 +92,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final selectionProvider = context.watch<SelectionProvider>();
 
     return Column(
@@ -121,7 +120,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                           selectionProvider.setSongList(_songResults);
                           selectionProvider.enterSelectionMode();
                         },
-                        color: isDark ? Colors.white54 : Colors.black54,
+                        color: theme.colorScheme.onSurfaceVariant,
                         tooltip: '批量选择',
                       ),
                   ],
@@ -130,13 +129,13 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 Container(
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
+                    color: theme.colorScheme.onSurface.withAlpha(10),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
                       const SizedBox(width: 12),
-                      Icon(CupertinoIcons.search, color: isDark ? Colors.white38 : Colors.black38, size: 18),
+                      Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
@@ -144,7 +143,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           decoration: InputDecoration(
                             hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
-                            hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
+                            hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
                             border: InputBorder.none,
                             contentPadding: const EdgeInsets.symmetric(vertical: 10),
                           ),
@@ -159,7 +158,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                             _searchController.clear();
                             setState(() {});
                           },
-                          color: isDark ? Colors.white24 : Colors.black26,
+                          color: theme.colorScheme.onSurface.withAlpha(60),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
@@ -170,7 +169,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                           onPressed: _onSearch,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: theme.colorScheme.primary,
-                            foregroundColor: Colors.white,
+                            foregroundColor: theme.colorScheme.onPrimary,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -189,7 +188,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                   indicatorSize: TabBarIndicatorSize.label,
                   dividerColor: Colors.transparent,
                   labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
                   labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   indicator: UnderlineTabIndicator(
@@ -352,6 +351,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildArtistList() {
     if (_artistResults.isEmpty) return _buildEmptyState();
+    final theme = Theme.of(context);
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       itemCount: _artistResults.length,
@@ -368,7 +368,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Theme.of(context).dividerColor, width: 0.5),
+              border: Border.all(color: theme.dividerColor, width: 0.5),
             ),
             child: ClipOval(
               child: CoverImage(
@@ -402,15 +402,16 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   }
 
   Widget _buildEmptyState() {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(CupertinoIcons.search, size: 64, color: Theme.of(context).dividerColor),
+          Icon(CupertinoIcons.search, size: 64, color: theme.colorScheme.onSurface.withAlpha(40)),
           const SizedBox(height: 16),
           Text(
             '暂无搜索结果',
-            style: TextStyle(color: Theme.of(context).dividerColor, fontWeight: FontWeight.w500),
+            style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontWeight: FontWeight.w500),
           ),
         ],
       ),
@@ -426,6 +427,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       return const SizedBox.shrink();
     }
 
+    final theme = Theme.of(context);
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
@@ -434,7 +437,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87,
+            color: theme.colorScheme.onSurface,
           ),
         ),
         const SizedBox(height: 16),
@@ -450,14 +453,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white.withAlpha(8)
-                      : Colors.black.withAlpha(5),
+                  color: theme.colorScheme.onSurface.withAlpha(10),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white.withAlpha(10)
-                        : Colors.black.withAlpha(8),
+                    color: theme.colorScheme.outlineVariant,
                     width: 0.8,
                   ),
                 ),
@@ -466,7 +465,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
-                    color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
               ),

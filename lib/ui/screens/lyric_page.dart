@@ -41,7 +41,7 @@ class _LyricPageState extends State<LyricPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 36, color: Colors.white),
+          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 36, color: theme.colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -66,9 +66,9 @@ class _LyricPageState extends State<LyricPage> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withAlpha(180),
-                      Colors.black.withAlpha(120),
-                      Colors.black.withAlpha(220),
+                      theme.colorScheme.shadow.withAlpha(180),
+                      theme.colorScheme.shadow.withAlpha(120),
+                      theme.colorScheme.shadow.withAlpha(220),
                     ],
                   ),
                 ),
@@ -102,10 +102,10 @@ class _LyricPageState extends State<LyricPage> {
                         const SizedBox(height: 48),
                         Text(
                           song.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.w900,
-                            color: Colors.white,
+                            color: theme.colorScheme.onSurface,
                             letterSpacing: -1,
                           ),
                           maxLines: 2,
@@ -117,7 +117,7 @@ class _LyricPageState extends State<LyricPage> {
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white.withAlpha(150),
+                            color: theme.colorScheme.onSurface.withAlpha(150),
                             letterSpacing: -0.5,
                           ),
                         ),
@@ -138,12 +138,12 @@ class _LyricPageState extends State<LyricPage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(30)),
+                              Icon(Icons.music_note_rounded, size: 64, color: theme.colorScheme.onSurface.withAlpha(30)),
                               const SizedBox(height: 16),
                               Text(
                                 '暂无歌词',
                                 style: TextStyle(
-                                  color: Colors.white.withAlpha(100), 
+                                  color: theme.colorScheme.onSurface.withAlpha(100), 
                                   fontSize: 20,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -182,7 +182,7 @@ class _LyricPageState extends State<LyricPage> {
                                       style: TextStyle(
                                         fontSize: isCurrentLine ? 32 : 24,
                                         fontWeight: isCurrentLine ? FontWeight.w900 : FontWeight.w700,
-                                        color: isCurrentLine ? theme.colorScheme.primary : Colors.white,
+                                        color: isCurrentLine ? theme.colorScheme.primary : theme.colorScheme.onSurface,
                                         letterSpacing: -0.5,
                                         height: 1.4,
                                       ),
@@ -204,22 +204,23 @@ class _LyricPageState extends State<LyricPage> {
   }
 
   Widget _buildSongInfo(BuildContext context, dynamic song) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withAlpha(20),
+        color: theme.colorScheme.onSurface.withAlpha(20),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: theme.colorScheme.onSurface.withAlpha(25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.album_rounded, size: 16, color: Colors.white.withAlpha(150)),
+          Icon(Icons.album_rounded, size: 16, color: theme.colorScheme.onSurface.withAlpha(150)),
           const SizedBox(width: 8),
           Text(
             song.albumName,
             style: TextStyle(
-              color: Colors.white.withAlpha(150),
+              color: theme.colorScheme.onSurface.withAlpha(150),
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),

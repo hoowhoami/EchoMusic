@@ -6,8 +6,6 @@ class CustomTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return WindowTitleBarBox(
       child: Container(
         height: 52,
@@ -21,7 +19,7 @@ class CustomTitleBar extends StatelessWidget {
             Expanded(child: MoveWindow()),
             
             // Right area: Native-looking window buttons
-            WindowButtons(isDark: isDark),
+            const WindowButtons(),
           ],
         ),
       ),
@@ -30,22 +28,23 @@ class CustomTitleBar extends StatelessWidget {
 }
 
 class WindowButtons extends StatelessWidget {
-  final bool isDark;
-  const WindowButtons({super.key, required this.isDark});
+  const WindowButtons({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     final buttonColors = WindowButtonColors(
-        iconNormal: isDark ? Colors.white54 : Colors.black54,
-        mouseOver: isDark ? Colors.white10 : Colors.black12,
-        mouseDown: isDark ? Colors.white24 : Colors.black26,
-        iconMouseOver: isDark ? Colors.white : Colors.black,
-        iconMouseDown: isDark ? Colors.white : Colors.black);
+        iconNormal: theme.colorScheme.onSurfaceVariant,
+        mouseOver: theme.colorScheme.onSurface.withAlpha(25),
+        mouseDown: theme.colorScheme.onSurface.withAlpha(50),
+        iconMouseOver: theme.colorScheme.onSurface,
+        iconMouseDown: theme.colorScheme.onSurface);
 
     final closeButtonColors = WindowButtonColors(
         mouseOver: const Color(0xFFD32F2F),
         mouseDown: const Color(0xFFB71C1C),
-        iconNormal: isDark ? Colors.white54 : Colors.black54,
+        iconNormal: theme.colorScheme.onSurfaceVariant,
         iconMouseOver: Colors.white);
 
     return Row(

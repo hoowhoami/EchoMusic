@@ -25,7 +25,6 @@ class Sidebar extends StatelessWidget {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
     final user = userProvider.user;
-    final isDark = theme.brightness == Brightness.dark;
     final accentColor = theme.colorScheme.primary;
 
     return SingleChildScrollView(
@@ -54,9 +53,9 @@ class Sidebar extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5),
+                  color: theme.colorScheme.onSurface.withAlpha(10),
                   border: Border.all(
-                    color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                    color: theme.colorScheme.outlineVariant,
                     width: 1,
                   ),
                 ),
@@ -98,8 +97,9 @@ class Sidebar extends StatelessWidget {
                         children: [
                           Text(
                             user?.nickname ?? '未登录',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.w800,
                               fontSize: 14,
                               letterSpacing: -0.2,
                             ),
@@ -110,9 +110,9 @@ class Sidebar extends StatelessWidget {
                           Text(
                             userProvider.isAuthenticated ? '账号中心' : '登录发现更多',
                             style: TextStyle(
-                              color: isDark ? Colors.white38 : Colors.black38,
+                              color: theme.colorScheme.onSurfaceVariant,
                               fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
@@ -137,7 +137,7 @@ class Sidebar extends StatelessWidget {
           _buildNavItem(context, 4, CupertinoIcons.cloud_upload_fill, '我的云盘'),
 
           const SizedBox(height: 32),
-          _buildPlaylistSection(context, userProvider, isDark),
+          _buildPlaylistSection(context, userProvider),
 
           const SizedBox(height: 32),
           _buildNavItem(context, 5, CupertinoIcons.slider_horizontal_3, '应用设置'),
@@ -153,8 +153,8 @@ class Sidebar extends StatelessWidget {
       child: Text(
         title.toUpperCase(),
         style: TextStyle(
-          color: theme.brightness == Brightness.dark ? Colors.white24 : Colors.black26,
-          fontSize: 10,
+          color: theme.colorScheme.onSurface.withAlpha(100),
+          fontSize: 11,
           fontWeight: FontWeight.w900,
           letterSpacing: 1.5,
         ),
@@ -162,7 +162,8 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaylistSection(BuildContext context, UserProvider userProvider, bool isDark) {
+  Widget _buildPlaylistSection(BuildContext context, UserProvider userProvider) {
+    final theme = Theme.of(context);
     final createdPlaylists = userProvider.userPlaylists.where((p) => p['list_create_userid'] == userProvider.user?.userid).toList();
     final likedPlaylists = userProvider.userPlaylists.where((p) => p['list_create_userid'] != userProvider.user?.userid).toList();
 
@@ -173,17 +174,17 @@ class Sidebar extends StatelessWidget {
         
         if (userProvider.isAuthenticated) ...[
           for (var p in createdPlaylists)
-            _buildPlaylistItem(context, p, CupertinoIcons.music_note_2, isDark),
+            _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
 
           for (var p in likedPlaylists)
-            _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, isDark, imageUrl: p['pic']),
+            _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
         ] else
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
             child: Text(
               '登录同步歌单',
               style: TextStyle(
-                color: isDark ? Colors.white12 : Colors.black12, 
+                color: theme.colorScheme.onSurface.withAlpha(60), 
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -193,8 +194,9 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, bool isDark, {String? imageUrl}) {
+  Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, {String? imageUrl}) {
     final playlist = Playlist.fromJson(playlistData);
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: InkWell(
@@ -220,16 +222,16 @@ class Sidebar extends StatelessWidget {
                 borderRadius: 6,
                 showShadow: false,
                 size: 100,
-                errorWidget: Icon(icon, color: isDark ? Colors.white38 : Colors.black38, size: 14),
+                errorWidget: Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 14),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   playlist.name,
                   style: TextStyle(
-                    color: isDark ? Colors.white.withAlpha(180) : Colors.black.withAlpha(180), 
+                    color: theme.colorScheme.onSurface.withAlpha(200), 
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.2,
                   ),
                   maxLines: 1,
@@ -246,7 +248,6 @@ class Sidebar extends StatelessWidget {
   Widget _buildNavItem(BuildContext context, int index, IconData icon, String label) {
     final isSelected = selectedIndex == index;
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final accentColor = theme.colorScheme.primary;
 
     return Padding(
@@ -259,7 +260,7 @@ class Sidebar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: isSelected 
-              ? accentColor.withAlpha(isDark ? 30 : 20)
+              ? accentColor.withAlpha(35)
               : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
           ),
@@ -267,7 +268,7 @@ class Sidebar extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                color: isSelected ? accentColor : (isDark ? Colors.white38 : Colors.black38),
+                color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant,
                 size: 20,
               ),
               const SizedBox(width: 14),
@@ -275,9 +276,9 @@ class Sidebar extends StatelessWidget {
                 label,
                 style: TextStyle(
                   color: isSelected 
-                    ? (isDark ? Colors.white : accentColor) 
-                    : (isDark ? Colors.white.withAlpha(150) : Colors.black.withAlpha(150)),
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    ? accentColor 
+                    : theme.colorScheme.onSurface.withAlpha(200),
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
                   fontSize: 14,
                   letterSpacing: -0.2,
                 ),

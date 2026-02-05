@@ -25,29 +25,34 @@ class AppTheme {
         primary: primaryAccent,
         secondary: secondaryAccent,
         surface: lightSurface,
-        onSurface: const Color(0xFF1F2937),
+        onSurface: const Color(0xFF1D1D1F), // Apple-style deep black
+        onSurfaceVariant: const Color(0xFF4B5563), // Improved readability for secondary text
+        surfaceContainerHighest: const Color(0xFFE5E7EB), // For backgrounds of elements
+        outline: const Color(0xFFD1D5DB),
+        outlineVariant: const Color(0xFFE5E7EB),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 15, fontWeight: FontWeight.w600),
+        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 16, fontWeight: FontWeight.bold),
+        iconTheme: IconThemeData(color: Color(0xFF1D1D1F)),
       ),
       cardTheme: CardThemeData(
         color: lightSurface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: Color(0xFFE5E5EA), width: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFFE5E5EA), width: 1.0),
         ),
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: primaryAccent,
-        inactiveTrackColor: primaryAccent.withAlpha(25),
+        inactiveTrackColor: primaryAccent.withAlpha(30),
         thumbColor: primaryAccent,
         overlayColor: primaryAccent.withAlpha(15),
-        trackHeight: 1.8,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4.5),
+        trackHeight: 3.0,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -66,34 +71,27 @@ class AppTheme {
       ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFFE5E5EA),
-        thickness: 0.6,
+        thickness: 0.8,
       ),
       textTheme: base.textTheme.apply(
         fontFamily: 'Inter',
-        bodyColor: const Color(0xFF1F2937),
+        bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, letterSpacing: -0.5),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: -0.2),
-        bodyLarge: const TextStyle(fontSize: 13, height: 1.4),
-        bodyMedium: const TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF6B7280)),
-      ),
-      dropdownMenuTheme: DropdownMenuThemeData(
-        textStyle: const TextStyle(fontSize: 12, color: Color(0xFF1F2937)),
-        inputDecorationTheme: InputDecorationTheme(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ),
+        titleLarge: const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: -0.6),
+        titleMedium: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.3),
+        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500),
+        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, color: Color(0xFF4B5563)),
+        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ),
       extensions: [
         AppModernTheme(
-          sidebarColor: const Color(0xFFFFFFFF).withAlpha(240),
+          sidebarColor: const Color(0xFFFFFFFF).withAlpha(245),
           playerBarColor: const Color(0xFFFFFFFF).withAlpha(250),
           dividerColor: const Color(0xFFE5E5EA),
-          glassBlur: 20.0,
-          cardHighlight: primaryAccent.withAlpha(5),
+          sidebarBorder: const Color(0xFFE5E5EA),
+          glassBlur: 25.0,
+          cardHighlight: primaryAccent.withAlpha(8),
         ),
       ],
     );
@@ -110,75 +108,58 @@ class AppTheme {
         primary: primaryAccent,
         secondary: secondaryAccent,
         surface: darkSurface,
-        onSurface: const Color(0xFFF3F4F6),
+        onSurface: const Color(0xFFF5F5F7), // Improved readability
+        onSurfaceVariant: const Color(0xFF9CA3AF),
+        surfaceContainerHighest: const Color(0xFF2C2C2E),
+        outline: const Color(0xFF38383A),
+        outlineVariant: const Color(0xFF2C2C2E),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFFF9FAFB), fontSize: 15, fontWeight: FontWeight.w600),
+        titleTextStyle: TextStyle(color: Color(0xFFFFFFFF), fontSize: 16, fontWeight: FontWeight.bold),
+        iconTheme: IconThemeData(color: Color(0xFFF5F5F7)),
       ),
       cardTheme: CardThemeData(
         color: darkSurface,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: Color(0xFF38383A), width: 0.8),
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Color(0xFF38383A), width: 1.0),
         ),
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: primaryAccent,
-        inactiveTrackColor: Colors.white.withAlpha(12),
+        inactiveTrackColor: Colors.white.withAlpha(15),
         thumbColor: Colors.white,
-        overlayColor: primaryAccent.withAlpha(25),
-        trackHeight: 1.8,
-        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4.5),
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return primaryAccent;
-          }
-          return const Color(0xFF6B7280);
-        }),
-        trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return primaryAccent.withAlpha(80);
-          }
-          return const Color(0xFF374151);
-        }),
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        overlayColor: primaryAccent.withAlpha(30),
+        trackHeight: 3.0,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFF38383A),
-        thickness: 0.6,
+        thickness: 0.8,
       ),
       textTheme: base.textTheme.apply(
         fontFamily: 'Inter',
-        bodyColor: const Color(0xFFF3F4F6),
+        bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20, letterSpacing: -0.5),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, letterSpacing: -0.2),
-        bodyLarge: const TextStyle(fontSize: 13, height: 1.4),
-        bodyMedium: const TextStyle(fontSize: 12, height: 1.4, color: Color(0xFF9CA3AF)),
-      ),
-      dropdownMenuTheme: DropdownMenuThemeData(
-        textStyle: const TextStyle(fontSize: 12, color: Color(0xFFF3F4F6)),
-        inputDecorationTheme: InputDecorationTheme(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ),
+        titleLarge: const TextStyle(fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: -0.6),
+        titleMedium: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: -0.3),
+        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500),
+        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, color: Color(0xFF9CA3AF)),
+        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ),
       extensions: [
         AppModernTheme(
-          sidebarColor: const Color(0xFF0C0C0E).withAlpha(230),
-          playerBarColor: const Color(0xFF1C1C1E).withAlpha(240),
+          sidebarColor: const Color(0xFF0C0C0E).withAlpha(240),
+          playerBarColor: const Color(0xFF1C1C1E).withAlpha(245),
           dividerColor: const Color(0xFF38383A),
-          glassBlur: 20.0,
-          cardHighlight: primaryAccent.withAlpha(10),
+          sidebarBorder: const Color(0xFF2C2C2E),
+          glassBlur: 25.0,
+          cardHighlight: primaryAccent.withAlpha(15),
         ),
       ],
     );
@@ -189,6 +170,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
   final Color? sidebarColor;
   final Color? playerBarColor;
   final Color? dividerColor;
+  final Color? sidebarBorder;
   final double? glassBlur;
   final Color? cardHighlight;
 
@@ -196,6 +178,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     this.sidebarColor,
     this.playerBarColor,
     this.dividerColor,
+    this.sidebarBorder,
     this.glassBlur,
     this.cardHighlight,
   });
@@ -205,6 +188,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     Color? sidebarColor,
     Color? playerBarColor,
     Color? dividerColor,
+    Color? sidebarBorder,
     double? glassBlur,
     Color? cardHighlight,
   }) {
@@ -212,6 +196,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       sidebarColor: sidebarColor ?? this.sidebarColor,
       playerBarColor: playerBarColor ?? this.playerBarColor,
       dividerColor: dividerColor ?? this.dividerColor,
+      sidebarBorder: sidebarBorder ?? this.sidebarBorder,
       glassBlur: glassBlur ?? this.glassBlur,
       cardHighlight: cardHighlight ?? this.cardHighlight,
     );
@@ -224,6 +209,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       sidebarColor: Color.lerp(sidebarColor, other.sidebarColor, t),
       playerBarColor: Color.lerp(playerBarColor, other.playerBarColor, t),
       dividerColor: Color.lerp(dividerColor, other.dividerColor, t),
+      sidebarBorder: Color.lerp(sidebarBorder, other.sidebarBorder, t),
       glassBlur: _lerpDouble(glassBlur, other.glassBlur, t),
       cardHighlight: Color.lerp(cardHighlight, other.cardHighlight, t),
     );

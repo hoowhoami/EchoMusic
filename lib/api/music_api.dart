@@ -297,16 +297,15 @@ class MusicApi {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> getAlbumTop() async {
+  static Future<Map<String, dynamic>> getAlbumTop() async {
     try {
       final response = await _dio.get('/top/album');
       if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
-        return data.cast<Map<String, dynamic>>();
+        return response.data['data']['info'] ?? {};
       }
-      return [];
+      return {};
     } catch (e) {
-      return [];
+      return {};
     }
   }
 
@@ -445,7 +444,10 @@ class MusicApi {
       final response = await _dio.get('/user/history', queryParameters: bp != null ? {'bp': bp} : {});
       if (response.data['status'] == 1) {
         List data = response.data['data']['list'] ?? [];
-        return data.map((json) => Song.fromJson(json)).toList();
+        return data
+            .where((item) => item['info'] != null)
+            .map((item) => Song.fromJson(item['info']))
+            .toList();
       }
       return [];
     } catch (e) {

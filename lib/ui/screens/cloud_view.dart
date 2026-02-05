@@ -28,10 +28,16 @@ class _CloudViewState extends State<CloudView> {
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final selectionProvider = context.watch<SelectionProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final theme = Theme.of(context);
 
     if (!userProvider.isAuthenticated) {
-      return const Center(child: Text('登录后查看云盘', style: TextStyle(color: Colors.white30)));
+      return Center(
+        child: Text(
+          '登录后查看云盘', 
+          style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontWeight: FontWeight.w600),
+        ),
+      );
     }
 
     return Scaffold(
@@ -50,9 +56,9 @@ class _CloudViewState extends State<CloudView> {
                         '音乐云盘',
                         style: TextStyle(
                           fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : Colors.black,
-                          letterSpacing: -0.5,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
+                          letterSpacing: -0.6,
                         ),
                       ),
                       const Spacer(),
@@ -69,7 +75,7 @@ class _CloudViewState extends State<CloudView> {
                               selectionProvider.setSongList(songs);
                               selectionProvider.enterSelectionMode();
                             },
-                            color: isDark ? Colors.white54 : Colors.black54,
+                            color: theme.colorScheme.onSurfaceVariant,
                             tooltip: '批量选择',
                           );
                         },
@@ -86,8 +92,11 @@ class _CloudViewState extends State<CloudView> {
                         }
                         final songs = snapshot.data ?? [];
                         if (songs.isEmpty) {
-                          return const Center(
-                            child: Text('云盘暂无歌曲', style: TextStyle(color: Colors.white30)),
+                          return Center(
+                            child: Text(
+                              '云盘暂无歌曲', 
+                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontWeight: FontWeight.w600),
+                            ),
                           );
                         }
 

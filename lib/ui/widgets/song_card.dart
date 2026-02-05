@@ -33,7 +33,6 @@ class SongCard extends StatelessWidget {
     final audioProvider = context.watch<AudioProvider>();
     final isCurrent = audioProvider.currentSong?.hash == song.hash;
     final isPlaying = isCurrent && audioProvider.isPlaying;
-    final isDark = theme.brightness == Brightness.dark;
     final primaryColor = theme.colorScheme.primary;
 
     return InkWell(
@@ -51,7 +50,7 @@ class SongCard extends StatelessWidget {
       child: Container(
         decoration: isSelectionMode && isSelected
             ? BoxDecoration(
-                color: primaryColor.withAlpha(isDark ? 20 : 10),
+                color: primaryColor.withAlpha(20),
                 borderRadius: BorderRadius.circular(16),
               )
             : null,
@@ -67,7 +66,7 @@ class SongCard extends StatelessWidget {
                     onChanged: (value) => onSelectionChanged?.call(value ?? false),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                     side: BorderSide(
-                      color: isDark ? Colors.white24 : Colors.black26,
+                      color: theme.colorScheme.outline,
                       width: 1.5,
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -90,16 +89,16 @@ class SongCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: song.isUnavailable
-                                ? (isDark ? Colors.white24 : Colors.black26)
-                                : (isCurrent ? primaryColor : (isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A))),
-                            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w600,
+                                ? theme.colorScheme.onSurface.withAlpha(80)
+                                : (isCurrent ? primaryColor : theme.colorScheme.onSurface),
+                            fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
                             fontSize: 15,
-                            letterSpacing: -0.2,
+                            letterSpacing: -0.3,
                           ),
                         ),
                       ),
                       if (song.isUnavailable)
-                        _buildTag(context, '不可用', const Color(0xFF9CA3AF))
+                        _buildTag(context, '不可用', theme.colorScheme.onSurface.withAlpha(100))
                       else if (song.isPaid)
                         _buildTag(context, '付费', const Color(0xFF8B5CF6))
                       else if (song.isVip)
@@ -114,9 +113,9 @@ class SongCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: isDark ? Colors.white38 : Colors.black38,
+                      color: theme.colorScheme.onSurfaceVariant,
                       fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -131,7 +130,7 @@ class SongCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: isDark ? Colors.white38 : Colors.black38, 
+                    color: theme.colorScheme.onSurfaceVariant, 
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
@@ -141,9 +140,10 @@ class SongCard extends StatelessWidget {
               Text(
                 _formatDuration(song.duration),
                 style: TextStyle(
-                  color: isDark ? Colors.white30 : Colors.black26, 
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(150), 
                   fontSize: 13,
                   fontFamily: 'monospace',
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -153,7 +153,7 @@ class SongCard extends StatelessWidget {
               onPressed: () {
                 // TODO: Context menu
               },
-              color: isDark ? Colors.white24 : Colors.black26,
+              color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
               splashRadius: 24,
             ),
           ],
@@ -164,6 +164,7 @@ class SongCard extends StatelessWidget {
   }
 
   Widget _buildCover(BuildContext context, bool isCurrent, bool isPlaying, Color primaryColor) {
+    final theme = Theme.of(context);
     return Stack(
       children: [
         CoverImage(
@@ -179,12 +180,12 @@ class SongCard extends StatelessWidget {
             width: coverSize,
             height: coverSize,
             decoration: BoxDecoration(
-              color: Colors.black.withAlpha(isPlaying ? 100 : 60),
+              color: theme.colorScheme.shadow.withAlpha(isPlaying ? 100 : 60),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: isPlaying 
-                ? _PlayingIndicator(color: Colors.white)
+                ? const _PlayingIndicator(color: Colors.white)
                 : const Icon(CupertinoIcons.play_fill, color: Colors.white, size: 18),
             ),
           ),

@@ -30,8 +30,9 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final selectionProvider = context.watch<SelectionProvider>();
+
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -60,7 +61,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                             selectionProvider.setSongList(snapshot.data!);
                             selectionProvider.enterSelectionMode();
                           },
-                          color: isDark ? Colors.white54 : Colors.black54,
+                          color: theme.colorScheme.onSurfaceVariant,
                           tooltip: '批量选择',
                         );
                       },
@@ -89,8 +90,8 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                                   end: Alignment.bottomCenter,
                                   colors: [
                                     Colors.transparent,
-                                    Theme.of(context).scaffoldBackgroundColor.withOpacity(0.8),
-                                    Theme.of(context).scaffoldBackgroundColor,
+                                    theme.scaffoldBackgroundColor.withAlpha(200),
+                                    theme.scaffoldBackgroundColor,
                                   ],
                                 ),
                               ),
@@ -106,7 +107,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                                         borderRadius: BorderRadius.circular(12),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withAlpha(50),
+                                            color: theme.colorScheme.shadow.withAlpha(50),
                                             blurRadius: 20,
                                             offset: const Offset(0, 10),
                                           ),
@@ -132,19 +133,19 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                                         Text(
                                           '专辑',
                                           style: TextStyle(
-                                            color: isDark ? Colors.white54 : Colors.black54,
+                                            color: theme.colorScheme.onSurfaceVariant,
                                             fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            letterSpacing: 1.2,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 1.5,
                                           ),
                                         ),
                                         Text(
                                           widget.albumName,
                                           style: TextStyle(
                                             fontSize: 32,
-                                            fontWeight: FontWeight.w700,
-                                            color: isDark ? Colors.white : Colors.black,
-                                            letterSpacing: -0.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: theme.colorScheme.onSurface,
+                                            letterSpacing: -1.0,
                                           ),
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
@@ -153,7 +154,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                                         if (detail != null)
                                           Text(
                                             '${detail['singername'] ?? detail['singer'] ?? ''} • ${detail['publishtime'] ?? detail['publish_time'] ?? ''}',
-                                            style: TextStyle(color: isDark ? Colors.white70 : Colors.black.withOpacity(0.7), fontSize: 16),
+                                            style: TextStyle(
+                                              color: theme.colorScheme.onSurfaceVariant, 
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),

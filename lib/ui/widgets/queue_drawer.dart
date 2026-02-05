@@ -12,7 +12,6 @@ class QueueDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final modernTheme = theme.extension<AppModernTheme>()!;
 
     return Container(
@@ -40,7 +39,7 @@ class QueueDrawer extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : Colors.black87,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
                 const Spacer(),
@@ -52,7 +51,7 @@ class QueueDrawer extends StatelessWidget {
                       '$songCount 首',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? Colors.white38 : Colors.black38,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     );
                   },
@@ -76,14 +75,14 @@ class QueueDrawer extends StatelessWidget {
                         Icon(
                           CupertinoIcons.music_note_list,
                           size: 48,
-                          color: isDark ? Colors.white24 : Colors.black12,
+                          color: theme.colorScheme.onSurface.withAlpha(40),
                         ),
                         const SizedBox(height: 12),
                         Text(
                           '播放队列为空',
                           style: TextStyle(
                             fontSize: 14,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -102,7 +101,7 @@ class QueueDrawer extends StatelessWidget {
                       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                       decoration: BoxDecoration(
                         color: isCurrent
-                            ? theme.colorScheme.primary.withAlpha(isDark ? 20 : 10)
+                            ? theme.colorScheme.primary.withAlpha(20)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -130,7 +129,7 @@ class QueueDrawer extends StatelessWidget {
                           song.singerName,
                           style: TextStyle(
                             fontSize: 11,
-                            color: isDark ? Colors.white38 : Colors.black38,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -144,7 +143,7 @@ class QueueDrawer extends StatelessWidget {
                             : Icon(
                                 CupertinoIcons.play_circle,
                                 size: 20,
-                                color: isDark ? Colors.white24 : Colors.black26,
+                                color: theme.colorScheme.onSurface.withAlpha(80),
                               ),
                         onTap: () {
                           audioProvider.playSong(song, playlist: playlist);
@@ -180,9 +179,9 @@ class QueueDrawer extends StatelessWidget {
                   icon: const Icon(CupertinoIcons.delete, size: 16),
                   label: const Text('清空列表', style: TextStyle(fontSize: 13)),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: isDark ? Colors.white70 : Colors.black87,
+                    foregroundColor: theme.colorScheme.onSurface,
                     side: BorderSide(
-                      color: isDark ? Colors.white24 : Colors.black26,
+                      color: theme.colorScheme.outlineVariant,
                       width: 0.8,
                     ),
                     padding: const EdgeInsets.symmetric(vertical: 10),

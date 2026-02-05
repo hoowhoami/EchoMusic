@@ -69,8 +69,8 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
     final selectionProvider = context.watch<SelectionProvider>();
 
     if (_isLoadingRanks) {
@@ -92,7 +92,7 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : Colors.black,
+                        color: theme.colorScheme.onSurface,
                         letterSpacing: -0.5,
                       ),
                     ),
@@ -104,7 +104,7 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                           selectionProvider.setSongList(_rankSongs);
                           selectionProvider.enterSelectionMode();
                         },
-                        color: isDark ? Colors.white54 : Colors.black54,
+                        color: theme.colorScheme.onSurfaceVariant,
                         tooltip: '批量选择',
                       ),
                     if (_ranks.isNotEmpty)
@@ -118,7 +118,7 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                   indicatorSize: TabBarIndicatorSize.label,
                   dividerColor: Colors.transparent,
                   labelColor: accentColor,
-                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
                   labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                   unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   indicator: UnderlineTabIndicator(
@@ -149,7 +149,7 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
   }
 
   Widget _buildRankSelector(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final selectedRank = _ranks.firstWhere((r) => r['rankid'] == _selectedRankId, orElse: () => _ranks.first);
     
     return InkWell(
@@ -158,9 +158,9 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+          color: theme.colorScheme.onSurface.withAlpha(10),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -170,11 +170,11 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white.withAlpha(200) : Colors.black.withAlpha(200),
+                color: theme.colorScheme.onSurface.withAlpha(200),
               ),
             ),
             const SizedBox(width: 8),
-            Icon(CupertinoIcons.chevron_down, size: 14, color: isDark ? Colors.white38 : Colors.black38),
+            Icon(CupertinoIcons.chevron_down, size: 14, color: theme.colorScheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -182,17 +182,16 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
   }
 
   void _showRankPicker(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
+        final theme = Theme.of(context);
         return Container(
           height: MediaQuery.of(context).size.height * 0.7,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            color: theme.colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
@@ -202,15 +201,15 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white10 : Colors.black12,
+                  color: theme.dividerColor.withAlpha(50),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.all(24.0),
+              Padding(
+                padding: const EdgeInsets.all(24.0),
                 child: Text(
                   '选择排行榜',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
                 ),
               ),
               Expanded(
@@ -236,12 +235,12 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         decoration: BoxDecoration(
                           color: isSelected 
-                            ? Theme.of(context).primaryColor.withAlpha(20)
-                            : (isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5)),
+                            ? theme.primaryColor.withAlpha(20)
+                            : theme.colorScheme.onSurface.withAlpha(5),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isSelected 
-                              ? Theme.of(context).primaryColor.withAlpha(100)
+                              ? theme.primaryColor.withAlpha(100)
                               : Colors.transparent
                           ),
                         ),
@@ -252,7 +251,7 @@ class _RankViewState extends State<RankView> with SingleTickerProviderStateMixin
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? Theme.of(context).primaryColor : (isDark ? Colors.white70 : Colors.black87),
+                              color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
                             ),
                           ),
                         ),

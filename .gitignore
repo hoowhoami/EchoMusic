@@ -121,3 +121,4 @@ app.*.symbols
 
 # Server
 server/
+.ace-tool/

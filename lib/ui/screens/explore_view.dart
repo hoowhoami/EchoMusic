@@ -45,17 +45,19 @@ class _ExploreViewState extends State<ExploreView> {
   }
 
   Widget _buildHeader(String title) {
+    final theme = Theme.of(context);
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 24,
         fontWeight: FontWeight.bold,
-        color: Colors.white,
+        color: theme.colorScheme.onSurface,
       ),
     );
   }
 
   Widget _buildRecommendedPlaylists() {
+    final theme = Theme.of(context);
     return FutureBuilder<List<Playlist>>(
       future: _recommendedPlaylistsFuture,
       builder: (context, snapshot) {
@@ -98,8 +100,8 @@ class _ExploreViewState extends State<ExploreView> {
                           playlist.name,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -116,6 +118,7 @@ class _ExploreViewState extends State<ExploreView> {
   }
 
   Widget _buildNewSongs() {
+    final theme = Theme.of(context);
     return FutureBuilder<List<Song>>(
       future: _newSongsFuture,
       builder: (context, snapshot) {
@@ -147,7 +150,7 @@ class _ExploreViewState extends State<ExploreView> {
                         imageUrl: song.cover,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorWidget: (context, url, error) => const Icon(Icons.music_note, size: 50),
+                        errorWidget: (context, url, error) => Icon(Icons.music_note, size: 50, color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ),
@@ -156,13 +159,13 @@ class _ExploreViewState extends State<ExploreView> {
                     song.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
                   ),
                   Text(
                     song.singerName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
                   ),
                 ],
               ),

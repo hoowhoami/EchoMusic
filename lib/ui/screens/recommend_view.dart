@@ -116,7 +116,6 @@ class _RecommendViewState extends State<RecommendView> {
     required VoidCallback onTap,
     required Color color,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final theme = Theme.of(context);
     
     return Expanded(
@@ -124,10 +123,10 @@ class _RecommendViewState extends State<RecommendView> {
         height: 72,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5)),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
         ),
         child: Material(
-          color: isDark ? Colors.white.withAlpha(5) : Colors.white,
+          color: theme.colorScheme.onSurface.withAlpha(8),
           borderRadius: BorderRadius.circular(16),
           child: InkWell(
             onTap: onTap,
@@ -137,23 +136,30 @@ class _RecommendViewState extends State<RecommendView> {
               child: Row(
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [color, color.withAlpha(180)],
+                        colors: [color, color.withAlpha(200)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withAlpha(60),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     child: Center(
                       child: Text(
                         iconContent,
-                        style: const TextStyle(
-                          fontSize: 16, 
+                        style: TextStyle(
+                          fontSize: 15, 
                           fontWeight: FontWeight.w900, 
-                          color: Colors.white,
+                          color: theme.colorScheme.onPrimary,
                         ),
                       ),
                     ),
@@ -166,11 +172,15 @@ class _RecommendViewState extends State<RecommendView> {
                       children: [
                         Text(
                           title,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            fontSize: 14, 
+                            fontWeight: FontWeight.w800,
+                            color: theme.colorScheme.onSurface,
+                          ),
                         ),
                         Text(
                           subtitle,
-                          style: theme.textTheme.bodyMedium?.copyWith(fontSize: 11),
+                          style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -302,8 +312,9 @@ class _RecommendViewState extends State<RecommendView> {
               playlist.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
             ),
@@ -311,7 +322,7 @@ class _RecommendViewState extends State<RecommendView> {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 11),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
       ),

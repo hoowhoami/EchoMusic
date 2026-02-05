@@ -88,7 +88,6 @@ class _BackToTopButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
@@ -99,19 +98,15 @@ class _BackToTopButton extends StatelessWidget {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withAlpha(10)
-                : Colors.white.withAlpha(200),
+            color: theme.colorScheme.surface.withAlpha(220),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark
-                  ? Colors.white.withAlpha(10)
-                  : Colors.white.withAlpha(30),
+              color: theme.colorScheme.outlineVariant,
               width: 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withAlpha(10),
+                color: theme.colorScheme.shadow.withAlpha(20),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -119,7 +114,7 @@ class _BackToTopButton extends StatelessWidget {
           ),
           child: Icon(
             CupertinoIcons.arrow_up,
-            color: isDark ? Colors.white70 : Colors.black54,
+            color: theme.colorScheme.onSurfaceVariant,
             size: 24,
           ),
         ),

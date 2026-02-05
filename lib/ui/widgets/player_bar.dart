@@ -17,7 +17,6 @@ class PlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final modernTheme = theme.extension<AppModernTheme>()!;
     final accentColor = theme.colorScheme.primary;
 
@@ -41,8 +40,8 @@ class PlayerBar extends StatelessWidget {
                 ),
               ),
               child: song == null
-                  ? _buildEmptyState(context, isDark, accentColor)
-                  : _buildPlayerContent(context, song, audioProvider, persistenceProvider, theme, isDark, modernTheme, accentColor),
+                  ? _buildEmptyState(context, accentColor)
+                  : _buildPlayerContent(context, song, audioProvider, persistenceProvider, theme, modernTheme, accentColor),
             ),
           ),
         );
@@ -50,7 +49,8 @@ class PlayerBar extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, bool isDark, Color accentColor) {
+  Widget _buildEmptyState(BuildContext context, Color accentColor) {
+    final theme = Theme.of(context);
     return Row(
       children: [
         Expanded(
@@ -58,7 +58,7 @@ class PlayerBar extends StatelessWidget {
             child: Text(
               '暂无播放内容',
               style: TextStyle(
-                color: isDark ? Colors.white.withAlpha(80) : Colors.black.withAlpha(80),
+                color: theme.colorScheme.onSurface.withAlpha(80),
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -80,7 +80,6 @@ class PlayerBar extends StatelessWidget {
     AudioProvider audioProvider,
     PersistenceProvider persistenceProvider,
     ThemeData theme,
-    bool isDark,
     AppModernTheme modernTheme,
     Color accentColor,
   ) {
@@ -120,10 +119,11 @@ class PlayerBar extends StatelessWidget {
                       children: [
                         Text(
                           song.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w800,
                             fontSize: 14,
-                            letterSpacing: -0.3,
+                            letterSpacing: -0.4,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -132,9 +132,9 @@ class PlayerBar extends StatelessWidget {
                         Text(
                           song.singerName,
                           style: TextStyle(
-                            color: isDark ? Colors.white54 : Colors.black54,
+                            color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 11,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -191,7 +191,7 @@ class PlayerBar extends StatelessWidget {
                         ? CupertinoIcons.pause_fill
                         : CupertinoIcons.play_fill,
                     size: 18,
-                    color: Colors.white,
+                    color: theme.colorScheme.onPrimary,
                   ),
                 ),
               ),
@@ -258,10 +258,10 @@ class PlayerBar extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(8),
+                    color: theme.colorScheme.onSurface.withAlpha(10),
                     borderRadius: BorderRadius.circular(5),
                     border: Border.all(
-                      color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(6),
+                      color: theme.colorScheme.outlineVariant,
                       width: 0.8,
                     ),
                   ),
@@ -276,7 +276,11 @@ class PlayerBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Icon(CupertinoIcons.speaker_2_fill, size: 14, color: isDark ? Colors.white38 : Colors.black38),
+              Icon(
+                CupertinoIcons.speaker_2_fill, 
+                size: 14, 
+                color: theme.colorScheme.onSurfaceVariant.withAlpha(140)
+              ),
               const SizedBox(width: 8),
               SizedBox(
                 width: 80,
@@ -396,10 +400,10 @@ class _PlayerIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final color = isSelected 
-      ? (activeColor ?? (isDark ? Colors.white : Theme.of(context).primaryColor))
-      : (isDark ? Colors.white.withAlpha(100) : Colors.black.withAlpha(100));
+      ? (activeColor ?? theme.primaryColor)
+      : theme.colorScheme.onSurfaceVariant.withAlpha(140);
 
     return IconButton(
       icon: Icon(icon, size: size, color: color),

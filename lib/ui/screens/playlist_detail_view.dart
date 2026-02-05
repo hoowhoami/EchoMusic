@@ -27,7 +27,6 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -117,7 +116,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                                   widget.playlist.intro,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               const SizedBox(height: 12),
                               Row(
@@ -148,7 +150,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                     label: const Text('播放全部'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: Colors.white,
+                      foregroundColor: theme.colorScheme.onPrimary,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 8,
@@ -163,6 +165,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      side: BorderSide(color: theme.colorScheme.outlineVariant),
+                      foregroundColor: theme.colorScheme.onSurface,
                     ),
                   ),
                 ],
@@ -207,22 +211,22 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   Widget _buildInfoChip(BuildContext context, IconData icon, String label) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: theme.brightness == Brightness.dark ? Colors.white10 : Colors.black.withAlpha(10),
-        borderRadius: BorderRadius.circular(6),
+        color: theme.colorScheme.onSurface.withAlpha(15),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: theme.brightness == Brightness.dark ? Colors.white54 : Colors.black54),
-          const SizedBox(width: 4),
+          Icon(icon, size: 12, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: theme.brightness == Brightness.dark ? Colors.white54 : Colors.black54,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],

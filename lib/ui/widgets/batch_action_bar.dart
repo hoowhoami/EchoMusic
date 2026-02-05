@@ -12,7 +12,7 @@ class BatchActionBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectionProvider = context.watch<SelectionProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     if (!selectionProvider.isSelectionMode) {
       return const SizedBox.shrink();
@@ -21,18 +21,18 @@ class BatchActionBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        color: theme.colorScheme.surface,
         border: Border(
           top: BorderSide(
-            color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(10),
+            color: theme.colorScheme.outlineVariant,
             width: 1,
           ),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
+            color: theme.colorScheme.shadow.withOpacity(0.08),
+            blurRadius: 15,
+            offset: const Offset(0, -5),
           ),
         ],
       ),
@@ -44,8 +44,9 @@ class BatchActionBar extends StatelessWidget {
               '已选 ${selectionProvider.selectedCount} 首',
               style: TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: -0.4,
               ),
             ),
             const Spacer(),
@@ -58,9 +59,10 @@ class BatchActionBar extends StatelessWidget {
                 '清空',
                 style: TextStyle(
                   fontSize: 14,
+                  fontWeight: FontWeight.w700,
                   color: selectionProvider.hasSelection
-                      ? (isDark ? Colors.white70 : Colors.black54)
-                      : (isDark ? Colors.white24 : Colors.black26),
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.colorScheme.onSurface.withAlpha(80),
                 ),
               ),
             ),
@@ -73,31 +75,32 @@ class BatchActionBar extends StatelessWidget {
                 '全选',
                 style: TextStyle(
                   fontSize: 14,
+                  fontWeight: FontWeight.w700,
                   color: selectionProvider.selectedCount < selectionProvider.selectedSongs.length
-                      ? (isDark ? Colors.white70 : Colors.black54)
-                      : (isDark ? Colors.white24 : Colors.black26),
+                      ? theme.colorScheme.onSurfaceVariant
+                      : theme.colorScheme.onSurface.withAlpha(80),
                 ),
               ),
             ),
             const SizedBox(width: 8),
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(8),
+              color: theme.colorScheme.primary,
+              borderRadius: BorderRadius.circular(10),
               onPressed: selectionProvider.hasSelection
                   ? () => _showBatchActions(context, selectionProvider)
                   : null,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(CupertinoIcons.ellipsis, size: 16, color: Colors.white),
-                  const SizedBox(width: 6),
+                  Icon(CupertinoIcons.ellipsis, size: 16, color: theme.colorScheme.onPrimary),
+                  const SizedBox(width: 8),
                   Text(
                     '批量操作',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: theme.colorScheme.onPrimary,
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
@@ -110,7 +113,7 @@ class BatchActionBar extends StatelessWidget {
   }
 
   void _showBatchActions(BuildContext context, SelectionProvider selectionProvider) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final userProvider = context.read<UserProvider>();
     final isAuthenticated = userProvider.isAuthenticated;
 
@@ -118,8 +121,8 @@ class BatchActionBar extends StatelessWidget {
       context: context,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SafeArea(
           top: false,
@@ -127,11 +130,11 @@ class BatchActionBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 36,
+                width: 40,
                 height: 4,
                 margin: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(10),
+                  color: theme.dividerColor.withAlpha(50),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -143,8 +146,9 @@ class BatchActionBar extends StatelessWidget {
                       '批量操作',
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : Colors.black,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                        letterSpacing: -0.5,
                       ),
                     ),
                     const Spacer(),
@@ -154,13 +158,13 @@ class BatchActionBar extends StatelessWidget {
                       child: Icon(
                         CupertinoIcons.xmark,
                         size: 20,
-                        color: isDark ? Colors.white54 : Colors.black54,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
+              Divider(height: 1, color: theme.colorScheme.outlineVariant),
               ListView(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -234,7 +238,7 @@ class BatchActionBar extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
             ],
           ),
         ),
@@ -250,7 +254,7 @@ class BatchActionBar extends StatelessWidget {
     required VoidCallback onTap,
     bool isDestructive = false,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     return CupertinoButton(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -261,8 +265,8 @@ class BatchActionBar extends StatelessWidget {
             icon,
             size: 28,
             color: isDestructive
-                ? CupertinoColors.destructiveRed
-                : Theme.of(context).colorScheme.primary,
+                ? theme.colorScheme.error
+                : theme.colorScheme.primary,
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -273,8 +277,8 @@ class BatchActionBar extends StatelessWidget {
                   title,
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.white : Colors.black,
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -282,7 +286,8 @@ class BatchActionBar extends StatelessWidget {
                   subtitle,
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? Colors.white54 : Colors.black54,
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -291,7 +296,7 @@ class BatchActionBar extends StatelessWidget {
           Icon(
             CupertinoIcons.chevron_right,
             size: 18,
-            color: isDark ? Colors.white24 : Colors.black26,
+            color: theme.colorScheme.onSurface.withAlpha(50),
           ),
         ],
       ),

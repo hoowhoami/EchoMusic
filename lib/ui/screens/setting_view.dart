@@ -11,10 +11,8 @@ class SettingView extends StatelessWidget {
   Widget build(BuildContext context) {
     final persistence = context.watch<PersistenceProvider>();
     final settings = persistence.settings;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black87;
-    final subTextColor = isDark ? Colors.white54 : Colors.black54;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
 
     return ScrollableContent(
       padding: const EdgeInsets.all(24.0),
@@ -23,10 +21,10 @@ class SettingView extends StatelessWidget {
         children: [
           Text(
             '偏好设置',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: textColor),
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
           ),
           const SizedBox(height: 6),
-          Text('个性化您的音乐播放体验', style: TextStyle(color: subTextColor, fontSize: 13)),
+          Text('个性化您的音乐播放体验', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13)),
           const SizedBox(height: 28),
 
           _buildGroup(
@@ -247,7 +245,7 @@ class SettingView extends StatelessWidget {
                 context,
                 '开源地址',
                 'https://github.com/hoowhoami/EchoMusic.git',
-                trailing: Icon(Icons.open_in_new, size: 16, color: subTextColor),
+                trailing: Icon(Icons.open_in_new, size: 16, color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -258,7 +256,7 @@ class SettingView extends StatelessWidget {
   }
 
   Widget _buildSliderItem(BuildContext context, String title, String valueText, double value, double min, double max, ValueChanged<double> onChanged) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -267,19 +265,19 @@ class SettingView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(title, style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(200), fontSize: 12, fontWeight: FontWeight.w500)),
                 Slider(
                   value: value,
                   min: min,
                   max: max,
                   onChanged: onChanged,
-                  activeColor: Theme.of(context).colorScheme.primary,
+                  activeColor: theme.colorScheme.primary,
                 ),
               ],
             ),
           ),
           const SizedBox(width: 10),
-          Text(valueText, style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 11)),
+          Text(valueText, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11)),
         ],
       ),
     );
@@ -302,8 +300,8 @@ class SettingView extends StatelessWidget {
   }
 
   Widget _buildGroup(BuildContext context, String title, List<Widget> items) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,7 +315,7 @@ class SettingView extends StatelessWidget {
         ),
         Container(
           decoration: BoxDecoration(
-            color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(6),
+            color: theme.colorScheme.onSurface.withAlpha(8),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -325,7 +323,7 @@ class SettingView extends StatelessWidget {
               for (int i = 0; i < items.length; i++) ...[
                 items[i],
                 if (i < items.length - 1)
-                  Divider(color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(8), height: 1, indent: 14, endIndent: 14),
+                  Divider(color: theme.colorScheme.onSurface.withAlpha(8), height: 1, indent: 14, endIndent: 14),
               ],
             ],
           ),
@@ -335,7 +333,7 @@ class SettingView extends StatelessWidget {
   }
 
   Widget _buildItem(BuildContext context, String title, String desc, {required Widget trailing}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
@@ -344,9 +342,9 @@ class SettingView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(title, style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 3),
-                Text(desc, style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 11)),
+                Text(desc, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11)),
               ],
             ),
           ),
@@ -358,8 +356,8 @@ class SettingView extends StatelessWidget {
   }
 
   Widget _buildDropdown(BuildContext context, List<String> options, String value, ValueChanged<String> onChanged) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
 
     return MenuAnchor(
       builder: (BuildContext context, MenuController controller, Widget? child) {
@@ -375,10 +373,10 @@ class SettingView extends StatelessWidget {
             height: 28,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(8),
+              color: theme.colorScheme.onSurface.withAlpha(10),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: isDark ? Colors.white.withAlpha(8) : Colors.black.withAlpha(6),
+                color: theme.colorScheme.outlineVariant,
                 width: 0.8,
               ),
             ),
@@ -390,7 +388,7 @@ class SettingView extends StatelessWidget {
                   style: TextStyle(color: accentColor, fontSize: 12),
                 ),
                 const SizedBox(width: 4),
-                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: isDark ? Colors.white38 : Colors.black45),
+                Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
               ],
             ),
           ),
@@ -402,10 +400,10 @@ class SettingView extends StatelessWidget {
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.hovered)) {
-                return accentColor.withAlpha(isDark ? 20 : 15);
+                return accentColor.withAlpha(15);
               }
               if (isSelected) {
-                return accentColor.withAlpha(isDark ? 30 : 20);
+                return accentColor.withAlpha(20);
               }
               return null;
             }),
@@ -413,7 +411,7 @@ class SettingView extends StatelessWidget {
               if (isSelected) {
                 return accentColor;
               }
-              return isDark ? Colors.white70 : Colors.black87;
+              return theme.colorScheme.onSurface;
             }),
             padding: const WidgetStatePropertyAll(
               EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -432,7 +430,7 @@ class SettingView extends StatelessWidget {
         );
       }).toList(),
       style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll<Color>(isDark ? const Color(0xFF2C2C2E) : Colors.white),
+        backgroundColor: WidgetStatePropertyAll<Color>(theme.colorScheme.surface),
         elevation: const WidgetStatePropertyAll<double>(4),
         shape: WidgetStatePropertyAll<RoundedRectangleBorder>(
           RoundedRectangleBorder(

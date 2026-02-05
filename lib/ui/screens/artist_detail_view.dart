@@ -35,7 +35,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
     final userProvider = context.watch<UserProvider>();
     final selectionProvider = context.watch<SelectionProvider>();
     final isFollowing = userProvider.isFollowingSinger(widget.artistId);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -64,7 +65,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                             selectionProvider.setSongList(snapshot.data!);
                             selectionProvider.enterSelectionMode();
                           },
-                          color: isDark ? Colors.white54 : Colors.black54,
+                          color: theme.colorScheme.onSurfaceVariant,
                           tooltip: '批量选择',
                         );
                       },
@@ -94,8 +95,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                   end: Alignment.bottomCenter,
                                   colors: [
                                     Colors.transparent,
-                                    Theme.of(context).scaffoldBackgroundColor.withOpacity(0.4),
-                                    Theme.of(context).scaffoldBackgroundColor,
+                                    theme.scaffoldBackgroundColor.withAlpha(100),
+                                    theme.scaffoldBackgroundColor,
                                   ],
                                 ),
                               ),
@@ -112,8 +113,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                     style: TextStyle(
                                       fontSize: 48,
                                       fontWeight: FontWeight.w800,
-                                      color: isDark ? Colors.white : Colors.black,
-                                      letterSpacing: -1.5,
+                                      color: theme.colorScheme.onSurface,
+                                      letterSpacing: -1.8,
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -123,8 +124,9 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: isDark ? Colors.white70 : Colors.black54,
+                                        color: theme.colorScheme.onSurfaceVariant,
                                         fontSize: 15,
+                                        fontWeight: FontWeight.w600,
                                         letterSpacing: -0.2,
                                       ),
                                     ),
@@ -133,8 +135,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                     children: [
                                       CupertinoButton(
                                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                        color: isDark ? Colors.white : Colors.black,
-                                        borderRadius: BorderRadius.circular(10),
+                                        color: theme.colorScheme.primary,
+                                        borderRadius: BorderRadius.circular(12),
                                         onPressed: () async {
                                           final songs = await _songsFuture;
                                           if (songs.isNotEmpty) {
@@ -144,17 +146,17 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(CupertinoIcons.play_fill, color: isDark ? Colors.black : Colors.white, size: 18),
+                                            Icon(CupertinoIcons.play_fill, color: theme.colorScheme.onPrimary, size: 18),
                                             const SizedBox(width: 8),
-                                            Text('播放全部', style: TextStyle(color: isDark ? Colors.black : Colors.white, fontWeight: FontWeight.w600)),
+                                            Text('播放全部', style: TextStyle(color: theme.colorScheme.onPrimary, fontWeight: FontWeight.w800)),
                                           ],
                                         ),
                                       ),
                                       const SizedBox(width: 16),
                                       CupertinoButton(
                                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                        color: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(10),
-                                        borderRadius: BorderRadius.circular(10),
+                                        color: theme.colorScheme.onSurface.withAlpha(20),
+                                        borderRadius: BorderRadius.circular(12),
                                         onPressed: () {
                                           if (isFollowing) {
                                             userProvider.unfollowSinger(widget.artistId);
@@ -165,9 +167,9 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, color: isDark ? Colors.white : Colors.black, size: 18),
+                                            Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, color: theme.colorScheme.onSurface, size: 18),
                                             const SizedBox(width: 8),
-                                            Text(isFollowing ? '已关注' : '关注', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.w600)),
+                                            Text(isFollowing ? '已关注' : '关注', style: TextStyle(color: theme.colorScheme.onSurface, fontWeight: FontWeight.w800)),
                                           ],
                                         ),
                                       ),

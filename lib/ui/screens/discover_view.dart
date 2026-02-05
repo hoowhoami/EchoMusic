@@ -18,7 +18,6 @@ class DiscoverView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return DefaultTabController(
       length: 4,
@@ -42,14 +41,15 @@ class DiscoverView extends StatelessWidget {
                   indicatorSize: TabBarIndicatorSize.label,
                   dividerColor: Colors.transparent,
                   labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor: isDark ? Colors.white38 : Colors.black38,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   indicator: UnderlineTabIndicator(
                     borderSide: BorderSide(
-                      width: 2,
+                      width: 2.5,
                       color: theme.colorScheme.primary,
                     ),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                   tabs: const [
                     Tab(text: '歌单'),
@@ -121,17 +121,16 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
   }
 
   void _showCategoryPicker(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) {
+        final theme = Theme.of(context);
         return Container(
           height: MediaQuery.of(context).size.height * 0.7,
           decoration: BoxDecoration(
-            color: isDark ? const Color(0xFF1E293B) : Colors.white,
+            color: theme.colorScheme.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: Column(
@@ -141,15 +140,15 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white10 : Colors.black12,
+                  color: theme.dividerColor.withAlpha(50),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.all(24.0),
+              Padding(
+                padding: const EdgeInsets.all(24.0),
                 child: Text(
                   '歌单分类',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
                 ),
               ),
               Expanded(
@@ -168,7 +167,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                           child: Text(
                             category['tag_name'] ?? '',
                             style: TextStyle(
-                              color: Theme.of(context).primaryColor,
+                              color: theme.primaryColor,
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
                             ),
@@ -192,12 +191,12 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 decoration: BoxDecoration(
                                   color: isSelected 
-                                    ? Theme.of(context).primaryColor.withAlpha(20)
-                                    : (isDark ? Colors.white.withAlpha(5) : Colors.black.withAlpha(5)),
+                                    ? theme.primaryColor.withAlpha(20)
+                                    : theme.colorScheme.onSurface.withAlpha(5),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: isSelected 
-                                      ? Theme.of(context).primaryColor.withAlpha(100)
+                                      ? theme.primaryColor.withAlpha(100)
                                       : Colors.transparent
                                   ),
                                 ),
@@ -205,8 +204,8 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                                   son['tag_name'] ?? '',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    color: isSelected ? Theme.of(context).primaryColor : (isDark ? Colors.white70 : Colors.black87),
+                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                    color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
                                   ),
                                 ),
                               ),
@@ -228,7 +227,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     return Column(
       children: [
@@ -242,9 +241,9 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                    color: theme.colorScheme.onSurface.withAlpha(10),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
                   child: Row(
                     children: [
@@ -253,7 +252,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(width: 8),
-                      Icon(CupertinoIcons.chevron_right, size: 12, color: isDark ? Colors.white38 : Colors.black38),
+                      Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurfaceVariant),
                     ],
                   ),
                 ),
@@ -290,7 +289,7 @@ class _PlaylistCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     return InkWell(
       onTap: () {
@@ -309,7 +308,7 @@ class _PlaylistCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withAlpha(30),
+                    color: theme.colorScheme.shadow.withAlpha(30),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -321,7 +320,7 @@ class _PlaylistCard extends StatelessWidget {
                                     imageUrl: playlist.pic,
                                     fit: BoxFit.cover,
                                     width: double.infinity,
-                                    placeholder: (context, url) => Container(color: isDark ? Colors.white10 : Colors.black12),
+                                    placeholder: (context, url) => Container(color: theme.colorScheme.onSurface.withAlpha(10)),
                                     errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_note_list),
                                   ),
                                 ),            ),
@@ -332,9 +331,9 @@ class _PlaylistCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: isDark ? Colors.white.withAlpha(220) : Colors.black.withAlpha(220), 
+              color: theme.colorScheme.onSurface, 
               fontSize: 13,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -351,96 +350,242 @@ class _DiscoverAlbumTab extends StatefulWidget {
 }
 
 class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
-  late Future<List<Map<String, dynamic>>> _albumsFuture;
+  String _selectedTypeId = 'all';
+  String _selectedTypeName = '全部';
+  Map<String, dynamic> _allAlbums = {};
+  bool _isLoading = true;
+
+  final List<Map<String, String>> _types = [
+    {'id': 'all', 'name': '全部'},
+    {'id': 'chn', 'name': '华语'},
+    {'id': 'eur', 'name': '欧美'},
+    {'id': 'jpn', 'name': '日本'},
+    {'id': 'kor', 'name': '韩国'},
+  ];
 
   @override
   void initState() {
     super.initState();
-    _albumsFuture = MusicApi.getAlbumTop();
+    _loadAlbums();
+  }
+
+  Future<void> _loadAlbums() async {
+    setState(() => _isLoading = true);
+    final res = await MusicApi.getAlbumTop();
+    if (mounted) {
+      setState(() {
+        _allAlbums = res;
+        _isLoading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _getFilteredAlbums() {
+    if (_selectedTypeId == 'all') {
+      List<Map<String, dynamic>> combined = [];
+      for (var type in _types) {
+        if (type['id'] != 'all' && _allAlbums.containsKey(type['id'])) {
+          combined.addAll((_allAlbums[type['id']] as List).cast<Map<String, dynamic>>());
+        }
+      }
+      return combined;
+    } else {
+      return (_allAlbums[_selectedTypeId] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    }
+  }
+
+  void _showTypePicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final theme = Theme.of(context);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.dividerColor.withAlpha(50),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Text('专辑类型', style: theme.textTheme.titleLarge?.copyWith(fontSize: 18)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
+                child: Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: _types.map((type) {
+                    final isSelected = type['id'] == _selectedTypeId;
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedTypeId = type['id']!;
+                          _selectedTypeName = type['name']!;
+                        });
+                        Navigator.pop(context);
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isSelected 
+                            ? theme.primaryColor.withAlpha(20)
+                            : theme.colorScheme.onSurface.withAlpha(5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? theme.primaryColor : Colors.transparent
+                          ),
+                        ),
+                        child: Text(
+                          type['name']!,
+                          style: TextStyle(
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final albums = _getFilteredAlbums();
 
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _albumsFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CupertinoActivityIndicator());
-        final albums = snapshot.data!;
-        return GridView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
-          ),
-          itemCount: albums.length,
-          itemBuilder: (context, index) {
-            final album = albums[index];
-            String cover = album['imgurl']?.replaceAll('{size}', '400') ?? '';
-            return InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => AlbumDetailView(
-                      albumId: album['albumid'],
-                      albumName: album['albumname'] ?? '',
-                    ),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+          child: Row(
+            children: [
+              InkWell(
+                onTap: () => _showTypePicker(context),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withAlpha(8),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
                   ),
-                );
-              },
-              borderRadius: BorderRadius.circular(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withAlpha(30),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: CachedNetworkImage(
-                          imageUrl: cover,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
+                  child: Row(
+                    children: [
+                      Text(
+                        _selectedTypeName, 
+                        style: TextStyle(
+                          fontSize: 13, 
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    album['albumname'] ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isDark ? Colors.white.withAlpha(220) : Colors.black.withAlpha(220), 
-                      fontSize: 13, 
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    album['singername'] ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 11),
-                  ),
-                ],
+                ),
               ),
-            );
-          },
-        );
-      },
+            ],
+          ),
+        ),
+        Expanded(
+          child: _isLoading
+            ? const Center(child: CupertinoActivityIndicator())
+            : GridView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 5,
+                  childAspectRatio: 0.75,
+                  crossAxisSpacing: 24,
+                  mainAxisSpacing: 24,
+                ),
+                itemCount: albums.length,
+                itemBuilder: (context, index) {
+                  final album = albums[index];
+                  String cover = album['imgurl']?.replaceAll('{size}', '400') ?? '';
+                  return InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => AlbumDetailView(
+                            albumId: album['albumid'],
+                            albumName: album['albumname'] ?? '',
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withAlpha(30),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: CachedNetworkImage(
+                                imageUrl: cover,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                placeholder: (context, url) => Container(color: theme.colorScheme.surfaceContainerHighest),
+                                errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          album['albumname'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface, 
+                            fontSize: 13, 
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          album['singername'] ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+        ),
+      ],
     );
   }
 }
@@ -486,7 +631,7 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
                         selectionProvider.setSongList(songs);
                         selectionProvider.enterSelectionMode();
                       },
-                      color: isDark ? Colors.white54 : Colors.black54,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       tooltip: '批量选择',
                     ),
                   ],

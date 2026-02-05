@@ -51,13 +51,17 @@ class _LoadingScreenState extends State<LoadingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF0D1B2A), Color(0xFF000000)],
+            colors: [
+              theme.scaffoldBackgroundColor,
+              theme.colorScheme.surface,
+            ],
           ),
         ),
         child: Center(
@@ -65,16 +69,16 @@ class _LoadingScreenState extends State<LoadingScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (!_hasError)
-                const SpinKitDoubleBounce(
-                  color: Colors.cyanAccent,
+                SpinKitDoubleBounce(
+                  color: theme.colorScheme.primary,
                   size: 80.0,
                 )
               else
-                const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 80),
+                Icon(Icons.error_outline_rounded, color: theme.colorScheme.error, size: 80),
               const SizedBox(height: 40),
               Text(
                 _statusMessage,
-                style: const TextStyle(color: Colors.white70, fontSize: 18),
+                style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(180), fontSize: 18),
                 textAlign: TextAlign.center,
               ),
               if (_hasError) ...[
@@ -92,8 +96,8 @@ class _LoadingScreenState extends State<LoadingScreen> {
                         _startServer();
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.cyanAccent,
-                        foregroundColor: Colors.black,
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: theme.colorScheme.onPrimary,
                       ),
                       child: const Text('重试'),
                     ),
@@ -104,8 +108,8 @@ class _LoadingScreenState extends State<LoadingScreen> {
                         exit(0);
                       },
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: const BorderSide(color: Colors.white24),
+                        foregroundColor: theme.colorScheme.onSurface.withAlpha(180),
+                        side: BorderSide(color: theme.colorScheme.outlineVariant),
                       ),
                       child: const Text('退出应用'),
                     ),

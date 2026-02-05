@@ -38,7 +38,7 @@ class CoverImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final coverUrl = getCoverUrl(url, size: size);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     Widget image = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -52,7 +52,7 @@ class CoverImage extends StatelessWidget {
             Container(
               width: width,
               height: height,
-              color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+              color: theme.colorScheme.onSurface.withAlpha(10),
               child: const Center(
                 child: SizedBox(
                   width: 24,
@@ -66,11 +66,11 @@ class CoverImage extends StatelessWidget {
             Container(
               width: width,
               height: height,
-              color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+              color: theme.colorScheme.onSurface.withAlpha(10),
               child: Icon(
                 Icons.music_note_rounded,
                 size: (width ?? 40) * 0.5,
-                color: isDark ? Colors.white30 : Colors.black26,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
       ),
@@ -82,7 +82,7 @@ class CoverImage extends StatelessWidget {
           borderRadius: BorderRadius.circular(borderRadius),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(isDark ? 80 : 40),
+              color: theme.colorScheme.shadow.withAlpha(60),
               blurRadius: 20,
               offset: const Offset(0, 10),
               spreadRadius: -8,

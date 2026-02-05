@@ -116,8 +116,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final modernTheme = Theme.of(context).extension<AppModernTheme>()!;
+    final theme = Theme.of(context);
+    final modernTheme = theme.extension<AppModernTheme>()!;
 
     return Scaffold(
       body: Stack(
@@ -129,9 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: isDark
-                    ? [const Color(0xFF0F172A), const Color(0xFF020617), const Color(0xFF1E1B4B)]
-                    : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9), const Color(0xFFEEF2FF)],
+                  colors: [
+                    theme.scaffoldBackgroundColor,
+                    theme.colorScheme.surface,
+                    theme.colorScheme.surfaceContainerHighest.withAlpha(100),
+                  ],
                 ),
               ),
             ),
@@ -254,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required VoidCallback? onPressed,
     required String tooltip,
   }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final isEnabled = onPressed != null;
 
     return Tooltip(
@@ -264,8 +266,8 @@ class _HomeScreenState extends State<HomeScreen> {
           icon,
           size: 18,
           color: isEnabled
-              ? (isDark ? Colors.white70 : Colors.black.withAlpha(180))
-              : (isDark ? Colors.white24 : Colors.black.withAlpha(60)),
+              ? theme.colorScheme.onSurface
+              : theme.colorScheme.onSurface.withAlpha(60),
         ),
         onPressed: onPressed,
         padding: EdgeInsets.zero,
@@ -281,18 +283,19 @@ class WindowButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+
     final buttonColors = WindowButtonColors(
-        iconNormal: isDark ? Colors.white54 : Colors.black54,
-        mouseOver: isDark ? Colors.white10 : Colors.black12,
-        mouseDown: isDark ? Colors.white24 : Colors.black26,
-        iconMouseOver: isDark ? Colors.white : Colors.black,
-        iconMouseDown: isDark ? Colors.white : Colors.black);
+        iconNormal: theme.colorScheme.onSurfaceVariant,
+        mouseOver: theme.colorScheme.onSurface.withAlpha(25),
+        mouseDown: theme.colorScheme.onSurface.withAlpha(50),
+        iconMouseOver: theme.colorScheme.onSurface,
+        iconMouseDown: theme.colorScheme.onSurface);
 
     final closeButtonColors = WindowButtonColors(
         mouseOver: const Color(0xFFD32F2F),
         mouseDown: const Color(0xFFB71C1C),
-        iconNormal: isDark ? Colors.white54 : Colors.black54,
+        iconNormal: theme.colorScheme.onSurfaceVariant,
         iconMouseOver: Colors.white);
 
     return Row(

@@ -19,10 +19,10 @@ class _ProfileViewState extends State<ProfileView> {
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final user = userProvider.user;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
 
     if (!userProvider.isAuthenticated) {
-      return const Center(child: Text('请先登录', style: TextStyle(color: Colors.white30)));
+      return Center(child: Text('请先登录', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(60))));
     }
 
     final detail = user?.extendsInfo?['detail'] ?? {};
@@ -46,7 +46,7 @@ class _ProfileViewState extends State<ProfileView> {
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : Colors.black,
+                    color: theme.colorScheme.onSurface,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -61,7 +61,7 @@ class _ProfileViewState extends State<ProfileView> {
                       await userProvider.fetchUserDetails();
                       setState(() => _isLoading = false);
                     },
-                    color: isDark ? Colors.white38 : Colors.black38,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
               ],
             ),
@@ -71,9 +71,9 @@ class _ProfileViewState extends State<ProfileView> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                color: theme.colorScheme.onSurface.withAlpha(10),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
               ),
               child: Row(
                 children: [
@@ -103,7 +103,7 @@ class _ProfileViewState extends State<ProfileView> {
                         const SizedBox(height: 8),
                         Text(
                           'Lv.${detail['p_grade'] ?? 0} • ${detail['follows'] ?? 0} 关注 • ${detail['fans'] ?? 0} 粉丝',
-                          style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 13),
+                          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
                         ),
                         if (detail['descri'] != null)
                           Padding(
@@ -112,7 +112,7 @@ class _ProfileViewState extends State<ProfileView> {
                               detail['descri'],
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: isDark ? Colors.white30 : Colors.black38, fontSize: 12),
+                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontSize: 12),
                             ),
                           ),
                       ],
@@ -120,7 +120,7 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   CupertinoButton(
                     onPressed: () => _showLogoutDialog(context, userProvider),
-                    child: const Text('退出登录', style: TextStyle(color: CupertinoColors.destructiveRed)),
+                    child: Text('退出登录', style: TextStyle(color: theme.colorScheme.error)),
                   ),
                 ],
               ),
@@ -128,21 +128,21 @@ class _ProfileViewState extends State<ProfileView> {
 
             const SizedBox(height: 32),
             _buildSectionHeader('账号信息'),
-            _buildInfoCard(isDark, [
-              _buildInfoItem('用户ID', user?.userid.toString() ?? '', isDark),
-              _buildInfoItem('用户乐龄', _formatLeLing(detail['rtime']), isDark),
-              _buildInfoItem('听歌时长', _formatDuration(detail['duration']), isDark),
-              _buildInfoItem('IP属地', detail['loc'] ?? '未知', isDark),
-              _buildInfoItem('城市', detail['city'] ?? '未知', isDark),
+            _buildInfoCard(theme, [
+              _buildInfoItem(theme, '用户ID', user?.userid.toString() ?? ''),
+              _buildInfoItem(theme, '用户乐龄', _formatLeLing(detail['rtime'])),
+              _buildInfoItem(theme, '听歌时长', _formatDuration(detail['duration'])),
+              _buildInfoItem(theme, 'IP属地', detail['loc'] ?? '未知'),
+              _buildInfoItem(theme, '城市', detail['city'] ?? '未知'),
             ]),
 
             const SizedBox(height: 32),
             _buildSectionHeader('会员特权'),
-            _buildInfoCard(isDark, [
-              _buildVipInfoItem('畅听VIP', tvip, Colors.green, isDark, () {
+            _buildInfoCard(theme, [
+              _buildVipInfoItem(theme, '畅听VIP', tvip, Colors.green, () {
                 // TODO: Claim TVIP
               }),
-              _buildVipInfoItem('概念VIP', svip, Colors.orange, isDark, () {
+              _buildVipInfoItem(theme, '概念VIP', svip, Colors.orange, () {
                 // TODO: Claim SVIP
               }),
             ]),
@@ -176,10 +176,10 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  Widget _buildInfoCard(bool isDark, List<Widget> children) {
+  Widget _buildInfoCard(ThemeData theme, List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+        color: theme.colorScheme.onSurface.withAlpha(8),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -187,27 +187,27 @@ class _ProfileViewState extends State<ProfileView> {
           for (int i = 0; i < children.length; i++) ...[
             children[i],
             if (i < children.length - 1)
-              Divider(height: 1, indent: 16, endIndent: 16, color: isDark ? Colors.white10 : Colors.black12),
+              Divider(height: 1, indent: 16, endIndent: 16, color: theme.colorScheme.outlineVariant),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem(String label, String value, bool isDark) {
+  Widget _buildInfoItem(ThemeData theme, String label, String value) {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 14)),
+          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14)),
           Text(value, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
         ],
       ),
     );
   }
 
-  Widget _buildVipInfoItem(String label, dynamic vip, Color color, bool isDark, VoidCallback onTap) {
+  Widget _buildVipInfoItem(ThemeData theme, String label, dynamic vip, Color color, VoidCallback onTap) {
     final bool isActive = vip != null;
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -221,7 +221,7 @@ class _ProfileViewState extends State<ProfileView> {
                 if (isActive)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text('${vip['vip_begin_time']} ~ ${vip['vip_end_time']}', style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 12)),
+                    child: Text('${vip['vip_begin_time']} ~ ${vip['vip_end_time']}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
                   )
                 else
                   const Padding(

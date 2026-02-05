@@ -13,6 +13,7 @@ class LibraryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return DefaultTabController(
       length: 4,
       child: Padding(
@@ -20,12 +21,12 @@ class LibraryView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const TabBar(
+            TabBar(
               isScrollable: true,
-              indicatorColor: Colors.cyanAccent,
-              labelColor: Colors.cyanAccent,
-              unselectedLabelColor: Colors.white54,
-              tabs: [
+              indicatorColor: theme.colorScheme.primary,
+              labelColor: theme.colorScheme.primary,
+              unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+              tabs: const [
                 Tab(text: '我的收藏'),
                 Tab(text: '最近播放'),
                 Tab(text: '我的关注'),
@@ -56,6 +57,7 @@ class _SongList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Consumer<PersistenceProvider>(
       builder: (context, persistence, child) {
         final songs = type == 'favorites' ? persistence.favorites : persistence.history;
@@ -64,7 +66,7 @@ class _SongList extends StatelessWidget {
           return Center(
             child: Text(
               type == 'favorites' ? '暂无收藏歌曲' : '暂无播放历史',
-              style: const TextStyle(color: Colors.white30),
+              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
             ),
           );
         }
@@ -83,12 +85,12 @@ class _SongList extends StatelessWidget {
                   fit: BoxFit.cover,
                 ),
               ),
-              title: Text(song.name, style: const TextStyle(color: Colors.white)),
-              subtitle: Text(song.singerName, style: const TextStyle(color: Colors.white54)),
+              title: Text(song.name, style: TextStyle(color: theme.colorScheme.onSurface)),
+              subtitle: Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
               trailing: IconButton(
                 icon: Icon(
                   persistence.isFavorite(song) ? Icons.favorite : Icons.favorite_border,
-                  color: persistence.isFavorite(song) ? Colors.redAccent : Colors.white30,
+                  color: persistence.isFavorite(song) ? Colors.redAccent : theme.colorScheme.onSurface.withAlpha(80),
                 ),
                 onPressed: () => persistence.toggleFavorite(song),
               ),
@@ -108,6 +110,7 @@ class _FollowList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
     if (!userProvider.isAuthenticated) {
       return _buildLoginPrompt(context);
@@ -115,7 +118,7 @@ class _FollowList extends StatelessWidget {
 
     final follows = userProvider.userFollows;
     if (follows.isEmpty) {
-      return const Center(child: Text('暂无关注', style: TextStyle(color: Colors.white30)));
+      return Center(child: Text('暂无关注', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80))));
     }
 
     return ListView.builder(
@@ -129,7 +132,7 @@ class _FollowList extends StatelessWidget {
             backgroundImage: avatar != null ? CachedNetworkImageProvider(avatar) : null,
             child: avatar == null ? const Icon(Icons.person) : null,
           ),
-          title: Text(follow['singername'] ?? '', style: const TextStyle(color: Colors.white)),
+          title: Text(follow['singername'] ?? '', style: TextStyle(color: theme.colorScheme.onSurface)),
           onTap: () {
             Navigator.push(
               context,
@@ -147,11 +150,12 @@ class _FollowList extends StatelessWidget {
   }
 
   Widget _buildLoginPrompt(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('登录后查看关注', style: TextStyle(color: Colors.white54)),
+          Text('登录后查看关注', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
@@ -170,6 +174,7 @@ class _CloudList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
     if (!userProvider.isAuthenticated) {
       return _buildLoginPrompt(context);
@@ -177,7 +182,7 @@ class _CloudList extends StatelessWidget {
 
     final songs = userProvider.userCloud;
     if (songs.isEmpty) {
-      return const Center(child: Text('云盘暂无歌曲', style: TextStyle(color: Colors.white30)));
+      return Center(child: Text('云盘暂无歌曲', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80))));
     }
 
     return ListView.builder(
@@ -185,9 +190,9 @@ class _CloudList extends StatelessWidget {
       itemBuilder: (context, index) {
         final song = songs[index];
         return ListTile(
-          leading: const Icon(Icons.cloud_queue, color: Colors.cyanAccent),
-          title: Text(song.name, style: const TextStyle(color: Colors.white)),
-          subtitle: Text(song.singerName, style: const TextStyle(color: Colors.white54)),
+          leading: Icon(Icons.cloud_queue, color: theme.colorScheme.primary),
+          title: Text(song.name, style: TextStyle(color: theme.colorScheme.onSurface)),
+          subtitle: Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
           onTap: () {
             context.read<AudioProvider>().playSong(song, playlist: songs);
           },
@@ -197,11 +202,12 @@ class _CloudList extends StatelessWidget {
   }
 
   Widget _buildLoginPrompt(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('登录后查看云盘', style: TextStyle(color: Colors.white54)),
+          Text('登录后查看云盘', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {

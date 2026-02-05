@@ -167,8 +167,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -184,7 +184,7 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             child: Text(
               _loginMethod == 0 ? '验证码登录' : '扫码登录', 
-              style: TextStyle(color: accentColor, fontWeight: FontWeight.bold)
+              style: TextStyle(color: accentColor, fontWeight: FontWeight.w800)
             ),
           ),
           const SizedBox(width: 10),
@@ -199,23 +199,32 @@ class _LoginScreenState extends State<LoginScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: isDark 
-                    ? [const Color(0xFF1E1E1E), const Color(0xFF000000), const Color(0xFF121212)]
-                    : [const Color(0xFFF5F5F7), const Color(0xFFFFFFFF), const Color(0xFFE5E5EA)],
+                  colors: [
+                    theme.scaffoldBackgroundColor,
+                    theme.colorScheme.surface,
+                    theme.colorScheme.surfaceContainerHighest.withAlpha(150),
+                  ],
                 ),
               ),
             ),
           ),
           Center(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(
                 width: 400,
                 padding: const EdgeInsets.all(40),
                 decoration: BoxDecoration(
-                  color: isDark ? Colors.white.withAlpha(15) : Colors.black.withAlpha(5),
+                  color: theme.colorScheme.surface.withAlpha(180),
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: isDark ? Colors.white.withAlpha(20) : Colors.black.withAlpha(10)),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                  boxShadow: [
+                    BoxShadow(
+                      color: theme.colorScheme.shadow.withAlpha(50),
+                      blurRadius: 40,
+                      offset: const Offset(0, 20),
+                    ),
+                  ],
                 ),
                 child: SingleChildScrollView(
                   child: Column(
@@ -234,19 +243,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildQrLogin(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black87;
+    final theme = Theme.of(context);
+    final textColor = theme.colorScheme.onSurface;
 
     return Column(
       children: [
         Text(
           '扫码登录', 
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: textColor, letterSpacing: -0.5)
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 8),
         Text(
           '使用酷狗音乐APP扫码', 
-          style: TextStyle(fontSize: 14, color: isDark ? Colors.white54 : Colors.black54)
+          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)
         ),
         const SizedBox(height: 32),
         Container(
@@ -255,7 +264,7 @@ class _LoginScreenState extends State<LoginScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
-              BoxShadow(color: Colors.black.withAlpha(20), blurRadius: 20, offset: const Offset(0, 10))
+              BoxShadow(color: Colors.black.withAlpha(30), blurRadius: 25, offset: const Offset(0, 10))
             ]
           ),
           child: qrUrl != null
@@ -276,26 +285,26 @@ class _LoginScreenState extends State<LoginScreen> {
                         : QrImageView(data: qrUrl!, version: QrVersions.auto, size: 200.0),
                     if (qrStatus == 0)
                       Container(
-                        color: Colors.white.withAlpha(200),
+                        color: Colors.white.withAlpha(220),
                         width: 200, height: 200,
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text('二维码已过期', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                            TextButton(onPressed: _loadQrCode, child: const Text('点击刷新')),
+                            const Text('二维码已过期', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
+                            TextButton(onPressed: _loadQrCode, child: const Text('点击刷新', style: TextStyle(fontWeight: FontWeight.w800))),
                           ],
                         ),
                       ),
                     if (qrStatus == 2)
                       Container(
-                        color: Colors.white.withAlpha(200),
+                        color: Colors.white.withAlpha(220),
                         width: 200, height: 200,
                         child: const Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.check_circle, color: Colors.green, size: 48),
-                            SizedBox(height: 12),
-                            Text('已扫码，请在手机上确认', style: TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w600)),
+                            Icon(Icons.check_circle, color: Colors.green, size: 56),
+                            SizedBox(height: 16),
+                            Text('已扫码，请在手机上确认', style: TextStyle(color: Colors.black, fontSize: 13, fontWeight: FontWeight.w800)),
                           ],
                         ),
                       ),
@@ -308,47 +317,47 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          const Icon(Icons.error_outline, size: 48, color: Colors.red),
                           SizedBox(height: 12),
-                          Text(_errorMessage ?? '加载失败', style: TextStyle(color: Colors.black, fontSize: 12)),
+                          Text(_errorMessage ?? '加载失败', style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w600)),
                           SizedBox(height: 8),
                           TextButton(
                             onPressed: _loadQrCode,
-                            child: const Text('重试', style: TextStyle(fontWeight: FontWeight.bold)),
+                            child: const Text('重试', style: TextStyle(fontWeight: FontWeight.w800)),
                           ),
                         ],
                       ),
                     ),
         ),
         const SizedBox(height: 32),
-        Text(_getStatusText(), style: TextStyle(color: isDark ? Colors.white38 : Colors.black38, fontSize: 13)),
+        Text(_getStatusText(), style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w600)),
       ],
     );
   }
 
   Widget _buildMobileLogin(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : Colors.black87;
-    final accentColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final textColor = theme.colorScheme.onSurface;
+    final accentColor = theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           '验证码登录', 
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: textColor, letterSpacing: -0.5)
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 32),
         TextField(
           controller: _mobileController,
           keyboardType: TextInputType.phone,
-          style: TextStyle(color: textColor),
+          style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             hintText: '手机号码',
-            hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
-            prefixIcon: Icon(Icons.phone_android, color: isDark ? Colors.white30 : Colors.black38, size: 20),
+            hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
+            prefixIcon: Icon(Icons.phone_android, color: theme.colorScheme.onSurfaceVariant, size: 20),
             filled: true,
-            fillColor: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+            fillColor: theme.colorScheme.onSurface.withAlpha(8),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             contentPadding: const EdgeInsets.symmetric(vertical: 16),
           ),
@@ -360,13 +369,13 @@ class _LoginScreenState extends State<LoginScreen> {
               child: TextField(
                 controller: _codeController,
                 keyboardType: TextInputType.number,
-                style: TextStyle(color: textColor),
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   hintText: '验证码',
-                  hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black38),
-                  prefixIcon: Icon(Icons.lock_outline, color: isDark ? Colors.white30 : Colors.black38, size: 20),
+                  hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
+                  prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.onSurfaceVariant, size: 20),
                   filled: true,
-                  fillColor: isDark ? Colors.white.withAlpha(10) : Colors.black.withAlpha(5),
+                  fillColor: theme.colorScheme.onSurface.withAlpha(8),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -383,7 +392,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码', style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码', style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ],
@@ -395,12 +404,12 @@ class _LoginScreenState extends State<LoginScreen> {
           child: ElevatedButton(
             onPressed: _loginByMobile,
             style: ElevatedButton.styleFrom(
-              backgroundColor: textColor,
-              foregroundColor: isDark ? Colors.black : Colors.white,
+              backgroundColor: theme.colorScheme.onSurface,
+              foregroundColor: theme.colorScheme.surface,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            child: const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ),
         ),
       ],

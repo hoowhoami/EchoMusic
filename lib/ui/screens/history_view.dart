@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
@@ -11,8 +12,10 @@ class HistoryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final selectionProvider = context.watch<SelectionProvider>();
+    final userProvider = context.watch<UserProvider>();
+
+    final theme = Theme.of(context);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -30,39 +33,40 @@ class HistoryView extends StatelessWidget {
                         '最近播放',
                         style: TextStyle(
                           fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? Colors.white : Colors.black,
-                          letterSpacing: -0.5,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
+                          letterSpacing: -0.6,
                         ),
                       ),
                       const Spacer(),
-                      Consumer<PersistenceProvider>(
-                        builder: (context, persistence, _) {
-                          final songs = persistence.history;
-                          if (songs.isEmpty || selectionProvider.isSelectionMode) {
-                            return const SizedBox.shrink();
-                          }
-                          return IconButton(
-                            icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                            onPressed: () {
+                      if (!selectionProvider.isSelectionMode)
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                          onPressed: () {
+                            final songs = userProvider.isAuthenticated 
+                                ? userProvider.userHistory 
+                                : context.read<PersistenceProvider>().history;
+                            if (songs.isNotEmpty) {
                               selectionProvider.setSongList(songs);
                               selectionProvider.enterSelectionMode();
-                            },
-                            color: isDark ? Colors.white54 : Colors.black54,
-                            tooltip: '批量选择',
-                          );
-                        },
-                      ),
+                            }
+                          },
+                          color: theme.colorScheme.onSurfaceVariant,
+                          tooltip: '批量选择',
+                        ),
                     ],
                   ),
                   const SizedBox(height: 24),
                   Expanded(
-                    child: Consumer<PersistenceProvider>(
-                      builder: (context, persistence, _) {
-                        final songs = persistence.history;
+                    child: Consumer2<PersistenceProvider, UserProvider>(
+                      builder: (context, persistence, user, _) {
+                        final songs = user.isAuthenticated ? user.userHistory : persistence.history;
                         if (songs.isEmpty) {
-                          return const Center(
-                            child: Text('暂无历史', style: TextStyle(color: Colors.white30)),
+                          return Center(
+                            child: Text(
+                              '暂无历史', 
+                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontWeight: FontWeight.w600),
+                            ),
                           );
                         }
                         return ListView.builder(

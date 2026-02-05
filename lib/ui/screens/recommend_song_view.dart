@@ -25,7 +25,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
     final selectionProvider = context.watch<SelectionProvider>();
 
     return Scaffold(
@@ -35,7 +35,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
         border: null,
         middle: Text(
           '每日推荐',
-          style: TextStyle(color: isDark ? Colors.white : Colors.black),
+          style: TextStyle(color: theme.colorScheme.onSurface),
         ),
         trailing: FutureBuilder<List<Song>>(
           future: _recommendSongsFuture,
@@ -52,7 +52,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
               child: Icon(
                 CupertinoIcons.checkmark_circle,
                 size: 22,
-                color: isDark ? Colors.white54 : Colors.black54,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             );
           },
