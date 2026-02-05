@@ -92,9 +92,9 @@ class UserProvider with ChangeNotifier {
     final details = await MusicApi.userDetail();
     if (details != null && _user != null) {
       _user = _user!.copyWith(
-        username: details['username'],
-        nickname: details['nickname'],
-        pic: details['pic'],
+        username: details['username']?.toString(),
+        nickname: details['nickname']?.toString(),
+        pic: details['pic']?.toString(),
         extendsInfo: {
           ..._user!.extendsInfo ?? {},
           'detail': details,

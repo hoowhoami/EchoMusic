@@ -77,125 +77,127 @@ class _LyricPageState extends State<LyricPage> {
           ),
 
           // Content
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 40),
-            child: Row(
-              children: [
-                // Left side: Cover Art
-                Expanded(
-                  flex: 5,
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Hero(
-                          tag: 'player_cover',
-                          child: CoverImage(
-                            url: song.cover,
-                            width: 460,
-                            height: 460,
-                            borderRadius: 32,
-                            size: 1000,
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 40),
+              child: Row(
+                children: [
+                  // Left side: Cover Art
+                  Expanded(
+                    flex: 5,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Hero(
+                            tag: 'player_cover',
+                            child: CoverImage(
+                              url: song.cover,
+                              width: 460,
+                              height: 460,
+                              borderRadius: 32,
+                              size: 1000,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 48),
-                        Text(
-                          song.name,
-                          style: TextStyle(
-                            fontSize: 36,
-                            fontWeight: FontWeight.w900,
-                            color: theme.colorScheme.onSurface,
-                            letterSpacing: -1,
+                          const SizedBox(height: 48),
+                          Text(
+                            song.name,
+                            style: TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              color: theme.colorScheme.onSurface,
+                              letterSpacing: -1,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          song.singerName,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurface.withAlpha(150),
-                            letterSpacing: -0.5,
+                          const SizedBox(height: 12),
+                          Text(
+                            song.singerName,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface.withAlpha(150),
+                              letterSpacing: -0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 40),
-                        _buildSongInfo(context, song),
-                      ],
+                          const SizedBox(height: 40),
+                          _buildSongInfo(context, song),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(width: 60),
+                  const SizedBox(width: 60),
 
-                // Right side: Lyrics
-                Expanded(
-                  flex: 6,
-                  child: lyricProvider.lyrics.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.music_note_rounded, size: 64, color: theme.colorScheme.onSurface.withAlpha(30)),
-                              const SizedBox(height: 16),
-                              Text(
-                                '暂无歌词',
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurface.withAlpha(100), 
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ShaderMask(
-                          shaderCallback: (rect) {
-                            return const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
-                              stops: [0.0, 0.15, 0.85, 1.0],
-                            ).createShader(rect);
-                          },
-                          blendMode: BlendMode.dstIn,
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            itemCount: lyricProvider.lyrics.length,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(vertical: 300),
-                            itemBuilder: (context, index) {
-                              final isCurrentLine = lyricProvider.currentLineIndex == index;
-                              return AnimatedOpacity(
-                                duration: const Duration(milliseconds: 300),
-                                opacity: isCurrentLine ? 1.0 : 0.3,
-                                child: InkWell(
-                                  onTap: () {
-                                    // Optional: Seek to lyric time
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(vertical: 18),
-                                    child: Text(
-                                      lyricProvider.lyrics[index].text,
-                                      style: TextStyle(
-                                        fontSize: isCurrentLine ? 32 : 24,
-                                        fontWeight: isCurrentLine ? FontWeight.w900 : FontWeight.w700,
-                                        color: isCurrentLine ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                                        letterSpacing: -0.5,
-                                        height: 1.4,
-                                      ),
-                                      textAlign: TextAlign.left,
-                                    ),
+                  // Right side: Lyrics
+                  Expanded(
+                    flex: 6,
+                    child: lyricProvider.lyrics.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.music_note_rounded, size: 64, color: theme.colorScheme.onSurface.withAlpha(30)),
+                                const SizedBox(height: 16),
+                                Text(
+                                  '暂无歌词',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface.withAlpha(100), 
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              );
+                              ],
+                            ),
+                          )
+                        : ShaderMask(
+                            shaderCallback: (rect) {
+                              return const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
+                                stops: [0.0, 0.15, 0.85, 1.0],
+                              ).createShader(rect);
                             },
+                            blendMode: BlendMode.dstIn,
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              itemCount: lyricProvider.lyrics.length,
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(vertical: 300),
+                              itemBuilder: (context, index) {
+                                final isCurrentLine = lyricProvider.currentLineIndex == index;
+                                return AnimatedOpacity(
+                                  duration: const Duration(milliseconds: 300),
+                                  opacity: isCurrentLine ? 1.0 : 0.3,
+                                  child: InkWell(
+                                    onTap: () {
+                                      // Optional: Seek to lyric time
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 18),
+                                      child: Text(
+                                        lyricProvider.lyrics[index].text,
+                                        style: TextStyle(
+                                          fontSize: isCurrentLine ? 32 : 24,
+                                          fontWeight: isCurrentLine ? FontWeight.w900 : FontWeight.w700,
+                                          color: isCurrentLine ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                                          letterSpacing: -0.5,
+                                          height: 1.4,
+                                        ),
+                                        textAlign: TextAlign.left,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],

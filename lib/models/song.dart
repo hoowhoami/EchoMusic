@@ -47,18 +47,18 @@ class Song {
     }
 
     return Song(
-      hash: json['hash'] ?? '',
-      name: json['name'] ?? json['songname'] ?? '',
-      albumName: json['albuminfo']?['name'] ?? json['album_name'] ?? '',
+      hash: (json['hash'] ?? '').toString(),
+      name: (json['name'] ?? json['songname'] ?? '').toString(),
+      albumName: (json['albuminfo']?['name'] ?? json['album_name'] ?? '').toString(),
       albumId: json['album_id']?.toString(),
       singers: singers,
       duration: json['timelen'] != null ? (parseInt(json['timelen']) / 1000).floor() : 0,
-      cover: cover,
-      mvHash: json['mvhash'],
+      cover: cover.toString(),
+      mvHash: json['mvhash']?.toString(),
       mixSongId: parseInt(json['mixsongid']),
       privilege: json['privilege'] is int ? json['privilege'] : (json['privilege'] != null ? int.tryParse(json['privilege'].toString()) : null),
       relateGoods: relateGoods,
-      source: json['source'],
+      source: json['source']?.toString(),
     );
   }
 
@@ -108,8 +108,8 @@ class SingerInfo {
 
     return SingerInfo(
       id: parseInt(json['id']),
-      name: json['name'] ?? json['author_name'] ?? '',
-      avatar: json['avatar'],
+      name: (json['name'] ?? json['author_name'] ?? '').toString(),
+      avatar: json['avatar']?.toString(),
     );
   }
 }

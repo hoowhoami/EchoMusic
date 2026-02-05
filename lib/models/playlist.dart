@@ -38,9 +38,9 @@ class Playlist {
 
     return Playlist(
       id: parseId(json['listid'] ?? json['specialid'] ?? json['global_collection_id']),
-      name: json['name'] ?? json['specialname'] ?? '',
-      pic: pic,
-      intro: json['intro'] ?? '',
+      name: (json['name'] ?? json['specialname'] ?? '').toString(),
+      pic: pic.toString(),
+      intro: (json['intro'] ?? '').toString(),
       playCount: parseId(json['play_count'] ?? json['playcount']),
       count: parseId(json['song_count'] ?? json['count']),
       isPrivate: isPrivate,

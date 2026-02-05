@@ -174,6 +174,14 @@ class _LoginScreenState extends State<LoginScreen> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('登录'),
+        leadingWidth: 80,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 20),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -208,30 +216,32 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          Center(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                width: 400,
-                padding: const EdgeInsets.all(40),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withAlpha(180),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: theme.colorScheme.outlineVariant),
-                  boxShadow: [
-                    BoxShadow(
-                      color: theme.colorScheme.shadow.withAlpha(50),
-                      blurRadius: 40,
-                      offset: const Offset(0, 20),
-                    ),
-                  ],
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_loginMethod == 0) _buildQrLogin(context) else _buildMobileLogin(context),
+          SafeArea(
+            child: Center(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                child: Container(
+                  width: 400,
+                  padding: const EdgeInsets.all(40),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface.withAlpha(180),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.colorScheme.shadow.withAlpha(50),
+                        blurRadius: 40,
+                        offset: const Offset(0, 20),
+                      ),
                     ],
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_loginMethod == 0) _buildQrLogin(context) else _buildMobileLogin(context),
+                      ],
+                    ),
                   ),
                 ),
               ),
