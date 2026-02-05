@@ -80,7 +80,7 @@ class _RankViewState extends State<RankView> {
     }
 
     return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: bgColor,
         body: Stack(
         children: [
           Padding(

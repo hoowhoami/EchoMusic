@@ -226,7 +226,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           // Content View
                           Expanded(
                             child: Container(
-                              color: Colors.transparent,
+                              decoration: BoxDecoration(
+                                color: theme.scaffoldBackgroundColor,
+                              ),
                               child: Navigator(
                                 key: _navigatorKey,
                                 observers: [
@@ -241,12 +243,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onGenerateRoute: (settings) {
                                   return PageRouteBuilder(
                                     pageBuilder: (context, animation, secondaryAnimation) {
-                                      return AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 300),
-                                        child: KeyedSubtree(
-                                          key: ValueKey(_selectedIndex),
-                                          child: _views[_selectedIndex],
-                                        ),
+                                      return IndexedStack(
+                                        index: _selectedIndex,
+                                        children: _views,
                                       );
                                     },
                                   );

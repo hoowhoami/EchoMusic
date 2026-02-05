@@ -29,7 +29,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
     final selectionProvider = context.watch<SelectionProvider>();
 
     return Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: theme.scaffoldBackgroundColor,
         body: Stack(
         children: [
           Column(
