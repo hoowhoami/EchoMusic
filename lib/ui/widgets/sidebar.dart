@@ -6,6 +6,7 @@ import '../screens/login_screen.dart';
 import '../screens/playlist_detail_view.dart';
 import '../../models/playlist.dart';
 import 'cover_image.dart';
+import '../widgets/custom_dialog.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -26,17 +27,13 @@ class Sidebar extends StatelessWidget {
     final user = userProvider.user;
     final accentColor = theme.colorScheme.primary;
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 12),
-
-          // User Branding / Profile
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    return Column(
+      children: [
+        // Top Profile Section
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
             child: InkWell(
               onTap: () {
                 if (!userProvider.isAuthenticated) {
@@ -47,28 +44,29 @@ class Sidebar extends StatelessWidget {
                   onDestinationSelected(6);
                 }
               },
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                   color: theme.colorScheme.onSurface.withAlpha(10),
                   border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
+                    color: theme.colorScheme.outlineVariant.withAlpha(80),
                     width: 1,
                   ),
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: accentColor.withAlpha(40),
-                            blurRadius: 10,
+                            color: accentColor.withAlpha(30),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
@@ -76,19 +74,19 @@ class Sidebar extends StatelessWidget {
                         child: user?.pic != null
                           ? CoverImage(
                               url: user!.pic!,
-                              width: 40,
-                              height: 40,
+                              width: 42,
+                              height: 42,
                               borderRadius: 0,
                               showShadow: false,
                               size: 100,
                             )
                           : Container(
                               color: accentColor.withAlpha(20),
-                              child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 20),
+                              child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 22),
                             ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,20 +96,21 @@ class Sidebar extends StatelessWidget {
                             user?.nickname ?? '未登录',
                             style: TextStyle(
                               color: theme.colorScheme.onSurface,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
                               fontSize: 14,
-                              letterSpacing: -0.2,
+                              letterSpacing: -0.4,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 3),
                           Text(
-                            userProvider.isAuthenticated ? '账号中心' : '登录发现更多',
+                            userProvider.isAuthenticated ? '个人中心' : '点击登录账号',
                             style: TextStyle(
                               color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
                             ),
                           ),
                         ],
@@ -122,25 +121,104 @@ class Sidebar extends StatelessWidget {
               ),
             ),
           ),
+        ),
 
-          const SizedBox(height: 12),
+        // Scrollable Navigation Section
+        Expanded(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildGroupTitle(context, '发现音乐'),
+                _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
+                _buildNavItem(context, 1, CupertinoIcons.compass_fill, '探索发现'),
+                _buildNavItem(context, 2, CupertinoIcons.search, '全网搜索'),
 
-          _buildGroupTitle(context, '发现'),
-          _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
-          _buildNavItem(context, 1, CupertinoIcons.compass_fill, '发现音乐'),
-          _buildNavItem(context, 2, CupertinoIcons.search, '快速搜索'),
+                const SizedBox(height: 28),
+                _buildGroupTitle(context, '我的库'),
+                _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
+                _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
 
-          const SizedBox(height: 32),
-          _buildGroupTitle(context, '库'),
-          _buildNavItem(context, 3, CupertinoIcons.time_solid, '播放历史'),
-          _buildNavItem(context, 4, CupertinoIcons.cloud_upload_fill, '我的云盘'),
+                const SizedBox(height: 28),
+                _buildPlaylistSection(context, userProvider),
+              ],
+            ),
+          ),
+        ),
 
-          const SizedBox(height: 32),
-          _buildPlaylistSection(context, userProvider),
+        // Bottom Static Action Section
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.onSurface.withAlpha(8),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                _buildStaticActionItem(
+                  context,
+                  index: 5,
+                  icon: CupertinoIcons.settings_solid,
+                  label: '应用设置',
+                  onTap: () => onDestinationSelected(5),
+                ),
+                if (userProvider.isAuthenticated) ...[
+                  const SizedBox(height: 4),
+                  _buildStaticActionItem(
+                    context,
+                    icon: CupertinoIcons.power,
+                    label: '退出登录',
+                    color: theme.colorScheme.error,
+                    onTap: () => _showLogoutDialog(context, userProvider),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-          const SizedBox(height: 32),
-          _buildNavItem(context, 5, CupertinoIcons.slider_horizontal_3, '应用设置'),
-        ],
+  Widget _buildStaticActionItem(BuildContext context, {int? index, required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
+    final isSelected = index != null && selectedIndex == index;
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? accentColor.withAlpha(30) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? accentColor : (color ?? theme.colorScheme.onSurfaceVariant),
+                size: 18,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? accentColor : (color ?? theme.colorScheme.onSurface),
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -148,14 +226,14 @@ class Sidebar extends StatelessWidget {
   Widget _buildGroupTitle(BuildContext context, String title) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 28, right: 16, top: 8, bottom: 8),
+      padding: const EdgeInsets.only(left: 28, right: 16, top: 8, bottom: 10),
       child: Text(
-        title.toUpperCase(),
+        title,
         style: TextStyle(
-          color: theme.colorScheme.onSurface.withAlpha(160),
+          color: theme.colorScheme.onSurface.withAlpha(120),
           fontSize: 11,
           fontWeight: FontWeight.w900,
-          letterSpacing: 1.5,
+          letterSpacing: 1.2,
         ),
       ),
     );
@@ -181,11 +259,12 @@ class Sidebar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
             child: Text(
-              '登录同步歌单',
+              '登录同步云端歌单',
               style: TextStyle(
-                color: theme.colorScheme.onSurface.withAlpha(120), 
+                color: theme.colorScheme.onSurface.withAlpha(80), 
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ),
@@ -198,46 +277,55 @@ class Sidebar extends StatelessWidget {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
-      child: InkWell(
-        onTap: () {
-          if (onPushRoute != null) {
-            onPushRoute!(PlaylistDetailView(playlist: playlist));
-          } else {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
-            );
-          }
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              CoverImage(
-                url: imageUrl,
-                width: 24,
-                height: 24,
-                borderRadius: 6,
-                showShadow: false,
-                size: 100,
-                errorWidget: Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 14),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  playlist.name,
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface, 
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: InkWell(
+          onTap: () {
+            if (onPushRoute != null) {
+              onPushRoute!(PlaylistDetailView(playlist: playlist));
+            } else {
+              Navigator.push(
+                context,
+                CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
+              );
+            }
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                CoverImage(
+                  url: imageUrl,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
+                  showShadow: false,
+                  size: 100,
+                  errorWidget: Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withAlpha(10),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 14),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    playlist.name,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(220), 
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -251,43 +339,58 @@ class Sidebar extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: InkWell(
-        onTap: () => onDestinationSelected(index),
-        borderRadius: BorderRadius.circular(14),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected 
-              ? accentColor.withAlpha(35)
-              : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant,
-                size: 20,
-              ),
-              const SizedBox(width: 14),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected 
-                    ? accentColor 
-                    : theme.colorScheme.onSurface,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                  fontSize: 14,
-                  letterSpacing: -0.2,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: InkWell(
+          onTap: () => onDestinationSelected(index),
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected 
+                ? accentColor.withAlpha(35)
+                : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant,
+                  size: 20,
                 ),
-              ),
-            ],
+                const SizedBox(width: 14),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: isSelected 
+                      ? accentColor 
+                      : theme.colorScheme.onSurface,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                    fontSize: 14,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  void _showLogoutDialog(BuildContext context, UserProvider userProvider) {
+    CustomDialog.show(
+      context,
+      title: '确认退出登录',
+      content: '退出登录将清空您的用户信息，但会保留设备关联信息。',
+      confirmText: '退出登录',
+      isDestructive: true,
+    ).then((confirmed) {
+      if (confirmed == true) {
+        userProvider.logout();
+      }
+    });
+  }
 }
-
-
