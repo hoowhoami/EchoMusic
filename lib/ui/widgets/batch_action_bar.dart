@@ -68,23 +68,23 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
             child: Align(
               alignment: Alignment.bottomCenter,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
                     decoration: BoxDecoration(
-                      color: modernTheme.batchBarColor,
-                      borderRadius: BorderRadius.circular(20),
+                      color: theme.colorScheme.surface.withAlpha(theme.brightness == Brightness.dark ? 200 : 230),
+                      borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: theme.colorScheme.primary.withAlpha(40),
-                        width: 1.5,
+                        color: theme.colorScheme.primary.withAlpha(50),
+                        width: 1.0,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withAlpha(20),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          color: Colors.black.withAlpha(30),
+                          blurRadius: 30,
+                          offset: const Offset(0, 12),
                         ),
                       ],
                     ),
@@ -99,14 +99,14 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                               '已选择',
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                                 color: theme.colorScheme.onSurface.withAlpha(120),
                               ),
                             ),
                             Text(
                               '${selectionProvider.selectedCount} 首歌曲',
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w900,
                                 color: theme.colorScheme.onSurface,
                                 letterSpacing: -0.5,
@@ -115,26 +115,27 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                           ],
                         ),
                         const SizedBox(width: 32),
-                                                                    _buildIconButton(
-                                                                      icon: selectionProvider.selectedCount == selectionProvider.currentSongList.length && selectionProvider.currentSongList.isNotEmpty
-                                                                          ? CupertinoIcons.checkmark_square_fill
-                                                                          : (selectionProvider.selectedCount > 0 
-                                                                              ? CupertinoIcons.minus_square_fill 
-                                                                              : CupertinoIcons.square),
-                                                                      label: selectionProvider.selectedCount == selectionProvider.currentSongList.length && selectionProvider.currentSongList.isNotEmpty
-                                                                          ? '全不选'
-                                                                          : '全选',
-                                                                      onPressed: selectionProvider.currentSongList.isNotEmpty 
-                                                                          ? () {
-                                                                              if (selectionProvider.selectedCount == selectionProvider.currentSongList.length) {
-                                                                                selectionProvider.clearSelection();
-                                                                              } else {
-                                                                                selectionProvider.selectAll();
-                                                                              }
-                                                                            }
-                                                                          : null,
-                                                                      id: 'select_all',
-                                                                    ),                        _buildIconButton(
+                        _buildIconButton(
+                          icon: selectionProvider.selectedCount == selectionProvider.currentSongList.length && selectionProvider.currentSongList.isNotEmpty
+                              ? CupertinoIcons.checkmark_square_fill
+                              : (selectionProvider.selectedCount > 0 
+                                  ? CupertinoIcons.minus_square_fill 
+                                  : CupertinoIcons.square),
+                          label: selectionProvider.selectedCount == selectionProvider.currentSongList.length && selectionProvider.currentSongList.isNotEmpty
+                              ? '全不选'
+                              : '全选',
+                          onPressed: selectionProvider.currentSongList.isNotEmpty 
+                              ? () {
+                                  if (selectionProvider.selectedCount == selectionProvider.currentSongList.length) {
+                                    selectionProvider.clearSelection();
+                                  } else {
+                                    selectionProvider.selectAll();
+                                  }
+                                }
+                              : null,
+                          id: 'select_all',
+                        ),
+                        _buildIconButton(
                           icon: CupertinoIcons.play_fill,
                           label: '播放',
                           onPressed: selectionProvider.hasSelection ? () => _playSelected(context, selectionProvider) : null,
@@ -174,8 +175,10 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
   }) {
     final theme = Theme.of(context);
     final isHovered = _hoveredButton == id;
+    final isEnabled = onPressed != null;
 
     return MouseRegion(
+      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hoveredButton = id),
       onExit: (_) => setState(() => _hoveredButton = null),
       child: CupertinoButton(
@@ -190,8 +193,10 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: isHovered 
-                  ? (isDestructive ? theme.colorScheme.error : theme.colorScheme.primary)
-                  : (onPressed == null ? theme.disabledColor.withAlpha(20) : theme.colorScheme.primary.withAlpha(30)),
+                  ? (isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.primary)
+                  : (isEnabled 
+                      ? (isDestructive ? theme.colorScheme.error.withAlpha(30) : theme.colorScheme.primary.withAlpha(30))
+                      : theme.disabledColor.withAlpha(20)),
                 shape: BoxShape.circle,
               ),
               child: Padding(
@@ -199,17 +204,23 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                 child: Icon(
                   icon,
                   size: 18,
-                  color: isHovered ? Colors.white : (isDestructive ? theme.colorScheme.error : theme.colorScheme.primary),
+                  color: isHovered 
+                    ? Colors.white 
+                    : (isEnabled 
+                        ? (isDestructive ? theme.colorScheme.error : theme.colorScheme.primary)
+                        : theme.colorScheme.onSurface.withAlpha(40)),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.onSurface.withAlpha(180),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: isEnabled 
+                  ? (isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.onSurface.withAlpha(200))
+                  : theme.colorScheme.onSurface.withAlpha(40),
               ),
             ),
           ],
@@ -226,95 +237,8 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
     }
   }
 
-  Widget _buildTextButton({
-    required String label,
-    required VoidCallback? onPressed,
-    required Color color,
-    required String id,
-  }) {
-    final theme = Theme.of(context);
-    final isHovered = _hoveredButton == id && onPressed != null;
-
-    return MouseRegion(
-      cursor: onPressed != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hoveredButton = id),
-      onExit: (_) => setState(() => _hoveredButton = null),
-      child: CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        onPressed: onPressed,
-        child: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 200),
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: onPressed != null
-                ? (isHovered ? color : color.withValues(alpha: 0.7))
-                : theme.colorScheme.onSurface.withValues(alpha: 0.3),
-          ),
-          child: Text(label),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton(
-    BuildContext context, {
-    required VoidCallback? onPressed,
-    required String id,
-  }) {
-    final theme = Theme.of(context);
-    final isHovered = _hoveredButton == id && onPressed != null;
-
-    return MouseRegion(
-      cursor: onPressed != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hoveredButton = id),
-      onExit: (_) => setState(() => _hoveredButton = null),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: onPressed != null
-              ? (isHovered ? theme.colorScheme.primary : theme.colorScheme.primary.withValues(alpha: 0.85))
-              : theme.colorScheme.onSurface.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: isHovered
-              ? [BoxShadow(color: theme.colorScheme.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))]
-              : [],
-        ),
-        child: CupertinoButton(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          onPressed: onPressed,
-          minSize: 0,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                CupertinoIcons.ellipsis,
-                size: 16,
-                color: onPressed != null ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '批量操作',
-                style: TextStyle(
-                  color: onPressed != null ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  int _getAvailableSongCount(SelectionProvider provider) {
-    return provider.currentSongList.length;
-  }
-
   void _showBatchActions(BuildContext context, SelectionProvider selectionProvider) {
     final theme = Theme.of(context);
-    final modernTheme = theme.extension<AppModernTheme>()!;
     final userProvider = context.read<UserProvider>();
     final isAuthenticated = userProvider.isAuthenticated;
 
@@ -325,179 +249,147 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
           constraints: const BoxConstraints(maxWidth: 400),
           margin: const EdgeInsets.all(24),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withAlpha(theme.brightness == Brightness.dark ? 180 : 220),
-                  borderRadius: BorderRadius.circular(28),
+                  color: theme.colorScheme.surface.withAlpha(theme.brightness == Brightness.dark ? 200 : 240),
+                  borderRadius: BorderRadius.circular(32),
                   border: Border.all(
-                    color: theme.colorScheme.primary.withAlpha(40),
-                    width: 1.5,
+                    color: theme.colorScheme.onSurface.withAlpha(30),
+                    width: 0.5,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withAlpha(40),
-                      blurRadius: 40,
-                      offset: const Offset(0, 15),
+                      color: Colors.black.withAlpha(50),
+                      blurRadius: 50,
+                      offset: const Offset(0, 20),
                     ),
                   ],
                 ),
                 child: Material(
                   color: Colors.transparent,
-                  child: SafeArea(
-                    top: false,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.onSurface.withAlpha(40),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurface.withAlpha(40),
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  CupertinoIcons.layers_alt_fill,
-                                  size: 16,
-                                  color: theme.colorScheme.primary,
-                                ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withAlpha(30),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '批量操作',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w900,
-                                        color: theme.colorScheme.onSurface,
-                                        letterSpacing: -0.5,
-                                      ),
+                              child: Icon(
+                                CupertinoIcons.layers_alt_fill,
+                                size: 18,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '批量操作',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: theme.colorScheme.onSurface,
+                                      letterSpacing: -0.5,
                                     ),
-                                    Text(
-                                      '已选择 ${selectionProvider.selectedCount} 首歌曲',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: theme.colorScheme.onSurfaceVariant,
-                                      ),
+                                  ),
+                                  Text(
+                                    '已选择 ${selectionProvider.selectedCount} 首歌曲',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
-                                  ],
-                                ),
-                              ),
-                              CupertinoButton(
-                                padding: EdgeInsets.zero,
-                                onPressed: () => Navigator.pop(context),
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.onSurface.withAlpha(20),
-                                    shape: BoxShape.circle,
                                   ),
-                                  child: Icon(
-                                    CupertinoIcons.xmark,
-                                    size: 14,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: ListView(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.only(bottom: 12),
-                            physics: const NeverScrollableScrollPhysics(),
-                            children: [
-                              if (isAuthenticated)
-                                _buildImprovedActionItem(
-                                  context,
-                                  icon: CupertinoIcons.add_circled,
-                                  title: '添加到歌单',
-                                  subtitle: '将选中的歌曲添加到您的收藏歌单',
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _showAddToPlaylistDialog(context, selectionProvider);
-                                  },
-                                ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Column(
+                          children: [
+                            if (isAuthenticated)
                               _buildImprovedActionItem(
                                 context,
-                                icon: CupertinoIcons.play_circle,
-                                title: '立即播放',
-                                subtitle: '替换当前播放列表并开始播放',
+                                icon: CupertinoIcons.add_circled,
+                                title: '添加到歌单',
+                                subtitle: '将选中的歌曲添加到您的收藏歌单',
                                 onTap: () {
                                   Navigator.pop(context);
-                                  selectionProvider.exitSelectionMode();
+                                  _showAddToPlaylistDialog(context, selectionProvider);
+                                },
+                              ),
+                            _buildImprovedActionItem(
+                              context,
+                              icon: CupertinoIcons.play_circle,
+                              title: '立即播放',
+                              subtitle: '替换当前播放列表并开始播放',
+                              onTap: () {
+                                Navigator.pop(context);
+                                selectionProvider.exitSelectionMode();
+                                final songs = selectionProvider.selectedSongs;
+                                if (songs.isNotEmpty) {
+                                  context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                }
+                              },
+                            ),
+                            if (isAuthenticated)
+                              _buildImprovedActionItem(
+                                context,
+                                icon: CupertinoIcons.heart_fill,
+                                title: '添加到喜欢',
+                                subtitle: '收藏到“我喜欢的音乐”',
+                                onTap: () async {
+                                  Navigator.pop(context);
+                                  final persistenceProvider = context.read<PersistenceProvider>();
                                   final songs = selectionProvider.selectedSongs;
-                                  if (songs.isNotEmpty) {
-                                    context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                  for (final song in songs) {
+                                    await persistenceProvider.toggleFavorite(song);
                                   }
-                                },
-                              ),
-                              if (isAuthenticated)
-                                _buildImprovedActionItem(
-                                  context,
-                                  icon: CupertinoIcons.heart_fill,
-                                  title: '添加到喜欢',
-                                  subtitle: '收藏到“我喜欢的音乐”',
-                                  onTap: () async {
-                                    Navigator.pop(context);
-                                    final persistenceProvider = context.read<PersistenceProvider>();
-                                    final songs = selectionProvider.selectedSongs;
-                                    for (final song in songs) {
-                                      await persistenceProvider.toggleFavorite(song);
-                                    }
-                                    selectionProvider.exitSelectionMode();
-                                    if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('已添加 ${songs.length} 首歌曲到我喜欢的'),
-                                          behavior: SnackBarBehavior.floating,
-                                          margin: const EdgeInsets.all(20),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                ),
-                              const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: Divider(height: 1),
-                              ),
-                              _buildImprovedActionItem(
-                                context,
-                                icon: CupertinoIcons.multiply_circle,
-                                title: '取消选择',
-                                subtitle: '退出批量操作模式',
-                                onTap: () {
-                                  Navigator.pop(context);
                                   selectionProvider.exitSelectionMode();
                                 },
-                                isDestructive: true,
                               ),
-                            ],
-                          ),
+                            const SizedBox(height: 8),
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+                            _buildImprovedActionItem(
+                              context,
+                              icon: CupertinoIcons.multiply_circle,
+                              title: '取消选择',
+                              subtitle: '退出批量操作模式',
+                              onTap: () {
+                                Navigator.pop(context);
+                                selectionProvider.exitSelectionMode();
+                              },
+                              isDestructive: true,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
                   ),
                 ),
               ),
@@ -518,68 +410,66 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
   }) {
     final theme = Theme.of(context);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          hoverColor: isDestructive 
-            ? theme.colorScheme.error.withAlpha(20) 
-            : theme.colorScheme.primary.withAlpha(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: isDestructive
-                        ? theme.colorScheme.error.withAlpha(30)
-                        : theme.colorScheme.primary.withAlpha(20),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 22,
-                    color: isDestructive
-                        ? theme.colorScheme.error
-                        : theme.colorScheme.primary,
-                  ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        mouseCursor: SystemMouseCursors.click,
+        borderRadius: BorderRadius.circular(20),
+        hoverColor: isDestructive 
+          ? theme.colorScheme.error.withAlpha(20) 
+          : theme.colorScheme.primary.withAlpha(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isDestructive
+                      ? theme.colorScheme.error.withAlpha(30)
+                      : theme.colorScheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
-                        ),
+                child: Icon(
+                  icon,
+                  size: 24,
+                  color: isDestructive
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                        fontWeight: FontWeight.w500,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 14,
-                  color: theme.colorScheme.onSurface.withAlpha(40),
-                ),
-              ],
-            ),
+              ),
+              Icon(
+                CupertinoIcons.chevron_right,
+                size: 14,
+                color: theme.colorScheme.onSurface.withAlpha(40),
+              ),
+            ],
           ),
         ),
       ),
@@ -593,36 +483,29 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         .where((p) => p['list_create_userid'] == userProvider.user?.userid)
         .toList();
 
-    if (myPlaylists.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('您还没有创建任何歌单')),
-      );
-      return;
-    }
-
     showCupertinoModalPopup(
       context: context,
       builder: (context) => Center(
         child: Container(
-          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 550),
+          constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
           margin: const EdgeInsets.all(24),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(32),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withAlpha(theme.brightness == Brightness.dark ? 180 : 220),
-                  borderRadius: BorderRadius.circular(28),
+                  color: theme.colorScheme.surface.withAlpha(theme.brightness == Brightness.dark ? 200 : 240),
+                  borderRadius: BorderRadius.circular(32),
                   border: Border.all(
-                    color: theme.colorScheme.primary.withAlpha(40),
-                    width: 1.5,
+                    color: theme.colorScheme.onSurface.withAlpha(30),
+                    width: 0.5,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withAlpha(40),
-                      blurRadius: 40,
-                      offset: const Offset(0, 15),
+                      color: Colors.black.withAlpha(50),
+                      blurRadius: 50,
+                      offset: const Offset(0, 20),
                     ),
                   ],
                 ),
@@ -632,7 +515,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 36,
+                        width: 40,
                         height: 4,
                         margin: const EdgeInsets.symmetric(vertical: 12),
                         decoration: BoxDecoration(
@@ -641,46 +524,30 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 color: theme.colorScheme.primary.withAlpha(30),
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
                                 CupertinoIcons.music_note_list,
-                                size: 16,
+                                size: 18,
                                 color: theme.colorScheme.primary,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: Text(
                                 '添加到歌单',
                                 style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                   color: theme.colorScheme.onSurface,
                                   letterSpacing: -0.5,
-                                ),
-                              ),
-                            ),
-                            CupertinoButton(
-                              padding: EdgeInsets.zero,
-                              onPressed: () => Navigator.pop(context),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.onSurface.withAlpha(20),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  CupertinoIcons.xmark,
-                                  size: 14,
-                                  color: theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -690,89 +557,76 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                       Flexible(
                         child: ListView.builder(
                           shrinkWrap: true,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           itemCount: myPlaylists.length,
                           itemBuilder: (context, index) {
                             final p = myPlaylists[index];
-                            return Container(
-                              margin: const EdgeInsets.symmetric(vertical: 2),
-                              child: InkWell(
-                                onTap: () async {
-                                  Navigator.pop(context);
-                                  final songs = selectionProvider.selectedSongs;
-                                  final count = await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
-                                  selectionProvider.exitSelectionMode();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('成功添加 $count 首歌曲到歌单'),
-                                        behavior: SnackBarBehavior.floating,
-                                        margin: const EdgeInsets.all(20),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            return InkWell(
+                              onTap: () async {
+                                Navigator.pop(context);
+                                final songs = selectionProvider.selectedSongs;
+                                await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
+                                selectionProvider.exitSelectionMode();
+                              },
+                              mouseCursor: SystemMouseCursors.click,
+                              borderRadius: BorderRadius.circular(20),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.primary.withAlpha(20),
+                                        borderRadius: BorderRadius.circular(14),
                                       ),
-                                    );
-                                  }
-                                },
-                                borderRadius: BorderRadius.circular(16),
-                                hoverColor: theme.colorScheme.primary.withAlpha(20),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary.withAlpha(20),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Icon(
-                                          CupertinoIcons.music_note_list,
-                                          color: theme.colorScheme.primary,
-                                          size: 18,
-                                        ),
+                                      child: Icon(
+                                        CupertinoIcons.music_note_list,
+                                        color: theme.colorScheme.primary,
+                                        size: 20,
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              p['name'] ?? p['specialname'] ?? '',
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w700,
-                                                color: theme.colorScheme.onSurface,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            p['name'] ?? p['specialname'] ?? '',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700,
+                                              color: theme.colorScheme.onSurface,
                                             ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              '${p['song_count'] ?? 0} 首歌曲',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: theme.colorScheme.onSurfaceVariant,
-                                                fontWeight: FontWeight.w500,
-                                              ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${p['song_count'] ?? 0} 首歌曲',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: theme.colorScheme.onSurfaceVariant,
+                                              fontWeight: FontWeight.w500,
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
-                                      Icon(
-                                        CupertinoIcons.chevron_right,
-                                        size: 12,
-                                        color: theme.colorScheme.onSurface.withAlpha(40),
-                                      ),
-                                    ],
-                                  ),
+                                    ),
+                                    Icon(
+                                      CupertinoIcons.chevron_right,
+                                      size: 14,
+                                      color: theme.colorScheme.onSurface.withAlpha(40),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
                           },
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),

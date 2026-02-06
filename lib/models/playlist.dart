@@ -2,6 +2,7 @@ import 'song.dart';
 
 class Playlist {
   final int id;
+  final String? globalCollectionId;
   final String name;
   final String pic;
   final String intro;
@@ -14,6 +15,7 @@ class Playlist {
 
   Playlist({
     required this.id,
+    this.globalCollectionId,
     required this.name,
     required this.pic,
     required this.intro,
@@ -32,6 +34,7 @@ class Playlist {
                 json['img'] ?? 
                 json['cover'] ?? '';
     pic = pic.replaceAll('{size}', '400');
+    if (pic.startsWith('//')) pic = 'https:$pic';
 
     int parseId(dynamic value) {
       if (value == null) return 0;
@@ -45,6 +48,7 @@ class Playlist {
 
     return Playlist(
       id: parseId(json['listid'] ?? json['specialid'] ?? json['global_collection_id'] ?? json['gid']),
+      globalCollectionId: (json['global_collection_id'] ?? json['gid'] ?? json['specialid'] ?? json['listid'])?.toString(),
       name: (json['name'] ?? json['specialname'] ?? '').toString(),
       pic: pic.toString(),
       intro: (json['intro'] ?? '').toString(),

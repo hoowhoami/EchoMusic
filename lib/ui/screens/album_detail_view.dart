@@ -8,6 +8,7 @@ import '../../providers/selection_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
+import '../widgets/cover_image.dart';
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
@@ -32,7 +33,6 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
   @override
   Widget build(BuildContext context) {
     final selectionProvider = context.watch<SelectionProvider>();
-
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -41,255 +41,272 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
         children: [
           Expanded(
             child: CustomScrollView(
+              physics: const BouncingScrollPhysics(),
               slivers: [
                 SliverAppBar(
-                  backgroundColor: Colors.transparent,
-                  expandedHeight: 300,
+                  backgroundColor: theme.scaffoldBackgroundColor,
+                  surfaceTintColor: Colors.transparent,
+                  expandedHeight: 200,
+                  pinned: true,
                   automaticallyImplyLeading: false,
-                  actions: [
-                    FutureBuilder<List<Song>>(
-                      future: _songsFuture,
+                  elevation: 0,
+                  flexibleSpace: FlexibleSpaceBar(
+                    titlePadding: EdgeInsets.zero,
+                    centerTitle: false,
+                    expandedTitleScale: 1.0,
+                    title: FutureBuilder<Map<String, dynamic>?>(
+                      future: _detailFuture,
                       builder: (context, snapshot) {
-                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        if (selectionProvider.isSelectionMode) {
-                          return const SizedBox.shrink();
-                        }
-                        return IconButton(
-                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                          onPressed: () {
-                            selectionProvider.setSongList(snapshot.data!);
-                            selectionProvider.enterSelectionMode();
+                        final String? cover = snapshot.data?['img'] ?? snapshot.data?['imgurl'];
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                            return AnimatedOpacity(
+                              duration: const Duration(milliseconds: 200),
+                              opacity: isCollapsed ? 1.0 : 0.0,
+                              child: Container(
+                                height: kToolbarHeight,
+                                padding: const EdgeInsets.only(left: 20),
+                                child: Row(
+                                  children: [
+                                    if (cover != null)
+                                      CoverImage(
+                                        url: cover,
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: 6,
+                                        showShadow: false,
+                                      ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        widget.albumName,
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurface,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
                           },
-                          color: theme.colorScheme.onSurfaceVariant,
-                          tooltip: '批量选择',
                         );
                       },
                     ),
-                  ],
-                  flexibleSpace: FlexibleSpaceBar(
                     background: FutureBuilder<Map<String, dynamic>?>(
                       future: _detailFuture,
                       builder: (context, snapshot) {
                         final detail = snapshot.data;
-                        final String? cover = detail?['img']?.replaceAll('{size}', '800') ?? detail?['imgurl']?.replaceAll('{size}', '800');
+                        final String? cover = detail?['img']?.replaceAll('{size}', '400') ?? detail?['imgurl']?.replaceAll('{size}', '400');
 
-                        return Stack(
-                          children: [
-                            if (cover != null)
-                              Positioned.fill(
-                                child: CachedNetworkImage(
-                                  imageUrl: cover,
-                                  fit: BoxFit.cover,
+                        return Container(
+                          padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              if (cover != null)
+                                CoverImage(
+                                  url: cover,
+                                  width: 140,
+                                  height: 140,
+                                  borderRadius: 12,
+                                )
+                              else
+                                Container(
+                                  width: 140,
+                                  height: 140,
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(CupertinoIcons.music_albums, size: 52, color: theme.colorScheme.onSurfaceVariant),
                                 ),
-                              ),
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.transparent,
-                                    theme.scaffoldBackgroundColor.withAlpha(200),
-                                    theme.scaffoldBackgroundColor,
+                              const SizedBox(width: 32),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'ALBUM',
+                                      style: TextStyle(
+                                        color: theme.colorScheme.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 2.0,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      widget.albumName,
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w900,
+                                        height: 1.2,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    if (detail != null)
+                                      Text(
+                                        '${detail['singername'] ?? detail['singer'] ?? ''} • ${detail['publishtime'] ?? detail['publish_time'] ?? ''}',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant, 
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    const SizedBox(height: 14),
+                                    Row(
+                                      children: [
+                                        ElevatedButton.icon(
+                                          onPressed: () async {
+                                            final songs = await _songsFuture;
+                                            if (songs.isNotEmpty) {
+                                              context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                            }
+                                          },
+                                          icon: const Icon(CupertinoIcons.play_fill, size: 16),
+                                          label: const Text('播放'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: theme.colorScheme.primary,
+                                            foregroundColor: theme.colorScheme.onPrimary,
+                                            elevation: 8,
+                                            shadowColor: theme.colorScheme.primary.withAlpha(80),
+                                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        OutlinedButton.icon(
+                                          onPressed: () {},
+                                          icon: const Icon(CupertinoIcons.heart, size: 16),
+                                          label: const Text('收藏'),
+                                          style: OutlinedButton.styleFrom(
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            side: BorderSide(color: theme.colorScheme.outlineVariant),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(40.0),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  if (cover != null)
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: theme.colorScheme.shadow.withAlpha(50),
-                                            blurRadius: 20,
-                                            offset: const Offset(0, 10),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: CachedNetworkImage(
-                                          imageUrl: cover,
-                                          width: 180,
-                                          height: 180,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      ),
-                                    ),
-                                  const SizedBox(width: 24),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          '专辑',
-                                          style: TextStyle(
-                                            color: theme.colorScheme.onSurfaceVariant,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: 1.5,
-                                          ),
-                                        ),
-                                        Text(
-                                          widget.albumName,
-                                          style: TextStyle(
-                                            fontSize: 32,
-                                            fontWeight: FontWeight.w800,
-                                            color: theme.colorScheme.onSurface,
-                                            letterSpacing: -1.0,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        if (detail != null)
-                                          Text(
-                                            '${detail['singername'] ?? detail['singer'] ?? ''} • ${detail['publishtime'] ?? detail['publish_time'] ?? ''}',
-                                            style: TextStyle(
-                                              color: theme.colorScheme.onSurfaceVariant, 
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         );
                       },
                     ),
                   ),
-                ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(40, 32, 40, 16),
-              child: FutureBuilder<Map<String, dynamic>?>(
-                future: _detailFuture,
-                builder: (context, snapshot) {
-                  final detail = snapshot.data;
-                  final String? intro = detail?['intro'];
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: () async {
-                              final songs = await _songsFuture;
-                              if (songs.isNotEmpty) {
-                                context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                              }
+                  actions: [
+                    FutureBuilder<List<Song>>(
+                      future: _songsFuture,
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
+                        if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 10),
+                          child: TextButton.icon(
+                            onPressed: () {
+                              selectionProvider.setSongList(snapshot.data!);
+                              selectionProvider.enterSelectionMode();
                             },
-                            icon: const Icon(CupertinoIcons.play_fill, size: 18),
-                            label: const Text('播放全部'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: theme.colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              elevation: 8,
-                              shadowColor: theme.colorScheme.primary.withAlpha(100),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          OutlinedButton.icon(
-                            onPressed: () {},
-                            icon: const Icon(CupertinoIcons.heart, size: 18),
-                            label: const Text('收藏专辑'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              side: BorderSide(color: theme.colorScheme.outlineVariant),
+                            icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
+                            label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                            style: TextButton.styleFrom(
                               foregroundColor: theme.colorScheme.onSurface,
+                              backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
-                        ],
-                      ),
-                      if (intro != null && intro.isNotEmpty) ...[
-                        const SizedBox(height: 32),
-                        Text(
-                          '专辑介绍',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 20),
+                  ],
+                ),
+                SliverToBoxAdapter(
+                  child: FutureBuilder<Map<String, dynamic>?>(
+                    future: _detailFuture,
+                    builder: (context, snapshot) {
+                      final detail = snapshot.data;
+                      final String? intro = detail?['intro'];
+
+                      if (intro == null || intro.isEmpty) return const SizedBox.shrink();
+
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '专辑介绍',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              intro,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                height: 1.6,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          intro,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.6,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 32),
-                      Text(
-                        '歌曲列表',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          FutureBuilder<List<Song>>(
-            future: _songsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SliverToBoxAdapter(
-                  child: Center(child: Padding(
-                    padding: EdgeInsets.all(40.0),
-                    child: CupertinoActivityIndicator(),
-                  )),
-                );
-              }
-              final songs = snapshot.data ?? [];
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final song = songs[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                      child: SongCard(
-                        song: song,
-                        playlist: songs,
-                        showMore: true,
-                        isSelectionMode: selectionProvider.isSelectionMode,
-                        isSelected: selectionProvider.isSelected(song.hash),
-                        onSelectionChanged: (selected) {
-                          selectionProvider.toggleSelection(song.hash);
+                      );
+                    },
+                  ),
+                ),
+                FutureBuilder<List<Song>>(
+                  future: _songsFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SliverToBoxAdapter(
+                        child: Center(child: Padding(
+                          padding: EdgeInsets.all(40.0),
+                          child: CupertinoActivityIndicator(),
+                        )),
+                      );
+                    }
+                    final songs = snapshot.data ?? [];
+                    return SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final song = songs[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: SongCard(
+                              song: song,
+                              playlist: songs,
+                              showMore: true,
+                              isSelectionMode: selectionProvider.isSelectionMode,
+                              isSelected: selectionProvider.isSelected(song.hash),
+                              onSelectionChanged: (selected) {
+                                selectionProvider.toggleSelection(song.hash);
+                              },
+                            ),
+                          );
                         },
+                        childCount: songs.length,
                       ),
                     );
                   },
-                  childCount: songs.length,
                 ),
-              );
-            },
-          ),
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                const SliverToBoxAdapter(child: SizedBox(height: 10)),
               ],
             ),
           ),
