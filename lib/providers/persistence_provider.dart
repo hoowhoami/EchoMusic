@@ -93,6 +93,40 @@ class PersistenceProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearUserInfo() async {
+    _userInfo = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyUserInfo);
+    notifyListeners();
+  }
+
+  Future<void> clearAllData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    _favorites = [];
+    _history = [];
+    _device = null;
+    _userInfo = null;
+    // Reset settings to default
+    _settings = {
+      'theme': 'auto',
+      'volumeFade': true,
+      'volumeFadeTime': 1000,
+      'autoNext': true,
+      'autoNextTime': 3000,
+      'showPlaylistCount': true,
+      'addSongsToPlaylist': true,
+      'replacePlaylist': false,
+      'preventSleep': true,
+      'compatibilityMode': true,
+      'backupQuality': '标准',
+      'audioQuality': '无损',
+      'autoSign': false,
+      'autoReceiveVip': false,
+    };
+    notifyListeners();
+  }
+
   Future<void> toggleFavorite(Song song) async {
     final index = _favorites.indexWhere((s) => s.hash == song.hash);
     if (index >= 0) {

@@ -529,65 +529,68 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          hoverColor: isDestructive 
-            ? theme.colorScheme.error.withAlpha(20) 
-            : theme.colorScheme.primary.withAlpha(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: isDestructive
-                        ? theme.colorScheme.error.withAlpha(30)
-                        : theme.colorScheme.primary.withAlpha(20),
-                    borderRadius: BorderRadius.circular(12),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            hoverColor: isDestructive 
+              ? theme.colorScheme.error.withAlpha(20) 
+              : theme.colorScheme.primary.withAlpha(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDestructive
+                          ? theme.colorScheme.error.withAlpha(30)
+                          : theme.colorScheme.primary.withAlpha(20),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 22,
+                      color: isDestructive
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.primary,
+                    ),
                   ),
-                  child: Icon(
-                    icon,
-                    size: 22,
-                    color: isDestructive
-                        ? theme.colorScheme.error
-                        : theme.colorScheme.primary,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Icon(
-                  CupertinoIcons.chevron_right,
-                  size: 14,
-                  color: theme.colorScheme.onSurface.withAlpha(40),
-                ),
-              ],
+                  Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 14,
+                    color: theme.colorScheme.onSurface.withAlpha(40),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -686,19 +689,22 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                     ),
                                   ),
                                 ),
-                                CupertinoButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => Navigator.pop(context),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.onSurface.withAlpha(20),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      CupertinoIcons.xmark,
-                                      size: 14,
-                                      color: theme.colorScheme.onSurfaceVariant,
+                                MouseRegion(
+                                  cursor: SystemMouseCursors.click,
+                                  child: CupertinoButton(
+                                    padding: EdgeInsets.zero,
+                                    onPressed: () => Navigator.pop(context),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: theme.colorScheme.onSurface.withAlpha(20),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        CupertinoIcons.xmark,
+                                        size: 14,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -714,75 +720,78 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                 final p = myPlaylists[index];
                                 return Container(
                                   margin: const EdgeInsets.symmetric(vertical: 2),
-                                  child: InkWell(
-                                    onTap: () async {
-                                      Navigator.pop(context);
-                                      final songs = selectionProvider.selectedSongs;
-                                      final count = await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
-                                      selectionProvider.exitSelectionMode();
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('成功添加 $count 首歌曲到歌单'),
-                                            behavior: SnackBarBehavior.floating,
-                                            margin: const EdgeInsets.all(20),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    borderRadius: BorderRadius.circular(16),
-                                    hoverColor: theme.colorScheme.primary.withAlpha(20),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              color: theme.colorScheme.primary.withAlpha(20),
-                                              borderRadius: BorderRadius.circular(12),
+                                  child: MouseRegion(
+                                    cursor: SystemMouseCursors.click,
+                                    child: InkWell(
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        final songs = selectionProvider.selectedSongs;
+                                        final count = await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
+                                        selectionProvider.exitSelectionMode();
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('成功添加 $count 首歌曲到歌单'),
+                                              behavior: SnackBarBehavior.floating,
+                                              margin: const EdgeInsets.all(20),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                             ),
-                                            child: Icon(
-                                              CupertinoIcons.music_note_list,
-                                              color: theme.colorScheme.primary,
-                                              size: 18,
+                                          );
+                                        }
+                                      },
+                                      borderRadius: BorderRadius.circular(16),
+                                      hoverColor: theme.colorScheme.primary.withAlpha(20),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 44,
+                                              height: 44,
+                                              decoration: BoxDecoration(
+                                                color: theme.colorScheme.primary.withAlpha(20),
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Icon(
+                                                CupertinoIcons.music_note_list,
+                                                color: theme.colorScheme.primary,
+                                                size: 18,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  p['name'] ?? p['specialname'] ?? '',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: theme.colorScheme.onSurface,
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    p['name'] ?? p['specialname'] ?? '',
+                                                    style: TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: theme.colorScheme.onSurface,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 1),
-                                                Text(
-                                                  '${p['song_count'] ?? 0} 首歌曲',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: theme.colorScheme.onSurfaceVariant,
-                                                    fontWeight: FontWeight.w500,
+                                                  const SizedBox(height: 1),
+                                                  Text(
+                                                    '${p['song_count'] ?? 0} 首歌曲',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: theme.colorScheme.onSurfaceVariant,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                          Icon(
-                                            CupertinoIcons.chevron_right,
-                                            size: 12,
-                                            color: theme.colorScheme.onSurface.withAlpha(40),
-                                          ),
-                                        ],
+                                            Icon(
+                                              CupertinoIcons.chevron_right,
+                                              size: 12,
+                                              color: theme.colorScheme.onSurface.withAlpha(40),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),

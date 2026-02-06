@@ -47,7 +47,7 @@ class UserProvider with ChangeNotifier {
 
   Future<void> logout() async {
     _user = null;
-    await _persistenceProvider?.setUserInfo({});
+    await _persistenceProvider?.clearUserInfo();
     _userPlaylists = [];
     _userFollows = [];
     _userHistory = [];
