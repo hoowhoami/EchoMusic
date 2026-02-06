@@ -228,7 +228,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                   );
                 },
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)), // Space for BatchActionBar
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: selectionProvider.isSelectionMode ? 80 : 20,
+                ),
+              ), // Space for BatchActionBar
             ],
           ),
           const BatchActionBar(),

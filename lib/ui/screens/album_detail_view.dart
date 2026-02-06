@@ -305,7 +305,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView> {
                   );
                 },
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: selectionProvider.isSelectionMode ? 80 : 20,
+                ),
+              ),
             ],
           ),
           const BatchActionBar(),

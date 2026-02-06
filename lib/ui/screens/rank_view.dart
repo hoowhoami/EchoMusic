@@ -5,7 +5,7 @@ import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
-import '../widgets/batch_action_bar.dart';
+import '../widgets/batch_selection_scaffold.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -68,65 +68,19 @@ class _RankViewState extends State<RankView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final selectionProvider = context.watch<SelectionProvider>();
-    final bgColor = widget.backgroundColor ?? theme.scaffoldBackgroundColor;
-
     if (_isLoadingRanks) {
-      return Scaffold(
-        backgroundColor: bgColor,
-        body: const Center(child: CupertinoActivityIndicator()),
+      return const Scaffold(
+        body: Center(child: CupertinoActivityIndicator()),
       );
     }
 
-    return Scaffold(
-        backgroundColor: bgColor,
-        body: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      '排行榜',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.onSurface,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    if (_ranks.isNotEmpty)
-                      _buildRankSelector(context),
-                    const Spacer(),
-                    if (!selectionProvider.isSelectionMode && _rankSongs.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 20),
-                        onPressed: () {
-                          selectionProvider.setSongList(_rankSongs);
-                          selectionProvider.enterSelectionMode();
-                        },
-                        color: theme.colorScheme.onSurfaceVariant,
-                        tooltip: '批量选择',
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Expanded(
-                  child: _isLoadingSongs
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : _buildSongGrid(context),
-                ),
-              ],
-            ),
-          ),
-          const BatchActionBar(),
-        ],
-      ),
+    return BatchSelectionScaffold(
+      title: '排行榜',
+      songs: _rankSongs,
+      appBarActions: _ranks.isNotEmpty ? _buildRankSelector(context) : null,
+      body: _isLoadingSongs
+          ? const Center(child: CupertinoActivityIndicator())
+          : _buildSongGrid(context),
     );
   }
 
@@ -285,6 +239,7 @@ class _RankViewState extends State<RankView> {
     final selectionProvider = context.watch<SelectionProvider>();
 
     return GridView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 400,

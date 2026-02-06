@@ -237,12 +237,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
-      itemCount: _songResults.length + 1,
-      padding: EdgeInsets.zero,
+      itemCount: _songResults.length,
+      padding: EdgeInsets.only(bottom: selectionProvider.isSelectionMode ? 80 : 20),
       itemBuilder: (context, index) {
-        if (index == _songResults.length) {
-          return const SizedBox(height: 100);
-        }
         final song = _songResults[index];
         return SongCard(
           song: song,

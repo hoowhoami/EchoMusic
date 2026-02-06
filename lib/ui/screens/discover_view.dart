@@ -617,55 +617,66 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
 
         return Stack(
           children: [
-            ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-              itemCount: songs.length + 1, // +1 for extra space at the bottom
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  // Special header for Batch Select button when not in selection mode
-                  if (songs.isNotEmpty && !selectionProvider.isSelectionMode) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                      child: Row(
-                        children: [
-                          const Spacer(),
-                          IconButton(
-                            icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                            onPressed: () {
-                              selectionProvider.setSongList(songs);
-                              selectionProvider.enterSelectionMode();
-                            },
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            tooltip: '批量选择',
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                }
-                
-                if (index == songs.length + 1 - 1) {
-                  return const SizedBox(height: 100); // Space for BatchActionBar
-                }
+            Column(
+              children: [
+                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        _buildBatchButton(context, selectionProvider, songs),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+                    itemCount: songs.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == songs.length) {
+                        return const SizedBox(height: 100);
+                      }
 
-                final song = songs[index - 1];
-                return SongCard(
-                  song: song,
-                  playlist: songs,
-                  showMore: true,
-                  isSelectionMode: selectionProvider.isSelectionMode,
-                  isSelected: selectionProvider.isSelected(song.hash),
-                  onSelectionChanged: (selected) {
-                    selectionProvider.toggleSelection(song.hash);
-                  },
-                );
-              },
+                      final song = songs[index];
+                      return SongCard(
+                        song: song,
+                        playlist: songs,
+                        showMore: true,
+                        isSelectionMode: selectionProvider.isSelectionMode,
+                        isSelected: selectionProvider.isSelected(song.hash),
+                        onSelectionChanged: (selected) {
+                          selectionProvider.toggleSelection(song.hash);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
             const BatchActionBar(),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildBatchButton(BuildContext context, SelectionProvider selectionProvider, List<Song> songs) {
+    final theme = Theme.of(context);
+    
+    return TextButton.icon(
+      onPressed: () {
+        selectionProvider.setSongList(songs);
+        selectionProvider.enterSelectionMode();
+      },
+      icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
+      label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+      style: TextButton.styleFrom(
+        foregroundColor: theme.colorScheme.onSurface,
+        backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
     );
   }
 }

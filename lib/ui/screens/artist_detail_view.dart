@@ -339,7 +339,11 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                   );
                 },
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: selectionProvider.isSelectionMode ? 80 : 20,
+                ),
+              ),
             ],
           ),
           const BatchActionBar(),
