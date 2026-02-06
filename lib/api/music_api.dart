@@ -6,6 +6,9 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 
 class MusicApi {
+  static VoidCallback? onAuthExpired;
+  static bool _isAuthExpiredNotified = false;
+
   static final Dio _dio = Dio(BaseOptions(
     baseUrl: 'http://localhost:10086',
     connectTimeout: const Duration(seconds: 10),
@@ -48,23 +51,52 @@ class MusicApi {
         options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
 
         debugPrint('--> ${options.method} ${options.uri}');
-        debugPrint('Headers: ${options.headers}');
-        debugPrint('Params: ${options.queryParameters}');
-        if (options.data != null) debugPrint('Body: ${options.data}');
         
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        debugPrint('<-- ${response.statusCode} ${response.requestOptions.uri}');
+        _checkAuthExpiration(response.requestOptions.path, response.data);
         return handler.next(response);
       },
       onError: (err, handler) {
-        debugPrint('<-- ERROR ${err.response?.statusCode} ${err.requestOptions.uri}');
-        debugPrint('Message: ${err.message}');
-        if (err.response?.data != null) debugPrint('Error Body: ${err.response?.data}');
+        if (err.response != null) {
+          _checkAuthExpiration(err.requestOptions.path, err.response!.data);
+        }
         return handler.next(err);
       },
     ));
+
+  static void _checkAuthExpiration(String path, dynamic data) {
+    if (data is! Map) return;
+
+    // Define expiration detection rules
+    final rules = [
+      // Rule 1: Global error code for expired token
+      () => data['error_code'] == 20018,
+      
+      // Rule 2: Song URL specifically indicates auth required/expired
+      () => path.contains('/song/url') && data['status'] == 2,
+      
+      // Rule 3: VIP detail failure often means token invalid
+      () => path.contains('/user/vip/detail') && data['status'] == 0,
+      
+      // Rule 4: General session expired message in data
+      () => (data['msg']?.toString().contains('登录已过期') ?? false),
+    ];
+
+    bool isExpired = rules.any((rule) => rule());
+
+    if (isExpired && !_isAuthExpiredNotified) {
+      _isAuthExpiredNotified = true;
+      debugPrint('[MusicApi] Auth expiration detected at $path. Data: $data');
+      onAuthExpired?.call();
+      
+      // Reset after a delay to allow future notifications if user logs in and expires again
+      Future.delayed(const Duration(seconds: 5), () {
+        _isAuthExpiredNotified = false;
+      });
+    }
+  }
 
   static Future<Map<String, dynamic>?> registerDevice() async {
     try {
@@ -437,13 +469,24 @@ class MusicApi {
     }
   }
 
-  static Future<Map<String, dynamic>?> loginCellphone(String mobile, String code) async {
+  static Future<Map<String, dynamic>> loginCellphone(String mobile, String code, {int? userid}) async {
     try {
-      final response = await _dio.get('/login/cellphone', queryParameters: {'mobile': mobile, 'code': code});
-      if (response.data['status'] == 1) return response.data['data'];
-      return null;
+      final queryParams = {
+        'mobile': mobile,
+        'code': code,
+      };
+      if (userid != null) {
+        queryParams['userid'] = userid.toString();
+      }
+      final response = await _dio.get('/login/cellphone', queryParameters: queryParams);
+      return response.data;
+    } on DioException catch (e) {
+      if (e.response?.data != null) {
+        return e.response!.data is Map ? e.response!.data : {'status': 0, 'error': e.message};
+      }
+      return {'status': 0, 'error': e.message};
     } catch (e) {
-      return null;
+      return {'status': 0, 'error': e.toString()};
     }
   }
 

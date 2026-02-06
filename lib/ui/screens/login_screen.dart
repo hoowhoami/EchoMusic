@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../api/music_api.dart';
 import '../../providers/user_provider.dart';
 import '../../theme/app_theme.dart';
+import '../widgets/custom_toast.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,9 +30,16 @@ class _LoginScreenState extends State<LoginScreen> {
   // Mobile Login State
   final _mobileController = TextEditingController();
   final _codeController = TextEditingController();
+  String? _mobileError;
+  String? _codeError;
   bool _isSendingCode = false;
   int _countdown = 0;
   Timer? _countdownTimer;
+
+  // Account Selection State
+  bool _showAccountSelection = false;
+  List<dynamic> _accountList = [];
+  bool _isLoggingIn = false;
 
   @override
   void initState() {
@@ -127,14 +135,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _sendCode() async {
     final mobile = _mobileController.text.trim();
-    if (mobile.isEmpty) return;
+    if (mobile.isEmpty) {
+      setState(() => _mobileError = '请输入手机号码');
+      return;
+    }
+    if (mobile.length != 11) {
+      setState(() => _mobileError = '请输入正确的11位手机号码');
+      return;
+    }
 
     setState(() {
       _isSendingCode = true;
+      _mobileError = null;
     });
 
     final success = await MusicApi.captchaSent(mobile);
     if (success) {
+      if (mounted) CustomToast.success(context, '验证码已发送');
       setState(() {
         _countdown = 60;
       });
@@ -147,6 +164,8 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         });
       });
+    } else {
+      setState(() => _mobileError = '发送失败，请重试');
     }
 
     setState(() {
@@ -154,14 +173,50 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  Future<void> _loginByMobile() async {
+  Future<void> _loginByMobile({int? selectedUserId}) async {
     final mobile = _mobileController.text.trim();
     final code = _codeController.text.trim();
-    if (mobile.isEmpty || code.isEmpty) return;
+    
+    if (selectedUserId == null) {
+      setState(() {
+        _mobileError = mobile.isEmpty ? '请输入手机号码' : (mobile.length != 11 ? '请输入正确的11位手机号码' : null);
+        _codeError = code.isEmpty ? '请输入验证码' : null;
+      });
+      if (_mobileError != null || _codeError != null) return;
+    }
 
-    await context.read<UserProvider>().login(mobile, code);
-    if (mounted && context.read<UserProvider>().isAuthenticated) {
-      Navigator.of(context).pop();
+    setState(() => _isLoggingIn = true);
+
+    try {
+      final response = await context.read<UserProvider>().login(
+        mobile, 
+        code, 
+        userid: selectedUserId
+      );
+
+      if (mounted) {
+        if (response['status'] == 1) {
+          CustomToast.success(context, '登录成功');
+          Navigator.of(context).pop();
+        } else {
+          // Handle multi-account or other errors
+          final data = response['data'];
+          if (data != null && data['info_list'] != null && selectedUserId == null) {
+            setState(() {
+              _accountList = data['info_list'];
+              _showAccountSelection = true;
+            });
+          } else {
+            final errorMsg = response['error'] ?? response['msg'] ?? '登录失败，请检查验证码';
+            CustomToast.error(context, errorMsg.toString());
+            setState(() => _codeError = errorMsg.toString());
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) CustomToast.error(context, '系统错误: $e');
+    } finally {
+      if (mounted) setState(() => _isLoggingIn = false);
     }
   }
 
@@ -198,6 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                 child: Container(
                   width: 400,
+                  constraints: const BoxConstraints(maxHeight: 600),
                   padding: const EdgeInsets.all(40),
                   decoration: BoxDecoration(
                     color: modernTheme.modalColor,
@@ -215,7 +271,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (_loginMethod == 0) _buildQrLogin(context) else _buildMobileLogin(context),
+                        if (_showAccountSelection)
+                          _buildAccountSelection(context)
+                        else if (_loginMethod == 0)
+                          _buildQrLogin(context)
+                        else
+                          _buildMobileLogin(context),
                       ],
                     ),
                   ),
@@ -240,7 +301,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: Colors.transparent,
                     child: IconButton(
                       icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: theme.colorScheme.onSurface),
-                      onPressed: () => Navigator.of(context).pop(),
+                      onPressed: () {
+                        if (_showAccountSelection) {
+                          setState(() => _showAccountSelection = false);
+                        } else {
+                          Navigator.of(context).pop();
+                        }
+                      },
                       tooltip: '返回',
                     ),
                   ),
@@ -248,31 +315,119 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Spacer(),
                   
                   // Login Method Switcher
-                  Material(
-                    color: Colors.transparent,
-                    child: TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _loginMethod = _loginMethod == 0 ? 1 : 0;
-                          if (_loginMethod == 0) _loadQrCode();
-                        });
-                      },
-                      child: Text(
-                        _loginMethod == 0 ? '验证码登录' : '扫码登录', 
-                        style: TextStyle(
-                          color: accentColor, 
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                        )
+                  if (!_showAccountSelection)
+                    Material(
+                      color: Colors.transparent,
+                      child: TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _loginMethod = _loginMethod == 0 ? 1 : 0;
+                            if (_loginMethod == 0) _loadQrCode();
+                          });
+                        },
+                        child: Text(
+                          _loginMethod == 0 ? '验证码登录' : '扫码登录', 
+                          style: TextStyle(
+                            color: accentColor, 
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          )
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAccountSelection(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return Column(
+      children: [
+        Text(
+          '多账号选择', 
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: theme.colorScheme.onSurface, letterSpacing: -0.8)
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '该手机绑定多个账号，请选择一个登录', 
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)
+        ),
+        const SizedBox(height: 24),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 300),
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: _accountList.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final account = _accountList[index];
+              return Material(
+                color: theme.colorScheme.onSurface.withAlpha(8),
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: _isLoggingIn ? null : () => _loginByMobile(selectedUserId: account['userid']),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(
+                            account['pic'] ?? '',
+                            width: 44, height: 44,
+                            errorBuilder: (_, __, ___) => Container(
+                              color: accentColor.withAlpha(20),
+                              width: 44, height: 44,
+                              child: Icon(Icons.person, color: accentColor),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                account['nickname'] ?? '未命名用户',
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                maxLines: 1, overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Lv.${account['p_grade'] ?? 0} · UID: ${account['userid']}',
+                                style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_isLoggingIn)
+          Padding(
+            padding: const EdgeInsets.only(top: 20),
+            child: CircularProgressIndicator(strokeWidth: 3, color: accentColor),
+          ),
+        const SizedBox(height: 24),
+        TextButton(
+          onPressed: () => setState(() => _showAccountSelection = false),
+          child: Text('返回登录', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w800)),
+        ),
+      ],
     );
   }
 
@@ -385,9 +540,13 @@ class _LoginScreenState extends State<LoginScreen> {
         TextField(
           controller: _mobileController,
           keyboardType: TextInputType.phone,
+          onChanged: (_) {
+            if (_mobileError != null) setState(() => _mobileError = null);
+          },
           style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             hintText: '手机号码',
+            errorText: _mobileError,
             hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
             prefixIcon: Icon(Icons.phone_android, color: theme.colorScheme.onSurfaceVariant, size: 20),
             filled: true,
@@ -398,14 +557,19 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 16),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: TextField(
                 controller: _codeController,
                 keyboardType: TextInputType.number,
+                onChanged: (_) {
+                  if (_codeError != null) setState(() => _codeError = null);
+                },
                 style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   hintText: '验证码',
+                  errorText: _codeError,
                   hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
                   prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.onSurfaceVariant, size: 20),
                   filled: true,
@@ -436,14 +600,16 @@ class _LoginScreenState extends State<LoginScreen> {
           width: double.infinity,
           height: 52,
           child: ElevatedButton(
-            onPressed: _loginByMobile,
+            onPressed: _isLoggingIn ? null : _loginByMobile,
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.colorScheme.onSurface,
               foregroundColor: theme.colorScheme.surface,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            child: _isLoggingIn 
+              ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.surface))
+              : const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ),
         ),
       ],

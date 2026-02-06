@@ -5,7 +5,6 @@ import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/selection_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';

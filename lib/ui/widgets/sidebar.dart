@@ -6,7 +6,6 @@ import '../screens/login_screen.dart';
 import '../screens/playlist_detail_view.dart';
 import '../../models/playlist.dart';
 import 'cover_image.dart';
-import '../widgets/custom_dialog.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -29,96 +28,34 @@ class Sidebar extends StatelessWidget {
 
     return Column(
       children: [
-        // Top Profile Section
+        // Top Profile & Settings Section
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: InkWell(
-              onTap: () {
-                if (!userProvider.isAuthenticated) {
-                  Navigator.of(context).push(
-                    CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                  );
-                } else {
-                  onDestinationSelected(6);
-                }
-              },
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: theme.colorScheme.onSurface.withAlpha(10),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant.withAlpha(80),
+              color: theme.colorScheme.onSurface.withAlpha(10),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withAlpha(80),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildTopProfileItem(context, userProvider, user, theme, accentColor),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Container(
+                    height: 22,
                     width: 1,
+                    color: theme.colorScheme.onSurface.withAlpha(40),
                   ),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: accentColor.withAlpha(30),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: user?.pic != null
-                          ? CoverImage(
-                              url: user!.pic!,
-                              width: 42,
-                              height: 42,
-                              borderRadius: 0,
-                              showShadow: false,
-                              size: 100,
-                            )
-                          : Container(
-                              color: accentColor.withAlpha(20),
-                              child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 22),
-                            ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            user?.nickname ?? '未登录',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14,
-                              letterSpacing: -0.4,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            userProvider.isAuthenticated ? '个人中心' : '点击登录账号',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                _buildSettingsIconButton(context, 5, onDestinationSelected, theme, accentColor),
+              ],
             ),
           ),
         ),
@@ -147,76 +84,117 @@ class Sidebar extends StatelessWidget {
             ),
           ),
         ),
-
-        // Bottom Static Action Section
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.onSurface.withAlpha(8),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              children: [
-                _buildStaticActionItem(
-                  context,
-                  index: 5,
-                  icon: CupertinoIcons.settings_solid,
-                  label: '应用设置',
-                  onTap: () => onDestinationSelected(5),
-                ),
-                if (userProvider.isAuthenticated) ...[
-                  const SizedBox(height: 4),
-                  _buildStaticActionItem(
-                    context,
-                    icon: CupertinoIcons.power,
-                    label: '退出登录',
-                    color: theme.colorScheme.error,
-                    onTap: () => _showLogoutDialog(context, userProvider),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildStaticActionItem(BuildContext context, {int? index, required IconData icon, required String label, required VoidCallback onTap, Color? color}) {
-    final isSelected = index != null && selectedIndex == index;
-    final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.primary;
-
+  Widget _buildTopProfileItem(BuildContext context, UserProvider userProvider, dynamic user, ThemeData theme, Color accentColor) {
+    final isSelected = selectedIndex == 6;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          if (!userProvider.isAuthenticated) {
+            Navigator.of(context).push(
+              CupertinoPageRoute(builder: (_) => const LoginScreen()),
+            );
+          } else {
+            onDestinationSelected(6);
+          }
+        },
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected ? accentColor.withAlpha(30) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
           ),
           child: Row(
             children: [
-              Icon(
-                icon,
-                color: isSelected ? accentColor : (color ?? theme.colorScheme.onSurfaceVariant),
-                size: 18,
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: user?.pic != null ? [
+                    BoxShadow(
+                      color: accentColor.withAlpha(30),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ] : null,
+                ),
+                child: ClipOval(
+                  child: user?.pic != null
+                    ? CoverImage(
+                        url: user!.pic!,
+                        width: 34,
+                        height: 34,
+                        borderRadius: 0,
+                        showShadow: false,
+                        size: 100,
+                      )
+                    : Container(
+                        color: accentColor.withAlpha(20),
+                        child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 18),
+                      ),
+                ),
               ),
               const SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? accentColor : (color ?? theme.colorScheme.onSurface),
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                  fontSize: 13,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      user?.nickname ?? '未登录',
+                      style: TextStyle(
+                        color: isSelected ? accentColor : theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: -0.4,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      userProvider.isAuthenticated 
+                        ? 'Lv.${user?.extendsInfo?['detail']?['p_grade'] ?? 0}' 
+                        : '点击登录账号',
+                      style: TextStyle(
+                        color: isSelected ? accentColor.withAlpha(180) : theme.colorScheme.onSurfaceVariant,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsIconButton(BuildContext context, int index, ValueChanged<int> onTap, ThemeData theme, Color accentColor) {
+    final isSelected = selectedIndex == index;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: InkWell(
+        onTap: () => onTap(index),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: isSelected ? accentColor.withAlpha(30) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            CupertinoIcons.settings_solid,
+            color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant,
+            size: 20,
           ),
         ),
       ),
@@ -378,19 +356,5 @@ class Sidebar extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  void _showLogoutDialog(BuildContext context, UserProvider userProvider) {
-    CustomDialog.show(
-      context,
-      title: '确认退出登录',
-      content: '退出登录将清空您的用户信息，但会保留设备关联信息。',
-      confirmText: '退出登录',
-      isDestructive: true,
-    ).then((confirmed) {
-      if (confirmed == true) {
-        userProvider.logout();
-      }
-    });
   }
 }

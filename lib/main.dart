@@ -9,6 +9,7 @@ import 'providers/user_provider.dart';
 import 'providers/selection_provider.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
+import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 
 void _handleExit() {
@@ -62,7 +63,7 @@ void main() async {
           },
         ),
       ],
-      child: const WindowHandler(child: MyApp()),
+      child: const WindowHandler(child: AuthListener(child: MyApp())),
     ),
   );
 }
@@ -103,6 +104,8 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener {
   Widget build(BuildContext context) => widget.child;
 }
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -113,6 +116,7 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'EchoMusic',
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       themeMode: themeMode,
       theme: AppTheme.light(),

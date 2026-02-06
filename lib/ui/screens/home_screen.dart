@@ -15,7 +15,6 @@ import 'profile_view.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../api/music_api.dart';
-import '../../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -124,7 +123,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final modernTheme = theme.extension<AppModernTheme>()!;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,

@@ -7,11 +7,21 @@ import '../models/song.dart';
 class UserProvider with ChangeNotifier {
   User? _user;
   PersistenceProvider? _persistenceProvider;
+  VoidCallback? onSessionExpired;
   
   List<Map<String, dynamic>> _userPlaylists = [];
   List<Map<String, dynamic>> _userFollows = [];
   List<Song> _userHistory = [];
   List<Song> _userCloud = [];
+
+  UserProvider() {
+    MusicApi.onAuthExpired = () {
+      if (isAuthenticated) {
+        logout();
+        onSessionExpired?.call();
+      }
+    };
+  }
 
   User? get user => _user;
   bool get isAuthenticated => _user != null && _user!.token.isNotEmpty;
@@ -28,14 +38,16 @@ class UserProvider with ChangeNotifier {
     }
   }
 
-  Future<void> login(String mobile, String code) async {
-    final userData = await MusicApi.loginCellphone(mobile, code);
-    if (userData != null) {
+  Future<Map<String, dynamic>> login(String mobile, String code, {int? userid}) async {
+    final response = await MusicApi.loginCellphone(mobile, code, userid: userid);
+    if (response['status'] == 1 && response['data'] != null) {
+      final userData = response['data'];
       _user = User.fromJson(userData);
       await _persistenceProvider?.setUserInfo(userData);
       await fetchAllUserData();
       notifyListeners();
     }
+    return response;
   }
 
   Future<void> handleQrLoginSuccess(Map<String, dynamic> userData) async {
