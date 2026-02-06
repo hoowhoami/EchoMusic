@@ -8,7 +8,8 @@ import 'batch_action_bar.dart';
 class BatchSelectionScaffold extends StatelessWidget {
   final Widget body;
   final List<Song> songs;
-  final String title;
+  final String? title;
+  final Widget? leading;
   final Widget? appBarActions;
   final bool showAppBar;
 
@@ -16,7 +17,8 @@ class BatchSelectionScaffold extends StatelessWidget {
     super.key,
     required this.body,
     required this.songs,
-    required this.title,
+    this.title,
+    this.leading,
     this.appBarActions,
     this.showAppBar = true,
   });
@@ -54,18 +56,23 @@ class BatchSelectionScaffold extends StatelessWidget {
     final theme = Theme.of(context);
     
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 30, 40, 20),
+      padding: const EdgeInsets.fromLTRB(40, 10, 40, 10), // Reduced vertical padding
       child: Row(
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: theme.colorScheme.onSurface,
-              letterSpacing: -0.6,
+          if (leading != null) ...[
+            leading!,
+            const SizedBox(width: 12),
+          ],
+          if (title != null && title!.isNotEmpty)
+            Text(
+              title!,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: -0.6,
+              ),
             ),
-          ),
           const Spacer(),
           if (appBarActions != null) appBarActions!,
           if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
@@ -86,13 +93,21 @@ class BatchSelectionScaffold extends StatelessWidget {
           selectionProvider.setSongList(songs);
           selectionProvider.enterSelectionMode();
         },
-        icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
-        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        icon: const Icon(CupertinoIcons.checkmark_circle, size: 14), // Smaller icon
+        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
         style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface,
-          backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          foregroundColor: theme.colorScheme.onSurface.withAlpha(200),
+          backgroundColor: theme.colorScheme.onSurface.withAlpha(15),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: theme.colorScheme.onSurface.withAlpha(20),
+              width: 1.0,
+            ),
+          ),
         ),
       ),
     );

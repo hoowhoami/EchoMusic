@@ -93,7 +93,7 @@ class _RecommendViewState extends State<RecommendView> {
                 title: '排行榜',
                 subtitle: '实时热门趋势',
                 iconContent: 'TOP',
-                onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RankView())),
+                onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RankView(isRecommend: true))),
                 color: Theme.of(context).colorScheme.secondary,
               ),
             ],

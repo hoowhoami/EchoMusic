@@ -151,6 +151,21 @@ class MusicApi {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getRankTop() async {
+    try {
+      final response = await _dio.get('/rank/top');
+      if (response.data['status'] == 1) {
+        // Based on EchoMusicLegacy, the data is in response.data['data']['list'] or similar
+        // Looking at server/module/rank_top.js, it returns the raw response from Kugou
+        List data = response.data['data']?['list'] ?? response.data['list'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
   static Future<List<Song>> getRankSongs(int rankId) async {
     try {
       final response = await _dio.get('/rank/audio', queryParameters: {

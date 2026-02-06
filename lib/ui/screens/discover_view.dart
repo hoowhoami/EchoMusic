@@ -66,11 +66,11 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
       body: TabBarView(
         controller: _tabController,
         physics: const BouncingScrollPhysics(),
-        children: const [
-          _DiscoverPlaylistTab(),
-          RankView(backgroundColor: Colors.transparent),
-          _DiscoverAlbumTab(),
-          _DiscoverSongTab(),
+        children: [
+          const _DiscoverPlaylistTab(),
+          const RankView(backgroundColor: Colors.transparent, showTitle: false),
+          const _DiscoverAlbumTab(),
+          const _DiscoverSongTab(),
         ],
       ),
     );
@@ -87,8 +87,8 @@ class _DiscoverPlaylistTab extends StatefulWidget {
 class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
   List<Playlist> _playlists = [];
   List<Map<String, dynamic>> _categories = [];
-  String _selectedCategoryId = '0';
-  String _selectedCategoryName = '全部分类';
+  String? _selectedCategoryId;
+  String? _selectedCategoryName;
   bool _isLoading = true;
 
   @override
@@ -103,14 +103,25 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
       setState(() {
         _categories = categories;
       });
-      _loadPlaylists('0');
+
+      if (_categories.isNotEmpty) {
+        final firstCat = _categories.first;
+        final sons = (firstCat['son'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        if (sons.isNotEmpty) {
+          final firstSon = sons.first;
+          final categoryId = firstSon['tag_id'].toString();
+          final categoryName = '${firstCat['tag_name']} - ${firstSon['tag_name']}';
+          _loadPlaylists(categoryId, categoryName);
+        }
+      }
     }
   }
 
-  Future<void> _loadPlaylists(String categoryId) async {
+  Future<void> _loadPlaylists(String categoryId, String categoryName) async {
     setState(() {
       _isLoading = true;
       _selectedCategoryId = categoryId;
+      _selectedCategoryName = categoryName;
     });
     final playlists = await MusicApi.getPlaylistByCategory(categoryId);
     if (mounted) {
@@ -128,7 +139,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
       for (var son in sons) {
         options.add(PickerOption(
           id: son['tag_id'].toString(),
-          name: son['tag_name'],
+          name: son['tag_name'], // Just display the sub-category name inside the picker
           group: cat['tag_name'],
         ));
       }
@@ -138,12 +149,11 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
       context,
       title: '歌单分类',
       options: options,
-      selectedId: _selectedCategoryId,
+      selectedId: _selectedCategoryId ?? '',
       onSelected: (opt) {
-        setState(() {
-          _selectedCategoryName = opt.name;
-        });
-        _loadPlaylists(opt.id);
+        // Construct the full "Group - Tag" name for the external label
+        final fullName = opt.group != null ? '${opt.group} - ${opt.name}' : opt.name;
+        _loadPlaylists(opt.id, fullName);
       },
     );
   }
@@ -156,10 +166,11 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
           child: Row(
             children: [
-              CustomSelector(
-                label: _selectedCategoryName,
-                onTap: () => _showCategoryPicker(context),
-              ),
+              if (_selectedCategoryName != null)
+                CustomSelector(
+                  label: _selectedCategoryName!,
+                  onTap: () => _showCategoryPicker(context),
+                ),
             ],
           ),
         ),
@@ -504,13 +515,21 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
           selectionProvider.setSongList(songs);
           selectionProvider.enterSelectionMode();
         },
-        icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
-        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        icon: const Icon(CupertinoIcons.checkmark_circle, size: 14),
+        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
         style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface,
-          backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          foregroundColor: theme.colorScheme.onSurface.withAlpha(200),
+          backgroundColor: theme.colorScheme.onSurface.withAlpha(15),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: theme.colorScheme.onSurface.withAlpha(20),
+              width: 1.0,
+            ),
+          ),
         ),
       ),
     );

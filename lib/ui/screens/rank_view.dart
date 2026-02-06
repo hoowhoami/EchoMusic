@@ -12,7 +12,15 @@ import '../widgets/custom_selector.dart';
 class RankView extends StatefulWidget {
   final int? initialRankId;
   final Color? backgroundColor;
-  const RankView({super.key, this.initialRankId, this.backgroundColor});
+  final bool isRecommend;
+  final bool showTitle;
+  const RankView({
+    super.key, 
+    this.initialRankId, 
+    this.backgroundColor,
+    this.isRecommend = false,
+    this.showTitle = true,
+  });
 
   @override
   State<RankView> createState() => _RankViewState();
@@ -32,13 +40,20 @@ class _RankViewState extends State<RankView> {
   }
 
   Future<void> _loadRanks() async {
-    final ranks = await MusicApi.getRanks();
+    final ranks = widget.isRecommend 
+        ? await MusicApi.getRankTop()
+        : await MusicApi.getRanks();
+    
     if (ranks.isNotEmpty && mounted) {
       setState(() {
         _ranks = ranks;
         _isLoadingRanks = false;
         _selectedRankId = widget.initialRankId ?? _ranks.first['rankid'];
         _loadRankSongs(_selectedRankId!);
+      });
+    } else if (mounted) {
+      setState(() {
+        _isLoadingRanks = false;
       });
     }
   }
@@ -75,16 +90,18 @@ class _RankViewState extends State<RankView> {
     }
 
     final selectedRank = _ranks.firstWhere((r) => r['rankid'] == _selectedRankId, orElse: () => _ranks.first);
-
-    return BatchSelectionScaffold(
-      title: '排行榜',
-      songs: _rankSongs,
-      appBarActions: _ranks.isNotEmpty 
+    final selector = _ranks.isNotEmpty 
         ? CustomSelector(
             label: selectedRank['rankname'],
             onTap: () => _showRankPicker(context),
           )
-        : null,
+        : null;
+
+    return BatchSelectionScaffold(
+      title: widget.showTitle ? '排行榜' : null,
+      leading: widget.showTitle ? null : selector,
+      songs: _rankSongs,
+      appBarActions: widget.showTitle ? selector : null,
       body: _isLoadingSongs
           ? const Center(child: CupertinoActivityIndicator())
           : _buildSongGrid(context),

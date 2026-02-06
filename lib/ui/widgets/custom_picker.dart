@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../theme/app_theme.dart';
+import 'custom_tab_bar.dart';
 
 class PickerOption {
   final String id;
@@ -11,7 +12,7 @@ class PickerOption {
   PickerOption({required this.id, required this.name, this.group});
 }
 
-class CustomPicker extends StatelessWidget {
+class CustomPicker extends StatefulWidget {
   final String title;
   final List<PickerOption> options;
   final String selectedId;
@@ -60,20 +61,64 @@ class CustomPicker extends StatelessWidget {
   }
 
   @override
+  State<CustomPicker> createState() => _CustomPickerState();
+}
+
+class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderStateMixin {
+  late Map<String, List<PickerOption>> _groupedOptions;
+  late List<String> _groupNames;
+  TabController? _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _initGroups();
+  }
+
+  void _initGroups() {
+    _groupedOptions = {};
+    for (var opt in widget.options) {
+      final key = opt.group ?? '';
+      if (!_groupedOptions.containsKey(key)) _groupedOptions[key] = [];
+      _groupedOptions[key]!.add(opt);
+    }
+    
+    // 如果只有一个空白组名，则视为不分组
+    if (_groupedOptions.length == 1 && _groupedOptions.containsKey('')) {
+      _groupNames = [];
+    } else {
+      _groupNames = _groupedOptions.keys.where((k) => k.isNotEmpty).toList();
+    }
+
+    if (_groupNames.length > 1) {
+      int initialIndex = 0;
+      for (int i = 0; i < _groupNames.length; i++) {
+        if (_groupedOptions[_groupNames[i]]!.any((opt) => opt.id == widget.selectedId)) {
+          initialIndex = i;
+          break;
+        }
+      }
+      _tabController = TabController(length: _groupNames.length, vsync: this, initialIndex: initialIndex);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>()!;
-    
-    // 分组逻辑
-    final Map<String, List<PickerOption>> groupedOptions = {};
-    for (var opt in options) {
-      final key = opt.group ?? '';
-      if (!groupedOptions.containsKey(key)) groupedOptions[key] = [];
-      groupedOptions[key]!.add(opt);
-    }
+    final bool useTabs = _tabController != null;
 
     return Container(
-      constraints: BoxConstraints(maxWidth: maxWidth!),
+      constraints: BoxConstraints(
+        maxWidth: widget.maxWidth!, 
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
       margin: const EdgeInsets.all(24),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -102,23 +147,48 @@ class CustomPicker extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(context),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: groupedOptions.entries.map((entry) {
-                          return _buildGroup(context, entry.key, entry.value, modernTheme);
-                        }).toList(),
+                  if (useTabs)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                      child: CustomTabBar(
+                        controller: _tabController!,
+                        tabs: _groupNames,
                       ),
                     ),
+                  Flexible(
+                    child: useTabs
+                        ? SizedBox(
+                            height: 320, // Tab 模式下给一个固定参考高度
+                            child: TabBarView(
+                              controller: _tabController,
+                              physics: const BouncingScrollPhysics(),
+                              children: _groupNames.map((name) {
+                                return _buildScrollArea(context, _groupedOptions[name]!, modernTheme);
+                              }).toList(),
+                            ),
+                          )
+                        : _buildScrollArea(context, widget.options, modernTheme),
                   ),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildScrollArea(BuildContext context, List<PickerOption> items, AppModernTheme modernTheme) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      physics: const BouncingScrollPhysics(),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: items.map((item) {
+          final isSelected = item.id == widget.selectedId;
+          return _buildTag(context, item, isSelected, modernTheme);
+        }).toList(),
       ),
     );
   }
@@ -130,7 +200,7 @@ class CustomPicker extends StatelessWidget {
       child: Row(
         children: [
           Text(
-            title,
+            widget.title,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
@@ -160,41 +230,11 @@ class CustomPicker extends StatelessWidget {
     );
   }
 
-  Widget _buildGroup(BuildContext context, String groupName, List<PickerOption> items, AppModernTheme modernTheme) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (groupName.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 8, left: 4),
-            child: Text(
-              groupName.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                color: theme.colorScheme.primary.withAlpha(200),
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: items.map((item) {
-            final isSelected = item.id == selectedId;
-            return _buildTag(context, item, isSelected, modernTheme);
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
   Widget _buildTag(BuildContext context, PickerOption item, bool isSelected, AppModernTheme modernTheme) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: () {
-        onSelected(item);
+        widget.onSelected(item);
         Navigator.pop(context);
       },
       borderRadius: BorderRadius.circular(10),
