@@ -93,11 +93,13 @@ class AppTheme {
           playerBarColor: const Color(0xFFFFFFFF).withAlpha(180),
           titleBarColor: const Color(0xFFFFFFFF).withAlpha(150),
           batchBarColor: const Color(0xFFFFFFFF).withAlpha(40),
-          modalColor: const Color(0xFFFFFFFF).withAlpha(100),
+          modalColor: const Color(0xFFFFFFFF).withAlpha(220),
           dividerColor: const Color(0xFFE5E5EA),
           sidebarBorder: const Color(0xFFE5E5EA),
           glassBlur: 25.0,
           cardHighlight: primaryAccent.withAlpha(8),
+          tabSliderColor: Colors.white,
+          tabSelectedTextColor: primaryAccent,
         ),
       ],
     );
@@ -146,6 +148,21 @@ class AppTheme {
         trackHeight: 3.0,
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return primaryAccent;
+          }
+          return const Color(0xFFD1D5DB);
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return primaryAccent.withAlpha(80);
+          }
+          return const Color(0xFFE5E7EB);
+        }),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFF38383A),
         thickness: 0.8,
@@ -167,11 +184,13 @@ class AppTheme {
           playerBarColor: const Color(0xFF1C1C1E).withAlpha(160),
           titleBarColor: const Color(0xFF000000).withAlpha(120),
           batchBarColor: const Color(0xFF1C1C1E).withAlpha(60),
-          modalColor: const Color(0xFF1C1C1E).withAlpha(120),
+          modalColor: const Color(0xFF1C1C1E).withAlpha(200),
           dividerColor: const Color(0xFF38383A),
           sidebarBorder: const Color(0xFF2C2C2E),
           glassBlur: 25.0,
           cardHighlight: primaryAccent.withAlpha(15),
+          tabSliderColor: primaryAccent,
+          tabSelectedTextColor: Colors.white,
         ),
       ],
     );
@@ -188,6 +207,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
   final Color? sidebarBorder;
   final double? glassBlur;
   final Color? cardHighlight;
+  final Color? tabSliderColor;
+  final Color? tabSelectedTextColor;
 
   AppModernTheme({
     this.sidebarColor,
@@ -199,6 +220,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     this.sidebarBorder,
     this.glassBlur,
     this.cardHighlight,
+    this.tabSliderColor,
+    this.tabSelectedTextColor,
   });
 
   @override
@@ -212,6 +235,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     Color? sidebarBorder,
     double? glassBlur,
     Color? cardHighlight,
+    Color? tabSliderColor,
+    Color? tabSelectedTextColor,
   }) {
     return AppModernTheme(
       sidebarColor: sidebarColor ?? this.sidebarColor,
@@ -223,6 +248,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       sidebarBorder: sidebarBorder ?? this.sidebarBorder,
       glassBlur: glassBlur ?? this.glassBlur,
       cardHighlight: cardHighlight ?? this.cardHighlight,
+      tabSliderColor: tabSliderColor ?? this.tabSliderColor,
+      tabSelectedTextColor: tabSelectedTextColor ?? this.tabSelectedTextColor,
     );
   }
 
@@ -239,6 +266,8 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       sidebarBorder: Color.lerp(sidebarBorder, other.sidebarBorder, t),
       glassBlur: _lerpDouble(glassBlur, other.glassBlur, t),
       cardHighlight: Color.lerp(cardHighlight, other.cardHighlight, t),
+      tabSliderColor: Color.lerp(tabSliderColor, other.tabSliderColor, t),
+      tabSelectedTextColor: Color.lerp(tabSelectedTextColor, other.tabSelectedTextColor, t),
     );
   }
 

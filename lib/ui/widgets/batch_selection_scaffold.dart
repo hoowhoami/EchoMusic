@@ -80,6 +80,7 @@ class BatchSelectionScaffold extends StatelessWidget {
     
     return Container(
       margin: const EdgeInsets.only(left: 12),
+      height: 32,
       child: TextButton.icon(
         onPressed: () {
           selectionProvider.setSongList(songs);
@@ -90,7 +91,7 @@ class BatchSelectionScaffold extends StatelessWidget {
         style: TextButton.styleFrom(
           foregroundColor: theme.colorScheme.onSurface,
           backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),

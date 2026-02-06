@@ -11,14 +11,14 @@ class PickerOption {
   PickerOption({required this.id, required this.name, this.group});
 }
 
-class RefinedPicker extends StatelessWidget {
+class CustomPicker extends StatelessWidget {
   final String title;
   final List<PickerOption> options;
   final String selectedId;
   final Function(PickerOption) onSelected;
   final double? maxWidth;
 
-  const RefinedPicker({
+  const CustomPicker({
     super.key,
     required this.title,
     required this.options,
@@ -38,7 +38,7 @@ class RefinedPicker extends StatelessWidget {
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
-      barrierLabel: 'RefinedPicker',
+      barrierLabel: 'CustomPicker',
       barrierColor: Colors.black.withAlpha(20),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, animation, secondaryAnimation) => Center(
@@ -46,7 +46,7 @@ class RefinedPicker extends StatelessWidget {
           scale: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
           child: FadeTransition(
             opacity: animation,
-            child: RefinedPicker(
+            child: CustomPicker(
               title: title,
               options: options,
               selectedId: selectedId,
@@ -64,15 +64,13 @@ class RefinedPicker extends StatelessWidget {
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>()!;
     
-    // Group options if applicable
+    // 分组逻辑
     final Map<String, List<PickerOption>> groupedOptions = {};
     for (var opt in options) {
       final key = opt.group ?? '';
       if (!groupedOptions.containsKey(key)) groupedOptions[key] = [];
       groupedOptions[key]!.add(opt);
     }
-
-    final isLight = theme.brightness == Brightness.light;
 
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth!),
@@ -83,9 +81,7 @@ class RefinedPicker extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: isLight 
-                ? Colors.white.withAlpha(220) 
-                : modernTheme.modalColor?.withAlpha(200),
+              color: modernTheme.modalColor,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: theme.colorScheme.primary.withAlpha(40),
@@ -113,7 +109,7 @@ class RefinedPicker extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: groupedOptions.entries.map((entry) {
-                          return _buildGroup(context, entry.key, entry.value);
+                          return _buildGroup(context, entry.key, entry.value, modernTheme);
                         }).toList(),
                       ),
                     ),
@@ -164,7 +160,7 @@ class RefinedPicker extends StatelessWidget {
     );
   }
 
-  Widget _buildGroup(BuildContext context, String groupName, List<PickerOption> items) {
+  Widget _buildGroup(BuildContext context, String groupName, List<PickerOption> items, AppModernTheme modernTheme) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,14 +183,14 @@ class RefinedPicker extends StatelessWidget {
           runSpacing: 8,
           children: items.map((item) {
             final isSelected = item.id == selectedId;
-            return _buildTag(context, item, isSelected);
+            return _buildTag(context, item, isSelected, modernTheme);
           }).toList(),
         ),
       ],
     );
   }
 
-  Widget _buildTag(BuildContext context, PickerOption item, bool isSelected) {
+  Widget _buildTag(BuildContext context, PickerOption item, bool isSelected, AppModernTheme modernTheme) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: () {
@@ -208,7 +204,7 @@ class RefinedPicker extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected 
             ? theme.colorScheme.primary 
-            : theme.colorScheme.onSurface.withAlpha(isSelected ? 255 : 15),
+            : theme.colorScheme.onSurface.withAlpha(15),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected 
@@ -223,7 +219,7 @@ class RefinedPicker extends StatelessWidget {
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
             color: isSelected 
-              ? theme.colorScheme.onPrimary 
+              ? (theme.brightness == Brightness.light ? Colors.white : modernTheme.tabSelectedTextColor)
               : theme.colorScheme.onSurface.withAlpha(200),
           ),
         ),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
-class RefinedSelector extends StatelessWidget {
+class CustomSelector extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final IconData? icon;
 
-  const RefinedSelector({
+  const CustomSelector({
     super.key,
     required this.label,
     required this.onTap,

@@ -6,8 +6,8 @@ import '../../models/song.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
-import '../widgets/refined_picker.dart';
-import '../widgets/refined_selector.dart';
+import '../widgets/custom_picker.dart';
+import '../widgets/custom_selector.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -80,7 +80,7 @@ class _RankViewState extends State<RankView> {
       title: '排行榜',
       songs: _rankSongs,
       appBarActions: _ranks.isNotEmpty 
-        ? RefinedSelector(
+        ? CustomSelector(
             label: selectedRank['rankname'],
             onTap: () => _showRankPicker(context),
           )
@@ -97,7 +97,7 @@ class _RankViewState extends State<RankView> {
       name: r['rankname'],
     )).toList();
 
-    RefinedPicker.show(
+    CustomPicker.show(
       context,
       title: '排行榜选择',
       options: options,

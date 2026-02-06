@@ -11,6 +11,7 @@ import 'album_detail_view.dart';
 import '../../models/playlist.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
+import '../widgets/custom_tab_bar.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -38,6 +39,13 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadHotSearches();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHotSearches() async {
@@ -181,29 +189,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 ),
               ),
               const SizedBox(height: 24),
-              TabBar(
+              CustomTabBar(
                 controller: _tabController,
-                isScrollable: true,
-                indicatorSize: TabBarIndicatorSize.label,
-                dividerColor: Colors.transparent,
-                labelColor: theme.colorScheme.primary,
-                unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                indicator: UnderlineTabIndicator(
-                  borderSide: BorderSide(
-                    width: 2,
-                    color: theme.colorScheme.primary,
-                  ),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                tabs: const ['单曲', '歌单', '专辑', '歌手'],
                 onTap: (_) => setState(() {}),
-                tabs: const [
-                  Tab(text: '单曲'),
-                  Tab(text: '歌单'),
-                  Tab(text: '专辑'),
-                  Tab(text: '歌手'),
-                ],
               ),
               const SizedBox(height: 16),
               Expanded(

@@ -11,67 +11,67 @@ import 'rank_view.dart';
 import 'album_detail_view.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
-import '../widgets/refined_picker.dart';
-import '../widgets/refined_selector.dart';
+import '../widgets/custom_picker.dart';
+import '../widgets/custom_selector.dart';
+import '../widgets/custom_tab_bar.dart';
 
-class DiscoverView extends StatelessWidget {
+class DiscoverView extends StatefulWidget {
   const DiscoverView({super.key});
+
+  @override
+  State<DiscoverView> createState() => _DiscoverViewState();
+}
+
+class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(100),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '发现音乐',
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
-                ),
-                const SizedBox(height: 8),
-                TabBar(
-                  isScrollable: true,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                  indicator: UnderlineTabIndicator(
-                    borderSide: BorderSide(
-                      width: 2.5,
-                      color: theme.colorScheme.primary,
-                    ),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  tabs: const [
-                    Tab(text: '歌单'),
-                    Tab(text: '排行榜'),
-                    Tab(text: '新碟上架'),
-                    Tab(text: '新歌速递'),
-                  ],
-                ),
-              ],
-            ),
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(100),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '发现音乐',
+                style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
+              ),
+              const SizedBox(height: 12),
+              CustomTabBar(
+                controller: _tabController,
+                tabs: const ['歌单', '排行榜', '新碟上架', '新歌速递'],
+              ),
+            ],
           ),
         ),
-        body: const TabBarView(
-          physics: BouncingScrollPhysics(),
-          children: [
-            _DiscoverPlaylistTab(),
-            RankView(backgroundColor: Colors.transparent),
-            _DiscoverAlbumTab(),
-            _DiscoverSongTab(),
-          ],
-        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        physics: const BouncingScrollPhysics(),
+        children: const [
+          _DiscoverPlaylistTab(),
+          RankView(backgroundColor: Colors.transparent),
+          _DiscoverAlbumTab(),
+          _DiscoverSongTab(),
+        ],
       ),
     );
   }
@@ -134,7 +134,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
       }
     }
 
-    RefinedPicker.show(
+    CustomPicker.show(
       context,
       title: '歌单分类',
       options: options,
@@ -156,7 +156,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
           child: Row(
             children: [
-              RefinedSelector(
+              CustomSelector(
                 label: _selectedCategoryName,
                 onTap: () => _showCategoryPicker(context),
               ),
@@ -304,7 +304,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
       name: type['name']!,
     )).toList();
 
-    RefinedPicker.show(
+    CustomPicker.show(
       context,
       title: '专辑类型',
       options: options,
@@ -329,7 +329,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
           child: Row(
             children: [
-              RefinedSelector(
+              CustomSelector(
                 label: _selectedTypeName,
                 onTap: () => _showTypePicker(context),
               ),
@@ -497,18 +497,21 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
   Widget _buildBatchButton(BuildContext context, SelectionProvider selectionProvider, List<Song> songs) {
     final theme = Theme.of(context);
     
-    return TextButton.icon(
-      onPressed: () {
-        selectionProvider.setSongList(songs);
-        selectionProvider.enterSelectionMode();
-      },
-      icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
-      label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-      style: TextButton.styleFrom(
-        foregroundColor: theme.colorScheme.onSurface,
-        backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    return SizedBox(
+      height: 32,
+      child: TextButton.icon(
+        onPressed: () {
+          selectionProvider.setSongList(songs);
+          selectionProvider.enterSelectionMode();
+        },
+        icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
+        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurface,
+          backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       ),
     );
   }
