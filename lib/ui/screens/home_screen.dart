@@ -15,6 +15,7 @@ import 'cloud_view.dart';
 import 'profile_view.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/selection_provider.dart';
 import '../../api/music_api.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -26,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  dynamic _selectedPlaylistId;
   final List<int> _navigationHistory = [0];
   int _historyIndex = 0;
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -37,9 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateTo(int index) {
-    if (index == _selectedIndex) return;
+    if (index == _selectedIndex && _selectedPlaylistId == null) return;
+
+    // Reset selection mode when navigating to a new main view
+    context.read<SelectionProvider>().reset();
 
     setState(() {
+      _selectedPlaylistId = null;
       // Remove forward history when navigating to a new page
       if (_historyIndex < _navigationHistory.length - 1) {
         _navigationHistory.removeRange(_historyIndex + 1, _navigationHistory.length);
@@ -54,7 +60,20 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _pushRoute(Widget page) {
+  void _pushRoute(Widget page, {dynamic playlistId}) {
+    if (playlistId != null && _selectedPlaylistId == playlistId) {
+      return;
+    }
+
+    // Reset selection mode when pushing a new route
+    context.read<SelectionProvider>().reset();
+
+    if (playlistId != null) {
+      setState(() {
+        _selectedPlaylistId = playlistId;
+      });
+    }
+
     _navigatorKey.currentState?.push(
       CupertinoPageRoute(builder: (_) => page),
     ).then((_) {
@@ -70,9 +89,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (_historyIndex > 0) {
+      context.read<SelectionProvider>().reset();
       setState(() {
         _historyIndex--;
         _selectedIndex = _navigationHistory[_historyIndex];
+        _selectedPlaylistId = null;
       });
     }
   }
@@ -169,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: Sidebar(
                           selectedIndex: _selectedIndex,
+                          selectedPlaylistId: _selectedPlaylistId,
                           onDestinationSelected: _navigateTo,
                           onPushRoute: _pushRoute,
                         ),

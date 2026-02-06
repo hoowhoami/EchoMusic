@@ -9,12 +9,14 @@ import 'cover_image.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
+  final dynamic selectedPlaylistId;
   final ValueChanged<int> onDestinationSelected;
-  final void Function(Widget)? onPushRoute;
+  final void Function(Widget, {dynamic playlistId})? onPushRoute;
 
   const Sidebar({
     super.key,
     required this.selectedIndex,
+    this.selectedPlaylistId,
     required this.onDestinationSelected,
     this.onPushRoute,
   });
@@ -253,6 +255,9 @@ class Sidebar extends StatelessWidget {
   Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, {String? imageUrl}) {
     final playlist = Playlist.fromUserPlaylist(playlistData);
     final theme = Theme.of(context);
+    final isSelected = selectedPlaylistId == playlist.id;
+    final accentColor = theme.colorScheme.primary;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: MouseRegion(
@@ -260,7 +265,7 @@ class Sidebar extends StatelessWidget {
         child: InkWell(
           onTap: () {
             if (onPushRoute != null) {
-              onPushRoute!(PlaylistDetailView(playlist: playlist));
+              onPushRoute!(PlaylistDetailView(playlist: playlist), playlistId: playlist.id);
             } else {
               Navigator.push(
                 context,
@@ -269,8 +274,13 @@ class Sidebar extends StatelessWidget {
             }
           },
           borderRadius: BorderRadius.circular(12),
-          child: Padding(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? accentColor.withAlpha(30) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Row(
               children: [
                 CoverImage(
@@ -285,7 +295,7 @@ class Sidebar extends StatelessWidget {
                       color: theme.colorScheme.onSurface.withAlpha(10),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 14),
+                    child: Icon(icon, color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant, size: 14),
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -293,9 +303,9 @@ class Sidebar extends StatelessWidget {
                   child: Text(
                     playlist.name,
                     style: TextStyle(
-                      color: theme.colorScheme.onSurface.withAlpha(220), 
+                      color: isSelected ? accentColor : theme.colorScheme.onSurface.withAlpha(220), 
                       fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
                       letterSpacing: -0.2,
                     ),
                     maxLines: 1,

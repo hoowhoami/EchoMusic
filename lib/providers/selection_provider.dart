@@ -57,6 +57,14 @@ class SelectionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  void reset() {
+    _isSelectionMode = false;
+    _selectedHashes.clear();
+    _currentSongList = [];
+    _sourcePlaylistId = null;
+    notifyListeners();
+  }
+
   bool isSelected(String hash) {
     return _selectedHashes.contains(hash);
   }
