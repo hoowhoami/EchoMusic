@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/user_provider.dart';
 import '../screens/lyric_page.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
@@ -312,7 +313,7 @@ class PlayerBar extends StatelessWidget {
                 icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
                 isSelected: persistenceProvider.isFavorite(song),
                 activeColor: Colors.redAccent,
-                onPressed: () => persistenceProvider.toggleFavorite(song),
+                onPressed: () => persistenceProvider.toggleFavorite(song, userProvider: context.read<UserProvider>()),
                 size: 20,
               ),
               const SizedBox(width: 12),

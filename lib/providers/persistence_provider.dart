@@ -127,12 +127,14 @@ class PersistenceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleFavorite(Song song) async {
+  Future<void> toggleFavorite(Song song, {dynamic userProvider}) async {
     final index = _favorites.indexWhere((s) => s.hash == song.hash);
-    if (index >= 0) {
-      _favorites.removeAt(index);
-    } else {
+    bool isAdding = index < 0;
+
+    if (isAdding) {
       _favorites.insert(0, song);
+    } else {
+      _favorites.removeAt(index);
     }
     
     final prefs = await SharedPreferences.getInstance();
@@ -141,6 +143,15 @@ class PersistenceProvider with ChangeNotifier {
       _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
     );
     notifyListeners();
+
+    // Cloud sync if authenticated
+    if (userProvider != null && userProvider.isAuthenticated && userProvider.likedPlaylistId != null) {
+      if (isAdding) {
+        await userProvider.addSongToPlaylist(userProvider.likedPlaylistId!, song);
+      } else {
+        await userProvider.removeSongFromPlaylist(userProvider.likedPlaylistId!, song);
+      }
+    }
   }
 
   bool isFavorite(Song song) {

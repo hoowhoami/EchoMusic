@@ -6,6 +6,7 @@ class SelectionProvider with ChangeNotifier {
   final Set<String> _selectedHashes = {};
   bool _isSelectionMode = false;
   List<Song> _currentSongList = [];
+  dynamic _sourcePlaylistId;
 
   Set<String> get selectedHashes => _selectedHashes;
   List<Song> get selectedSongs {
@@ -15,9 +16,11 @@ class SelectionProvider with ChangeNotifier {
   bool get isSelectionMode => _isSelectionMode;
   int get selectedCount => _selectedHashes.length;
   bool get hasSelection => _selectedHashes.isNotEmpty;
+  dynamic get sourcePlaylistId => _sourcePlaylistId;
 
-  void setSongList(List<Song> songs) {
+  void setSongList(List<Song> songs, {dynamic playlistId}) {
     _currentSongList = songs;
+    _sourcePlaylistId = playlistId;
   }
 
   void enterSelectionMode() {

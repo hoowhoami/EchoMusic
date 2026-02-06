@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
+import '../screens/artist_detail_view.dart';
+import '../screens/album_detail_view.dart';
 import 'cover_image.dart';
+import 'custom_toast.dart';
 
 import '../../models/playlist.dart' as model;
 
@@ -46,12 +49,31 @@ class SongCard extends StatelessWidget {
           ],
         ),
       ),
+      const PopupMenuItem(
+        value: 'artist',
+        child: Row(
+          children: [
+            Icon(CupertinoIcons.person, size: 18),
+            SizedBox(width: 12),
+            Text('歌手详情', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+      ),
+      if (song.albumId != null && song.albumId != '0' && song.albumId!.isNotEmpty)
+        const PopupMenuItem(
+          value: 'album',
+          child: Row(
+            children: [
+              Icon(CupertinoIcons.music_albums, size: 18),
+              SizedBox(width: 12),
+              Text('专辑详情', style: TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
     ];
 
     if (userProvider.isAuthenticated) {
-      final myPlaylists = userProvider.userPlaylists
-          .where((p) => p['list_create_userid'] == userProvider.user?.userid)
-          .toList();
+      final myPlaylists = userProvider.createdPlaylists;
 
       if (myPlaylists.isNotEmpty) {
         menuItems.add(
@@ -72,9 +94,11 @@ class SongCard extends StatelessWidget {
               onSelected: (listId) async {
                 final success = await userProvider.addSongToPlaylist(listId, song);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(success ? '已添加到歌单' : '添加失败')),
-                  );
+                  if (success) {
+                    CustomToast.success(context, '已添加到歌单');
+                  } else {
+                    CustomToast.error(context, '添加失败');
+                  }
                 }
               },
               itemBuilder: (context) => myPlaylists.map((p) {
@@ -121,15 +145,36 @@ class SongCard extends StatelessWidget {
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ).then((value) async {
+      if (!context.mounted) return;
       if (value == 'play') {
         context.read<AudioProvider>().playSong(song, playlist: playlist);
+      } else if (value == 'artist') {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => ArtistDetailView(
+              artistId: song.singers.isNotEmpty ? song.singers.first.id : 0,
+              artistName: song.singerName,
+            ),
+          ),
+        );
+      } else if (value == 'album') {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => AlbumDetailView(
+              albumId: int.tryParse(song.albumId ?? '0') ?? 0,
+              albumName: song.albumName,
+            ),
+          ),
+        );
       } else if (value == 'removeFromPlaylist') {
         if (parentPlaylist != null) {
           final success = await userProvider.removeSongFromPlaylist(parentPlaylist!.id, song);
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(success ? '已从歌单删除' : '删除失败')),
-            );
+            if (success) {
+              CustomToast.success(context, '已从歌单删除');
+            } else {
+              CustomToast.error(context, '删除失败');
+            }
           }
         }
       }

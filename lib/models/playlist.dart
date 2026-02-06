@@ -5,6 +5,7 @@ class Playlist {
   final String? globalCollectionId;
   final String? listCreateGid; // 新增：原始歌单 ID
   final int? listCreateUserid; // 新增：歌单创建者 ID
+  final int? listCreateListid; // 新增：原始歌单 ID (int)
   final int? listid;
   final String name;
   final String pic;
@@ -16,11 +17,14 @@ class Playlist {
   final int? heat;
   final String? publishDate;
 
+  int get originalId => listCreateListid ?? id;
+
   Playlist({
     required this.id,
     this.globalCollectionId,
     this.listCreateGid,
     this.listCreateUserid,
+    this.listCreateListid,
     this.listid,
     required this.name,
     required this.pic,
@@ -57,6 +61,7 @@ class Playlist {
       globalCollectionId: (json['global_collection_id'] ?? json['gid'] ?? json['specialid'])?.toString(),
       listCreateGid: (json['list_create_gid'] ?? json['gid'] ?? json['specialid'])?.toString(),
       listCreateUserid: json['list_create_userid'] != null ? parseId(json['list_create_userid']) : null,
+      listCreateListid: json['list_create_listid'] != null ? parseId(json['list_create_listid']) : null,
       listid: json['listid'] != null ? parseId(json['listid']) : null,
       name: (json['name'] ?? json['specialname'] ?? '').toString(),
       pic: pic.toString(),

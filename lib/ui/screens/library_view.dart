@@ -4,6 +4,7 @@ import '../../providers/persistence_provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/song_card.dart';
 import 'artist_detail_view.dart';
 import 'login_screen.dart';
 
@@ -74,28 +75,10 @@ class _SongList extends StatelessWidget {
           itemCount: songs.length,
           itemBuilder: (context, index) {
             final song = songs[index];
-            return ListTile(
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: CachedNetworkImage(
-                  imageUrl: song.cover,
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              title: Text(song.name, style: TextStyle(color: theme.colorScheme.onSurface)),
-              subtitle: Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
-              trailing: IconButton(
-                icon: Icon(
-                  persistence.isFavorite(song) ? Icons.favorite : Icons.favorite_border,
-                  color: persistence.isFavorite(song) ? Colors.redAccent : theme.colorScheme.onSurface.withAlpha(80),
-                ),
-                onPressed: () => persistence.toggleFavorite(song),
-              ),
-              onTap: () {
-                context.read<AudioProvider>().playSong(song, playlist: songs);
-              },
+            return SongCard(
+              song: song,
+              playlist: songs,
+              showMore: true,
             );
           },
         );
@@ -188,13 +171,10 @@ class _CloudList extends StatelessWidget {
       itemCount: songs.length,
       itemBuilder: (context, index) {
         final song = songs[index];
-        return ListTile(
-          leading: Icon(Icons.cloud_queue, color: theme.colorScheme.primary),
-          title: Text(song.name, style: TextStyle(color: theme.colorScheme.onSurface)),
-          subtitle: Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
-          onTap: () {
-            context.read<AudioProvider>().playSong(song, playlist: songs);
-          },
+        return SongCard(
+          song: song,
+          playlist: songs,
+          showMore: true,
         );
       },
     );
@@ -219,5 +199,6 @@ class _CloudList extends StatelessWidget {
     );
   }
 }
+
 
 

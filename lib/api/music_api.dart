@@ -632,9 +632,9 @@ class MusicApi {
   // --- Playlist ---
   static Future<List<Map<String, dynamic>>> getUserPlaylists({int page = 1, int pagesize = 30}) async {
     try {
-      final response = await _dio.get('/user/playlist', queryParameters: {'page': page, 'pagesize': pagesize});
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
+      final response = await getUserPlaylistsRaw(page: page, pagesize: pagesize);
+      if (response['status'] == 1) {
+        List data = response['data']['info'] ?? [];
         return data.cast<Map<String, dynamic>>();
       }
       return [];
@@ -643,30 +643,42 @@ class MusicApi {
     }
   }
 
-  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? listCreateUserid, int? listCreateListid}) async {
+  static Future<Map<String, dynamic>> getUserPlaylistsRaw({int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/user/playlist', queryParameters: {'page': page, 'pagesize': pagesize});
+      return response.data ?? {};
+    } catch (e) {
+      return {'status': 0, 'error': e.toString()};
+    }
+  }
+
+  static Future<bool> copyPlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid, bool isPrivate = false}) async {
+    return addPlaylist(
+      name,
+      isPri: isPrivate ? 1 : 0,
+      type: 1, // Type 1 as per legacy project for collecting/liking playlist
+      list_create_listid: playlistId,
+      list_create_userid: listCreateUserid,
+      list_create_gid: listCreateGid,
+    );
+  }
+
+  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? list_create_userid, int? list_create_listid, String? list_create_gid}) async {
     try {
       final params = {
         'name': name,
         'is_pri': isPri,
         'type': type,
       };
-      if (listCreateUserid != null) params['list_create_userid'] = listCreateUserid;
-      if (listCreateListid != null) params['list_create_listid'] = listCreateListid;
+      if (list_create_userid != null) params['list_create_userid'] = list_create_userid;
+      if (list_create_listid != null) params['list_create_listid'] = list_create_listid;
+      if (list_create_gid != null) params['list_create_gid'] = list_create_gid;
 
       final response = await _dio.get('/playlist/add', queryParameters: params);
       return response.data['status'] == 1;
     } catch (e) {
       return false;
     }
-  }
-
-  static Future<bool> copyPlaylist(int playlistId, String name, {bool isPrivate = false}) async {
-    return addPlaylist(
-      name,
-      isPri: isPrivate ? 1 : 0,
-      type: 8, // Type 8 indicates copied/imported playlist
-      listCreateListid: playlistId,
-    );
   }
 
   static Future<bool> deletePlaylist(int listid) async {

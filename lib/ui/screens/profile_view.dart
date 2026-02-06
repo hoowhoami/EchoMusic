@@ -5,6 +5,7 @@ import '../../providers/user_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
+import '../widgets/custom_toast.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -311,9 +312,11 @@ class _ProfileViewState extends State<ProfileView> {
             final success = await provider.claimTvip();
             setState(() => _isLoading = false);
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(success ? '领取成功' : '领取失败')),
-              );
+              if (success) {
+                CustomToast.success(context, '领取成功');
+              } else {
+                CustomToast.error(context, '领取失败');
+              }
             }
           },
           color: Colors.green,
@@ -330,9 +333,11 @@ class _ProfileViewState extends State<ProfileView> {
             final success = await provider.upgradeSvip();
             setState(() => _isLoading = false);
             if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(success ? '升级成功' : '请先领取畅听会员')),
-              );
+              if (success) {
+                CustomToast.success(context, '升级成功');
+              } else {
+                CustomToast.error(context, '请先领取畅听会员');
+              }
             }
           },
           color: Colors.orange,

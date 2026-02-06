@@ -5,6 +5,7 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'dart:io';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
+import '../widgets/custom_dialog.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
@@ -105,6 +106,18 @@ class _HomeScreenState extends State<HomeScreen> {
     
     // Auto fetch user data if authenticated
     final userProvider = context.read<UserProvider>();
+    userProvider.onPlaylistError = (message) {
+      if (mounted) {
+        CustomDialog.show(
+          context,
+          title: '提示',
+          content: message,
+          confirmText: '我知道了',
+          showCancel: false,
+        );
+      }
+    };
+
     if (userProvider.isAuthenticated) {
       userProvider.fetchAllUserData();
     }

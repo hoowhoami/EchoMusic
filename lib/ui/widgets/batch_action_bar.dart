@@ -7,6 +7,7 @@ import '../../providers/user_provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../theme/app_theme.dart';
+import 'custom_toast.dart';
 
 class BatchActionBar extends StatefulWidget {
   const BatchActionBar({super.key});
@@ -182,6 +183,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
       child: CupertinoButton(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         onPressed: onPressed,
+        minimumSize: const Size(0, 0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -213,7 +215,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
               ),
             ),
           ],
-        ), minimumSize: Size(0, 0),
+        ),
       ),
     );
   }
@@ -445,6 +447,27 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                         _showAddToPlaylistDialog(context, selectionProvider);
                                       },
                                     ),
+                                  if (isAuthenticated && selectionProvider.sourcePlaylistId != null && userProvider.isCreatedPlaylist(selectionProvider.sourcePlaylistId))
+                                    _buildImprovedActionItem(
+                                      context,
+                                      icon: CupertinoIcons.trash,
+                                      title: '从本歌单删除',
+                                      subtitle: '将选中的歌曲从当前歌单中移除',
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        final songs = selectionProvider.selectedSongs;
+                                        final count = await userProvider.removeSongsFromPlaylist(selectionProvider.sourcePlaylistId, songs);
+                                        selectionProvider.exitSelectionMode();
+                                        if (context.mounted) {
+                                          if (count > 0) {
+                                            CustomToast.success(context, '已从歌单中删除 $count 首歌曲');
+                                          } else {
+                                            CustomToast.error(context, '删除失败');
+                                          }
+                                        }
+                                      },
+                                      isDestructive: true,
+                                    ),
                                   _buildImprovedActionItem(
                                     context,
                                     icon: CupertinoIcons.play_circle,
@@ -468,20 +491,16 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                       onTap: () async {
                                         Navigator.pop(context);
                                         final persistenceProvider = context.read<PersistenceProvider>();
+                                        final userProvider = context.read<UserProvider>();
                                         final songs = selectionProvider.selectedSongs;
                                         for (final song in songs) {
-                                          await persistenceProvider.toggleFavorite(song);
+                                          if (!persistenceProvider.isFavorite(song)) {
+                                            await persistenceProvider.toggleFavorite(song, userProvider: userProvider);
+                                          }
                                         }
                                         selectionProvider.exitSelectionMode();
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('已添加 ${songs.length} 首歌曲到我喜欢的'),
-                                              behavior: SnackBarBehavior.floating,
-                                              margin: const EdgeInsets.all(20),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                          );
+                                          CustomToast.success(context, '已添加 ${songs.length} 首歌曲到我喜欢的');
                                         }
                                       },
                                     ),
@@ -602,14 +621,10 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>()!;
     final userProvider = context.read<UserProvider>();
-    final myPlaylists = userProvider.userPlaylists
-        .where((p) => p['list_create_userid'] == userProvider.user?.userid)
-        .toList();
+    final myPlaylists = userProvider.createdPlaylists;
 
     if (myPlaylists.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('您还没有创建任何歌单')),
-      );
+      CustomToast.warning(context, '您还没有创建任何歌单');
       return;
     }
 
@@ -729,14 +744,11 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                         final count = await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
                                         selectionProvider.exitSelectionMode();
                                         if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('成功添加 $count 首歌曲到歌单'),
-                                              behavior: SnackBarBehavior.floating,
-                                              margin: const EdgeInsets.all(20),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                            ),
-                                          );
+                                          if (count > 0) {
+                                            CustomToast.success(context, '成功添加 $count 首歌曲到歌单');
+                                          } else {
+                                            CustomToast.error(context, '添加失败');
+                                          }
                                         }
                                       },
                                       borderRadius: BorderRadius.circular(16),

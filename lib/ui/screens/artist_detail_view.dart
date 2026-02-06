@@ -10,6 +10,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/custom_toast.dart';
 
 class ArtistDetailView extends StatefulWidget {
   final int artistId;
@@ -201,11 +202,26 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                       ),
                                       const SizedBox(width: 12),
                                       OutlinedButton.icon(
-                                        onPressed: () {
+                                        onPressed: () async {
+                                          bool success;
                                           if (isFollowing) {
-                                            userProvider.unfollowSinger(widget.artistId);
+                                            success = await userProvider.unfollowSinger(widget.artistId);
+                                            if (context.mounted) {
+                                              if (success) {
+                                                CustomToast.success(context, '已取消关注');
+                                              } else {
+                                                CustomToast.error(context, '操作失败');
+                                              }
+                                            }
                                           } else {
-                                            userProvider.followSinger(widget.artistId);
+                                            success = await userProvider.followSinger(widget.artistId);
+                                            if (context.mounted) {
+                                              if (success) {
+                                                CustomToast.success(context, '关注成功');
+                                              } else {
+                                                CustomToast.error(context, '关注失败');
+                                              }
+                                            }
                                           }
                                         },
                                         icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
@@ -237,7 +253,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                         margin: const EdgeInsets.symmetric(vertical: 10),
                         child: TextButton.icon(
                           onPressed: () {
-                            selectionProvider.setSongList(snapshot.data!);
+                            selectionProvider.setSongList(snapshot.data!, playlistId: widget.artistId);
                             selectionProvider.enterSelectionMode();
                           },
                           icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),

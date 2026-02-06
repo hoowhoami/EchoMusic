@@ -219,8 +219,8 @@ class Sidebar extends StatelessWidget {
 
   Widget _buildPlaylistSection(BuildContext context, UserProvider userProvider) {
     final theme = Theme.of(context);
-    final createdPlaylists = userProvider.userPlaylists.where((p) => p['list_create_userid'] == userProvider.user?.userid).toList();
-    final likedPlaylists = userProvider.userPlaylists.where((p) => p['list_create_userid'] != userProvider.user?.userid).toList();
+    final createdPlaylists = userProvider.createdPlaylists;
+    final favoritedPlaylists = userProvider.favoritedPlaylists;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,7 +231,7 @@ class Sidebar extends StatelessWidget {
           for (var p in createdPlaylists)
             _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
 
-          for (var p in likedPlaylists)
+          for (var p in favoritedPlaylists)
             _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
         ] else
           Padding(

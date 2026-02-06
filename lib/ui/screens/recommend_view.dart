@@ -288,6 +288,7 @@ class _RecommendViewState extends State<RecommendView> {
             final playlist = Playlist.fromJson({
               'specialname': ip['title'],
               'flexible_cover': ip['pic'],
+              'specialid': ip['extra']['specialid'],
               'global_collection_id': ip['extra']['global_collection_id'],
             });
             return _buildPlaylistCard(playlist, subtitle: '编辑精选');
