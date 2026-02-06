@@ -11,6 +11,7 @@ import 'rank_view.dart';
 import 'album_detail_view.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
+import '../widgets/refined_picker.dart';
 
 class DiscoverView extends StatelessWidget {
   const DiscoverView({super.key});
@@ -120,106 +121,28 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
   }
 
   void _showCategoryPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.dividerColor.withAlpha(50),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Text(
-                  '歌单分类',
-                  style: theme.textTheme.titleLarge?.copyWith(fontSize: 18),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) {
-                    final category = _categories[index];
-                    final sons = (category['son'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-                    
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            category['tag_name'] ?? '',
-                            style: TextStyle(
-                              color: theme.primaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: sons.map((son) {
-                            final isSelected = son['tag_id'].toString() == _selectedCategoryId;
-                            return InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _selectedCategoryName = son['tag_name'];
-                                });
-                                Navigator.pop(context);
-                                _loadPlaylists(son['tag_id'].toString());
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: isSelected 
-                                    ? theme.primaryColor.withAlpha(20)
-                                    : theme.colorScheme.onSurface.withAlpha(5),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected 
-                                      ? theme.primaryColor.withAlpha(100)
-                                      : Colors.transparent
-                                  ),
-                                ),
-                                child: Text(
-                                  son['tag_name'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                    color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
+    final List<PickerOption> options = [];
+    for (var cat in _categories) {
+      final sons = (cat['son'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (var son in sons) {
+        options.add(PickerOption(
+          id: son['tag_id'].toString(),
+          name: son['tag_name'],
+          group: cat['tag_name'],
+        ));
+      }
+    }
+
+    RefinedPicker.show(
+      context,
+      title: '歌单分类',
+      options: options,
+      selectedId: _selectedCategoryId,
+      onSelected: (opt) {
+        setState(() {
+          _selectedCategoryName = opt.name;
+        });
+        _loadPlaylists(opt.id);
       },
     );
   }
@@ -313,16 +236,17 @@ class _PlaylistCard extends StatelessWidget {
                   ),
                 ],
               ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: playlist.pic,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    placeholder: (context, url) => Container(color: theme.colorScheme.onSurface.withAlpha(10)),
-                                    errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_note_list),
-                                  ),
-                                ),            ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: playlist.pic,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  placeholder: (context, url) => Container(color: theme.colorScheme.onSurface.withAlpha(10)),
+                  errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_note_list),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 10),
           Text(
@@ -394,75 +318,23 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
   }
 
   void _showTypePicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.dividerColor.withAlpha(50),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Text('专辑类型', style: theme.textTheme.titleLarge?.copyWith(fontSize: 18)),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 40),
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: _types.map((type) {
-                    final isSelected = type['id'] == _selectedTypeId;
-                    return InkWell(
-                      onTap: () {
-                        setState(() {
-                          _selectedTypeId = type['id']!;
-                          _selectedTypeName = type['name']!;
-                        });
-                        Navigator.pop(context);
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected 
-                            ? theme.primaryColor.withAlpha(20)
-                            : theme.colorScheme.onSurface.withAlpha(5),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected ? theme.primaryColor : Colors.transparent
-                          ),
-                        ),
-                        child: Text(
-                          type['name']!,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? theme.primaryColor : theme.colorScheme.onSurface.withAlpha(200),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-        );
+    final List<PickerOption> options = _types.map((type) => PickerOption(
+      id: type['id']!,
+      name: type['name']!,
+    )).toList();
+
+    RefinedPicker.show(
+      context,
+      title: '专辑类型',
+      options: options,
+      selectedId: _selectedTypeId,
+      onSelected: (opt) {
+        setState(() {
+          _selectedTypeId = opt.id;
+          _selectedTypeName = opt.name;
+        });
       },
+      maxWidth: 360,
     );
   }
 
@@ -632,22 +504,25 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                    itemCount: songs.length + 1,
+                    itemCount: songs.length,
                     itemBuilder: (context, index) {
-                      if (index == songs.length) {
-                        return const SizedBox(height: 100);
-                      }
-
                       final song = songs[index];
-                      return SongCard(
-                        song: song,
-                        playlist: songs,
-                        showMore: true,
-                        isSelectionMode: selectionProvider.isSelectionMode,
-                        isSelected: selectionProvider.isSelected(song.hash),
-                        onSelectionChanged: (selected) {
-                          selectionProvider.toggleSelection(song.hash);
-                        },
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == songs.length - 1 
+                            ? (selectionProvider.isSelectionMode ? 80 : 20) 
+                            : 0
+                        ),
+                        child: SongCard(
+                          song: song,
+                          playlist: songs,
+                          showMore: true,
+                          isSelectionMode: selectionProvider.isSelectionMode,
+                          isSelected: selectionProvider.isSelected(song.hash),
+                          onSelectionChanged: (selected) {
+                            selectionProvider.toggleSelection(song.hash);
+                          },
+                        ),
                       );
                     },
                   ),
@@ -680,5 +555,3 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
     );
   }
 }
-
-

@@ -6,6 +6,7 @@ import '../../models/song.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
+import '../widgets/refined_picker.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -31,14 +32,12 @@ class _RankViewState extends State<RankView> {
 
   Future<void> _loadRanks() async {
     final ranks = await MusicApi.getRanks();
-    if (mounted) {
+    if (ranks.isNotEmpty && mounted) {
       setState(() {
         _ranks = ranks;
         _isLoadingRanks = false;
-        if (_ranks.isNotEmpty) {
-          _selectedRankId = widget.initialRankId ?? _ranks.first['rankid'];
-          _loadRankSongs(_selectedRankId!);
-        }
+        _selectedRankId = widget.initialRankId ?? _ranks.first['rankid'];
+        _loadRankSongs(_selectedRankId!);
       });
     }
   }
@@ -118,115 +117,21 @@ class _RankViewState extends State<RankView> {
   }
 
   void _showRankPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) {
-        final theme = Theme.of(context);
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.6,
-          ),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withAlpha(30),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-                child: Row(
-                  children: [
-                    Text(
-                      '选择排行榜',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '共 ${_ranks.length} 个',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
-                  shrinkWrap: true,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    childAspectRatio: 2.8,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: _ranks.length,
-                  itemBuilder: (context, index) {
-                    final rank = _ranks[index];
-                    final isSelected = rank['rankid'] == _selectedRankId;
-                    return Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.pop(context);
-                          if (!isSelected) {
-                            _loadRankSongs(rank['rankid']);
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: isSelected 
-                              ? theme.colorScheme.primary.withAlpha(20)
-                              : theme.colorScheme.onSurface.withAlpha(8),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected 
-                                ? theme.colorScheme.primary.withAlpha(100)
-                                : Colors.transparent,
-                              width: 1,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              rank['rankname'],
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                color: isSelected 
-                                  ? theme.colorScheme.primary 
-                                  : theme.colorScheme.onSurface.withAlpha(200),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
+    final List<PickerOption> options = _ranks.map((r) => PickerOption(
+      id: r['rankid'].toString(),
+      name: r['rankname'],
+    )).toList();
+
+    RefinedPicker.show(
+      context,
+      title: '排行榜选择',
+      options: options,
+      selectedId: _selectedRankId.toString(),
+      onSelected: (opt) {
+        final id = int.parse(opt.id);
+        if (id != _selectedRankId) {
+          _loadRankSongs(id);
+        }
       },
     );
   }
