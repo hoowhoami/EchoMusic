@@ -154,7 +154,8 @@ class UserProvider with ChangeNotifier {
   Future<void> fetchUserPlaylists() async {
     final response = await MusicApi.getUserPlaylistsRaw();
     if (response['status'] == 1) {
-      List data = response['data']?['info'] ?? [];
+      // Correct the path: info is often at the root of response
+      List data = response['info'] ?? response['data']?['info'] ?? [];
       _userPlaylists = data.cast<Map<String, dynamic>>();
       
       // Identify "I Like" playlist
@@ -249,24 +250,33 @@ class UserProvider with ChangeNotifier {
     return _userFollows.any((f) => (f['singerid'] ?? f['author_id']) == id);
   }
 
-  bool isPlaylistFavorited(dynamic playlistId) {
+  bool isPlaylistFavorited(dynamic playlistId, {String? globalId}) {
     final id = playlistId.toString();
+    final gid = globalId?.toString();
     return _userPlaylists.any((p) {
       final localId = (p['listid'] ?? p['specialid'])?.toString();
       final originalId = p['list_create_gid']?.toString();
       final originalListid = p['list_create_listid']?.toString();
-      return localId == id || 
-             (originalId == id && originalId != null && originalId != '0') ||
-             (originalListid == id && originalListid != null && originalListid != '0');
+      
+      // Match by local ID
+      if (localId == id) return true;
+      // Match by original GID
+      if (gid != null && originalId == gid && originalId != '0') return true;
+      if (originalId == id && originalId != '0') return true;
+      // Match by original listid
+      if (originalListid == id && originalListid != '0') return true;
+      
+      return false;
     });
   }
 
-  Future<bool> favoritePlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid}) async {
+  Future<bool> favoritePlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid, int? listCreateListid}) async {
     final success = await MusicApi.copyPlaylist(
       playlistId, 
       name, 
       listCreateUserid: listCreateUserid,
       listCreateGid: listCreateGid,
+      listCreateListid: listCreateListid,
     );
     if (success) {
       await fetchUserPlaylists();
@@ -274,8 +284,30 @@ class UserProvider with ChangeNotifier {
     return success;
   }
 
-  Future<bool> unfavoritePlaylist(int playlistId) async {
-    final success = await MusicApi.deletePlaylist(playlistId);
+  Future<bool> unfavoritePlaylist(int playlistId, {String? globalId}) async {
+    // Find the local listid for this playlist in the user's collection
+    final id = playlistId.toString();
+    final gid = globalId?.toString();
+    final p = _userPlaylists.firstWhere(
+      (p) {
+        final localId = (p['listid'] ?? p['specialid'])?.toString();
+        final originalId = p['list_create_gid']?.toString();
+        final originalListid = p['list_create_listid']?.toString();
+        
+        if (localId == id) return true;
+        if (gid != null && originalId == gid && originalId != '0') return true;
+        if (originalId == id && originalId != '0') return true;
+        if (originalListid == id && originalListid != '0') return true;
+        
+        return false;
+      },
+      orElse: () => {},
+    );
+
+    final localListId = p['listid'] ?? p['specialid'];
+    if (localListId == null) return false;
+
+    final success = await MusicApi.deletePlaylist(localListId);
     if (success) {
       await fetchUserPlaylists();
     }

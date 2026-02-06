@@ -35,7 +35,7 @@ class SongCard extends StatelessWidget {
     this.onSelectionChanged,
   });
 
-  void _showContextMenu(BuildContext context) {
+  void _showContextMenu(BuildContext context, [Offset? tapPosition]) {
     final userProvider = context.read<UserProvider>();
 
     final List<PopupMenuItem<String>> menuItems = [
@@ -128,15 +128,27 @@ class SongCard extends StatelessWidget {
       }
     }
 
-    final RenderBox button = context.findRenderObject() as RenderBox;
     final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-      ),
-      Offset.zero & overlay.size,
-    );
+    final RelativeRect position;
+
+    if (tapPosition != null) {
+      // Convert global tap position to local coordinates of the overlay
+      final Offset localPosition = overlay.globalToLocal(tapPosition);
+      position = RelativeRect.fromRect(
+        localPosition & Size.zero,
+        Offset.zero & overlay.size,
+      );
+    } else {
+      final RenderBox box = context.findRenderObject() as RenderBox;
+      final Offset offset = box.localToGlobal(Offset.zero, ancestor: overlay);
+      position = RelativeRect.fromRect(
+        Rect.fromPoints(
+          offset,
+          offset.translate(box.size.width, box.size.height),
+        ),
+        Offset.zero & overlay.size,
+      );
+    }
 
     showMenu(
       context: context,
@@ -190,20 +202,13 @@ class SongCard extends StatelessWidget {
     final primaryColor = theme.colorScheme.primary;
 
     return GestureDetector(
-      onSecondaryTapDown: (details) => _showContextMenu(context),
+      onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
       child: InkWell(
         onTap: () {
           if (isSelectionMode) {
             onSelectionChanged?.call(!isSelected);
           } else {
             context.read<AudioProvider>().playSong(song, playlist: playlist);
-          }
-        },
-        onLongPress: () {
-          if (isSelectionMode) {
-            onSelectionChanged?.call(!isSelected);
-          } else {
-            _showContextMenu(context);
           }
         },
         borderRadius: BorderRadius.circular(16),
@@ -308,11 +313,13 @@ class SongCard extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(width: 12),
-                IconButton(
-                  icon: const Icon(CupertinoIcons.ellipsis, size: 20),
-                  onPressed: () => _showContextMenu(context),
-                  color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
-                  splashRadius: 24,
+                Builder(
+                  builder: (buttonContext) => IconButton(
+                    icon: const Icon(CupertinoIcons.ellipsis, size: 20),
+                    onPressed: () => _showContextMenu(buttonContext),
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                    splashRadius: 24,
+                  ),
                 ),
               ],
             ),

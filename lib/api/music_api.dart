@@ -232,7 +232,7 @@ class MusicApi {
       final response = await _dio.get('/playlist/recommend');
       if (response.data['status'] == 1) {
         List data = response.data['data']['list'] ?? response.data['data']['special_list'] ?? [];
-        return data.map((json) => Playlist.fromJson(json)).toList();
+        return data.map((json) => Playlist.fromSpecialPlaylist(json)).toList();
       }
       return [];
     } catch (e) {
@@ -652,23 +652,25 @@ class MusicApi {
     }
   }
 
-  static Future<bool> copyPlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid, bool isPrivate = false}) async {
+  static Future<bool> copyPlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid, int? listCreateListid, bool isPrivate = false, int source = 1}) async {
     return addPlaylist(
       name,
       isPri: isPrivate ? 1 : 0,
       type: 1, // Type 1 as per legacy project for collecting/liking playlist
-      list_create_listid: playlistId,
+      list_create_listid: listCreateListid ?? playlistId,
       list_create_userid: listCreateUserid,
       list_create_gid: listCreateGid,
+      source: source,
     );
   }
 
-  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? list_create_userid, int? list_create_listid, String? list_create_gid}) async {
+  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? list_create_userid, int? list_create_listid, String? list_create_gid, int source = 1}) async {
     try {
       final params = {
         'name': name,
         'is_pri': isPri,
         'type': type,
+        'source': source,
       };
       if (list_create_userid != null) params['list_create_userid'] = list_create_userid;
       if (list_create_listid != null) params['list_create_listid'] = list_create_listid;
@@ -734,7 +736,7 @@ class MusicApi {
                          root['data']?['list'] ?? 
                          root['special_list'] ?? 
                          root['list'] ?? [];
-        return data.map((json) => Playlist.fromJson(json)).toList();
+        return data.map((json) => Playlist.fromSpecialPlaylist(json)).toList();
       }
       return [];
     } catch (e) {

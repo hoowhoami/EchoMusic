@@ -251,7 +251,7 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, {String? imageUrl}) {
-    final playlist = Playlist.fromJson(playlistData);
+    final playlist = Playlist.fromUserPlaylist(playlistData);
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),

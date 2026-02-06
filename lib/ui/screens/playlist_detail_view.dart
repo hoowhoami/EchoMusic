@@ -71,7 +71,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
     final theme = Theme.of(context);
     final selectionProvider = context.watch<SelectionProvider>();
     final userProvider = context.watch<UserProvider>();
-    final isFavorited = userProvider.isPlaylistFavorited(widget.playlist.id);
+    final isFavorited = userProvider.isPlaylistFavorited(widget.playlist.id, globalId: widget.playlist.listCreateGid);
     final isCreated = userProvider.isCreatedPlaylist(widget.playlist.id);
 
     return Scaffold(
@@ -184,7 +184,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                                       onPressed: () async {
                                         bool success;
                                         if (isFavorited) {
-                                          success = await userProvider.unfavoritePlaylist(widget.playlist.id);
+                                          success = await userProvider.unfavoritePlaylist(widget.playlist.id, globalId: widget.playlist.listCreateGid);
                                           if (context.mounted) {
                                             if (success) {
                                               CustomToast.success(context, '已取消收藏');
@@ -198,6 +198,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                                             widget.playlist.name,
                                             listCreateUserid: widget.playlist.listCreateUserid,
                                             listCreateGid: widget.playlist.listCreateGid,
+                                            listCreateListid: widget.playlist.listCreateListid,
                                           );
                                           if (context.mounted) {
                                             if (success) {
@@ -209,31 +210,32 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                                         }
                                       },
                                       icon: Icon(isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, size: 16),
-                                      label: Text(isFavorited ? '已收藏' : '收藏'),
+                                      label: const Text('收藏', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                                       style: OutlinedButton.styleFrom(
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                         side: BorderSide(color: theme.colorScheme.outlineVariant),
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                                        minimumSize: const Size(0, 40),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                   ],
-                                  ElevatedButton.icon(
+                                  OutlinedButton.icon(
                                     onPressed: () async {
                                       final songs = _songs ?? [];
                                       if (songs.isNotEmpty) {
                                         context.read<AudioProvider>().playSong(songs.first, playlist: songs);
                                       }
                                     },
-                                    icon: const Icon(CupertinoIcons.play_fill, size: 16),
-                                    label: const Text('播放'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: theme.colorScheme.primary,
-                                      foregroundColor: theme.colorScheme.onPrimary,
-                                      elevation: 8,
-                                      shadowColor: theme.colorScheme.primary.withAlpha(80),
-                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                    icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                                    label: Text('播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                    style: OutlinedButton.styleFrom(
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      minimumSize: const Size(0, 40),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     ),
                                   ),
                                 ],
@@ -248,7 +250,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                 actions: [
                   if (_songs != null && _songs!.isNotEmpty && !selectionProvider.isSelectionMode)
                     Container(
-                      margin: const EdgeInsets.symmetric(vertical: 10),
+                      margin: const EdgeInsets.symmetric(vertical: 8),
                       child: TextButton.icon(
                         onPressed: () {
                           selectionProvider.setSongList(_songs!, playlistId: widget.playlist.id);
@@ -259,8 +261,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
                         style: TextButton.styleFrom(
                           foregroundColor: theme.colorScheme.onSurface,
                           backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          minimumSize: const Size(0, 40),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                       ),
                     ),

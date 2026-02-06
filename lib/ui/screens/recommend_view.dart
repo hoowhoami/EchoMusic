@@ -285,12 +285,7 @@ class _RecommendViewState extends State<RecommendView> {
           padding: EdgeInsets.zero,
           itemBuilder: (context, index) {
             final ip = ipList[index];
-            final playlist = Playlist.fromJson({
-              'specialname': ip['title'],
-              'flexible_cover': ip['pic'],
-              'specialid': ip['extra']['specialid'],
-              'global_collection_id': ip['extra']['global_collection_id'],
-            });
+            final playlist = Playlist.fromIP(ip);
             return _buildPlaylistCard(playlist, subtitle: '编辑精选');
           },
         );

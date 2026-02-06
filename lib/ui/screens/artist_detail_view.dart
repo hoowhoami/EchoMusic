@@ -182,22 +182,21 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                   const SizedBox(height: 16),
                                   Row(
                                     children: [
-                                      ElevatedButton.icon(
+                                      OutlinedButton.icon(
                                         onPressed: () async {
                                           final songs = await _songsFuture;
                                           if (songs.isNotEmpty) {
                                             context.read<AudioProvider>().playSong(songs.first, playlist: songs);
                                           }
                                         },
-                                        icon: const Icon(CupertinoIcons.play_fill, size: 16),
-                                        label: const Text('播放热门'),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: theme.colorScheme.primary,
-                                          foregroundColor: theme.colorScheme.onPrimary,
-                                          elevation: 8,
-                                          shadowColor: theme.colorScheme.primary.withAlpha(80),
-                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                        icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                                        label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                        style: OutlinedButton.styleFrom(
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          minimumSize: const Size(0, 40),
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -225,11 +224,13 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                                           }
                                         },
                                         icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
-                                        label: Text(isFollowing ? '已关注' : '关注'),
+                                        label: Text(isFollowing ? '已关注' : '关注', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                                         style: OutlinedButton.styleFrom(
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                           side: BorderSide(color: theme.colorScheme.outlineVariant),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          minimumSize: const Size(0, 40),
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                         ),
                                       ),
                                     ],
@@ -250,7 +251,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                       if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
                       if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
                       return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 10),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
                         child: TextButton.icon(
                           onPressed: () {
                             selectionProvider.setSongList(snapshot.data!, playlistId: widget.artistId);
@@ -261,8 +262,10 @@ class _ArtistDetailViewState extends State<ArtistDetailView> {
                           style: TextButton.styleFrom(
                             foregroundColor: theme.colorScheme.onSurface,
                             backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            minimumSize: const Size(0, 40),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
                       );

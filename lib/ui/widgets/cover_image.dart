@@ -69,7 +69,7 @@ class CoverImage extends StatelessWidget {
               color: theme.colorScheme.onSurface.withAlpha(10),
               child: Icon(
                 Icons.music_note_rounded,
-                size: (width ?? 40) * 0.5,
+                size: (width != null && width!.isFinite) ? width! * 0.5 : 40,
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
