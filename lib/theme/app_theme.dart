@@ -92,7 +92,8 @@ class AppTheme {
           sidebarColor: const Color(0xFFFFFFFF).withAlpha(200),
           playerBarColor: const Color(0xFFFFFFFF).withAlpha(180),
           titleBarColor: const Color(0xFFFFFFFF).withAlpha(150),
-          batchBarColor: const Color(0xFF0071E3).withAlpha(40),
+          batchBarColor: const Color(0xFFFFFFFF).withAlpha(40),
+          modalColor: const Color(0xFFFFFFFF).withAlpha(100),
           dividerColor: const Color(0xFFE5E5EA),
           sidebarBorder: const Color(0xFFE5E5EA),
           glassBlur: 25.0,
@@ -165,7 +166,8 @@ class AppTheme {
           sidebarColor: const Color(0xFF0C0C0E).withAlpha(180),
           playerBarColor: const Color(0xFF1C1C1E).withAlpha(160),
           titleBarColor: const Color(0xFF000000).withAlpha(120),
-          batchBarColor: const Color(0xFF0071E3).withAlpha(60),
+          batchBarColor: const Color(0xFF1C1C1E).withAlpha(60),
+          modalColor: const Color(0xFF1C1C1E).withAlpha(120),
           dividerColor: const Color(0xFF38383A),
           sidebarBorder: const Color(0xFF2C2C2E),
           glassBlur: 25.0,
@@ -181,6 +183,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
   final Color? playerBarColor;
   final Color? titleBarColor;
   final Color? batchBarColor;
+  final Color? modalColor;
   final Color? dividerColor;
   final Color? sidebarBorder;
   final double? glassBlur;
@@ -191,6 +194,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     this.playerBarColor,
     this.titleBarColor,
     this.batchBarColor,
+    this.modalColor,
     this.dividerColor,
     this.sidebarBorder,
     this.glassBlur,
@@ -203,6 +207,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     Color? playerBarColor,
     Color? titleBarColor,
     Color? batchBarColor,
+    Color? modalColor,
     Color? dividerColor,
     Color? sidebarBorder,
     double? glassBlur,
@@ -213,6 +218,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       playerBarColor: playerBarColor ?? this.playerBarColor,
       titleBarColor: titleBarColor ?? this.titleBarColor,
       batchBarColor: batchBarColor ?? this.batchBarColor,
+      modalColor: modalColor ?? this.modalColor,
       dividerColor: dividerColor ?? this.dividerColor,
       sidebarBorder: sidebarBorder ?? this.sidebarBorder,
       glassBlur: glassBlur ?? this.glassBlur,
@@ -228,6 +234,7 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
       playerBarColor: Color.lerp(playerBarColor, other.playerBarColor, t),
       titleBarColor: Color.lerp(titleBarColor, other.titleBarColor, t),
       batchBarColor: Color.lerp(batchBarColor, other.batchBarColor, t),
+      modalColor: Color.lerp(modalColor, other.modalColor, t),
       dividerColor: Color.lerp(dividerColor, other.dividerColor, t),
       sidebarBorder: Color.lerp(sidebarBorder, other.sidebarBorder, t),
       glassBlur: _lerpDouble(glassBlur, other.glassBlur, t),

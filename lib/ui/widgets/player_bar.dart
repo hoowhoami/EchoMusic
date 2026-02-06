@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:just_audio/just_audio.dart';
-import 'dart:ui';
 import '../../theme/app_theme.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';

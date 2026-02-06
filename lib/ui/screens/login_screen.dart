@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../api/music_api.dart';
 import '../../providers/user_provider.dart';
+import '../../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -167,6 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final modernTheme = theme.extension<AppModernTheme>()!;
     final accentColor = theme.colorScheme.primary;
 
     return Scaffold(
@@ -198,7 +200,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   width: 400,
                   padding: const EdgeInsets.all(40),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surface.withAlpha(180),
+                    color: modernTheme.modalColor,
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(color: theme.colorScheme.outlineVariant),
                     boxShadow: [

@@ -617,46 +617,50 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> {
 
         return Stack(
           children: [
-            Column(
-              children: [
-                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
-                    child: Row(
-                      children: [
-                        const Spacer(),
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                          onPressed: () {
-                            selectionProvider.setSongList(songs);
-                            selectionProvider.enterSelectionMode();
-                          },
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          tooltip: '批量选择',
-                        ),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                    itemCount: songs.length,
-                    itemBuilder: (context, index) {
-                      final song = songs[index];
-                      return SongCard(
-                        song: song,
-                        playlist: songs,
-                        showMore: true,
-                        isSelectionMode: selectionProvider.isSelectionMode,
-                        isSelected: selectionProvider.isSelected(song.hash),
-                        onSelectionChanged: (selected) {
-                          selectionProvider.toggleSelection(song.hash);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
+            ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              itemCount: songs.length + 1, // +1 for extra space at the bottom
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  // Special header for Batch Select button when not in selection mode
+                  if (songs.isNotEmpty && !selectionProvider.isSelectionMode) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                      child: Row(
+                        children: [
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                            onPressed: () {
+                              selectionProvider.setSongList(songs);
+                              selectionProvider.enterSelectionMode();
+                            },
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            tooltip: '批量选择',
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                }
+                
+                if (index == songs.length + 1 - 1) {
+                  return const SizedBox(height: 100); // Space for BatchActionBar
+                }
+
+                final song = songs[index - 1];
+                return SongCard(
+                  song: song,
+                  playlist: songs,
+                  showMore: true,
+                  isSelectionMode: selectionProvider.isSelectionMode,
+                  isSelected: selectionProvider.isSelected(song.hash),
+                  onSelectionChanged: (selected) {
+                    selectionProvider.toggleSelection(song.hash);
+                  },
+                );
+              },
             ),
             const BatchActionBar(),
           ],

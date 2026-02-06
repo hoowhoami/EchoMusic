@@ -17,7 +17,7 @@ class AudioProvider with ChangeNotifier {
   LoopMode _loopMode = LoopMode.off;
   bool _isShuffle = false;
   double _playbackRate = 1.0;
-  Map<double, String> _climaxMarks = {};
+  final Map<double, String> _climaxMarks = {};
 
   AudioPlayer get player => _player;
   Song? get currentSong => _currentSong;

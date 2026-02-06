@@ -94,137 +94,135 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     final theme = Theme.of(context);
     final selectionProvider = context.watch<SelectionProvider>();
 
-    return Column(
+    return Stack(
       children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '搜索',
+                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
+                  ),
+                  const Spacer(),
+                  if (_songResults.isNotEmpty &&
+                      _searchController.text.isNotEmpty &&
+                      !_isLoading &&
+                      !selectionProvider.isSelectionMode &&
+                      _tabController.index == 0)
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                      onPressed: () {
+                        selectionProvider.setSongList(_songResults);
+                        selectionProvider.enterSelectionMode();
+                      },
+                      color: theme.colorScheme.onSurfaceVariant,
+                      tooltip: '批量选择',
+                    ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.onSurface.withAlpha(10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      '搜索',
-                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
+                    const SizedBox(width: 12),
+                    Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        decoration: InputDecoration(
+                          hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
+                          hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: (_) => _onSearch(),
+                      ),
                     ),
-                    const Spacer(),
-                    if (_songResults.isNotEmpty &&
-                        _searchController.text.isNotEmpty &&
-                        !_isLoading &&
-                        !selectionProvider.isSelectionMode &&
-                        _tabController.index == 0)
+                    if (_searchController.text.isNotEmpty)
                       IconButton(
-                        icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
+                        icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
                         onPressed: () {
-                          selectionProvider.setSongList(_songResults);
-                          selectionProvider.enterSelectionMode();
+                          _searchController.clear();
+                          setState(() {});
                         },
-                        color: theme.colorScheme.onSurfaceVariant,
-                        tooltip: '批量选择',
+                        color: theme.colorScheme.onSurface.withAlpha(60),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withAlpha(10),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                          decoration: InputDecoration(
-                            hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
-                            hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
-                          onChanged: (_) => setState(() {}),
-                          onSubmitted: (_) => _onSearch(),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.all(4.0),
+                      child: ElevatedButton(
+                        onPressed: _onSearch,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          minimumSize: const Size(0, 36),
                         ),
+                        child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                       ),
-                      if (_searchController.text.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {});
-                          },
-                          color: theme.colorScheme.onSurface.withAlpha(60),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      const SizedBox(width: 8),
-                      Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: ElevatedButton(
-                          onPressed: _onSearch,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: theme.colorScheme.primary,
-                            foregroundColor: theme.colorScheme.onPrimary,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            minimumSize: const Size(0, 36),
-                          ),
-                          child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  labelColor: theme.colorScheme.primary,
-                  unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                  indicator: UnderlineTabIndicator(
-                    borderSide: BorderSide(
-                      width: 2,
-                      color: theme.colorScheme.primary,
                     ),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  onTap: (_) => setState(() {}),
-                  tabs: const [
-                    Tab(text: '单曲'),
-                    Tab(text: '歌单'),
-                    Tab(text: '专辑'),
-                    Tab(text: '歌手'),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: _searchController.text.isEmpty
-                      ? _buildHotSearches()
-                      : _isLoading
-                          ? const Center(child: CupertinoActivityIndicator())
-                          : TabBarView(
-                              controller: _tabController,
-                              physics: const BouncingScrollPhysics(),
-                              children: [
-                                _buildSongList(),
-                                _buildPlaylistList(),
-                                _buildAlbumList(),
-                                _buildArtistList(),
-                              ],
-                            ),
+              ),
+              const SizedBox(height: 24),
+              TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                indicatorSize: TabBarIndicatorSize.label,
+                dividerColor: Colors.transparent,
+                labelColor: theme.colorScheme.primary,
+                unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                indicator: UnderlineTabIndicator(
+                  borderSide: BorderSide(
+                    width: 2,
+                    color: theme.colorScheme.primary,
+                  ),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-              ],
-            ),
+                onTap: (_) => setState(() {}),
+                tabs: const [
+                  Tab(text: '单曲'),
+                  Tab(text: '歌单'),
+                  Tab(text: '专辑'),
+                  Tab(text: '歌手'),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: _searchController.text.isEmpty
+                    ? _buildHotSearches()
+                    : _isLoading
+                        ? const Center(child: CupertinoActivityIndicator())
+                        : TabBarView(
+                            controller: _tabController,
+                            physics: const BouncingScrollPhysics(),
+                            children: [
+                              _buildSongList(),
+                              _buildPlaylistList(),
+                              _buildAlbumList(),
+                              _buildArtistList(),
+                            ],
+                          ),
+              ),
+            ],
           ),
         ),
         const BatchActionBar(),
@@ -239,9 +237,12 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
-      itemCount: _songResults.length,
+      itemCount: _songResults.length + 1,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
+        if (index == _songResults.length) {
+          return const SizedBox(height: 100);
+        }
         final song = _songResults[index];
         return SongCard(
           song: song,

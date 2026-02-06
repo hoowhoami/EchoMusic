@@ -52,7 +52,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['showPlaylistCount'] ?? true,
                     onChanged: (v) => persistence.updateSetting('showPlaylistCount', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -73,7 +73,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['addSongsToPlaylist'] ?? true,
                     onChanged: (v) => persistence.updateSetting('addSongsToPlaylist', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -86,7 +86,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['replacePlaylist'] ?? false,
                     onChanged: (v) => persistence.updateSetting('replacePlaylist', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -99,7 +99,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['volumeFade'] ?? true,
                     onChanged: (v) => persistence.updateSetting('volumeFade', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -122,7 +122,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['autoNext'] ?? true,
                     onChanged: (v) => persistence.updateSetting('autoNext', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -145,7 +145,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['preventSleep'] ?? true,
                     onChanged: (v) => persistence.updateSetting('preventSleep', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -177,7 +177,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['compatibilityMode'] ?? true,
                     onChanged: (v) => persistence.updateSetting('compatibilityMode', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -209,7 +209,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['autoSign'] ?? false,
                     onChanged: (v) => persistence.updateSetting('autoSign', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
@@ -222,7 +222,7 @@ class SettingView extends StatelessWidget {
                   child: Switch(
                     value: settings['autoReceiveVip'] ?? false,
                     onChanged: (v) => persistence.updateSetting('autoReceiveVip', v),
-                    activeColor: accentColor,
+                    activeThumbColor: accentColor,
                   ),
                 ),
               ),
