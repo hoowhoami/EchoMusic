@@ -3,6 +3,9 @@ import 'song.dart';
 class Playlist {
   final int id;
   final String? globalCollectionId;
+  final String? listCreateGid; // 新增：原始歌单 ID
+  final int? listCreateUserid; // 新增：歌单创建者 ID
+  final int? listid;
   final String name;
   final String pic;
   final String intro;
@@ -16,6 +19,9 @@ class Playlist {
   Playlist({
     required this.id,
     this.globalCollectionId,
+    this.listCreateGid,
+    this.listCreateUserid,
+    this.listid,
     required this.name,
     required this.pic,
     required this.intro,
@@ -48,7 +54,10 @@ class Playlist {
 
     return Playlist(
       id: parseId(json['listid'] ?? json['specialid'] ?? json['global_collection_id'] ?? json['gid']),
-      globalCollectionId: (json['global_collection_id'] ?? json['gid'] ?? json['specialid'] ?? json['listid'])?.toString(),
+      globalCollectionId: (json['global_collection_id'] ?? json['gid'] ?? json['specialid'])?.toString(),
+      listCreateGid: (json['list_create_gid'] ?? json['gid'] ?? json['specialid'])?.toString(),
+      listCreateUserid: json['list_create_userid'] != null ? parseId(json['list_create_userid']) : null,
+      listid: json['listid'] != null ? parseId(json['listid']) : null,
       name: (json['name'] ?? json['specialname'] ?? '').toString(),
       pic: pic.toString(),
       intro: (json['intro'] ?? '').toString(),

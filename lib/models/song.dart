@@ -63,29 +63,38 @@ class Song {
 
   // For /playlist/track/all and history
   factory Song.fromPlaylistJson(Map<String, dynamic> json) {
+    // 兼容处理：部分接口（如公共歌单）会将核心信息包装在 audio_info 中
+    final audioInfo = json['audio_info'] ?? {};
+    final hash = (json['hash'] ?? audioInfo['hash_128'] ?? audioInfo['hash'] ?? '').toString();
+
     int parseInt(dynamic value) {
       if (value == null) return 0;
       if (value is int) return value;
       return int.tryParse(value.toString()) ?? 0;
     }
 
-    var singersList = json['singerinfo'] as List? ?? [];
+    var singersList = json['singerinfo'] as List? ?? json['authors'] as List? ?? [];
     List<SingerInfo> singers = singersList.map((i) => SingerInfo.fromJson(i)).toList();
+    if (singers.isEmpty && json['author_name'] != null) {
+      singers = [SingerInfo(id: 0, name: json['author_name'].toString())];
+    }
     
-    final albumInfo = json['albuminfo'] ?? {};
-    String cover = json['cover'] ?? albumInfo['cover'] ?? '';
+    final albumInfo = json['albuminfo'] ?? json['album_info'] ?? {};
+    String cover = json['cover'] ?? albumInfo['cover'] ?? albumInfo['sizable_cover'] ?? '';
     cover = cover.replaceAll('{size}', '400');
 
+    int duration = parseInt(json['timelen'] ?? audioInfo['duration_128'] ?? audioInfo['duration'] ?? 0);
+
     return Song(
-      hash: (json['hash'] ?? '').toString(),
+      hash: hash,
       name: _processName((json['name'] ?? json['songname'] ?? '').toString()),
-      albumName: (albumInfo['name'] ?? '').toString(),
-      albumId: albumInfo['id']?.toString(),
+      albumName: (albumInfo['name'] ?? albumInfo['album_name'] ?? '').toString(),
+      albumId: (albumInfo['id'] ?? json['album_id'])?.toString(),
       singers: singers,
-      duration: parseInt(json['timelen'] ?? 0) ~/ 1000,
+      duration: duration ~/ 1000,
       cover: cover,
-      mvHash: json['mvhash']?.toString(),
-      mixSongId: parseInt(json['mixsongid'] ?? 0),
+      mvHash: (json['mvhash'] ?? json['video_hash'])?.toString(),
+      mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? 0),
       fileId: json['fileid'] != null ? parseInt(json['fileid']) : null,
       privilege: parseInt(json['privilege'] ?? 0),
       relateGoods: (json['relate_goods'] as List?)?.cast<Map<String, dynamic>>(),

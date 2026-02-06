@@ -224,27 +224,84 @@ class MusicApi {
         'page': page,
         'pagesize': pagesize,
       });
-      if (response.data['status'] == 1) {
-        return response.data['data'] ?? {};
-      }
-      return {};
+      return response.data ?? {};
     } catch (e) {
       return {};
     }
   }
 
-  static Future<List<Song>> getPlaylistSongs(dynamic id) async {
+  static Future<Map<String, dynamic>> getPlaylistTrackAllNew(int listid, {int page = 1, int pagesize = 100}) async {
     try {
-      final String playlistId = id.toString();
-      final data = await getPlaylistTrackAll(playlistId, pagesize: 100);
-      List songsData = data['songs'] ?? [];
-      return songsData
-          .where((json) => json['hash'] != null && json['hash'].toString().isNotEmpty)
-          .map((json) => Song.fromPlaylistJson(json))
-          .toList();
+      final response = await _dio.get('/playlist/track/all/new', queryParameters: {
+        'listid': listid,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      return response.data ?? {};
     } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<List<Song>> getPlaylistSongs(
+    dynamic id, {
+    int? listid,
+    String? listCreateGid,
+    int? listCreateUserid,
+  }) async {
+    try {
+      String queryId = id?.toString() ?? '';
+      
+      if (listid != null && listid != 0) {
+        // 获取当前用户 ID 用于判定所有权
+        final prefs = await SharedPreferences.getInstance();
+        final userInfoJson = prefs.getString('user_info');
+        int? currentUserId;
+        if (userInfoJson != null) {
+          currentUserId = jsonDecode(userInfoJson)['userid'];
+        }
+
+        // 判定逻辑：如果创建者不是自己，说明是收藏的他人歌单，必须换用 listCreateGid
+        if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
+          if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
+            queryId = listCreateGid;
+          }
+        }
+      }
+
+      if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
+      
+      final responseData = await getPlaylistTrackAll(queryId, pagesize: 500);
+      return _parseSongsFromResponse(responseData);
+    } catch (e) {
+      debugPrint('getPlaylistSongs error: $e');
       return [];
     }
+  }
+
+  static List<Song> _parseSongsFromResponse(Map<String, dynamic> responseData) {
+    final data = responseData['data'] ?? responseData;
+    List? list;
+    
+    if (data is Map) {
+      // 优先提取歌曲列表字段
+      list = data['songs'] ?? data['info'] ?? data['list'] ?? data['songlist'] ?? data['song_list'];
+      
+      // 兼容嵌套结构
+      if (list == null && data['info'] is Map) {
+        list = data['info']['list'] ?? data['info']['songs'] ?? data['info']['songlist'];
+      }
+    } else if (data is List) {
+      list = data;
+    }
+    
+    final List songsData = list ?? [];
+    
+    return songsData
+        .whereType<Map<String, dynamic>>()
+        .map((json) => Song.fromPlaylistJson(json))
+        .where((song) => song.hash.isNotEmpty)
+        .toList();
   }
 
   static Future<Map<String, dynamic>?> searchLyric(String hash) async {
