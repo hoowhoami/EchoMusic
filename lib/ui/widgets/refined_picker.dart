@@ -39,7 +39,7 @@ class RefinedPicker extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'RefinedPicker',
-      barrierColor: Colors.black.withAlpha(40),
+      barrierColor: Colors.black.withAlpha(20),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, animation, secondaryAnimation) => Center(
         child: ScaleTransition(
@@ -72,24 +72,28 @@ class RefinedPicker extends StatelessWidget {
       groupedOptions[key]!.add(opt);
     }
 
+    final isLight = theme.brightness == Brightness.light;
+
     return Container(
       constraints: BoxConstraints(maxWidth: maxWidth!),
       margin: const EdgeInsets.all(24),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: modernTheme.modalColor,
+              color: isLight 
+                ? Colors.white.withAlpha(220) 
+                : modernTheme.modalColor?.withAlpha(200),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: theme.colorScheme.primary.withAlpha(20),
-                width: 1.0,
+                color: theme.colorScheme.primary.withAlpha(40),
+                width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withAlpha(30),
+                  color: Colors.black.withAlpha(20),
                   blurRadius: 30,
                   offset: const Offset(0, 10),
                 ),
@@ -169,12 +173,12 @@ class RefinedPicker extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 12, bottom: 8, left: 4),
             child: Text(
-              groupName,
+              groupName.toUpperCase(),
               style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.primary,
-                letterSpacing: 1.0,
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                color: theme.colorScheme.primary.withAlpha(200),
+                letterSpacing: 1.2,
               ),
             ),
           ),
@@ -204,12 +208,12 @@ class RefinedPicker extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected 
             ? theme.colorScheme.primary 
-            : theme.colorScheme.onSurface.withAlpha(15),
+            : theme.colorScheme.onSurface.withAlpha(isSelected ? 255 : 15),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected 
               ? theme.colorScheme.primary 
-              : Colors.transparent,
+              : theme.colorScheme.onSurface.withAlpha(30),
             width: 1,
           ),
         ),
@@ -220,7 +224,7 @@ class RefinedPicker extends StatelessWidget {
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
             color: isSelected 
               ? theme.colorScheme.onPrimary 
-              : theme.colorScheme.onSurface.withAlpha(180),
+              : theme.colorScheme.onSurface.withAlpha(200),
           ),
         ),
       ),

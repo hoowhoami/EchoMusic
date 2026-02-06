@@ -7,6 +7,7 @@ import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
 import '../widgets/refined_picker.dart';
+import '../widgets/refined_selector.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -73,46 +74,20 @@ class _RankViewState extends State<RankView> {
       );
     }
 
+    final selectedRank = _ranks.firstWhere((r) => r['rankid'] == _selectedRankId, orElse: () => _ranks.first);
+
     return BatchSelectionScaffold(
       title: '排行榜',
       songs: _rankSongs,
-      appBarActions: _ranks.isNotEmpty ? _buildRankSelector(context) : null,
+      appBarActions: _ranks.isNotEmpty 
+        ? RefinedSelector(
+            label: selectedRank['rankname'],
+            onTap: () => _showRankPicker(context),
+          )
+        : null,
       body: _isLoadingSongs
           ? const Center(child: CupertinoActivityIndicator())
           : _buildSongGrid(context),
-    );
-  }
-
-  Widget _buildRankSelector(BuildContext context) {
-    final theme = Theme.of(context);
-    final selectedRank = _ranks.firstWhere((r) => r['rankid'] == _selectedRankId, orElse: () => _ranks.first);
-    
-    return InkWell(
-      onTap: () => _showRankPicker(context),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.onSurface.withAlpha(10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              selectedRank['rankname'],
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurface.withAlpha(200),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(CupertinoIcons.chevron_down, size: 14, color: theme.colorScheme.onSurfaceVariant),
-          ],
-        ),
-      ),
     );
   }
 

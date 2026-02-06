@@ -12,6 +12,7 @@ import 'album_detail_view.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/refined_picker.dart';
+import '../widgets/refined_selector.dart';
 
 class DiscoverView extends StatelessWidget {
   const DiscoverView({super.key});
@@ -149,35 +150,15 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
           child: Row(
             children: [
-              InkWell(
+              RefinedSelector(
+                label: _selectedCategoryName,
                 onTap: () => _showCategoryPicker(context),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withAlpha(10),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        _selectedCategoryName,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurfaceVariant),
-                    ],
-                  ),
-                ),
               ),
             ],
           ),
@@ -340,7 +321,6 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final albums = _getFilteredAlbums();
 
     return Column(
@@ -349,31 +329,9 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
           child: Row(
             children: [
-              InkWell(
+              RefinedSelector(
+                label: _selectedTypeName,
                 onTap: () => _showTypePicker(context),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withAlpha(8),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        _selectedTypeName, 
-                        style: TextStyle(
-                          fontSize: 13, 
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurfaceVariant),
-                    ],
-                  ),
-                ),
               ),
             ],
           ),
@@ -427,7 +385,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
                                 imageUrl: cover,
                                 fit: BoxFit.cover,
                                 width: double.infinity,
-                                placeholder: (context, url) => Container(color: theme.colorScheme.surfaceContainerHighest),
+                                placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
                                 errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
                               ),
                             ),
@@ -439,7 +397,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: theme.colorScheme.onSurface, 
+                            color: Theme.of(context).colorScheme.onSurface, 
                             fontSize: 13, 
                             fontWeight: FontWeight.w700,
                           ),
@@ -448,7 +406,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
                           album['singername'] ?? '',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
+                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
                         ),
                       ],
                     ),
