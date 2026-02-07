@@ -18,6 +18,7 @@ class PlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final modernTheme = theme.extension<AppModernTheme>();
     final accentColor = theme.colorScheme.primary;
 
     return Consumer2<AudioProvider, PersistenceProvider>(
@@ -27,10 +28,10 @@ class PlayerBar extends StatelessWidget {
         return Container(
           height: 80,
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
+            color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
             border: Border(
               top: BorderSide(
-                color: theme.dividerColor.withAlpha(15),
+                color: (modernTheme?.dividerColor ?? theme.dividerColor).withAlpha(30),
                 width: 0.5,
               ),
             ),
@@ -110,7 +111,7 @@ class PlayerBar extends StatelessWidget {
                         width: barWidth.clamp(6.0, constraints.maxWidth), // At least 6px for visibility
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withAlpha(160),
+                          color: theme.colorScheme.onPrimary.withAlpha(180),
                           borderRadius: BorderRadius.circular(2),
                           boxShadow: [
                             BoxShadow(color: accentColor.withAlpha(80), blurRadius: 4),
@@ -163,7 +164,7 @@ class PlayerBar extends StatelessWidget {
               Container(
                 width: 44, height: 44,
                 decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.onSurface.withAlpha(5)),
-                child: const Center(child: Icon(CupertinoIcons.play_fill, size: 24, color: Colors.grey)),
+                child: Center(child: Icon(CupertinoIcons.play_fill, size: 24, color: theme.disabledColor)),
               ),
               const SizedBox(width: 28),
               Icon(CupertinoIcons.forward_fill, size: 22, color: theme.colorScheme.onSurface.withAlpha(40)),
@@ -338,11 +339,12 @@ class PlayerBar extends StatelessWidget {
   }
 
   void _showQueueDrawer(BuildContext context) {
+    final theme = Theme.of(context);
     showGeneralDialog(
       context: context,
       barrierLabel: 'Queue',
       barrierDismissible: true,
-      barrierColor: Colors.black.withAlpha(20),
+      barrierColor: theme.colorScheme.scrim.withAlpha(20),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, _, __) => Align(
         alignment: Alignment.centerRight,
@@ -387,6 +389,9 @@ class _PlayerIconButton extends StatelessWidget {
         tooltip: tooltip,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(),
+        hoverColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        splashColor: Colors.transparent,
       ),
     );
   }

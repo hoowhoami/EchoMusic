@@ -5,7 +5,6 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'dart:io';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
-import '../widgets/custom_dialog.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
