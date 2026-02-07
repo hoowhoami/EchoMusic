@@ -28,8 +28,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   dynamic _selectedPlaylistId;
-  final List<int> _navigationHistory = [0];
+  
+  // 简单的历史记录：只记录状态变更（分类索引 + 歌单ID）
+  final List<({int index, dynamic playlistId})> _history = [(index: 0, playlistId: null)];
   int _historyIndex = 0;
+  
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
@@ -38,35 +41,51 @@ class _HomeScreenState extends State<HomeScreen> {
     _initDevice();
   }
 
+  // 辅助方法：检查两个状态是否相同
+  bool _isSameState(int index, dynamic playlistId) {
+    return _selectedIndex == index && _selectedPlaylistId == playlistId;
+  }
+
   void _navigateTo(int index) {
-    if (index == _selectedIndex && _selectedPlaylistId == null) return;
+    // 1. 如果点击的是当前已激活的分类，且不在歌单里，则什么都不做
+    if (_isSameState(index, null)) return;
 
     context.read<SelectionProvider>().reset();
 
     setState(() {
-      // If we're clicking the same category but a playlist was open, 
-      // just clear the playlist and pop to root, don't add to history.
-      if (index != _selectedIndex) {
-        if (_historyIndex < _navigationHistory.length - 1) {
-          _navigationHistory.removeRange(_historyIndex + 1, _navigationHistory.length);
-        }
-        _navigationHistory.add(index);
-        _historyIndex = _navigationHistory.length - 1;
-        _selectedIndex = index;
+      // 2. 清理当前位置之后的前进历史
+      if (_historyIndex < _history.length - 1) {
+        _history.removeRange(_historyIndex + 1, _history.length);
       }
       
+      // 3. 记录新状态
+      _history.add((index: index, playlistId: null));
+      _historyIndex = _history.length - 1;
+      
+      _selectedIndex = index;
       _selectedPlaylistId = null;
+      
+      // 4. 重置 Navigator 到首页
       _navigatorKey.currentState?.popUntil((route) => route.isFirst);
     });
   }
 
   void _pushRoute(Widget page, {dynamic playlistId}) {
-    if (playlistId != null && _selectedPlaylistId == playlistId) return;
+    // 1. 如果点击的是当前已经在看的歌单，则什么都不做
+    if (_isSameState(_selectedIndex, playlistId)) return;
     
     context.read<SelectionProvider>().reset();
+    
     setState(() {
+      if (_historyIndex < _history.length - 1) {
+        _history.removeRange(_historyIndex + 1, _history.length);
+      }
+      
+      _history.add((index: _selectedIndex, playlistId: playlistId));
+      _historyIndex = _history.length - 1;
       _selectedPlaylistId = playlistId;
     });
+
     _navigatorKey.currentState?.push(
       CupertinoPageRoute(
         builder: (_) => page,
@@ -76,31 +95,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _goBack() {
-    if (_navigatorKey.currentState?.canPop() ?? false) {
-      _navigatorKey.currentState?.pop();
-      return;
-    }
     if (_historyIndex > 0) {
       context.read<SelectionProvider>().reset();
+      
       setState(() {
         _historyIndex--;
-        _selectedIndex = _navigationHistory[_historyIndex];
-        _selectedPlaylistId = null;
+        final state = _history[_historyIndex];
+        
+        // 判定是退回到上一个分类，还是退回到当前分类的根目录
+        if (state.index != _selectedIndex) {
+          _selectedIndex = state.index;
+          _selectedPlaylistId = state.playlistId;
+          // 切换分类时必须清空 Navigator
+          _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+        } else {
+          // 在同一个分类内回退（通常是从歌单详情页退回分类根目录）
+          _selectedPlaylistId = state.playlistId;
+          if (_selectedPlaylistId == null) {
+            _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+          } else {
+            // 如果历史记录里上一步也是个歌单，则 pop 当前详情页即可
+            if (_navigatorKey.currentState?.canPop() ?? false) {
+              _navigatorKey.currentState?.pop();
+            }
+          }
+        }
       });
     }
   }
 
   void _goForward() {
-    if (_historyIndex < _navigationHistory.length - 1) {
+    if (_historyIndex < _history.length - 1) {
+      context.read<SelectionProvider>().reset();
       setState(() {
         _historyIndex++;
-        _selectedIndex = _navigationHistory[_historyIndex];
+        final state = _history[_historyIndex];
+        
+        if (state.index != _selectedIndex) {
+          _selectedIndex = state.index;
+        }
+        _selectedPlaylistId = state.playlistId;
+        // 注意：前进到详情页在当前 Navigator 结构下需要重构以完美支持
       });
     }
   }
 
-  bool get canGoBack => (_navigatorKey.currentState?.canPop() ?? false) || _historyIndex > 0;
-  bool get canGoForward => _historyIndex < _navigationHistory.length - 1;
+  bool get canGoBack => _historyIndex > 0;
+  bool get canGoForward => _historyIndex < _history.length - 1;
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
@@ -176,18 +217,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: Navigator(
                           key: _navigatorKey,
-                          observers: [_NavigationObserver((route) {
-                            if (mounted) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) {
-                                  setState(() {
-                                    _selectedPlaylistId = route?.settings.arguments;
-                                  });
-                                }
-                              });
-                            }
-                          })],
+                          observers: [
+                            _NavigationObserver((route, prevRoute) {
+                              // 当用户通过手势或代码 pop 详情页时，同步侧边栏高亮状态
+                              if (prevRoute is CupertinoPageRoute && route?.settings.name == 'root') {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted && _selectedPlaylistId != null) {
+                                    setState(() {
+                                      _selectedPlaylistId = null;
+                                      // 尝试修正历史索引位置，使“后退”按钮在手动 pop 后依然合乎逻辑
+                                      if (_historyIndex > 0 && _history[_historyIndex - 1].playlistId == null) {
+                                        _historyIndex--;
+                                      }
+                                    });
+                                  }
+                                });
+                              }
+                            })
+                          ],
                           onGenerateRoute: (settings) => PageRouteBuilder(
+                            settings: const RouteSettings(name: 'root'),
                             pageBuilder: (context, _, __) => IndexedStack(index: _selectedIndex, children: _views),
                           ),
                         ),
@@ -219,12 +268,12 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _NavigationObserver extends NavigatorObserver {
-  final Function(Route?) onStateChanged;
+  final Function(Route?, Route?) onStateChanged;
   _NavigationObserver(this.onStateChanged);
   @override
-  void didPush(Route route, Route? prev) => onStateChanged(route);
+  void didPush(Route route, Route? prev) => onStateChanged(route, prev);
   @override
-  void didPop(Route route, Route? prev) => onStateChanged(prev);
+  void didPop(Route route, Route? prev) => onStateChanged(prev, route);
 }
 
 class WindowButtons extends StatelessWidget {
