@@ -223,29 +223,26 @@ class _SongListState extends State<SongList> {
 
   Widget _buildLocatePlayingButton(BuildContext context) {
     final theme = Theme.of(context);
-    return Tooltip(
-      message: '定位当前播放',
-      child: InkWell(
-        onTap: () {
-          final audioProvider = context.read<AudioProvider>();
-          final currentSong = audioProvider.currentSong;
-          if (currentSong != null) {
-            // Location logic
-          }
-        },
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          height: 36,
-          width: 36,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.onSurface.withAlpha(15),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            CupertinoIcons.scope, // Target/Aim icon
-            size: 18,
-            color: theme.colorScheme.onSurface.withAlpha(200),
-          ),
+    return InkWell(
+      onTap: () {
+        final audioProvider = context.read<AudioProvider>();
+        final currentSong = audioProvider.currentSong;
+        if (currentSong != null) {
+          // Location logic
+        }
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 36,
+        width: 36,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.onSurface.withAlpha(15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          CupertinoIcons.scope, // Target/Aim icon
+          size: 18,
+          color: theme.colorScheme.onSurface.withAlpha(200),
         ),
       ),
     );

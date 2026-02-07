@@ -440,18 +440,27 @@ class PlayerBar extends StatelessWidget {
     showGeneralDialog(
       context: context,
       barrierLabel: 'QueueDrawer',
-      barrierColor: Colors.transparent,
+      barrierColor: Colors.black.withAlpha(20),
       barrierDismissible: true,
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, animation, secondaryAnimation) {
         return Align(
-          alignment: Alignment.centerRight,
-          child: Material(
-            elevation: 16,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
+          alignment: Alignment.topRight,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 80), // Stop above the player bar
+            child: Material(
+              elevation: 20,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                bottomLeft: Radius.circular(16),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                width: 380,
+                height: double.infinity,
+                child: const QueueDrawer(),
+              ),
             ),
-            child: const SizedBox(width: 350, child: QueueDrawer()),
           ),
         );
       },

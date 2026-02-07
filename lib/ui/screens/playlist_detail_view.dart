@@ -39,7 +39,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
 
   Future<void> _loadSongs() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (_songs == null) {
+      setState(() => _isLoading = true);
+    }
     
     final songs = await MusicApi.getPlaylistSongs(
       widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),

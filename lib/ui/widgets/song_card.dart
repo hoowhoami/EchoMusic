@@ -11,7 +11,7 @@ import 'custom_toast.dart';
 
 import '../../models/playlist.dart' as model;
 
-class SongCard extends StatelessWidget {
+class SongCard extends StatefulWidget {
   final Song song;
   final List<Song> playlist;
   final model.Playlist? parentPlaylist;
@@ -35,8 +35,18 @@ class SongCard extends StatelessWidget {
     this.onSelectionChanged,
   });
 
+  @override
+  State<SongCard> createState() => _SongCardState();
+}
+
+class _SongCardState extends State<SongCard> {
+  bool _isMenuOpen = false;
+
   void _showContextMenu(BuildContext context, [Offset? tapPosition]) {
     final userProvider = context.read<UserProvider>();
+    final theme = Theme.of(context);
+
+    setState(() => _isMenuOpen = true);
 
     final List<PopupMenuItem<String>> menuItems = [
       const PopupMenuItem(
@@ -59,7 +69,7 @@ class SongCard extends StatelessWidget {
           ],
         ),
       ),
-      if (song.albumId != null && song.albumId != '0' && song.albumId!.isNotEmpty)
+      if (widget.song.albumId != null && widget.song.albumId != '0' && widget.song.albumId!.isNotEmpty)
         const PopupMenuItem(
           value: 'album',
           child: Row(
@@ -79,20 +89,27 @@ class SongCard extends StatelessWidget {
         menuItems.add(
           PopupMenuItem(
             value: 'addToPlaylist',
+            padding: EdgeInsets.zero,
+            enabled: false,
             child: PopupMenuButton<int>(
-              tooltip: '添加到歌单',
+              tooltip: '',
               offset: const Offset(120, 0),
-              child: const Row(
-                children: [
-                  Icon(CupertinoIcons.add_circled, size: 18),
-                  SizedBox(width: 12),
-                  Text('添加到歌单', style: TextStyle(fontSize: 14)),
-                  Spacer(),
-                  Icon(CupertinoIcons.chevron_right, size: 12),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(CupertinoIcons.add_circled, size: 18, color: theme.colorScheme.onSurface),
+                    const SizedBox(width: 12),
+                    Text('添加到歌单', style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface)),
+                    const Spacer(),
+                    Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurface.withAlpha(120)),
+                  ],
+                ),
               ),
               onSelected: (listId) async {
-                final success = await userProvider.addSongToPlaylist(listId, song);
+                Navigator.of(context).pop();
+                
+                final success = await userProvider.addSongToPlaylist(listId, widget.song);
                 if (context.mounted) {
                   if (success) {
                     CustomToast.success(context, '已添加到歌单');
@@ -100,6 +117,9 @@ class SongCard extends StatelessWidget {
                     CustomToast.error(context, '添加失败');
                   }
                 }
+              },
+              onCanceled: () {
+                Navigator.of(context).pop();
               },
               itemBuilder: (context) => myPlaylists.map((p) {
                 return PopupMenuItem<int>(
@@ -112,7 +132,7 @@ class SongCard extends StatelessWidget {
         );
       }
 
-      if (parentPlaylist != null && userProvider.isCreatedPlaylist(parentPlaylist!.id)) {
+      if (widget.parentPlaylist != null && userProvider.isCreatedPlaylist(widget.parentPlaylist!.id)) {
         menuItems.add(
           const PopupMenuItem(
             value: 'removeFromPlaylist',
@@ -132,7 +152,6 @@ class SongCard extends StatelessWidget {
     final RelativeRect position;
 
     if (tapPosition != null) {
-      // Convert global tap position to local coordinates of the overlay
       final Offset localPosition = overlay.globalToLocal(tapPosition);
       position = RelativeRect.fromRect(
         localPosition & Size.zero,
@@ -157,15 +176,16 @@ class SongCard extends StatelessWidget {
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ).then((value) async {
+      if (mounted) setState(() => _isMenuOpen = false);
       if (!context.mounted) return;
       if (value == 'play') {
-        context.read<AudioProvider>().playSong(song, playlist: playlist);
+        context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
       } else if (value == 'artist') {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => ArtistDetailView(
-              artistId: song.singers.isNotEmpty ? song.singers.first.id : 0,
-              artistName: song.singerName,
+              artistId: widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0,
+              artistName: widget.song.singerName,
             ),
           ),
         );
@@ -173,14 +193,14 @@ class SongCard extends StatelessWidget {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => AlbumDetailView(
-              albumId: int.tryParse(song.albumId ?? '0') ?? 0,
-              albumName: song.albumName,
+              albumId: int.tryParse(widget.song.albumId ?? '0') ?? 0,
+              albumName: widget.song.albumName,
             ),
           ),
         );
       } else if (value == 'removeFromPlaylist') {
-        if (parentPlaylist != null) {
-          final success = await userProvider.removeSongFromPlaylist(parentPlaylist!.id, song);
+        if (widget.parentPlaylist != null) {
+          final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
           if (context.mounted) {
             if (success) {
               CustomToast.success(context, '已从歌单删除');
@@ -197,7 +217,7 @@ class SongCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final audioProvider = context.watch<AudioProvider>();
-    final isCurrent = audioProvider.currentSong?.hash == song.hash;
+    final isCurrent = audioProvider.currentSong?.hash == widget.song.hash;
     final isPlaying = isCurrent && audioProvider.isPlaying;
     final primaryColor = theme.colorScheme.primary;
 
@@ -205,30 +225,31 @@ class SongCard extends StatelessWidget {
       onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
       child: InkWell(
         onTap: () {
-          if (isSelectionMode) {
-            onSelectionChanged?.call(!isSelected);
+          if (widget.isSelectionMode) {
+            widget.onSelectionChanged?.call(!widget.isSelected);
           } else {
-            context.read<AudioProvider>().playSong(song, playlist: playlist);
+            context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
           }
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          decoration: isSelectionMode && isSelected
+          decoration: (widget.isSelectionMode && widget.isSelected) || _isMenuOpen
               ? BoxDecoration(
-                  color: primaryColor.withAlpha(20),
+                  color: primaryColor.withAlpha(_isMenuOpen ? 30 : 20),
                   borderRadius: BorderRadius.circular(16),
+                  border: _isMenuOpen ? Border.all(color: primaryColor.withAlpha(80), width: 1.5) : null,
                 )
               : null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                if (isSelectionMode)
+                if (widget.isSelectionMode)
                   Padding(
                     padding: const EdgeInsets.only(right: 12),
                     child: Checkbox(
-                      value: isSelected,
-                      onChanged: (value) => onSelectionChanged?.call(value ?? false),
+                      value: widget.isSelected,
+                      onChanged: (value) => widget.onSelectionChanged?.call(value ?? false),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                       side: BorderSide(
                         color: theme.colorScheme.outline,
@@ -237,7 +258,7 @@ class SongCard extends StatelessWidget {
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
-                if (showCover)
+                if (widget.showCover)
                   _buildCover(context, isCurrent, isPlaying, primaryColor),
                 const SizedBox(width: 16),
                 Expanded(
@@ -249,11 +270,11 @@ class SongCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              song.title,
+                              widget.song.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: song.isUnavailable
+                                color: widget.song.isUnavailable
                                     ? theme.colorScheme.onSurface.withAlpha(80)
                                     : (isCurrent ? primaryColor : theme.colorScheme.onSurface),
                                 fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
@@ -262,19 +283,19 @@ class SongCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (song.isUnavailable)
+                          if (widget.song.isUnavailable)
                             _buildTag(context, '不可用', theme.colorScheme.onSurface.withAlpha(100))
-                          else if (song.isPaid)
+                          else if (widget.song.isPaid)
                             _buildTag(context, '付费', const Color(0xFF8B5CF6))
-                          else if (song.isVip)
+                          else if (widget.song.isVip)
                             _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
-                          if (song.qualityTag.isNotEmpty && !song.isUnavailable)
-                            _buildTag(context, song.qualityTag, const Color(0xFF06B6D4)),
+                          if (widget.song.qualityTag.isNotEmpty && !widget.song.isUnavailable)
+                            _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        song.singerName,
+                        widget.song.singerName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -286,12 +307,12 @@ class SongCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (showMore) ...[
+                if (widget.showMore) ...[
                   const SizedBox(width: 24),
                   SizedBox(
                     width: 180,
                     child: Text(
-                      song.albumName,
+                      widget.song.albumName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -303,7 +324,7 @@ class SongCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 24),
                   Text(
-                    _formatDuration(song.duration),
+                    _formatDuration(widget.song.duration),
                     style: TextStyle(
                       color: theme.colorScheme.onSurfaceVariant.withAlpha(150), 
                       fontSize: 13,
@@ -334,17 +355,17 @@ class SongCard extends StatelessWidget {
     return Stack(
       children: [
         CoverImage(
-          url: song.cover,
-          width: coverSize,
-          height: coverSize,
+          url: widget.song.cover,
+          width: widget.coverSize,
+          height: widget.coverSize,
           borderRadius: 12,
           size: 100,
           showShadow: false,
         ),
         if (isCurrent)
           Container(
-            width: coverSize,
-            height: coverSize,
+            width: widget.coverSize,
+            height: widget.coverSize,
             decoration: BoxDecoration(
               color: theme.colorScheme.shadow.withAlpha(isPlaying ? 100 : 60),
               borderRadius: BorderRadius.circular(12),
