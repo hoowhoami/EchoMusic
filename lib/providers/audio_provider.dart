@@ -7,7 +7,11 @@ import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
 class AudioProvider with ChangeNotifier {
-  final Player player = Player();
+  late final Player _player = Player();
+
+  // Getter for external use
+  Player get player => _player;
+
   final List<StreamSubscription> _subscriptions = [];
   final StreamController<double> _userVolumeController = StreamController<double>.broadcast();
 
@@ -28,9 +32,9 @@ class AudioProvider with ChangeNotifier {
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  bool get isPlaying => player.state.playing;
-  bool get isLoading => _isLoading || player.state.buffering;
-  PlaylistMode get loopMode => player.state.playlistMode;
+  bool get isPlaying => _player.state.playing;
+  bool get isLoading => _isLoading || _player.state.buffering;
+  PlaylistMode get loopMode => _player.state.playlistMode;
   bool get isShuffle => _isShuffle;
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
@@ -41,25 +45,38 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _initListeners() {
-    _subscriptions.add(player.stream.completed.listen((c) {
+    _subscriptions.add(_player.stream.completed.listen((c) {
       if (_isDisposed || !c) return;
-      loopMode == PlaylistMode.single ? player.seek(Duration.zero) : next();
+      try {
+        loopMode == PlaylistMode.single ? _player.seek(Duration.zero) : next();
+      } catch (_) {}
     }));
 
-    _subscriptions.add(player.stream.playing.listen((_) => _safeNotify()));
-    _subscriptions.add(player.stream.buffering.listen((_) => _safeNotify()));
-    
-    _subscriptions.add(player.stream.position.listen((pos) {
+    _subscriptions.add(_player.stream.playing.listen((_) => _safeNotify()));
+    _subscriptions.add(_player.stream.buffering.listen((_) => _safeNotify()));
+
+    _subscriptions.add(_player.stream.position.listen((pos) {
       if (_isDisposed) return;
-      if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
+      try {
+        if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
+      } catch (_) {}
     }));
 
-    _subscriptions.add(player.stream.volume.listen((v) {
+    _subscriptions.add(_player.stream.volume.listen((v) {
       if (_isDisposed) return;
-      final normalized = v / 100.0;
-      _persistenceProvider?.saveVolume(normalized);
-      _userVolumeController.add(normalized);
+      try {
+        final normalized = v / 100.0;
+        _persistenceProvider?.saveVolume(normalized);
+        _userVolumeController.add(normalized);
+      } catch (_) {}
     }));
+  }
+
+  void _cancelSubscriptions() {
+    for (var sub in _subscriptions) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
   }
 
   void _safeNotify() {
@@ -69,25 +86,25 @@ class AudioProvider with ChangeNotifier {
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
-    player.setVolume(p.volume * 100.0);
+    _player.setVolume(p.volume * 100.0);
     _userVolumeController.add(p.volume);
   }
 
   void setVolume(double v) {
     if (_isDisposed) return;
-    player.setVolume(v * 100.0);
+    _player.setVolume(v * 100.0);
   }
 
   void setPlaybackRate(double r) {
     _playbackRate = r;
-    player.setRate(r);
+    _player.setRate(r);
     _safeNotify();
   }
 
   void toggleLoopMode() {
-    final mode = player.state.playlistMode;
+    final mode = _player.state.playlistMode;
     final nextMode = mode == PlaylistMode.none ? PlaylistMode.loop : (mode == PlaylistMode.loop ? PlaylistMode.single : PlaylistMode.none);
-    player.setPlaylistMode(nextMode);
+    _player.setPlaylistMode(nextMode);
     _safeNotify();
   }
 
@@ -123,8 +140,8 @@ class AudioProvider with ChangeNotifier {
       final result = await _getAudioUrlWithQuality(song);
       if (_isDisposed || result == null || result['url'] == null) return;
 
-      await player.open(Media(result['url']), play: true);
-      player.setRate(_playbackRate);
+      await _player.open(Media(result['url']), play: true);
+      _player.setRate(_playbackRate);
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -136,18 +153,15 @@ class AudioProvider with ChangeNotifier {
       final url = await MusicApi.getCloudSongUrl(song.hash);
       return url != null ? {'url': url} : null;
     }
-    // 尝试获取设置中的音质
     final settings = _persistenceProvider?.settings ?? {};
     final quality = settings['audioQuality'] ?? 'flac';
     final result = await MusicApi.getSongUrl(song.hash, quality: quality);
     if (result != null && result['url'] != null) return {'url': result['url']};
-    
-    // 备选音质
     final backup = await MusicApi.getSongUrl(song.hash);
     return (backup != null && backup['url'] != null) ? {'url': backup['url']} : null;
   }
 
-  void togglePlay() => player.playOrPause();
+  void togglePlay() => _player.playOrPause();
   void next() {
     if (_playlist.isEmpty) return;
     _currentIndex = (_currentIndex + 1) % _playlist.length;
@@ -174,7 +188,7 @@ class AudioProvider with ChangeNotifier {
     if (_currentIndex == index) {
       if (_playlist.isEmpty) {
         _currentSong = null;
-        player.stop();
+        _player.stop();
       } else {
         _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);
@@ -209,8 +223,7 @@ class AudioProvider with ChangeNotifier {
           final startTime = start is String ? int.parse(start) : (start as num).toInt();
           final endTime = end != null 
               ? (end is String ? int.parse(end) : (end as num).toInt())
-              : startTime + 15000; // 如果没结束时间，默认展示15秒高潮段
-          
+              : startTime + 15000;
           _climaxMarks[startTime / 1000 / songDur] = endTime / 1000 / songDur;
         }
       }
@@ -221,12 +234,11 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    for (var sub in _subscriptions) {
-      sub.cancel();
-    }
-    _subscriptions.clear();
+    // IMPORTANT: Cancel subscriptions FIRST to prevent any pending callbacks
+    _cancelSubscriptions();
     _userVolumeController.close();
-    player.stop(); // 停止播放但不立即销毁，以缓解开发环境下的 FFI 竞争
+    // DO NOT call any Player methods (stop, dispose, etc.)
+    // The global player instance survives hot restarts
     super.dispose();
   }
 }

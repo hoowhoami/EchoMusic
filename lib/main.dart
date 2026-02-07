@@ -19,6 +19,7 @@ void main() async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+
   await windowManager.ensureInitialized();
   
   if (!Platform.isWindows) {
