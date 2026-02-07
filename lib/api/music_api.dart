@@ -143,19 +143,69 @@ class MusicApi {
     }
   }
 
-  static Future<String?> getSongUrl(String hash, {String quality = ''}) async {
+  static Future<Map<String, dynamic>?> getSongUrl(String hash, {String quality = ''}) async {
     try {
-      final params = <String, dynamic>{'hash': hash};
+      final params = <String, dynamic>{
+        'hash': hash,
+      };
       if (quality.isNotEmpty) {
         params['quality'] = quality;
       }
       final response = await _dio.get('/song/url', queryParameters: params);
+      
+      if (response.data != null) {
+        final status = response.data['status'];
+        // Some responses have data at root, some in a 'data' field
+        final payload = response.data['data'] ?? response.data;
+        final urlData = payload['url'];
+        
+        String? url;
+        if (urlData is List && urlData.isNotEmpty) {
+          url = urlData[0].toString();
+        } else if (urlData is String) {
+          url = urlData;
+        }
+
+        return {
+          'url': url,
+          'status': status,
+        };
+      }
+      return null;
+    } catch (e) {
+      debugPrint('getSongUrl error: $e');
+      return null;
+    }
+  }
+
+  static Future<String?> getCloudSongUrl(String hash) async {
+    try {
+      final response = await _dio.get('/user/cloud/url', queryParameters: {'hash': hash});
       if (response.data['status'] == 1) {
-        return response.data['data']['url'];
+        return response.data['data']?['url'];
       }
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getSongPrivilege(String hash, {String? albumId}) async {
+    try {
+      final params = {'hash': hash};
+      if (albumId != null && albumId != '0' && albumId.isNotEmpty) {
+        params['album_id'] = albumId;
+      }
+      
+      final response = await _dio.get('/privilege/lite', queryParameters: params);
+      if (response.data['status'] == 1) {
+        final List data = response.data['data'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('getSongPrivilege error: $e');
+      return [];
     }
   }
 
@@ -345,27 +395,36 @@ class MusicApi {
       final response = await _dio.get('/search/lyric', queryParameters: {
         'hash': hash,
       });
-      if (response.data['status'] == 1 && response.data['data'] != null) {
-        return response.data['data'];
+      debugPrint('Raw searchLyric Response: ${response.data}');
+      if (response.data != null && (response.data['status'] == 1 || response.data['status'] == 200)) {
+        return response.data;
       }
       return null;
     } catch (e) {
+      debugPrint('searchLyric Error: $e');
       return null;
     }
   }
 
-  static Future<String?> getLyric(String id, String accesskey) async {
+  static Future<Map<String, dynamic>?> getLyric(String id, String accesskey) async {
     try {
       final response = await _dio.get('/lyric', queryParameters: {
         'id': id,
         'accesskey': accesskey,
         'decode': 'true',
+        'fmt': 'krc',
       });
-      if (response.data['status'] == 1) {
-        return response.data['data']['lyric'];
+      debugPrint('Raw getLyric Response: ${response.data}');
+      if (response.data != null) {
+        // Support direct body return or wrapped in 'data'
+        final data = response.data['data'] ?? response.data;
+        if (response.data['status'] == 1 || response.data['status'] == 200 || data['decodeContent'] != null) {
+          return data is Map ? Map<String, dynamic>.from(data) : null;
+        }
       }
       return null;
     } catch (e) {
+      debugPrint('getLyric Error: $e');
       return null;
     }
   }

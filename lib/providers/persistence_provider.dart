@@ -27,8 +27,9 @@ class PersistenceProvider with ChangeNotifier {
     'replacePlaylist': false,
     'preventSleep': true,
     'compatibilityMode': true,
-    'backupQuality': '标准',
-    'audioQuality': '无损',
+    'backupQuality': '128',
+    'audioQuality': 'flac',
+    'audioEffect': 'none',
     'autoSign': false,
     'autoReceiveVip': false,
   };
@@ -119,8 +120,9 @@ class PersistenceProvider with ChangeNotifier {
       'replacePlaylist': false,
       'preventSleep': true,
       'compatibilityMode': true,
-      'backupQuality': '标准',
-      'audioQuality': '无损',
+      'backupQuality': '128',
+      'audioQuality': 'flac',
+      'audioEffect': 'none',
       'autoSign': false,
       'autoReceiveVip': false,
     };

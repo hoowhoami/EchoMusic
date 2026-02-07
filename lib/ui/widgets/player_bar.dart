@@ -54,23 +54,53 @@ class PlayerBar extends StatelessWidget {
                       right: 0,
                       child: SizedBox(
                         height: 6, // 增加热区高度以便交互，但视觉上仍保持纤细
-                        child: StreamBuilder<Duration>(
-                          stream: audioProvider.player.positionStream,
-                          builder: (context, snapshot) {
-                            final position = snapshot.data ?? Duration.zero;
-                            final total = audioProvider.player.duration ?? Duration.zero;
-                            return ProgressBar(
-                              progress: position,
-                              total: total,
-                              barHeight: 2.5, // 稍微加粗一点增加可见性
-                              baseBarColor: Colors.transparent, 
-                              progressBarColor: accentColor.withAlpha(220),
-                              thumbColor: accentColor,
-                              thumbRadius: 0, // 隐藏滑块
-                              onSeek: (duration) => audioProvider.player.seek(duration),
-                              timeLabelLocation: TimeLabelLocation.none,
-                            );
-                          },
+                        child: Stack(
+                          children: [
+                            StreamBuilder<Duration>(
+                              stream: audioProvider.player.positionStream,
+                              builder: (context, snapshot) {
+                                final position = snapshot.data ?? Duration.zero;
+                                final total = audioProvider.player.duration ?? Duration.zero;
+                                return ProgressBar(
+                                  progress: position,
+                                  total: total,
+                                  barHeight: 2.5, // 稍微加粗一点增加可见性
+                                  baseBarColor: Colors.transparent, 
+                                  progressBarColor: accentColor.withAlpha(220),
+                                  thumbColor: accentColor,
+                                  thumbRadius: 0, // 隐藏滑块
+                                  onSeek: (duration) => audioProvider.player.seek(duration),
+                                  timeLabelLocation: TimeLabelLocation.none,
+                                );
+                              },
+                            ),
+                            // Climax Markers
+                            if (audioProvider.climaxMarks.isNotEmpty)
+                              ...audioProvider.climaxMarks.keys.map((progress) {
+                                return Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  child: LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      return Padding(
+                                        padding: EdgeInsets.only(left: constraints.maxWidth * progress - 1.5),
+                                        child: Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Container(
+                                            width: 3,
+                                            height: 2.5,
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.withAlpha(200),
+                                              borderRadius: BorderRadius.circular(1),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                );
+                              }),
+                          ],
                         ),
                       ),
                     ),
@@ -132,8 +162,6 @@ class PlayerBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(CupertinoIcons.shuffle, size: 18, color: theme.colorScheme.onSurface.withAlpha(40)),
-              const SizedBox(width: 24),
               Icon(CupertinoIcons.backward_fill, size: 22, color: theme.colorScheme.onSurface.withAlpha(40)),
               const SizedBox(width: 28),
               Container(
@@ -273,13 +301,6 @@ class PlayerBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _PlayerIconButton(
-                icon: audioProvider.isShuffle ? CupertinoIcons.shuffle : CupertinoIcons.arrow_right,
-                isSelected: audioProvider.isShuffle,
-                onPressed: audioProvider.toggleShuffle,
-                size: 18,
-              ),
-              const SizedBox(width: 24),
-              _PlayerIconButton(
                 icon: CupertinoIcons.backward_fill,
                 onPressed: audioProvider.previous,
                 size: 22,
@@ -352,7 +373,7 @@ class PlayerBar extends StatelessWidget {
 
   Widget _buildPlayButton(ThemeData theme, AudioProvider audioProvider) {
     return GestureDetector(
-      onTap: audioProvider.togglePlay,
+      onTap: audioProvider.isLoading ? null : audioProvider.togglePlay,
       child: Container(
         width: 44,
         height: 44,
@@ -361,14 +382,23 @@ class PlayerBar extends StatelessWidget {
           color: theme.colorScheme.onSurface.withAlpha(10), // 现代感背景
         ),
         child: Center(
-          child: Padding(
-            padding: EdgeInsets.only(left: audioProvider.isPlaying ? 0 : 4),
-            child: Icon(
-              audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-              size: 24,
-              color: theme.colorScheme.onSurface,
-            ),
-          ),
+          child: audioProvider.isLoading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: theme.colorScheme.onSurface.withAlpha(150),
+                  ),
+                )
+              : Padding(
+                  padding: EdgeInsets.only(left: audioProvider.isPlaying ? 0 : 4),
+                  child: Icon(
+                    audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                    size: 24,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
         ),
       ),
     );

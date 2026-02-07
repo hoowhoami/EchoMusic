@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
+import '../../utils/constants.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
 
@@ -116,7 +117,7 @@ class SettingView extends StatelessWidget {
           const SizedBox(height: 32),
           _buildGroup(
             context,
-            '音质与兼容性',
+            '音质与音效',
             CupertinoIcons.waveform_circle,
             [
               _buildItem(
@@ -125,9 +126,12 @@ class SettingView extends StatelessWidget {
                 '根据网络环境选择播放音质',
                 trailing: _buildDropdown(
                   context,
-                  ['标准', '高品质', '无损'],
-                  settings['audioQuality'] ?? '无损',
-                  (v) => persistence.updateSetting('audioQuality', v),
+                  AudioQuality.options.map((o) => o.label).toList(),
+                  AudioQuality.getLabel(settings['audioQuality'] ?? 'flac'),
+                  (label) {
+                    final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
+                    persistence.updateSetting('audioQuality', value);
+                  },
                 ),
               ),
               _buildItem(
@@ -146,9 +150,26 @@ class SettingView extends StatelessWidget {
                 '兼容模式下的备选音质级别',
                 trailing: _buildDropdown(
                   context,
-                  ['标准', '高品质', '超高品质', '无损'],
-                  settings['backupQuality'] ?? '标准',
-                  (v) => persistence.updateSetting('backupQuality', v),
+                  AudioQuality.options.map((o) => o.label).toList(),
+                  AudioQuality.getLabel(settings['backupQuality'] ?? '128'),
+                  (label) {
+                    final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
+                    persistence.updateSetting('backupQuality', value);
+                  },
+                ),
+              ),
+              _buildItem(
+                context,
+                '全局音效',
+                '为播放内容应用实时音频增强',
+                trailing: _buildDropdown(
+                  context,
+                  AudioEffect.options.map((o) => o.label).toList(),
+                  AudioEffect.getLabel(settings['audioEffect'] ?? 'none'),
+                  (label) {
+                    final value = AudioEffect.options.firstWhere((o) => o.label == label).value;
+                    persistence.updateSetting('audioEffect', value);
+                  },
                 ),
               ),
             ],

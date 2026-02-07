@@ -17,6 +17,7 @@ class AudioProvider with ChangeNotifier {
   LoopMode _loopMode = LoopMode.off;
   bool _isShuffle = false;
   double _playbackRate = 1.0;
+  bool _isLoading = false;
   final Map<double, String> _climaxMarks = {};
 
   AudioPlayer get player => _player;
@@ -24,6 +25,7 @@ class AudioProvider with ChangeNotifier {
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   bool get isPlaying => _player.playing;
+  bool get isLoading => _isLoading;
   LoopMode get loopMode => _loopMode;
   bool get isShuffle => _isShuffle;
   double get playbackRate => _playbackRate;
@@ -49,19 +51,6 @@ class AudioProvider with ChangeNotifier {
     _player.volumeStream.listen((volume) {
       _persistenceProvider?.saveVolume(volume);
     });
-  }
-
-  String _convertQualityToApiValue(String quality) {
-    switch (quality) {
-      case '标准':
-        return '128';
-      case '高品质':
-        return '320';
-      case '无损':
-        return 'flac';
-      default:
-        return 'flac';
-    }
   }
 
   void setPlaybackRate(double rate) {
@@ -109,40 +98,159 @@ class AudioProvider with ChangeNotifier {
       if (_isShuffle) {
         _playlist.shuffle();
       }
-      _currentIndex = _playlist.indexWhere((s) => s.hash == song.hash);
     }
-
+    
+    _currentIndex = _playlist.indexWhere((s) => s.hash == song.hash);
     _currentSong = song;
     notifyListeners();
 
-    _persistenceProvider?.addToHistory(song);
-    _lyricProvider?.clear();
-    _fetchLyrics(song.hash);
-    _fetchClimax(song);
+    await _initPlayer(song);
+  }
 
-    // Get quality setting
-    final qualitySetting = _persistenceProvider?.settings['audioQuality'] ?? '无损';
-    final quality = _convertQualityToApiValue(qualitySetting);
+  Future<void> _initPlayer(Song song) async {
+    _isLoading = true;
+    notifyListeners();
 
-    final url = await MusicApi.getSongUrl(song.hash, quality: quality);
-    if (url != null) {
-      try {
-        await _player.setUrl(url);
+    try {
+      _persistenceProvider?.addToHistory(song);
+      _lyricProvider?.clear();
+      _fetchLyrics(song.hash);
+      _fetchClimax(song);
+
+      final urlResult = await _getAudioUrlWithQuality(song);
+      if (urlResult != null) {
+        final String url = urlResult['url'];
+        final isFlac = urlResult['isFlac'];
+        
+        debugPrint('Playing URL: $url (Lossless: $isFlac)');
+
+        final source = AudioSource.uri(
+          Uri.parse(url),
+          headers: {
+            'User-Agent': 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi',
+          },
+        );
+
+        await _player.setAudioSource(source);
         _player.setSpeed(_playbackRate);
         _player.play();
-      } catch (e) {
-        debugPrint('Error playing song: $e');
+      } else {
+        _handleLoadFailure(song);
+      }
+    } catch (e) {
+      debugPrint('Error initializing player: $e');
+      // Graceful fallback for macOS/iOS specific AVPlayer errors (-11800, etc)
+      if (e.toString().contains('-11800') || e.toString().contains('codec')) {
+        debugPrint('Detected format/loading error, trying fallback standard quality...');
+        final result = await MusicApi.getSongUrl(song.hash, quality: '128');
+        if (result != null && result['status'] == 1 && result['url'] != null) {
+          try {
+            await _player.setUrl(result['url']);
+            _player.play();
+            return;
+          } catch (fallbackError) {
+            debugPrint('Fallback also failed: $fallbackError');
+          }
+        }
+      }
+      _handleLoadFailure(song);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  void _handleLoadFailure(Song song) {
+    debugPrint('Failed to get playable URL for ${song.title}');
+    if (_persistenceProvider?.settings['autoNext'] ?? true) {
+      next();
+    }
+  }
+
+  Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
+    if (song.source == 'cloud') {
+      final url = await MusicApi.getCloudSongUrl(song.hash);
+      return url != null ? {'url': url, 'isFlac': false} : null;
+    }
+
+    // 动态获取歌曲权限和关联音质信息 (relate_goods)
+    final privilegeList = await MusicApi.getSongPrivilege(song.hash, albumId: song.albumId);
+    final List<dynamic> relateGoods = privilegeList.isNotEmpty 
+        ? (privilegeList[0]['relate_goods'] ?? []) 
+        : (song.relateGoods ?? []);
+
+    final settings = _persistenceProvider?.settings ?? {};
+    final primaryQuality = settings['audioQuality'] ?? 'flac';
+    final backupQuality = settings['backupQuality'] ?? '128';
+    final compatibilityMode = settings['compatibilityMode'] ?? true;
+
+    final qualitiesToTry = [primaryQuality];
+    if (compatibilityMode && backupQuality != primaryQuality) {
+      qualitiesToTry.add(backupQuality);
+    }
+
+    for (var apiQuality in qualitiesToTry) {
+      String targetHash = song.hash;
+
+      // 在最新的 relateGoods 中寻找匹配音质的 hash
+      if (relateGoods.isNotEmpty) {
+        Map<String, dynamic>? match;
+        for (final item in relateGoods) {
+          if (item['quality'] == apiQuality) {
+            match = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
+            break;
+          }
+        }
+        if (match != null && match['hash'] != null) {
+          targetHash = match['hash'];
+        }
+      }
+
+      final result = await MusicApi.getSongUrl(targetHash, quality: apiQuality);
+      if (result != null) {
+        final status = result['status'];
+        final url = result['url'];
+        
+        if (status == 1 && url != null && url.isNotEmpty) {
+          return {
+            'url': url,
+            'isFlac': apiQuality == 'flac',
+          };
+        } else if (status == 2) {
+          debugPrint('Quality $apiQuality requires VIP, trying next...');
+        } else if (status == 3) {
+          debugPrint('Quality $apiQuality has no copyright, trying next...');
+        }
       }
     }
+
+    if (compatibilityMode) {
+      final result = await MusicApi.getSongUrl(song.hash);
+      if (result != null && result['status'] == 1 && result['url'] != null) {
+        return {'url': result['url'], 'isFlac': false};
+      }
+    }
+
+    return null;
   }
 
   Future<void> _fetchLyrics(String hash) async {
     final searchResult = await MusicApi.searchLyric(hash);
-    if (searchResult != null && searchResult['info'] != null && searchResult['info'].isNotEmpty) {
-      final firstLyric = searchResult['info'][0];
-      final lrc = await MusicApi.getLyric(firstLyric['id'], firstLyric['accesskey']);
-      if (lrc != null) {
-        _lyricProvider?.parseLyrics(lrc);
+    
+    dynamic targetCandidate;
+    if (searchResult != null && searchResult['candidates'] != null && searchResult['candidates'] is List && searchResult['candidates'].isNotEmpty) {
+      targetCandidate = searchResult['candidates'][0];
+    } else if (searchResult != null && searchResult['info'] != null && searchResult['info'] is List && searchResult['info'].isNotEmpty) {
+      targetCandidate = searchResult['info'][0];
+    }
+
+    if (targetCandidate != null) {
+      final lyricData = await MusicApi.getLyric(
+        targetCandidate['id']?.toString() ?? '', 
+        targetCandidate['accesskey']?.toString() ?? ''
+      );
+      if (lyricData != null) {
+        _lyricProvider?.parseLyrics(lyricData);
       }
     }
   }
@@ -154,31 +262,30 @@ class AudioProvider with ChangeNotifier {
     try {
       final result = await MusicApi.getSongClimaxRaw(song.hash);
       if (result.isNotEmpty) {
-        final songDuration = song.duration;
+        final songDuration = song.duration > 0 ? song.duration : 1; // Avoid division by zero
         for (final item in result) {
           final startTime = item['start_time'] ?? item['starttime'];
           final endTime = item['end_time'] ?? item['endtime'];
 
           if (startTime != null) {
-            final start = startTime is String ? int.parse(startTime) : startTime as int;
-            if (start > 0) {
-              final startProgress = (start / 1000) / songDuration;
-              _climaxMarks[startProgress] = '';
+            final startMs = startTime is String ? int.parse(startTime) : (startTime as num).toInt();
+            if (startMs > 0) {
+              final startProgress = (startMs / 1000) / songDuration;
+              _climaxMarks[startProgress.clamp(0.0, 1.0)] = '';
             }
           }
 
           if (endTime != null) {
-            final end = endTime is String ? int.parse(endTime) : endTime as int;
-            if (end > 0) {
-              final endProgress = (end / 1000) / songDuration;
-              _climaxMarks[endProgress] = '';
+            final endMs = endTime is String ? int.parse(endTime) : (endTime as num).toInt();
+            if (endMs > 0) {
+              final endProgress = (endMs / 1000) / songDuration;
+              _climaxMarks[endProgress.clamp(0.0, 1.0)] = '';
             }
           }
         }
         notifyListeners();
       }
     } catch (e) {
-      // Silently fail if climax fetching fails
       debugPrint('Error fetching climax: $e');
     }
   }
@@ -187,7 +294,9 @@ class AudioProvider with ChangeNotifier {
     if (_player.playing) {
       _player.pause();
     } else {
-      _player.play();
+      if (_currentSong != null) {
+        _player.play();
+      }
     }
     notifyListeners();
   }
@@ -221,11 +330,8 @@ class AudioProvider with ChangeNotifier {
       if (_playlist.isEmpty) {
         _currentSong = null;
         _player.stop();
-      } else if (index < _playlist.length) {
-        _currentIndex = index;
-        playSong(_playlist[_currentIndex]);
       } else {
-        _currentIndex = _playlist.length - 1;
+        _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);
       }
     } else if (_currentIndex > index) {
