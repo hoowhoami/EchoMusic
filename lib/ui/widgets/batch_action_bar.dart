@@ -284,7 +284,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         ),
         child: CupertinoButton(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          onPressed: onPressed,
+          onPressed: onPressed, minimumSize: Size(0, 0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -303,7 +303,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                 ),
               ),
             ],
-          ), minimumSize: Size(0, 0),
+          ),
         ),
       ),
     );

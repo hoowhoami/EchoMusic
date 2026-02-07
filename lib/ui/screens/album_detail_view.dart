@@ -8,7 +8,6 @@ import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';
-import '../widgets/custom_toast.dart';
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;

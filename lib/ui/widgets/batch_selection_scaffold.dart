@@ -74,7 +74,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          if (appBarActions != null) appBarActions!,
+          ?appBarActions,
           if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
             _buildBatchButton(context, selectionProvider),
         ],
