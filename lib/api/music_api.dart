@@ -395,7 +395,6 @@ class MusicApi {
       final response = await _dio.get('/search/lyric', queryParameters: {
         'hash': hash,
       });
-      debugPrint('Raw searchLyric Response: ${response.data}');
       if (response.data != null && (response.data['status'] == 1 || response.data['status'] == 200)) {
         return response.data;
       }
@@ -414,7 +413,6 @@ class MusicApi {
         'decode': 'true',
         'fmt': 'krc',
       });
-      debugPrint('Raw getLyric Response: ${response.data}');
       if (response.data != null) {
         // Support direct body return or wrapped in 'data'
         final data = response.data['data'] ?? response.data;

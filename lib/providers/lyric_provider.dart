@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 
 class LyricCharacter {
   final String text;
-  final int startTime; // milliseconds
-  final int endTime; // milliseconds
+  final int startTime; 
+  final int endTime; 
   bool highlighted = false;
 
   LyricCharacter({
@@ -36,55 +36,75 @@ class LyricProvider with ChangeNotifier {
   List<LyricLine> _lyrics = [];
   int _currentLineIndex = -1;
   String _tips = '暂无歌词';
-  LyricsMode _lyricsMode = LyricsMode.translation;
+  LyricsMode _lyricsMode = LyricsMode.none;
+  bool _hasTranslation = false;
+  bool _hasRomanization = false;
+  
+  // New: Status tracking to prevent unnecessary processing and leaks
+  bool _isPageOpen = false;
+  String? _loadedHash;
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
   String get tips => _tips;
   LyricsMode get lyricsMode => _lyricsMode;
+  bool get hasTranslation => _hasTranslation;
+  bool get hasRomanization => _hasRomanization;
+  bool get isPageOpen => _isPageOpen;
+  String? get loadedHash => _loadedHash;
 
-  bool get showTranslation => _lyricsMode == LyricsMode.translation;
-  bool get showRomanization => _lyricsMode == LyricsMode.romanization;
+  void setPageOpen(bool open) {
+    _isPageOpen = open;
+    // Only notify if opening, or if we have listeners and aren't in a sensitive lifecycle
+    // Closing the page (dispose) shouldn't trigger UI rebuilds
+    if (open) {
+      notifyListeners();
+    }
+  }
+
+  bool get showTranslation => _lyricsMode == LyricsMode.translation && _hasTranslation;
+  bool get showRomanization => _lyricsMode == LyricsMode.romanization && _hasRomanization;
 
   void toggleLyricsMode() {
-    if (_lyricsMode == LyricsMode.translation) {
-      _lyricsMode = LyricsMode.romanization;
-    } else if (_lyricsMode == LyricsMode.romanization) {
-      _lyricsMode = LyricsMode.none;
+    if (_lyricsMode == LyricsMode.none) {
+      if (_hasTranslation) {
+        _lyricsMode = LyricsMode.translation;
+      } else if (_hasRomanization) {
+        _lyricsMode = LyricsMode.romanization;
+      } else {
+        _lyricsMode = LyricsMode.none;
+      }
+    } else if (_lyricsMode == LyricsMode.translation) {
+      if (_hasRomanization) {
+        _lyricsMode = LyricsMode.romanization;
+      } else {
+        _lyricsMode = LyricsMode.none;
+      }
     } else {
-      _lyricsMode = LyricsMode.translation;
+      _lyricsMode = LyricsMode.none;
     }
     notifyListeners();
   }
 
-  void setLyricsMode(LyricsMode mode) {
-    _lyricsMode = mode;
-    notifyListeners();
-  }
-
-  void toggleTranslation() {
-    if (_lyricsMode == LyricsMode.translation) {
-      _lyricsMode = LyricsMode.none;
-    } else {
-      _lyricsMode = LyricsMode.translation;
-    }
-    notifyListeners();
-  }
-
-  void parseLyrics(Map<String, dynamic> lyricData) {
+  void parseLyrics(Map<String, dynamic> lyricData, {String? hash}) {
     _lyrics = [];
+    _hasTranslation = false;
+    _hasRomanization = false;
+    _currentLineIndex = -1;
+    _loadedHash = hash;
+    
     final String content = (lyricData['decodeContent'] ?? lyricData['lyric'] ?? '').toString();
     if (content.isEmpty) {
       _tips = '暂无歌词';
       notifyListeners();
       return;
     }
+    // ... rest of parseLyrics remains the same
 
     final List<String> lines = content.split('\n');
     List<dynamic>? translationLyrics;
     List<dynamic>? romanizationLyrics;
 
-    // Parse translation and romanization
     try {
       String languageLine = '';
       for (final String line in lines) {
@@ -117,14 +137,13 @@ class LyricProvider with ChangeNotifier {
         }
       }
     } catch (e) {
-      debugPrint('Error parsing lyric language data: $e');
+      // Silent catch
     }
 
     final charRegex = RegExp(r'<(\d+),(\d+),\d+>([^<]+)');
     final parsedLines = <LyricLine>[];
 
     for (var line in lines) {
-      // Match KRC line format: [start,duration]text
       final lineMatch = RegExp(r'^\[(\d+),(\d+)\](.*)').firstMatch(line);
       if (lineMatch != null) {
         final lineStart = int.parse(lineMatch.group(1)!);
@@ -145,11 +164,9 @@ class LyricProvider with ChangeNotifier {
             ));
           }
         } else {
-          // Fallback for LRC-like lines within KRC or simple lines
           final duration = int.parse(lineMatch.group(2)!);
           final text = lineContent.replaceAll(RegExp(r'<.*?>'), '').trim();
           if (text.isNotEmpty) {
-            // Distribute duration equally if no per-char timing
             for (int i = 0; i < text.length; i++) {
               characters.add(LyricCharacter(
                 text: text[i],
@@ -166,7 +183,6 @@ class LyricProvider with ChangeNotifier {
         continue;
       }
 
-      // Match standard LRC format: [mm:ss.xx]text
       final lrcMatch = RegExp(r'^\[(\d+):(\d+\.\d+)\](.*)').firstMatch(line);
       if (lrcMatch != null) {
         final minutes = int.parse(lrcMatch.group(1)!);
@@ -182,7 +198,6 @@ class LyricProvider with ChangeNotifier {
       }
     }
 
-    // Assign translations and romanizations
     for (int i = 0; i < parsedLines.length; i++) {
       String? trans;
       String? roman;
@@ -191,6 +206,7 @@ class LyricProvider with ChangeNotifier {
         final transLine = translationLyrics[i];
         if (transLine is List && transLine.isNotEmpty) {
           trans = transLine[0].toString();
+          if (trans.isNotEmpty) _hasTranslation = true;
         }
       }
       
@@ -198,6 +214,7 @@ class LyricProvider with ChangeNotifier {
         final romanLine = romanizationLyrics[i];
         if (romanLine is List) {
           roman = romanLine.join('');
+          if (roman.isNotEmpty) _hasRomanization = true;
         }
       }
 
@@ -209,41 +226,52 @@ class LyricProvider with ChangeNotifier {
     }
 
     _tips = _lyrics.isEmpty ? '暂无歌词' : '歌词已加载';
+    _lyricsMode = LyricsMode.none; 
     notifyListeners();
   }
 
+  /// Optimized Update Strategy: Incremental search to prevent UI freezing on long audio
   void updateHighlight(Duration position) {
+    if (_lyrics.isEmpty) return;
+    
     final posMs = position.inMilliseconds;
     int newIndex = -1;
-    bool statusChanged = false;
+    bool needsNotify = false;
 
-    for (int i = 0; i < _lyrics.length; i++) {
-      final line = _lyrics[i];
-      bool isLineActive = false;
+    // 1. Efficient Line Selection: Start from current index for O(1) in 99% cases
+    int startSearchIdx = _currentLineIndex >= 0 ? _currentLineIndex : 0;
+    
+    // Check if the monotonic forward assumption holds
+    if (posMs < _lyrics[startSearchIdx].startTime) {
+      startSearchIdx = 0; // Rewound, search from beginning
+    }
 
-      for (var char in line.characters) {
-        final shouldBeHighlighted = posMs >= char.startTime;
-        if (char.highlighted != shouldBeHighlighted) {
-          char.highlighted = shouldBeHighlighted;
-          statusChanged = true;
-        }
-        
-        if (posMs >= char.startTime && posMs <= char.endTime) {
-          isLineActive = true;
-        }
-      }
-
-      if (isLineActive || (posMs >= line.startTime && (i == _lyrics.length - 1 || posMs < _lyrics[i + 1].startTime))) {
+    for (int i = startSearchIdx; i < _lyrics.length; i++) {
+      if (posMs >= _lyrics[i].startTime && (i == _lyrics.length - 1 || posMs < _lyrics[i + 1].startTime)) {
         newIndex = i;
+        break;
       }
     }
 
+    // 2. Character Highlight Update (Only update affected lines)
+    if (newIndex != -1) {
+      final line = _lyrics[newIndex];
+      for (var char in line.characters) {
+        final shouldHighlight = posMs >= char.startTime;
+        if (char.highlighted != shouldHighlight) {
+          char.highlighted = shouldHighlight;
+          needsNotify = true;
+        }
+      }
+    }
+
+    // 3. Line Transition Update
     if (newIndex != _currentLineIndex) {
       _currentLineIndex = newIndex;
-      statusChanged = true;
+      needsNotify = true;
     }
 
-    if (statusChanged) {
+    if (needsNotify) {
       notifyListeners();
     }
   }

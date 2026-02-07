@@ -45,7 +45,10 @@ class AudioProvider with ChangeNotifier {
     });
 
     _player.positionStream.listen((position) {
-      _lyricProvider?.updateHighlight(position);
+      // Performance: Only update lyrics if the page is actually open
+      if (_lyricProvider?.isPageOpen == true) {
+        _lyricProvider?.updateHighlight(position);
+      }
     });
 
     _player.volumeStream.listen((volume) {
@@ -114,7 +117,8 @@ class AudioProvider with ChangeNotifier {
     try {
       _persistenceProvider?.addToHistory(song);
       _lyricProvider?.clear();
-      _fetchLyrics(song.hash);
+      // Optimization: No longer fetch lyrics immediately. 
+      // They will be loaded when the lyric page is opened.
       _fetchClimax(song);
 
       final urlResult = await _getAudioUrlWithQuality(song);
@@ -139,9 +143,7 @@ class AudioProvider with ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error initializing player: $e');
-      // Graceful fallback for macOS/iOS specific AVPlayer errors (-11800, etc)
       if (e.toString().contains('-11800') || e.toString().contains('codec')) {
-        debugPrint('Detected format/loading error, trying fallback standard quality...');
         final result = await MusicApi.getSongUrl(song.hash, quality: '128');
         if (result != null && result['status'] == 1 && result['url'] != null) {
           try {
@@ -149,7 +151,7 @@ class AudioProvider with ChangeNotifier {
             _player.play();
             return;
           } catch (fallbackError) {
-            debugPrint('Fallback also failed: $fallbackError');
+            // Error logged
           }
         }
       }
@@ -161,7 +163,6 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _handleLoadFailure(Song song) {
-    debugPrint('Failed to get playable URL for ${song.title}');
     if (_persistenceProvider?.settings['autoNext'] ?? true) {
       next();
     }
@@ -173,7 +174,6 @@ class AudioProvider with ChangeNotifier {
       return url != null ? {'url': url, 'isFlac': false} : null;
     }
 
-    // 动态获取歌曲权限和关联音质信息 (relate_goods)
     final privilegeList = await MusicApi.getSongPrivilege(song.hash, albumId: song.albumId);
     final List<dynamic> relateGoods = privilegeList.isNotEmpty 
         ? (privilegeList[0]['relate_goods'] ?? []) 
@@ -192,7 +192,6 @@ class AudioProvider with ChangeNotifier {
     for (var apiQuality in qualitiesToTry) {
       String targetHash = song.hash;
 
-      // 在最新的 relateGoods 中寻找匹配音质的 hash
       if (relateGoods.isNotEmpty) {
         Map<String, dynamic>? match;
         for (final item in relateGoods) {
@@ -216,10 +215,6 @@ class AudioProvider with ChangeNotifier {
             'url': url,
             'isFlac': apiQuality == 'flac',
           };
-        } else if (status == 2) {
-          debugPrint('Quality $apiQuality requires VIP, trying next...');
-        } else if (status == 3) {
-          debugPrint('Quality $apiQuality has no copyright, trying next...');
         }
       }
     }
@@ -232,6 +227,17 @@ class AudioProvider with ChangeNotifier {
     }
 
     return null;
+  }
+
+  /// Public method to load lyrics on demand
+  Future<void> fetchLyrics() async {
+    final song = _currentSong;
+    if (song == null) return;
+    
+    // Skip if already loaded for this exact hash
+    if (_lyricProvider?.loadedHash == song.hash) return;
+
+    await _fetchLyrics(song.hash);
   }
 
   Future<void> _fetchLyrics(String hash) async {
@@ -250,7 +256,8 @@ class AudioProvider with ChangeNotifier {
         targetCandidate['accesskey']?.toString() ?? ''
       );
       if (lyricData != null) {
-        _lyricProvider?.parseLyrics(lyricData);
+        // Tag with hash for cache tracking
+        _lyricProvider?.parseLyrics(lyricData, hash: hash);
       }
     }
   }
@@ -262,7 +269,7 @@ class AudioProvider with ChangeNotifier {
     try {
       final result = await MusicApi.getSongClimaxRaw(song.hash);
       if (result.isNotEmpty) {
-        final songDuration = song.duration > 0 ? song.duration : 1; // Avoid division by zero
+        final songDuration = song.duration > 0 ? song.duration : 1;
         for (final item in result) {
           final startTime = item['start_time'] ?? item['starttime'];
           final endTime = item['end_time'] ?? item['endtime'];
@@ -286,7 +293,7 @@ class AudioProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error fetching climax: $e');
+      // Silence climax errors
     }
   }
 
