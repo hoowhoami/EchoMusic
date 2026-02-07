@@ -5,6 +5,7 @@ import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:just_audio/just_audio.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/lyric_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../screens/lyric_page.dart';
@@ -64,11 +65,12 @@ class PlayerBar extends StatelessWidget {
                                 return ProgressBar(
                                   progress: position,
                                   total: total,
-                                  barHeight: 2.5, // 稍微加粗一点增加可见性
+                                  barHeight: 3.0, // Slightly thicker for visibility
                                   baseBarColor: Colors.transparent, 
                                   progressBarColor: accentColor.withAlpha(220),
                                   thumbColor: accentColor,
-                                  thumbRadius: 0, // 隐藏滑块
+                                  thumbRadius: 5.0, // Visible handle
+                                  thumbGlowRadius: 0, // No big circle on drag
                                   onSeek: (duration) => audioProvider.player.seek(duration),
                                   timeLabelLocation: TimeLabelLocation.none,
                                 );
@@ -265,16 +267,25 @@ class PlayerBar extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        song.name,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurface,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          letterSpacing: -0.3,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              song.name,
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                                letterSpacing: -0.3,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (song.source == 'cloud')
+                            Icon(CupertinoIcons.cloud, size: 14, color: theme.colorScheme.primary.withAlpha(180)),
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -290,6 +301,13 @@ class PlayerBar extends StatelessWidget {
                     ],
                   ),
                 ),
+                _PlayerIconButton(
+                  icon: Icons.lyrics_outlined,
+                  onPressed: () => context.read<LyricProvider>().toggleLyricsMode(),
+                  size: 18,
+                  tooltip: '切换歌词模式',
+                ),
+                const SizedBox(width: 8),
               ],
             ),
           ),
@@ -303,22 +321,15 @@ class PlayerBar extends StatelessWidget {
               _PlayerIconButton(
                 icon: CupertinoIcons.backward_fill,
                 onPressed: audioProvider.previous,
-                size: 22,
+                size: 24,
               ),
-              const SizedBox(width: 28),
+              const SizedBox(width: 32),
               _buildPlayButton(theme, audioProvider),
-              const SizedBox(width: 28),
+              const SizedBox(width: 32),
               _PlayerIconButton(
                 icon: CupertinoIcons.forward_fill,
                 onPressed: audioProvider.next,
-                size: 22,
-              ),
-              const SizedBox(width: 24),
-              _PlayerIconButton(
-                icon: audioProvider.loopMode == LoopMode.one ? CupertinoIcons.repeat_1 : CupertinoIcons.repeat,
-                isSelected: audioProvider.loopMode != LoopMode.off,
-                onPressed: audioProvider.toggleLoopMode,
-                size: 18,
+                size: 24,
               ),
             ],
           ),
@@ -326,18 +337,36 @@ class PlayerBar extends StatelessWidget {
 
         // Extras
         SizedBox(
-          width: 300,
+          width: 400,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              _PlayerIconButton(
-                icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                isSelected: persistenceProvider.isFavorite(song),
-                activeColor: Colors.redAccent,
-                onPressed: () => persistenceProvider.toggleFavorite(song, userProvider: context.read<UserProvider>()),
-                size: 20,
+              // Time
+              StreamBuilder<Duration>(
+                stream: audioProvider.player.positionStream,
+                builder: (context, snapshot) {
+                  final position = snapshot.data ?? Duration.zero;
+                  final total = audioProvider.player.duration ?? Duration.zero;
+                  return Text(
+                    '${_formatDuration(position)} / ${_formatDuration(total)}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: theme.colorScheme.onSurface.withAlpha(120),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 12),
+              _PlayerIconButton(
+                icon: audioProvider.loopMode == LoopMode.one ? CupertinoIcons.repeat_1 : (audioProvider.loopMode == LoopMode.all ? CupertinoIcons.repeat : CupertinoIcons.shuffle),
+                isSelected: true,
+                onPressed: audioProvider.toggleLoopMode,
+                size: 18,
+                tooltip: '播放模式',
+              ),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => _showPlaybackRateDialog(context, audioProvider),
                 child: Container(
@@ -356,19 +385,35 @@ class PlayerBar extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               _buildVolumeSlider(theme, audioProvider),
-              const SizedBox(width: 16),
+              const SizedBox(width: 8),
+              _PlayerIconButton(
+                icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                isSelected: persistenceProvider.isFavorite(song),
+                activeColor: Colors.redAccent,
+                onPressed: () => persistenceProvider.toggleFavorite(song, userProvider: context.read<UserProvider>()),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
               _PlayerIconButton(
                 icon: CupertinoIcons.list_bullet,
                 onPressed: () => _showQueueDrawer(context),
                 size: 20,
+                tooltip: '播放列表',
               ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    String twoDigitMinutes = twoDigits(duration.inMinutes.remainder(60));
+    String twoDigitSeconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$twoDigitMinutes:$twoDigitSeconds";
   }
 
   Widget _buildPlayButton(ThemeData theme, AudioProvider audioProvider) {
@@ -516,6 +561,7 @@ class _PlayerIconButton extends StatelessWidget {
   final double size;
   final bool isSelected;
   final Color? activeColor;
+  final String? tooltip;
 
   const _PlayerIconButton({
     required this.icon,
@@ -523,6 +569,7 @@ class _PlayerIconButton extends StatelessWidget {
     this.size = 20,
     this.isSelected = false,
     this.activeColor,
+    this.tooltip,
   });
 
   @override
@@ -532,12 +579,18 @@ class _PlayerIconButton extends StatelessWidget {
       ? (activeColor ?? theme.primaryColor)
       : theme.colorScheme.onSurfaceVariant.withAlpha(140);
 
-    return IconButton(
+    Widget button = IconButton(
       icon: Icon(icon, size: size, color: color),
       onPressed: onPressed,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
       splashRadius: 24,
     );
+
+    if (tooltip != null) {
+      button = Tooltip(message: tooltip!, child: button);
+    }
+
+    return button;
   }
 }

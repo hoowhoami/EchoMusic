@@ -30,19 +30,44 @@ class LyricLine {
   int get endTime => characters.last.endTime;
 }
 
+enum LyricsMode { none, translation, romanization }
+
 class LyricProvider with ChangeNotifier {
   List<LyricLine> _lyrics = [];
   int _currentLineIndex = -1;
   String _tips = '暂无歌词';
-  bool _showTranslation = true;
+  LyricsMode _lyricsMode = LyricsMode.translation;
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
   String get tips => _tips;
-  bool get showTranslation => _showTranslation;
+  LyricsMode get lyricsMode => _lyricsMode;
+
+  bool get showTranslation => _lyricsMode == LyricsMode.translation;
+  bool get showRomanization => _lyricsMode == LyricsMode.romanization;
+
+  void toggleLyricsMode() {
+    if (_lyricsMode == LyricsMode.translation) {
+      _lyricsMode = LyricsMode.romanization;
+    } else if (_lyricsMode == LyricsMode.romanization) {
+      _lyricsMode = LyricsMode.none;
+    } else {
+      _lyricsMode = LyricsMode.translation;
+    }
+    notifyListeners();
+  }
+
+  void setLyricsMode(LyricsMode mode) {
+    _lyricsMode = mode;
+    notifyListeners();
+  }
 
   void toggleTranslation() {
-    _showTranslation = !_showTranslation;
+    if (_lyricsMode == LyricsMode.translation) {
+      _lyricsMode = LyricsMode.none;
+    } else {
+      _lyricsMode = LyricsMode.translation;
+    }
     notifyListeners();
   }
 

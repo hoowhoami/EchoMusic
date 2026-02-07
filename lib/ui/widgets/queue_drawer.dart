@@ -5,8 +5,45 @@ import '../../providers/audio_provider.dart';
 import 'cover_image.dart';
 import 'custom_dialog.dart';
 
-class QueueDrawer extends StatelessWidget {
+class QueueDrawer extends StatefulWidget {
   const QueueDrawer({super.key});
+
+  @override
+  State<QueueDrawer> createState() => _QueueDrawerState();
+}
+
+class _QueueDrawerState extends State<QueueDrawer> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToCurrent(AudioProvider audioProvider) {
+    if (audioProvider.currentIndex >= 0 && _scrollController.hasClients) {
+      _scrollController.animateTo(
+        audioProvider.currentIndex * 60.0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _showClearConfirm(BuildContext context, AudioProvider audioProvider) {
+    CustomDialog.show(
+      context,
+      title: '清空播放列表',
+      content: '确定要清空当前的播放列表吗？',
+      confirmText: '清空',
+      isDestructive: true,
+    ).then((confirmed) {
+      if (confirmed == true) {
+        audioProvider.clearPlaylist();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,17 +100,32 @@ class QueueDrawer extends StatelessWidget {
                 Consumer<AudioProvider>(
                   builder: (context, audioProvider, child) {
                     if (audioProvider.playlist.isEmpty) return const SizedBox.shrink();
-                    return Tooltip(
-                      message: '清空列表',
-                      child: IconButton(
-                        onPressed: () => _showClearConfirm(context, audioProvider),
-                        icon: Icon(
-                          CupertinoIcons.trash,
-                          size: 20,
-                          color: theme.colorScheme.onSurface.withAlpha(150),
+                    return Row(
+                      children: [
+                        Tooltip(
+                          message: '滚动到当前播放',
+                          child: IconButton(
+                            onPressed: () => _scrollToCurrent(audioProvider),
+                            icon: Icon(
+                              CupertinoIcons.location_fill,
+                              size: 18,
+                              color: theme.colorScheme.onSurface.withAlpha(150),
+                            ),
+                          ),
                         ),
-                        hoverColor: theme.colorScheme.error.withAlpha(20),
-                      ),
+                        Tooltip(
+                          message: '清空列表',
+                          child: IconButton(
+                            onPressed: () => _showClearConfirm(context, audioProvider),
+                            icon: Icon(
+                              CupertinoIcons.trash,
+                              size: 18,
+                              color: theme.colorScheme.onSurface.withAlpha(150),
+                            ),
+                            hoverColor: theme.colorScheme.error.withAlpha(20),
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -121,94 +173,25 @@ class QueueDrawer extends StatelessWidget {
                   );
                 }
 
-                return ListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  itemCount: playlist.length,
-                  itemBuilder: (context, index) {
-                    final song = playlist[index];
-                    final isCurrent = index == currentIndex;
+                return ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    itemCount: playlist.length,
+                    itemExtent: 60,
+                    itemBuilder: (context, index) {
+                      final song = playlist[index];
+                      final isCurrent = index == currentIndex;
 
-                    return Container(
-                      margin: const EdgeInsets.symmetric(vertical: 1),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () => audioProvider.playSong(song, playlist: playlist),
-                          borderRadius: BorderRadius.circular(12),
-                          hoverColor: theme.colorScheme.primary.withAlpha(15),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            child: Row(
-                              children: [
-                                Stack(
-                                  children: [
-                                    CoverImage(
-                                      url: song.cover,
-                                      width: 44,
-                                      height: 44,
-                                      borderRadius: 8,
-                                      showShadow: false,
-                                      size: 100,
-                                    ),
-                                    if (isCurrent)
-                                      Container(
-                                        width: 44,
-                                        height: 44,
-                                        decoration: BoxDecoration(
-                                          color: theme.colorScheme.primary.withAlpha(100),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Center(
-                                          child: Icon(CupertinoIcons.play_fill, color: Colors.white, size: 16),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        song.name,
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
-                                          color: isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurface,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        song.singerName,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (!isCurrent)
-                                  IconButton(
-                                    icon: const Icon(CupertinoIcons.xmark, size: 14),
-                                    onPressed: () => audioProvider.removeFromPlaylist(index),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    color: theme.colorScheme.onSurface.withAlpha(60),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
+                      return _QueueItem(
+                        song: song,
+                        isCurrent: isCurrent,
+                        onTap: () => audioProvider.playSong(song, playlist: playlist),
+                        onRemove: () => audioProvider.removeFromPlaylist(index),
+                      );
+                    },
+                  ),
                 );
               },
             ),
@@ -218,18 +201,115 @@ class QueueDrawer extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _showClearConfirm(BuildContext context, AudioProvider audioProvider) {
-    CustomDialog.show(
-      context,
-      title: '清空播放列表',
-      content: '确定要清空当前的播放列表吗？',
-      confirmText: '清空',
-      isDestructive: true,
-    ).then((confirmed) {
-      if (confirmed == true) {
-        audioProvider.clearPlaylist();
-      }
-    });
+class _QueueItem extends StatefulWidget {
+  final dynamic song;
+  final bool isCurrent;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _QueueItem({
+    required this.song,
+    required this.isCurrent,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  State<_QueueItem> createState() => _QueueItemState();
+}
+
+class _QueueItemState extends State<_QueueItem> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 1),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(12),
+            hoverColor: theme.colorScheme.primary.withAlpha(15),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Stack(
+                    children: [
+                      CoverImage(
+                        url: widget.song.cover,
+                        width: 44,
+                        height: 44,
+                        borderRadius: 8,
+                        showShadow: false,
+                        size: 100,
+                      ),
+                      if (widget.isCurrent)
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primary.withAlpha(100),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Icon(CupertinoIcons.play_fill, color: Colors.white, size: 16),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          widget.song.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: widget.isCurrent ? FontWeight.w800 : FontWeight.w700,
+                            color: widget.isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.song.singerName,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_isHovered && !widget.isCurrent)
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.xmark, size: 14),
+                      onPressed: widget.onRemove,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      color: theme.colorScheme.onSurface.withAlpha(60),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

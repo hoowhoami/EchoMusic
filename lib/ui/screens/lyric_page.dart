@@ -3,11 +3,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
-import 'package:just_audio/just_audio.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/lyric_provider.dart';
-import '../../providers/persistence_provider.dart';
-import '../../providers/user_provider.dart';
 import '../widgets/cover_image.dart';
 
 class LyricPage extends StatefulWidget {
@@ -22,6 +19,12 @@ class _LyricPageState extends State<LyricPage> {
   bool _isAutoScrolling = true;
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final audioProvider = context.watch<AudioProvider>();
@@ -30,16 +33,19 @@ class _LyricPageState extends State<LyricPage> {
 
     if (song == null) return const Scaffold(backgroundColor: Colors.black);
 
-    // Auto-scroll logic
+    // Dynamic line height calculation
+    final bool isDualLine = lyricProvider.lyricsMode != LyricsMode.none;
+    final double lineHeight = isDualLine ? 84.0 : 56.0;
+
+    // Auto-scroll logic with Precise Centering
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_isAutoScrolling && _scrollController.hasClients && lyricProvider.currentLineIndex >= 0) {
-        final screenHeight = MediaQuery.of(context).size.height;
-        // Vertically center the highlighted line
-        final targetOffset = (lyricProvider.currentLineIndex * 70.0) - (screenHeight * 0.5) + 35.0;
+        // With padding equal to half the container height, targetOffset is simply index * lineHeight
+        final targetOffset = lyricProvider.currentLineIndex * lineHeight;
         
         _scrollController.animateTo(
           targetOffset.clamp(0, _scrollController.position.maxScrollExtent),
-          duration: const Duration(milliseconds: 800),
+          duration: const Duration(milliseconds: 600),
           curve: Curves.fastEaseInToSlowEaseOut,
         );
       }
@@ -49,7 +55,7 @@ class _LyricPageState extends State<LyricPage> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. Dynamic Background
+          // Dynamic Background
           Positioned.fill(
             child: Opacity(
               opacity: 0.35,
@@ -63,7 +69,7 @@ class _LyricPageState extends State<LyricPage> {
             ),
           ),
           
-          // 2. Multi-layer Frosted Glass
+          // Multi-layer Frosted Glass
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
@@ -83,7 +89,6 @@ class _LyricPageState extends State<LyricPage> {
             ),
           ),
 
-          // 3. Main Content
           SafeArea(
             child: Column(
               children: [
@@ -93,31 +98,27 @@ class _LyricPageState extends State<LyricPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.center,
-                        child: IconButton(
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28, color: Colors.white60),
-                          onPressed: () => Navigator.pop(context),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
+                      IconButton(
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28, color: Colors.white60),
+                        onPressed: () => Navigator.pop(context),
                       ),
                       const Spacer(),
                       _buildTopAction(
                         icon: Icons.translate_rounded,
-                        isActive: lyricProvider.showTranslation,
-                        onPressed: lyricProvider.toggleTranslation,
+                        isActive: lyricProvider.lyricsMode != LyricsMode.none,
+                        onPressed: lyricProvider.toggleLyricsMode,
+                        label: _getLyricsModeLabel(lyricProvider.lyricsMode),
                       ),
                     ],
                   ),
                 ),
 
+                const SizedBox(height: 60),
+
                 // Middle Section (Cover + Lyrics)
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 100),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -126,57 +127,64 @@ class _LyricPageState extends State<LyricPage> {
                           flex: 4,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Center(
-                                child: Hero(
-                                  tag: 'player_cover',
-                                  child: Container(
-                                    constraints: const BoxConstraints(maxWidth: 260, maxHeight: 260),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withAlpha(120),
-                                          blurRadius: 40,
-                                          offset: const Offset(0, 12),
-                                        ),
-                                      ],
-                                    ),
-                                    child: CoverImage(
-                                      url: song.cover,
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      borderRadius: 16,
-                                      size: 800,
-                                      showShadow: false,
-                                    ),
+                              Hero(
+                                tag: 'player_cover',
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth: MediaQuery.of(context).size.height * 0.4,
+                                    maxHeight: MediaQuery.of(context).size.height * 0.4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black.withAlpha(120), blurRadius: 40, offset: const Offset(0, 12)),
+                                    ],
+                                  ),
+                                  child: CoverImage(
+                                    url: song.cover,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    borderRadius: 16,
+                                    size: 800,
+                                    showShadow: false,
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 40),
                               _buildSongDetails(song, Colors.white),
                             ],
                           ),
                         ),
 
-                        const SizedBox(width: 100),
+                        const SizedBox(width: 80),
 
-                        // Right: Lyrics
+                        // Right: Lyrics (Absolute Center Container)
                         Expanded(
                           flex: 6,
                           child: lyricProvider.lyrics.isEmpty
                               ? _buildEmptyState(lyricProvider.tips)
-                              : _buildLyricList(lyricProvider, audioProvider, theme),
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    // Padding to ensure current line is at the center of this container
+                                    final double verticalPadding = constraints.maxHeight / 2 - lineHeight / 2;
+                                    return _buildLyricList(lyricProvider, audioProvider, theme, verticalPadding, lineHeight);
+                                  },
+                                ),
                         ),
                       ],
                     ),
                   ),
                 ),
 
+                const SizedBox(height: 80),
+
                 // Bottom: Controls
-                _buildBottomControls(context, audioProvider, theme),
-                const SizedBox(height: 40),
+                Center(
+                  child: _buildBottomControls(context, audioProvider, theme),
+                ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -185,75 +193,60 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildTopAction({required IconData icon, required bool isActive, required VoidCallback onPressed}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white.withAlpha(25) : Colors.white.withAlpha(8),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: IconButton(
-        icon: Icon(icon, size: 16, color: isActive ? Colors.white : Colors.white60),
-        onPressed: onPressed,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        padding: EdgeInsets.zero,
+  String _getLyricsModeLabel(LyricsMode mode) {
+    switch (mode) {
+      case LyricsMode.translation: return '翻译';
+      case LyricsMode.romanization: return '音译';
+      case LyricsMode.none: return '纯净';
+    }
+  }
+
+  Widget _buildTopAction({required IconData icon, required bool isActive, required VoidCallback onPressed, String? label}) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white.withAlpha(25) : Colors.white.withAlpha(8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withAlpha(isActive ? 30 : 10)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (label != null) ...[
+              Text(label, style: TextStyle(color: isActive ? Colors.white : Colors.white60, fontSize: 12, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+            ],
+            Icon(icon, size: 16, color: isActive ? Colors.white : Colors.white60),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSongDetails(dynamic song, Color color) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           song.name,
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            color: color,
-            letterSpacing: -0.4,
-            height: 1.2,
-          ),
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: color, letterSpacing: -0.5, height: 1.2),
+          textAlign: TextAlign.center,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 12),
         Text(
           song.singerName,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: color.withAlpha(120),
-          ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(12),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: Colors.white.withAlpha(15)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.album_rounded, size: 10, color: color.withAlpha(120)),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  song.albumName,
-                  style: TextStyle(color: color.withAlpha(120), fontSize: 11, fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: color.withAlpha(180)),
         ),
       ],
     );
   }
 
-  Widget _buildLyricList(LyricProvider lyricProvider, AudioProvider audioProvider, ThemeData theme) {
+  Widget _buildLyricList(LyricProvider lyricProvider, AudioProvider audioProvider, ThemeData theme, double verticalPadding, double lineHeight) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is UserScrollNotification) {
@@ -270,7 +263,7 @@ class _LyricPageState extends State<LyricPage> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent],
-            stops: [0.0, 0.15, 0.85, 1.0],
+            stops: [0.0, 0.2, 0.8, 1.0],
           ).createShader(rect);
         },
         blendMode: BlendMode.dstIn,
@@ -278,16 +271,21 @@ class _LyricPageState extends State<LyricPage> {
           controller: _scrollController,
           itemCount: lyricProvider.lyrics.length,
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(vertical: 240),
+          padding: EdgeInsets.symmetric(vertical: verticalPadding),
           itemBuilder: (context, index) {
             final isCurrentLine = lyricProvider.currentLineIndex == index;
             final line = lyricProvider.lyrics[index];
             
+            String? secondaryText;
+            if (lyricProvider.showTranslation) secondaryText = line.translated;
+            else if (lyricProvider.showRomanization) secondaryText = line.romanized;
+
             return AnimatedOpacity(
               duration: const Duration(milliseconds: 400),
-              opacity: isCurrentLine ? 1.0 : 0.15,
+              opacity: isCurrentLine ? 1.0 : 0.2,
               child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
+                height: lineHeight,
+                alignment: Alignment.center,
                 child: InkWell(
                   onTap: () {
                     audioProvider.player.seek(Duration(milliseconds: line.startTime));
@@ -296,7 +294,7 @@ class _LyricPageState extends State<LyricPage> {
                   hoverColor: Colors.transparent,
                   splashColor: Colors.transparent,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       RichText(
                         textAlign: TextAlign.center,
@@ -305,29 +303,24 @@ class _LyricPageState extends State<LyricPage> {
                             return TextSpan(
                               text: char.text,
                               style: TextStyle(
-                                fontSize: isCurrentLine ? 22 : 18,
-                                fontWeight: FontWeight.w900,
-                                color: char.highlighted 
-                                    ? theme.colorScheme.primary 
-                                    : (isCurrentLine ? Colors.white : Colors.white70),
-                                letterSpacing: -0.3,
-                                height: 1.4,
+                                fontSize: isCurrentLine ? 32 : 24,
+                                fontWeight: FontWeight.w800,
+                                color: char.highlighted ? theme.colorScheme.primary : (isCurrentLine ? Colors.white : Colors.white70),
+                                letterSpacing: 0.8,
+                                shadows: char.highlighted ? [Shadow(color: theme.colorScheme.primary.withAlpha(200), blurRadius: 20)] : null,
                               ),
                             );
                           }).toList(),
                         ),
                       ),
-                      if (lyricProvider.showTranslation && line.translated != null && line.translated!.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                      if (secondaryText != null && secondaryText.isNotEmpty) ...[
+                        const SizedBox(height: 6),
                         Text(
-                          line.translated!,
+                          secondaryText,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: isCurrentLine ? 14 : 12,
-                            fontWeight: FontWeight.w600,
-                            color: (isCurrentLine ? Colors.white : Colors.white54).withAlpha(140),
-                            height: 1.3,
-                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: isCurrentLine ? 18 : 16, fontWeight: FontWeight.w500, color: (isCurrentLine ? Colors.white : Colors.white54).withAlpha(160)),
                         ),
                       ],
                     ],
@@ -343,51 +336,51 @@ class _LyricPageState extends State<LyricPage> {
 
   Widget _buildBottomControls(BuildContext context, AudioProvider audioProvider, ThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 80, vertical: 5),
+      width: 400,
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Progress Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              height: 20,
-              child: Stack(
-                alignment: Alignment.center,
+          StreamBuilder<Duration>(
+            stream: audioProvider.player.positionStream,
+            builder: (context, snapshot) {
+              final position = snapshot.data ?? Duration.zero;
+              final total = audioProvider.player.duration ?? Duration.zero;
+              return Column(
                 children: [
-                  StreamBuilder<Duration>(
-                    stream: audioProvider.player.positionStream,
-                    builder: (context, snapshot) {
-                      final position = snapshot.data ?? Duration.zero;
-                      final total = audioProvider.player.duration ?? Duration.zero;
-                      return ProgressBar(
-                        progress: position,
-                        total: total,
-                        barHeight: 2,
-                        baseBarColor: Colors.white.withAlpha(15),
-                        progressBarColor: theme.colorScheme.primary,
-                        thumbColor: Colors.white,
-                        thumbRadius: 4,
-                        timeLabelLocation: TimeLabelLocation.sides,
-                        timeLabelTextStyle: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
-                        onSeek: (duration) => audioProvider.player.seek(duration),
-                      );
-                    },
+                  ProgressBar(
+                    progress: position,
+                    total: total,
+                    barHeight: 4,
+                    baseBarColor: Colors.white.withAlpha(25),
+                    progressBarColor: theme.colorScheme.primary,
+                    thumbColor: Colors.white,
+                    thumbRadius: 6,
+                    thumbGlowRadius: 0, // Removed big circle on drag
+                    timeLabelLocation: TimeLabelLocation.none,
+                    onSeek: (duration) => audioProvider.player.seek(duration),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_formatDuration(position), style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                      Text(_formatDuration(total), style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
+                    ],
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-          const SizedBox(height: 12),
-          // Buttons
+          const SizedBox(height: 6), // Tightened gap
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildControlBtn(icon: CupertinoIcons.backward_fill, size: 24, onPressed: audioProvider.previous),
-              const SizedBox(width: 44),
+              _buildControlBtn(icon: CupertinoIcons.backward_fill, size: 20, onPressed: audioProvider.previous),
+              const SizedBox(width: 40),
               _buildPlayBtn(audioProvider, theme),
-              const SizedBox(width: 44),
-              _buildControlBtn(icon: CupertinoIcons.forward_fill, size: 24, onPressed: audioProvider.next),
+              const SizedBox(width: 40),
+              _buildControlBtn(icon: CupertinoIcons.forward_fill, size: 20, onPressed: audioProvider.next),
             ],
           ),
         ],
@@ -395,37 +388,37 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    return "${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
+  }
+
   Widget _buildPlayBtn(AudioProvider audioProvider, ThemeData theme) {
     return GestureDetector(
       onTap: audioProvider.isLoading ? null : audioProvider.togglePlay,
       child: Container(
-        width: 50,
-        height: 50,
+        width: 46,
+        height: 46,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withAlpha(12),
-          border: Border.all(color: Colors.white.withAlpha(8)),
+          color: Colors.white.withAlpha(18),
+          border: Border.all(color: Colors.white.withAlpha(10)),
         ),
         child: Center(
           child: audioProvider.isLoading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white60))
-              : Icon(
-                  audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-                  size: 24,
-                  color: Colors.white,
-                ),
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white60))
+              : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 22, color: Colors.white),
         ),
       ),
     );
   }
 
-  Widget _buildControlBtn({required IconData icon, double size = 18, bool isActive = false, required VoidCallback onPressed}) {
+  Widget _buildControlBtn({required IconData icon, double size = 20, bool isActive = false, required VoidCallback onPressed}) {
     return IconButton(
       icon: Icon(icon, size: size, color: isActive ? Colors.white : Colors.white38),
       onPressed: onPressed,
-      splashRadius: 20,
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
     );
   }
 
@@ -436,10 +429,7 @@ class _LyricPageState extends State<LyricPage> {
         children: [
           Icon(Icons.music_note_rounded, size: 48, color: Colors.white.withAlpha(8)),
           const SizedBox(height: 16),
-          Text(
-            tips,
-            style: TextStyle(color: Colors.white.withAlpha(15), fontSize: 16, fontWeight: FontWeight.w700),
-          ),
+          Text(tips, style: TextStyle(color: Colors.white.withAlpha(15), fontSize: 16, fontWeight: FontWeight.w700)),
         ],
       ),
     );
