@@ -41,53 +41,45 @@ class _HomeScreenState extends State<HomeScreen> {
   void _navigateTo(int index) {
     if (index == _selectedIndex && _selectedPlaylistId == null) return;
 
-    // Reset selection mode when navigating to a new main view
     context.read<SelectionProvider>().reset();
 
     setState(() {
-      _selectedPlaylistId = null;
-      // Remove forward history when navigating to a new page
-      if (_historyIndex < _navigationHistory.length - 1) {
-        _navigationHistory.removeRange(_historyIndex + 1, _navigationHistory.length);
+      // If we're clicking the same category but a playlist was open, 
+      // just clear the playlist and pop to root, don't add to history.
+      if (index != _selectedIndex) {
+        if (_historyIndex < _navigationHistory.length - 1) {
+          _navigationHistory.removeRange(_historyIndex + 1, _navigationHistory.length);
+        }
+        _navigationHistory.add(index);
+        _historyIndex = _navigationHistory.length - 1;
+        _selectedIndex = index;
       }
-
-      _navigationHistory.add(index);
-      _historyIndex = _navigationHistory.length - 1;
-      _selectedIndex = index;
-
-      // Pop to root of nested navigator when changing views
+      
+      _selectedPlaylistId = null;
       _navigatorKey.currentState?.popUntil((route) => route.isFirst);
     });
   }
 
   void _pushRoute(Widget page, {dynamic playlistId}) {
-    if (playlistId != null && _selectedPlaylistId == playlistId) {
-      return;
-    }
-
-    // Reset selection mode when pushing a new route
+    if (playlistId != null && _selectedPlaylistId == playlistId) return;
+    
     context.read<SelectionProvider>().reset();
-
-    if (playlistId != null) {
-      setState(() {
-        _selectedPlaylistId = playlistId;
-      });
-    }
-
-    _navigatorKey.currentState?.push(
-      CupertinoPageRoute(builder: (_) => page),
-    ).then((_) {
-      if (mounted) setState(() {});
+    setState(() {
+      _selectedPlaylistId = playlistId;
     });
+    _navigatorKey.currentState?.push(
+      CupertinoPageRoute(
+        builder: (_) => page,
+        settings: RouteSettings(arguments: playlistId),
+      ),
+    );
   }
 
   void _goBack() {
     if (_navigatorKey.currentState?.canPop() ?? false) {
       _navigatorKey.currentState?.pop();
-      if (mounted) setState(() {});
       return;
     }
-
     if (_historyIndex > 0) {
       context.read<SelectionProvider>().reset();
       setState(() {
@@ -107,12 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _refresh() {
-    setState(() {
-      // Trigger rebuild to refresh current view
-    });
-  }
-
   bool get canGoBack => (_navigatorKey.currentState?.canPop() ?? false) || _historyIndex > 0;
   bool get canGoForward => _historyIndex < _navigationHistory.length - 1;
 
@@ -120,28 +106,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final persistence = context.read<PersistenceProvider>();
     if (persistence.device == null) {
       final device = await MusicApi.registerDevice();
-      if (device != null) {
-        await persistence.setDevice(device);
-      }
+      if (device != null) await persistence.setDevice(device);
     }
-    
-    // Auto fetch user data if authenticated
     final userProvider = context.read<UserProvider>();
-    userProvider.onPlaylistError = (message) {
-      if (mounted) {
-        CustomDialog.show(
-          context,
-          title: '提示',
-          content: message,
-          confirmText: '我知道了',
-          showCancel: false,
-        );
-      }
-    };
-
-    if (userProvider.isAuthenticated) {
-      userProvider.fetchAllUserData();
-    }
+    if (userProvider.isAuthenticated) userProvider.fetchAllUserData();
   }
 
   final List<Widget> _views = [
@@ -164,29 +132,16 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Expanded(
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Solid Sidebar
                 Container(
                   width: 260,
-                  height: double.infinity,
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surface,
-                    border: Border(
-                      right: BorderSide(
-                        color: theme.dividerColor.withAlpha(40), // More subtle border
-                        width: 0.5,
-                      ),
-                    ),
+                    border: Border(right: BorderSide(color: theme.dividerColor.withAlpha(40), width: 0.5)),
                   ),
                   child: Column(
                     children: [
-                      // Window Control & Drag Area
-                      SizedBox(
-                        height: 48,
-                        child: MoveWindow(),
-                      ),
-                      // Scrollable Sidebar Content
+                      SizedBox(height: 48, child: MoveWindow()),
                       Expanded(
                         child: Sidebar(
                           selectedIndex: _selectedIndex,
@@ -198,72 +153,43 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-
-                // Main Content area
                 Expanded(
                   child: Column(
                     children: [
-                      // Redesigned Top bar
                       Container(
                         height: 48,
                         decoration: BoxDecoration(
                           color: theme.scaffoldBackgroundColor,
-                          border: Border(
-                            bottom: BorderSide(
-                              color: theme.dividerColor.withAlpha(30), // Even lighter top border
-                              width: 0.5,
-                            ),
-                          ),
+                          border: Border(bottom: BorderSide(color: theme.dividerColor.withAlpha(30), width: 0.5)),
                         ),
                         child: Row(
                           children: [
                             const SizedBox(width: 12),
-                            _buildNavButton(
-                              icon: CupertinoIcons.chevron_left,
-                              onPressed: canGoBack ? _goBack : null,
-                              tooltip: '后退',
-                            ),
+                            _buildNavButton(icon: CupertinoIcons.chevron_left, onPressed: canGoBack ? _goBack : null, tooltip: '后退'),
                             const SizedBox(width: 8),
-                            _buildNavButton(
-                              icon: CupertinoIcons.chevron_right,
-                              onPressed: canGoForward ? _goForward : null,
-                              tooltip: '前进',
-                            ),
-                            const SizedBox(width: 8),
-                            _buildNavButton(
-                              icon: CupertinoIcons.refresh,
-                              onPressed: _refresh,
-                              tooltip: '刷新',
-                            ),
+                            _buildNavButton(icon: CupertinoIcons.chevron_right, onPressed: canGoForward ? _goForward : null, tooltip: '前进'),
                             Expanded(child: MoveWindow()),
-                            if (!Platform.isMacOS)
-                              const WindowButtons(),
+                            if (!Platform.isMacOS) const WindowButtons(),
                           ],
                         ),
                       ),
-                      // Content View
                       Expanded(
                         child: Navigator(
                           key: _navigatorKey,
-                          observers: [
-                            _NavigationObserver(() {
-                              if (mounted) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) setState(() {});
-                                });
-                              }
-                            }),
-                          ],
-                          onGenerateRoute: (settings) {
-                            return PageRouteBuilder(
-                              pageBuilder: (context, animation, secondaryAnimation) {
-                                return IndexedStack(
-                                  index: _selectedIndex,
-                                  children: _views,
-                                );
-                              },
-                            );
-                          },
+                          observers: [_NavigationObserver((route) {
+                            if (mounted) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  setState(() {
+                                    _selectedPlaylistId = route?.settings.arguments;
+                                  });
+                                }
+                              });
+                            }
+                          })],
+                          onGenerateRoute: (settings) => PageRouteBuilder(
+                            pageBuilder: (context, _, __) => IndexedStack(index: _selectedIndex, children: _views),
+                          ),
                         ),
                       ),
                     ],
@@ -272,97 +198,41 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-
-          // Bottom Player Bar
           const PlayerBar(),
         ],
       ),
     );
   }
 
-  Widget _buildNavButton({
-    required IconData icon,
-    required VoidCallback? onPressed,
-    required String tooltip,
-  }) {
+  Widget _buildNavButton({required IconData icon, required VoidCallback? onPressed, required String tooltip}) {
     final theme = Theme.of(context);
-    final isEnabled = onPressed != null;
-
     return Tooltip(
       message: tooltip,
       child: IconButton(
-        icon: Icon(
-          icon,
-          size: 18,
-          color: isEnabled
-              ? theme.colorScheme.onSurface
-              : theme.colorScheme.onSurface.withAlpha(60),
-        ),
+        icon: Icon(icon, size: 18, color: onPressed != null ? theme.colorScheme.onSurface : theme.colorScheme.onSurface.withAlpha(60)),
         onPressed: onPressed,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-        splashRadius: 18,
       ),
     );
   }
 }
 
+class _NavigationObserver extends NavigatorObserver {
+  final Function(Route?) onStateChanged;
+  _NavigationObserver(this.onStateChanged);
+  @override
+  void didPush(Route route, Route? prev) => onStateChanged(route);
+  @override
+  void didPop(Route route, Route? prev) => onStateChanged(prev);
+}
+
 class WindowButtons extends StatelessWidget {
   const WindowButtons({super.key});
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    final buttonColors = WindowButtonColors(
-        iconNormal: theme.colorScheme.onSurfaceVariant,
-        mouseOver: theme.colorScheme.onSurface.withAlpha(25),
-        mouseDown: theme.colorScheme.onSurface.withAlpha(50),
-        iconMouseOver: theme.colorScheme.onSurface,
-        iconMouseDown: theme.colorScheme.onSurface);
-
-    final closeButtonColors = WindowButtonColors(
-        mouseOver: const Color(0xFFD32F2F),
-        mouseDown: const Color(0xFFB71C1C),
-        iconNormal: theme.colorScheme.onSurfaceVariant,
-        iconMouseOver: Colors.white);
-
-    return Row(
-      children: [
-        MinimizeWindowButton(colors: buttonColors),
-        MaximizeWindowButton(colors: buttonColors),
-        CloseWindowButton(colors: closeButtonColors),
-      ],
-    );
-  }
-}
-
-class _NavigationObserver extends NavigatorObserver {
-  final VoidCallback onStateChanged;
-
-  _NavigationObserver(this.onStateChanged);
-
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didPush(route, previousRoute);
-    onStateChanged();
-  }
-
-  @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didPop(route, previousRoute);
-    onStateChanged();
-  }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    super.didRemove(route, previousRoute);
-    onStateChanged();
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-    onStateChanged();
+    final buttonColors = WindowButtonColors(iconNormal: theme.colorScheme.onSurfaceVariant, mouseOver: theme.colorScheme.onSurface.withAlpha(25), mouseDown: theme.colorScheme.onSurface.withAlpha(50), iconMouseOver: theme.colorScheme.onSurface, iconMouseDown: theme.colorScheme.onSurface);
+    return Row(children: [MinimizeWindowButton(colors: buttonColors), MaximizeWindowButton(colors: buttonColors), CloseWindowButton(colors: WindowButtonColors(mouseOver: const Color(0xFFD32F2F), mouseDown: const Color(0xFFB71C1C), iconNormal: theme.colorScheme.onSurfaceVariant, iconMouseOver: Colors.white))]);
   }
 }

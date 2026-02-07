@@ -1,85 +1,94 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
 class AudioProvider with ChangeNotifier {
-  final AudioPlayer _player = AudioPlayer();
+  final Player player = Player();
+  final List<StreamSubscription> _subscriptions = [];
+  final StreamController<double> _userVolumeController = StreamController<double>.broadcast();
+
   Song? _currentSong;
   List<Song> _playlist = [];
   List<Song> _originalPlaylist = [];
   int _currentIndex = -1;
+  bool _isLoading = false;
+  bool _isShuffle = false;
+  bool _isDisposed = false;
+  double _playbackRate = 1.0;
+  final Map<double, String> _climaxMarks = {};
+
   LyricProvider? _lyricProvider;
   PersistenceProvider? _persistenceProvider;
 
-  LoopMode _loopMode = LoopMode.off;
-  bool _isShuffle = false;
-  double _playbackRate = 1.0;
-  bool _isLoading = false;
-  final Map<double, String> _climaxMarks = {};
-
-  AudioPlayer get player => _player;
+  // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  bool get isPlaying => _player.playing;
-  bool get isLoading => _isLoading;
-  LoopMode get loopMode => _loopMode;
+  bool get isPlaying => player.state.playing;
+  bool get isLoading => _isLoading || player.state.buffering;
+  PlaylistMode get loopMode => player.state.playlistMode;
   bool get isShuffle => _isShuffle;
   double get playbackRate => _playbackRate;
   Map<double, String> get climaxMarks => _climaxMarks;
+  Stream<double> get userVolumeStream => _userVolumeController.stream;
 
   AudioProvider() {
-    _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        if (_loopMode == LoopMode.one) {
-          _player.seek(Duration.zero);
-          _player.play();
-        } else {
-          next();
-        }
-      }
-      notifyListeners();
-    });
-
-    _player.positionStream.listen((position) {
-      // Performance: Only update lyrics if the page is actually open
-      if (_lyricProvider?.isPageOpen == true) {
-        _lyricProvider?.updateHighlight(position);
-      }
-    });
-
-    _player.volumeStream.listen((volume) {
-      _persistenceProvider?.saveVolume(volume);
-    });
+    _initListeners();
   }
 
-  void setPlaybackRate(double rate) {
-    _playbackRate = rate;
-    _player.setSpeed(rate);
-    notifyListeners();
+  void _initListeners() {
+    _subscriptions.add(player.stream.completed.listen((c) {
+      if (_isDisposed || !c) return;
+      loopMode == PlaylistMode.single ? player.seek(Duration.zero) : next();
+    }));
+
+    _subscriptions.add(player.stream.playing.listen((_) => _safeNotify()));
+    _subscriptions.add(player.stream.buffering.listen((_) => _safeNotify()));
+    
+    _subscriptions.add(player.stream.position.listen((pos) {
+      if (_isDisposed) return;
+      if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
+    }));
+
+    _subscriptions.add(player.stream.volume.listen((v) {
+      if (_isDisposed) return;
+      final normalized = v / 100.0;
+      _persistenceProvider?.saveVolume(normalized);
+      _userVolumeController.add(normalized);
+    }));
   }
 
-  void setLyricProvider(LyricProvider provider) {
-    _lyricProvider = provider;
+  void _safeNotify() {
+    if (!_isDisposed) notifyListeners();
   }
 
-  void setPersistenceProvider(PersistenceProvider provider) {
-    _persistenceProvider = provider;
-    _player.setVolume(provider.volume);
+  void setLyricProvider(LyricProvider p) => _lyricProvider = p;
+  void setPersistenceProvider(PersistenceProvider p) {
+    _persistenceProvider = p;
+    player.setVolume(p.volume * 100.0);
+    _userVolumeController.add(p.volume);
+  }
+
+  void setVolume(double v) {
+    if (_isDisposed) return;
+    player.setVolume(v * 100.0);
+  }
+
+  void setPlaybackRate(double r) {
+    _playbackRate = r;
+    player.setRate(r);
+    _safeNotify();
   }
 
   void toggleLoopMode() {
-    if (_loopMode == LoopMode.off) {
-      _loopMode = LoopMode.all;
-    } else if (_loopMode == LoopMode.all) {
-      _loopMode = LoopMode.one;
-    } else {
-      _loopMode = LoopMode.off;
-    }
-    notifyListeners();
+    final mode = player.state.playlistMode;
+    final nextMode = mode == PlaylistMode.none ? PlaylistMode.loop : (mode == PlaylistMode.loop ? PlaylistMode.single : PlaylistMode.none);
+    player.setPlaylistMode(nextMode);
+    _safeNotify();
   }
 
   void toggleShuffle() {
@@ -91,223 +100,54 @@ class AudioProvider with ChangeNotifier {
       _playlist = List.from(_originalPlaylist);
     }
     _currentIndex = _playlist.indexWhere((s) => s.hash == _currentSong?.hash);
-    notifyListeners();
+    _safeNotify();
   }
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
+    if (_isDisposed) return;
     if (playlist != null) {
       _playlist = List.from(playlist);
       _originalPlaylist = List.from(playlist);
-      if (_isShuffle) {
-        _playlist.shuffle();
-      }
+      if (_isShuffle) _playlist.shuffle();
     }
-    
     _currentIndex = _playlist.indexWhere((s) => s.hash == song.hash);
     _currentSong = song;
-    notifyListeners();
+    _safeNotify();
 
-    await _initPlayer(song);
-  }
-
-  Future<void> _initPlayer(Song song) async {
     _isLoading = true;
-    notifyListeners();
+    _safeNotify();
 
     try {
       _persistenceProvider?.addToHistory(song);
-      _lyricProvider?.clear();
-      // Optimization: No longer fetch lyrics immediately. 
-      // They will be loaded when the lyric page is opened.
       _fetchClimax(song);
+      final result = await _getAudioUrlWithQuality(song);
+      if (_isDisposed || result == null || result['url'] == null) return;
 
-      final urlResult = await _getAudioUrlWithQuality(song);
-      if (urlResult != null) {
-        final String url = urlResult['url'];
-        final isFlac = urlResult['isFlac'];
-        
-        debugPrint('Playing URL: $url (Lossless: $isFlac)');
-
-        final source = AudioSource.uri(
-          Uri.parse(url),
-          headers: {
-            'User-Agent': 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi',
-          },
-        );
-
-        await _player.setAudioSource(source);
-        _player.setSpeed(_playbackRate);
-        _player.play();
-      } else {
-        _handleLoadFailure(song);
-      }
-    } catch (e) {
-      debugPrint('Error initializing player: $e');
-      if (e.toString().contains('-11800') || e.toString().contains('codec')) {
-        final result = await MusicApi.getSongUrl(song.hash, quality: '128');
-        if (result != null && result['status'] == 1 && result['url'] != null) {
-          try {
-            await _player.setUrl(result['url']);
-            _player.play();
-            return;
-          } catch (fallbackError) {
-            // Error logged
-          }
-        }
-      }
-      _handleLoadFailure(song);
+      await player.open(Media(result['url']), play: true);
+      player.setRate(_playbackRate);
     } finally {
       _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  void _handleLoadFailure(Song song) {
-    if (_persistenceProvider?.settings['autoNext'] ?? true) {
-      next();
+      _safeNotify();
     }
   }
 
   Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
     if (song.source == 'cloud') {
       final url = await MusicApi.getCloudSongUrl(song.hash);
-      return url != null ? {'url': url, 'isFlac': false} : null;
+      return url != null ? {'url': url} : null;
     }
-
-    final privilegeList = await MusicApi.getSongPrivilege(song.hash, albumId: song.albumId);
-    final List<dynamic> relateGoods = privilegeList.isNotEmpty 
-        ? (privilegeList[0]['relate_goods'] ?? []) 
-        : (song.relateGoods ?? []);
-
+    // 尝试获取设置中的音质
     final settings = _persistenceProvider?.settings ?? {};
-    final primaryQuality = settings['audioQuality'] ?? 'flac';
-    final backupQuality = settings['backupQuality'] ?? '128';
-    final compatibilityMode = settings['compatibilityMode'] ?? true;
-
-    final qualitiesToTry = [primaryQuality];
-    if (compatibilityMode && backupQuality != primaryQuality) {
-      qualitiesToTry.add(backupQuality);
-    }
-
-    for (var apiQuality in qualitiesToTry) {
-      String targetHash = song.hash;
-
-      if (relateGoods.isNotEmpty) {
-        Map<String, dynamic>? match;
-        for (final item in relateGoods) {
-          if (item['quality'] == apiQuality) {
-            match = item is Map<String, dynamic> ? item : Map<String, dynamic>.from(item);
-            break;
-          }
-        }
-        if (match != null && match['hash'] != null) {
-          targetHash = match['hash'];
-        }
-      }
-
-      final result = await MusicApi.getSongUrl(targetHash, quality: apiQuality);
-      if (result != null) {
-        final status = result['status'];
-        final url = result['url'];
-        
-        if (status == 1 && url != null && url.isNotEmpty) {
-          return {
-            'url': url,
-            'isFlac': apiQuality == 'flac',
-          };
-        }
-      }
-    }
-
-    if (compatibilityMode) {
-      final result = await MusicApi.getSongUrl(song.hash);
-      if (result != null && result['status'] == 1 && result['url'] != null) {
-        return {'url': result['url'], 'isFlac': false};
-      }
-    }
-
-    return null;
-  }
-
-  /// Public method to load lyrics on demand
-  Future<void> fetchLyrics() async {
-    final song = _currentSong;
-    if (song == null) return;
+    final quality = settings['audioQuality'] ?? 'flac';
+    final result = await MusicApi.getSongUrl(song.hash, quality: quality);
+    if (result != null && result['url'] != null) return {'url': result['url']};
     
-    // Skip if already loaded for this exact hash
-    if (_lyricProvider?.loadedHash == song.hash) return;
-
-    await _fetchLyrics(song.hash);
+    // 备选音质
+    final backup = await MusicApi.getSongUrl(song.hash);
+    return (backup != null && backup['url'] != null) ? {'url': backup['url']} : null;
   }
 
-  Future<void> _fetchLyrics(String hash) async {
-    final searchResult = await MusicApi.searchLyric(hash);
-    
-    dynamic targetCandidate;
-    if (searchResult != null && searchResult['candidates'] != null && searchResult['candidates'] is List && searchResult['candidates'].isNotEmpty) {
-      targetCandidate = searchResult['candidates'][0];
-    } else if (searchResult != null && searchResult['info'] != null && searchResult['info'] is List && searchResult['info'].isNotEmpty) {
-      targetCandidate = searchResult['info'][0];
-    }
-
-    if (targetCandidate != null) {
-      final lyricData = await MusicApi.getLyric(
-        targetCandidate['id']?.toString() ?? '', 
-        targetCandidate['accesskey']?.toString() ?? ''
-      );
-      if (lyricData != null) {
-        // Tag with hash for cache tracking
-        _lyricProvider?.parseLyrics(lyricData, hash: hash);
-      }
-    }
-  }
-
-  Future<void> _fetchClimax(Song song) async {
-    _climaxMarks.clear();
-    notifyListeners();
-
-    try {
-      final result = await MusicApi.getSongClimaxRaw(song.hash);
-      if (result.isNotEmpty) {
-        final songDuration = song.duration > 0 ? song.duration : 1;
-        for (final item in result) {
-          final startTime = item['start_time'] ?? item['starttime'];
-          final endTime = item['end_time'] ?? item['endtime'];
-
-          if (startTime != null) {
-            final startMs = startTime is String ? int.parse(startTime) : (startTime as num).toInt();
-            if (startMs > 0) {
-              final startProgress = (startMs / 1000) / songDuration;
-              _climaxMarks[startProgress.clamp(0.0, 1.0)] = '';
-            }
-          }
-
-          if (endTime != null) {
-            final endMs = endTime is String ? int.parse(endTime) : (endTime as num).toInt();
-            if (endMs > 0) {
-              final endProgress = (endMs / 1000) / songDuration;
-              _climaxMarks[endProgress.clamp(0.0, 1.0)] = '';
-            }
-          }
-        }
-        notifyListeners();
-      }
-    } catch (e) {
-      // Silence climax errors
-    }
-  }
-
-  void togglePlay() {
-    if (_player.playing) {
-      _player.pause();
-    } else {
-      if (_currentSong != null) {
-        _player.play();
-      }
-    }
-    notifyListeners();
-  }
-
+  void togglePlay() => player.playOrPause();
   void next() {
     if (_playlist.isEmpty) return;
     _currentIndex = (_currentIndex + 1) % _playlist.length;
@@ -324,19 +164,17 @@ class AudioProvider with ChangeNotifier {
     _playlist = [];
     _originalPlaylist = [];
     _currentIndex = -1;
-    notifyListeners();
+    _safeNotify();
   }
 
   void removeFromPlaylist(int index) {
     if (index < 0 || index >= _playlist.length) return;
-
     final removed = _playlist[index];
     _playlist.removeAt(index);
-
     if (_currentIndex == index) {
       if (_playlist.isEmpty) {
         _currentSong = null;
-        _player.stop();
+        player.stop();
       } else {
         _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);
@@ -344,17 +182,45 @@ class AudioProvider with ChangeNotifier {
     } else if (_currentIndex > index) {
       _currentIndex--;
     }
+    if (_isShuffle) _originalPlaylist.removeWhere((s) => s.hash == removed.hash);
+    _safeNotify();
+  }
 
-    if (_isShuffle) {
-      _originalPlaylist.removeWhere((s) => s.hash == removed.hash);
+  Future<void> fetchLyrics() async {
+    final song = _currentSong;
+    if (song == null) return;
+    final searchResult = await MusicApi.searchLyric(song.hash);
+    final target = (searchResult?['candidates']?.isNotEmpty ?? false) ? searchResult!['candidates'][0] : (searchResult?['info']?.isNotEmpty ?? false ? searchResult!['info'][0] : null);
+    if (target != null) {
+      final lyricData = await MusicApi.getLyric(target['id']?.toString() ?? '', target['accesskey']?.toString() ?? '');
+      if (lyricData != null) _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
     }
+  }
 
-    notifyListeners();
+  Future<void> _fetchClimax(Song song) async {
+    _climaxMarks.clear();
+    try {
+      final result = await MusicApi.getSongClimaxRaw(song.hash);
+      for (var item in result) {
+        final start = item['start_time'] ?? item['starttime'];
+        if (start != null) {
+          final time = start is String ? int.parse(start) : (start as num).toInt();
+          _climaxMarks[time / 1000 / (song.duration > 0 ? song.duration : 1)] = '';
+        }
+      }
+      _safeNotify();
+    } catch (_) {}
   }
 
   @override
   void dispose() {
-    _player.dispose();
+    _isDisposed = true;
+    for (var sub in _subscriptions) {
+      sub.cancel();
+    }
+    _subscriptions.clear();
+    _userVolumeController.close();
+    player.stop(); // 停止播放但不立即销毁，以缓解开发环境下的 FFI 竞争
     super.dispose();
   }
 }

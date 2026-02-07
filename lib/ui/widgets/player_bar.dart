@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/lyric_provider.dart';
@@ -30,7 +30,7 @@ class PlayerBar extends StatelessWidget {
             color: theme.colorScheme.surface,
             border: Border(
               top: BorderSide(
-                color: theme.dividerColor.withAlpha(20),
+                color: theme.dividerColor.withAlpha(15),
                 width: 0.5,
               ),
             ),
@@ -46,42 +46,80 @@ class PlayerBar extends StatelessWidget {
                     : _buildPlayerContent(context, song, audioProvider, persistenceProvider, theme, accentColor),
               ),
 
-              // 2. High-Precision Progress Bar Layer (Floating at top)
+              // 2. Redesigned Progress Bar (Top Integrated)
               if (song != null)
                 Positioned(
-                  top: -2, // Perfectly aligned with the top border
+                  top: -10, // Higher positioning for larger hit area
                   left: 0,
                   right: 0,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: SizedBox(
-                      height: 4, 
-                      child: StreamBuilder<Duration>(
-                        stream: audioProvider.player.positionStream,
-                        builder: (context, snapshot) {
-                          final position = snapshot.data ?? Duration.zero;
-                          final total = audioProvider.player.duration ?? Duration.zero;
-                          return ProgressBar(
-                            progress: position,
-                            total: total,
-                            barHeight: 2.5,
-                            baseBarColor: Colors.transparent, 
-                            progressBarColor: accentColor,
-                            thumbColor: accentColor,
-                            thumbRadius: 0.0, // Hidden thumb for cleaner look on bar
-                            thumbGlowRadius: 0,
-                            onSeek: (duration) => audioProvider.player.seek(duration),
-                            timeLabelLocation: TimeLabelLocation.none,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
+                  child: _buildIntegratedProgressBar(audioProvider, accentColor, theme),
                 ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildIntegratedProgressBar(AudioProvider audioProvider, Color accentColor, ThemeData theme) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            height: 20, // Large hit area for easy mouse interaction
+            width: double.infinity,
+            color: Colors.transparent, // Ensures the entire height is clickable
+            child: Stack(
+              alignment: Alignment.centerLeft,
+              children: [
+                // The actual bar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 0),
+                  child: StreamBuilder<Duration>(
+                    stream: audioProvider.player.stream.position,
+                    builder: (context, snapshot) {
+                      final position = snapshot.data ?? Duration.zero;
+                      final total = audioProvider.player.state.duration;
+                      return ProgressBar(
+                        progress: position,
+                        total: total,
+                        barHeight: 4.0, // Slightly thicker for visibility
+                        baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
+                        progressBarColor: accentColor,
+                        thumbColor: accentColor,
+                        thumbRadius: 7.0, // Larger thumb for better control
+                        thumbGlowRadius: 15.0,
+                        onSeek: (duration) => audioProvider.player.seek(duration),
+                        timeLabelLocation: TimeLabelLocation.none,
+                      );
+                    },
+                  ),
+                ),
+                
+                // Climax Dots (Embedded in the bar)
+                ...audioProvider.climaxMarks.keys.map((p) => Positioned(
+                  left: constraints.maxWidth * p - 2, // Centering the 4px dot
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(220),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 3),
+                          BoxShadow(color: accentColor.withAlpha(100), blurRadius: 5),
+                        ],
+                      ),
+                    ),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        );
+      }
     );
   }
 
@@ -199,10 +237,10 @@ class PlayerBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               StreamBuilder<Duration>(
-                stream: audioProvider.player.positionStream,
+                stream: audioProvider.player.stream.position,
                 builder: (context, snapshot) {
                   final position = snapshot.data ?? Duration.zero;
-                  final total = audioProvider.player.duration ?? Duration.zero;
+                  final total = audioProvider.player.state.duration;
                   return Text(
                     '${_formatDuration(position)} / ${_formatDuration(total)}',
                     style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
@@ -211,13 +249,13 @@ class PlayerBar extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               _PlayerIconButton(
-                icon: audioProvider.loopMode == LoopMode.one ? CupertinoIcons.repeat_1 : (audioProvider.loopMode == LoopMode.all ? CupertinoIcons.repeat : CupertinoIcons.shuffle),
+                icon: audioProvider.loopMode == PlaylistMode.single ? CupertinoIcons.repeat_1 : (audioProvider.loopMode == PlaylistMode.loop ? CupertinoIcons.repeat : CupertinoIcons.shuffle),
                 isSelected: true,
                 onPressed: audioProvider.toggleLoopMode,
                 size: 18,
               ),
               const SizedBox(width: 8),
-              _buildVolumeSlider(theme, audioProvider),
+              _buildVolumeSlider(theme, audioProvider, persistenceProvider),
               const SizedBox(width: 8),
               _PlayerIconButton(
                 icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
@@ -261,14 +299,15 @@ class PlayerBar extends StatelessWidget {
     );
   }
 
-  Widget _buildVolumeSlider(ThemeData theme, AudioProvider audioProvider) {
+  Widget _buildVolumeSlider(ThemeData theme, AudioProvider audioProvider, PersistenceProvider persistenceProvider) {
     return Row(
       children: [
         Icon(CupertinoIcons.speaker_2_fill, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
         SizedBox(
           width: 80,
           child: StreamBuilder<double>(
-            stream: audioProvider.player.volumeStream,
+            stream: audioProvider.userVolumeStream,
+            initialData: persistenceProvider.volume,
             builder: (context, snapshot) {
               return SliderTheme(
                 data: theme.sliderTheme.copyWith(
@@ -278,7 +317,7 @@ class PlayerBar extends StatelessWidget {
                 ),
                 child: Slider(
                   value: snapshot.data ?? 1.0,
-                  onChanged: (value) => audioProvider.player.setVolume(value),
+                  onChanged: (value) => audioProvider.setVolume(value),
                 ),
               );
             },
