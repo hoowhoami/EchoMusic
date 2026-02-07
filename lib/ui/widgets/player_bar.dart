@@ -97,24 +97,29 @@ class PlayerBar extends StatelessWidget {
                   ),
                 ),
                 
-                // Climax Dots (Embedded in the bar)
-                ...audioProvider.climaxMarks.keys.map((p) => Positioned(
-                  left: constraints.maxWidth * p - 2, // Centering the 4px dot
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 4,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(220),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withAlpha(80), blurRadius: 3),
-                          BoxShadow(color: accentColor.withAlpha(100), blurRadius: 5),
-                        ],
+                // Climax Bars (Embedded in the bar)
+                ...audioProvider.climaxMarks.entries.map((entry) {
+                  final start = entry.key;
+                  final end = entry.value;
+                  final barWidth = (end - start) * constraints.maxWidth;
+                  
+                  return Positioned(
+                    left: constraints.maxWidth * start,
+                    child: IgnorePointer(
+                      child: Container(
+                        width: barWidth.clamp(6.0, constraints.maxWidth), // At least 6px for visibility
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(160),
+                          borderRadius: BorderRadius.circular(2),
+                          boxShadow: [
+                            BoxShadow(color: accentColor.withAlpha(80), blurRadius: 4),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                )),
+                  );
+                }),
               ],
             ),
           ),

@@ -19,7 +19,7 @@ class AudioProvider with ChangeNotifier {
   bool _isShuffle = false;
   bool _isDisposed = false;
   double _playbackRate = 1.0;
-  final Map<double, String> _climaxMarks = {};
+  final Map<double, double> _climaxMarks = {};
 
   LyricProvider? _lyricProvider;
   PersistenceProvider? _persistenceProvider;
@@ -33,7 +33,7 @@ class AudioProvider with ChangeNotifier {
   PlaylistMode get loopMode => player.state.playlistMode;
   bool get isShuffle => _isShuffle;
   double get playbackRate => _playbackRate;
-  Map<double, String> get climaxMarks => _climaxMarks;
+  Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
 
   AudioProvider() {
@@ -201,11 +201,17 @@ class AudioProvider with ChangeNotifier {
     _climaxMarks.clear();
     try {
       final result = await MusicApi.getSongClimaxRaw(song.hash);
+      final songDur = song.duration > 0 ? song.duration : 1;
       for (var item in result) {
         final start = item['start_time'] ?? item['starttime'];
+        final end = item['end_time'] ?? item['endtime'];
         if (start != null) {
-          final time = start is String ? int.parse(start) : (start as num).toInt();
-          _climaxMarks[time / 1000 / (song.duration > 0 ? song.duration : 1)] = '';
+          final startTime = start is String ? int.parse(start) : (start as num).toInt();
+          final endTime = end != null 
+              ? (end is String ? int.parse(end) : (end as num).toInt())
+              : startTime + 15000; // 如果没结束时间，默认展示15秒高潮段
+          
+          _climaxMarks[startTime / 1000 / songDur] = endTime / 1000 / songDur;
         }
       }
       _safeNotify();
