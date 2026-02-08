@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
 import '../utils/constants.dart';
@@ -144,13 +145,26 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _safeNotify() {
-    if (!_isDisposed) notifyListeners();
+    if (!_isDisposed) {
+      notifyListeners();
+      _updateWakelock();
+    }
+  }
+
+  void _updateWakelock() {
+    if (_isDisposed) return;
+    final preventSleep = _persistenceProvider?.settings['preventSleep'] ?? true;
+    final isPlaying = _player.state.playing;
+    
+    // Only prevent sleep when both enabled and playing
+    WakelockPlus.toggle(enable: preventSleep && isPlaying);
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
+    _updateWakelock();
     final savedVol = p.volume;
     _player.setVolume(savedVol * 100.0);
     _userVolumeController.add(savedVol);
@@ -513,6 +527,7 @@ class AudioProvider with ChangeNotifier {
     _volumeSaveTimer?.cancel();
     _cancelSubscriptions();
     _userVolumeController.close();
+    WakelockPlus.disable(); // Ensure wakelock is released
     _player.dispose(); // CRITICAL: Fix crash on exit
     super.dispose();
   }

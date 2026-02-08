@@ -71,20 +71,45 @@ class _PlayerBarState extends State<PlayerBar> {
   }
 
   Widget _buildIntegratedProgressBar(AudioProvider audioProvider, Color accentColor, ThemeData theme) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: Container(
-            height: 20,
-            width: double.infinity,
-            color: Colors.transparent,
-            child: Stack(
-              alignment: Alignment.centerLeft,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 0),
-                  child: StreamBuilder<Duration>(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Container(
+              height: 20,
+              color: Colors.transparent,
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  // Range background line (Subtle, Centered)
+                  ...audioProvider.climaxMarks.entries.map((entry) {
+                    final start = entry.key;
+                    final end = entry.value;
+                    return Positioned(
+                      left: constraints.maxWidth * start,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: Container(
+                          width: (end - start) * constraints.maxWidth,
+                          height: 2,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFFFF8F00).withAlpha(0),
+                                const Color(0xFFFF8F00).withAlpha(80),
+                                const Color(0xFFFF8F00).withAlpha(0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  // Main Progress Bar
+                  StreamBuilder<Duration>(
                     stream: audioProvider.player.stream.position,
                     builder: (context, snapshot) {
                       final position = snapshot.data ?? Duration.zero;
@@ -103,33 +128,31 @@ class _PlayerBarState extends State<PlayerBar> {
                       );
                     },
                   ),
-                ),
-                ...audioProvider.climaxMarks.entries.map((entry) {
-                  final start = entry.key;
-                  final end = entry.value;
-                  final barWidth = (end - start) * constraints.maxWidth;
-                  return Positioned(
-                    left: constraints.maxWidth * start,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: barWidth.clamp(6.0, constraints.maxWidth),
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.onPrimary.withAlpha(180),
-                          borderRadius: BorderRadius.circular(2),
-                          boxShadow: [
-                            BoxShadow(color: accentColor.withAlpha(80), blurRadius: 4),
-                          ],
-                        ),
+                  // Boundary markers (Two points style, Centered)
+                  ...audioProvider.climaxMarks.entries.expand((entry) {
+                    final start = entry.key;
+                    final end = entry.value;
+                    return [
+                      Positioned(
+                        left: constraints.maxWidth * start - 5,
+                        top: 0,
+                        bottom: 0,
+                        child: const Center(child: _ClimaxMarker()),
                       ),
-                    ),
-                  );
-                }),
-              ],
+                      Positioned(
+                        left: constraints.maxWidth * end - 5,
+                        top: 0,
+                        bottom: 0,
+                        child: const Center(child: _ClimaxMarker()),
+                      ),
+                    ];
+                  }),
+                ],
+              ),
             ),
-          ),
-        );
-      }
+          );
+        }
+      ),
     );
   }
 
@@ -733,6 +756,61 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ClimaxMarker extends StatefulWidget {
+  const _ClimaxMarker();
+
+  @override
+  State<_ClimaxMarker> createState() => _ClimaxMarkerState();
+}
+
+class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return IgnorePointer(
+          child: Transform.rotate(
+            angle: 0.785, // 45 degrees
+            child: Container(
+              width: 5 + (_controller.value * 2),
+              height: 5 + (_controller.value * 2),
+              decoration: BoxDecoration(
+                color: Color.lerp(const Color(0xFFFFD54F), Colors.white, _controller.value),
+                borderRadius: BorderRadius.circular(1),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF8F00).withAlpha((150 + (_controller.value * 105)).toInt().clamp(0, 255)),
+                    blurRadius: 4 + (_controller.value * 6),
+                    spreadRadius: _controller.value * 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

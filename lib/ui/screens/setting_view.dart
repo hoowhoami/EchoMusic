@@ -111,6 +111,16 @@ class SettingView extends StatelessWidget {
                   (v) => persistence.updateSetting('autoNext', v),
                 ),
               ),
+              _buildItem(
+                context,
+                '防止系统休眠',
+                '仅在播放音乐时阻止系统进入睡眠状态',
+                trailing: _buildSwitch(
+                  context,
+                  settings['preventSleep'] ?? true,
+                  (v) => persistence.updateSetting('preventSleep', v),
+                ),
+              ),
             ],
           ),
 

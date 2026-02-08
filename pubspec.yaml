@@ -50,6 +50,7 @@ dependencies:
   bitsdojo_window: ^0.1.6
   qr_flutter: ^4.1.0
   path: ^1.8.3
+  wakelock_plus: ^1.4.0
 
 dev_dependencies:
   flutter_test:
