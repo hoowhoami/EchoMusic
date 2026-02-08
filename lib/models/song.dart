@@ -103,21 +103,48 @@ class Song {
 
   // For /user/cloud
   factory Song.fromCloudJson(Map<String, dynamic> json) {
+    final audioInfo = json['audio_info'] ?? {};
+    
     int parseInt(dynamic value) {
       if (value == null) return 0;
       if (value is int) return value;
       return int.tryParse(value.toString()) ?? 0;
     }
 
+    String rawName = (json['songname'] ?? json['filename'] ?? json['name'] ?? audioInfo['songname'] ?? '').toString();
+    String singerName = (json['singername'] ?? json['author_name'] ?? json['singer'] ?? audioInfo['author_name'] ?? '').toString();
+    String albumName = (json['albumname'] ?? json['album_name'] ?? audioInfo['album_name'] ?? '').toString();
+    
+    // Attempt to extract singer from rawName if singerName is empty
+    if (singerName.isEmpty && rawName.contains(' - ')) {
+      singerName = rawName.split(' - ')[0];
+    }
+    
+    String title = _processName(rawName);
+
+    // Clean up file extensions if present
+    final extensions = ['.mp3', '.flac', '.wav', '.aac', '.m4a', '.ape'];
+    for (var ext in extensions) {
+      if (title.toLowerCase().endsWith(ext)) {
+        title = title.substring(0, title.length - ext.length);
+      }
+      if (singerName.toLowerCase().endsWith(ext)) {
+        singerName = singerName.substring(0, singerName.length - ext.length);
+      }
+    }
+
+    if (singerName.isEmpty) singerName = '未知歌手';
+
     return Song(
-      hash: (json['hash'] ?? '').toString(),
-      name: (json['songname'] ?? json['filename'] ?? '').toString(),
-      albumName: (json['albumname'] ?? '').toString(),
-      albumId: json['albumid']?.toString(),
-      singers: [SingerInfo(id: 0, name: (json['singername'] ?? '未知歌手').toString())],
-      duration: parseInt(json['duration'] ?? 0),
-      cover: '', // Cloud songs often don't have covers in the list
-      mixSongId: parseInt(json['mixsongid'] ?? 0),
+      hash: (json['hash'] ?? audioInfo['hash'] ?? audioInfo['hash_128'] ?? '').toString(),
+      name: title,
+      albumName: albumName,
+      albumId: (json['albumid'] ?? json['album_id'] ?? audioInfo['album_id'])?.toString(),
+      singers: [SingerInfo(id: 0, name: singerName)],
+      duration: parseInt(json['duration'] ?? json['timelen'] ?? audioInfo['duration'] ?? audioInfo['duration_128'] ?? 0) ~/ 
+                (json.containsKey('timelen') || audioInfo.containsKey('duration_128') ? 1000 : 1),
+      cover: (json['cover'] ?? json['pic'] ?? '').toString(),
+      mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? audioInfo['audio_id'] ?? 0),
       source: 'cloud',
     );
   }

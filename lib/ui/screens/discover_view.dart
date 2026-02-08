@@ -5,15 +5,16 @@ import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
-import '../../providers/selection_provider.dart';
-import 'playlist_detail_view.dart';
-import 'rank_view.dart';
-import 'album_detail_view.dart';
-import '../widgets/song_card.dart';
-import '../widgets/batch_action_bar.dart';
+import 'package:echomusic/providers/selection_provider.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
+import '../widgets/custom_tab_bar.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
-import '../widgets/custom_tab_bar.dart';
+import '../widgets/song_card.dart';
+import '../widgets/batch_action_bar.dart';
+import 'playlist_detail_view.dart';
+import 'album_detail_view.dart';
+import 'rank_view.dart';
 
 class DiscoverView extends StatefulWidget {
   const DiscoverView({super.key});
@@ -24,6 +25,7 @@ class DiscoverView extends StatefulWidget {
 
 class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -32,9 +34,26 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshProvider = context.watch<RefreshProvider>();
+    _refreshProvider.addListener(_onRefresh);
+  }
+
+  @override
   void dispose() {
+    _refreshProvider.removeListener(_onRefresh);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _onRefresh() {
+    if (mounted) {
+      setState(() {
+        // This will cause the entire DiscoverView and its children to rebuild
+        // Children (like _DiscoverPlaylistTab) also listen to RefreshProvider
+      });
+    }
   }
 
   @override
@@ -90,11 +109,35 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isLoading = true;
+  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
     super.initState();
     _loadInitialData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshProvider = context.watch<RefreshProvider>();
+    _refreshProvider.addListener(_onRefresh);
+  }
+
+  @override
+  void dispose() {
+    _refreshProvider.removeListener(_onRefresh);
+    super.dispose();
+  }
+
+  void _onRefresh() {
+    if (mounted) {
+      if (_selectedCategoryId != null && _selectedCategoryName != null) {
+        _loadPlaylists(_selectedCategoryId!, _selectedCategoryName!);
+      } else {
+        _loadInitialData();
+      }
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -269,6 +312,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
   String _selectedTypeName = '全部';
   Map<String, dynamic> _allAlbums = {};
   bool _isLoading = true;
+  late RefreshProvider _refreshProvider;
 
   final List<Map<String, String>> _types = [
     {'id': 'all', 'name': '全部'},
@@ -282,6 +326,25 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
   void initState() {
     super.initState();
     _loadAlbums();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshProvider = context.watch<RefreshProvider>();
+    _refreshProvider.addListener(_onRefresh);
+  }
+
+  @override
+  void dispose() {
+    _refreshProvider.removeListener(_onRefresh);
+    super.dispose();
+  }
+
+  void _onRefresh() {
+    if (mounted) {
+      _loadAlbums();
+    }
   }
 
   Future<void> _loadAlbums() async {

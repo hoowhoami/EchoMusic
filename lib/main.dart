@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:media_kit/media_kit.dart';
-import 'providers/audio_provider.dart';
-import 'providers/lyric_provider.dart';
-import 'providers/persistence_provider.dart';
-import 'providers/user_provider.dart';
-import 'providers/selection_provider.dart';
+import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/lyric_provider.dart';
+import 'package:echomusic/providers/persistence_provider.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/providers/selection_provider.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/auth_listener.dart';
@@ -47,6 +48,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => PersistenceProvider()),
+        ChangeNotifierProvider(create: (_) => RefreshProvider()),
         ChangeNotifierProxyProvider<PersistenceProvider, UserProvider>(
           create: (_) => UserProvider(),
           update: (_, p, u) => u!..setPersistenceProvider(p),

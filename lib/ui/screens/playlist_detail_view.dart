@@ -4,8 +4,9 @@ import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
-import '../../providers/audio_provider.dart';
-import '../../providers/user_provider.dart';
+import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/song_list_scaffold.dart';
@@ -22,6 +23,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   List<Song>? _songs;
   bool _isLoading = true;
   late UserProvider _userProvider;
+  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -32,9 +34,23 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshProvider = context.watch<RefreshProvider>();
+    _refreshProvider.addListener(_onRefresh);
+  }
+
+  @override
   void dispose() {
     _userProvider.playlistSongsChangeNotifier.removeListener(_onPlaylistSongsChanged);
+    _refreshProvider.removeListener(_onRefresh);
     super.dispose();
+  }
+
+  void _onRefresh() {
+    if (mounted) {
+      _loadSongs();
+    }
   }
 
   Future<void> _loadSongs() async {

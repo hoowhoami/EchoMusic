@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter/cupertino.dart';
 import 'dart:ui';
 import '../../theme/app_theme.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
 
 class CustomTitleBar extends StatelessWidget {
   const CustomTitleBar({super.key});
@@ -33,13 +36,32 @@ class CustomTitleBar extends StatelessWidget {
               children: [
                 // Left area: Reserved for traffic lights on macOS or padding
                 const SizedBox(width: 80),
+
+                // Navigation Controls
+                _NavButton(
+                  icon: CupertinoIcons.chevron_left,
+                  onPressed: () => Navigator.maybePop(context),
+                  tooltip: '后退',
+                ),
+                _NavButton(
+                  icon: CupertinoIcons.chevron_right,
+                  onPressed: null, // Can be implemented if needed
+                  tooltip: '前进',
+                ),
+                _NavButton(
+                  icon: CupertinoIcons.refresh,
+                  onPressed: () => context.read<RefreshProvider>().triggerRefresh(),
+                  tooltip: '刷新',
+                ),
+
+                const SizedBox(width: 8),
                 
                 // Middle Spacer / Move Window
                 Expanded(
                   child: MoveWindow(
                     child: Container(
                       alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.only(left: 16),
+                      padding: const EdgeInsets.only(left: 8),
                       child: Text(
                         'EchoMusic',
                         style: TextStyle(
@@ -52,13 +74,47 @@ class CustomTitleBar extends StatelessWidget {
                     ),
                   ),
                 ),
-                
+
                 // Right area: Native-looking window buttons
                 const WindowButtons(),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _NavButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String tooltip;
+
+  const _NavButton({
+    required this.icon,
+    this.onPressed,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 16,
+          color: onPressed != null 
+            ? theme.colorScheme.onSurface.withAlpha(120)
+            : theme.colorScheme.onSurface.withAlpha(40),
+        ),
+        splashRadius: 20,
+        tooltip: tooltip,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        padding: EdgeInsets.zero,
       ),
     );
   }

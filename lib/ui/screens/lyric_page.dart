@@ -3,8 +3,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'dart:ui';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
-import '../../providers/audio_provider.dart';
-import '../../providers/lyric_provider.dart';
+import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/lyric_provider.dart';
 import '../widgets/cover_image.dart';
 
 class LyricPage extends StatefulWidget {

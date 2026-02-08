@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import '../../providers/user_provider.dart';
+import 'package:echomusic/providers/user_provider.dart';
 import '../screens/login_screen.dart';
 import '../widgets/custom_dialog.dart';
 import '../../main.dart'; // To access navigatorKey

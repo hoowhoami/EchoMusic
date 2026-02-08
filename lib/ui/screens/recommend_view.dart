@@ -3,12 +3,13 @@ import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
-import '../../providers/user_provider.dart';
+import 'package:echomusic/providers/user_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/scrollable_content.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'recommend_song_view.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
 
 class RecommendView extends StatefulWidget {
   const RecommendView({super.key});
@@ -20,10 +21,37 @@ class RecommendView extends StatefulWidget {
 class _RecommendViewState extends State<RecommendView> {
   late Future<List<Playlist>> _recommendedPlaylistsFuture;
   late Future<List<Map<String, dynamic>>> _topIpFuture;
+  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshProvider = context.watch<RefreshProvider>();
+    // If the counter changes, reload data
+    _refreshProvider.addListener(_onRefresh);
+  }
+
+  @override
+  void dispose() {
+    _refreshProvider.removeListener(_onRefresh);
+    super.dispose();
+  }
+
+  void _onRefresh() {
+    if (mounted) {
+      setState(() {
+        _loadData();
+      });
+    }
+  }
+
+  void _loadData() {
     _recommendedPlaylistsFuture = MusicApi.getPlaylistByCategory('0'); // Use category '0' for recommendation
     _topIpFuture = MusicApi.getTopIP();
   }

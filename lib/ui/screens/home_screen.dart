@@ -12,9 +12,10 @@ import 'setting_view.dart';
 import 'history_view.dart';
 import 'cloud_view.dart';
 import 'profile_view.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/persistence_provider.dart';
-import '../../providers/selection_provider.dart';
+import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/providers/persistence_provider.dart';
+import 'package:echomusic/providers/selection_provider.dart';
+import 'package:echomusic/providers/refresh_provider.dart';
 import '../../api/music_api.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -208,6 +209,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             _buildNavButton(icon: CupertinoIcons.chevron_left, onPressed: canGoBack ? _goBack : null, tooltip: '后退'),
                             const SizedBox(width: 8),
                             _buildNavButton(icon: CupertinoIcons.chevron_right, onPressed: canGoForward ? _goForward : null, tooltip: '前进'),
+                            const SizedBox(width: 8),
+                            _buildNavButton(
+                              icon: CupertinoIcons.refresh, 
+                              onPressed: () {
+                                context.read<RefreshProvider>().triggerRefresh();
+                                context.read<UserProvider>().fetchAllUserData(); // Global refresh also refreshes user data
+                              }, 
+                              tooltip: '刷新'
+                            ),
                             Expanded(child: MoveWindow()),
                             if (!Platform.isMacOS) const WindowButtons(),
                           ],
