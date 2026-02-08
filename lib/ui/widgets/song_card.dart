@@ -219,7 +219,7 @@ class _SongCardState extends State<SongCard> {
     final theme = Theme.of(context);
     final audioProvider = context.watch<AudioProvider>();
     final persistenceProvider = context.watch<PersistenceProvider>();
-    final isCurrent = audioProvider.currentSong?.hash == widget.song.hash;
+    final isCurrent = audioProvider.currentSong?.isSameSong(widget.song) ?? false;
     final isPlaying = isCurrent && audioProvider.isPlaying;
     final primaryColor = theme.colorScheme.primary;
     final isFavorite = persistenceProvider.isFavorite(widget.song);

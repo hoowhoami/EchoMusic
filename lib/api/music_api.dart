@@ -358,14 +358,14 @@ class MusicApi {
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
       
       final responseData = await getPlaylistTrackAll(queryId, pagesize: 500);
-      return _parseSongsFromResponse(responseData);
+      return parseSongsFromResponse(responseData);
     } catch (e) {
       debugPrint('getPlaylistSongs error: $e');
       return [];
     }
   }
 
-  static List<Song> _parseSongsFromResponse(Map<String, dynamic> responseData) {
+  static List<Song> parseSongsFromResponse(Map<String, dynamic> responseData) {
     final data = responseData['data'] ?? responseData;
     List? list;
     
@@ -758,7 +758,7 @@ class MusicApi {
     }
   }
 
-  static Future<bool> addPlaylistTrack(int listid, String data) async {
+  static Future<bool> addPlaylistTrack(dynamic listid, String data) async {
     try {
       final response = await _dio.get('/playlist/tracks/add', queryParameters: {'listid': listid, 'data': data});
       return response.data['status'] == 1;
@@ -767,7 +767,7 @@ class MusicApi {
     }
   }
 
-  static Future<bool> deletePlaylistTrack(int listid, String fileids) async {
+  static Future<bool> deletePlaylistTrack(dynamic listid, String fileids) async {
     try {
       final response = await _dio.get('/playlist/tracks/del', queryParameters: {'listid': listid, 'fileids': fileids});
       return response.data['status'] == 1;

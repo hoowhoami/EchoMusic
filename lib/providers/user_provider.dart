@@ -14,8 +14,10 @@ class UserProvider with ChangeNotifier {
   List<Map<String, dynamic>> _userFollows = [];
   List<Song> _userHistory = [];
   List<Song> _userCloud = [];
+  List<Song> _likedSongs = [];
 
-  int? _likedPlaylistId;
+  dynamic _likedPlaylistId;
+  bool _isInitialSynced = false;
   final ValueNotifier<int> playlistSongsChangeNotifier = ValueNotifier<int>(0);
 
   UserProvider() {
@@ -29,12 +31,13 @@ class UserProvider with ChangeNotifier {
 
   User? get user => _user;
   bool get isAuthenticated => _user != null && _user!.token.isNotEmpty;
-  int? get likedPlaylistId => _likedPlaylistId ?? _user?.extendsInfo?['likedPlaylistId'];
+  dynamic get likedPlaylistId => _likedPlaylistId ?? _user?.extendsInfo?['likedPlaylistId'];
   
   List<Map<String, dynamic>> get userPlaylists => _userPlaylists;
   List<Map<String, dynamic>> get userFollows => _userFollows;
   List<Song> get userHistory => _userHistory;
   List<Song> get userCloud => _userCloud;
+  List<Song> get likedSongs => _likedSongs;
 
   List<Map<String, dynamic>> get createdPlaylists =>
       _userPlaylists.where((p) => p['list_create_userid'] == _user?.userid).toList();
@@ -45,13 +48,26 @@ class UserProvider with ChangeNotifier {
   void setPersistenceProvider(PersistenceProvider provider) {
     _persistenceProvider = provider;
     if (provider.userInfo != null) {
-      _user = User.fromJson(provider.userInfo!);
-      _likedPlaylistId = _user?.extendsInfo?['likedPlaylistId'];
+      final newUser = User.fromJson(provider.userInfo!);
+      if (_user?.userid != newUser.userid) {
+        _user = newUser;
+        _likedPlaylistId = _user?.extendsInfo?['likedPlaylistId'];
+        _isInitialSynced = false;
+      }
+      
+      if (!_isInitialSynced && isAuthenticated) {
+        _isInitialSynced = true;
+        // Background sync
+        fetchAllUserData();
+      }
     }
   }
 
-  void _updatePlaylistSongCount(int listId, int delta) {
-    final index = _userPlaylists.indexWhere((p) => (p['listid'] ?? p['specialid']) == listId);
+  void _updatePlaylistSongCount(dynamic listId, int delta) {
+    final index = _userPlaylists.indexWhere((p) {
+      final id = (p['listid'] ?? p['specialid'] ?? p['list_create_gid'] ?? p['gid'])?.toString();
+      return id == listId?.toString();
+    });
     if (index != -1) {
       final p = Map<String, dynamic>.from(_userPlaylists[index]);
       p['song_count'] = (p['song_count'] ?? 0) + delta;
@@ -61,12 +77,77 @@ class UserProvider with ChangeNotifier {
     }
   }
 
-  void notifyPlaylistSongsChanged(int listId) {
-    playlistSongsChangeNotifier.value = listId;
+  void notifyPlaylistSongsChanged(dynamic listId) {
+    // Convert to int if possible, otherwise use hash as a notifier value
+    int notifyValue = 0;
+    if (listId is int) {
+      notifyValue = listId;
+    } else if (listId != null) {
+      notifyValue = listId.toString().hashCode.abs();
+    }
+    playlistSongsChangeNotifier.value = notifyValue;
     // Reset so that the same playlist can trigger again if needed
     Future.delayed(const Duration(milliseconds: 100), () {
       playlistSongsChangeNotifier.value = 0;
     });
+  }
+
+  /// Helper to get the correct numeric listid from any ID (GID or local)
+  dynamic _getNumericListId(dynamic id) {
+    if (id == null) return 0;
+    final idStr = id.toString();
+    
+    // Find the playlist in our local list to get its numeric ID
+    final index = _userPlaylists.indexWhere((p) {
+      return (p['listid'] ?? p['specialid'])?.toString() == idStr || 
+             (p['list_create_gid'] ?? p['gid'])?.toString() == idStr;
+    });
+
+    if (index != -1) {
+      final p = _userPlaylists[index];
+      return p['listid'] ?? p['specialid'] ?? id;
+    }
+    
+    return id;
+  }
+
+  Future<void> fetchLikedSongs({int? listid, String? gid}) async {
+    final targetGid = gid ?? (likedPlaylistId is String ? likedPlaylistId : null);
+    final targetListid = listid ?? (likedPlaylistId is int ? likedPlaylistId : null);
+    
+    if (targetGid == null && targetListid == null) {
+      debugPrint('[UserProvider] Cannot fetch liked songs: no ID available');
+      return;
+    }
+
+    debugPrint('[UserProvider] Fetching liked songs. GID: $targetGid, Numeric ID: $targetListid');
+    
+    List<Song> songs = [];
+    
+    // STRATEGY 1: Use GID with the standard track/all API (Most reliable for cloud sync)
+    if (targetGid != null) {
+      debugPrint('[UserProvider] Attempting fetch with GID: $targetGid via track/all');
+      songs = await MusicApi.getPlaylistSongs(targetGid);
+    }
+    
+    // STRATEGY 2: Fallback to Numeric ID with track/all/new if GID failed
+    if (songs.isEmpty && targetListid != null) {
+      debugPrint('[UserProvider] Attempting fallback with Numeric ID: $targetListid via track/all/new');
+      final response = await MusicApi.getPlaylistTrackAllNew(targetListid, pagesize: 500);
+      songs = MusicApi.parseSongsFromResponse(response);
+    }
+
+    debugPrint('[UserProvider] Final fetched songs count: ${songs.length}');
+    
+    if (songs.isNotEmpty) {
+      _likedSongs = songs;
+      if (_persistenceProvider != null) {
+        _persistenceProvider!.syncCloudFavorites(_likedSongs);
+      }
+      notifyListeners();
+    } else {
+      debugPrint('[UserProvider] Failed to fetch any songs for the liked playlist.');
+    }
   }
 
   Future<Map<String, dynamic>> login(String mobile, String code, {int? userid}) async {
@@ -91,6 +172,7 @@ class UserProvider with ChangeNotifier {
   Future<void> logout() async {
     _user = null;
     _likedPlaylistId = null;
+    _likedSongs = [];
     await _persistenceProvider?.clearUserInfo();
     _userPlaylists = [];
     _userFollows = [];
@@ -107,6 +189,7 @@ class UserProvider with ChangeNotifier {
 
   Future<void> fetchAllUserData() async {
     if (!isAuthenticated) return;
+    debugPrint('[UserProvider] Starting full user data sync...');
     
     await Future.wait([
       fetchUserPlaylists(),
@@ -116,6 +199,7 @@ class UserProvider with ChangeNotifier {
       fetchUserDetails(),
       syncVipStatus(),
     ]);
+    debugPrint('[UserProvider] Full user data sync completed.');
   }
 
   Future<void> syncVipStatus() async {
@@ -154,35 +238,56 @@ class UserProvider with ChangeNotifier {
   Future<void> fetchUserPlaylists() async {
     final response = await MusicApi.getUserPlaylistsRaw();
     if (response['status'] == 1) {
-      // Correct the path: info is often at the root of response
       List data = response['info'] ?? response['data']?['info'] ?? [];
       _userPlaylists = data.cast<Map<String, dynamic>>();
       
-      // Identify "I Like" playlist
-      final likedIndex = _userPlaylists.indexWhere(
-        (p) => p['list_create_userid'] == _user?.userid && 
-               (p['name'] == '我喜欢' || p['name'] == '默认收藏'),
-      );
+      debugPrint('[UserProvider] --- All User Playlists ---');
+      for (var p in _userPlaylists) {
+        debugPrint('  * Name: "${p['name']}" | Songs: ${p['count'] ?? p['song_count']} | listid: ${p['listid']} | GID: ${p['list_create_gid']}');
+      }
+      debugPrint('[UserProvider] ---------------------------');
+      
+      // Identify "I Like" playlist with NEW PRIORITY
+      int likedIndex = _userPlaylists.indexWhere((p) {
+        final name = p['name']?.toString() ?? '';
+        return name == '我喜欢' || name == '我喜欢的音乐';
+      });
+
+      if (likedIndex == -1) {
+        likedIndex = _userPlaylists.indexWhere((p) => p['name']?.toString().contains('喜欢') ?? false);
+      }
+
+      if (likedIndex == -1) {
+        likedIndex = _userPlaylists.indexWhere((p) => p['type'] == 1 || p['is_def'] == 1 || p['is_default'] == 1 || p['is_def'] == 2);
+      }
+
+      if (likedIndex == -1) {
+        likedIndex = _userPlaylists.indexWhere((p) => p['name']?.toString() == '默认收藏');
+      }
       
       if (likedIndex != -1) {
         final liked = _userPlaylists[likedIndex];
-        _likedPlaylistId = liked['listid'] ?? liked['specialid'];
+        // STRATEGY: Always prefer GID for storage to avoid numeric ID issues
+        _likedPlaylistId = liked['list_create_gid'] ?? liked['gid'] ?? liked['listid'];
         
-        // Persist it in user info
+        debugPrint('[UserProvider] FINAL PICK for Liked Playlist: ${liked['name']} (Stored ID: $_likedPlaylistId)');
+        
+        // Persist
         if (_user != null && _user?.extendsInfo?['likedPlaylistId'] != _likedPlaylistId) {
           _user = _user!.copyWith(
-            extendsInfo: {
-              ..._user!.extendsInfo ?? {},
-              'likedPlaylistId': _likedPlaylistId,
-            },
+            extendsInfo: {..._user!.extendsInfo ?? {}, 'likedPlaylistId': _likedPlaylistId},
           );
           await _persistenceProvider?.setUserInfo(_user!.toJson());
         }
+
+        // Fetch songs
+        fetchLikedSongs(
+          listid: int.tryParse(liked['listid']?.toString() ?? ''),
+          gid: liked['list_create_gid']?.toString(),
+        );
       }
       
       notifyListeners();
-    } else if (response['status'] == 0) {
-      onPlaylistError?.call('新账号请先在酷狗官方客户端登录一次');
     }
   }
 
@@ -314,24 +419,40 @@ class UserProvider with ChangeNotifier {
     return success;
   }
 
-  Future<bool> addSongToPlaylist(int listId, Song song) async {
+  Future<bool> addSongToPlaylist(dynamic listId, Song song) async {
+    final numericId = _getNumericListId(listId);
     final songData = "${song.name}|${song.hash}|${song.albumId ?? 0}|${song.mixSongId}";
-    final success = await MusicApi.addPlaylistTrack(listId, songData);
+    final success = await MusicApi.addPlaylistTrack(numericId, songData);
     if (success) {
+      if (listId?.toString() == likedPlaylistId?.toString()) {
+        if (!_likedSongs.any((s) => s.isSameSong(song))) {
+          _likedSongs.insert(0, song);
+        }
+        _persistenceProvider?.syncCloudFavorites([song]);
+      }
       _updatePlaylistSongCount(listId, 1);
       notifyPlaylistSongsChanged(listId);
     }
     return success;
   }
 
-  Future<int> addSongsToPlaylist(int listId, List<Song> songs) async {
+  Future<int> addSongsToPlaylist(dynamic listId, List<Song> songs) async {
     if (songs.isEmpty) return 0;
     
+    final numericId = _getNumericListId(listId);
     // Legacy API supports batch adding by comma-separated song data
     final data = songs.map((s) => "${s.name}|${s.hash}|${s.albumId ?? 0}|${s.mixSongId}").join(',');
-    final success = await MusicApi.addPlaylistTrack(listId, data);
+    final success = await MusicApi.addPlaylistTrack(numericId, data);
     
     if (success) {
+      if (listId?.toString() == likedPlaylistId?.toString()) {
+        for (var song in songs) {
+          if (!_likedSongs.any((s) => s.isSameSong(song))) {
+            _likedSongs.insert(0, song);
+          }
+        }
+        _persistenceProvider?.syncCloudFavorites(songs);
+      }
       _updatePlaylistSongCount(listId, songs.length);
       notifyPlaylistSongsChanged(listId);
       return songs.length;
@@ -339,20 +460,32 @@ class UserProvider with ChangeNotifier {
     return 0;
   }
 
-  Future<bool> removeSongFromPlaylist(int listId, Song song) async {
+  Future<bool> removeSongFromPlaylist(dynamic listId, Song song) async {
+    final numericId = _getNumericListId(listId);
     final fileId = song.fileId ?? song.mixSongId;
-    final success = await MusicApi.deletePlaylistTrack(listId, fileId.toString());
+    final success = await MusicApi.deletePlaylistTrack(numericId, fileId.toString());
     if (success) {
+      if (listId?.toString() == likedPlaylistId?.toString()) {
+        _likedSongs.removeWhere((s) => s.isSameSong(song));
+        _persistenceProvider?.removeFromFavorites(song);
+      }
       _updatePlaylistSongCount(listId, -1);
       notifyPlaylistSongsChanged(listId);
     }
     return success;
   }
 
-  Future<int> removeSongsFromPlaylist(int listId, List<Song> songs) async {
+  Future<int> removeSongsFromPlaylist(dynamic listId, List<Song> songs) async {
+    final numericId = _getNumericListId(listId);
     final fileIds = songs.map((s) => s.fileId ?? s.mixSongId).join(',');
-    final success = await MusicApi.deletePlaylistTrack(listId, fileIds);
+    final success = await MusicApi.deletePlaylistTrack(numericId, fileIds);
     if (success) {
+      if (listId?.toString() == likedPlaylistId?.toString()) {
+        for (var song in songs) {
+          _likedSongs.removeWhere((s) => s.isSameSong(song));
+          _persistenceProvider?.removeFromFavorites(song);
+        }
+      }
       _updatePlaylistSongCount(listId, -songs.length);
       notifyPlaylistSongsChanged(listId);
       return songs.length;
@@ -362,6 +495,6 @@ class UserProvider with ChangeNotifier {
 
   bool isCreatedPlaylist(dynamic listId) {
     final id = listId.toString();
-    return _userPlaylists.any((p) => (p['listid'] ?? p['specialid']).toString() == id && p['list_create_userid'] == _user?.userid);
+    return _userPlaylists.any((p) => (p['listid'] ?? p['specialid'] ?? p['list_create_gid'] ?? p['gid']).toString() == id && p['list_create_userid'] == _user?.userid);
   }
 }

@@ -174,7 +174,7 @@ class PersistenceProvider with ChangeNotifier {
   }
 
   Future<void> toggleFavorite(Song song, {dynamic userProvider}) async {
-    final index = _favorites.indexWhere((s) => s.hash == song.hash);
+    final index = _favorites.indexWhere((s) => s.isSameSong(song));
     bool isAdding = index < 0;
 
     if (isAdding) {
@@ -201,11 +201,43 @@ class PersistenceProvider with ChangeNotifier {
   }
 
   bool isFavorite(Song song) {
-    return _favorites.any((s) => s.hash == song.hash);
+    return _favorites.any((s) => s.isSameSong(song));
+  }
+
+  Future<void> syncCloudFavorites(List<Song> cloudSongs) async {
+    bool changed = false;
+    for (var cloudSong in cloudSongs) {
+      if (!_favorites.any((s) => s.isSameSong(cloudSong))) {
+        _favorites.add(cloudSong);
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _keyFavorites,
+        _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
+      );
+      notifyListeners();
+    }
+  }
+
+  Future<void> removeFromFavorites(Song song) async {
+    final index = _favorites.indexWhere((s) => s.isSameSong(song));
+    if (index != -1) {
+      _favorites.removeAt(index);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _keyFavorites,
+        _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
+      );
+      notifyListeners();
+    }
   }
 
   Future<void> addToHistory(Song song) async {
-    _history.removeWhere((s) => s.hash == song.hash);
+    _history.removeWhere((s) => s.isSameSong(song));
     _history.insert(0, song);
     
     if (_history.length > 100) {

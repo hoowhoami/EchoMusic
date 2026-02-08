@@ -263,7 +263,7 @@ class AudioProvider with ChangeNotifier {
         final current = _currentSong;
         _playlist.shuffle();
         if (current != null) {
-          _playlist.removeWhere((s) => s.hash == current.hash);
+          _playlist.removeWhere((s) => s.isSameSong(current));
           _playlist.insert(0, current);
           _currentIndex = 0;
         }
@@ -273,7 +273,7 @@ class AudioProvider with ChangeNotifier {
       _playlist = List.from(_originalPlaylist);
       _originalPlaylist = [];
       if (current != null) {
-        _currentIndex = _playlist.indexWhere((s) => s.hash == current.hash);
+        _currentIndex = _playlist.indexWhere((s) => s.isSameSong(current));
       }
     }
   }
@@ -292,11 +292,11 @@ class AudioProvider with ChangeNotifier {
       if (_playMode == 'shuffle') {
         _originalPlaylist = List.from(playlist);
         _playlist.shuffle();
-        _playlist.removeWhere((s) => s.hash == song.hash);
+        _playlist.removeWhere((s) => s.isSameSong(song));
         _playlist.insert(0, song);
       }
     }
-    _currentIndex = _playlist.indexWhere((s) => s.hash == song.hash);
+    _currentIndex = _playlist.indexWhere((s) => s.isSameSong(song));
     _currentSong = song;
     _safeNotify();
 
@@ -470,7 +470,7 @@ class AudioProvider with ChangeNotifier {
     } else if (_currentIndex > index) {
       _currentIndex--;
     }
-    if (_playMode == 'shuffle') _originalPlaylist.removeWhere((s) => s.hash == removed.hash);
+    if (_playMode == 'shuffle') _originalPlaylist.removeWhere((s) => s.isSameSong(removed));
     _savePlaybackState();
     _safeNotify();
   }

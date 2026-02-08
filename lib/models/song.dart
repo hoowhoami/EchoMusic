@@ -286,6 +286,16 @@ class Song {
     if (relateGoods!.length > 1) return 'HQ';
     return '';
   }
+
+  bool isSameSong(Song other) {
+    if (mixSongId != 0 && other.mixSongId != 0) {
+      if (mixSongId == other.mixSongId) return true;
+    }
+    if (hash.isNotEmpty && other.hash.isNotEmpty) {
+      if (hash.toLowerCase() == other.hash.toLowerCase()) return true;
+    }
+    return false;
+  }
 }
 
 class SingerInfo {
