@@ -484,7 +484,7 @@ class _PlayerBarState extends State<PlayerBar> {
       pageBuilder: (context, _, __) => Align(
         alignment: Alignment.centerRight,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 80),
+          padding: const EdgeInsets.only(bottom: 96),
           child: Material(elevation: 20, borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)), child: SizedBox(width: 380, child: const QueueDrawer())),
         ),
       ),

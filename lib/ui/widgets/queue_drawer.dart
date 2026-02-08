@@ -50,10 +50,9 @@ class _QueueDrawerState extends State<QueueDrawer> {
     final theme = Theme.of(context);
 
     return Container(
-      width: 400,
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(40),
@@ -300,9 +299,11 @@ class _QueueItemState extends State<_QueueItem> {
                     IconButton(
                       icon: const Icon(CupertinoIcons.xmark, size: 14),
                       onPressed: widget.onRemove,
-                      padding: EdgeInsets.zero,
+                      padding: const EdgeInsets.all(10),
                       constraints: const BoxConstraints(),
-                      color: theme.colorScheme.onSurface.withAlpha(60),
+                      splashRadius: 20,
+                      hoverColor: theme.colorScheme.error.withAlpha(20),
+                      color: theme.colorScheme.onSurface.withAlpha(80),
                     ),
                 ],
               ),

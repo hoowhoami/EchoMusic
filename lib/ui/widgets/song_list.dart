@@ -30,11 +30,13 @@ class SongList extends StatefulWidget {
 }
 
 class _SongListState extends State<SongList> {
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -65,6 +67,7 @@ class _SongListState extends State<SongList> {
     }
 
     return CustomScrollView(
+      controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       slivers: [
         if (widget.headers != null) ...widget.headers!,
@@ -131,7 +134,7 @@ class _SongListState extends State<SongList> {
                   const SizedBox(width: 12),
                   
                   // 3. Locate Button on the Right
-                  _buildLocatePlayingButton(context),
+                  _buildLocatePlayingButton(context, filteredSongs),
                 ],
               ),
             ),
@@ -153,7 +156,8 @@ class _SongListState extends State<SongList> {
         else
           SliverPadding(
             padding: widget.padding,
-            sliver: SliverList(
+            sliver: SliverFixedExtentList(
+              itemExtent: 72.0,
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final song = filteredSongs[index];
@@ -221,14 +225,35 @@ class _SongListState extends State<SongList> {
     );
   }
 
-  Widget _buildLocatePlayingButton(BuildContext context) {
+  Widget _buildLocatePlayingButton(BuildContext context, List<Song> filteredSongs) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: () {
         final audioProvider = context.read<AudioProvider>();
         final currentSong = audioProvider.currentSong;
         if (currentSong != null) {
-          // Location logic
+          final index = filteredSongs.indexWhere((s) => s.isSameSong(currentSong));
+          if (index != -1 && _scrollController.hasClients) {
+            // Calculate header height estimate
+            // PlaylistDetail: SliverAppBar(200) + Toolbar(56) = 256
+            // Pinned heights: SliverAppBar(56) + Toolbar(56) = 112
+            // Initial offset to list start is around 256.
+            // We want item at top but below pinned stuff (112).
+            
+            // If headers are null, headerOffset is 0.
+            final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
+            final headerHeight = hasHeaders ? 200.0 : 0.0;
+            final toolbarHeight = 56.0;
+            final pinnedHeight = (hasHeaders ? 56.0 : 0.0) + 56.0;
+            
+            final targetOffset = (index * 72.0) + headerHeight + toolbarHeight - pinnedHeight;
+            
+            _scrollController.animateTo(
+              targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+            );
+          }
         }
       },
       borderRadius: BorderRadius.circular(10),
