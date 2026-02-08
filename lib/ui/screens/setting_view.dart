@@ -45,7 +45,7 @@ class SettingView extends StatelessWidget {
               _buildItem(
                 context,
                 '播放列表计数',
-                '在库图标上显示歌曲数量',
+                '在播放器的播放列表图标上显示计数',
                 trailing: _buildSwitch(
                   context,
                   settings['showPlaylistCount'] ?? true,

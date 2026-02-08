@@ -315,7 +315,42 @@ class _PlayerBarState extends State<PlayerBar> {
                 ),
               ),
               const SizedBox(width: 12),
-              _PlayerIconButton(icon: CupertinoIcons.list_bullet, onPressed: () => _showQueueDrawer(context), size: 22, tooltip: '播放队列'),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _PlayerIconButton(icon: CupertinoIcons.list_bullet, onPressed: () => _showQueueDrawer(context), size: 22, tooltip: '播放队列'),
+                  if (persistenceProvider.settings['showPlaylistCount'] ?? true)
+                    Positioned(
+                      top: -2,
+                      right: -10,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                          decoration: BoxDecoration(
+                            color: accentColor,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: theme.colorScheme.surface, width: 1.5),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withAlpha(50), blurRadius: 4, offset: const Offset(0, 1)),
+                            ],
+                          ),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                          child: Center(
+                            child: Text(
+                              audioProvider.playlist.length > 99 ? '99+' : '${audioProvider.playlist.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                                height: 1.1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
