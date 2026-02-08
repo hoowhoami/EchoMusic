@@ -252,7 +252,10 @@ class _PlaylistCard extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)),
+          CupertinoPageRoute(
+            settings: RouteSettings(name: 'playlist_detail', arguments: playlist),
+            builder: (_) => PlaylistDetailView(playlist: playlist),
+          ),
         );
       },
       borderRadius: BorderRadius.circular(10),
@@ -430,6 +433,13 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
                       Navigator.push(
                         context,
                         CupertinoPageRoute(
+                          settings: RouteSettings(
+                            name: 'album_detail', 
+                            arguments: {
+                              'id': album['albumid'],
+                              'name': album['albumname'] ?? '',
+                            }
+                          ),
                           builder: (_) => AlbumDetailView(
                             albumId: album['albumid'],
                             albumName: album['albumname'] ?? '',

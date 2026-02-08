@@ -11,14 +11,14 @@ class Sidebar extends StatelessWidget {
   final int selectedIndex;
   final dynamic selectedPlaylistId;
   final ValueChanged<int> onDestinationSelected;
-  final void Function(Widget, {dynamic playlistId})? onPushRoute;
+  final void Function(Playlist)? onPushPlaylist;
 
   const Sidebar({
     super.key,
     required this.selectedIndex,
     this.selectedPlaylistId,
     required this.onDestinationSelected,
-    this.onPushRoute,
+    this.onPushPlaylist,
   });
 
   @override
@@ -139,7 +139,7 @@ class Sidebar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: InkWell(
-        onTap: () => onPushRoute?.call(PlaylistDetailView(playlist: playlist), playlistId: playlist.id),
+        onTap: () => onPushPlaylist?.call(playlist),
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: isSelected ? accentColor.withAlpha(30) : Colors.transparent, borderRadius: BorderRadius.circular(12)), child: Row(children: [CoverImage(url: imageUrl, width: 26, height: 26, borderRadius: 6, showShadow: false, size: 100, errorWidget: Container(decoration: BoxDecoration(color: theme.colorScheme.onSurface.withAlpha(10), borderRadius: BorderRadius.circular(6)), child: Icon(icon, color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant, size: 14))), const SizedBox(width: 14), Expanded(child: Text(playlist.name, style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface.withAlpha(220), fontSize: 13, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, letterSpacing: -0.2), maxLines: 1, overflow: TextOverflow.ellipsis))])),
       ),

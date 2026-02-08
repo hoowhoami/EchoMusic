@@ -112,7 +112,13 @@ class _RecommendViewState extends State<RecommendView> {
                 title: '每日推荐',
                 subtitle: '为你量身定制',
                 iconContent: DateTime.now().day.toString(),
-                onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RecommendSongView())),
+                onTap: () => Navigator.push(
+                  context, 
+                  CupertinoPageRoute(
+                    settings: const RouteSettings(name: 'recommend_song'),
+                    builder: (_) => const RecommendSongView()
+                  )
+                ),
                 color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 16),
@@ -121,7 +127,13 @@ class _RecommendViewState extends State<RecommendView> {
                 title: '排行榜',
                 subtitle: '实时热门趋势',
                 iconContent: 'TOP',
-                onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const RankView(isRecommend: true))),
+                onTap: () => Navigator.push(
+                  context, 
+                  CupertinoPageRoute(
+                    settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
+                    builder: (_) => const RankView(isRecommend: true)
+                  )
+                ),
                 color: Theme.of(context).colorScheme.secondary,
               ),
             ],
@@ -328,6 +340,7 @@ class _RecommendViewState extends State<RecommendView> {
         Navigator.push(
           context,
           CupertinoPageRoute(
+            settings: RouteSettings(name: 'playlist_detail', arguments: playlist),
             builder: (_) => PlaylistDetailView(playlist: playlist),
           ),
         );

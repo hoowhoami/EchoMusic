@@ -12,6 +12,11 @@ import 'setting_view.dart';
 import 'history_view.dart';
 import 'cloud_view.dart';
 import 'profile_view.dart';
+import 'playlist_detail_view.dart';
+import 'album_detail_view.dart';
+import 'recommend_song_view.dart';
+import 'rank_view.dart';
+import '../../models/playlist.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
@@ -25,13 +30,21 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+class _HistoryEntry {
+  final int index;
+  final String? routeName;
+  final dynamic arguments;
+  _HistoryEntry({required this.index, this.routeName, this.arguments});
+}
+
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  dynamic _selectedPlaylistId;
+  final ValueNotifier<int> _indexNotifier = ValueNotifier(0);
+  Playlist? _selectedPlaylist;
   
-  // 简单的历史记录：只记录状态变更（分类索引 + 歌单ID）
-  final List<({int index, dynamic playlistId})> _history = [(index: 0, playlistId: null)];
+  List<_HistoryEntry> _history = [_HistoryEntry(index: 0)];
   int _historyIndex = 0;
+  bool _isInternalNav = false;
   
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
@@ -41,107 +54,113 @@ class _HomeScreenState extends State<HomeScreen> {
     _initDevice();
   }
 
-  // 辅助方法：检查两个状态是否相同
-  bool _isSameState(int index, dynamic playlistId) {
-    return _selectedIndex == index && _selectedPlaylistId == playlistId;
+  @override
+  void dispose() {
+    _indexNotifier.dispose();
+    super.dispose();
   }
 
   void _navigateTo(int index) {
-    // 1. 如果点击的是当前已激活的分类，且不在歌单里，则什么都不做
-    if (_isSameState(index, null)) return;
+    if (_selectedIndex == index && _selectedPlaylist == null) return;
 
     context.read<SelectionProvider>().reset();
 
     setState(() {
-      // 2. 清理当前位置之后的前进历史
       if (_historyIndex < _history.length - 1) {
         _history.removeRange(_historyIndex + 1, _history.length);
       }
       
-      // 3. 记录新状态
-      _history.add((index: index, playlistId: null));
+      _history.add(_HistoryEntry(index: index));
       _historyIndex = _history.length - 1;
       
       _selectedIndex = index;
-      _selectedPlaylistId = null;
+      _indexNotifier.value = index;
+      _selectedPlaylist = null;
       
-      // 4. 重置 Navigator 到首页
+      _isInternalNav = true;
       _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      _isInternalNav = false;
     });
   }
 
-  void _pushRoute(Widget page, {dynamic playlistId}) {
-    // 1. 如果点击的是当前已经在看的歌单，则什么都不做
-    if (_isSameState(_selectedIndex, playlistId)) return;
-    
+  void _pushRoute(Widget page, {String? name, dynamic arguments}) {
     context.read<SelectionProvider>().reset();
     
-    setState(() {
-      if (_historyIndex < _history.length - 1) {
-        _history.removeRange(_historyIndex + 1, _history.length);
-      }
-      
-      _history.add((index: _selectedIndex, playlistId: playlistId));
-      _historyIndex = _history.length - 1;
-      _selectedPlaylistId = playlistId;
-    });
-
     _navigatorKey.currentState?.push(
       CupertinoPageRoute(
         builder: (_) => page,
-        settings: RouteSettings(arguments: playlistId),
+        settings: RouteSettings(name: name, arguments: arguments),
       ),
     );
   }
 
   void _goBack() {
     if (_historyIndex > 0) {
-      context.read<SelectionProvider>().reset();
-      
-      setState(() {
-        _historyIndex--;
-        final state = _history[_historyIndex];
-        
-        // 判定是退回到上一个分类，还是退回到当前分类的根目录
-        if (state.index != _selectedIndex) {
-          _selectedIndex = state.index;
-          _selectedPlaylistId = state.playlistId;
-          // 切换分类时必须清空 Navigator
-          _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-        } else {
-          // 在同一个分类内回退（通常是从歌单详情页退回分类根目录）
-          _selectedPlaylistId = state.playlistId;
-          if (_selectedPlaylistId == null) {
-            _navigatorKey.currentState?.popUntil((route) => route.isFirst);
-          } else {
-            // 如果历史记录里上一步也是个歌单，则 pop 当前详情页即可
-            if (_navigatorKey.currentState?.canPop() ?? false) {
-              _navigatorKey.currentState?.pop();
-            }
-          }
-        }
-      });
+      _historyIndex--;
+      _syncHistoryState();
     }
   }
 
   void _goForward() {
     if (_historyIndex < _history.length - 1) {
-      context.read<SelectionProvider>().reset();
-      setState(() {
-        _historyIndex++;
-        final state = _history[_historyIndex];
-        
-        if (state.index != _selectedIndex) {
-          _selectedIndex = state.index;
-        }
-        _selectedPlaylistId = state.playlistId;
-        // 注意：前进到详情页在当前 Navigator 结构下需要重构以完美支持
-      });
+      _historyIndex++;
+      _syncHistoryState();
+    }
+  }
+
+  void _syncHistoryState() {
+    final state = _history[_historyIndex];
+    context.read<SelectionProvider>().reset();
+    
+    _isInternalNav = true;
+    setState(() {
+      _selectedIndex = state.index;
+      _indexNotifier.value = state.index;
+      if (state.routeName == 'playlist_detail') {
+        _selectedPlaylist = state.arguments as Playlist?;
+      } else {
+        _selectedPlaylist = null;
+      }
+    });
+
+    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    
+    if (state.routeName != null) {
+      _navigatorKey.currentState?.push(
+        CupertinoPageRoute(
+          builder: (_) => _rebuildPage(state.routeName!, state.arguments),
+          settings: RouteSettings(name: state.routeName, arguments: state.arguments),
+        ),
+      );
+    }
+    _isInternalNav = false;
+  }
+
+  Widget _rebuildPage(String name, dynamic arguments) {
+    switch (name) {
+      case 'playlist_detail':
+        return PlaylistDetailView(playlist: arguments as Playlist);
+      case 'album_detail':
+        return AlbumDetailView(
+          albumId: arguments['id'],
+          albumName: arguments['name'],
+        );
+      case 'recommend_song':
+        return RecommendSongView();
+      case 'rank_view':
+        return RankView(
+          isRecommend: arguments?['isRecommend'] ?? false,
+          showTitle: arguments?['showTitle'] ?? true,
+          initialRankId: arguments?['initialRankId'],
+        );
+      default:
+        return const SizedBox();
     }
   }
 
   bool get canGoBack => _historyIndex > 0;
   bool get canGoForward => _historyIndex < _history.length - 1;
+
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
@@ -186,9 +205,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: Sidebar(
                           selectedIndex: _selectedIndex,
-                          selectedPlaylistId: _selectedPlaylistId,
+                          selectedPlaylistId: _selectedPlaylist?.id,
                           onDestinationSelected: _navigateTo,
-                          onPushRoute: _pushRoute,
+                          onPushPlaylist: (playlist) {
+                             _pushRoute(
+                               PlaylistDetailView(playlist: playlist), 
+                               name: 'playlist_detail', 
+                               arguments: playlist
+                             );
+                          },
                         ),
                       ),
                     ],
@@ -214,7 +239,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               icon: CupertinoIcons.refresh, 
                               onPressed: () {
                                 context.read<RefreshProvider>().triggerRefresh();
-                                context.read<UserProvider>().fetchAllUserData(); // Global refresh also refreshes user data
+                                context.read<UserProvider>().fetchAllUserData();
                               }, 
                               tooltip: '刷新'
                             ),
@@ -227,16 +252,40 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Navigator(
                           key: _navigatorKey,
                           observers: [
-                            _NavigationObserver((route, prevRoute) {
-                              // 当用户通过手势或代码 pop 详情页时，同步侧边栏高亮状态
-                              if (prevRoute is CupertinoPageRoute && route?.settings.name == 'root') {
+                            _NavigationObserver((route, prevRoute, type) {
+                              if (_isInternalNav) return;
+                              
+                              if (type == _NavChangeType.pop) {
                                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted && _selectedPlaylistId != null) {
+                                  if (mounted) {
                                     setState(() {
-                                      _selectedPlaylistId = null;
-                                      // 尝试修正历史索引位置，使“后退”按钮在手动 pop 后依然合乎逻辑
-                                      if (_historyIndex > 0 && _history[_historyIndex - 1].playlistId == null) {
+                                      // Sync state with the route we just returned to
+                                      if (prevRoute?.settings.name == 'playlist_detail') {
+                                        _selectedPlaylist = prevRoute?.settings.arguments as Playlist?;
+                                      } else {
+                                        _selectedPlaylist = null;
+                                      }
+                                      
+                                      if (_historyIndex > 0) {
                                         _historyIndex--;
+                                      }
+                                    });
+                                  }
+                                });
+                              } else if (type == _NavChangeType.push && route?.settings.name != 'root') {
+                                final name = route?.settings.name;
+                                final args = route?.settings.arguments;
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  if (mounted) {
+                                    setState(() {
+                                      if (_historyIndex < _history.length - 1) {
+                                        _history.removeRange(_historyIndex + 1, _history.length);
+                                      }
+                                      _history.add(_HistoryEntry(index: _selectedIndex, routeName: name, arguments: args));
+                                      _historyIndex = _history.length - 1;
+                                      
+                                      if (name == 'playlist_detail') {
+                                        _selectedPlaylist = args as Playlist?;
                                       }
                                     });
                                   }
@@ -246,7 +295,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                           onGenerateRoute: (settings) => PageRouteBuilder(
                             settings: const RouteSettings(name: 'root'),
-                            pageBuilder: (context, _, __) => IndexedStack(index: _selectedIndex, children: _views),
+                            pageBuilder: (context, _, __) => ValueListenableBuilder<int>(
+                              valueListenable: _indexNotifier,
+                              builder: (context, index, _) => IndexedStack(
+                                index: index, 
+                                children: _views
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -276,13 +331,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+enum _NavChangeType { push, pop }
+
 class _NavigationObserver extends NavigatorObserver {
-  final Function(Route?, Route?) onStateChanged;
+  final Function(Route?, Route?, _NavChangeType) onStateChanged;
   _NavigationObserver(this.onStateChanged);
   @override
-  void didPush(Route route, Route? prev) => onStateChanged(route, prev);
+  void didPush(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.push);
   @override
-  void didPop(Route route, Route? prev) => onStateChanged(prev, route);
+  void didPop(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.pop);
 }
 
 class WindowButtons extends StatelessWidget {
