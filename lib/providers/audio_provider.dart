@@ -151,9 +151,10 @@ class AudioProvider with ChangeNotifier {
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
-    _player.setVolume(p.volume * 100.0);
-    _userVolumeController.add(p.volume);
-    _lastVolume = p.volume > 0.001 ? p.volume : 0.5;
+    final savedVol = p.volume;
+    _player.setVolume(savedVol * 100.0);
+    _userVolumeController.add(savedVol);
+    _lastVolume = savedVol > 0.001 ? savedVol : 0.5;
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
     
     // Restore playback state if not already playing
@@ -163,7 +164,10 @@ class AudioProvider with ChangeNotifier {
       _currentIndex = p.currentIndex;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
-        _initRestore(p.currentPosition);
+        // Ensure UI updates before restoration begins
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _initRestore(p.currentPosition);
+        });
       }
     }
     
@@ -509,6 +513,7 @@ class AudioProvider with ChangeNotifier {
     _volumeSaveTimer?.cancel();
     _cancelSubscriptions();
     _userVolumeController.close();
+    _player.dispose(); // CRITICAL: Fix crash on exit
     super.dispose();
   }
 }
