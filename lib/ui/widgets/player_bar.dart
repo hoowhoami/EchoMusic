@@ -421,8 +421,11 @@ class _PlayerBarState extends State<PlayerBar> {
   }
 
   String _getQualityEffectLabel(PersistenceProvider p) {
-    final q = p.settings['audioQuality'] == '128' ? '标准' : (p.settings['audioQuality'] == '320' ? 'HQ' : 'SQ');
-    final e = AudioEffect.getLabel(p.settings['audioEffect'] ?? 'none');
+    final qVal = p.playerSettings['audioQuality'] ?? p.settings['audioQuality'] ?? 'flac';
+    final eVal = p.playerSettings['audioEffect'] ?? p.settings['audioEffect'] ?? 'none';
+    
+    final q = qVal == '128' ? '标准' : (qVal == '320' ? 'HQ' : 'SQ');
+    final e = AudioEffect.getLabel(eVal);
     return e == '原声' ? q : '$q · $e';
   }
 
@@ -503,8 +506,8 @@ class _QualityEffectPopup extends StatelessWidget {
   Widget build(BuildContext context) {
     final audio = context.watch<AudioProvider>();
     final persistence = context.watch<PersistenceProvider>();
-    final currentQuality = persistence.settings['audioQuality'] ?? 'flac';
-    final currentEffect = persistence.settings['audioEffect'] ?? 'none';
+    final currentQuality = persistence.playerSettings['audioQuality'] ?? persistence.settings['audioQuality'] ?? 'flac';
+    final currentEffect = persistence.playerSettings['audioEffect'] ?? persistence.settings['audioEffect'] ?? 'none';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
