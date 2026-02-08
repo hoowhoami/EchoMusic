@@ -221,8 +221,9 @@ class _LyricPageState extends State<LyricPage> {
               itemBuilder: (context, index) {
                 final line = lyricProvider.lyrics[index];
                 String? secondary;
-                if (lyricProvider.showTranslation) secondary = line.translated;
-                else if (lyricProvider.showRomanization) secondary = line.romanized;
+                if (lyricProvider.showTranslation) {
+                  secondary = line.translated;
+                } else if (lyricProvider.showRomanization) secondary = line.romanized;
                 return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.player.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
               },
             ),

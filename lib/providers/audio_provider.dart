@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
+import '../utils/constants.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
@@ -20,13 +21,18 @@ class AudioProvider with ChangeNotifier {
   List<Song> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
-  bool _isShuffle = false;
   bool _isDisposed = false;
   double _playbackRate = 1.0;
+  double _lastVolume = 1.0;
   final Map<double, double> _climaxMarks = {};
+
+  String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
 
   LyricProvider? _lyricProvider;
   PersistenceProvider? _persistenceProvider;
+
+  Timer? _fadeTimer;
+  bool _isInternalChanging = false;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -34,8 +40,8 @@ class AudioProvider with ChangeNotifier {
   int get currentIndex => _currentIndex;
   bool get isPlaying => _player.state.playing;
   bool get isLoading => _isLoading || _player.state.buffering;
-  PlaylistMode get loopMode => _player.state.playlistMode;
-  bool get isShuffle => _isShuffle;
+  String get playMode => _playMode;
+  String get loopMode => _playMode; // Alias for potential dynamic lookup
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
@@ -44,35 +50,84 @@ class AudioProvider with ChangeNotifier {
     _initListeners();
   }
 
+  void _fadeVolume(double target, {int? durationMs, VoidCallback? onComplete}) {
+    _fadeTimer?.cancel();
+    if (_persistenceProvider?.settings['volumeFade'] == false) {
+      _player.setVolume(target * 100.0);
+      onComplete?.call();
+      return;
+    }
+
+    final startVolume = _player.state.volume / 100.0;
+    final duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 500;
+    if (duration <= 0) {
+      _player.setVolume(target * 100.0);
+      onComplete?.call();
+      return;
+    }
+
+    _isInternalChanging = true;
+    const steps = 20;
+    final stepDuration = duration ~/ steps;
+    final volumeStep = (target - startVolume) / steps;
+    int currentStep = 0;
+
+    _fadeTimer = Timer.periodic(Duration(milliseconds: stepDuration), (timer) {
+      currentStep++;
+      final newVolume = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
+      _player.setVolume(newVolume * 100.0);
+      if (currentStep >= steps) {
+        timer.cancel();
+        _fadeTimer = null;
+        _player.setVolume(target * 100.0);
+        _isInternalChanging = false;
+        onComplete?.call();
+      }
+    });
+  }
+
+  int _lastSavedSecond = -1;
+
   void _initListeners() {
     _subscriptions.add(_player.stream.completed.listen((c) {
       if (_isDisposed || !c) return;
       try {
-        loopMode == PlaylistMode.single ? _player.seek(Duration.zero) : next();
+        next();
       } catch (_) {}
     }));
 
     _subscriptions.add(_player.stream.playing.listen((_) => _safeNotify()));
     _subscriptions.add(_player.stream.buffering.listen((_) => _safeNotify()));
+    _subscriptions.add(_player.stream.error.listen((_) => _handlePlayError()));
 
     _subscriptions.add(_player.stream.position.listen((pos) {
       if (_isDisposed) return;
+      final sec = pos.inSeconds;
       try {
         if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
+        // Periodically save state (every 5 seconds)
+        if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
+          _lastSavedSecond = sec;
+          _savePlaybackState();
+        }
       } catch (_) {}
     }));
 
     _subscriptions.add(_player.stream.volume.listen((v) {
-      if (_isDisposed) return;
+      if (_isDisposed || _isInternalChanging) return;
       try {
         final normalized = v / 100.0;
-        _persistenceProvider?.saveVolume(normalized);
-        _userVolumeController.add(normalized);
+        // Only save volume if not fading
+        if (_fadeTimer == null || !_fadeTimer!.isActive) {
+          _persistenceProvider?.saveVolume(normalized);
+          _userVolumeController.add(normalized);
+        }
       } catch (_) {}
     }));
   }
 
   void _cancelSubscriptions() {
+    _fadeTimer?.cancel();
     for (var sub in _subscriptions) {
       sub.cancel();
     }
@@ -84,15 +139,72 @@ class AudioProvider with ChangeNotifier {
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
+
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
     _player.setVolume(p.volume * 100.0);
     _userVolumeController.add(p.volume);
+    _lastVolume = p.volume > 0 ? p.volume : 1.0;
+    _playMode = p.settings['playMode'] ?? 'repeat';
+    
+    // Restore playback state if not already playing
+    if (_currentIndex == -1 && p.playlist.isNotEmpty) {
+      _playlist = List.from(p.playlist);
+      _originalPlaylist = []; 
+      _currentIndex = p.currentIndex;
+      if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
+        _currentSong = _playlist[_currentIndex];
+        _initRestore(p.currentPosition);
+      }
+    }
+    
+    _applyPlayMode();
+  }
+
+  Future<void> _initRestore(double positionSeconds) async {
+    if (_currentSong == null) return;
+    _isLoading = true;
+    _safeNotify();
+    try {
+      final result = await _getAudioUrlWithQuality(_currentSong!);
+      if (result != null && result['url'] != null) {
+        await _player.open(Media(result['url']), play: false);
+        await _player.seek(Duration(milliseconds: (positionSeconds * 1000).toInt()));
+        _player.setRate(_playbackRate);
+        _fetchClimax(_currentSong!);
+      }
+    } finally {
+      _isLoading = false;
+      _safeNotify();
+    }
+  }
+
+  void _savePlaybackState() {
+    if (_persistenceProvider != null && _playlist.isNotEmpty) {
+      _persistenceProvider!.savePlaybackState(
+        _playlist,
+        _currentIndex,
+        _player.state.position.inMilliseconds / 1000.0,
+      );
+    }
   }
 
   void setVolume(double v) {
     if (_isDisposed) return;
+    _fadeTimer?.cancel(); 
+    _fadeTimer = null;
     _player.setVolume(v * 100.0);
+    _persistenceProvider?.saveVolume(v);
+    _userVolumeController.add(v);
+  }
+
+  void toggleMute() {
+    if (_player.state.volume > 0) {
+      _lastVolume = _player.state.volume / 100.0;
+      setVolume(0.0);
+    } else {
+      setVolume(_lastVolume > 0 ? _lastVolume : (_persistenceProvider?.volume ?? 1.0));
+    }
   }
 
   void setPlaybackRate(double r) {
@@ -101,31 +213,58 @@ class AudioProvider with ChangeNotifier {
     _safeNotify();
   }
 
-  void toggleLoopMode() {
-    final mode = _player.state.playlistMode;
-    final nextMode = mode == PlaylistMode.none ? PlaylistMode.loop : (mode == PlaylistMode.loop ? PlaylistMode.single : PlaylistMode.none);
-    _player.setPlaylistMode(nextMode);
+  void setPlayMode(String mode) {
+    _playMode = mode;
+    _persistenceProvider?.updateSetting('playMode', mode);
+    _applyPlayMode();
     _safeNotify();
   }
 
-  void toggleShuffle() {
-    _isShuffle = !_isShuffle;
-    if (_isShuffle) {
-      _originalPlaylist = List.from(_playlist);
-      _playlist.shuffle();
+  void _applyPlayMode() {
+    if (_playMode == 'repeat-once') {
+      _player.setPlaylistMode(PlaylistMode.single);
     } else {
-      _playlist = List.from(_originalPlaylist);
+      _player.setPlaylistMode(PlaylistMode.none);
     }
-    _currentIndex = _playlist.indexWhere((s) => s.hash == _currentSong?.hash);
-    _safeNotify();
+
+    if (_playMode == 'shuffle' && _playlist.isNotEmpty) {
+      if (_originalPlaylist.isEmpty) {
+        _originalPlaylist = List.from(_playlist);
+        final current = _currentSong;
+        _playlist.shuffle();
+        if (current != null) {
+          _playlist.removeWhere((s) => s.hash == current.hash);
+          _playlist.insert(0, current);
+          _currentIndex = 0;
+        }
+      }
+    } else if (_originalPlaylist.isNotEmpty) {
+      final current = _currentSong;
+      _playlist = List.from(_originalPlaylist);
+      _originalPlaylist = [];
+      if (current != null) {
+        _currentIndex = _playlist.indexWhere((s) => s.hash == current.hash);
+      }
+    }
+  }
+
+  void togglePlayMode() {
+    if (_playMode == 'repeat') setPlayMode('repeat-once');
+    else if (_playMode == 'repeat-once') setPlayMode('shuffle');
+    else setPlayMode('repeat');
   }
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
     if (playlist != null) {
       _playlist = List.from(playlist);
-      _originalPlaylist = List.from(playlist);
-      if (_isShuffle) _playlist.shuffle();
+      _originalPlaylist = [];
+      if (_playMode == 'shuffle') {
+        _originalPlaylist = List.from(playlist);
+        _playlist.shuffle();
+        _playlist.removeWhere((s) => s.hash == song.hash);
+        _playlist.insert(0, song);
+      }
     }
     _currentIndex = _playlist.indexWhere((s) => s.hash == song.hash);
     _currentSong = song;
@@ -136,12 +275,18 @@ class AudioProvider with ChangeNotifier {
 
     try {
       _persistenceProvider?.addToHistory(song);
+      MusicApi.uploadPlayHistory(song.mixSongId);
       _fetchClimax(song);
       final result = await _getAudioUrlWithQuality(song);
       if (_isDisposed || result == null || result['url'] == null) return;
 
+      _player.setVolume(0.0);
       await _player.open(Media(result['url']), play: true);
       _player.setRate(_playbackRate);
+      _applyPlayMode(); 
+      
+      _fadeVolume(_persistenceProvider?.volume ?? 1.0);
+      _savePlaybackState();
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -153,31 +298,126 @@ class AudioProvider with ChangeNotifier {
       final url = await MusicApi.getCloudSongUrl(song.hash);
       return url != null ? {'url': url} : null;
     }
+
     final settings = _persistenceProvider?.settings ?? {};
-    final quality = settings['audioQuality'] ?? 'flac';
-    final result = await MusicApi.getSongUrl(song.hash, quality: quality);
-    if (result != null && result['url'] != null) return {'url': result['url']};
-    final backup = await MusicApi.getSongUrl(song.hash);
-    return (backup != null && backup['url'] != null) ? {'url': backup['url']} : null;
+    final audioQuality = settings['audioQuality'] ?? 'flac';
+    final audioEffect = settings['audioEffect'] ?? 'none';
+    final backupQuality = settings['backupQuality'] ?? '128';
+    final compatibilityMode = settings['compatibilityMode'] ?? true;
+
+    // Build priority list
+    final List<String> qualityList = [];
+    if (audioEffect != 'none') qualityList.add(audioEffect);
+    qualityList.add(audioQuality);
+    if (compatibilityMode) qualityList.add(backupQuality);
+    
+    final uniqueQualities = qualityList.toSet().toList();
+
+    final privilege = await MusicApi.getSongPrivilege(song.hash);
+    final List<dynamic> relateGoods = (privilege.isNotEmpty) ? (privilege[0]['relate_goods'] ?? []) : [];
+
+    for (final quality in uniqueQualities) {
+      try {
+        final isEffect = AudioEffect.options.any((e) => e.value == quality && e.value != 'none');
+        
+        String targetHash = song.hash;
+        if (!isEffect) {
+          final good = relateGoods.firstWhere((item) => item['quality']?.toString() == quality, orElse: () => null);
+          if (good != null && good['hash'] != null) {
+            targetHash = good['hash'];
+          } else {
+            // If we can't find the hash for this quality level, skip it unless it's the primary one
+            if (quality != audioQuality) continue;
+          }
+        }
+
+        final result = await MusicApi.getSongUrl(targetHash, quality: quality);
+        if (result != null && result['status'] == 1 && result['url'] != null) {
+          return result;
+        }
+      } catch (_) {}
+    }
+
+    if (compatibilityMode) {
+      final lastResort = await MusicApi.getSongUrl(song.hash);
+      if (lastResort != null && lastResort['url'] != null) return lastResort;
+    }
+
+    return null;
   }
 
-  void togglePlay() => _player.playOrPause();
+  Future<void> _handlePlayError() async {
+    if (_isDisposed) return;
+    
+    final settings = _persistenceProvider?.settings ?? {};
+    final autoNext = settings['autoNext'] ?? true;
+    final autoNextTime = settings['autoNextTime'] ?? 3000;
+
+    if (autoNext) {
+      await Future.delayed(Duration(milliseconds: autoNextTime));
+      next();
+    }
+  }
+
+  Future<void> updateAudioSetting(String key, String value) async {
+    _persistenceProvider?.updateSetting(key, value);
+    if (_currentSong != null) {
+      final pos = _player.state.position;
+      final playing = _player.state.playing;
+      _isLoading = true;
+      _safeNotify();
+      try {
+        final result = await _getAudioUrlWithQuality(_currentSong!);
+        if (result != null && result['url'] != null) {
+          await _player.open(Media(result['url']), play: playing);
+          await _player.seek(pos);
+          _player.setRate(_playbackRate);
+        }
+      } finally {
+        _isLoading = false;
+        _safeNotify();
+      }
+    }
+  }
+
+  void togglePlay() {
+    if (_player.state.playing) {
+      _fadeVolume(0.0, onComplete: () {
+        _player.pause();
+        _savePlaybackState();
+      });
+    } else {
+      _player.play();
+      _fadeVolume(_persistenceProvider?.volume ?? 1.0);
+    }
+  }
+
   void next() {
     if (_playlist.isEmpty) return;
-    _currentIndex = (_currentIndex + 1) % _playlist.length;
-    playSong(_playlist[_currentIndex]);
+    if (_playMode == 'repeat-once') {
+       _player.seek(Duration.zero);
+       _player.play();
+       return;
+    }
+    _fadeVolume(0.0, onComplete: () {
+      _currentIndex = (_currentIndex + 1) % _playlist.length;
+      playSong(_playlist[_currentIndex]);
+    });
   }
 
   void previous() {
     if (_playlist.isEmpty) return;
-    _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
-    playSong(_playlist[_currentIndex]);
+    _fadeVolume(0.0, onComplete: () {
+      _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
+      playSong(_playlist[_currentIndex]);
+    });
   }
 
   void clearPlaylist() {
     _playlist = [];
     _originalPlaylist = [];
     _currentIndex = -1;
+    _savePlaybackState();
     _safeNotify();
   }
 
@@ -196,7 +436,8 @@ class AudioProvider with ChangeNotifier {
     } else if (_currentIndex > index) {
       _currentIndex--;
     }
-    if (_isShuffle) _originalPlaylist.removeWhere((s) => s.hash == removed.hash);
+    if (_playMode == 'shuffle') _originalPlaylist.removeWhere((s) => s.hash == removed.hash);
+    _savePlaybackState();
     _safeNotify();
   }
 
@@ -234,11 +475,8 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    // IMPORTANT: Cancel subscriptions FIRST to prevent any pending callbacks
     _cancelSubscriptions();
     _userVolumeController.close();
-    // DO NOT call any Player methods (stop, dispose, etc.)
-    // The global player instance survives hot restarts
     super.dispose();
   }
 }

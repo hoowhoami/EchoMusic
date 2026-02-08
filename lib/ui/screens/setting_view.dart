@@ -117,7 +117,7 @@ class SettingView extends StatelessWidget {
           const SizedBox(height: 32),
           _buildGroup(
             context,
-            '音质与音效',
+            '播放音质',
             CupertinoIcons.waveform_circle,
             [
               _buildItem(
@@ -155,20 +155,6 @@ class SettingView extends StatelessWidget {
                   (label) {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('backupQuality', value);
-                  },
-                ),
-              ),
-              _buildItem(
-                context,
-                '全局音效',
-                '为播放内容应用实时音频增强',
-                trailing: _buildDropdown(
-                  context,
-                  AudioEffect.options.map((o) => o.label).toList(),
-                  AudioEffect.getLabel(settings['audioEffect'] ?? 'none'),
-                  (label) {
-                    final value = AudioEffect.options.firstWhere((o) => o.label == label).value;
-                    persistence.updateSetting('audioEffect', value);
                   },
                 ),
               ),

@@ -673,6 +673,15 @@ class MusicApi {
     }
   }
 
+  static Future<bool> uploadPlayHistory(int mixSongId) async {
+    try {
+      final response = await _dio.get('/playhistory/upload', queryParameters: {'mxid': mixSongId});
+      return response.data['status'] == 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static Future<List<Song>> getUserCloud({int page = 1, int pagesize = 30}) async {
     try {
       final response = await _dio.get('/user/cloud', queryParameters: {'page': page, 'pagesize': pagesize});

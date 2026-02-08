@@ -10,9 +10,15 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyDevice = 'device_info';
   static const String _keyUserInfo = 'user_info';
   static const String _keySettings = 'app_settings';
+  static const String _keyPlaylist = 'current_playlist';
+  static const String _keyCurrentIndex = 'current_index';
+  static const String _keyCurrentPosition = 'current_position';
 
   List<Song> _favorites = [];
   List<Song> _history = [];
+  List<Song> _playlist = [];
+  int _currentIndex = -1;
+  double _currentPosition = 0;
   double _volume = 1.0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
@@ -32,10 +38,14 @@ class PersistenceProvider with ChangeNotifier {
     'audioEffect': 'none',
     'autoSign': false,
     'autoReceiveVip': false,
+    'playMode': 'repeat',
   };
 
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
+  List<Song> get playlist => _playlist;
+  int get currentIndex => _currentIndex;
+  double get currentPosition => _currentPosition;
   double get volume => _volume;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
@@ -61,6 +71,14 @@ class PersistenceProvider with ChangeNotifier {
     // Load history
     final historyJson = prefs.getStringList(_keyHistory) ?? [];
     _history = historyJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
+
+    // Load Playlist
+    final playlistJson = prefs.getStringList(_keyPlaylist) ?? [];
+    _playlist = playlistJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
+
+    // Load Index & Position
+    _currentIndex = prefs.getInt(_keyCurrentIndex) ?? -1;
+    _currentPosition = prefs.getDouble(_keyCurrentPosition) ?? 0.0;
     
     // Load volume
     _volume = prefs.getDouble(_keyVolume) ?? 1.0;
@@ -78,6 +96,16 @@ class PersistenceProvider with ChangeNotifier {
     }
     
     notifyListeners();
+  }
+
+  Future<void> savePlaybackState(List<Song> playlist, int index, double position) async {
+    _playlist = playlist;
+    _currentIndex = index;
+    _currentPosition = position;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyPlaylist, playlist.map((s) => jsonEncode(_songToMap(s))).toList());
+    await prefs.setInt(_keyCurrentIndex, index);
+    await prefs.setDouble(_keyCurrentPosition, position);
   }
 
   Future<void> setDevice(Map<String, dynamic> device) async {
@@ -106,9 +134,11 @@ class PersistenceProvider with ChangeNotifier {
     await prefs.clear();
     _favorites = [];
     _history = [];
+    _playlist = [];
+    _currentIndex = -1;
+    _currentPosition = 0;
     _device = null;
     _userInfo = null;
-    // Reset settings to default
     _settings = {
       'theme': 'auto',
       'volumeFade': true,
@@ -125,6 +155,7 @@ class PersistenceProvider with ChangeNotifier {
       'audioEffect': 'none',
       'autoSign': false,
       'autoReceiveVip': false,
+      'playMode': 'repeat',
     };
     notifyListeners();
   }
