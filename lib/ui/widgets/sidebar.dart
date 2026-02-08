@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import '../screens/login_screen.dart';
-import '../screens/playlist_detail_view.dart';
 import '../../models/playlist.dart';
 import 'cover_image.dart';
 

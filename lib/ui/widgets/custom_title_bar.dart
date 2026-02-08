@@ -3,8 +3,8 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:ui';
-import '../../theme/app_theme.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class CustomTitleBar extends StatelessWidget {
   const CustomTitleBar({super.key});
@@ -37,7 +37,7 @@ class CustomTitleBar extends StatelessWidget {
                 // Left area: Reserved for traffic lights on macOS or padding
                 const SizedBox(width: 80),
 
-                // Navigation Controls
+                // Navigation Controls (Note: These need integration with HomeScreen state for full functionality)
                 _NavButton(
                   icon: CupertinoIcons.chevron_left,
                   onPressed: () => Navigator.maybePop(context),
@@ -45,7 +45,7 @@ class CustomTitleBar extends StatelessWidget {
                 ),
                 _NavButton(
                   icon: CupertinoIcons.chevron_right,
-                  onPressed: null, // Can be implemented if needed
+                  onPressed: null, // Placeholder
                   tooltip: '前进',
                 ),
                 _NavButton(

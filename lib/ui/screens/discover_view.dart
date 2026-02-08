@@ -23,9 +23,8 @@ class DiscoverView extends StatefulWidget {
   State<DiscoverView> createState() => _DiscoverViewState();
 }
 
-class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin {
+class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin, RefreshableState {
   late TabController _tabController;
-  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -34,26 +33,16 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    _refreshProvider.addListener(_onRefresh);
+  void onRefresh() {
+    setState(() {
+      // Rebuild children
+    });
   }
 
   @override
   void dispose() {
-    _refreshProvider.removeListener(_onRefresh);
     _tabController.dispose();
     super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      setState(() {
-        // This will cause the entire DiscoverView and its children to rebuild
-        // Children (like _DiscoverPlaylistTab) also listen to RefreshProvider
-      });
-    }
   }
 
   @override
@@ -103,13 +92,12 @@ class _DiscoverPlaylistTab extends StatefulWidget {
   State<_DiscoverPlaylistTab> createState() => _DiscoverPlaylistTabState();
 }
 
-class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
+class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with RefreshableState {
   List<Playlist> _playlists = [];
   List<Map<String, dynamic>> _categories = [];
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isLoading = true;
-  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -118,25 +106,11 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    _refreshProvider.addListener(_onRefresh);
-  }
-
-  @override
-  void dispose() {
-    _refreshProvider.removeListener(_onRefresh);
-    super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      if (_selectedCategoryId != null && _selectedCategoryName != null) {
-        _loadPlaylists(_selectedCategoryId!, _selectedCategoryName!);
-      } else {
-        _loadInitialData();
-      }
+  void onRefresh() {
+    if (_selectedCategoryId != null && _selectedCategoryName != null) {
+      _loadPlaylists(_selectedCategoryId!, _selectedCategoryName!);
+    } else {
+      _loadInitialData();
     }
   }
 
@@ -310,12 +284,11 @@ class _DiscoverAlbumTab extends StatefulWidget {
   State<_DiscoverAlbumTab> createState() => _DiscoverAlbumTabState();
 }
 
-class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
+class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableState {
   String _selectedTypeId = 'all';
   String _selectedTypeName = '全部';
   Map<String, dynamic> _allAlbums = {};
   bool _isLoading = true;
-  late RefreshProvider _refreshProvider;
 
   final List<Map<String, String>> _types = [
     {'id': 'all', 'name': '全部'},
@@ -332,22 +305,8 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    _refreshProvider.addListener(_onRefresh);
-  }
-
-  @override
-  void dispose() {
-    _refreshProvider.removeListener(_onRefresh);
-    super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      _loadAlbums();
-    }
+  void onRefresh() {
+    _loadAlbums();
   }
 
   Future<void> _loadAlbums() async {
@@ -510,13 +469,20 @@ class _DiscoverSongTab extends StatefulWidget {
   State<_DiscoverSongTab> createState() => _DiscoverSongTabState();
 }
 
-class _DiscoverSongTabState extends State<_DiscoverSongTab> {
+class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableState {
   late Future<List<Song>> _songsFuture;
 
   @override
   void initState() {
     super.initState();
     _songsFuture = MusicApi.getNewSongs();
+  }
+
+  @override
+  void onRefresh() {
+    setState(() {
+      _songsFuture = MusicApi.getNewSongs();
+    });
   }
 
   @override

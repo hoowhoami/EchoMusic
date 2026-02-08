@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../api/music_api.dart';
 import 'persistence_provider.dart';
+import 'refresh_provider.dart';
 import '../models/song.dart';
 
 class UserProvider with ChangeNotifier {
@@ -19,6 +20,7 @@ class UserProvider with ChangeNotifier {
   dynamic _likedPlaylistId;
   bool _isInitialSynced = false;
   final ValueNotifier<int> playlistSongsChangeNotifier = ValueNotifier<int>(0);
+  RefreshProvider? _refreshProvider;
 
   UserProvider() {
     MusicApi.onAuthExpired = () {
@@ -61,6 +63,21 @@ class UserProvider with ChangeNotifier {
         fetchAllUserData();
       }
     }
+  }
+
+  void setRefreshProvider(RefreshProvider provider) {
+    if (_refreshProvider != provider) {
+      _refreshProvider?.removeListener(fetchAllUserData);
+      _refreshProvider = provider;
+      _refreshProvider?.addListener(fetchAllUserData);
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshProvider?.removeListener(fetchAllUserData);
+    playlistSongsChangeNotifier.dispose();
+    super.dispose();
   }
 
   void _updatePlaylistSongCount(dynamic listId, int delta) {
@@ -116,37 +133,28 @@ class UserProvider with ChangeNotifier {
     final targetListid = listid ?? (likedPlaylistId is int ? likedPlaylistId : null);
     
     if (targetGid == null && targetListid == null) {
-      debugPrint('[UserProvider] Cannot fetch liked songs: no ID available');
       return;
     }
 
-    debugPrint('[UserProvider] Fetching liked songs. GID: $targetGid, Numeric ID: $targetListid');
-    
     List<Song> songs = [];
     
     // STRATEGY 1: Use GID with the standard track/all API (Most reliable for cloud sync)
     if (targetGid != null) {
-      debugPrint('[UserProvider] Attempting fetch with GID: $targetGid via track/all');
       songs = await MusicApi.getPlaylistSongs(targetGid);
     }
     
     // STRATEGY 2: Fallback to Numeric ID with track/all/new if GID failed
     if (songs.isEmpty && targetListid != null) {
-      debugPrint('[UserProvider] Attempting fallback with Numeric ID: $targetListid via track/all/new');
       final response = await MusicApi.getPlaylistTrackAllNew(targetListid, pagesize: 500);
       songs = MusicApi.parseSongsFromResponse(response);
     }
 
-    debugPrint('[UserProvider] Final fetched songs count: ${songs.length}');
-    
     if (songs.isNotEmpty) {
       _likedSongs = songs;
       if (_persistenceProvider != null) {
         _persistenceProvider!.syncCloudFavorites(_likedSongs);
       }
       notifyListeners();
-    } else {
-      debugPrint('[UserProvider] Failed to fetch any songs for the liked playlist.');
     }
   }
 
@@ -189,7 +197,6 @@ class UserProvider with ChangeNotifier {
 
   Future<void> fetchAllUserData() async {
     if (!isAuthenticated) return;
-    debugPrint('[UserProvider] Starting full user data sync...');
     
     await Future.wait([
       fetchUserPlaylists(),
@@ -199,7 +206,6 @@ class UserProvider with ChangeNotifier {
       fetchUserDetails(),
       syncVipStatus(),
     ]);
-    debugPrint('[UserProvider] Full user data sync completed.');
   }
 
   Future<void> syncVipStatus() async {
@@ -241,12 +247,6 @@ class UserProvider with ChangeNotifier {
       List data = response['info'] ?? response['data']?['info'] ?? [];
       _userPlaylists = data.cast<Map<String, dynamic>>();
       
-      debugPrint('[UserProvider] --- All User Playlists ---');
-      for (var p in _userPlaylists) {
-        debugPrint('  * Name: "${p['name']}" | Songs: ${p['count'] ?? p['song_count']} | listid: ${p['listid']} | GID: ${p['list_create_gid']}');
-      }
-      debugPrint('[UserProvider] ---------------------------');
-      
       // Identify "I Like" playlist with NEW PRIORITY
       int likedIndex = _userPlaylists.indexWhere((p) {
         final name = p['name']?.toString() ?? '';
@@ -269,8 +269,6 @@ class UserProvider with ChangeNotifier {
         final liked = _userPlaylists[likedIndex];
         // STRATEGY: Always prefer GID for storage to avoid numeric ID issues
         _likedPlaylistId = liked['list_create_gid'] ?? liked['gid'] ?? liked['listid'];
-        
-        debugPrint('[UserProvider] FINAL PICK for Liked Playlist: ${liked['name']} (Stored ID: $_likedPlaylistId)');
         
         // Persist
         if (_user != null && _user?.extendsInfo?['likedPlaylistId'] != _likedPlaylistId) {

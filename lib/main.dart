@@ -49,9 +49,11 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => PersistenceProvider()),
         ChangeNotifierProvider(create: (_) => RefreshProvider()),
-        ChangeNotifierProxyProvider<PersistenceProvider, UserProvider>(
+        ChangeNotifierProxyProvider2<PersistenceProvider, RefreshProvider, UserProvider>(
           create: (_) => UserProvider(),
-          update: (_, p, u) => u!..setPersistenceProvider(p),
+          update: (_, p, r, u) => u!
+            ..setPersistenceProvider(p)
+            ..setRefreshProvider(r),
         ),
         ChangeNotifierProvider(create: (_) => LyricProvider()),
         ChangeNotifierProvider(create: (_) => SelectionProvider()),

@@ -19,11 +19,10 @@ class PlaylistDetailView extends StatefulWidget {
   State<PlaylistDetailView> createState() => _PlaylistDetailViewState();
 }
 
-class _PlaylistDetailViewState extends State<PlaylistDetailView> {
+class _PlaylistDetailViewState extends State<PlaylistDetailView> with RefreshableState {
   List<Song>? _songs;
   bool _isLoading = true;
   late UserProvider _userProvider;
-  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -34,23 +33,14 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    _refreshProvider.addListener(_onRefresh);
+  void onRefresh() {
+    _loadSongs();
   }
 
   @override
   void dispose() {
     _userProvider.playlistSongsChangeNotifier.removeListener(_onPlaylistSongsChanged);
-    _refreshProvider.removeListener(_onRefresh);
     super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      _loadSongs();
-    }
   }
 
   Future<void> _loadSongs() async {

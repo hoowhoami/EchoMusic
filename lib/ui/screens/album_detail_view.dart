@@ -5,6 +5,7 @@ import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/selection_provider.dart';
+import '../../providers/refresh_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';
@@ -18,13 +19,24 @@ class AlbumDetailView extends StatefulWidget {
   State<AlbumDetailView> createState() => _AlbumDetailViewState();
 }
 
-class _AlbumDetailViewState extends State<AlbumDetailView> {
+class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
   late Future<Map<String, dynamic>?> _detailFuture;
   late Future<List<Song>> _songsFuture;
 
   @override
   void initState() {
     super.initState();
+    _loadData();
+  }
+
+  @override
+  void onRefresh() {
+    setState(() {
+      _loadData();
+    });
+  }
+
+  void _loadData() {
     _detailFuture = MusicApi.getAlbumDetail(widget.albumId);
     _songsFuture = MusicApi.getAlbumSongs(widget.albumId);
   }

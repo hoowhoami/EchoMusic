@@ -237,10 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(width: 8),
                             _buildNavButton(
                               icon: CupertinoIcons.refresh, 
-                              onPressed: () {
-                                context.read<RefreshProvider>().triggerRefresh();
-                                context.read<UserProvider>().fetchAllUserData();
-                              }, 
+                              onPressed: () => context.read<RefreshProvider>().triggerRefresh(), 
                               tooltip: '刷新'
                             ),
                             Expanded(child: MoveWindow()),

@@ -18,10 +18,9 @@ class RecommendView extends StatefulWidget {
   State<RecommendView> createState() => _RecommendViewState();
 }
 
-class _RecommendViewState extends State<RecommendView> {
+class _RecommendViewState extends State<RecommendView> with RefreshableState {
   late Future<List<Playlist>> _recommendedPlaylistsFuture;
   late Future<List<Map<String, dynamic>>> _topIpFuture;
-  late RefreshProvider _refreshProvider;
 
   @override
   void initState() {
@@ -30,25 +29,10 @@ class _RecommendViewState extends State<RecommendView> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    // If the counter changes, reload data
-    _refreshProvider.addListener(_onRefresh);
-  }
-
-  @override
-  void dispose() {
-    _refreshProvider.removeListener(_onRefresh);
-    super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      setState(() {
-        _loadData();
-      });
-    }
+  void onRefresh() {
+    setState(() {
+      _loadData();
+    });
   }
 
   void _loadData() {

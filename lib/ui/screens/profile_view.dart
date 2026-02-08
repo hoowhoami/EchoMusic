@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/refresh_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
@@ -14,8 +15,13 @@ class ProfileView extends StatefulWidget {
   State<ProfileView> createState() => _ProfileViewState();
 }
 
-class _ProfileViewState extends State<ProfileView> {
+class _ProfileViewState extends State<ProfileView> with RefreshableState {
   bool _isLoading = false;
+
+  @override
+  void onRefresh() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
