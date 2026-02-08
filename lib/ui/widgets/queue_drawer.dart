@@ -107,7 +107,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                           child: IconButton(
                             onPressed: () => _scrollToCurrent(audioProvider),
                             icon: Icon(
-                              CupertinoIcons.location_fill,
+                              CupertinoIcons.scope,
                               size: 18,
                               color: theme.colorScheme.onSurface.withAlpha(150),
                             ),
