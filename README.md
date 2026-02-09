@@ -1,19 +1,94 @@
 # EchoMusic
 
-🎉 一个简约的音乐播放器
+<p align="center">
+  <img src="assets/icons/icon.png" width="128" height="128" alt="EchoMusic Logo">
+</p>
 
-## 运行步骤
+<p align="center">
+  <strong>EchoMusic</strong> —— 一个专为桌面端打造的简约、精致、功能强大的音乐探索与播放器。
+</p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Flutter-v3.27.0-blue?logo=flutter" alt="Flutter">
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen" alt="Platform">
+  <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
+</p>
+
+---
+
+## ✨ 核心特性
+
+- 🎨 **极致美学**：基于 Material Design 3 设计，支持深浅色模式，适配桌面端大屏体验。
+- 🔍 **多维探索**：支持歌曲、歌手、专辑、歌单全方位搜索，快速发现心仪旋律。
+- ⚡ **原生动力**：底层集成高性能 Node.js 音乐引擎，提供流畅的数据抓取与流媒体播放。
+- 🎵 **进阶播放**：支持高潮片段标记（Firefly 效果）、播放进度精确控制、播放队列管理。
+- 📦 **跨平台支持**：原生适配 macOS、Windows 与 Linux 系统。
+- 🛠️ **持续集成**：完善的 GitHub Actions 配置，支持全平台自动编译与 Release 发布。
+
+## 📸 界面预览
+
+| 发现音乐 | 播放详情 |
+| :---: | :---: |
+| ![Discover](https://via.placeholder.com/400x250?text=Discover+View) | ![Player](https://via.placeholder.com/400x250?text=Player+Bar) |
+
+## 🛠️ 技术栈
+
+- **Frontend**: [Flutter](https://flutter.dev/) (Desktop)
+- **State Management**: [Provider](https://pub.dev/packages/provider)
+- **Networking**: [Dio](https://pub.dev/packages/dio)
+- **Backend Service**: [Node.js](https://nodejs.org/) (Custom built-in server)
+- **Persistence**: [Shared Preferences](https://pub.dev/packages/shared_preferences)
+
+## 🚀 快速开始
+
+### 前置要求
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (推荐最新稳定版)
+- [Node.js](https://nodejs.org/) (用于本地服务端依赖)
+
+### 本地开发
+
+1. **克隆仓库**
+   ```bash
+   git clone https://github.com/hoowhoami/EchoMusic.git
+   cd EchoMusic
+   ```
+
+2. **安装服务端依赖**
+   ```bash
+   cd server
+   npm install
+   cd ..
+   ```
+
+3. **获取 Flutter 依赖**
+   ```bash
+   flutter pub get
+   ```
+
+4. **启动应用**
+   ```bash
+   # 根据你的系统选择
+   flutter run -d macos
+   flutter run -d windows
+   flutter run -d linux
+   ```
+
+## 🏗️ 编译发布
+
+项目使用 GitHub Actions 进行自动化构建。每当推送 `v*` 格式的 Tag 时，会自动触发多平台构建并将二进制包上传至 Releases。
+
+**手动编译：**
 ```bash
-# 获取依赖
-flutter pub get
-
-# 运行 (macOS)
-flutter run -d macos
-
-# 运行 (Windows)
-flutter run -d windows
-
-# 运行 (Linux)
-flutter run -d linux
+flutter build macos --release
+flutter build windows --release
+flutter build linux --release
 ```
+
+## 📄 免责声明
+
+本软件仅供学习交流使用。所有音乐资源均来自第三方接口，EchoMusic 仅提供技术展示，不存储任何音源文件，亦不参与任何版权商业行为。
+
+## ⚖️ 开源协议
+
+基于 [MIT License](LICENSE) 协议发布。
