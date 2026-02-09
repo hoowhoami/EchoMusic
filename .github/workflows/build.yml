@@ -10,6 +10,8 @@ jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
@@ -80,28 +82,25 @@ jobs:
         if: matrix.platform == 'macos'
         run: |
           cd build/macos/Build/Products/Release
-          zip -r ../../../../../EchoMusic-macOS.zip EchoMusic.app
+          zip -r "${{ github.workspace }}/EchoMusic-macOS.zip" EchoMusic.app
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
         run: |
           cd build/windows/runner/Release
-          zip -r ../../../../EchoMusic-Windows.zip *
+          7z a "${{ github.workspace }}/EchoMusic-Windows.zip" *
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'
         run: |
           cd build/linux/x64/release/bundle
-          zip -r ../../../../../EchoMusic-Linux.zip *
+          zip -r "${{ github.workspace }}/EchoMusic-Linux.zip" *
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            EchoMusic-macOS.zip
-            EchoMusic-Windows.zip
-            EchoMusic-Linux.zip
+          files: EchoMusic-*.zip
           draft: false
           prerelease: false
         env:
