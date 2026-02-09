@@ -118,9 +118,10 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
   }
 
   @override
-  Future<AppExitResponse> didRequestAppExit() async {
-    ServerOrchestrator.stop();
-    return AppExitResponse.exit;
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      ServerOrchestrator.stop();
+    }
   }
 
   @override
