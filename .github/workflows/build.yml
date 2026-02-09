@@ -62,21 +62,36 @@ jobs:
 
       - name: Bundle Server (macOS)
         if: matrix.platform == 'macos'
+        shell: bash
         run: |
           mkdir -p build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server
           cp server/bin/app_macos build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
 
       - name: Bundle Server (Windows)
         if: matrix.platform == 'windows'
+        shell: bash
         run: |
           mkdir -p build/windows/runner/Release/server
           cp server/bin/app_win.exe build/windows/runner/Release/server/
 
       - name: Bundle Server (Linux)
         if: matrix.platform == 'linux'
+        shell: bash
         run: |
           mkdir -p build/linux/x64/release/bundle/server
           cp server/bin/app_linux build/linux/x64/release/bundle/server/
+
+      - name: Verify Build Artifacts
+        shell: bash
+        run: |
+          echo "Listing build artifacts..."
+          if [ "${{ matrix.platform }}" == "macos" ]; then
+            ls -lhR build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
+          elif [ "${{ matrix.platform }}" == "windows" ]; then
+            ls -lhR build/windows/runner/Release/server/
+          elif [ "${{ matrix.platform }}" == "linux" ]; then
+            ls -lhR build/linux/x64/release/bundle/server/
+          fi
 
       - name: Install create-dmg (macOS)
         if: matrix.platform == 'macos'
