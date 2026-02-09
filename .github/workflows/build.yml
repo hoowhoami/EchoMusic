@@ -81,17 +81,23 @@ jobs:
       - name: Prepare Release (macOS)
         if: matrix.platform == 'macos'
         run: |
-          hdiutil create -volname "EchoMusic" -srcfolder "build/macos/Build/Products/Release/EchoMusic.app" -ov -format UDZO "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-macOS.dmg"
+          VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${VERSION#v}
+          hdiutil create -volname "EchoMusic" -srcfolder "build/macos/Build/Products/Release/EchoMusic.app" -ov -format UDZO "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg"
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
         run: |
-          iscc /DAppVersion=${{ github.ref_name }} installer.iss
-          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Windows-Setup.exe"
+          VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${VERSION#v}
+          iscc /DAppVersion=${CLEAN_VERSION} installer.iss
+          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup.exe"
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'
         run: |
+          VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${VERSION#v}
           # Create .deb package structure
           mkdir -p deb/usr/bin
           mkdir -p deb/usr/share/echomusic
@@ -103,7 +109,7 @@ jobs:
           
           cat > deb/DEBIAN/control <<EOF
           Package: echomusic
-          Version: ${{ github.ref_name }}
+          Version: ${CLEAN_VERSION}
           Section: utils
           Priority: optional
           Architecture: amd64
@@ -120,7 +126,7 @@ jobs:
           Categories=AudioVideo;Audio;Player;
           EOF
           
-          dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Linux.deb"
+          dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Linux.deb"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
