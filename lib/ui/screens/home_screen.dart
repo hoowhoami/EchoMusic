@@ -21,7 +21,11 @@ import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../api/music_api.dart';
+import '../../utils/version_service.dart';
+import '../widgets/user_agreement_dialog.dart';
+import '../widgets/update_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -52,6 +56,47 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initDevice();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialState();
+    });
+  }
+
+  void _checkInitialState() {
+    final persistence = context.read<PersistenceProvider>();
+    if (!(persistence.settings['userAgreementAccepted'] ?? false)) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const UserAgreementDialog(),
+      );
+    } else {
+      // If already accepted, check for updates silently
+      _checkForUpdates(silent: true);
+    }
+  }
+
+  Future<void> _checkForUpdates({bool silent = false}) async {
+    final updateInfo = await VersionService.checkForUpdates();
+    
+    if (updateInfo != null && updateInfo.hasUpdate && mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => UpdateDialog(
+          version: updateInfo.version,
+          releaseNotes: updateInfo.releaseNotes,
+        ),
+      );
+    } else if (!silent && mounted) {
+      // If manually checking and no update found
+      final packageInfo = await PackageInfo.fromPlatform();
+      showDialog(
+        context: context,
+        builder: (context) => UpdateDialog(
+          version: packageInfo.version,
+          isLatest: true,
+        ),
+      );
+    }
   }
 
   @override

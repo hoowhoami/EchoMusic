@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
+import '../../models/artist.dart';
 import '../../models/song.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
@@ -9,6 +10,7 @@ import '../../providers/refresh_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/custom_dialog.dart';
 import '../widgets/song_list_scaffold.dart';
 
 class ArtistDetailView extends StatefulWidget {
@@ -21,8 +23,9 @@ class ArtistDetailView extends StatefulWidget {
 }
 
 class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
-  late Future<Map<String, dynamic>?> _detailFuture;
+  late Future<Artist?> _detailFuture;
   late Future<List<Song>> _songsFuture;
+  bool _isBioExpanded = false;
 
   @override
   void initState() {
@@ -38,7 +41,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
   }
 
   void _loadData() {
-    _detailFuture = MusicApi.getSingerDetail(widget.artistId);
+    _detailFuture = MusicApi.getSingerDetail(widget.artistId).then((json) => json != null ? Artist.fromDetailJson(json) : null);
     _songsFuture = MusicApi.getSingerSongs(widget.artistId);
   }
 
@@ -62,7 +65,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
             SliverAppBar(
               backgroundColor: theme.scaffoldBackgroundColor,
               surfaceTintColor: Colors.transparent,
-              expandedHeight: 200,
+              expandedHeight: 280,
               pinned: true,
               automaticallyImplyLeading: false,
               elevation: 0,
@@ -70,10 +73,10 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                 titlePadding: EdgeInsets.zero,
                 centerTitle: false,
                 expandedTitleScale: 1.0,
-                title: FutureBuilder<Map<String, dynamic>?>(
+                title: FutureBuilder<Artist?>(
                   future: _detailFuture,
                   builder: (context, snapshot) {
-                    final String? avatar = snapshot.data?['imgurl'];
+                    final artist = snapshot.data;
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
@@ -85,9 +88,9 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                             padding: const EdgeInsets.only(left: 20),
                             child: Row(
                               children: [
-                                if (avatar != null)
+                                if (artist != null)
                                   CoverImage(
-                                    url: avatar,
+                                    url: artist.pic,
                                     width: 32,
                                     height: 32,
                                     borderRadius: 16, // 圆形头像
@@ -114,18 +117,17 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                     );
                   },
                 ),
-                background: FutureBuilder<Map<String, dynamic>?>(
+                background: FutureBuilder<Artist?>(
                   future: _detailFuture,
                   builder: (context, snapshot) {
-                    final detail = snapshot.data;
-                    final String? avatar = detail?['imgurl']?.replaceAll('{size}', '400');
+                    final artist = snapshot.data;
 
                     return Container(
                       padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          if (avatar != null)
+                          if (artist != null)
                             Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -139,7 +141,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                               ),
                               child: ClipOval(
                                 child: CachedNetworkImage(
-                                  imageUrl: avatar,
+                                  imageUrl: artist.pic,
                                   width: 140,
                                   height: 140,
                                   fit: BoxFit.cover,
@@ -183,13 +185,13 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 10),
-                                if (detail != null)
+                                if (artist != null)
                                   Text(
-                                    '${detail['song_count'] ?? 0} 首歌曲 • ${detail['album_count'] ?? 0} 张专辑 • ${detail['fansnums'] ?? 0} 粉丝',
+                                    '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${artist.fansCount} 粉丝',
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant,
                                       fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 const SizedBox(height: 16),
@@ -259,11 +261,11 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
               ),
             ),
             SliverToBoxAdapter(
-              child: FutureBuilder<Map<String, dynamic>?>(
+              child: FutureBuilder<Artist?>(
                 future: _detailFuture,
                 builder: (context, snapshot) {
-                  final detail = snapshot.data;
-                  final String? bio = detail?['long_intro'] ?? detail?['intro'];
+                  final artist = snapshot.data;
+                  final String? bio = artist?.intro;
                   if (bio == null || bio.isEmpty) return const SizedBox.shrink();
 
                   return Padding(
@@ -281,14 +283,41 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                         const SizedBox(height: 8),
                         Text(
                           bio,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                             height: 1.6,
                             fontWeight: FontWeight.w500,
                           ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
                         ),
+                        if (bio.length > 100)
+                          InkWell(
+                            onTap: () {
+                              CustomDialog.show(
+                                context,
+                                title: '歌手简介',
+                                content: bio,
+                                confirmText: '确定',
+                                showCancel: false,
+                                width: 600,
+                              );
+                            },
+                            hoverColor: Colors.transparent,
+                            splashColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Text(
+                                '查看详情',
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   );

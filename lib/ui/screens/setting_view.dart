@@ -1,13 +1,64 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../providers/persistence_provider.dart';
 import '../../utils/constants.dart';
+import '../../utils/version_service.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
+import '../widgets/disclaimer_dialog.dart';
+import '../widgets/update_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class SettingView extends StatelessWidget {
+class SettingView extends StatefulWidget {
   const SettingView({super.key});
+
+  @override
+  State<SettingView> createState() => _SettingViewState();
+}
+
+class _SettingViewState extends State<SettingView> {
+  String _currentVersion = '1.0.0';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {
+        _currentVersion = packageInfo.version;
+      });
+    }
+  }
+
+  Future<void> _checkForUpdates() async {
+    final updateInfo = await VersionService.checkForUpdates();
+    
+    if (mounted) {
+      if (updateInfo != null && updateInfo.hasUpdate) {
+        showDialog(
+          context: context,
+          builder: (context) => UpdateDialog(
+            version: updateInfo.version,
+            releaseNotes: updateInfo.releaseNotes,
+          ),
+        );
+      } else {
+        showDialog(
+          context: context,
+          builder: (context) => UpdateDialog(
+            version: _currentVersion,
+            isLatest: true,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,14 +255,48 @@ class SettingView extends StatelessWidget {
               _buildItem(
                 context,
                 '当前版本',
-                'Version v1.0.0 Stable',
-                trailing: Text('检查更新', style: TextStyle(color: accentColor, fontSize: 13, fontWeight: FontWeight.w800)),
+                'Version v$_currentVersion Stable',
+                trailing: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: _checkForUpdates,
+                    child: Text('检查更新', style: TextStyle(color: accentColor, fontSize: 13, fontWeight: FontWeight.w800)),
+                  ),
+                ),
               ),
               _buildItem(
                 context,
                 '项目源码',
                 '开源共享于 GitHub',
-                trailing: Icon(CupertinoIcons.arrow_up_right_circle, size: 20, color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
+                trailing: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () async {
+                      final url = Uri.parse('https://github.com/hoowhoami/EchoMusic');
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url);
+                      }
+                    },
+                    child: Icon(CupertinoIcons.arrow_up_right_circle, size: 20, color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
+                  ),
+                ),
+              ),
+              _buildItem(
+                context,
+                '免责声明',
+                '查看法律条款与免责声明',
+                trailing: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () {
+                      showCupertinoDialog(
+                        context: context,
+                        builder: (context) => const DisclaimerDialog(),
+                      );
+                    },
+                    child: Icon(CupertinoIcons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant.withAlpha(100)),
+                  ),
+                ),
               ),
             ],
           ),

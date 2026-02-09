@@ -1,0 +1,48 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- 背景渐变 -->
+        <linearGradient id="bgGradient" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#1A1A1A"/>
+            <stop offset="1" stop-color="#000000"/>
+        </linearGradient>
+        
+        <!-- 外部阴影 -->
+        <filter id="shadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="12" stdDeviation="15" flood-opacity="0.3"/>
+        </filter>
+    </defs>
+
+    <!-- 图标主体：减小了圆角程度，使用标准的 rx -->
+    <g filter="url(#shadow)">
+        <rect x="100" y="100" width="824" height="824" rx="140" fill="url(#bgGradient)"/>
+        <!-- 内发光边框 -->
+        <rect x="100" y="100" width="824" height="824" rx="140" fill="none" stroke="#FFFFFF" stroke-width="2" opacity="0.1"/>
+    </g>
+
+    <!-- 装饰性波纹 -->
+    <g opacity="0.15">
+        <circle cx="512" cy="512" r="320" fill="none" stroke="#4A9EFF" stroke-width="1.5"/>
+        <circle cx="512" cy="512" r="380" fill="none" stroke="#4A9EFF" stroke-width="1"/>
+    </g>
+
+    <!-- Echo 文字 -->
+    <text x="512" y="460"
+          font-family="system-ui, -apple-system, sans-serif"
+          font-size="160"
+          font-weight="800"
+          fill="#FFFFFF"
+          text-anchor="middle"
+          letter-spacing="4">Echo</text>
+
+    <!-- Music 文字 -->
+    <text x="512" y="660"
+          font-family="system-ui, -apple-system, sans-serif"
+          font-size="180"
+          font-weight="900"
+          fill="#4A9EFF"
+          text-anchor="middle"
+          letter-spacing="8">MUSIC</text>
+          
+    <!-- 底部装饰横线 -->
+    <rect x="412" y="720" width="200" height="6" rx="3" fill="#4A9EFF" opacity="0.5"/>
+</svg>

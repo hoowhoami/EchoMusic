@@ -102,7 +102,7 @@ class _SongListState extends State<SongList> {
                       textAlignVertical: TextAlignVertical.center,
                       decoration: InputDecoration(
                         isCollapsed: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 使用 vertical padding 来自然居中
                         hintText: '搜索列表内歌曲',
                         hintStyle: TextStyle(
                           color: theme.colorScheme.onSurface.withAlpha(100),

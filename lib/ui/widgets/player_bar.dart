@@ -83,7 +83,7 @@ class _PlayerBarState extends State<PlayerBar> {
               child: Stack(
                 alignment: Alignment.centerLeft,
                 children: [
-                  // Range background line (Subtle, Centered)
+                  // Range background line (Improved: Glowing & Subtle)
                   ...audioProvider.climaxMarks.entries.map((entry) {
                     final start = entry.key;
                     final end = entry.value;
@@ -94,15 +94,26 @@ class _PlayerBarState extends State<PlayerBar> {
                       child: Center(
                         child: Container(
                           width: (end - start) * constraints.maxWidth,
-                          height: 2,
+                          height: 3, // 稍微加粗
                           decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(1.5),
                             gradient: LinearGradient(
                               colors: [
-                                const Color(0xFFFF8F00).withAlpha(0),
-                                const Color(0xFFFF8F00).withAlpha(80),
-                                const Color(0xFFFF8F00).withAlpha(0),
+                                const Color(0xFFFFAB40).withAlpha(0),
+                                const Color(0xFFFFAB40).withAlpha(120),
+                                const Color(0xFFFFE082).withAlpha(180),
+                                const Color(0xFFFFAB40).withAlpha(120),
+                                const Color(0xFFFFAB40).withAlpha(0),
                               ],
+                              stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF6D00).withAlpha(40),
+                                blurRadius: 8,
+                                spreadRadius: 1,
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -128,22 +139,22 @@ class _PlayerBarState extends State<PlayerBar> {
                       );
                     },
                   ),
-                  // Boundary markers (Two points style, Centered)
+                  // Boundary markers (Improved: Floating Firefly style)
                   ...audioProvider.climaxMarks.entries.expand((entry) {
                     final start = entry.key;
                     final end = entry.value;
                     return [
                       Positioned(
-                        left: constraints.maxWidth * start - 5,
+                        left: constraints.maxWidth * start - 6,
                         top: 0,
                         bottom: 0,
-                        child: const Center(child: _ClimaxMarker()),
+                        child: const Center(child: _ClimaxMarker(isStart: true)),
                       ),
                       Positioned(
-                        left: constraints.maxWidth * end - 5,
+                        left: constraints.maxWidth * end - 6,
                         top: 0,
                         bottom: 0,
-                        child: const Center(child: _ClimaxMarker()),
+                        child: const Center(child: _ClimaxMarker(isStart: false)),
                       ),
                     ];
                   }),
@@ -761,23 +772,23 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
 }
 
 class _ClimaxMarker extends StatefulWidget {
-  const _ClimaxMarker();
+  final bool isStart;
+  const _ClimaxMarker({required this.isStart});
 
   @override
   State<_ClimaxMarker> createState() => _ClimaxMarkerState();
 }
 
 class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-  }
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat(reverse: true);
+  
+  late final Animation<double> _pulseAnimation = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeInOutSine,
+  );
 
   @override
   void dispose() {
@@ -788,26 +799,55 @@ class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderS
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _controller, // 使用 controller 驱动，内部访问 pulseAnimation
       builder: (context, child) {
         return IgnorePointer(
-          child: Transform.rotate(
-            angle: 0.785, // 45 degrees
-            child: Container(
-              width: 5 + (_controller.value * 2),
-              height: 5 + (_controller.value * 2),
-              decoration: BoxDecoration(
-                color: Color.lerp(const Color(0xFFFFD54F), Colors.white, _controller.value),
-                borderRadius: BorderRadius.circular(1),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFFF8F00).withAlpha((150 + (_controller.value * 105)).toInt().clamp(0, 255)),
-                    blurRadius: 4 + (_controller.value * 6),
-                    spreadRadius: _controller.value * 1,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Outer Glow (Breathing)
+              Container(
+                width: 12 * _pulseAnimation.value + 4,
+                height: 12 * _pulseAnimation.value + 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      const Color(0xFFFFAB40).withAlpha((100 * (1 - _pulseAnimation.value)).toInt()),
+                      const Color(0xFFFFAB40).withAlpha(0),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+              // Inner Core
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF6D00).withAlpha(200),
+                      blurRadius: 4,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              // Tiny Sparkle
+              Transform.rotate(
+                angle: _controller.value * 3.14,
+                child: Container(
+                  width: 2,
+                  height: 10 * _pulseAnimation.value,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(150),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },

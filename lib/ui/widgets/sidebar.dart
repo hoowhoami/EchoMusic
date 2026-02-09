@@ -138,7 +138,11 @@ class Sidebar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1),
       child: InkWell(
-        onTap: () => onPushPlaylist?.call(playlist),
+        onTap: () {
+          if (!isSelected) {
+            onPushPlaylist?.call(playlist);
+          }
+        },
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: isSelected ? accentColor.withAlpha(30) : Colors.transparent, borderRadius: BorderRadius.circular(12)), child: Row(children: [CoverImage(url: imageUrl, width: 26, height: 26, borderRadius: 6, showShadow: false, size: 100, errorWidget: Container(decoration: BoxDecoration(color: theme.colorScheme.onSurface.withAlpha(10), borderRadius: BorderRadius.circular(6)), child: Icon(icon, color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant, size: 14))), const SizedBox(width: 14), Expanded(child: Text(playlist.name, style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface.withAlpha(220), fontSize: 13, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, letterSpacing: -0.2), maxLines: 1, overflow: TextOverflow.ellipsis))])),
       ),
@@ -153,7 +157,11 @@ class Sidebar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: InkWell(
-        onTap: () => onDestinationSelected(index),
+        onTap: () {
+          if (!isSelected) {
+            onDestinationSelected(index);
+          }
+        },
         borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: isSelected ? accentColor.withAlpha(35) : Colors.transparent, borderRadius: BorderRadius.circular(14)), child: Row(children: [Icon(icon, color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant, size: 20), const SizedBox(width: 14), Text(label, style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, fontSize: 14, letterSpacing: -0.2))])),
       ),

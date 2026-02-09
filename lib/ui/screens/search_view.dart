@@ -9,6 +9,8 @@ import 'artist_detail_view.dart';
 import 'playlist_detail_view.dart';
 import 'album_detail_view.dart';
 import '../../models/playlist.dart';
+import '../../models/album.dart';
+import '../../models/artist.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/custom_tab_bar.dart';
@@ -25,14 +27,15 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   late TabController _tabController;
 
   List<Song> _songResults = [];
-  List<Map<String, dynamic>> _albumResults = [];
-  List<Map<String, dynamic>> _artistResults = [];
-  List<Map<String, dynamic>> _playlistResults = [];
+  List<Album> _albumResults = [];
+  List<Artist> _artistResults = [];
+  List<Playlist> _playlistResults = [];
 
   List<String> _hotSearches = [];
   String _defaultKeyword = '';
   bool _isLoading = false;
   bool _isLoadingHot = true;
+  bool _hasSearched = false;
 
   @override
   void initState() {
@@ -74,6 +77,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
     setState(() {
       _isLoading = true;
+      _hasSearched = true;
     });
 
     try {
@@ -85,9 +89,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
       setState(() {
         _songResults = songRes;
-        _albumResults = (albumRes['data']?['lists'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        _artistResults = (artistRes['data']?['lists'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        _playlistResults = (playlistRes['data']?['lists'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _albumResults = (albumRes['data']?['lists'] as List?)?.map((json) => Album.fromSearchJson(json)).toList().cast<Album>() ?? [];
+        _artistResults = (artistRes['data']?['lists'] as List?)?.map((json) => Artist.fromSearchJson(json)).toList().cast<Artist>() ?? [];
+        _playlistResults = (playlistRes['data']?['lists'] as List?)?.map((json) => Playlist.fromSearchJson(json)).toList().cast<Playlist>() ?? [];
         _isLoading = false;
       });
     } catch (e) {
@@ -147,14 +151,27 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                     Expanded(
                       child: TextField(
                         controller: _searchController,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                        textAlignVertical: const TextAlignVertical(y: -0.6), // 中间值，适配 44px 高度容器
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                         decoration: InputDecoration(
                           hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
                           hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          isCollapsed: true, // 改用 collapsed
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10), // 配合 y 偏移实现精确居中
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (val) {
+                          if (_hasSearched) {
+                            setState(() {
+                              _hasSearched = false;
+                            });
+                          } else if (val.isEmpty) {
+                            setState(() {});
+                          }
+                        },
                         onSubmitted: (_) => _onSearch(),
                       ),
                     ),
@@ -163,7 +180,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                         icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
                         onPressed: () {
                           _searchController.clear();
-                          setState(() {});
+                          setState(() {
+                            _hasSearched = false;
+                          });
                         },
                         color: theme.colorScheme.onSurface.withAlpha(60),
                         padding: EdgeInsets.zero,
@@ -196,7 +215,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: _searchController.text.isEmpty
+                child: !_hasSearched
                     ? _buildHotSearches()
                     : _isLoading
                         ? const Center(child: CupertinoActivityIndicator())
@@ -251,29 +270,28 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       itemCount: _playlistResults.length,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
-        final item = _playlistResults[index];
-        final playlist = Playlist.fromJson(item);
+        final playlist = _playlistResults[index];
 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           leading: CoverImage(
             url: playlist.pic,
-            width: 44,
-            height: 44,
+            width: 52,
+            height: 52,
             borderRadius: 8,
             showShadow: false,
-            size: 100,
+            size: 200,
           ),
           title: Text(
             playlist.name, 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            '${playlist.count} 首歌曲', 
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+            '${playlist.count} 首歌曲 • ${playlist.nickname.isNotEmpty ? playlist.nickname : "未知作者"} • ${_formatPlayCount(playlist.playCount)} 次播放', 
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
           onTap: () {
             Navigator.push(context, CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)));
@@ -281,6 +299,11 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         );
       },
     );
+  }
+
+  String _formatPlayCount(int count) {
+    if (count < 10000) return count.toString();
+    return '${(count / 10000).toStringAsFixed(1)}万';
   }
 
   Widget _buildAlbumList() {
@@ -291,36 +314,35 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final album = _albumResults[index];
-        String cover = album['imgurl'] ?? '';
         
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           leading: CoverImage(
-            url: cover,
-            width: 44,
-            height: 44,
+            url: album.pic,
+            width: 52,
+            height: 52,
             borderRadius: 8,
             showShadow: false,
-            size: 100,
+            size: 200,
           ),
           title: Text(
-            album['albumname'] ?? '', 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            album.name, 
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Text(
-            album['singername'] ?? '', 
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12),
+            '${album.singerName} • ${album.publishTime} • ${album.songCount} 首歌曲', 
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
           onTap: () {
             Navigator.push(
               context,
               CupertinoPageRoute(
                 builder: (_) => AlbumDetailView(
-                  albumId: album['albumid'],
-                  albumName: album['albumname'] ?? '',
+                  albumId: album.id,
+                  albumName: album.name,
                 ),
               ),
             );
@@ -339,40 +361,43 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final artist = _artistResults[index];
-        String avatar = artist['imgurl'] ?? '';
         
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           leading: Container(
-            width: 44,
-            height: 44,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: theme.dividerColor, width: 0.5),
             ),
             child: ClipOval(
               child: CoverImage(
-                url: avatar,
-                width: 44,
-                height: 44,
+                url: artist.pic,
+                width: 52,
+                height: 52,
                 borderRadius: 0,
                 showShadow: false,
-                size: 100,
+                size: 200,
               ),
             ),
           ),
           title: Text(
-            artist['singername'] ?? '', 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            artist.name, 
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(
+            '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${_formatPlayCount(artist.fansCount)} 粉丝',
+            style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
           onTap: () {
             Navigator.push(
               context,
               CupertinoPageRoute(
                 builder: (_) => ArtistDetailView(
-                  artistId: artist['singerid'],
-                  artistName: artist['singername'],
+                  artistId: artist.id,
+                  artistName: artist.name,
                 ),
               ),
             );

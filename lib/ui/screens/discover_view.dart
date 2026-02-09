@@ -14,6 +14,7 @@ import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import 'playlist_detail_view.dart';
 import 'album_detail_view.dart';
+import '../../models/album.dart';
 import 'rank_view.dart';
 
 class DiscoverView extends StatefulWidget {
@@ -320,18 +321,18 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
     }
   }
 
-  List<Map<String, dynamic>> _getFilteredAlbums() {
+  List<Album> _getFilteredAlbums() {
+    List<Map<String, dynamic>> rawAlbums = [];
     if (_selectedTypeId == 'all') {
-      List<Map<String, dynamic>> combined = [];
       for (var type in _types) {
         if (type['id'] != 'all' && _allAlbums.containsKey(type['id'])) {
-          combined.addAll((_allAlbums[type['id']] as List).cast<Map<String, dynamic>>());
+          rawAlbums.addAll((_allAlbums[type['id']] as List).cast<Map<String, dynamic>>());
         }
       }
-      return combined;
     } else {
-      return (_allAlbums[_selectedTypeId] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      rawAlbums = (_allAlbums[_selectedTypeId] as List?)?.cast<Map<String, dynamic>>() ?? [];
     }
+    return rawAlbums.map((json) => Album.fromJson(json)).toList();
   }
 
   void _showTypePicker(BuildContext context) {
@@ -386,7 +387,6 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                 itemCount: albums.length,
                 itemBuilder: (context, index) {
                   final album = albums[index];
-                  String cover = album['imgurl']?.replaceAll('{size}', '400') ?? '';
                   return InkWell(
                     onTap: () {
                       Navigator.push(
@@ -395,13 +395,13 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                           settings: RouteSettings(
                             name: 'album_detail', 
                             arguments: {
-                              'id': album['albumid'],
-                              'name': album['albumname'] ?? '',
+                              'id': album.id,
+                              'name': album.name,
                             }
                           ),
                           builder: (_) => AlbumDetailView(
-                            albumId: album['albumid'],
-                            albumName: album['albumname'] ?? '',
+                            albumId: album.id,
+                            albumName: album.name,
                           ),
                         ),
                       );
@@ -425,7 +425,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(10),
                               child: CachedNetworkImage(
-                                imageUrl: cover,
+                                imageUrl: album.pic,
                                 fit: BoxFit.cover,
                                 width: double.infinity,
                                 placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
@@ -436,7 +436,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          album['albumname'] ?? '',
+                          album.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -446,7 +446,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                           ),
                         ),
                         Text(
-                          album['singername'] ?? '',
+                          album.singerName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),

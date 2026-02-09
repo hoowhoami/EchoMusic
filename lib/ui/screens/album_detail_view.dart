@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
+import '../../models/album.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/selection_provider.dart';
@@ -9,6 +10,7 @@ import '../../providers/refresh_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/custom_dialog.dart';
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
@@ -20,8 +22,9 @@ class AlbumDetailView extends StatefulWidget {
 }
 
 class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
-  late Future<Map<String, dynamic>?> _detailFuture;
+  late Future<Album?> _detailFuture;
   late Future<List<Song>> _songsFuture;
+  bool _isIntroExpanded = false;
 
   @override
   void initState() {
@@ -37,7 +40,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
   }
 
   void _loadData() {
-    _detailFuture = MusicApi.getAlbumDetail(widget.albumId);
+    _detailFuture = MusicApi.getAlbumDetail(widget.albumId).then((json) => json != null ? Album.fromDetailJson(json) : null);
     _songsFuture = MusicApi.getAlbumSongs(widget.albumId);
   }
 
@@ -56,7 +59,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
               SliverAppBar(
                 backgroundColor: theme.scaffoldBackgroundColor,
                 surfaceTintColor: Colors.transparent,
-                expandedHeight: 200,
+                expandedHeight: 280,
                 pinned: true,
                 automaticallyImplyLeading: false,
                 elevation: 0,
@@ -64,10 +67,10 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                   titlePadding: EdgeInsets.zero,
                   centerTitle: false,
                   expandedTitleScale: 1.0,
-                  title: FutureBuilder<Map<String, dynamic>?>(
+                  title: FutureBuilder<Album?>(
                     future: _detailFuture,
                     builder: (context, snapshot) {
-                      final String? cover = snapshot.data?['img'] ?? snapshot.data?['imgurl'];
+                      final album = snapshot.data;
                       return LayoutBuilder(
                         builder: (context, constraints) {
                           final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
@@ -79,9 +82,9 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                               padding: const EdgeInsets.only(left: 20),
                               child: Row(
                                 children: [
-                                  if (cover != null)
+                                  if (album != null)
                                     CoverImage(
-                                      url: cover,
+                                      url: album.pic,
                                       width: 32,
                                       height: 32,
                                       borderRadius: 6,
@@ -108,34 +111,22 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                       );
                     },
                   ),
-                  background: FutureBuilder<Map<String, dynamic>?>(
+                  background: FutureBuilder<Album?>(
                     future: _detailFuture,
                     builder: (context, snapshot) {
-                      final detail = snapshot.data;
-                      final String? cover = detail?['img']?.replaceAll('{size}', '400') ?? detail?['imgurl']?.replaceAll('{size}', '400');
+                      final album = snapshot.data;
 
                       return Container(
                         padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            if (cover != null)
-                              CoverImage(
-                                url: cover,
-                                width: 140,
-                                height: 140,
-                                borderRadius: 12,
-                              )
-                            else
-                              Container(
-                                width: 140,
-                                height: 140,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(CupertinoIcons.music_albums, size: 52, color: theme.colorScheme.onSurfaceVariant),
-                              ),
+                            CoverImage(
+                              url: album?.pic ?? '',
+                              width: 150,
+                              height: 150,
+                              borderRadius: 16,
+                            ),
                             const SizedBox(width: 32),
                             Expanded(
                               child: Column(
@@ -146,35 +137,70 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                     'ALBUM',
                                     style: TextStyle(
                                       color: theme.colorScheme.primary,
-                                      fontSize: 11,
+                                      fontSize: 10,
                                       fontWeight: FontWeight.w900,
                                       letterSpacing: 2.0,
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
+                                  const SizedBox(height: 4),
                                   Text(
                                     widget.albumName,
                                     style: theme.textTheme.titleLarge?.copyWith(
-                                      fontSize: 24,
+                                      fontSize: 26,
                                       fontWeight: FontWeight.w900,
-                                      height: 1.2,
+                                      height: 1.1,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 10),
-                                  if (detail != null)
-                                    Text(
-                                      '${detail['singername'] ?? detail['singer'] ?? ''} • ${detail['publishtime'] ?? detail['publish_time'] ?? ''}',
-                                      style: TextStyle(
-                                        color: theme.colorScheme.onSurfaceVariant, 
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                  if (album != null)
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${album.singerName} • ${album.publishTime}',
+                                          style: TextStyle(
+                                            color: theme.colorScheme.onSurfaceVariant, 
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            _buildInfoSmall(context, Icons.favorite_rounded, _formatNumber(album.heat)),
+                                            if (album.language.isNotEmpty || album.type.isNotEmpty) ...[
+                                              const SizedBox(width: 12),
+                                              if (album.language.isNotEmpty) ...[
+                                                _buildTag(context, album.language),
+                                                const SizedBox(width: 8),
+                                              ],
+                                              if (album.type.isNotEmpty) ...[
+                                                _buildTag(context, album.type),
+                                                const SizedBox(width: 8),
+                                              ],
+                                            ],
+                                          ],
+                                        ),
+                                        if (album.company.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            '发行公司: ${album.company}',
+                                            style: TextStyle(
+                                              color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                  const SizedBox(height: 14),
+                                  const SizedBox(height: 16),
                                   Row(
                                     children: [
                                       OutlinedButton.icon(
@@ -185,7 +211,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                           }
                                         },
                                         icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                                        label: Text('播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                        label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
                                         style: OutlinedButton.styleFrom(
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                           side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
@@ -249,11 +275,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                 ],
               ),
               SliverToBoxAdapter(
-                child: FutureBuilder<Map<String, dynamic>?>(
+                child: FutureBuilder<Album?>(
                   future: _detailFuture,
                   builder: (context, snapshot) {
-                    final detail = snapshot.data;
-                    final String? intro = detail?['intro'];
+                    final album = snapshot.data;
+                    final String? intro = album?.intro;
 
                     if (intro == null || intro.isEmpty) return const SizedBox.shrink();
 
@@ -272,12 +298,41 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                           const SizedBox(height: 8),
                           Text(
                             intro,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                               height: 1.6,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
+                          if (intro.length > 100)
+                            InkWell(
+                              onTap: () {
+                                CustomDialog.show(
+                                  context,
+                                  title: '专辑介绍',
+                                  content: intro,
+                                  confirmText: '确定',
+                                  showCancel: false,
+                                  width: 600,
+                                );
+                              },
+                              hoverColor: Colors.transparent,
+                              splashColor: Colors.transparent,
+                              highlightColor: Colors.transparent,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  '查看详情',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     );
@@ -329,6 +384,50 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
           const BatchActionBar(),
         ],
       ),
+    );
+  }
+
+  Widget _buildTag(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withAlpha(20),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: theme.colorScheme.primary.withAlpha(50), width: 0.5),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  String _formatNumber(int number) {
+    if (number < 10000) return number.toString();
+    return '${(number / 10000).toStringAsFixed(1)}万';
+  }
+
+  Widget _buildInfoSmall(BuildContext context, IconData icon, String label) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: theme.colorScheme.onSurfaceVariant.withAlpha(180)),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+          ),
+        ),
+      ],
     );
   }
 }

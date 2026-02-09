@@ -10,12 +10,17 @@ class Playlist {
   final String name;
   final String pic;
   final String intro;
+  final String nickname;
+  final String userPic;
+  final String tags;
   final int playCount;
   final int count;
   final List<Song>? songs;
   final bool isPrivate;
   final int? heat;
   final String? publishDate;
+  final int? createTime;
+  final int? updateTime;
 
   int get originalId => (listCreateListid != null && listCreateListid != 0)
       ? listCreateListid!
@@ -31,12 +36,17 @@ class Playlist {
     required this.name,
     required this.pic,
     required this.intro,
+    this.nickname = '',
+    this.userPic = '',
+    this.tags = '',
     required this.playCount,
     this.count = 0,
     this.songs,
     this.isPrivate = false,
     this.heat,
     this.publishDate,
+    this.createTime,
+    this.updateTime,
   });
 
   static int _parseId(dynamic value) {
@@ -59,7 +69,38 @@ class Playlist {
     return pic;
   }
 
-  /// From user created or favorited playlists (/user/playlist)
+  factory Playlist.fromJson(Map<String, dynamic> json) {
+    if (json.containsKey('specialname') && json.containsKey('img')) {
+      return Playlist.fromSearchJson(json);
+    }
+    if (json.containsKey('list_create_userid') && (json.containsKey('listid') || json.containsKey('specialid'))) {
+      return Playlist.fromUserPlaylist(json);
+    }
+    if (json.containsKey('extra')) {
+      return Playlist.fromIP(json);
+    }
+    return Playlist.fromSpecialPlaylist(json);
+  }
+
+  factory Playlist.fromSearchJson(Map<String, dynamic> json) {
+    return Playlist(
+      id: _parseId(json['specialid']),
+      globalCollectionId: json['gid']?.toString(),
+      listid: _parseId(json['specialid']),
+      listCreateUserid: _parseId(json['suid']),
+      name: (json['specialname'] ?? '').toString(),
+      pic: _formatPic(json['img']),
+      intro: (json['intro'] ?? '').toString(),
+      nickname: (json['nickname'] ?? json['username'] ?? json['author'] ?? '').toString(),
+      userPic: _formatPic(json['user_pic'] ?? json['avatar'] ?? json['create_user_pic']),
+      tags: (json['tags'] ?? '').toString(),
+      playCount: _parseId(json['playcount'] ?? json['play_count'] ?? json['count']),
+      count: _parseId(json['song_count'] ?? json['songcount'] ?? json['count']),
+      publishDate: (json['publish_time'] ?? '').toString().split(' ')[0],
+      isPrivate: false,
+    );
+  }
+
   factory Playlist.fromUserPlaylist(Map<String, dynamic> json) {
     return Playlist(
       id: _parseId(json['listid'] ?? json['specialid']),
@@ -69,17 +110,21 @@ class Playlist {
       listCreateUserid: _parseId(json['list_create_userid']),
       listCreateListid: _parseId(json['list_create_listid']),
       name: (json['name'] ?? json['specialname'] ?? '').toString(),
-      pic: _formatPic(json['pic'] ?? json['imgurl'] ?? json['cover']),
+      pic: _formatPic(json['pic'] ?? json['imgurl'] ?? json['cover'] ?? json['img']),
       intro: (json['intro'] ?? '').toString(),
-      playCount: _parseId(json['play_count'] ?? json['playcount'] ?? json['count']),
-      count: _parseId(json['song_count'] ?? json['count']),
+      nickname: (json['nickname'] ?? json['username'] ?? json['list_create_username'] ?? '').toString(),
+      userPic: _formatPic(json['user_pic'] ?? json['avatar'] ?? json['create_user_pic'] ?? json['pic']),
+      tags: (json['tags'] ?? '').toString(),
+      playCount: _parseId(json['play_count'] ?? json['playcount'] ?? json['count'] ?? json['play_total']),
+      count: _parseId(json['song_count'] ?? json['songcount'] ?? json['count']),
       isPrivate: (json['is_pri'] ?? json['is_private']) == 1,
-      heat: _parseId(json['collectcount']),
+      heat: _parseId(json['collectcount'] ?? json['collect_count'] ?? json['collect_total']),
       publishDate: (json['publishtime'] ?? json['publish_time'])?.toString().split(' ')[0],
+      createTime: json['create_time'] ?? json['addtime'],
+      updateTime: json['update_time'],
     );
   }
 
-  /// From recommended or category playlists (/top/playlist, special_recommend)
   factory Playlist.fromSpecialPlaylist(Map<String, dynamic> json) {
     return Playlist(
       id: _parseId(json['specialid'] ?? json['listid'] ?? json['global_collection_id']),
@@ -88,24 +133,28 @@ class Playlist {
       listCreateUserid: _parseId(json['list_create_userid'] ?? json['userid']),
       listCreateListid: _parseId(json['list_create_listid'] ?? json['specialid']),
       name: (json['specialname'] ?? json['name'] ?? '').toString(),
-      pic: _formatPic(json['flexible_cover'] ?? json['pic'] ?? json['imgurl']),
+      pic: _formatPic(json['flexible_cover'] ?? json['pic'] ?? json['imgurl'] ?? json['img']),
       intro: (json['intro'] ?? '').toString(),
-      playCount: _parseId(json['playcount'] ?? json['play_count'] ?? json['count']),
-      count: _parseId(json['song_count'] ?? json['count']),
+      nickname: (json['nickname'] ?? json['username'] ?? json['author'] ?? json['list_create_username'] ?? '').toString(),
+      userPic: _formatPic(json['user_pic'] ?? json['avatar'] ?? json['create_user_pic'] ?? json['author_pic']),
+      tags: (json['tags'] ?? '').toString(),
+      playCount: _parseId(json['playcount'] ?? json['play_count'] ?? json['count'] ?? json['play_total']),
+      count: _parseId(json['song_count'] ?? json['songcount'] ?? json['count']),
       isPrivate: false,
-      heat: _parseId(json['collectcount']),
+      heat: _parseId(json['collectcount'] ?? json['collect_count'] ?? json['collect_total']),
       publishDate: (json['publishtime'] ?? json['publish_time'])?.toString().split(' ')[0],
+      createTime: json['create_time'] ?? json['addtime'],
+      updateTime: json['update_time'],
     );
   }
 
-  /// From editor's choice / IP playlists (/top/ip)
   factory Playlist.fromIP(Map<String, dynamic> json) {
     final extra = json['extra'] ?? {};
     return Playlist(
       id: _parseId(extra['specialid'] ?? json['id']),
       globalCollectionId: extra['global_collection_id']?.toString(),
       listCreateGid: (extra['global_collection_id'] ?? extra['global_special_id'])?.toString(),
-      listCreateUserid: _parseId(extra['list_create_userid']), // Might be null
+      listCreateUserid: _parseId(extra['list_create_userid']),
       listCreateListid: _parseId(extra['specialid']),
       name: (json['title'] ?? '').toString(),
       pic: _formatPic(json['pic'] ?? json['image_url']),
@@ -115,16 +164,5 @@ class Playlist {
       isPrivate: false,
       heat: 0,
     );
-  }
-
-  factory Playlist.fromJson(Map<String, dynamic> json) {
-    // Legacy generic factory, tries to guess or defaults to Special
-    if (json.containsKey('list_create_userid') && (json.containsKey('listid') || json.containsKey('specialid'))) {
-      return Playlist.fromUserPlaylist(json);
-    }
-    if (json.containsKey('extra')) {
-      return Playlist.fromIP(json);
-    }
-    return Playlist.fromSpecialPlaylist(json);
   }
 }

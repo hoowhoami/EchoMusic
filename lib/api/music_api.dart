@@ -479,7 +479,11 @@ class MusicApi {
   static Future<Map<String, dynamic>?> getAlbumDetail(int id) async {
     try {
       final response = await _dio.get('/album/detail', queryParameters: {'id': id});
-      if (response.data['status'] == 1) return response.data['data'];
+      if (response.data['status'] == 1) {
+        final data = response.data['data'];
+        if (data is List && data.isNotEmpty) return data[0];
+        if (data is Map<String, dynamic>) return data;
+      }
       return null;
     } catch (e) {
       return null;

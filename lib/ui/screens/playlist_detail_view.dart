@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
@@ -9,6 +10,7 @@ import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/custom_dialog.dart';
 import '../widgets/song_list_scaffold.dart';
 
 class PlaylistDetailView extends StatefulWidget {
@@ -21,7 +23,9 @@ class PlaylistDetailView extends StatefulWidget {
 
 class _PlaylistDetailViewState extends State<PlaylistDetailView> with RefreshableState {
   List<Song>? _songs;
+  Playlist? _detailedPlaylist;
   bool _isLoading = true;
+  bool _isIntroExpanded = false;
   late UserProvider _userProvider;
 
   @override
@@ -29,12 +33,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     super.initState();
     _userProvider = context.read<UserProvider>();
     _userProvider.playlistSongsChangeNotifier.addListener(_onPlaylistSongsChanged);
-    _loadSongs();
+    _loadData();
   }
 
   @override
   void onRefresh() {
-    _loadSongs();
+    _loadData();
   }
 
   @override
@@ -43,12 +47,23 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     super.dispose();
   }
 
-  Future<void> _loadSongs() async {
+  Future<void> _loadData() async {
     if (!mounted) return;
     if (_songs == null) {
       setState(() => _isLoading = true);
     }
     
+    // Fetch detailed info to get creator and timestamps
+    final detailJson = await MusicApi.getPlaylistDetail(
+      widget.playlist.globalCollectionId ?? widget.playlist.id.toString()
+    );
+    
+    if (detailJson != null && mounted) {
+      setState(() {
+        _detailedPlaylist = Playlist.fromUserPlaylist(detailJson);
+      });
+    }
+
     final songs = await MusicApi.getPlaylistSongs(
       widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),
       listid: widget.playlist.listid,
@@ -68,27 +83,34 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     if (!mounted) return;
     final changedListId = _userProvider.playlistSongsChangeNotifier.value;
     if (changedListId == widget.playlist.id || changedListId == widget.playlist.listid) {
-      _loadSongs();
+      _loadData();
     }
+  }
+
+  String _formatTimestamp(int? timestamp) {
+    if (timestamp == null || timestamp == 0) return '未知';
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+    return DateFormat('yyyy-MM-dd').format(date);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
-    final isFavorited = userProvider.isPlaylistFavorited(widget.playlist.id, globalId: widget.playlist.listCreateGid);
-    final isCreated = userProvider.isCreatedPlaylist(widget.playlist.id);
+    final playlist = _detailedPlaylist ?? widget.playlist;
+    final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
+    final isCreated = userProvider.isCreatedPlaylist(playlist.id);
 
     return SongListScaffold(
       songs: _songs ?? [],
       isLoading: _isLoading,
-      parentPlaylist: widget.playlist,
-      sourceId: widget.playlist.id,
+      parentPlaylist: playlist,
+      sourceId: playlist.id,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 200,
+          expandedHeight: 280, // Match Album/Artist height
           pinned: true,
           elevation: 0,
           automaticallyImplyLeading: false,
@@ -110,7 +132,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                     child: Row(
                       children: [
                         CoverImage(
-                          url: widget.playlist.pic,
+                          url: playlist.pic,
                           width: 32,
                           height: 32,
                           borderRadius: 6,
@@ -119,7 +141,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            widget.playlist.name,
+                            playlist.name,
                             style: TextStyle(
                               color: theme.colorScheme.onSurface,
                               fontSize: 16,
@@ -141,10 +163,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   CoverImage(
-                    url: widget.playlist.pic,
-                    width: 140,
-                    height: 140,
-                    borderRadius: 12,
+                    url: playlist.pic,
+                    width: 160,
+                    height: 160,
+                    borderRadius: 16,
                   ),
                   const SizedBox(width: 32),
                   Expanded(
@@ -153,34 +175,122 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          widget.playlist.name,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 24,
+                          'PLAYLIST',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 10,
                             fontWeight: FontWeight.w900,
-                            height: 1.2,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          playlist.name,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            height: 1.1,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 10),
-                        if (widget.playlist.intro.isNotEmpty)
-                          Text(
-                            widget.playlist.intro,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
+                        const SizedBox(height: 12),
+                        if (playlist.nickname.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10.0),
+                            child: Row(
+                              children: [
+                                if (playlist.userPic.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8.0),
+                                    child: ClipOval(
+                                      child: CoverImage(
+                                        url: playlist.userPic,
+                                        width: 24,
+                                        height: 24,
+                                        borderRadius: 0,
+                                        showShadow: false,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8.0),
+                                    child: Icon(CupertinoIcons.person_circle_fill, size: 24, color: theme.colorScheme.primary.withAlpha(180)),
+                                  ),
+                                Text(
+                                  playlist.nickname,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '${_formatTimestamp(playlist.createTime)} 创建',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface.withAlpha(100),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        const SizedBox(height: 14),
+                        if (playlist.intro.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  playlist.intro,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                ),
+                                if (playlist.intro.length > 60)
+                                  InkWell(
+                                    onTap: () {
+                                      CustomDialog.show(
+                                        context,
+                                        title: '歌单详情',
+                                        content: playlist.intro,
+                                        confirmText: '确定',
+                                        showCancel: false,
+                                        width: 600,
+                                      );
+                                    },
+                                    hoverColor: Colors.transparent,
+                                    splashColor: Colors.transparent,
+                                    highlightColor: Colors.transparent,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Text(
+                                        '查看详情',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.primary,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         Row(
                           children: [
-                            _buildInfoChip(context, Icons.play_arrow_rounded, _formatNumber(widget.playlist.playCount)),
-                            if (widget.playlist.heat != null) ...[
+                            _buildInfoChip(context, CupertinoIcons.music_note_2, '${_songs?.length ?? playlist.count} 首歌曲'),
+                            if (playlist.updateTime != null) ...[
                               const SizedBox(width: 12),
-                              _buildInfoChip(context, Icons.favorite_rounded, _formatNumber(widget.playlist.heat!)),
+                              _buildInfoChip(context, Icons.update_rounded, '更新于 ${_formatTimestamp(playlist.updateTime)}'),
                             ],
                             const Spacer(),
                             if (userProvider.isAuthenticated && !isCreated) ...[
@@ -188,7 +298,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                 onPressed: () async {
                                   bool success;
                                   if (isFavorited) {
-                                    success = await userProvider.unfavoritePlaylist(widget.playlist.id, globalId: widget.playlist.listCreateGid);
+                                    success = await userProvider.unfavoritePlaylist(playlist.id, globalId: playlist.listCreateGid);
                                     if (context.mounted) {
                                       if (success) {
                                         CustomToast.success(context, '已取消收藏');
@@ -198,11 +308,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                     }
                                   } else {
                                     success = await userProvider.favoritePlaylist(
-                                      widget.playlist.originalId, 
-                                      widget.playlist.name,
-                                      listCreateUserid: widget.playlist.listCreateUserid,
-                                      listCreateGid: widget.playlist.listCreateGid,
-                                      listCreateListid: widget.playlist.listCreateListid,
+                                      playlist.originalId, 
+                                      playlist.name,
+                                      listCreateUserid: playlist.listCreateUserid,
+                                      listCreateGid: playlist.listCreateGid,
+                                      listCreateListid: playlist.listCreateListid,
                                     );
                                     if (context.mounted) {
                                       if (success) {

@@ -37,26 +37,27 @@ class Song {
       return int.tryParse(value.toString()) ?? 0;
     }
 
-    var singersList = json['authors'] as List? ?? [];
+    var singersList = json['authors'] as List? ?? json['singerinfo'] as List? ?? [];
     List<SingerInfo> singers = singersList.map((i) => SingerInfo.fromJson(i)).toList();
-    if (singers.isEmpty && json['author_name'] != null) {
-      singers = [SingerInfo(id: 0, name: json['author_name'].toString())];
+    if (singers.isEmpty && (json['author_name'] != null || json['singername'] != null)) {
+      singers = [SingerInfo(id: 0, name: (json['author_name'] ?? json['singername']).toString())];
     }
 
     String cover = json['album_sizable_cover'] ?? 
-                   json['trans_param']?['union_cover'] ?? '';
+                   json['trans_param']?['union_cover'] ?? 
+                   json['cover'] ?? '';
     cover = cover.replaceAll('{size}', '400');
 
     return Song(
-      hash: (json['hash'] ?? json['hash_128'] ?? '').toString(),
-      name: _processName((json['songname'] ?? json['filename'] ?? '').toString()),
-      albumName: (json['album_name'] ?? '').toString(),
-      albumId: json['album_id']?.toString(),
+      hash: (json['hash'] ?? json['hash_128'] ?? json['FileHash'] ?? '').toString(),
+      name: _processName((json['songname'] ?? json['filename'] ?? json['name'] ?? '').toString()),
+      albumName: (json['album_name'] ?? json['albumname'] ?? '').toString(),
+      albumId: (json['album_id'] ?? json['albumid'])?.toString(),
       singers: singers,
-      duration: parseInt(json['timelength'] ?? 0) ~/ 1000,
+      duration: parseInt(json['timelength'] ?? json['duration'] ?? 0) ~/ 1000,
       cover: cover,
-      mvHash: json['video_hash']?.toString(),
-      mixSongId: parseInt(json['audio_id'] ?? json['album_audio_id'] ?? 0),
+      mvHash: (json['video_hash'] ?? json['mvhash'])?.toString(),
+      mixSongId: parseInt(json['audio_id'] ?? json['album_audio_id'] ?? json['mixsongid'] ?? 0),
       privilege: parseInt(json['privilege'] ?? 0),
     );
   }

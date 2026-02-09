@@ -51,10 +51,25 @@ dependencies:
   qr_flutter: ^4.1.0
   path: ^1.8.3
   wakelock_plus: ^1.4.0
+  url_launcher: ^6.3.2
+  package_info_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  image_path: "assets/icons/icon.png"
+  macos:
+    generate: true
+    image_path: "assets/icons/icon_macos.png"
+  windows:
+    generate: true
+    image_path: "assets/icons/icon.png"
+  linux:
+    generate: true
+    image_path: "assets/icons/icon.png"
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
