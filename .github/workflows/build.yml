@@ -55,7 +55,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libsecret-1-dev
+          sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev
 
       - name: Build Flutter Desktop
         run: flutter build ${{ matrix.platform }} --release
