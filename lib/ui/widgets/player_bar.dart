@@ -75,90 +75,85 @@ class _PlayerBarState extends State<PlayerBar> {
       padding: const EdgeInsets.symmetric(horizontal: 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: Container(
-              height: 20,
-              color: Colors.transparent,
-              child: Stack(
-                alignment: Alignment.centerLeft,
-                children: [
-                  // Range background line (Improved: Glowing & Subtle)
-                  ...audioProvider.climaxMarks.entries.map((entry) {
-                    final start = entry.key;
-                    final end = entry.value;
-                    return Positioned(
-                      left: constraints.maxWidth * start,
-                      top: 0,
-                      bottom: 0,
-                      child: Center(
-                        child: Container(
-                          width: (end - start) * constraints.maxWidth,
-                          height: 3, // 稍微加粗
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(1.5),
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFFFFAB40).withAlpha(0),
-                                const Color(0xFFFFAB40).withAlpha(120),
-                                const Color(0xFFFFE082).withAlpha(180),
-                                const Color(0xFFFFAB40).withAlpha(120),
-                                const Color(0xFFFFAB40).withAlpha(0),
-                              ],
-                              stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFFF6D00).withAlpha(40),
-                                blurRadius: 8,
-                                spreadRadius: 1,
+          return RepaintBoundary(
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(
+                height: 20,
+                color: Colors.transparent,
+                child: Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    // Range background line (Improved: Glowing & Subtle)
+                    ...audioProvider.climaxMarks.entries.map((entry) {
+                      final start = entry.key;
+                      final end = entry.value;
+                      return Positioned(
+                        left: constraints.maxWidth * start,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: Container(
+                            width: (end - start) * constraints.maxWidth,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(1.5),
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFFFAB40).withAlpha(0),
+                                  const Color(0xFFFFAB40).withAlpha(120),
+                                  const Color(0xFFFFE082).withAlpha(180),
+                                  const Color(0xFFFFAB40).withAlpha(120),
+                                  const Color(0xFFFFAB40).withAlpha(0),
+                                ],
+                                stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  }),
-                  // Main Progress Bar
-                  StreamBuilder<Duration>(
-                    stream: audioProvider.player.positionStream,
-                    builder: (context, snapshot) {
-                      final position = snapshot.data ?? Duration.zero;
-                      final total = audioProvider.player.duration ?? Duration.zero;
-                      return ProgressBar(
-                        progress: position,
-                        total: total,
-                        barHeight: 4.0,
-                        baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
-                        progressBarColor: accentColor,
-                        thumbColor: accentColor,
-                        thumbRadius: 7.0,
-                        thumbGlowRadius: 15.0,
-                        onSeek: (duration) => audioProvider.player.seek(duration),
-                        timeLabelLocation: TimeLabelLocation.none,
                       );
-                    },
-                  ),
-                  // Boundary markers (Improved: Floating Firefly style)
-                  ...audioProvider.climaxMarks.entries.expand((entry) {
-                    final start = entry.key;
-                    final end = entry.value;
-                    return [
-                      Positioned(
-                        left: constraints.maxWidth * start - 6,
-                        top: 0,
-                        bottom: 0,
-                        child: const Center(child: _ClimaxMarker(isStart: true)),
-                      ),
-                      Positioned(
-                        left: constraints.maxWidth * end - 6,
-                        top: 0,
-                        bottom: 0,
-                        child: const Center(child: _ClimaxMarker(isStart: false)),
-                      ),
-                    ];
-                  }),
-                ],
+                    }),
+                    // Main Progress Bar
+                    StreamBuilder<Duration>(
+                      stream: audioProvider.player.positionStream,
+                      builder: (context, snapshot) {
+                        final position = snapshot.data ?? Duration.zero;
+                        final total = audioProvider.player.duration ?? Duration.zero;
+                        return ProgressBar(
+                          progress: position,
+                          total: total,
+                          barHeight: 4.0,
+                          baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
+                          progressBarColor: accentColor,
+                          thumbColor: accentColor,
+                          thumbRadius: 7.0,
+                          thumbGlowRadius: 15.0,
+                          onSeek: (duration) => audioProvider.player.seek(duration),
+                          timeLabelLocation: TimeLabelLocation.none,
+                        );
+                      },
+                    ),
+                    // Boundary markers (Improved: Floating Firefly style)
+                    ...audioProvider.climaxMarks.entries.expand((entry) {
+                      final start = entry.key;
+                      final end = entry.value;
+                      return [
+                        Positioned(
+                          left: constraints.maxWidth * start - 6,
+                          top: 0,
+                          bottom: 0,
+                          child: const Center(child: _ClimaxMarker(isStart: true)),
+                        ),
+                        Positioned(
+                          left: constraints.maxWidth * end - 6,
+                          top: 0,
+                          bottom: 0,
+                          child: const Center(child: _ClimaxMarker(isStart: false)),
+                        ),
+                      ];
+                    }),
+                  ],
+                ),
               ),
             ),
           );

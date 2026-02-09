@@ -134,12 +134,9 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 
   @override
   void onWindowFocus() async {
-    bool isVisible = await windowManager.isVisible();
-    if (!isVisible) {
-      await windowManager.show();
-    }
-    await windowManager.focus();
-    setState(() {});
+    // 窗口获得焦点时，通常已经是可见状态。
+    // 移除 setState(() {}) 以防止切换应用时触发全量重绘。
+    // 移除冗余的 windowManager.focus() 调用。
   }
 
   @override
@@ -149,9 +146,10 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
   }
 
   @override
-  void onTrayIconMouseDown() {
-    windowManager.show();
-    windowManager.focus();
+  void onTrayIconMouseDown() async {
+    // 增加异步等待确保顺序，并统一调用 show/focus
+    await windowManager.show();
+    await windowManager.focus();
   }
 
   @override
@@ -160,13 +158,13 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
   }
 
   @override
-  void onTrayMenuItemClick(MenuItem menuItem) {
+  void onTrayMenuItemClick(MenuItem menuItem) async {
     if (menuItem.key == 'show_window') {
-      windowManager.show();
-      windowManager.focus();
+      await windowManager.show();
+      await windowManager.focus();
     } else if (menuItem.key == 'exit_app') {
       ServerOrchestrator.stop();
-      windowManager.destroy();
+      await windowManager.destroy();
     }
   }
 
@@ -185,15 +183,19 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
   Widget build(BuildContext context) {
-    final theme = context.watch<PersistenceProvider>().settings['theme'];
-    return MaterialApp(
-      title: 'EchoMusic',
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      themeMode: theme == 'dark' ? ThemeMode.dark : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      home: const LoadingScreen(),
+    return Selector<PersistenceProvider, String>(
+      selector: (_, provider) => provider.settings['theme'] as String? ?? 'auto',
+      builder: (context, theme, child) {
+        return MaterialApp(
+          title: 'EchoMusic',
+          navigatorKey: navigatorKey,
+          debugShowCheckedModeBanner: false,
+          themeMode: theme == 'dark' ? ThemeMode.dark : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          home: const LoadingScreen(),
+        );
+      },
     );
   }
 }

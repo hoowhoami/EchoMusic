@@ -98,9 +98,11 @@ class _LyricPageState extends State<LyricPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
-              child: Opacity(opacity: 0.4, child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 800)),
+            child: RepaintBoundary(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                child: Opacity(opacity: 0.3, child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 400)),
+              ),
             ),
           ),
           Positioned.fill(
@@ -109,7 +111,7 @@ class _LyricPageState extends State<LyricPage> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(200), Colors.transparent, Colors.black.withAlpha(220)],
+                  colors: [Colors.black.withAlpha(180), Colors.transparent, Colors.black.withAlpha(200)],
                   stops: const [0.0, 0.5, 1.0],
                 ),
               ),
@@ -128,12 +130,12 @@ class _LyricPageState extends State<LyricPage> {
                       children: [
                         Expanded(flex: 5, child: _buildInfoSection(context, song)),
                         const SizedBox(width: 40),
-                        Expanded(flex: 7, child: _buildLyricSection(lyricProvider, audioProvider, theme, lineHeight)),
+                        Expanded(flex: 7, child: RepaintBoundary(child: _buildLyricSection(lyricProvider, audioProvider, theme, lineHeight))),
                       ],
                     ),
                   ),
                 ),
-                _buildBottomSection(context, audioProvider, theme),
+                RepaintBoundary(child: _buildBottomSection(context, audioProvider, theme)),
                 const SizedBox(height: 32),
               ],
             ),

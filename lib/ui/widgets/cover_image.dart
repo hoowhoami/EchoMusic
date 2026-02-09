@@ -40,59 +40,42 @@ class CoverImage extends StatelessWidget {
     final coverUrl = getCoverUrl(url, size: size);
     final theme = Theme.of(context);
 
-    Widget image = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: CachedNetworkImage(
-        imageUrl: coverUrl,
-        width: width,
-        height: height,
-        fit: fit,
-        placeholder: (context, url) =>
-            placeholder ??
-            Container(
-              width: width,
-              height: height,
-              color: theme.colorScheme.onSurface.withAlpha(10),
-              child: const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: CachedNetworkImage(
+          imageUrl: coverUrl,
+          width: width,
+          height: height,
+          fit: fit,
+          placeholder: (context, url) =>
+              placeholder ??
+              Container(
+                width: width,
+                height: height,
+                color: theme.colorScheme.onSurface.withAlpha(10),
+                child: const Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
-            ),
-        errorWidget: (context, url, error) =>
-            errorWidget ??
-            Container(
-              width: width,
-              height: height,
-              color: theme.colorScheme.onSurface.withAlpha(10),
-              child: Icon(
-                Icons.music_note_rounded,
-                size: (width != null && width!.isFinite) ? width! * 0.5 : 40,
-                color: theme.colorScheme.onSurfaceVariant,
+          errorWidget: (context, url, error) =>
+              errorWidget ??
+              Container(
+                width: width,
+                height: height,
+                color: theme.colorScheme.onSurface.withAlpha(10),
+                child: Icon(
+                  Icons.music_note_rounded,
+                  size: (width != null && width!.isFinite) ? width! * 0.5 : 40,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
+        ),
       ),
     );
-
-    if (showShadow) {
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(borderRadius),
-          boxShadow: [
-            BoxShadow(
-              color: theme.colorScheme.shadow.withAlpha(60),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-              spreadRadius: -8,
-            ),
-          ],
-        ),
-        child: image,
-      );
-    }
-
-    return image;
   }
 }
