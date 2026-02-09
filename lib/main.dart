@@ -77,10 +77,11 @@ class WindowHandler extends StatefulWidget {
   State<WindowHandler> createState() => _WindowHandlerState();
 }
 
-class _WindowHandlerState extends State<WindowHandler> with WindowListener, TrayListener {
+class _WindowHandlerState extends State<WindowHandler> with WindowListener, TrayListener, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     windowManager.addListener(this);
     trayManager.addListener(this);
     windowManager.setPreventClose(true);
@@ -91,29 +92,35 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
     await trayManager.setIcon(
       Platform.isWindows ? 'assets/icons/icon.png' : 'assets/icons/icon.png',
     );
-    if (!Platform.isMacOS) {
-      Menu menu = Menu(
-        items: [
-          MenuItem(
-            key: 'show_window',
-            label: '显示窗口',
-          ),
-          MenuItem.separator(),
-          MenuItem(
-            key: 'exit_app',
-            label: '退出',
-          ),
-        ],
-      );
-      await trayManager.setContextMenu(menu);
-    }
+    
+    List<MenuItem> items = [
+      MenuItem(
+        key: 'show_window',
+        label: '显示窗口',
+      ),
+      MenuItem.separator(),
+      MenuItem(
+        key: 'exit_app',
+        label: '退出',
+      ),
+    ];
+    
+    Menu menu = Menu(items: items);
+    await trayManager.setContextMenu(menu);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
     super.dispose();
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    ServerOrchestrator.stop();
+    return AppExitResponse.exit;
   }
 
   @override
