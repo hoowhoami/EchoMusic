@@ -80,6 +80,7 @@ jobs:
 
       - name: Prepare Release (macOS)
         if: matrix.platform == 'macos'
+        shell: bash
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
@@ -87,6 +88,7 @@ jobs:
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
+        shell: bash
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
@@ -95,6 +97,7 @@ jobs:
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'
+        shell: bash
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
