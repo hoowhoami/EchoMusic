@@ -41,7 +41,7 @@ jobs:
         run: |
           cd server
           npm install
-          npx pkg . --compress GZip -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-x64 -o bin/${{ matrix.server_bin }}
+          npx pkg . -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-x64 -o bin/${{ matrix.server_bin }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -71,8 +71,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: bash
         run: |
-          mkdir -p build/windows/runner/Release/server
-          cp server/bin/app_win.exe build/windows/runner/Release/server/
+          mkdir -p build/windows/x64/runner/Release/server
+          cp server/bin/app_win.exe build/windows/x64/runner/Release/server/
 
       - name: Bundle Server (Linux)
         if: matrix.platform == 'linux'
@@ -88,7 +88,7 @@ jobs:
           if [ "${{ matrix.platform }}" == "macos" ]; then
             ls -lhR build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
           elif [ "${{ matrix.platform }}" == "windows" ]; then
-            ls -lhR build/windows/runner/Release/server/
+            ls -lhR build/windows/x64/runner/Release/server/
           elif [ "${{ matrix.platform }}" == "linux" ]; then
             ls -lhR build/linux/x64/release/bundle/server/
           fi
