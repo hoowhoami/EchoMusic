@@ -84,7 +84,11 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          hdiutil create -volname "EchoMusic" -srcfolder "build/macos/Build/Products/Release/EchoMusic.app" -ov -format UDZO "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg"
+          # Create a temporary folder for dmg source to include the Applications link
+          mkdir dmg_root
+          cp -r "build/macos/Build/Products/Release/EchoMusic.app" dmg_root/
+          ln -s /Applications dmg_root/Applications
+          hdiutil create -volname "EchoMusic" -srcfolder dmg_root -ov -format UDZO "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg"
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
