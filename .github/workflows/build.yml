@@ -76,11 +76,33 @@ jobs:
           mkdir -p build/linux/x64/release/bundle/server
           cp server/bin/app_linux build/linux/x64/release/bundle/server/
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Prepare Release (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r ../../../../../EchoMusic-macOS.zip EchoMusic.app
+
+      - name: Prepare Release (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          cd build/windows/runner/Release
+          zip -r ../../../../EchoMusic-Windows.zip *
+
+      - name: Prepare Release (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd build/linux/x64/release/bundle
+          zip -r ../../../../../EchoMusic-Linux.zip *
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: EchoMusic-${{ matrix.platform }}
-          path: |
-            build/macos/Build/Products/Release/EchoMusic.app
-            build/windows/runner/Release
-            build/linux/x64/release/bundle
+          files: |
+            EchoMusic-macOS.zip
+            EchoMusic-Windows.zip
+            EchoMusic-Linux.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
