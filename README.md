@@ -99,3 +99,4 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 ## ⚖️ 开源协议
 
 基于 [MIT License](LICENSE) 协议发布。
+<!-- trigger -->
