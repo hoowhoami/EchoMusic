@@ -690,7 +690,7 @@ class _PopupArrowPainter extends CustomPainter {
 class _PlayerIconButton extends StatefulWidget {
   final IconData icon; final VoidCallback? onPressed; final VoidCallback? onSecondaryPressed; final Function(double)? onScroll;
   final double size; final bool isSelected; final Color? activeColor; final String? tooltip;
-  const _PlayerIconButton({super.key, required this.icon, this.onPressed, this.onSecondaryPressed, this.onScroll, this.size = 20, this.isSelected = false, this.activeColor, this.tooltip});
+  const _PlayerIconButton({super.key, required this.icon, this.onPressed, this.onScroll, this.size = 20, this.isSelected = false, this.activeColor, this.tooltip});
   @override
   State<_PlayerIconButton> createState() => _PlayerIconButtonState();
 }
