@@ -81,26 +81,55 @@ jobs:
       - name: Prepare Release (macOS)
         if: matrix.platform == 'macos'
         run: |
-          cd build/macos/Build/Products/Release
-          zip -r "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-macOS.zip" EchoMusic.app
+          hdiutil create -volname "EchoMusic" -srcfolder "build/macos/Build/Products/Release/EchoMusic.app" -ov -format UDZO "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-macOS.dmg"
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
         run: |
-          cd build/windows/runner/Release
-          7z a "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Windows.zip" *
+          iscc /DAppVersion=${{ github.ref_name }} installer.iss
+          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Windows-Setup.exe"
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'
         run: |
-          cd build/linux/x64/release/bundle
-          zip -r "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Linux.zip" *
+          # Create .deb package structure
+          mkdir -p deb/usr/bin
+          mkdir -p deb/usr/share/echomusic
+          mkdir -p deb/usr/share/applications
+          mkdir -p deb/DEBIAN
+          
+          cp -r build/linux/x64/release/bundle/* deb/usr/share/echomusic/
+          ln -s /usr/share/echomusic/echomusic deb/usr/bin/echomusic
+          
+          cat > deb/DEBIAN/control <<EOF
+          Package: echomusic
+          Version: ${{ github.ref_name }}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: EchoMusic Team
+          Description: A minimalist music player.
+          EOF
+          
+          cat > deb/usr/share/applications/echomusic.desktop <<EOF
+          [Desktop Entry]
+          Name=EchoMusic
+          Exec=echomusic
+          Icon=/usr/share/echomusic/assets/icons/icon.png
+          Type=Application
+          Categories=AudioVideo;Audio;Player;
+          EOF
+          
+          dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${{ github.ref_name }}-Linux.deb"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: EchoMusic-*.zip
+          files: |
+            EchoMusic-*.dmg
+            EchoMusic-*-Setup.exe
+            EchoMusic-*.deb
           draft: false
           prerelease: false
         env:
