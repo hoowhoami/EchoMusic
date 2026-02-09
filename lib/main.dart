@@ -88,7 +88,7 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 
   Future<void> _initTray() async {
     await trayManager.setIcon(
-      Platform.isWindows ? 'assets/icons/icon.png' : 'assets/icons/icon.png',
+      Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
     );
     
     List<MenuItem> items = [
