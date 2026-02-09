@@ -85,6 +85,14 @@ flutter build windows --release
 flutter build linux --release
 ```
 
+## 💡 灵感来源
+
+本项目受到以下优秀开源项目的启发：
+
+- [KuGouMusicApi](https://github.com/MakcRe/KuGouMusicApi) - 酷狗音乐 NodeJS 版 API
+- [SPlayer](https://github.com/imsyy/SPlayer) - 一个简约的音乐播放器
+- [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKoeMusic) - 一款开源简洁高颜值的酷狗第三方客户端
+
 ## 📄 免责声明
 
 本软件仅供学习交流使用。所有音乐资源均来自第三方接口，EchoMusic 仅提供技术展示，不存储任何音源文件，亦不参与任何版权商业行为。
