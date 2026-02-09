@@ -92,7 +92,7 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          iscc /DAppVersion=${CLEAN_VERSION} installer.iss
+          iscc //DAppVersion=${CLEAN_VERSION} installer.iss
           mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup.exe"
 
       - name: Prepare Release (Linux)
