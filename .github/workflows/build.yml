@@ -78,17 +78,30 @@ jobs:
           mkdir -p build/linux/x64/release/bundle/server
           cp server/bin/app_linux build/linux/x64/release/bundle/server/
 
+      - name: Install create-dmg (macOS)
+        if: matrix.platform == 'macos'
+        run: brew install create-dmg
+
       - name: Prepare Release (macOS)
         if: matrix.platform == 'macos'
         shell: bash
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          # Create a temporary folder for dmg source to include the Applications link
-          mkdir dmg_root
+          mkdir -p dmg_root
           cp -r "build/macos/Build/Products/Release/EchoMusic.app" dmg_root/
-          ln -s /Applications dmg_root/Applications
-          hdiutil create -volname "EchoMusic" -srcfolder dmg_root -ov -format UDZO "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg"
+          
+          create-dmg \
+            --volname "EchoMusic" \
+            --volicon "dmg_root/EchoMusic.app/Contents/Resources/AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "EchoMusic.app" 175 120 \
+            --hide-extension "EchoMusic.app" \
+            --app-drop-link 425 120 \
+            "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg" \
+            dmg_root/
 
       - name: Prepare Release (Windows)
         if: matrix.platform == 'windows'
