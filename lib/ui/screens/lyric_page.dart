@@ -240,10 +240,10 @@ class _LyricPageState extends State<LyricPage> {
       child: Column(
         children: [
           StreamBuilder<Duration>(
-            stream: audioProvider.player.stream.position,
+            stream: audioProvider.player.positionStream,
             builder: (context, snapshot) {
               final position = snapshot.data ?? Duration.zero;
-              final total = audioProvider.player.state.duration;
+              final total = audioProvider.player.duration ?? Duration.zero;
               return Column(
                 children: [
                   MouseRegion(

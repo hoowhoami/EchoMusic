@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
-import '../utils/constants.dart';
+import '../utils/constants.dart' as app_const;
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
 class AudioProvider with ChangeNotifier {
-  late final Player _player = Player();
+  late AudioPlayer _player;
 
   // Getter for external use
-  Player get player => _player;
+  AudioPlayer get player => _player;
 
   final List<StreamSubscription> _subscriptions = [];
   final StreamController<double> _userVolumeController = StreamController<double>.broadcast();
@@ -40,30 +41,31 @@ class AudioProvider with ChangeNotifier {
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  bool get isPlaying => _player.state.playing;
-  bool get isLoading => _isLoading || _player.state.buffering;
+  bool get isPlaying => _player.playing;
+  bool get isLoading => _isLoading || _player.processingState == ProcessingState.buffering || _player.processingState == ProcessingState.loading;
   String get playMode => _playMode;
-  String get loopMode => _playMode; // Alias for potential dynamic lookup
+  String get loopMode => _playMode; 
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
 
   AudioProvider() {
+    _player = AudioPlayer();
     _initListeners();
   }
 
   void _fadeVolume(double target, {int? durationMs, VoidCallback? onComplete}) {
     _fadeTimer?.cancel();
     if (_persistenceProvider?.settings['volumeFade'] == false) {
-      _player.setVolume(target * 100.0);
+      _player.setVolume(target);
       onComplete?.call();
       return;
     }
 
-    final startVolume = _player.state.volume / 100.0;
+    final startVolume = _player.volume;
     final duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 500;
     if (duration <= 0) {
-      _player.setVolume(target * 100.0);
+      _player.setVolume(target);
       onComplete?.call();
       return;
     }
@@ -71,17 +73,16 @@ class AudioProvider with ChangeNotifier {
     _isInternalChanging = true;
     const steps = 20;
     final stepDuration = duration ~/ steps;
-    final volumeStep = (target - startVolume) / steps;
-    int currentStep = 0;
+    final volumeStep = (target - startVolume) / steps; int currentStep = 0;
 
     _fadeTimer = Timer.periodic(Duration(milliseconds: stepDuration), (timer) {
       currentStep++;
       final newVolume = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
-      _player.setVolume(newVolume * 100.0);
+      _player.setVolume(newVolume);
       if (currentStep >= steps) {
         timer.cancel();
         _fadeTimer = null;
-        _player.setVolume(target * 100.0);
+        _player.setVolume(target);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -91,23 +92,27 @@ class AudioProvider with ChangeNotifier {
   int _lastSavedSecond = -1;
 
   void _initListeners() {
-    _subscriptions.add(_player.stream.completed.listen((c) {
-      if (_isDisposed || !c) return;
-      try {
-        next();
-      } catch (_) {}
+    _subscriptions.add(_player.playbackEventStream.listen((event) {
+      // just_audio handles errors via try-catch or this stream
+    }, onError: (Object e, StackTrace st) {
+      _handlePlayError(e);
     }));
 
-    _subscriptions.add(_player.stream.playing.listen((_) => _safeNotify()));
-    _subscriptions.add(_player.stream.buffering.listen((_) => _safeNotify()));
-    _subscriptions.add(_player.stream.error.listen((_) => _handlePlayError()));
+    _subscriptions.add(_player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        debugPrint('[AudioProvider] Playback completed.');
+        try {
+          next();
+        } catch (_) {}
+      }
+      _safeNotify();
+    }));
 
-    _subscriptions.add(_player.stream.position.listen((pos) {
+    _subscriptions.add(_player.positionStream.listen((pos) {
       if (_isDisposed) return;
       final sec = pos.inSeconds;
       try {
         if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
-        // Periodically save state (every 5 seconds)
         if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
           _lastSavedSecond = sec;
           _savePlaybackState();
@@ -115,19 +120,16 @@ class AudioProvider with ChangeNotifier {
       } catch (_) {}
     }));
 
-    _subscriptions.add(_player.stream.volume.listen((v) {
+    _subscriptions.add(_player.volumeStream.listen((v) {
       if (_isDisposed || _isInternalChanging) return;
       try {
-        final normalized = v / 100.0;
-        // Broadcast for UI smoothness
         if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          _userVolumeController.add(normalized);
-          // Auto-save volume from external changes (e.g. keyboard shortcuts)
-          if (normalized > 0.001) {
-            _lastVolume = normalized;
+          _userVolumeController.add(v);
+          if (v > 0.001) {
+            _lastVolume = v;
             _volumeSaveTimer?.cancel();
             _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', normalized);
+              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', v);
             });
           }
         }
@@ -154,9 +156,7 @@ class AudioProvider with ChangeNotifier {
   void _updateWakelock() {
     if (_isDisposed) return;
     final preventSleep = _persistenceProvider?.settings['preventSleep'] ?? true;
-    final isPlaying = _player.state.playing;
-    
-    // Only prevent sleep when both enabled and playing
+    final isPlaying = _player.playing;
     WakelockPlus.toggle(enable: preventSleep && isPlaying);
   }
 
@@ -166,19 +166,17 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
-    _player.setVolume(savedVol * 100.0);
+    _player.setVolume(savedVol);
     _userVolumeController.add(savedVol);
     _lastVolume = savedVol > 0.001 ? savedVol : 0.5;
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
     
-    // Restore playback state if not already playing
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
       _originalPlaylist = []; 
       _currentIndex = p.currentIndex;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
-        // Ensure UI updates before restoration begins
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _initRestore(p.currentPosition);
         });
@@ -195,11 +193,24 @@ class AudioProvider with ChangeNotifier {
     try {
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
-        await _player.open(Media(result['url']), play: false);
-        await _player.seek(Duration(milliseconds: (positionSeconds * 1000).toInt()));
-        _player.setRate(_playbackRate);
+        await _player.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(result['url']),
+            tag: MediaItem(
+              id: _currentSong!.hash,
+              album: _currentSong!.albumName,
+              title: _currentSong!.name,
+              artist: _currentSong!.singerName,
+              artUri: Uri.parse(_currentSong!.cover),
+            ),
+          ),
+          initialPosition: Duration(milliseconds: (positionSeconds * 1000).toInt()),
+        );
+        _player.setSpeed(_playbackRate);
         _fetchClimax(_currentSong!);
       }
+    } catch (e) {
+      debugPrint('Restore error: $e');
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -211,7 +222,7 @@ class AudioProvider with ChangeNotifier {
       _persistenceProvider!.savePlaybackState(
         _playlist,
         _currentIndex,
-        _player.state.position.inMilliseconds / 1000.0,
+        _player.position.inMilliseconds / 1000.0,
       );
     }
   }
@@ -220,16 +231,9 @@ class AudioProvider with ChangeNotifier {
     if (_isDisposed) return;
     _fadeTimer?.cancel(); 
     _fadeTimer = null;
-    
-    // Update real-time player
-    _player.setVolume(v * 100.0);
-    
-    // Smooth UI Update
+    _player.setVolume(v);
     _userVolumeController.add(v);
-
     if (v > 0.001) _lastVolume = v;
-    
-    // Debounced Persistence to prevent lag
     _volumeSaveTimer?.cancel();
     _volumeSaveTimer = Timer(const Duration(milliseconds: 500), () {
       if (!_isDisposed && v > 0.001) {
@@ -239,8 +243,8 @@ class AudioProvider with ChangeNotifier {
   }
 
   void toggleMute() {
-    if (_player.state.volume > 0.1) {
-      _lastVolume = _player.state.volume / 100.0;
+    if (_player.volume > 0.01) {
+      _lastVolume = _player.volume;
       _isInternalChanging = true;
       _player.setVolume(0.0);
       _userVolumeController.add(0.0);
@@ -253,7 +257,7 @@ class AudioProvider with ChangeNotifier {
 
   void setPlaybackRate(double r) {
     _playbackRate = r;
-    _player.setRate(r);
+    _player.setSpeed(r);
     _safeNotify();
   }
 
@@ -266,9 +270,9 @@ class AudioProvider with ChangeNotifier {
 
   void _applyPlayMode() {
     if (_playMode == 'repeat-once') {
-      _player.setPlaylistMode(PlaylistMode.single);
+      _player.setLoopMode(LoopMode.one);
     } else {
-      _player.setPlaylistMode(PlaylistMode.none);
+      _player.setLoopMode(LoopMode.off);
     }
 
     if (_playMode == 'shuffle' && _playlist.isNotEmpty) {
@@ -326,13 +330,29 @@ class AudioProvider with ChangeNotifier {
 
       _isInternalChanging = true;
       _player.setVolume(0.0);
-      await _player.open(Media(result['url']), play: true);
-      _player.setRate(_playbackRate);
+      
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(result['url']),
+          tag: MediaItem(
+            id: song.hash,
+            album: song.albumName,
+            title: song.name,
+            artist: song.singerName,
+            artUri: Uri.parse(song.cover),
+          ),
+        ),
+      );
+      
+      _player.setSpeed(_playbackRate);
+      _player.play();
       _isInternalChanging = false;
       _applyPlayMode(); 
       
       _fadeVolume(_persistenceProvider?.volume ?? 0.5);
       _savePlaybackState();
+    } catch (e) {
+      _handlePlayError(e);
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -353,7 +373,6 @@ class AudioProvider with ChangeNotifier {
     final backupQuality = settings['backupQuality'] ?? '128';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
-    // Build priority list
     final List<String> qualityList = [];
     if (audioEffect != 'none') qualityList.add(audioEffect);
     qualityList.add(audioQuality);
@@ -366,7 +385,7 @@ class AudioProvider with ChangeNotifier {
 
     for (final quality in uniqueQualities) {
       try {
-        final isEffect = AudioEffect.options.any((e) => e.value == quality && e.value != 'none');
+        final isEffect = app_const.AudioEffect.options.any((e) => e.value == quality && e.value != 'none');
         
         String targetHash = song.hash;
         if (!isEffect) {
@@ -374,7 +393,6 @@ class AudioProvider with ChangeNotifier {
           if (good != null && good['hash'] != null) {
             targetHash = good['hash'];
           } else {
-            // If we can't find the hash for this quality level, skip it unless it's the primary one
             if (quality != audioQuality) continue;
           }
         }
@@ -394,14 +412,16 @@ class AudioProvider with ChangeNotifier {
     return null;
   }
 
-  Future<void> _handlePlayError() async {
+  Future<void> _handlePlayError(dynamic err) async {
     if (_isDisposed) return;
-    
+    debugPrint('[AudioProvider] Playback error: $err');
+
     final settings = _persistenceProvider?.settings ?? {};
     final autoNext = settings['autoNext'] ?? true;
     final autoNextTime = settings['autoNextTime'] ?? 3000;
 
     if (autoNext) {
+      debugPrint('[AudioProvider] Auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
       await Future.delayed(Duration(milliseconds: autoNextTime));
       next();
     }
@@ -410,17 +430,30 @@ class AudioProvider with ChangeNotifier {
   Future<void> updateAudioSetting(String key, String value) async {
     _persistenceProvider?.updatePlayerSetting(key, value);
     if (_currentSong != null) {
-      final pos = _player.state.position;
-      final playing = _player.state.playing;
+      final pos = _player.position;
+      final playing = _player.playing;
       _isLoading = true;
       _safeNotify();
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
-          await _player.open(Media(result['url']), play: playing);
+          await _player.setAudioSource(
+            AudioSource.uri(
+              Uri.parse(result['url']),
+              tag: MediaItem(
+                id: _currentSong!.hash,
+                album: _currentSong!.albumName,
+                title: _currentSong!.name,
+                artist: _currentSong!.singerName,
+                artUri: Uri.parse(_currentSong!.cover),
+              ),
+            ),
+          );
           await _player.seek(pos);
-          _player.setRate(_playbackRate);
+          if (playing) _player.play();
+          _player.setSpeed(_playbackRate);
         }
+      } catch (_) {
       } finally {
         _isLoading = false;
         _safeNotify();
@@ -429,7 +462,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   void togglePlay() {
-    if (_player.state.playing) {
+    if (_player.playing) {
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
         _savePlaybackState();
@@ -438,6 +471,12 @@ class AudioProvider with ChangeNotifier {
       _player.play();
       _fadeVolume(_persistenceProvider?.volume ?? 0.5);
     }
+  }
+
+  void stop() {
+    _player.stop();
+    _savePlaybackState();
+    _safeNotify();
   }
 
   void next() {
@@ -527,8 +566,8 @@ class AudioProvider with ChangeNotifier {
     _volumeSaveTimer?.cancel();
     _cancelSubscriptions();
     _userVolumeController.close();
-    WakelockPlus.disable(); // Ensure wakelock is released
-    _player.dispose(); // CRITICAL: Fix crash on exit
+    WakelockPlus.disable();
+    _player.dispose();
     super.dispose();
   }
 }

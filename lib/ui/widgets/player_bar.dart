@@ -121,10 +121,10 @@ class _PlayerBarState extends State<PlayerBar> {
                   }),
                   // Main Progress Bar
                   StreamBuilder<Duration>(
-                    stream: audioProvider.player.stream.position,
+                    stream: audioProvider.player.positionStream,
                     builder: (context, snapshot) {
                       final position = snapshot.data ?? Duration.zero;
-                      final total = audioProvider.player.state.duration;
+                      final total = audioProvider.player.duration ?? Duration.zero;
                       return ProgressBar(
                         progress: position,
                         total: total,
@@ -435,10 +435,10 @@ class _PlayerBarState extends State<PlayerBar> {
   Widget _buildTimeInfo(AudioProvider audioProvider) {
     final theme = Theme.of(context);
     return StreamBuilder<Duration>(
-      stream: audioProvider.player.stream.position,
+      stream: audioProvider.player.positionStream,
       builder: (context, snapshot) {
         final position = snapshot.data ?? Duration.zero;
-        final total = audioProvider.player.state.duration;
+        final total = audioProvider.player.duration ?? Duration.zero;
         return Text(
           '${_formatDuration(position)} / ${_formatDuration(total)}',
           style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
