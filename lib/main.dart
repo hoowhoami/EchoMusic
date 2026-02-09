@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:tray_manager/tray_manager.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
@@ -76,26 +77,85 @@ class WindowHandler extends StatefulWidget {
   State<WindowHandler> createState() => _WindowHandlerState();
 }
 
-class _WindowHandlerState extends State<WindowHandler> with WindowListener {
+class _WindowHandlerState extends State<WindowHandler> with WindowListener, TrayListener {
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    trayManager.addListener(this);
     windowManager.setPreventClose(true);
+    _initTray();
+  }
+
+  Future<void> _initTray() async {
+    await trayManager.setIcon(
+      Platform.isWindows ? 'assets/icons/icon.png' : 'assets/icons/icon.png',
+    );
+    if (!Platform.isMacOS) {
+      Menu menu = Menu(
+        items: [
+          MenuItem(
+            key: 'show_window',
+            label: '显示窗口',
+          ),
+          MenuItem.separator(),
+          MenuItem(
+            key: 'exit_app',
+            label: '退出',
+          ),
+        ],
+      );
+      await trayManager.setContextMenu(menu);
+    }
   }
 
   @override
   void dispose() {
     windowManager.removeListener(this);
+    trayManager.removeListener(this);
     super.dispose();
   }
 
   @override
   void onWindowClose() async {
-    bool isPreventClose = await windowManager.isPreventClose();
-    if (isPreventClose) {
+    await windowManager.hide();
+  }
+
+  @override
+  void onWindowFocus() async {
+    bool isVisible = await windowManager.isVisible();
+    if (!isVisible) {
+      await windowManager.show();
+    }
+    await windowManager.focus();
+    setState(() {});
+  }
+
+  @override
+  void onWindowRestore() async {
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
+  @override
+  void onTrayIconMouseDown() {
+    windowManager.show();
+    windowManager.focus();
+  }
+
+  @override
+  void onTrayIconRightMouseDown() {
+    trayManager.popUpContextMenu();
+  }
+
+  @override
+  void onTrayMenuItemClick(MenuItem menuItem) {
+    if (menuItem.key == 'show_window') {
+      windowManager.show();
+      windowManager.focus();
+    } else if (menuItem.key == 'exit_app') {
       ServerOrchestrator.stop();
-      await windowManager.destroy();
+      windowManager.destroy();
     }
   }
 
