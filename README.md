@@ -65,7 +65,7 @@
    flutter run -d macos
    flutter run -d windows
    flutter run -d linux
-   ```
+   ```   
 
 ## 🏗️ 编译发布
 
@@ -76,6 +76,12 @@
 flutter build macos --release
 flutter build windows --release
 flutter build linux --release
+```
+
+## MacOS
+
+```bash
+xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Applications/EchoMusic.app
 ```
 
 ## 💡 灵感来源
