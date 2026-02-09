@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>EchoMusic</strong> —— 一个专为桌面端打造的简约、精致、功能强大的音乐探索与播放器。
+  <strong>EchoMusic</strong> —— 一个专为桌面端打造的简约、精致、功能强大的第三方酷狗音乐播放器。
 </p>
 
 <p align="center">
@@ -20,16 +20,9 @@
 
 - 🎨 **极致美学**：基于 Material Design 3 设计，支持深浅色模式，适配桌面端大屏体验。
 - 🔍 **多维探索**：支持歌曲、歌手、专辑、歌单全方位搜索，快速发现心仪旋律。
-- ⚡ **原生动力**：底层集成高性能 Node.js 音乐引擎，提供流畅的数据抓取与流媒体播放。
 - 🎵 **进阶播放**：支持高潮片段标记（Firefly 效果）、播放进度精确控制、播放队列管理。
 - 📦 **跨平台支持**：原生适配 macOS、Windows 与 Linux 系统。
 - 🛠️ **持续集成**：完善的 GitHub Actions 配置，支持全平台自动编译与 Release 发布。
-
-## 📸 界面预览
-
-| 发现音乐 | 播放详情 |
-| :---: | :---: |
-| ![Discover](https://via.placeholder.com/400x250?text=Discover+View) | ![Player](https://via.placeholder.com/400x250?text=Player+Bar) |
 
 ## 🛠️ 技术栈
 
