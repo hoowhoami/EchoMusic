@@ -13,156 +13,221 @@ import '../screens/lyric_page.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
 
-class PlayerBar extends StatefulWidget {
+class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
-
-  @override
-  State<PlayerBar> createState() => _PlayerBarState();
-}
-
-class _PlayerBarState extends State<PlayerBar> {
-  final LayerLink _volumeLink = LayerLink();
-  final LayerLink _qualityEffectLink = LayerLink();
-  final LayerLink _speedLink = LayerLink();
-  final LayerLink _playModeLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>();
-    final accentColor = theme.colorScheme.primary;
 
-    return Consumer2<AudioProvider, PersistenceProvider>(
-      builder: (context, audioProvider, persistenceProvider, child) {
-        final song = audioProvider.currentSong;
-
-        return Container(
-          height: 80,
-          decoration: BoxDecoration(
-            color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
-            border: Border(
-              top: BorderSide(
-                color: (modernTheme?.dividerColor ?? theme.dividerColor).withAlpha(30),
-                width: 0.5,
-              ),
-            ),
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: (modernTheme?.dividerColor ?? theme.dividerColor).withAlpha(30),
+            width: 0.5,
           ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: song == null
-                    ? _buildEmptyState(context, accentColor)
-                    : _buildPlayerContent(context, song, audioProvider, persistenceProvider, theme, accentColor),
-              ),
-              if (song != null)
-                Positioned(
-                  top: -10,
-                  left: 0,
-                  right: 0,
-                  child: _buildIntegratedProgressBar(audioProvider, accentColor, theme),
+        ),
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: _PlayerMainContent(),
+          ),
+          Positioned(
+            top: -10,
+            left: 0,
+            right: 0,
+            child: const _PlayerProgressBar(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayerProgressBar extends StatelessWidget {
+  const _PlayerProgressBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioProvider, bool>(
+      selector: (_, p) => p.currentSong != null,
+      builder: (context, hasSong, child) {
+        if (!hasSong) return const SizedBox.shrink();
+        
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return RepaintBoundary(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Container(
+                    height: 20,
+                    color: Colors.transparent,
+                    child: Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [
+                        // Climax Range Markers
+                        const _ClimaxRangeLines(),
+                        // Real Main Progress Bar
+                        const _ProgressBarWidget(),
+                        // Boundary markers
+                        const _ClimaxBoundaryMarkers(),
+                      ],
+                    ),
+                  ),
                 ),
-            ],
+              );
+            }
           ),
         );
       },
     );
   }
+}
 
-  Widget _buildIntegratedProgressBar(AudioProvider audioProvider, Color accentColor, ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return RepaintBoundary(
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: Container(
-                height: 20,
-                color: Colors.transparent,
-                child: Stack(
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    // Range background line (Improved: Glowing & Subtle)
-                    ...audioProvider.climaxMarks.entries.map((entry) {
-                      final start = entry.key;
-                      final end = entry.value;
-                      return Positioned(
-                        left: constraints.maxWidth * start,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: Container(
-                            width: (end - start) * constraints.maxWidth,
-                            height: 3,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(1.5),
-                              gradient: LinearGradient(
-                                colors: [
-                                  const Color(0xFFFFAB40).withAlpha(0),
-                                  const Color(0xFFFFAB40).withAlpha(120),
-                                  const Color(0xFFFFE082).withAlpha(180),
-                                  const Color(0xFFFFAB40).withAlpha(120),
-                                  const Color(0xFFFFAB40).withAlpha(0),
-                                ],
-                                stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                    // Main Progress Bar
-                    StreamBuilder<Duration>(
-                      stream: audioProvider.player.positionStream,
-                      builder: (context, snapshot) {
-                        final position = snapshot.data ?? Duration.zero;
-                        final total = audioProvider.player.duration ?? Duration.zero;
-                        return ProgressBar(
-                          progress: position,
-                          total: total,
-                          barHeight: 4.0,
-                          baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
-                          progressBarColor: accentColor,
-                          thumbColor: accentColor,
-                          thumbRadius: 7.0,
-                          thumbGlowRadius: 15.0,
-                          onSeek: (duration) => audioProvider.player.seek(duration),
-                          timeLabelLocation: TimeLabelLocation.none,
-                        );
-                      },
+class _ProgressBarWidget extends StatelessWidget {
+  const _ProgressBarWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return Consumer<AudioProvider>(
+      builder: (context, audioProvider, child) {
+        return StreamBuilder<Duration>(
+          stream: audioProvider.throttledPositionStream,
+          initialData: audioProvider.effectivePosition,
+          builder: (context, snapshot) {
+            final position = snapshot.data ?? audioProvider.effectivePosition;
+            final total = audioProvider.player.duration ?? Duration.zero;
+            return ProgressBar(
+              progress: position,
+              total: total,
+              barHeight: 4.0,
+              baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
+              progressBarColor: accentColor,
+              thumbColor: accentColor,
+              thumbRadius: 7.0,
+              thumbGlowRadius: 15.0,
+              onSeek: (duration) => audioProvider.player.seek(duration),
+              timeLabelLocation: TimeLabelLocation.none,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ClimaxRangeLines extends StatelessWidget {
+  const _ClimaxRangeLines();
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioProvider, Map<double, double>>(
+      selector: (_, p) => p.climaxMarks,
+      builder: (context, marks, child) {
+        if (marks.isEmpty) return const SizedBox.shrink();
+        return LayoutBuilder(builder: (context, constraints) {
+          return Stack(
+            children: marks.entries.map((entry) {
+              final start = entry.key;
+              final end = entry.value;
+              return Positioned(
+                left: constraints.maxWidth * start,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: Container(
+                    width: (end - start) * constraints.maxWidth,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(1.5),
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFFFFAB40).withAlpha(0),
+                          const Color(0xFFFFAB40).withAlpha(120),
+                          const Color(0xFFFFE082).withAlpha(180),
+                          const Color(0xFFFFAB40).withAlpha(120),
+                          const Color(0xFFFFAB40).withAlpha(0),
+                        ],
+                        stops: const [0.0, 0.2, 0.5, 0.8, 1.0],
+                      ),
                     ),
-                    // Boundary markers (Improved: Floating Firefly style)
-                    ...audioProvider.climaxMarks.entries.expand((entry) {
-                      final start = entry.key;
-                      final end = entry.value;
-                      return [
-                        Positioned(
-                          left: constraints.maxWidth * start - 6,
-                          top: 0,
-                          bottom: 0,
-                          child: const Center(child: _ClimaxMarker(isStart: true)),
-                        ),
-                        Positioned(
-                          left: constraints.maxWidth * end - 6,
-                          top: 0,
-                          bottom: 0,
-                          child: const Center(child: _ClimaxMarker(isStart: false)),
-                        ),
-                      ];
-                    }),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            }).toList(),
           );
-        }
-      ),
+        });
+      },
+    );
+  }
+}
+
+class _ClimaxBoundaryMarkers extends StatelessWidget {
+  const _ClimaxBoundaryMarkers();
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioProvider, Map<double, double>>(
+      selector: (_, p) => p.climaxMarks,
+      builder: (context, marks, child) {
+        if (marks.isEmpty) return const SizedBox.shrink();
+        return LayoutBuilder(builder: (context, constraints) {
+          return Stack(
+            children: marks.entries.expand((entry) {
+              final start = entry.key;
+              final end = entry.value;
+              return [
+                Positioned(
+                  left: constraints.maxWidth * start - 6,
+                  top: 0,
+                  bottom: 0,
+                  child: const Center(child: _ClimaxMarker(isStart: true)),
+                ),
+                Positioned(
+                  left: constraints.maxWidth * end - 6,
+                  top: 0,
+                  bottom: 0,
+                  child: const Center(child: _ClimaxMarker(isStart: false)),
+                ),
+              ];
+            }).toList(),
+          );
+        });
+      },
+    );
+  }
+}
+
+class _PlayerMainContent extends StatelessWidget {
+  const _PlayerMainContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return Selector<AudioProvider, bool>(
+      selector: (_, p) => p.currentSong == null,
+      builder: (context, isEmpty, child) {
+        if (isEmpty) return _buildEmptyState(context);
+        return _buildPlayerContent(context, theme, accentColor);
+      },
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, Color accentColor) {
+  Widget _buildEmptyState(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
       children: [
@@ -208,324 +273,372 @@ class _PlayerBarState extends State<PlayerBar> {
     );
   }
 
-  Widget _buildPlayerContent(
-    BuildContext context,
-    dynamic song,
-    AudioProvider audioProvider,
-    PersistenceProvider persistenceProvider,
-    ThemeData theme,
-    Color accentColor,
-  ) {
-    final userProvider = context.watch<UserProvider>();
-    
+  Widget _buildPlayerContent(BuildContext context, ThemeData theme, Color accentColor) {
     return Row(
       children: [
-        SizedBox(
-          width: 300,
-          child: Row(
-            children: [
-              InkWell(
-                onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const LyricPage())),
-                borderRadius: BorderRadius.circular(12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-                      child: Hero(
-                        key: ValueKey(song.hash),
-                        tag: 'player_cover',
-                        child: CoverImage(url: song.cover, width: 52, height: 52, borderRadius: 8, size: 100, showShadow: true),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 140),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 400),
-                        layoutBuilder: (currentChild, previousChildren) => Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            ...previousChildren,
-                            if (currentChild != null) currentChild,
-                          ],
-                        ),
-                        child: Column(
-                          key: ValueKey(song.hash),
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(song.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 2),
-                            Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(140), fontSize: 12, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (song.source == 'cloud')
-                _PlayerIconButton(icon: CupertinoIcons.cloud_fill, size: 16, activeColor: accentColor, isSelected: true, onPressed: (){}, tooltip: '云盘歌曲'),
-              if (userProvider.isAuthenticated)
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _PlayerIconButton(
-                    key: ValueKey('${song.hash}_${persistenceProvider.isFavorite(song)}'),
-                    icon: persistenceProvider.isFavorite(song) ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                    isSelected: persistenceProvider.isFavorite(song),
-                    activeColor: Colors.redAccent,
-                    onPressed: () => persistenceProvider.toggleFavorite(song, userProvider: userProvider),
-                    size: 20, tooltip: '收藏',
-                  ),
-                ),
-            ],
-          ),
-        ),
+        // 1. Song Info
+        const SizedBox(width: 300, child: _PlayerSongInfo()),
 
+        // 2. Playback Controls
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _PlayerIconButton(icon: CupertinoIcons.backward_fill, onPressed: audioProvider.previous, size: 26, tooltip: '上一首'),
+              _PlayerIconButton(icon: CupertinoIcons.backward_fill, onPressed: context.read<AudioProvider>().previous, size: 26, tooltip: '上一首'),
               const SizedBox(width: 24),
-              _buildPlayButton(theme, audioProvider),
+              const _PlayPauseButtonIsolated(),
               const SizedBox(width: 24),
-              _PlayerIconButton(icon: CupertinoIcons.forward_fill, onPressed: audioProvider.next, size: 26, tooltip: '下一首'),
+              _PlayerIconButton(icon: CupertinoIcons.forward_fill, onPressed: context.read<AudioProvider>().next, size: 26, tooltip: '下一首'),
             ],
           ),
         ),
 
-        SizedBox(
-          width: 440,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _buildTimeInfo(audioProvider),
-              const SizedBox(width: 16),
-              CompositedTransformTarget(
-                link: _playModeLink,
-                child: _buildLoopModeButton(audioProvider),
-              ),
-              const SizedBox(width: 12),
-              CompositedTransformTarget(
-                link: _speedLink,
-                child: _PlayerIconButton(
-                  icon: CupertinoIcons.speedometer,
-                  isSelected: audioProvider.playbackRate != 1.0,
-                  onPressed: () => _showCustomPopup(context, _speedLink, const _SpeedPopup(), width: 120, height: 340),
-                  size: 20, tooltip: '播放倍速',
-                ),
-              ),
-              const SizedBox(width: 12),
-              CompositedTransformTarget(
-                link: _qualityEffectLink,
-                child: _PlayerIconButton(
-                  icon: CupertinoIcons.waveform,
-                  onPressed: song.source == 'cloud' ? null : () => _showCustomPopup(context, _qualityEffectLink, const _QualityEffectPopup(), width: 180, height: 380),
-                  size: 20, tooltip: '音质选择',
-                  isSelected: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              CompositedTransformTarget(
-                link: _volumeLink,
-                child: _PlayerIconButton(
-                  icon: _getVolumeIcon(persistenceProvider.volume),
-                  isSelected: persistenceProvider.volume > 0,
-                  onPressed: () => _showCustomPopup(context, _volumeLink, const _VolumePopup(), width: 50, height: 200),
-                  onScroll: (delta) {
-                    final newVol = (persistenceProvider.volume + (delta > 0 ? -0.05 : 0.05)).clamp(0.0, 1.0);
-                    audioProvider.setVolume(newVol);
-                  },
-                  size: 20, tooltip: '音量',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Stack(
-                clipBehavior: Clip.none,
+        // 3. Functional Buttons
+        const SizedBox(width: 440, child: _PlayerRightActions()),
+      ],
+    );
+  }
+}
+
+class _PlayerSongInfo extends StatelessWidget {
+  const _PlayerSongInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return Selector<AudioProvider, dynamic>(
+      selector: (_, p) => p.currentSong,
+      builder: (context, song, child) {
+        if (song == null) return const SizedBox.shrink();
+
+        return Row(
+          children: [
+            InkWell(
+              onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const LyricPage())),
+              borderRadius: BorderRadius.circular(12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _PlayerIconButton(icon: CupertinoIcons.list_bullet, onPressed: () => _showQueueDrawer(context), size: 22, tooltip: '播放队列'),
-                  if (persistenceProvider.settings['showPlaylistCount'] ?? true)
-                    Positioned(
-                      top: -2,
-                      right: -10,
-                      child: IgnorePointer(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
-                          decoration: BoxDecoration(
-                            color: accentColor,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: theme.colorScheme.surface, width: 1.5),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withAlpha(50), blurRadius: 4, offset: const Offset(0, 1)),
-                            ],
-                          ),
-                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                          child: Center(
-                            child: Text(
-                              audioProvider.playlist.length > 99 ? '99+' : '${audioProvider.playlist.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900,
-                                height: 1.1,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                  Hero(
+                    tag: 'player_cover',
+                    child: CoverImage(url: song.cover, width: 52, height: 52, borderRadius: 8, size: 100, showShadow: true),
+                  ),
+                  const SizedBox(width: 14),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 140),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(song.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 2),
+                        Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(140), fontSize: 12, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ],
                     ),
+                  ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPlayButton(ThemeData theme, AudioProvider audioProvider) {
-    return _PlayPauseButton(audioProvider: audioProvider);
-  }
-
-  Widget _buildLoopModeButton(AudioProvider audioProvider) {
-    final mode = audioProvider.playMode;
-    IconData icon = CupertinoIcons.repeat;
-    String tip = '列表循环';
-    if (mode == 'repeat-once') { icon = CupertinoIcons.repeat_1; tip = '单曲循环'; }
-    else if (mode == 'shuffle') { icon = CupertinoIcons.shuffle; tip = '随机播放'; }
-    
-    return _PlayerIconButton(
-      icon: icon, isSelected: true, 
-      onPressed: () => _showCustomPopup(context, _playModeLink, const _PlayModePopup(), width: 140, height: 180),
-      size: 20, tooltip: tip,
-    );
-  }
-
-  void _showPlayModeDropdown(BuildContext context, AudioProvider audioProvider) {
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final Offset offset = button.localToGlobal(Offset.zero, ancestor: overlay);
-    final RelativeRect position = RelativeRect.fromLTRB(
-      offset.dx, offset.dy - 140, 
-      overlay.size.width - offset.dx - button.size.width, overlay.size.height - offset.dy,
-    );
-
-    showMenu(
-      context: context, position: position, elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      items: [
-        PopupMenuItem(value: 'repeat', child: Row(children: const [Icon(CupertinoIcons.repeat, size: 18), SizedBox(width: 10), Text('列表循环', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))])),
-        PopupMenuItem(value: 'repeat-once', child: Row(children: const [Icon(CupertinoIcons.repeat_1, size: 18), SizedBox(width: 10), Text('单曲循环', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))])),
-        PopupMenuItem(value: 'shuffle', child: Row(children: const [Icon(CupertinoIcons.shuffle, size: 18), SizedBox(width: 10), Text('随机播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))])),
-      ],
-    ).then((value) {
-      if (value != null) audioProvider.setPlayMode(value);
-    });
-  }
-
-  Widget _buildTimeInfo(AudioProvider audioProvider) {
-    final theme = Theme.of(context);
-    return StreamBuilder<Duration>(
-      stream: audioProvider.player.positionStream,
-      builder: (context, snapshot) {
-        final position = snapshot.data ?? Duration.zero;
-        final total = audioProvider.player.duration ?? Duration.zero;
-        return Text(
-          '${_formatDuration(position)} / ${_formatDuration(total)}',
-          style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(width: 8),
+            if (song.source == 'cloud')
+              _PlayerIconButton(icon: CupertinoIcons.cloud_fill, size: 16, activeColor: accentColor, isSelected: true, onPressed: (){}, tooltip: '云盘歌曲'),
+            const _FavoriteButton(),
+          ],
         );
       },
     );
   }
+}
 
-  Widget _buildTextActionButton({required String label, required VoidCallback? onTap, IconData? icon, bool isHighlight = false, bool disabled = false}) {
-    final theme = Theme.of(context);
-    final color = disabled ? theme.disabledColor : (isHighlight ? theme.colorScheme.primary : theme.colorScheme.onSurface.withAlpha(180));
-    return MouseRegion(
-      cursor: disabled ? SystemMouseCursors.basic : SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: isHighlight && !disabled ? Border.all(color: theme.colorScheme.primary.withAlpha(120), width: 1.2) : null,
-            color: isHighlight && !disabled ? theme.colorScheme.primary.withAlpha(15) : Colors.transparent,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
-              Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+class _FavoriteButton extends StatelessWidget {
+  const _FavoriteButton();
 
-  void _showCustomPopup(BuildContext context, LayerLink link, Widget content, {required double width, required double height}) {
-    late OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (_) => Stack(
-        children: [
-          GestureDetector(onTap: () => entry.remove(), behavior: HitTestBehavior.translucent, child: Container(color: Colors.transparent)),
-          CompositedTransformFollower(
-            link: link, showWhenUnlinked: false, offset: Offset(-(width / 2) + 16, -(height + 16)),
-            child: Material(color: Colors.transparent, child: _PlayerPopupContainer(width: width, height: height, child: content)),
-          ),
-        ],
-      ),
-    );
-    Overlay.of(context).insert(entry);
-  }
-
-  String _getQualityEffectLabel(PersistenceProvider p) {
-    final qVal = p.playerSettings['audioQuality'] ?? p.settings['audioQuality'] ?? 'flac';
-    final eVal = p.playerSettings['audioEffect'] ?? p.settings['audioEffect'] ?? 'none';
+  @override
+  Widget build(BuildContext context) {
+    final userProvider = context.watch<UserProvider>();
     
-    final q = qVal == '128' ? '标准' : (qVal == '320' ? 'HQ' : 'SQ');
-    final e = AudioEffect.getLabel(eVal);
-    return e == '原声' ? q : '$q · $e';
+    return Selector2<AudioProvider, PersistenceProvider, ({dynamic song, bool isFav})>(
+      selector: (_, a, p) => (
+        song: a.currentSong,
+        isFav: a.currentSong != null ? p.isFavorite(a.currentSong!) : false,
+      ),
+      builder: (context, data, child) {
+        if (data.song == null || !userProvider.isAuthenticated) return const SizedBox.shrink();
+        
+        return _PlayerIconButton(
+          icon: data.isFav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+          isSelected: data.isFav,
+          activeColor: Colors.redAccent,
+          onPressed: () => context.read<PersistenceProvider>().toggleFavorite(data.song, userProvider: userProvider),
+          size: 20, tooltip: '收藏',
+        );
+      },
+    );
   }
+}
 
-  IconData _getVolumeIcon(double vol) {
-    if (vol == 0) return CupertinoIcons.speaker_slash_fill;
-    if (vol < 0.5) return CupertinoIcons.speaker_1_fill;
-    return CupertinoIcons.speaker_2_fill;
+class _PlayPauseButtonIsolated extends StatelessWidget {
+  const _PlayPauseButtonIsolated();
+
+  @override
+  Widget build(BuildContext context) {
+    return Selector<AudioProvider, ({bool playing, bool loading})>(
+      selector: (_, p) => (playing: p.isPlaying, loading: p.isLoading),
+      builder: (context, state, child) {
+        return _PlayPauseButton(isPlaying: state.playing, isLoading: state.loading);
+      },
+    );
   }
+}
 
+class _PlayerRightActions extends StatelessWidget {
+  const _PlayerRightActions();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        const _PlaybackTimeInfo(),
+        const SizedBox(width: 16),
+        const _PlayModeButton(),
+        const SizedBox(width: 12),
+        const _PlaybackRateButton(),
+        const SizedBox(width: 12),
+        const _QualityButton(),
+        const SizedBox(width: 12),
+        const _VolumeButton(),
+        const SizedBox(width: 12),
+        const _QueueButton(),
+      ],
+    );
+  }
+}
+
+class _PlaybackTimeInfo extends StatelessWidget {
+  const _PlaybackTimeInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Consumer<AudioProvider>(
+      builder: (context, audioProvider, child) {
+        return StreamBuilder<Duration>(
+          stream: audioProvider.player.positionStream,
+          initialData: audioProvider.effectivePosition,
+          builder: (context, snapshot) {
+            final position = snapshot.data ?? audioProvider.effectivePosition;
+            final total = audioProvider.player.duration ?? Duration.zero;
+            return Text(
+              '${_formatDuration(position)} / ${_formatDuration(total)}',
+              style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
+            );
+          },
+        );
+      },
+    );
+  }
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
     return "${twoDigits(duration.inMinutes.remainder(60))}:${twoDigits(duration.inSeconds.remainder(60))}";
   }
+}
 
-  void _showQueueDrawer(BuildContext context) {
-    final theme = Theme.of(context);
-    showGeneralDialog(
-      context: context, barrierLabel: 'Queue', barrierDismissible: true,
-      barrierColor: theme.colorScheme.scrim.withAlpha(20),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, _, __) => Align(
-        alignment: Alignment.centerRight,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 96),
-          child: Material(elevation: 20, borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)), child: SizedBox(width: 380, child: const QueueDrawer())),
-        ),
-      ),
-      transitionBuilder: (context, anim, _, child) => SlideTransition(
-        position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-        child: child,
+class _PlayModeButton extends StatelessWidget {
+  const _PlayModeButton();
+  static final LayerLink _playModeLink = LayerLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _playModeLink,
+      child: Selector<AudioProvider, String>(
+        selector: (_, p) => p.playMode,
+        builder: (context, mode, child) {
+          IconData icon = CupertinoIcons.repeat;
+          String tip = '列表循环';
+          if (mode == 'repeat-once') { icon = CupertinoIcons.repeat_1; tip = '单曲循环'; }
+          else if (mode == 'shuffle') { icon = CupertinoIcons.shuffle; tip = '随机播放'; }
+          
+          return _PlayerIconButton(
+            icon: icon, isSelected: true, 
+            onPressed: () => _showCustomPopup(context, _playModeLink, const _PlayModePopup(), width: 140, height: 180),
+            size: 20, tooltip: tip,
+          );
+        },
       ),
     );
   }
 }
 
-// --- Popup Widgets ---
+class _PlaybackRateButton extends StatelessWidget {
+  const _PlaybackRateButton();
+  static final LayerLink _speedLink = LayerLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _speedLink,
+      child: Selector<AudioProvider, double>(
+        selector: (_, p) => p.playbackRate,
+        builder: (context, rate, child) {
+          return _PlayerIconButton(
+            icon: CupertinoIcons.speedometer,
+            isSelected: rate != 1.0,
+            onPressed: () => _showCustomPopup(context, _speedLink, const _SpeedPopup(), width: 120, height: 340),
+            size: 20, tooltip: '播放倍速',
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _QualityButton extends StatelessWidget {
+  const _QualityButton();
+  static final LayerLink _qualityLink = LayerLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _qualityLink,
+      child: Selector<AudioProvider, dynamic>(
+        selector: (_, p) => p.currentSong,
+        builder: (context, song, child) {
+          return _PlayerIconButton(
+            icon: CupertinoIcons.waveform,
+            onPressed: song?.source == 'cloud' ? null : () => _showCustomPopup(context, _qualityLink, const _QualityEffectPopup(), width: 180, height: 380),
+            size: 20, tooltip: '音质选择',
+            isSelected: true,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _VolumeButton extends StatelessWidget {
+  const _VolumeButton();
+  static final LayerLink _volumeLink = LayerLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final audioProvider = context.read<AudioProvider>();
+    return CompositedTransformTarget(
+      link: _volumeLink,
+      child: Selector<PersistenceProvider, double>(
+        selector: (_, p) => p.volume,
+        builder: (context, vol, child) {
+          return _PlayerIconButton(
+            icon: vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 0.5 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill),
+            isSelected: vol > 0,
+            onPressed: () => _showCustomPopup(context, _volumeLink, const _VolumePopup(), width: 50, height: 200),
+            onScroll: (delta) {
+              final newVol = (vol + (delta > 0 ? -0.05 : 0.05)).clamp(0.0, 1.0);
+              audioProvider.setVolume(newVol);
+            },
+            size: 20, tooltip: '音量',
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _QueueButton extends StatelessWidget {
+  const _QueueButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _PlayerIconButton(icon: CupertinoIcons.list_bullet, onPressed: () => _showQueueDrawer(context), size: 22, tooltip: '播放队列'),
+        Selector2<AudioProvider, PersistenceProvider, ({int count, bool show})>(
+          selector: (_, a, p) => (
+            count: a.playlist.length,
+            show: p.settings['showPlaylistCount'] ?? true
+          ),
+          builder: (context, data, child) {
+            if (!data.show) return const SizedBox.shrink();
+            return Positioned(
+              top: -2,
+              right: -10,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                  decoration: BoxDecoration(
+                    color: accentColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: theme.colorScheme.surface, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withAlpha(50), blurRadius: 4, offset: const Offset(0, 1)),
+                    ],
+                  ),
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  child: Center(
+                    child: Text(
+                      data.count > 99 ? '99+' : '${data.count}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// --- Popup Widgets & Helpers ---
+
+void _showCustomPopup(BuildContext context, LayerLink link, Widget content, {required double width, required double height}) {
+  late OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => Stack(
+      children: [
+        GestureDetector(onTap: () => entry.remove(), behavior: HitTestBehavior.translucent, child: Container(color: Colors.transparent)),
+        CompositedTransformFollower(
+          link: link, showWhenUnlinked: false, offset: Offset(-(width / 2) + 16, -(height + 16)),
+          child: Material(color: Colors.transparent, child: _PlayerPopupContainer(width: width, height: height, child: content)),
+        ),
+      ],
+    ),
+  );
+  Overlay.of(context).insert(entry);
+}
+
+void _showQueueDrawer(BuildContext context) {
+  final theme = Theme.of(context);
+  showGeneralDialog(
+    context: context, barrierLabel: 'Queue', barrierDismissible: true,
+    barrierColor: theme.colorScheme.scrim.withAlpha(20),
+    transitionDuration: const Duration(milliseconds: 300),
+    pageBuilder: (context, _, __) => Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 96),
+        child: Material(elevation: 20, borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)), child: SizedBox(width: 380, child: const QueueDrawer())),
+      ),
+    ),
+    transitionBuilder: (context, anim, _, child) => SlideTransition(
+      position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+      child: child,
+    ),
+  );
+}
 
 class _PlayModePopup extends StatelessWidget {
   const _PlayModePopup();
@@ -650,7 +763,7 @@ class _PlayerPopupContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final backgroundColor = theme.colorScheme.surface.withAlpha(240);
+    final backgroundColor = theme.colorScheme.surface;
     final borderColor = theme.dividerTheme.color ?? theme.dividerColor.withAlpha(20);
     return Stack(
       clipBehavior: Clip.none,
@@ -658,7 +771,7 @@ class _PlayerPopupContainer extends StatelessWidget {
         Container(
           width: width, height: height,
           decoration: BoxDecoration(color: backgroundColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor, width: 1), boxShadow: [BoxShadow(color: Colors.black.withAlpha(30), blurRadius: 20, offset: const Offset(0, 4))]),
-          child: ClipRRect(borderRadius: BorderRadius.circular(16), child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), child: child)),
+          child: ClipRRect(borderRadius: BorderRadius.circular(16), child: child),
         ),
         Positioned(bottom: -8, left: (width / 2) - 8, child: CustomPaint(painter: _PopupArrowPainter(color: backgroundColor, borderColor: borderColor), size: const Size(16, 8))),
       ],
@@ -723,8 +836,9 @@ class _PlayerIconButtonState extends State<_PlayerIconButton> {
 }
 
 class _PlayPauseButton extends StatefulWidget {
-  final AudioProvider audioProvider;
-  const _PlayPauseButton({required this.audioProvider});
+  final bool isPlaying;
+  final bool isLoading;
+  const _PlayPauseButton({required this.isPlaying, required this.isLoading});
 
   @override
   State<_PlayPauseButton> createState() => _PlayPauseButtonState();
@@ -736,14 +850,13 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final audioProvider = widget.audioProvider;
 
     return MouseRegion(
-      cursor: audioProvider.isLoading ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      cursor: widget.isLoading ? SystemMouseCursors.basic : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onTap: audioProvider.isLoading ? null : audioProvider.togglePlay,
+        onTap: widget.isLoading ? null : () => context.read<AudioProvider>().togglePlay(),
         child: AnimatedScale(
           scale: _isHovered ? 1.1 : 1.0,
           duration: const Duration(milliseconds: 200),
@@ -752,11 +865,11 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
             width: 48, height: 48,
             decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.onSurface.withAlpha(15)),
             child: Center(
-              child: audioProvider.isLoading
+              child: widget.isLoading
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5))
                   : Padding(
-                      padding: EdgeInsets.only(left: audioProvider.isPlaying ? 0 : 4),
-                      child: Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 26, color: theme.colorScheme.onSurface),
+                      padding: EdgeInsets.only(left: widget.isPlaying ? 0 : 4),
+                      child: Icon(widget.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 26, color: theme.colorScheme.onSurface),
                     ),
             ),
           ),
@@ -766,111 +879,28 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
   }
 }
 
-class _ClimaxMarker extends StatefulWidget {
+class _ClimaxMarker extends StatelessWidget {
   final bool isStart;
   const _ClimaxMarker({required this.isStart});
 
   @override
-  State<_ClimaxMarker> createState() => _ClimaxMarkerState();
-}
-
-class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _pulseAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _pulseAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOutSine,
-    );
-
-    // Only start animation if the app is active and playing
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final audioProvider = context.read<AudioProvider>();
-        if (audioProvider.isPlaying) {
-          _controller.repeat(reverse: true);
-        }
-      }
-    });
-  }
-
-  @override
-  void didUpdateWidget(_ClimaxMarker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final audioProvider = context.read<AudioProvider>();
-    if (audioProvider.isPlaying) {
-      if (!_controller.isAnimating) _controller.repeat(reverse: true);
-    } else {
-      if (_controller.isAnimating) _controller.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final audioProvider = context.watch<AudioProvider>();
-    
-    // Auto start/stop based on playback state
-    if (audioProvider.isPlaying && !_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    } else if (!audioProvider.isPlaying && _controller.isAnimating) {
-      _controller.stop();
-    }
-
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return IgnorePointer(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Outer Glow (Breathing) - Only show when animating to save CPU
-              if (_controller.isAnimating)
-                Container(
-                  width: 12 * _pulseAnimation.value + 4,
-                  height: 12 * _pulseAnimation.value + 4,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFFFFAB40).withAlpha((100 * (1 - _pulseAnimation.value)).toInt()),
-                        const Color(0xFFFFAB40).withAlpha(0),
-                      ],
-                    ),
-                  ),
-                ),
-              // Inner Core
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFF6D00).withAlpha(200),
-                      blurRadius: 4,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    return IgnorePointer(
+      child: Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF6D00).withAlpha(200),
+              blurRadius: 4,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

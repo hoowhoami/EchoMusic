@@ -15,6 +15,12 @@ class AudioProvider with ChangeNotifier {
   // Getter for external use
   AudioPlayer get player => _player;
 
+  // New: Throttled stream for UI progress bars to reduce CPU usage
+  Stream<Duration> get throttledPositionStream => _player.positionStream.distinct((prev, curr) {
+    final diff = (curr.inMilliseconds - prev.inMilliseconds).abs();
+    return diff < 200 && curr.inMilliseconds > prev.inMilliseconds;
+  });
+
   final List<StreamSubscription> _subscriptions = [];
   final StreamController<double> _userVolumeController = StreamController<double>.broadcast();
 
@@ -26,7 +32,8 @@ class AudioProvider with ChangeNotifier {
   bool _isDisposed = false;
   double _playbackRate = 1.0;
   double _lastVolume = 0.5;
-  final Map<double, double> _climaxMarks = {};
+  Map<double, double> _climaxMarks = {};
+  double? _restoredPosition;
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
 
@@ -48,6 +55,22 @@ class AudioProvider with ChangeNotifier {
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
+
+  Duration get effectivePosition {
+    if (_player.position != Duration.zero) return _player.position;
+    if (_restoredPosition != null) return Duration(milliseconds: (_restoredPosition! * 1000).toInt());
+    return Duration.zero;
+  }
+
+  // FIX: Provide a more reliable duration based on both player metadata and song model
+  Duration get effectiveDuration {
+    final playerDur = _player.duration;
+    if (playerDur != null && playerDur > Duration.zero) return playerDur;
+    if (_currentSong != null && _currentSong!.duration > 0) {
+      return Duration(seconds: _currentSong!.duration.toInt());
+    }
+    return Duration.zero;
+  }
 
   AudioProvider() {
     _player = AudioPlayer();
@@ -93,17 +116,14 @@ class AudioProvider with ChangeNotifier {
 
   void _initListeners() {
     _subscriptions.add(_player.playbackEventStream.listen((event) {
-      // just_audio handles errors via try-catch or this stream
     }, onError: (Object e, StackTrace st) {
       _handlePlayError(e);
     }));
 
     _subscriptions.add(_player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        debugPrint('[AudioProvider] Playback completed.');
-        try {
-          next();
-        } catch (_) {}
+        debugPrint('[AudioProvider] Playback completed naturally.');
+        _handlePlaybackEnded();
       }
       _safeNotify();
     }));
@@ -111,8 +131,25 @@ class AudioProvider with ChangeNotifier {
     _subscriptions.add(_player.positionStream.listen((pos) {
       if (_isDisposed) return;
       final sec = pos.inSeconds;
+      
       try {
-        if (_lyricProvider?.isPageOpen == true) _lyricProvider?.updateHighlight(pos);
+        // FIX: Proactive completion check to solve "Progress full but music continues"
+        // This happens often when initialPosition is used and duration estimation is wrong.
+        final total = effectiveDuration;
+        if (total > Duration.zero && !_isInternalChanging) {
+          final diff = total.inMilliseconds - pos.inMilliseconds;
+          // If we have reached or passed the duration, or are very close (less than 200ms)
+          // we treat it as ended to avoid getting stuck at the end of the bar.
+          if (diff <= 200 && _player.playing) {
+             debugPrint('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
+             _handlePlaybackEnded();
+          }
+        }
+
+        if (_lyricProvider?.isPageOpen == true) {
+          _lyricProvider?.updateHighlight(pos);
+        }
+        
         if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
           _lastSavedSecond = sec;
           _savePlaybackState();
@@ -135,6 +172,27 @@ class AudioProvider with ChangeNotifier {
         }
       } catch (_) {}
     }));
+  }
+
+  bool _isHandlingEnd = false;
+  void _handlePlaybackEnded() {
+    if (_isHandlingEnd || _isDisposed) return;
+    _isHandlingEnd = true;
+    
+    // Stop the player immediately to stop the music if duration estimation was wrong
+    _player.pause(); 
+    
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _isHandlingEnd = false;
+      if (_isDisposed) return;
+      
+      if (_playMode != 'repeat-once') {
+        next();
+      } else {
+        _player.seek(Duration.zero);
+        _player.play();
+      }
+    });
   }
 
   void _cancelSubscriptions() {
@@ -177,6 +235,8 @@ class AudioProvider with ChangeNotifier {
       _currentIndex = p.currentIndex;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
+        _restoredPosition = p.currentPosition;
+        _safeNotify();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _initRestore(p.currentPosition);
         });
@@ -193,6 +253,8 @@ class AudioProvider with ChangeNotifier {
     try {
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
+        // Use setAudioSource with initialPosition. 
+        // Note: some streams might report wrong duration when seeking close to end.
         await _player.setAudioSource(
           AudioSource.uri(
             Uri.parse(result['url']),
@@ -202,6 +264,7 @@ class AudioProvider with ChangeNotifier {
               title: _currentSong!.name,
               artist: _currentSong!.singerName,
               artUri: Uri.parse(_currentSong!.cover),
+              duration: Duration(seconds: _currentSong!.duration.toInt()),
             ),
           ),
           initialPosition: Duration(milliseconds: (positionSeconds * 1000).toInt()),
@@ -212,6 +275,7 @@ class AudioProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('Restore error: $e');
     } finally {
+      _restoredPosition = null;
       _isLoading = false;
       _safeNotify();
     }
@@ -326,7 +390,14 @@ class AudioProvider with ChangeNotifier {
       MusicApi.uploadPlayHistory(song.mixSongId);
       _fetchClimax(song);
       final result = await _getAudioUrlWithQuality(song);
-      if (_isDisposed || result == null || result['url'] == null) return;
+      
+      if (_isDisposed) return;
+      
+      if (result == null || result['url'] == null) {
+        debugPrint('[AudioProvider] Failed to get URL for ${song.name}, skipping to next.');
+        Future.delayed(const Duration(seconds: 1), () => next());
+        return;
+      }
 
       _isInternalChanging = true;
       _player.setVolume(0.0);
@@ -340,6 +411,7 @@ class AudioProvider with ChangeNotifier {
             title: song.name,
             artist: song.singerName,
             artUri: Uri.parse(song.cover),
+            duration: Duration(seconds: song.duration.toInt()),
           ),
         ),
       );
@@ -446,6 +518,7 @@ class AudioProvider with ChangeNotifier {
                 title: _currentSong!.name,
                 artist: _currentSong!.singerName,
                 artUri: Uri.parse(_currentSong!.cover),
+                duration: Duration(seconds: _currentSong!.duration.toInt()),
               ),
             ),
           );
@@ -481,10 +554,15 @@ class AudioProvider with ChangeNotifier {
 
   void next() {
     if (_playlist.isEmpty) return;
-    if (_playMode == 'repeat-once') {
+    if (_player.loopMode == LoopMode.one) {
        _player.seek(Duration.zero);
        _player.play();
        return;
+    }
+    if (_player.processingState == ProcessingState.completed || !_player.playing) {
+      _currentIndex = (_currentIndex + 1) % _playlist.length;
+      playSong(_playlist[_currentIndex]);
+      return;
     }
     _fadeVolume(0.0, onComplete: () {
       _currentIndex = (_currentIndex + 1) % _playlist.length;
@@ -494,6 +572,11 @@ class AudioProvider with ChangeNotifier {
 
   void previous() {
     if (_playlist.isEmpty) return;
+    if (_player.processingState == ProcessingState.completed || !_player.playing) {
+      _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
+      playSong(_playlist[_currentIndex]);
+      return;
+    }
     _fadeVolume(0.0, onComplete: () {
       _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
       playSong(_playlist[_currentIndex]);
@@ -540,7 +623,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<void> _fetchClimax(Song song) async {
-    _climaxMarks.clear();
+    final Map<double, double> newMarks = {};
     try {
       final result = await MusicApi.getSongClimaxRaw(song.hash);
       final songDur = song.duration > 0 ? song.duration : 1;
@@ -552,9 +635,10 @@ class AudioProvider with ChangeNotifier {
           final endTime = end != null 
               ? (end is String ? int.parse(end) : (end as num).toInt())
               : startTime + 15000;
-          _climaxMarks[startTime / 1000 / songDur] = endTime / 1000 / songDur;
+          newMarks[startTime / 1000 / songDur] = endTime / 1000 / songDur;
         }
       }
+      _climaxMarks = newMarks;
       _safeNotify();
     } catch (_) {}
   }

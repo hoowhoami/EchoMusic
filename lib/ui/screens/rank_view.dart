@@ -136,7 +136,7 @@ class _RankViewState extends State<RankView> {
     final selectionProvider = context.watch<SelectionProvider>();
 
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 400,

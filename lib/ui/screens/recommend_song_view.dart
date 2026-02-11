@@ -52,7 +52,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
       itemCount: songs.length,
       itemBuilder: (context, index) {
         final song = songs[index];

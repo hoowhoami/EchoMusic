@@ -37,12 +37,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               if (showAppBar)
                 _buildHeader(context, selectionProvider),
               Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: selectionProvider.isSelectionMode ? 80 : 0,
-                  ),
-                  child: body,
-                ),
+                child: body,
               ),
             ],
           ),
@@ -74,7 +69,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          ?appBarActions,
+          if (appBarActions != null) appBarActions!,
           if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
             _buildBatchButton(context, selectionProvider),
         ],
