@@ -108,7 +108,7 @@ class _ProgressBarWidget extends StatelessWidget {
           initialData: audioProvider.effectivePosition,
           builder: (context, snapshot) {
             final position = snapshot.data ?? audioProvider.effectivePosition;
-            final total = audioProvider.player.duration ?? Duration.zero;
+            final total = audioProvider.effectiveDuration;
             return ProgressBar(
               progress: position,
               total: total,

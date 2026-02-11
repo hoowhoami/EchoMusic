@@ -12,13 +12,11 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlayerSettings = 'player_settings';
   static const String _keyPlaylist = 'current_playlist';
   static const String _keyCurrentIndex = 'current_index';
-  static const String _keyCurrentPosition = 'current_position';
 
   List<Song> _favorites = [];
   List<Song> _history = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
-  double _currentPosition = 0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
   Map<String, dynamic> _settings = {
@@ -50,7 +48,6 @@ class PersistenceProvider with ChangeNotifier {
   List<Song> get history => _history;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  double get currentPosition => _currentPosition;
   double get volume => _playerSettings['volume'] ?? 0.5;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
@@ -82,9 +79,8 @@ class PersistenceProvider with ChangeNotifier {
     final playlistJson = prefs.getStringList(_keyPlaylist) ?? [];
     _playlist = playlistJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
 
-    // Load Index & Position
+    // Load Index
     _currentIndex = prefs.getInt(_keyCurrentIndex) ?? -1;
-    _currentPosition = prefs.getDouble(_keyCurrentPosition) ?? 0.0;
     
     // Load player settings
     final playerSettingsJson = prefs.getString(_keyPlayerSettings);
@@ -107,14 +103,12 @@ class PersistenceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> savePlaybackState(List<Song> playlist, int index, double position) async {
+  Future<void> savePlaybackState(List<Song> playlist, int index) async {
     _playlist = playlist;
     _currentIndex = index;
-    _currentPosition = position;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_keyPlaylist, playlist.map((s) => jsonEncode(_songToMap(s))).toList());
     await prefs.setInt(_keyCurrentIndex, index);
-    await prefs.setDouble(_keyCurrentPosition, position);
   }
 
   Future<void> setDevice(Map<String, dynamic> device) async {
@@ -145,7 +139,6 @@ class PersistenceProvider with ChangeNotifier {
     _history = [];
     _playlist = [];
     _currentIndex = -1;
-    _currentPosition = 0;
     _device = null;
     _userInfo = null;
     _settings = {

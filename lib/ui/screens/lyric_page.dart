@@ -28,7 +28,11 @@ class _LyricPageState extends State<LyricPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<LyricProvider>().setPageOpen(true);
+        final lyricProvider = context.read<LyricProvider>();
+        final audioProvider = context.read<AudioProvider>();
+        lyricProvider.setPageOpen(true);
+        // Sync highlighting immediately when page opens
+        lyricProvider.updateHighlight(audioProvider.effectivePosition);
       }
     });
   }
@@ -218,9 +222,9 @@ class _LyricPageState extends State<LyricPage> {
         children: [
           StreamBuilder<Duration>(
             stream: audioProvider.throttledPositionStream,
-            initialData: audioProvider.player.position,
+            initialData: audioProvider.effectivePosition,
             builder: (context, snapshot) {
-              final position = snapshot.data ?? Duration.zero;
+              final position = snapshot.data ?? audioProvider.effectivePosition;
               final total = audioProvider.player.duration ?? Duration.zero;
               return Column(
                 children: [

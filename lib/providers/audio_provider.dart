@@ -33,7 +33,6 @@ class AudioProvider with ChangeNotifier {
   double _playbackRate = 1.0;
   double _lastVolume = 0.5;
   Map<double, double> _climaxMarks = {};
-  double? _restoredPosition;
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
 
@@ -57,9 +56,7 @@ class AudioProvider with ChangeNotifier {
   Stream<double> get userVolumeStream => _userVolumeController.stream;
 
   Duration get effectivePosition {
-    if (_player.position != Duration.zero) return _player.position;
-    if (_restoredPosition != null) return Duration(milliseconds: (_restoredPosition! * 1000).toInt());
-    return Duration.zero;
+    return _player.position;
   }
 
   // FIX: Provide a more reliable duration based on both player metadata and song model
@@ -134,13 +131,12 @@ class AudioProvider with ChangeNotifier {
       
       try {
         // FIX: Proactive completion check to solve "Progress full but music continues"
-        // This happens often when initialPosition is used and duration estimation is wrong.
-        final total = effectiveDuration;
-        if (total > Duration.zero && !_isInternalChanging) {
+        // Only use player reported duration to avoid inaccuracies from model duration.
+        final total = _player.duration;
+        if (total != null && total > Duration.zero && !_isInternalChanging && _player.playing) {
           final diff = total.inMilliseconds - pos.inMilliseconds;
-          // If we have reached or passed the duration, or are very close (less than 200ms)
-          // we treat it as ended to avoid getting stuck at the end of the bar.
-          if (diff <= 200 && _player.playing) {
+          // If we are extremely close to the end, trigger completion.
+          if (diff <= 100) {
              debugPrint('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
              _handlePlaybackEnded();
           }
@@ -235,10 +231,9 @@ class AudioProvider with ChangeNotifier {
       _currentIndex = p.currentIndex;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
-        _restoredPosition = p.currentPosition;
         _safeNotify();
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _initRestore(p.currentPosition);
+          _initRestore();
         });
       }
     }
@@ -246,15 +241,13 @@ class AudioProvider with ChangeNotifier {
     _applyPlayMode();
   }
 
-  Future<void> _initRestore(double positionSeconds) async {
+  Future<void> _initRestore() async {
     if (_currentSong == null) return;
     _isLoading = true;
     _safeNotify();
     try {
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
-        // Use setAudioSource with initialPosition. 
-        // Note: some streams might report wrong duration when seeking close to end.
         await _player.setAudioSource(
           AudioSource.uri(
             Uri.parse(result['url']),
@@ -267,15 +260,14 @@ class AudioProvider with ChangeNotifier {
               duration: Duration(seconds: _currentSong!.duration.toInt()),
             ),
           ),
-          initialPosition: Duration(milliseconds: (positionSeconds * 1000).toInt()),
         );
+
         _player.setSpeed(_playbackRate);
         _fetchClimax(_currentSong!);
       }
     } catch (e) {
       debugPrint('Restore error: $e');
     } finally {
-      _restoredPosition = null;
       _isLoading = false;
       _safeNotify();
     }
@@ -286,7 +278,6 @@ class AudioProvider with ChangeNotifier {
       _persistenceProvider!.savePlaybackState(
         _playlist,
         _currentIndex,
-        _player.position.inMilliseconds / 1000.0,
       );
     }
   }
@@ -618,7 +609,11 @@ class AudioProvider with ChangeNotifier {
     final target = (searchResult?['candidates']?.isNotEmpty ?? false) ? searchResult!['candidates'][0] : (searchResult?['info']?.isNotEmpty ?? false ? searchResult!['info'][0] : null);
     if (target != null) {
       final lyricData = await MusicApi.getLyric(target['id']?.toString() ?? '', target['accesskey']?.toString() ?? '');
-      if (lyricData != null) _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
+      if (lyricData != null) {
+        _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
+        // Sync highlighting immediately after parsing
+        _lyricProvider?.updateHighlight(_player.position);
+      }
     }
   }
 
