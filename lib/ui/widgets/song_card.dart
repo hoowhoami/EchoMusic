@@ -5,6 +5,7 @@ import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/selection_provider.dart';
 import '../screens/artist_detail_view.dart';
 import '../screens/album_detail_view.dart';
 import 'cover_image.dart';
@@ -19,9 +20,6 @@ class SongCard extends StatefulWidget {
   final bool showCover;
   final double coverSize;
   final bool showMore;
-  final bool isSelected;
-  final bool isSelectionMode;
-  final ValueChanged<bool>? onSelectionChanged;
 
   const SongCard({
     super.key,
@@ -31,9 +29,6 @@ class SongCard extends StatefulWidget {
     this.showCover = true,
     this.coverSize = 52,
     this.showMore = false,
-    this.isSelected = false,
-    this.isSelectionMode = false,
-    this.onSelectionChanged,
   });
 
   @override
@@ -217,149 +212,172 @@ class _SongCardState extends State<SongCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final audioProvider = context.watch<AudioProvider>();
-    final persistenceProvider = context.watch<PersistenceProvider>();
-    final isCurrent = audioProvider.currentSong?.isSameSong(widget.song) ?? false;
-    final isPlaying = isCurrent && audioProvider.isPlaying;
     final primaryColor = theme.colorScheme.primary;
-    final isFavorite = persistenceProvider.isFavorite(widget.song);
 
-    return GestureDetector(
-      onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
-      child: InkWell(
-        onTap: () {
-          if (widget.isSelectionMode) {
-            widget.onSelectionChanged?.call(!widget.isSelected);
-          } else {
-            context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
-          }
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: (widget.isSelectionMode && widget.isSelected) || _isMenuOpen
-              ? BoxDecoration(
-                  color: primaryColor.withAlpha(_isMenuOpen ? 30 : 20),
-                  borderRadius: BorderRadius.circular(16),
-                  border: _isMenuOpen ? Border.all(color: primaryColor.withAlpha(80), width: 1.5) : null,
-                )
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                if (widget.isSelectionMode)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: Checkbox(
-                      value: widget.isSelected,
-                      onChanged: (value) => widget.onSelectionChanged?.call(value ?? false),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                      side: BorderSide(
-                        color: theme.colorScheme.outline,
-                        width: 1.5,
-                      ),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                if (widget.showCover)
-                  _buildCover(context, isCurrent, isPlaying, primaryColor),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              widget.song.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: widget.song.isUnavailable
-                                    ? theme.colorScheme.onSurface.withAlpha(80)
-                                    : (isCurrent ? primaryColor : theme.colorScheme.onSurface),
-                                fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
-                                fontSize: 15,
-                                letterSpacing: -0.3,
+    return RepaintBoundary(
+      child: Selector<SelectionProvider, ({bool isMode, bool isSelected})>(
+        selector: (_, p) => (
+          isMode: p.isSelectionMode,
+          isSelected: p.isSelected(widget.song.hash),
+        ),
+        builder: (context, selection, child) {
+          final isSelectionMode = selection.isMode;
+          final isSelected = selection.isSelected;
+
+          return Selector<AudioProvider, ({bool isCurrent, bool isPlaying})>(
+            selector: (_, provider) => (
+              isCurrent: provider.currentSong?.isSameSong(widget.song) ?? false,
+              isPlaying: provider.isPlaying,
+            ),
+            builder: (context, playbackState, child) {
+              final isCurrent = playbackState.isCurrent;
+              final isPlaying = isCurrent && playbackState.isPlaying;
+
+              return Selector<PersistenceProvider, bool>(
+                selector: (_, provider) => provider.isFavorite(widget.song),
+                builder: (context, isFavorite, child) {
+                  return GestureDetector(
+                    onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
+                    child: InkWell(
+                      onTap: () {
+                        if (isSelectionMode) {
+                          context.read<SelectionProvider>().toggleSelection(widget.song.hash);
+                        } else {
+                          context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        decoration: (isSelectionMode && isSelected) || _isMenuOpen
+                            ? BoxDecoration(
+                                color: primaryColor.withAlpha(_isMenuOpen ? 30 : 20),
+                                borderRadius: BorderRadius.circular(16),
+                                border: _isMenuOpen ? Border.all(color: primaryColor.withAlpha(80), width: 1.5) : null,
+                              )
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              if (isSelectionMode)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: Checkbox(
+                                    value: isSelected,
+                                    onChanged: (value) => context.read<SelectionProvider>().toggleSelection(widget.song.hash),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                    side: BorderSide(
+                                      color: theme.colorScheme.outline,
+                                      width: 1.5,
+                                    ),
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                ),
+                              if (widget.showCover)
+                                _buildCover(context, isCurrent, isPlaying, primaryColor),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            widget.song.title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: widget.song.isUnavailable
+                                                  ? theme.colorScheme.onSurface.withAlpha(80)
+                                                  : (isCurrent ? primaryColor : theme.colorScheme.onSurface),
+                                              fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
+                                              fontSize: 15,
+                                              letterSpacing: -0.3,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isFavorite)
+                                          Padding(
+                                            padding: const EdgeInsets.only(left: 6),
+                                            child: Icon(CupertinoIcons.heart_fill, size: 14, color: Colors.redAccent.withAlpha(200)),
+                                          ),
+                                        if (widget.song.isUnavailable)
+                                          _buildTag(context, '不可用', theme.colorScheme.onSurface.withAlpha(100))
+                                        else if (widget.song.isPaid)
+                                          _buildTag(context, '付费', const Color(0xFF8B5CF6))
+                                        else if (widget.song.isVip)
+                                          _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
+                                        if (widget.song.qualityTag.isNotEmpty && !widget.song.isUnavailable)
+                                          _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      widget.song.singerName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
+                              if (widget.showMore) ...[
+                                const SizedBox(width: 24),
+                                SizedBox(
+                                  width: 180,
+                                  child: Text(
+                                    widget.song.albumName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: theme.colorScheme.onSurfaceVariant, 
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 24),
+                                Text(
+                                  _formatDuration(widget.song.duration),
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurfaceVariant.withAlpha(150), 
+                                    fontSize: 13,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(width: 12),
+                              Builder(
+                                builder: (buttonContext) => IconButton(
+                                  icon: const Icon(CupertinoIcons.ellipsis, size: 20),
+                                  onPressed: () => _showContextMenu(buttonContext),
+                                  color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                                  splashRadius: 24,
+                                ),
+                              ),
+                            ],
                           ),
-                          if (isFavorite)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: Icon(CupertinoIcons.heart_fill, size: 14, color: Colors.redAccent.withAlpha(200)),
-                            ),
-                          if (widget.song.isUnavailable)
-                            _buildTag(context, '不可用', theme.colorScheme.onSurface.withAlpha(100))
-                          else if (widget.song.isPaid)
-                            _buildTag(context, '付费', const Color(0xFF8B5CF6))
-                          else if (widget.song.isVip)
-                            _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
-                          if (widget.song.qualityTag.isNotEmpty && !widget.song.isUnavailable)
-                            _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.song.singerName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                if (widget.showMore) ...[
-                  const SizedBox(width: 24),
-                  SizedBox(
-                    width: 180,
-                    child: Text(
-                      widget.song.albumName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurfaceVariant, 
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
                     ),
-                  ),
-                  const SizedBox(width: 24),
-                  Text(
-                    _formatDuration(widget.song.duration),
-                    style: TextStyle(
-                      color: theme.colorScheme.onSurfaceVariant.withAlpha(150), 
-                      fontSize: 13,
-                      fontFamily: 'monospace',
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 12),
-                Builder(
-                  builder: (buttonContext) => IconButton(
-                    icon: const Icon(CupertinoIcons.ellipsis, size: 20),
-                    onPressed: () => _showContextMenu(buttonContext),
-                    color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
-                    splashRadius: 24,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+                  );
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
 
   Widget _buildCover(BuildContext context, bool isCurrent, bool isPlaying, Color primaryColor) {
-    final theme = Theme.of(context);
     return Stack(
       children: [
         CoverImage(

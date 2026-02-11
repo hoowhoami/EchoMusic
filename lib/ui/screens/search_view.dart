@@ -253,11 +253,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           song: song,
           playlist: _songResults,
           showMore: true,
-          isSelectionMode: selectionProvider.isSelectionMode,
-          isSelected: selectionProvider.isSelected(song.hash),
-          onSelectionChanged: (selected) {
-            selectionProvider.toggleSelection(song.hash);
-          },
         );
       },
     );

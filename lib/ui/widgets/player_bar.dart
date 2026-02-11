@@ -775,15 +775,42 @@ class _ClimaxMarker extends StatefulWidget {
 }
 
 class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1500),
-  )..repeat(reverse: true);
-  
-  late final Animation<double> _pulseAnimation = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeInOutSine,
-  );
+  late final AnimationController _controller;
+  late final Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _pulseAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutSine,
+    );
+
+    // Only start animation if the app is active and playing
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final audioProvider = context.read<AudioProvider>();
+        if (audioProvider.isPlaying) {
+          _controller.repeat(reverse: true);
+        }
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(_ClimaxMarker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final audioProvider = context.read<AudioProvider>();
+    if (audioProvider.isPlaying) {
+      if (!_controller.isAnimating) _controller.repeat(reverse: true);
+    } else {
+      if (_controller.isAnimating) _controller.stop();
+    }
+  }
 
   @override
   void dispose() {
@@ -793,27 +820,37 @@ class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderS
 
   @override
   Widget build(BuildContext context) {
+    final audioProvider = context.watch<AudioProvider>();
+    
+    // Auto start/stop based on playback state
+    if (audioProvider.isPlaying && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!audioProvider.isPlaying && _controller.isAnimating) {
+      _controller.stop();
+    }
+
     return AnimatedBuilder(
-      animation: _controller, // 使用 controller 驱动，内部访问 pulseAnimation
+      animation: _controller,
       builder: (context, child) {
         return IgnorePointer(
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Outer Glow (Breathing)
-              Container(
-                width: 12 * _pulseAnimation.value + 4,
-                height: 12 * _pulseAnimation.value + 4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      const Color(0xFFFFAB40).withAlpha((100 * (1 - _pulseAnimation.value)).toInt()),
-                      const Color(0xFFFFAB40).withAlpha(0),
-                    ],
+              // Outer Glow (Breathing) - Only show when animating to save CPU
+              if (_controller.isAnimating)
+                Container(
+                  width: 12 * _pulseAnimation.value + 4,
+                  height: 12 * _pulseAnimation.value + 4,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        const Color(0xFFFFAB40).withAlpha((100 * (1 - _pulseAnimation.value)).toInt()),
+                        const Color(0xFFFFAB40).withAlpha(0),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               // Inner Core
               Container(
                 width: 6,
@@ -828,18 +865,6 @@ class _ClimaxMarkerState extends State<_ClimaxMarker> with SingleTickerProviderS
                       spreadRadius: 1,
                     ),
                   ],
-                ),
-              ),
-              // Tiny Sparkle
-              Transform.rotate(
-                angle: _controller.value * 3.14,
-                child: Container(
-                  width: 2,
-                  height: 10 * _pulseAnimation.value,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(150),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
                 ),
               ),
             ],

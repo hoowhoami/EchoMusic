@@ -39,6 +39,10 @@ class CoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final coverUrl = getCoverUrl(url, size: size);
     final theme = Theme.of(context);
+    
+    // Calculate cache size based on display size to save CPU/Memory
+    final cacheWidth = width != null && width! > 0 && width!.isFinite ? (width! * 2).toInt() : null;
+    final cacheHeight = height != null && height! > 0 && height!.isFinite ? (height! * 2).toInt() : null;
 
     return RepaintBoundary(
       child: ClipRRect(
@@ -48,17 +52,19 @@ class CoverImage extends StatelessWidget {
           width: width,
           height: height,
           fit: fit,
+          memCacheWidth: cacheWidth,
+          memCacheHeight: cacheHeight,
           placeholder: (context, url) =>
               placeholder ??
               Container(
                 width: width,
                 height: height,
                 color: theme.colorScheme.onSurface.withAlpha(10),
-                child: const Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                child: Center(
+                  child: Icon(
+                    Icons.music_note_rounded,
+                    size: (width != null && width!.isFinite) ? width! * 0.4 : 24,
+                    color: theme.colorScheme.onSurface.withAlpha(20),
                   ),
                 ),
               ),

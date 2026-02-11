@@ -525,11 +525,6 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
                           song: song,
                           playlist: songs,
                           showMore: true,
-                          isSelectionMode: selectionProvider.isSelectionMode,
-                          isSelected: selectionProvider.isSelected(song.hash),
-                          onSelectionChanged: (selected) {
-                            selectionProvider.toggleSelection(song.hash);
-                          },
                         ),
                       );
                     },

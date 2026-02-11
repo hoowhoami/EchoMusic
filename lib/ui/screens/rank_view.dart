@@ -153,11 +153,6 @@ class _RankViewState extends State<RankView> {
           showCover: true,
           coverSize: 44,
           showMore: false,
-          isSelectionMode: selectionProvider.isSelectionMode,
-          isSelected: selectionProvider.isSelected(song.hash),
-          onSelectionChanged: (selected) {
-            selectionProvider.toggleSelection(song.hash);
-          },
         );
       },
     );

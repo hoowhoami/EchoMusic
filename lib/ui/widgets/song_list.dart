@@ -33,6 +33,9 @@ class _SongListState extends State<SongList> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  List<Song>? _cachedFilteredSongs;
+  List<Song>? _lastSourceSongs;
+  String? _lastSearchQuery;
 
   @override
   void dispose() {
@@ -42,19 +45,29 @@ class _SongListState extends State<SongList> {
   }
 
   List<Song> get _filteredSongs {
-    if (_searchQuery.isEmpty) return widget.songs;
-    return widget.songs.where((song) {
+    if (_lastSourceSongs == widget.songs && _lastSearchQuery == _searchQuery && _cachedFilteredSongs != null) {
+      return _cachedFilteredSongs!;
+    }
+
+    _lastSourceSongs = widget.songs;
+    _lastSearchQuery = _searchQuery;
+
+    if (_searchQuery.isEmpty) {
+      _cachedFilteredSongs = widget.songs;
+    } else {
       final query = _searchQuery.toLowerCase();
-      return song.name.toLowerCase().contains(query) ||
-          song.singerName.toLowerCase().contains(query) ||
-          song.albumName.toLowerCase().contains(query);
-    }).toList();
+      _cachedFilteredSongs = widget.songs.where((song) {
+        return song.name.toLowerCase().contains(query) ||
+            song.singerName.toLowerCase().contains(query) ||
+            song.albumName.toLowerCase().contains(query);
+      }).toList();
+    }
+    return _cachedFilteredSongs!;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selectionProvider = context.watch<SelectionProvider>();
     final filteredSongs = _filteredSongs;
 
     if (widget.isLoading) {
@@ -82,8 +95,15 @@ class _SongListState extends State<SongList> {
               child: Row(
                 children: [
                   // 1. Batch Action on the Left
-                  if (widget.songs.isNotEmpty && !selectionProvider.isSelectionMode)
-                    _buildBatchActionButton(context, selectionProvider),
+                  Selector<SelectionProvider, bool>(
+                    selector: (_, p) => p.isSelectionMode,
+                    builder: (context, isSelectionMode, child) {
+                      if (widget.songs.isNotEmpty && !isSelectionMode) {
+                        return _buildBatchActionButton(context);
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
                   
                   const Spacer(), // Push others to the right
                   
@@ -102,7 +122,7 @@ class _SongListState extends State<SongList> {
                       textAlignVertical: TextAlignVertical.center,
                       decoration: InputDecoration(
                         isCollapsed: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 使用 vertical padding 来自然居中
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         hintText: '搜索列表内歌曲',
                         hintStyle: TextStyle(
                           color: theme.colorScheme.onSurface.withAlpha(100),
@@ -166,11 +186,6 @@ class _SongListState extends State<SongList> {
                     playlist: filteredSongs,
                     parentPlaylist: widget.parentPlaylist,
                     showMore: true,
-                    isSelectionMode: selectionProvider.isSelectionMode,
-                    isSelected: selectionProvider.isSelected(song.hash),
-                    onSelectionChanged: (selected) {
-                      selectionProvider.toggleSelection(song.hash);
-                    },
                   );
                 },
                 childCount: filteredSongs.length,
@@ -178,21 +193,22 @@ class _SongListState extends State<SongList> {
             ),
           ),
         
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: selectionProvider.isSelectionMode ? 80 : 20,
+        Selector<SelectionProvider, bool>(
+          selector: (_, p) => p.isSelectionMode,
+          builder: (context, isMode, child) => SliverToBoxAdapter(
+            child: SizedBox(height: isMode ? 80 : 20),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildBatchActionButton(BuildContext context, SelectionProvider selectionProvider) {
+  Widget _buildBatchActionButton(BuildContext context) {
     final theme = Theme.of(context);
     return InkWell(
       onTap: () {
-        selectionProvider.setSongList(widget.songs, playlistId: widget.sourceId);
-        selectionProvider.enterSelectionMode();
+        context.read<SelectionProvider>().setSongList(widget.songs, playlistId: widget.sourceId);
+        context.read<SelectionProvider>().enterSelectionMode();
       },
       borderRadius: BorderRadius.circular(10),
       child: Container(
@@ -234,13 +250,6 @@ class _SongListState extends State<SongList> {
         if (currentSong != null) {
           final index = filteredSongs.indexWhere((s) => s.isSameSong(currentSong));
           if (index != -1 && _scrollController.hasClients) {
-            // Calculate header height estimate
-            // PlaylistDetail: SliverAppBar(200) + Toolbar(56) = 256
-            // Pinned heights: SliverAppBar(56) + Toolbar(56) = 112
-            // Initial offset to list start is around 256.
-            // We want item at top but below pinned stuff (112).
-            
-            // If headers are null, headerOffset is 0.
             final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
             final headerHeight = hasHeaders ? 200.0 : 0.0;
             final toolbarHeight = 56.0;
@@ -265,7 +274,7 @@ class _SongListState extends State<SongList> {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
-          CupertinoIcons.scope, // Target/Aim icon
+          CupertinoIcons.scope,
           size: 18,
           color: theme.colorScheme.onSurface.withAlpha(200),
         ),
@@ -285,13 +294,13 @@ class _StickyToolbarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  double get maxExtent => 56.0; // 36 height + 20 vertical padding
+  double get maxExtent => 56.0;
 
   @override
   double get minExtent => 56.0;
 
   @override
   bool shouldRebuild(covariant _StickyToolbarDelegate oldDelegate) {
-    return true;
+    return false;
   }
 }

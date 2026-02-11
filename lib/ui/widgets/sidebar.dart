@@ -23,8 +23,8 @@ class Sidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final userProvider = context.watch<UserProvider>();
-    final user = userProvider.user;
+    final user = context.select<UserProvider, dynamic>((p) => p.user);
+    final isAuthenticated = context.select<UserProvider, bool>((p) => p.isAuthenticated);
     final accentColor = theme.colorScheme.primary;
 
     return Column(
@@ -40,7 +40,7 @@ class Sidebar extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Expanded(child: _buildTopProfileItem(context, userProvider, user, theme, accentColor)),
+                Expanded(child: _buildTopProfileItem(context, isAuthenticated, user, theme, accentColor)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Container(height: 22, width: 1, color: theme.colorScheme.onSurface.withAlpha(40)),
@@ -66,7 +66,7 @@ class Sidebar extends StatelessWidget {
                 _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
                 _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
                 const SizedBox(height: 18),
-                _buildPlaylistSection(context, userProvider),
+                _buildPlaylistSection(context),
               ],
             ),
           ),
@@ -75,11 +75,11 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildTopProfileItem(BuildContext context, UserProvider userProvider, dynamic user, ThemeData theme, Color accentColor) {
+  Widget _buildTopProfileItem(BuildContext context, bool isAuthenticated, dynamic user, ThemeData theme, Color accentColor) {
     final isSelected = selectedPlaylistId == null && selectedIndex == 6;
     return InkWell(
       onTap: () {
-        if (!userProvider.isAuthenticated) {
+        if (!isAuthenticated) {
           Navigator.push(context, CupertinoPageRoute(builder: (_) => const LoginScreen()));
         } else {
           onDestinationSelected(6);
@@ -93,7 +93,7 @@ class Sidebar extends StatelessWidget {
           children: [
             ClipOval(child: user?.pic != null ? CoverImage(url: user!.pic!, width: 34, height: 34, borderRadius: 0, showShadow: false, size: 100) : Container(width: 34, height: 34, color: accentColor.withAlpha(20), child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 18))),
             const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(user?.nickname ?? '未登录', style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: -0.4), maxLines: 1, overflow: TextOverflow.ellipsis), Text(userProvider.isAuthenticated ? 'Lv.${user?.extendsInfo?['detail']?['p_grade'] ?? 0}' : '点击登录账号', style: TextStyle(color: isSelected ? accentColor.withAlpha(180) : theme.colorScheme.onSurfaceVariant, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.2))])),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(user?.nickname ?? '未登录', style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: -0.4), maxLines: 1, overflow: TextOverflow.ellipsis), Text(isAuthenticated ? 'Lv.${user?.extendsInfo?['detail']?['p_grade'] ?? 0}' : '点击登录账号', style: TextStyle(color: isSelected ? accentColor.withAlpha(180) : theme.colorScheme.onSurfaceVariant, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.2))])),
           ],
         ),
       ),
@@ -114,15 +114,19 @@ class Sidebar extends StatelessWidget {
     return Padding(padding: const EdgeInsets.only(left: 28, right: 16, top: 8, bottom: 10), child: Text(title, style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(120), fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2)));
   }
 
-  Widget _buildPlaylistSection(BuildContext context, UserProvider userProvider) {
+  Widget _buildPlaylistSection(BuildContext context) {
     final theme = Theme.of(context);
+    final isAuthenticated = context.select<UserProvider, bool>((p) => p.isAuthenticated);
+    final createdPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.createdPlaylists);
+    final favoritedPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedPlaylists);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildGroupTitle(context, '我的歌单'),
-        if (userProvider.isAuthenticated) ...[
-          for (var p in userProvider.createdPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
-          for (var p in userProvider.favoritedPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
+        if (isAuthenticated) ...[
+          for (var p in createdPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
+          for (var p in favoritedPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
         ] else
           Padding(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8), child: Text('登录同步云端歌单', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontSize: 12, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic))),
       ],

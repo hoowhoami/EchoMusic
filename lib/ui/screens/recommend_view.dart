@@ -5,7 +5,6 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import '../widgets/cover_image.dart';
-import '../widgets/scrollable_content.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'recommend_song_view.dart';
@@ -36,7 +35,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   }
 
   void _loadData() {
-    _recommendedPlaylistsFuture = MusicApi.getPlaylistByCategory('0'); // Use category '0' for recommendation
+    _recommendedPlaylistsFuture = MusicApi.getPlaylistByCategory('0');
     _topIpFuture = MusicApi.getTopIP();
   }
 
@@ -53,90 +52,153 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final userProvider = context.watch<UserProvider>();
-    final greeting = userProvider.isAuthenticated
-        ? 'Hi, ${userProvider.user?.nickname} ${_getGreeting()}'
+    final nickname = context.select<UserProvider, String?>(
+      (p) => p.user?.nickname
+    );
+    final isAuthenticated = context.select<UserProvider, bool>(
+      (p) => p.isAuthenticated
+    );
+    
+    final greeting = isAuthenticated
+        ? 'Hi, $nickname ${_getGreeting()}'
         : _getGreeting();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: ScrollableContent(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Greeting
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-              Text(
-                greeting,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontSize: 22, 
-                  letterSpacing: -0.5,
-                  color: theme.colorScheme.onSurface, // Explicit color
-                ),
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(40, 32, 40, 0),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    greeting,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 22, 
+                      letterSpacing: -0.5,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '由此开启好心情 ~',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withAlpha(150),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      _buildLargeFeatureCard(
+                        context,
+                        title: '每日推荐',
+                        subtitle: '为你量身定制',
+                        iconContent: DateTime.now().day.toString(),
+                        onTap: () => Navigator.push(
+                          context, 
+                          CupertinoPageRoute(
+                            settings: const RouteSettings(name: 'recommend_song'),
+                            builder: (_) => const RecommendSongView()
+                          )
+                        ),
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 16),
+                      _buildLargeFeatureCard(
+                        context,
+                        title: '排行榜',
+                        subtitle: '实时热门趋势',
+                        iconContent: 'TOP',
+                        onTap: () => Navigator.push(
+                          context, 
+                          CupertinoPageRoute(
+                            settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
+                            builder: (_) => const RankView(isRecommend: true)
+                          )
+                        ),
+                        color: theme.colorScheme.secondary,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 40),
+                  _buildHeader(context, '推荐歌单'),
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '由此开启好心情 ~',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontSize: 12,
-                  color: theme.colorScheme.onSurface.withAlpha(150), // Explicit color
-                ),
-              ),
-            ],
+            ),
           ),
-          const SizedBox(height: 32),
-
-          // Daily Recommend & Rank Cards
-          Row(
-            children: [
-              _buildLargeFeatureCard(
-                context,
-                title: '每日推荐',
-                subtitle: '为你量身定制',
-                iconContent: DateTime.now().day.toString(),
-                onTap: () => Navigator.push(
-                  context, 
-                  CupertinoPageRoute(
-                    settings: const RouteSettings(name: 'recommend_song'),
-                    builder: (_) => const RecommendSongView()
-                  )
+          
+          FutureBuilder<List<Playlist>>(
+            future: _recommendedPlaylistsFuture,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SliverToBoxAdapter(child: SizedBox(height: 200));
+              }
+              final playlists = snapshot.data!;
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 200,
+                    mainAxisSpacing: 24,
+                    crossAxisSpacing: 20,
+                    mainAxisExtent: 210,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildPlaylistCard(playlists[index]),
+                    childCount: playlists.length,
+                  ),
                 ),
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 16),
-              _buildLargeFeatureCard(
-                context,
-                title: '排行榜',
-                subtitle: '实时热门趋势',
-                iconContent: 'TOP',
-                onTap: () => Navigator.push(
-                  context, 
-                  CupertinoPageRoute(
-                    settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
-                    builder: (_) => const RankView(isRecommend: true)
-                  )
-                ),
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-            ],
+              );
+            },
           ),
 
-          const SizedBox(height: 40),
-          _buildHeader(context, '推荐歌单'),
-          const SizedBox(height: 16),
-          _buildRecommendedPlaylists(),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(40, 40, 40, 16),
+            sliver: SliverToBoxAdapter(
+              child: _buildHeader(context, '编辑精选'),
+            ),
+          ),
 
-          const SizedBox(height: 40),
-          _buildHeader(context, '编辑精选'),
-          const SizedBox(height: 16),
-          _buildIPTopPlaylists(),
+          FutureBuilder<List<Map<String, dynamic>>>(
+            future: _topIpFuture,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SliverToBoxAdapter(child: SizedBox(height: 200));
+              }
+              final ipList = snapshot.data!.where((item) => 
+                item['type'] == 1 && item['extra']?['global_collection_id'] != null
+              ).toList();
 
-          const SizedBox(height: 100),
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 200,
+                    mainAxisSpacing: 24,
+                    crossAxisSpacing: 20,
+                    mainAxisExtent: 210,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final ip = ipList[index];
+                      final playlist = Playlist.fromIP(ip);
+                      return _buildPlaylistCard(playlist, subtitle: '编辑精选');
+                    },
+                    childCount: ipList.length,
+                  ),
+                ),
+              );
+            },
+          ),
+          
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),
-    ),
     );
   }
 
@@ -148,7 +210,6 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
     required Color color,
   }) {
     final theme = Theme.of(context);
-    
     return Expanded(
       child: Container(
         height: 72,
@@ -239,7 +300,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
           title,
           style: theme.textTheme.titleMedium?.copyWith(
             fontSize: 15,
-            color: theme.colorScheme.onSurface, // Explicit color
+            color: theme.colorScheme.onSurface,
           ),
         ),
         TextButton(
@@ -259,61 +320,6 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildRecommendedPlaylists() {
-    return FutureBuilder<List<Playlist>>(
-      future: _recommendedPlaylistsFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 200);
-        final playlists = snapshot.data!;
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
-            mainAxisSpacing: 24,
-            crossAxisSpacing: 20,
-            mainAxisExtent: 210,
-          ),
-          itemCount: playlists.length,
-          padding: EdgeInsets.zero,
-          itemBuilder: (context, index) {
-            return _buildPlaylistCard(playlists[index]);
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildIPTopPlaylists() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _topIpFuture,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 200);
-        final ipList = snapshot.data!.where((item) => 
-          item['type'] == 1 && item['extra']?['global_collection_id'] != null
-        ).toList();
-
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
-            mainAxisSpacing: 24,
-            crossAxisSpacing: 20,
-            mainAxisExtent: 210,
-          ),
-          itemCount: ipList.length,
-          padding: EdgeInsets.zero,
-          itemBuilder: (context, index) {
-            final ip = ipList[index];
-            final playlist = Playlist.fromIP(ip);
-            return _buildPlaylistCard(playlist, subtitle: '编辑精选');
-          },
-        );
-      },
     );
   }
 
