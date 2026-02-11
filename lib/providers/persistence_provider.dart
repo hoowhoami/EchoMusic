@@ -36,6 +36,7 @@ class PersistenceProvider with ChangeNotifier {
     'autoSign': false,
     'autoReceiveVip': false,
     'userAgreementAccepted': false,
+    'lyricOffset': 0,
   };
   Map<String, dynamic> _playerSettings = {
     'volume': 0.5,

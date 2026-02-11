@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'persistence_provider.dart';
 
 class LyricCharacter {
   final String text;
@@ -44,6 +45,8 @@ class LyricProvider with ChangeNotifier {
   bool _isPageOpen = false;
   String? _loadedHash;
 
+  PersistenceProvider? _persistenceProvider;
+
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
   String get tips => _tips;
@@ -53,10 +56,10 @@ class LyricProvider with ChangeNotifier {
   bool get isPageOpen => _isPageOpen;
   String? get loadedHash => _loadedHash;
 
+  void setPersistenceProvider(PersistenceProvider p) => _persistenceProvider = p;
+
   void setPageOpen(bool open) {
     _isPageOpen = open;
-    // Only notify if opening, or if we have listeners and aren't in a sensitive lifecycle
-    // Closing the page (dispose) shouldn't trigger UI rebuilds
     if (open) {
       notifyListeners();
     }
@@ -99,7 +102,6 @@ class LyricProvider with ChangeNotifier {
       notifyListeners();
       return;
     }
-    // ... rest of parseLyrics remains the same
 
     final List<String> lines = content.split('\n');
     List<dynamic>? translationLyrics;
@@ -230,20 +232,21 @@ class LyricProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Optimized Update Strategy: Incremental search to prevent UI freezing on long audio
+  /// Optimized Update Strategy: Incremental search with configurable offset
   void updateHighlight(Duration position) {
     if (_lyrics.isEmpty) return;
     
-    final posMs = position.inMilliseconds;
+    // Apply user-defined offset (positive offset means delay highlighting)
+    final offset = _persistenceProvider?.settings['lyricOffset'] ?? 0;
+    final posMs = position.inMilliseconds - (offset as int);
+    
     int newIndex = -1;
     bool needsNotify = false;
 
-    // 1. Efficient Line Selection: Start from current index for O(1) in 99% cases
+    // 1. Efficient Line Selection
     int startSearchIdx = _currentLineIndex >= 0 ? _currentLineIndex : 0;
-    
-    // Check if the monotonic forward assumption holds
     if (posMs < _lyrics[startSearchIdx].startTime) {
-      startSearchIdx = 0; // Rewound, search from beginning
+      startSearchIdx = 0; 
     }
 
     for (int i = startSearchIdx; i < _lyrics.length; i++) {
@@ -253,7 +256,7 @@ class LyricProvider with ChangeNotifier {
       }
     }
 
-    // 2. Character Highlight Update (Only update affected lines)
+    // 2. Character Highlight Update
     if (newIndex != -1) {
       final line = _lyrics[newIndex];
       for (var char in line.characters) {

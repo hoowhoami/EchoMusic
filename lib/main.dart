@@ -61,7 +61,10 @@ void main() async {
             ..setPersistenceProvider(p)
             ..setRefreshProvider(r),
         ),
-        ChangeNotifierProvider(create: (_) => LyricProvider()),
+        ChangeNotifierProxyProvider<PersistenceProvider, LyricProvider>(
+          create: (_) => LyricProvider(),
+          update: (_, p, l) => l!..setPersistenceProvider(p),
+        ),
         ChangeNotifierProvider(create: (_) => SelectionProvider()),
         ChangeNotifierProxyProvider2<PersistenceProvider, LyricProvider, AudioProvider>(
           create: (_) => AudioProvider(),
