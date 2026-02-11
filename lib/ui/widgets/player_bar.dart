@@ -276,10 +276,10 @@ class _PlayerMainContent extends StatelessWidget {
   Widget _buildPlayerContent(BuildContext context, ThemeData theme, Color accentColor) {
     return Row(
       children: [
-        // 1. Song Info
-        const SizedBox(width: 300, child: _PlayerSongInfo()),
+        // 1. Song Info - Balanced width
+        const SizedBox(width: 350, child: _PlayerSongInfo()),
 
-        // 2. Playback Controls
+        // 2. Playback Controls - Will now be perfectly centered
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -293,8 +293,8 @@ class _PlayerMainContent extends StatelessWidget {
           ),
         ),
 
-        // 3. Functional Buttons
-        const SizedBox(width: 440, child: _PlayerRightActions()),
+        // 3. Functional Buttons - Balanced width
+        const SizedBox(width: 350, child: _PlayerRightActions()),
       ],
     );
   }

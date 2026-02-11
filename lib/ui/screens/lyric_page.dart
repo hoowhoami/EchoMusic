@@ -216,7 +216,7 @@ class _LyricPageState extends State<LyricPage> {
 
   Widget _buildBottomSection(BuildContext context, AudioProvider audioProvider, ThemeData theme) {
     return Container(
-      width: 500,
+      width: 600, // Slightly wider for better desktop layout
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Column(
         children: [
@@ -242,6 +242,7 @@ class _LyricPageState extends State<LyricPage> {
             },
           ),
           const SizedBox(height: 16),
+          // Balanced Row for playback controls
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -275,10 +276,7 @@ class _LyricPageState extends State<LyricPage> {
           child: Center(
             child: audioProvider.isLoading
                 ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white70))
-                : Padding(
-                    padding: EdgeInsets.only(left: audioProvider.isPlaying ? 0 : 4),
-                    child: Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 32, color: Colors.white),
-                  ),
+                : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 32, color: Colors.white),
           ),
         ),
       ),
