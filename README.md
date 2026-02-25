@@ -34,11 +34,13 @@
 
 ## 界面截图
 
-| 发现 (Discover) | 首页 (Home) | 歌词 (Lyric) |
-| :---: | :---: | :---: |
-| ![Discover](screenshots/discover.png) | ![Home](screenshots/home.png) | ![Lyric](screenshots/lyric.png) |
-| **播放列表 (Playlist)** | **搜索 (Search)** | **设置 (Settings)** |
-| ![Playlist](screenshots/playlist.png) | ![Search](screenshots/search.png) | ![Settings](screenshots/settings.png) |
+- ![首页](screenshots/home.png)
+- ![发现](screenshots/discover.png)
+- ![歌词](screenshots/lyric.png)
+- ![播放列表](screenshots/playlist.png)
+- ![搜索](screenshots/search.png)
+- ![设置](screenshots/settings.png)
+
 
 ## 🚀 快速开始
 
