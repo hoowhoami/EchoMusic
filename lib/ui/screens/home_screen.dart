@@ -209,9 +209,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
-    if (persistence.device == null) {
+    if (persistence.device == null || persistence.device?['dfid'] == null) {
       final device = await MusicApi.registerDevice();
-      if (device != null) await persistence.setDevice(device);
+      if (device != null && device['dfid'] != null) await persistence.setDevice(device);
     }
     final userProvider = context.read<UserProvider>();
     if (userProvider.isAuthenticated) userProvider.fetchAllUserData();

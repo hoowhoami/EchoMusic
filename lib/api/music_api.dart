@@ -17,6 +17,7 @@ class MusicApi {
   ))
     ..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        options.extra['startTime'] = DateTime.now().millisecondsSinceEpoch;
         final prefs = await SharedPreferences.getInstance();
         
         // Retrieve device and user info from storage
@@ -51,18 +52,25 @@ class MusicApi {
 
         options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
 
-        LoggerService.d('HTTP Request: [${options.method}] ${options.uri}\n'
-            'Headers: ${options.headers}\n'
-            'QueryParams: ${options.queryParameters}\n'
-            'Body: ${options.data}');
-        
         return handler.next(options);
       },
       onResponse: (response, handler) {
         _checkAuthExpiration(response.requestOptions.path, response.data);
         
-        LoggerService.i('HTTP Response: [${response.statusCode}] ${response.requestOptions.uri}\n'
-            'Data: ${_truncateData(response.data)}');
+        final startTime = response.requestOptions.extra['startTime'] as int?;
+        final endTime = DateTime.now().millisecondsSinceEpoch;
+        final duration = startTime != null ? endTime - startTime : null;
+        
+        final logMsg = StringBuffer();
+        logMsg.writeln('HTTP [${response.requestOptions.method}] ${response.requestOptions.uri}');
+        logMsg.writeln('Status: ${response.statusCode} ${response.statusMessage} | Duration: ${duration}ms');
+        logMsg.writeln('Headers: ${response.requestOptions.headers}');
+        if (response.requestOptions.data != null) {
+          logMsg.writeln('Request Body: ${response.requestOptions.data}');
+        }
+        logMsg.write('Response: ${_truncateData(response.data)}');
+        
+        LoggerService.i(logMsg.toString());
             
         return handler.next(response);
       },
@@ -71,9 +79,23 @@ class MusicApi {
           _checkAuthExpiration(err.requestOptions.path, err.response!.data);
         }
         
-        LoggerService.e('HTTP Error: [${err.response?.statusCode}] ${err.requestOptions.uri}\n'
-            'Message: ${err.message}\n'
-            'Response: ${_truncateData(err.response?.data)}');
+        final startTime = err.requestOptions.extra['startTime'] as int?;
+        final endTime = DateTime.now().millisecondsSinceEpoch;
+        final duration = startTime != null ? endTime - startTime : null;
+
+        final logMsg = StringBuffer();
+        logMsg.writeln('HTTP Error [${err.requestOptions.method}] ${err.requestOptions.uri}');
+        logMsg.writeln('Status: ${err.response?.statusCode} | Duration: ${duration}ms');
+        logMsg.writeln('Headers: ${err.requestOptions.headers}');
+        logMsg.writeln('Error: ${err.message}');
+        if (err.requestOptions.data != null) {
+          logMsg.writeln('Request Body: ${err.requestOptions.data}');
+        }
+        if (err.response?.data != null) {
+          logMsg.write('Response: ${_truncateData(err.response?.data)}');
+        }
+        
+        LoggerService.e(logMsg.toString());
             
         return handler.next(err);
       },
@@ -194,7 +216,7 @@ class MusicApi {
       }
       return null;
     } catch (e) {
-      debugPrint('getSongUrl error: $e');
+      LoggerService.e('getSongUrl error: $e');
       return null;
     }
   }
@@ -225,7 +247,7 @@ class MusicApi {
       }
       return [];
     } catch (e) {
-      debugPrint('getSongPrivilege error: $e');
+      LoggerService.e('getSongPrivilege error: $e');
       return [];
     }
   }
@@ -250,10 +272,10 @@ class MusicApi {
         List data = response.data['data']['info'] ?? [];
         return data.cast<Map<String, dynamic>>();
       }
-      debugPrint('getRanks status != 1: ${response.data}');
+      LoggerService.w('getRanks status != 1: ${response.data}');
       return [];
     } catch (e) {
-      debugPrint('getRanks error: $e');
+      LoggerService.e('getRanks error: $e');
       return [];
     }
   }
@@ -381,7 +403,7 @@ class MusicApi {
       final responseData = await getPlaylistTrackAll(queryId, pagesize: 500);
       return parseSongsFromResponse(responseData);
     } catch (e) {
-      debugPrint('getPlaylistSongs error: $e');
+      LoggerService.e('getPlaylistSongs error: $e');
       return [];
     }
   }
@@ -421,7 +443,7 @@ class MusicApi {
       }
       return null;
     } catch (e) {
-      debugPrint('searchLyric Error: $e');
+      LoggerService.e('searchLyric Error: $e');
       return null;
     }
   }
@@ -443,7 +465,7 @@ class MusicApi {
       }
       return null;
     } catch (e) {
-      debugPrint('getLyric Error: $e');
+      LoggerService.e('getLyric Error: $e');
       return null;
     }
   }
@@ -575,7 +597,6 @@ class MusicApi {
   static Future<Map<String, dynamic>?> loginQrKey() async {
     try {
       final response = await _dio.get('/login/qr/key');
-      debugPrint('loginQrKey response: ${response.data}');
 
       // 检查响应格式
       if (response.data != null && response.data['status'] == 1 && response.data['data'] != null) {
@@ -598,10 +619,10 @@ class MusicApi {
         return data;
       }
 
-      debugPrint('loginQrKey: 无法解析响应数据');
+      LoggerService.w('loginQrKey: 无法解析响应数据');
       return null;
     } catch (e) {
-      debugPrint('loginQrKey error: $e');
+      LoggerService.e('loginQrKey error: $e');
       return null;
     }
   }
@@ -609,7 +630,6 @@ class MusicApi {
   static Future<Map<String, dynamic>?> loginQrCreate(String key) async {
     try {
       final response = await _dio.get('/login/qr/create', queryParameters: {'key': key, 'qrimg': 'true'});
-      debugPrint('loginQrCreate response: ${response.data}');
 
       if (response.data != null) {
         // 格式1: {code: 200, data: {url: "xxx", base64: "xxx"}}
@@ -632,10 +652,10 @@ class MusicApi {
           return response.data;
         }
       }
-      debugPrint('loginQrCreate: 无法解析响应数据');
+      LoggerService.w('loginQrCreate: 无法解析响应数据');
       return null;
     } catch (e) {
-      debugPrint('loginQrCreate error: $e');
+      LoggerService.e('loginQrCreate error: $e');
       return null;
     }
   }

@@ -443,7 +443,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          '使用酷狗音乐APP扫码', 
+          '使用酷狗概念版APP扫码', 
           style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600)
         ),
         const SizedBox(height: 32),
