@@ -34,12 +34,18 @@
 
 ## 界面截图
 
-- ![首页](screenshots/home.png)
-- ![发现](screenshots/discover.png)
-- ![歌词](screenshots/lyric.png)
-- ![播放列表](screenshots/playlist.png)
-- ![搜索](screenshots/search.png)
-- ![设置](screenshots/settings.png)
+- 首页
+  ![首页](screenshots/home.png)
+- 发现
+  ![发现](screenshots/discover.png)
+- 歌词  
+  ![歌词](screenshots/lyric.png)
+- 播放列表
+  ![播放列表](screenshots/playlist.png)
+- 搜索
+  ![搜索](screenshots/search.png)
+- 设置  
+  ![设置](screenshots/settings.png)
 
 
 ## 🚀 快速开始
