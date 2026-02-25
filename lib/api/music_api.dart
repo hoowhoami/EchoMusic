@@ -665,7 +665,8 @@ class MusicApi {
     try {
       final response = await _dio.get('/user/history', queryParameters: bp != null ? {'bp': bp} : {});
       if (response.data['status'] == 1) {
-        List data = response.data['data']?['list'] ?? [];
+        final payload = response.data['data'] ?? {};
+        List data = payload['list'] ?? payload['songs'] ?? [];
         return data
             .where((item) => item['info'] != null)
             .map((item) => Song.fromPlaylistJson(item['info']))
@@ -686,16 +687,22 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getUserCloud({int page = 1, int pagesize = 30}) async {
+  static Future<Map<String, dynamic>> getUserCloud({int page = 1, int pagesize = 30}) async {
     try {
       final response = await _dio.get('/user/cloud', queryParameters: {'page': page, 'pagesize': pagesize});
       if (response.data['status'] == 1) {
-        List data = response.data['data']?['list'] ?? [];
-        return data.map((json) => Song.fromCloudJson(json)).toList();
+        final payload = response.data['data'] ?? {};
+        List data = payload['list'] ?? [];
+        return {
+          'songs': data.map((json) => Song.fromCloudJson(json)).toList(),
+          'count': payload['list_count'] ?? 0,
+          'capacity': payload['max_size'] ?? 0,
+          'available': payload['availble_size'] ?? 0,
+        };
       }
-      return [];
+      return {'songs': <Song>[], 'count': 0, 'capacity': 0, 'available': 0};
     } catch (e) {
-      return [];
+      return {'songs': <Song>[], 'count': 0, 'capacity': 0, 'available': 0};
     }
   }
 

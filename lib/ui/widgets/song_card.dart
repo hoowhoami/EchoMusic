@@ -289,9 +289,7 @@ class _SongCardState extends State<SongCard> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: widget.song.isUnavailable
-                                                  ? theme.colorScheme.onSurface.withAlpha(80)
-                                                  : (isCurrent ? primaryColor : theme.colorScheme.onSurface),
+                                              color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
                                               fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
                                               fontSize: 15,
                                               letterSpacing: -0.3,
@@ -303,13 +301,11 @@ class _SongCardState extends State<SongCard> {
                                             padding: const EdgeInsets.only(left: 6),
                                             child: Icon(CupertinoIcons.heart_fill, size: 14, color: Colors.redAccent.withAlpha(200)),
                                           ),
-                                        if (widget.song.isUnavailable)
-                                          _buildTag(context, '不可用', theme.colorScheme.onSurface.withAlpha(100))
-                                        else if (widget.song.isPaid)
+                                        if (widget.song.isPaid)
                                           _buildTag(context, '付费', const Color(0xFF8B5CF6))
                                         else if (widget.song.isVip)
                                           _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
-                                        if (widget.song.qualityTag.isNotEmpty && !widget.song.isUnavailable)
+                                        if (widget.song.qualityTag.isNotEmpty)
                                           _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
                                       ],
                                     ),

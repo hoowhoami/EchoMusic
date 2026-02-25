@@ -15,6 +15,9 @@ class UserProvider with ChangeNotifier {
   List<Map<String, dynamic>> _userFollows = [];
   List<Song> _userHistory = [];
   List<Song> _userCloud = [];
+  int _cloudCount = 0;
+  int _cloudCapacity = 0;
+  int _cloudAvailable = 0;
   List<Song> _likedSongs = [];
 
   dynamic _likedPlaylistId;
@@ -39,6 +42,9 @@ class UserProvider with ChangeNotifier {
   List<Map<String, dynamic>> get userFollows => _userFollows;
   List<Song> get userHistory => _userHistory;
   List<Song> get userCloud => _userCloud;
+  int get cloudCount => _cloudCount;
+  int get cloudCapacity => _cloudCapacity;
+  int get cloudAvailable => _cloudAvailable;
   List<Song> get likedSongs => _likedSongs;
 
   List<Map<String, dynamic>> get createdPlaylists =>
@@ -186,6 +192,9 @@ class UserProvider with ChangeNotifier {
     _userFollows = [];
     _userHistory = [];
     _userCloud = [];
+    _cloudCount = 0;
+    _cloudCapacity = 0;
+    _cloudAvailable = 0;
     notifyListeners();
   }
 
@@ -300,7 +309,11 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> fetchUserCloud() async {
-    _userCloud = await MusicApi.getUserCloud();
+    final res = await MusicApi.getUserCloud();
+    _userCloud = res['songs'] ?? [];
+    _cloudCount = res['count'] ?? 0;
+    _cloudCapacity = res['capacity'] ?? 0;
+    _cloudAvailable = res['available'] ?? 0;
     notifyListeners();
   }
 

@@ -20,14 +20,31 @@ class HistoryView extends StatelessWidget {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(40, 20, 40, 10),
-            child: Text(
-              '最近播放',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurface,
-                letterSpacing: -0.6,
-              ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '最近播放',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.onSurface,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '共 ${songs.length} 首',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface.withAlpha(128),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
