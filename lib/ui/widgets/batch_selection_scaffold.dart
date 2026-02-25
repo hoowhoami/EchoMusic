@@ -80,29 +80,37 @@ class BatchSelectionScaffold extends StatelessWidget {
   Widget _buildBatchButton(BuildContext context, SelectionProvider selectionProvider) {
     final theme = Theme.of(context);
     
-    return Container(
-      margin: const EdgeInsets.only(left: 12),
-      height: 32,
-      child: TextButton.icon(
-        onPressed: () {
-          selectionProvider.setSongList(songs);
-          selectionProvider.enterSelectionMode();
-        },
-        icon: const Icon(CupertinoIcons.checkmark_circle, size: 14), // Smaller icon
-        label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-        style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurface.withAlpha(200),
-          backgroundColor: theme.colorScheme.onSurface.withAlpha(15),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(
-              color: theme.colorScheme.onSurface.withAlpha(20),
-              width: 1.0,
+    return InkWell(
+      onTap: () {
+        selectionProvider.setSongList(songs);
+        selectionProvider.enterSelectionMode();
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.onSurface.withAlpha(15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              CupertinoIcons.checkmark_circle,
+              size: 16,
+              color: theme.colorScheme.onSurface.withAlpha(200),
             ),
-          ),
+            const SizedBox(width: 6),
+            Text(
+              '批量操作',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurface.withAlpha(200),
+              ),
+            ),
+          ],
         ),
       ),
     );

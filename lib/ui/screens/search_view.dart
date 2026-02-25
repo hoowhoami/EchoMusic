@@ -125,14 +125,39 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                       !_isLoading &&
                       !selectionProvider.isSelectionMode &&
                       _tabController.index == 0)
-                    IconButton(
-                      icon: const Icon(CupertinoIcons.checkmark_circle, size: 22),
-                      onPressed: () {
+                    InkWell(
+                      onTap: () {
                         selectionProvider.setSongList(_songResults);
                         selectionProvider.enterSelectionMode();
                       },
-                      color: theme.colorScheme.onSurfaceVariant,
-                      tooltip: '批量选择',
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurface.withAlpha(15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              CupertinoIcons.checkmark_circle,
+                              size: 16,
+                              color: theme.colorScheme.onSurface.withAlpha(200),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '批量操作',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: theme.colorScheme.onSurface.withAlpha(200),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                 ],
               ),

@@ -251,21 +251,39 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                       if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
                       if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
                       return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        child: TextButton.icon(
-                          onPressed: () {
+                        margin: const EdgeInsets.symmetric(vertical: 10),
+                        child: InkWell(
+                          onTap: () {
                             selectionProvider.setSongList(snapshot.data!, playlistId: widget.albumId);
                             selectionProvider.enterSelectionMode();
                           },
-                          icon: const Icon(CupertinoIcons.checkmark_circle, size: 16),
-                          label: const Text('批量选择', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                          style: TextButton.styleFrom(
-                            foregroundColor: theme.colorScheme.onSurface,
-                            backgroundColor: theme.colorScheme.onSurface.withAlpha(20),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            minimumSize: const Size(0, 40),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.onSurface.withAlpha(15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.checkmark_circle,
+                                  size: 16,
+                                  color: theme.colorScheme.onSurface.withAlpha(200),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '批量操作',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.colorScheme.onSurface.withAlpha(200),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       );
