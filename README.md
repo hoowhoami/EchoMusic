@@ -32,6 +32,14 @@
 - **Backend Service**: [Node.js](https://nodejs.org/) (Custom built-in server)
 - **Persistence**: [Shared Preferences](https://pub.dev/packages/shared_preferences)
 
+## 界面截图
+
+| 发现 (Discover) | 首页 (Home) | 歌词 (Lyric) |
+| :---: | :---: | :---: |
+| ![Discover](screenshots/discover.png) | ![Home](screenshots/home.png) | ![Lyric](screenshots/lyric.png) |
+| **播放列表 (Playlist)** | **搜索 (Search)** | **设置 (Settings)** |
+| ![Playlist](screenshots/playlist.png) | ![Search](screenshots/search.png) | ![Settings](screenshots/settings.png) |
+
 ## 🚀 快速开始
 
 ### 前置要求
