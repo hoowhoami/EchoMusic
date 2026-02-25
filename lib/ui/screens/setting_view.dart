@@ -5,11 +5,13 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../providers/persistence_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/version_service.dart';
+import '../../utils/logger.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/disclaimer_dialog.dart';
 import '../widgets/update_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:io';
 
 class SettingView extends StatefulWidget {
   const SettingView({super.key});
@@ -56,6 +58,45 @@ class _SettingViewState extends State<SettingView> {
             isLatest: true,
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _exportLogs() async {
+    final logFile = LoggerService.logFile;
+    if (logFile == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('当前处于开发模式，日志仅在控制台输出'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(20),
+          ),
+        );
+      }
+      return;
+    }
+
+    final logDir = logFile.parent;
+    if (await logDir.exists()) {
+      try {
+        if (Platform.isMacOS) {
+          await Process.run('open', [logDir.path]);
+        } else if (Platform.isWindows) {
+          await Process.run('explorer.exe', [logDir.path]);
+        } else {
+          final url = Uri.file(logDir.path);
+          if (await canLaunchUrl(url)) {
+            await launchUrl(url);
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('无法打开日志目录: $e')),
+          );
+        }
       }
     }
   }
@@ -228,6 +269,21 @@ class _SettingViewState extends State<SettingView> {
             '数据与安全',
             CupertinoIcons.shield,
             [
+              _buildItem(
+                context,
+                '导出运行日志',
+                '打包当前应用日志以供排查问题',
+                trailing: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  color: theme.colorScheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(10),
+                  onPressed: _exportLogs,
+                  child: Text(
+                    '立即导出',
+                    style: TextStyle(color: theme.colorScheme.primary, fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
               _buildItem(
                 context,
                 '清除应用数据',

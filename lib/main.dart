@@ -14,12 +14,16 @@ import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
+import 'utils/logger.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+  
+  await LoggerService.init();
+  LoggerService.i('App starting...');
   
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',

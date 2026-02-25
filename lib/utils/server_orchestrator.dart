@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:dio/dio.dart';
+import 'logger.dart';
 
 class ServerOrchestrator {
   static Process? _serverProcess;
@@ -20,7 +21,7 @@ class ServerOrchestrator {
   }
 
   static Future<void> killPort() async {
-    debugPrint('[Server] Attempting to kill port 10086...');
+    LoggerService.i('[Server] Attempting to kill port 10086...');
     try {
       if (Platform.isWindows) {
         final result = await Process.run('cmd', ['/c', 'netstat -ano | findstr :10086']);
@@ -32,7 +33,7 @@ class ServerOrchestrator {
             if (parts.length >= 5) {
               final pid = parts.last;
               await Process.run('taskkill', ['/F', '/PID', pid]);
-              debugPrint('[Server] Killed Windows process $pid');
+              LoggerService.i('[Server] Killed Windows process $pid');
             }
           }
         }
@@ -41,11 +42,11 @@ class ServerOrchestrator {
         final pid = result.stdout.toString().trim();
         if (pid.isNotEmpty) {
           await Process.run('kill', ['-9', pid]);
-          debugPrint('[Server] Killed Unix process $pid');
+          LoggerService.i('[Server] Killed Unix process $pid');
         }
       }
     } catch (e) {
-      debugPrint('[Server] Error killing port: $e');
+      LoggerService.e('[Server] Error killing port', e);
     }
   }
 
@@ -53,18 +54,18 @@ class ServerOrchestrator {
     if (_serverProcess != null) return true;
 
     // 无论如何，启动前先尝试清理端口占用，确保启动的是最新进程
-    debugPrint('[Server] Pre-start cleanup: killing any existing process on port 10086...');
+    LoggerService.i('[Server] Pre-start cleanup: killing any existing process on port 10086...');
     await killPort();
 
     String? serverDir;
     final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
     
     if (kDebugMode) {
-      debugPrint('[Server] Debug mode detected. Finding server directory...');
+      LoggerService.i('[Server] Debug mode detected. Finding server directory...');
       // Use Platform.resolvedExecutable as a more reliable anchor in macOS Sandbox
       // Typically: /Project/build/macos/Build/Products/Debug/app.app/Contents/MacOS/app
       Directory anchorDir = Directory(p.dirname(Platform.resolvedExecutable));
-      debugPrint('[Server] Starting search from executable dir: ${anchorDir.path}');
+      LoggerService.d('[Server] Starting search from executable dir: ${anchorDir.path}');
       
       for (int i = 0; i < 10; i++) {
         final potential = p.join(anchorDir.path, 'server');
@@ -83,32 +84,32 @@ class ServerOrchestrator {
       }
       
       if (serverDir != null) {
-        debugPrint('[Server] Found server directory at: $serverDir');
+        LoggerService.i('[Server] Found server directory at: $serverDir');
         final nodeModules = Directory(p.join(serverDir, 'node_modules'));
         final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
 
         if (!nodeModules.existsSync()) {
-          debugPrint('[Server] node_modules not found. Running npm install...');
+          LoggerService.i('[Server] node_modules not found. Running npm install...');
           final installResult = await Process.run(
             npmCmd, 
             ['install'], 
             workingDirectory: serverDir
           );
           if (installResult.exitCode != 0) {
-            debugPrint('[Server] npm install failed: ${installResult.stderr}');
+            LoggerService.e('[Server] npm install failed: ${installResult.stderr}');
             return false;
           }
-          debugPrint('[Server] npm install completed.');
+          LoggerService.i('[Server] npm install completed.');
         }
 
-        debugPrint('[Server] Starting server via npm start...');
+        LoggerService.i('[Server] Starting server via npm start...');
         _serverProcess = await Process.start(
           npmCmd,
           ['start', '--', ...args],
           workingDirectory: serverDir,
         );
       } else {
-        debugPrint('[Server] ERROR: Could not find server directory in project structure!');
+        LoggerService.e('[Server] ERROR: Could not find server directory in project structure!');
         return false;
       }
     } else {
@@ -119,29 +120,35 @@ class ServerOrchestrator {
           : p.join(appDir, 'server', executableName);
 
       if (File(serverPath).existsSync()) {
-        debugPrint('[Server] Starting production executable: $serverPath');
+        LoggerService.i('[Server] Starting production executable: $serverPath');
         _serverProcess = await Process.start(serverPath, args);
       }
     }
 
     if (_serverProcess == null) return false;
 
-    _serverProcess?.stdout.listen((data) => debugPrint('[Server LOG] ${String.fromCharCodes(data).trim()}'));
-    _serverProcess?.stderr.listen((data) => debugPrint('[Server ERR] ${String.fromCharCodes(data).trim()}'));
+    _serverProcess?.stdout.listen((data) {
+      final msg = String.fromCharCodes(data).trim();
+      if (msg.isNotEmpty) LoggerService.d('[Server] $msg');
+    });
+    _serverProcess?.stderr.listen((data) {
+      final msg = String.fromCharCodes(data).trim();
+      if (msg.isNotEmpty) LoggerService.e('[Server] $msg');
+    });
 
-    debugPrint('[Server] Waiting for health check...');
+    LoggerService.i('[Server] Waiting for health check...');
     for (int i = 0; i < 20; i++) {
       await Future.delayed(const Duration(milliseconds: 500));
       if (await isServerRunning()) return true;
     }
 
-    debugPrint('[Server] ERROR: Timeout waiting for server.');
+    LoggerService.e('[Server] ERROR: Timeout waiting for server.');
     return false;
   }
 
   static void stop() {
     if (_serverProcess != null) {
-      debugPrint('[Server] Stopping server process...');
+      LoggerService.i('[Server] Stopping server process...');
       _serverProcess?.kill();
       _serverProcess = null;
     }

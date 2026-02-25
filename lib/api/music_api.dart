@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
+import '../utils/logger.dart';
 
 class MusicApi {
   static VoidCallback? onAuthExpired;
@@ -50,21 +51,41 @@ class MusicApi {
 
         options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
 
-        debugPrint('--> ${options.method} ${options.uri}');
+        LoggerService.d('HTTP Request: [${options.method}] ${options.uri}\n'
+            'Headers: ${options.headers}\n'
+            'QueryParams: ${options.queryParameters}\n'
+            'Body: ${options.data}');
         
         return handler.next(options);
       },
       onResponse: (response, handler) {
         _checkAuthExpiration(response.requestOptions.path, response.data);
+        
+        LoggerService.i('HTTP Response: [${response.statusCode}] ${response.requestOptions.uri}\n'
+            'Data: ${_truncateData(response.data)}');
+            
         return handler.next(response);
       },
       onError: (err, handler) {
         if (err.response != null) {
           _checkAuthExpiration(err.requestOptions.path, err.response!.data);
         }
+        
+        LoggerService.e('HTTP Error: [${err.response?.statusCode}] ${err.requestOptions.uri}\n'
+            'Message: ${err.message}\n'
+            'Response: ${_truncateData(err.response?.data)}');
+            
         return handler.next(err);
       },
     ));
+
+  static String _truncateData(dynamic data) {
+    if (data == null) return 'null';
+    final String str = data is String ? data : jsonEncode(data);
+    const int maxLength = 1000;
+    if (str.length <= maxLength) return str;
+    return '${str.substring(0, maxLength)}... (truncated, total length: ${str.length})';
+  }
 
   static void _checkAuthExpiration(String path, dynamic data) {
     if (data is! Map) return;
@@ -88,7 +109,7 @@ class MusicApi {
 
     if (isExpired && !_isAuthExpiredNotified) {
       _isAuthExpiredNotified = true;
-      debugPrint('[MusicApi] Auth expiration detected at $path. Data: $data');
+      LoggerService.w('[MusicApi] Auth expiration detected at $path. Data: $data');
       onAuthExpired?.call();
       
       // Reset after a delay to allow future notifications if user logs in and expires again
