@@ -46,13 +46,21 @@ class VersionService {
   }
 
   static bool _isVersionNewer(String current, String latest) {
-    List<int> currentParts = current.split('.').map(int.parse).toList();
-    List<int> latestParts = latest.split('.').map(int.parse).toList();
+    try {
+      // Remove any build numbers or suffixes like +4 or -beta
+      final currentClean = current.split('+')[0].split('-')[0].trim();
+      final latestClean = latest.split('+')[0].split('-')[0].trim();
 
-    for (int i = 0; i < latestParts.length; i++) {
-      int currentPart = i < currentParts.length ? currentParts[i] : 0;
-      if (latestParts[i] > currentPart) return true;
-      if (latestParts[i] < currentPart) return false;
+      List<int> currentParts = currentClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+      List<int> latestParts = latestClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
+
+      for (int i = 0; i < latestParts.length; i++) {
+        int currentPart = i < currentParts.length ? currentParts[i] : 0;
+        if (latestParts[i] > currentPart) return true;
+        if (latestParts[i] < currentPart) return false;
+      }
+    } catch (e) {
+      print('版本对比出错: $e');
     }
     return false;
   }
