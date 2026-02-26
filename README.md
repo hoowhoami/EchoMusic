@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>EchoMusic</strong> —— 一个专为桌面端打造的简约、精致、功能强大的第三方酷狗音乐播放器。
+  <strong>EchoMusic</strong> —— 一个专为桌面端打造的简约、精致、功能强大的第三方酷狗概念版音乐播放器。
 </p>
 
 <p align="center">
