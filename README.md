@@ -100,6 +100,9 @@ flutter build linux --release
 xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Applications/EchoMusic.app
 ```
 
+## 交流群
+- [Telegram](https://t.me/+H9vpkAJrDlViZjU1)
+
 ## 💡 灵感来源
 
 本项目受到以下优秀开源项目的启发：
