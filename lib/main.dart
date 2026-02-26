@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
@@ -21,6 +22,15 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize JustAudioMediaKit for FLAC and other format support on Desktop
+  JustAudioMediaKit.ensureInitialized(
+    linux: true,
+    windows: true,
+    android: false,
+    iOS: false,
+    macOS: false,
+  );
   
   await LoggerService.init();
   LoggerService.i('App starting...');

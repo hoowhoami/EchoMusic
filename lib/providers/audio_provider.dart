@@ -6,6 +6,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
 import '../utils/constants.dart' as app_const;
+import '../utils/logger.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
@@ -119,7 +120,7 @@ class AudioProvider with ChangeNotifier {
 
     _subscriptions.add(_player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        debugPrint('[AudioProvider] Playback completed naturally.');
+        LoggerService.i('[AudioProvider] Playback completed naturally.');
         _handlePlaybackEnded();
       }
       _safeNotify();
@@ -137,7 +138,7 @@ class AudioProvider with ChangeNotifier {
           final diff = total.inMilliseconds - pos.inMilliseconds;
           // If we are extremely close to the end, trigger completion.
           if (diff <= 100) {
-             debugPrint('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
+             LoggerService.i('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
              _handlePlaybackEnded();
           }
         }
@@ -266,7 +267,7 @@ class AudioProvider with ChangeNotifier {
         _fetchClimax(_currentSong!);
       }
     } catch (e) {
-      debugPrint('Restore error: $e');
+      LoggerService.e('Restore error: $e');
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -385,7 +386,7 @@ class AudioProvider with ChangeNotifier {
       if (_isDisposed) return;
       
       if (result == null || result['url'] == null) {
-        debugPrint('[AudioProvider] Failed to get URL for ${song.name}, skipping to next.');
+        LoggerService.e('[AudioProvider] Failed to get URL for ${song.name}, skipping to next.');
         Future.delayed(const Duration(seconds: 1), () => next());
         return;
       }
@@ -477,14 +478,14 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> _handlePlayError(dynamic err) async {
     if (_isDisposed) return;
-    debugPrint('[AudioProvider] Playback error: $err');
+    LoggerService.e('[AudioProvider] Playback error: $err');
 
     final settings = _persistenceProvider?.settings ?? {};
     final autoNext = settings['autoNext'] ?? true;
     final autoNextTime = settings['autoNextTime'] ?? 3000;
 
     if (autoNext) {
-      debugPrint('[AudioProvider] Auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
+      LoggerService.i('[AudioProvider] Auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
       await Future.delayed(Duration(milliseconds: autoNextTime));
       next();
     }
