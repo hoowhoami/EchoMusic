@@ -46,26 +46,34 @@ class VersionService {
   }
 
   static bool _isVersionNewer(String current, String latest) {
-    if (current == latest) return false;
+    if (current.trim() == latest.trim()) return false;
     
     try {
-      // 清洗版本号，处理 1.0.3+4 或 1.0.3-beta 格式
-      final currentClean = current.split('+')[0].split('-')[0].trim();
-      final latestClean = latest.split('+')[0].split('-')[0].trim();
-
-      if (currentClean == latestClean) return false;
-
-      List<int> currentParts = currentClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-      List<int> latestParts = latestClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
-
-      for (int i = 0; i < latestParts.length; i++) {
-        int currentPart = i < currentParts.length ? currentParts[i] : 0;
-        if (latestParts[i] > currentPart) return true;
-        if (latestParts[i] < currentPart) return false;
+      // Helper to convert version string like "1.0.3+4" to list of ints [1, 0, 3]
+      List<int> toParts(String v) {
+        final clean = v.split('+')[0].split('-')[0].trim();
+        return clean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
       }
-    } catch (_) {
-      // 容错处理
-    }
+
+      final cParts = toParts(current);
+      final lParts = toParts(latest);
+
+      // Compare major.minor.patch
+      for (int i = 0; i < 3; i++) {
+        final c = i < cParts.length ? cParts[i] : 0;
+        final l = i < lParts.length ? lParts[i] : 0;
+        if (l > c) return true;
+        if (l < c) return false;
+      }
+      
+      // If we are here, major.minor.patch are equal.
+      // Now check if build number (after +) exists and is newer
+      if (current.contains('+') && latest.contains('+')) {
+        final cBuild = int.tryParse(current.split('+').last) ?? 0;
+        final lBuild = int.tryParse(latest.split('+').last) ?? 0;
+        return lBuild > cBuild;
+      }
+    } catch (_) {}
     return false;
   }
 }
