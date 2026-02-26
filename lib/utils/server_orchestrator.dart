@@ -21,105 +21,65 @@ class ServerOrchestrator {
     }
   }
 
+  /// 异步清理端口，不阻塞主流程
+  static void fireAndForgetKillPort() {
+    killPort().timeout(const Duration(seconds: 2), onTimeout: () {
+      LoggerService.w('[Server] Port cleanup task reached timeout, moving on.');
+    });
+  }
+
   static Future<void> killPort() async {
-    LoggerService.i('[Server] Checking if port 10086 is occupied...');
     try {
       if (Platform.isWindows) {
-        // Direct execution of netstat to avoid cmd shell issues
-        final result = await Process.run('netstat', ['-ano']).timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => ProcessResult(0, 0, '', 'Timeout'),
-        );
-        
-        final output = result.stdout.toString();
-        if (output.isNotEmpty) {
-          final lines = output.split('\n');
-          for (var line in lines) {
-            if (line.contains(':10086')) {
-              final parts = line.trim().split(RegExp(r'\s+'));
-              if (parts.isNotEmpty) {
-                final pid = parts.last;
-                if (int.tryParse(pid) != null && pid != '0') {
-                  LoggerService.i('[Server] Found process $pid on port 10086. Killing...');
-                  await Process.run('taskkill', ['/F', '/PID', pid]);
-                }
-              }
-            }
-          }
-        }
+        // 直接执行 taskkill 尝试杀死可能残留的服务器进程名，比查端口更高效稳定
+        await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T']);
       } else {
-        final result = await Process.run('lsof', ['-ti', ':10086']).timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => ProcessResult(0, 0, '', 'Timeout'),
-        );
+        final result = await Process.run('lsof', ['-ti', ':10086']).timeout(const Duration(seconds: 1));
         final pid = result.stdout.toString().trim();
         if (pid.isNotEmpty) {
           await Process.run('kill', ['-9', pid]);
-          LoggerService.i('[Server] Killed Unix process $pid');
         }
       }
     } catch (e) {
-      LoggerService.e('[Server] Error during port cleanup', e);
+      // 忽略清理阶段的所有错误
     }
   }
 
   static Future<bool> start() async {
     if (_serverProcess != null) return true;
 
-    LoggerService.i('[Server] Pre-start cleanup...');
-    await killPort();
+    // 如果服务已经在运行（可能是之前没退干净），直接复用，不重启
+    if (await isServerRunning()) {
+      LoggerService.i('[Server] Existing server detected, reusing.');
+      return true;
+    }
 
-    String? serverDir;
-    final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
-    
+    LoggerService.i('[Server] Starting pre-start cleanup (non-blocking)...');
+    // 使用非阻塞方式清理
+    fireAndForgetKillPort();
+
     try {
+      final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
+      
       if (kDebugMode) {
-        LoggerService.i('[Server] Debug mode detected. Finding server directory...');
+        // Debug 模式保持原样
+        String? serverDir;
         Directory anchorDir = Directory(p.dirname(Platform.resolvedExecutable));
-        
         for (int i = 0; i < 10; i++) {
           final potential = p.join(anchorDir.path, 'server');
           if (Directory(potential).existsSync() && File(p.join(potential, 'package.json')).existsSync()) {
             serverDir = potential;
             break;
           }
-          final rootPotential = p.join(Directory.current.path, 'server');
-          if (Directory(rootPotential).existsSync() && File(p.join(rootPotential, 'package.json')).existsSync()) {
-            serverDir = rootPotential;
-            break;
-          }
           anchorDir = anchorDir.parent;
-          if (anchorDir.path == anchorDir.parent.path) break;
         }
         
         if (serverDir != null) {
-          LoggerService.i('[Server] Found server directory at: $serverDir');
-          final nodeModules = Directory(p.join(serverDir, 'node_modules'));
           final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
-
-          if (!nodeModules.existsSync()) {
-            LoggerService.i('[Server] node_modules not found. Running npm install...');
-            final installResult = await Process.run(
-              npmCmd, 
-              ['install'], 
-              workingDirectory: serverDir
-            );
-            if (installResult.exitCode != 0) {
-              LoggerService.e('[Server] npm install failed: ${installResult.stderr}');
-              return false;
-            }
-          }
-
-          _serverProcess = await Process.start(
-            npmCmd,
-            ['start', '--', ...args],
-            workingDirectory: serverDir,
-          );
-        } else {
-          LoggerService.e('[Server] ERROR: Could not find server directory!');
-          return false;
+          _serverProcess = await Process.start(npmCmd, ['start', '--', ...args], workingDirectory: serverDir);
         }
       } else {
+        // 生产模式
         final executableName = Platform.isWindows ? 'app_win.exe' : (Platform.isMacOS ? 'app_macos' : 'app_linux');
         final appDir = p.dirname(Platform.resolvedExecutable);
         String serverPath = Platform.isMacOS 
@@ -127,44 +87,32 @@ class ServerOrchestrator {
             : p.join(appDir, 'server', executableName);
 
         if (File(serverPath).existsSync()) {
-          LoggerService.i('[Server] Starting production executable: $serverPath');
+          LoggerService.i('[Server] Launching binary: $serverPath');
           _serverProcess = await Process.start(serverPath, args);
-        } else {
-          LoggerService.e('[Server] ERROR: Server binary not found at $serverPath');
         }
       }
 
       if (_serverProcess == null) return false;
 
-      _serverProcess?.stdout.listen((data) {
-        final msg = utf8.decode(data, allowMalformed: true).trim();
-        if (msg.isNotEmpty) LoggerService.d('[Server] $msg');
-      });
-      _serverProcess?.stderr.listen((data) {
-        final msg = utf8.decode(data, allowMalformed: true).trim();
-        if (msg.isNotEmpty) LoggerService.e('[Server] $msg');
-      });
+      // 监听日志输出（使用 malformed 容错）
+      _serverProcess?.stdout.listen((data) => LoggerService.d('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
+      _serverProcess?.stderr.listen((data) => LoggerService.e('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
 
-      LoggerService.i('[Server] Waiting for health check...');
+      // 健康检查
       for (int i = 0; i < 20; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await isServerRunning()) return true;
       }
     } catch (e) {
-      LoggerService.e('[Server] Unexpected crash during startup', e);
-      return false;
+      LoggerService.e('[Server] Startup critical error', e);
     }
 
-    LoggerService.e('[Server] ERROR: Timeout waiting for server.');
     return false;
   }
 
   static void stop() {
-    if (_serverProcess != null) {
-      LoggerService.i('[Server] Stopping server process...');
-      _serverProcess?.kill();
-      _serverProcess = null;
-    }
+    _serverProcess?.kill();
+    _serverProcess = null;
     killPort();
   }
 }

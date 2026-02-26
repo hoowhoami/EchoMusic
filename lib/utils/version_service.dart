@@ -25,12 +25,12 @@ class VersionService {
       
       if (response.statusCode == 200) {
         final data = response.data;
-        final latestVersion = data['tag_name'].toString().replaceAll('v', '');
+        final latestVersion = data['tag_name'].toString().replaceAll('v', '').trim();
         final releaseNotes = data['body'] ?? '暂无更新说明';
         final htmlUrl = data['html_url'] ?? 'https://github.com/hoowhoami/EchoMusic/releases';
         
         final packageInfo = await PackageInfo.fromPlatform();
-        final currentVersion = packageInfo.version;
+        final currentVersion = packageInfo.version.trim();
 
         return UpdateInfo(
           version: latestVersion,
@@ -40,16 +40,20 @@ class VersionService {
         );
       }
     } catch (e) {
-      print('检查更新失败: $e');
+      // 检查更新失败时不应干扰主流程
     }
     return null;
   }
 
   static bool _isVersionNewer(String current, String latest) {
+    if (current == latest) return false;
+    
     try {
-      // Remove any build numbers or suffixes like +4 or -beta
+      // 清洗版本号，处理 1.0.3+4 或 1.0.3-beta 格式
       final currentClean = current.split('+')[0].split('-')[0].trim();
       final latestClean = latest.split('+')[0].split('-')[0].trim();
+
+      if (currentClean == latestClean) return false;
 
       List<int> currentParts = currentClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
       List<int> latestParts = latestClean.split('.').map((e) => int.tryParse(e) ?? 0).toList();
@@ -59,8 +63,8 @@ class VersionService {
         if (latestParts[i] > currentPart) return true;
         if (latestParts[i] < currentPart) return false;
       }
-    } catch (e) {
-      print('版本对比出错: $e');
+    } catch (_) {
+      // 容错处理
     }
     return false;
   }
