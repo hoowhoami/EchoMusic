@@ -342,7 +342,11 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
               if (success) {
                 CustomToast.success(context, '升级成功');
               } else {
-                CustomToast.error(context, '请先领取畅听会员');
+                if (!provider.isTvipClaimedToday) {
+                  CustomToast.error(context, '请先领取畅听会员');
+                } else {
+                  CustomToast.error(context, '升级失败或今日已升级');
+                }
               }
             }
           },

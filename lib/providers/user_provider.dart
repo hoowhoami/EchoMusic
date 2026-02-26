@@ -223,8 +223,16 @@ class UserProvider with ChangeNotifier {
     final List list = record['list'] ?? [];
     
     _isTvipClaimedToday = list.any((item) => item['day'] == today);
-    // Note: The API doesn't seem to have a direct way to check SVIP upgrade for today other than attempting it or checking the privilege level
-    // In Legacy it uses a local state saved in the store, but here we'll just check the record for TVIP.
+    
+    // Check if user is currently an SVIP
+    final vipInfo = _user?.extendsInfo?['vip'] ?? {};
+    final busiVip = vipInfo['busi_vip'] as List? ?? [];
+    final hasActiveSvip = busiVip.any((v) => v['product_type'] == 'svip' && v['is_vip'] == 1);
+    
+    if (hasActiveSvip) {
+      _isSvipClaimedToday = true;
+    }
+
     notifyListeners();
   }
 
@@ -362,6 +370,14 @@ class UserProvider with ChangeNotifier {
           'vip': vip,
         },
       );
+      
+      // Update SVIP claimed status based on actual VIP info
+      final busiVip = vip['busi_vip'] as List? ?? [];
+      final hasActiveSvip = busiVip.any((v) => v['product_type'] == 'svip' && v['is_vip'] == 1);
+      if (hasActiveSvip) {
+        _isSvipClaimedToday = true;
+      }
+      
       await _persistenceProvider?.setUserInfo(_user!.toJson());
       notifyListeners();
     }
