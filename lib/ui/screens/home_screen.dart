@@ -253,11 +253,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           selectedPlaylistId: _selectedPlaylist?.id,
                           onDestinationSelected: _navigateTo,
                           onPushPlaylist: (playlist) {
-                             _pushRoute(
-                               PlaylistDetailView(playlist: playlist), 
-                               name: 'playlist_detail', 
-                               arguments: playlist
-                             );
+                             if (playlist.source == 2) {
+                               _pushRoute(
+                                 AlbumDetailView(
+                                   albumId: playlist.originalId, 
+                                   albumName: playlist.name,
+                                 ),
+                                 name: 'album_detail',
+                                 arguments: {'id': playlist.originalId, 'name': playlist.name}
+                               );
+                             } else {
+                               _pushRoute(
+                                 PlaylistDetailView(playlist: playlist), 
+                                 name: 'playlist_detail', 
+                                 arguments: playlist
+                               );
+                             }
                           },
                         ),
                       ),

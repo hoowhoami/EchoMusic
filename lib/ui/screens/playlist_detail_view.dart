@@ -323,11 +323,24 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                     }
                                   }
                                 },
-                                icon: Icon(isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, size: 16),
-                                label: const Text('收藏', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                icon: Icon(
+                                  isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
+                                  size: 16,
+                                  color: isFavorited ? Colors.red : null,
+                                ),
+                                label: Text(
+                                  '收藏', 
+                                  style: TextStyle(
+                                    fontSize: 13, 
+                                    fontWeight: FontWeight.w700,
+                                    color: isFavorited ? Colors.red : null,
+                                  )
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                                  side: BorderSide(
+                                    color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
+                                  ),
                                   padding: const EdgeInsets.symmetric(horizontal: 16),
                                   minimumSize: const Size(0, 40),
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,

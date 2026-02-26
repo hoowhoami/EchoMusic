@@ -118,7 +118,8 @@ class Sidebar extends StatelessWidget {
     final theme = Theme.of(context);
     final isAuthenticated = context.select<UserProvider, bool>((p) => p.isAuthenticated);
     final createdPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.createdPlaylists);
-    final favoritedPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedPlaylists);
+    final favoritedPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedOnlyPlaylists);
+    final favoritedAlbums = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedAlbums);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,6 +128,11 @@ class Sidebar extends StatelessWidget {
         if (isAuthenticated) ...[
           for (var p in createdPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
           for (var p in favoritedPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
+          if (favoritedAlbums.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _buildGroupTitle(context, '我的专辑'),
+            for (var a in favoritedAlbums) _buildPlaylistItem(context, a, Icons.favorite_rounded, imageUrl: a['pic']),
+          ],
         ] else
           Padding(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8), child: Text('登录同步云端歌单', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontSize: 12, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic))),
       ],

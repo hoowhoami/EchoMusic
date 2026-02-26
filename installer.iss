@@ -1,7 +1,7 @@
 [Setup]
 AppId={{ECHO-MUSIC-DESKTOP-APP}}
 AppName=EchoMusic
-AppVersion=1.0.3
+AppVersion=1.0.4
 AppPublisher=EchoMusic Team
 DefaultDirName={autopf}\EchoMusic
 DefaultGroupName=EchoMusic

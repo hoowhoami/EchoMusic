@@ -21,6 +21,7 @@ class Playlist {
   final String? publishDate;
   final int? createTime;
   final int? updateTime;
+  final int source; // 1: playlist, 2: album
 
   int get originalId => (listCreateListid != null && listCreateListid != 0)
       ? listCreateListid!
@@ -47,6 +48,7 @@ class Playlist {
     this.publishDate,
     this.createTime,
     this.updateTime,
+    this.source = 1,
   });
 
   static int _parseId(dynamic value) {
@@ -98,6 +100,7 @@ class Playlist {
       count: _parseId(json['song_count'] ?? json['songcount'] ?? json['count']),
       publishDate: (json['publish_time'] ?? '').toString().split(' ')[0],
       isPrivate: false,
+      source: _parseId(json['source'] ?? 1),
     );
   }
 
@@ -122,6 +125,7 @@ class Playlist {
       publishDate: (json['publishtime'] ?? json['publish_time'])?.toString().split(' ')[0],
       createTime: json['create_time'] ?? json['addtime'],
       updateTime: json['update_time'],
+      source: _parseId(json['source'] ?? 1),
     );
   }
 
@@ -145,6 +149,7 @@ class Playlist {
       publishDate: (json['publishtime'] ?? json['publish_time'])?.toString().split(' ')[0],
       createTime: json['create_time'] ?? json['addtime'],
       updateTime: json['update_time'],
+      source: _parseId(json['source'] ?? 1),
     );
   }
 
@@ -163,6 +168,7 @@ class Playlist {
       count: 0,
       isPrivate: false,
       heat: 0,
+      source: _parseId(json['source'] ?? 1),
     );
   }
 }

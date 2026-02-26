@@ -210,7 +210,11 @@ class Song {
       return int.tryParse(value.toString()) ?? 0;
     }
 
-    String cover = albumInfo['cover'] ?? transParam['union_cover'] ?? '';
+    String cover = json['pic'] ?? 
+                  json['img'] ?? 
+                  audioInfo['img'] ?? 
+                  albumInfo['cover'] ?? 
+                  transParam['union_cover'] ?? '';
     cover = cover.replaceAll('{size}', '400');
 
     int duration = parseInt(audioInfo['duration'] ?? 0) ~/ 1000;

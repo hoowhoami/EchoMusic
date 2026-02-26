@@ -53,6 +53,12 @@ class UserProvider with ChangeNotifier {
   List<Map<String, dynamic>> get favoritedPlaylists =>
       _userPlaylists.where((p) => p['list_create_userid'] != _user?.userid).toList();
 
+  List<Map<String, dynamic>> get favoritedOnlyPlaylists =>
+      favoritedPlaylists.where((p) => p['source'] != 2).toList();
+
+  List<Map<String, dynamic>> get favoritedAlbums =>
+      favoritedPlaylists.where((p) => p['source'] == 2).toList();
+
   void setPersistenceProvider(PersistenceProvider provider) {
     _persistenceProvider = provider;
     if (provider.userInfo != null) {
@@ -437,6 +443,20 @@ class UserProvider with ChangeNotifier {
     return success;
   }
 
+  Future<bool> favoriteAlbum(int albumId, String name, {int? singerId}) async {
+    final success = await MusicApi.copyPlaylist(
+      albumId, 
+      name, 
+      listCreateUserid: singerId,
+      listCreateListid: albumId,
+      source: 2, // Source 2 for albums
+    );
+    if (success) {
+      await fetchUserPlaylists();
+    }
+    return success;
+  }
+
   Future<bool> unfavoritePlaylist(int playlistId, {String? globalId}) async {
     // Find the local listid for this playlist in the user's collection
     final id = playlistId.toString();
@@ -465,6 +485,10 @@ class UserProvider with ChangeNotifier {
       await fetchUserPlaylists();
     }
     return success;
+  }
+
+  Future<bool> unfavoriteAlbum(int albumId) async {
+    return unfavoritePlaylist(albumId);
   }
 
   Future<bool> addSongToPlaylist(dynamic listId, Song song) async {

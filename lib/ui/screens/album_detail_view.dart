@@ -5,12 +5,13 @@ import '../../api/music_api.dart';
 import '../../models/album.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/refresh_provider.dart';
-import '../widgets/song_card.dart';
-import '../widgets/batch_action_bar.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
+import '../widgets/custom_toast.dart';
+import '../widgets/song_list_scaffold.dart';
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
@@ -22,9 +23,9 @@ class AlbumDetailView extends StatefulWidget {
 }
 
 class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
-  late Future<Album?> _detailFuture;
-  late Future<List<Song>> _songsFuture;
-  bool _isIntroExpanded = false;
+  Album? _album;
+  List<Song>? _songs;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -34,369 +35,298 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
 
   @override
   void onRefresh() {
-    setState(() {
-      _loadData();
-    });
+    _loadData();
   }
 
-  void _loadData() {
-    _detailFuture = MusicApi.getAlbumDetail(widget.albumId).then((json) => json != null ? Album.fromDetailJson(json) : null);
-    _songsFuture = MusicApi.getAlbumSongs(widget.albumId);
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    if (_songs == null) {
+      setState(() => _isLoading = true);
+    }
+
+    final results = await Future.wait([
+      MusicApi.getAlbumDetail(widget.albumId),
+      MusicApi.getAlbumSongs(widget.albumId),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        final albumJson = results[0] as Map<String, dynamic>?;
+        if (albumJson != null) {
+          _album = Album.fromDetailJson(albumJson);
+        }
+        _songs = results[1] as List<Song>?;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final selectionProvider = context.watch<SelectionProvider>();
+    final userProvider = context.watch<UserProvider>();
     final theme = Theme.of(context);
+    final isFavorited = userProvider.isPlaylistFavorited(widget.albumId);
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Stack(
-        children: [
-          CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverAppBar(
-                backgroundColor: theme.scaffoldBackgroundColor,
-                surfaceTintColor: Colors.transparent,
-                expandedHeight: 280,
-                pinned: true,
-                automaticallyImplyLeading: false,
-                elevation: 0,
-                flexibleSpace: FlexibleSpaceBar(
-                  titlePadding: EdgeInsets.zero,
-                  centerTitle: false,
-                  expandedTitleScale: 1.0,
-                  title: FutureBuilder<Album?>(
-                    future: _detailFuture,
-                    builder: (context, snapshot) {
-                      final album = snapshot.data;
-                      return LayoutBuilder(
-                        builder: (context, constraints) {
-                          final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
-                          return AnimatedOpacity(
-                            duration: const Duration(milliseconds: 200),
-                            opacity: isCollapsed ? 1.0 : 0.0,
-                            child: Container(
-                              height: kToolbarHeight,
-                              padding: const EdgeInsets.only(left: 20),
-                              child: Row(
-                                children: [
-                                  if (album != null)
-                                    CoverImage(
-                                      url: album.pic,
-                                      width: 32,
-                                      height: 32,
-                                      borderRadius: 6,
-                                      showShadow: false,
-                                    ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      widget.albumName,
-                                      style: TextStyle(
-                                        color: theme.colorScheme.onSurface,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
+    return SongListScaffold(
+      songs: _songs ?? [],
+      isLoading: _isLoading,
+      sourceId: widget.albumId,
+      headers: [
+        SliverAppBar(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          surfaceTintColor: Colors.transparent,
+          expandedHeight: 280,
+          pinned: true,
+          automaticallyImplyLeading: false,
+          elevation: 0,
+          flexibleSpace: FlexibleSpaceBar(
+            titlePadding: EdgeInsets.zero,
+            centerTitle: false,
+            expandedTitleScale: 1.0,
+            title: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                return AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: isCollapsed ? 1.0 : 0.0,
+                  child: Container(
+                    height: kToolbarHeight,
+                    padding: const EdgeInsets.only(left: 20),
+                    child: Row(
+                      children: [
+                        if (_album != null)
+                          CoverImage(
+                            url: _album!.pic,
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            showShadow: false,
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.albumName,
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
                             ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                  background: FutureBuilder<Album?>(
-                    future: _detailFuture,
-                    builder: (context, snapshot) {
-                      final album = snapshot.data;
-
-                      return Container(
-                        padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            CoverImage(
-                              url: album?.pic ?? '',
-                              width: 150,
-                              height: 150,
-                              borderRadius: 16,
-                            ),
-                            const SizedBox(width: 32),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'ALBUM',
-                                    style: TextStyle(
-                                      color: theme.colorScheme.primary,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 2.0,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    widget.albumName,
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontSize: 26,
-                                      fontWeight: FontWeight.w900,
-                                      height: 1.1,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  if (album != null)
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '${album.singerName} • ${album.publishTime}',
-                                          style: TextStyle(
-                                            color: theme.colorScheme.onSurfaceVariant, 
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            _buildInfoSmall(context, Icons.favorite_rounded, _formatNumber(album.heat)),
-                                            if (album.language.isNotEmpty || album.type.isNotEmpty) ...[
-                                              const SizedBox(width: 12),
-                                              if (album.language.isNotEmpty) ...[
-                                                _buildTag(context, album.language),
-                                                const SizedBox(width: 8),
-                                              ],
-                                              if (album.type.isNotEmpty) ...[
-                                                _buildTag(context, album.type),
-                                                const SizedBox(width: 8),
-                                              ],
-                                            ],
-                                          ],
-                                        ),
-                                        if (album.company.isNotEmpty) ...[
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            '发行公司: ${album.company}',
-                                            style: TextStyle(
-                                              color: theme.colorScheme.onSurfaceVariant.withAlpha(150),
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  const SizedBox(height: 16),
-                                  Row(
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: () async {
-                                          final songs = await _songsFuture;
-                                          if (songs.isNotEmpty) {
-                                            context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                                          }
-                                        },
-                                        icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                                        label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                                        style: OutlinedButton.styleFrom(
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          minimumSize: const Size(0, 40),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      OutlinedButton.icon(
-                                        onPressed: () {},
-                                        icon: const Icon(CupertinoIcons.heart, size: 16),
-                                        label: const Text('收藏', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                        style: OutlinedButton.styleFrom(
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          side: BorderSide(color: theme.colorScheme.outlineVariant),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          minimumSize: const Size(0, 40),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                actions: [
-                  FutureBuilder<List<Song>>(
-                    future: _songsFuture,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) return const SizedBox.shrink();
-                      if (selectionProvider.isSelectionMode) return const SizedBox.shrink();
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 10),
-                        child: InkWell(
-                          onTap: () {
-                            selectionProvider.setSongList(snapshot.data!, playlistId: widget.albumId);
-                            selectionProvider.enterSelectionMode();
-                          },
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onSurface.withAlpha(15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  CupertinoIcons.checkmark_circle,
-                                  size: 16,
-                                  color: theme.colorScheme.onSurface.withAlpha(200),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '批量操作',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: theme.colorScheme.onSurface.withAlpha(200),
-                                  ),
-                                ),
-                              ],
-                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 20),
+                );
+              },
+            ),
+            background: Container(
+              padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  CoverImage(
+                    url: _album?.pic ?? '',
+                    width: 150,
+                    height: 150,
+                    borderRadius: 16,
+                  ),
+                  const SizedBox(width: 32),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'ALBUM',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.albumName,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            height: 1.1,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 10),
+                        if (_album != null)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${_album!.singerName} • ${_album!.publishTime}',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant, 
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  _buildInfoSmall(context, Icons.favorite_rounded, _formatNumber(_album!.heat)),
+                                  if (_album!.language.isNotEmpty || _album!.type.isNotEmpty) ...[
+                                    const SizedBox(width: 12),
+                                    if (_album!.language.isNotEmpty) ...[
+                                      _buildTag(context, _album!.language),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    if (_album!.type.isNotEmpty) ...[
+                                      _buildTag(context, _album!.type),
+                                      const SizedBox(width: 8),
+                                    ],
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final songs = _songs ?? [];
+                                if (songs.isNotEmpty) {
+                                  context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                }
+                              },
+                              icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                              label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                              style: OutlinedButton.styleFrom(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                minimumSize: const Size(0, 40),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                                                        OutlinedButton.icon(
+                                                          onPressed: () async {
+                                                            if (!userProvider.isAuthenticated) {
+                                                              CustomToast.error(context, '请先登录');
+                                                              return;
+                                                            }
+                                                            
+                                                            if (_album == null) return;
+                            
+                                                            bool success;
+                                                            if (isFavorited) {
+                                                              success = await userProvider.unfavoriteAlbum(widget.albumId);
+                                                              if (context.mounted && success) {
+                                                                CustomToast.success(context, '已取消收藏');
+                                                              }
+                                                            } else {
+                                                              success = await userProvider.favoriteAlbum(
+                                                                widget.albumId, 
+                                                                widget.albumName,
+                                                                singerId: _album!.singerId,
+                                                              );
+                                                              if (context.mounted && success) {
+                                                                CustomToast.success(context, '已收藏专辑');
+                                                              }
+                                                            }
+                                                          },
+                                                          icon: Icon(
+                                                            isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
+                                                            size: 16,
+                                                            color: isFavorited ? Colors.red : null,
+                                                          ),
+                                                          label: Text(
+                                                            '收藏', 
+                                                            style: TextStyle(
+                                                              fontSize: 13, 
+                                                              fontWeight: FontWeight.w700,
+                                                              color: isFavorited ? Colors.red : null,
+                                                            )
+                                                          ),
+                                                          style: OutlinedButton.styleFrom(
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                            side: BorderSide(
+                                                              color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
+                                                            ),
+                                                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                            minimumSize: const Size(0, 40),
+                                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                          ),
+                                                        ),                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              SliverToBoxAdapter(
-                child: FutureBuilder<Album?>(
-                  future: _detailFuture,
-                  builder: (context, snapshot) {
-                    final album = snapshot.data;
-                    final String? intro = album?.intro;
-
-                    if (intro == null || intro.isEmpty) return const SizedBox.shrink();
-
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '专辑介绍',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            intro,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              height: 1.6,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if (intro.length > 100)
-                            InkWell(
-                              onTap: () {
-                                CustomDialog.show(
-                                  context,
-                                  title: '专辑介绍',
-                                  content: intro,
-                                  confirmText: '确定',
-                                  showCancel: false,
-                                  width: 600,
-                                );
-                              },
-                              hoverColor: Colors.transparent,
-                              splashColor: Colors.transparent,
-                              highlightColor: Colors.transparent,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Text(
-                                  '查看详情',
-                                  style: TextStyle(
-                                    color: theme.colorScheme.primary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              FutureBuilder<List<Song>>(
-                future: _songsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const SliverToBoxAdapter(
-                      child: Center(child: Padding(
-                        padding: EdgeInsets.all(40.0),
-                        child: CupertinoActivityIndicator(),
-                      )),
-                    );
-                  }
-                  final songs = snapshot.data ?? [];
-                  return SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final song = songs[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: SongCard(
-                            song: song,
-                            playlist: songs,
-                            showMore: true,
-                          ),
-                        );
-                      },
-                      childCount: songs.length,
-                    ),
-                  );
-                },
-              ),
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: selectionProvider.isSelectionMode ? 80 : 20,
-                ),
-              ),
-            ],
+            ),
           ),
-          const BatchActionBar(),
-        ],
-      ),
+        ),
+        SliverToBoxAdapter(
+          child: _album?.intro != null && _album!.intro.isNotEmpty ? Padding(
+            padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '专辑介绍',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _album!.intro,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.6,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (_album!.intro.length > 100)
+                  InkWell(
+                    onTap: () {
+                      CustomDialog.show(
+                        context,
+                        title: '专辑介绍',
+                        content: _album!.intro,
+                        confirmText: '确定',
+                        showCancel: false,
+                        width: 600,
+                      );
+                    },
+                    hoverColor: Colors.transparent,
+                    splashColor: Colors.transparent,
+                    highlightColor: Colors.transparent,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        '查看详情',
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ) : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 
