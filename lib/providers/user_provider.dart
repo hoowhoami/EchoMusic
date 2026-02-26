@@ -251,7 +251,7 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> fetchUserPlaylists() async {
-    final response = await MusicApi.getUserPlaylistsRaw();
+    final response = await MusicApi.getUserPlaylistsRaw(pagesize: 100);
     if (response['status'] == 1) {
       List data = response['info'] ?? response['data']?['info'] ?? [];
       _userPlaylists = data.cast<Map<String, dynamic>>();
@@ -309,11 +309,32 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> fetchUserCloud() async {
-    final res = await MusicApi.getUserCloud();
-    _userCloud = res['songs'] ?? [];
-    _cloudCount = res['count'] ?? 0;
-    _cloudCapacity = res['capacity'] ?? 0;
-    _cloudAvailable = res['available'] ?? 0;
+    List<Song> allSongs = [];
+    int page = 1;
+    const int pageSize = 100; 
+    
+    try {
+      // First fetch to get count and first batch
+      final res = await MusicApi.getUserCloud(page: page, pagesize: pageSize);
+      allSongs.addAll(res['songs'] ?? []);
+      _cloudCount = res['count'] ?? 0;
+      _cloudCapacity = res['capacity'] ?? 0;
+      _cloudAvailable = res['available'] ?? 0;
+      
+      // Fetch remaining pages if any
+      while (allSongs.length < _cloudCount) {
+        page++;
+        final nextRes = await MusicApi.getUserCloud(page: page, pagesize: pageSize);
+        final List<Song> nextSongs = nextRes['songs'] ?? [];
+        if (nextSongs.isEmpty) break;
+        allSongs.addAll(nextSongs);
+      }
+      
+      _userCloud = allSongs;
+    } catch (e) {
+      debugPrint('Error fetching cloud songs: $e');
+    }
+    
     notifyListeners();
   }
 
