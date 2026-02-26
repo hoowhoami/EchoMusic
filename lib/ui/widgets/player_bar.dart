@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -626,7 +625,7 @@ void _showQueueDrawer(BuildContext context) {
     context: context, barrierLabel: 'Queue', barrierDismissible: true,
     barrierColor: theme.colorScheme.scrim.withAlpha(20),
     transitionDuration: const Duration(milliseconds: 300),
-    pageBuilder: (context, _, __) => Align(
+    pageBuilder: (context, _, _) => Align(
       alignment: Alignment.centerRight,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 96),

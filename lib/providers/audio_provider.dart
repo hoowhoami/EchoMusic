@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_service/audio_service.dart';
@@ -394,9 +393,13 @@ class AudioProvider with ChangeNotifier {
   }
 
   void togglePlayMode() {
-    if (_playMode == 'repeat') setPlayMode('repeat-once');
-    else if (_playMode == 'repeat-once') setPlayMode('shuffle');
-    else setPlayMode('repeat');
+    if (_playMode == 'repeat') {
+      setPlayMode('repeat-once');
+    } else if (_playMode == 'repeat-once') {
+      setPlayMode('shuffle');
+    } else {
+      setPlayMode('repeat');
+    }
   }
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {

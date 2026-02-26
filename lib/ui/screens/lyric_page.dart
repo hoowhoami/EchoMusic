@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import 'dart:ui';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
@@ -202,7 +201,9 @@ class _LyricPageState extends State<LyricPage> {
                     String? secondary;
                     if (lyricProvider.showTranslation) {
                       secondary = line.translated;
-                    } else if (lyricProvider.showRomanization) secondary = line.romanized;
+                    } else if (lyricProvider.showRomanization) {
+                      secondary = line.romanized;
+                    }
                     return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.player.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
                   },
                 ),

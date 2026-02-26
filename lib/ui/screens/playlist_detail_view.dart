@@ -25,7 +25,6 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   List<Song>? _songs;
   Playlist? _detailedPlaylist;
   bool _isLoading = true;
-  bool _isIntroExpanded = false;
   late UserProvider _userProvider;
 
   @override
@@ -377,11 +376,6 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
         ),
       ],
     );
-  }
-
-  String _formatNumber(int number) {
-    if (number < 10000) return number.toString();
-    return '${(number / 10000).toStringAsFixed(1)}万';
   }
 
   Widget _buildInfoChip(BuildContext context, IconData icon, String label) {

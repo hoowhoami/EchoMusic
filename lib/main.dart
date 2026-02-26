@@ -185,7 +185,7 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)..badCertificateCallback = (_, __, ___) => true;
+    return super.createHttpClient(context)..badCertificateCallback = (_, _, _) => true;
   }
 }
 

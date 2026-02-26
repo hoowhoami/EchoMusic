@@ -58,7 +58,7 @@ class BatchSelectionScaffold extends StatelessWidget {
             leading!,
             const SizedBox(width: 12),
           ],
-          if (title != null && title!.isNotEmpty)
+          if (title?.isNotEmpty ?? false)
             Text(
               title!,
               style: TextStyle(

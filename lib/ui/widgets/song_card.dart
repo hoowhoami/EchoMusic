@@ -482,7 +482,7 @@ class _PlayingCoverOverlayState extends State<_PlayingCoverOverlay> with SingleT
           width: widget.size,
           height: widget.size,
           decoration: BoxDecoration(
-            color: theme.colorScheme.shadow.withOpacity(widget.isPlaying ? _opacityAnimation.value : 0.4),
+            color: theme.colorScheme.shadow.withValues(alpha: widget.isPlaying ? _opacityAnimation.value : 0.4),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Center(

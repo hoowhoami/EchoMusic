@@ -25,7 +25,6 @@ class ArtistDetailView extends StatefulWidget {
 class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
   late Future<Artist?> _detailFuture;
   late Future<List<Song>> _songsFuture;
-  bool _isBioExpanded = false;
 
   @override
   void initState() {

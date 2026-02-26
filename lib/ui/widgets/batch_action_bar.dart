@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
@@ -86,9 +85,9 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
           decoration: BoxDecoration(
             // FORCE OPAQUE
             color: Color.fromARGB(255, 
-              (modernTheme.batchBarColor ?? theme.colorScheme.surface).red,
-              (modernTheme.batchBarColor ?? theme.colorScheme.surface).green,
-              (modernTheme.batchBarColor ?? theme.colorScheme.surface).blue,
+              ((modernTheme.batchBarColor ?? theme.colorScheme.surface).r * 255).round(),
+              ((modernTheme.batchBarColor ?? theme.colorScheme.surface).g * 255).round(),
+              ((modernTheme.batchBarColor ?? theme.colorScheme.surface).b * 255).round(),
             ),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
@@ -263,9 +262,9 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                   decoration: BoxDecoration(
                     // FORCE OPAQUE
                     color: Color.fromARGB(255, 
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).red,
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).green,
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).blue,
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).r * 255).round(),
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).g * 255).round(),
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).b * 255).round(),
                     ),
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(
@@ -574,9 +573,9 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                   decoration: BoxDecoration(
                     // FORCE OPAQUE
                     color: Color.fromARGB(255, 
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).red,
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).green,
-                      (modernTheme.modalColor ?? theme.colorScheme.surface).blue,
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).r * 255).round(),
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).g * 255).round(),
+                      ((modernTheme.modalColor ?? theme.colorScheme.surface).b * 255).round(),
                     ),
                     borderRadius: BorderRadius.circular(28),
                     border: Border.all(

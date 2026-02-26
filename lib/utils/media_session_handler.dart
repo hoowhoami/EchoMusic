@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:ui';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import '../models/song.dart';
-import '../utils/logger.dart';
 
 /// A Media Session Handler implementation using the audio_service package.
 /// This provides a unified way to interface with system media controls (SMTC, MPRIS, NowPlaying)
@@ -34,7 +32,7 @@ class MediaSessionHandler extends BaseAudioHandler with QueueHandler, SeekHandle
       ),
     );
     
-    _instance = handler as MediaSessionHandler;
+    _instance = handler;
     return _instance!;
   }
 
