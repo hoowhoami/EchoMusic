@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_service/audio_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
 import '../utils/constants.dart' as app_const;
 import '../utils/logger.dart';
+import '../utils/media_session_handler.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
@@ -73,6 +75,17 @@ class AudioProvider with ChangeNotifier {
   AudioProvider() {
     _player = AudioPlayer();
     _initListeners();
+    _initMediaSession();
+  }
+
+  Future<void> _initMediaSession() async {
+    await MediaSessionHandler.init(
+      onPlay: () => togglePlay(),
+      onPause: () => togglePlay(),
+      onNext: () => next(),
+      onPrevious: () => previous(),
+      onSeek: (pos) => _player.seek(pos),
+    );
   }
 
   void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
@@ -144,6 +157,9 @@ class AudioProvider with ChangeNotifier {
         _handlePlaybackEnded();
       }
       _safeNotify();
+      
+      // Update Media Session State
+      MediaSessionHandler.updatePlaybackState(_player.playing, _player.position);
     }));
 
     _subscriptions.add(_player.positionStream.listen((pos) {
@@ -167,6 +183,11 @@ class AudioProvider with ChangeNotifier {
         if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
           _lastSavedSecond = sec;
           _savePlaybackState();
+        }
+
+        // Periodically sync position to Media Session
+        if (sec % 1 == 0 && sec != _lastSavedSecond) {
+           MediaSessionHandler.updatePlaybackState(_player.playing, pos);
         }
       } catch (_) {}
     }));
@@ -280,6 +301,10 @@ class AudioProvider with ChangeNotifier {
         );
 
         _player.setSpeed(_playbackRate);
+        
+        // Update Media Session Metadata
+        MediaSessionHandler.updateMetadata(_currentSong, Duration(seconds: _currentSong!.duration.toInt()));
+        
         _fetchClimax(_currentSong!);
       }
     } catch (e) {
@@ -424,6 +449,9 @@ class AudioProvider with ChangeNotifier {
           ),
         ),
       );
+      
+      // Update Media Session Metadata
+      MediaSessionHandler.updateMetadata(song, Duration(seconds: song.duration.toInt()));
       
       _player.setSpeed(_playbackRate);
       _player.play();
