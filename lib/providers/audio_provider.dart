@@ -75,36 +75,56 @@ class AudioProvider with ChangeNotifier {
     _initListeners();
   }
 
-  void _fadeVolume(double target, {int? durationMs, VoidCallback? onComplete}) {
+  void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
     _fadeTimer?.cancel();
-    if (_persistenceProvider?.settings['volumeFade'] == false) {
+    final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
+    
+    if (!isFadeEnabled) {
       _player.setVolume(target);
       onComplete?.call();
       return;
     }
 
-    final startVolume = _player.volume;
-    final duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 500;
-    if (duration <= 0) {
+    final double startVolume = from ?? _player.volume;
+    final int duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
+    
+    if (duration <= 0 || (target - startVolume).abs() < 0.01) {
       _player.setVolume(target);
       onComplete?.call();
       return;
     }
 
     _isInternalChanging = true;
-    const steps = 20;
-    final stepDuration = duration ~/ steps;
-    final volumeStep = (target - startVolume) / steps; int currentStep = 0;
+    final int stepMs = 20; 
+    final int totalSteps = (duration / stepMs).round();
+    final double volumeStep = (target - startVolume) / totalSteps;
+    int currentStep = 0;
 
-    _fadeTimer = Timer.periodic(Duration(milliseconds: stepDuration), (timer) {
+    LoggerService.d('[AudioProvider] Fade started: $startVolume -> $target (${duration}ms)');
+
+    _fadeTimer = Timer.periodic(Duration(milliseconds: stepMs), (timer) {
+      if (_isDisposed) {
+        timer.cancel();
+        return;
+      }
+
       currentStep++;
-      final newVolume = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
+      final double newVolume = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
       _player.setVolume(newVolume);
-      if (currentStep >= steps) {
+      
+      if (currentStep >= totalSteps) {
         timer.cancel();
         _fadeTimer = null;
         _player.setVolume(target);
-        _isInternalChanging = false;
+        
+        // Windows/mpv settlement delay: wait for events to stop firing before allowing listener to save volume
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (!_isDisposed) {
+            _isInternalChanging = false;
+            LoggerService.d('[AudioProvider] Fade settled and internal flag released.');
+          }
+        });
+
         onComplete?.call();
       }
     });
@@ -131,12 +151,9 @@ class AudioProvider with ChangeNotifier {
       final sec = pos.inSeconds;
       
       try {
-        // FIX: Proactive completion check to solve "Progress full but music continues"
-        // Only use player reported duration to avoid inaccuracies from model duration.
         final total = _player.duration;
         if (total != null && total > Duration.zero && !_isInternalChanging && _player.playing) {
           final diff = total.inMilliseconds - pos.inMilliseconds;
-          // If we are extremely close to the end, trigger completion.
           if (diff <= 100) {
              LoggerService.i('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
              _handlePlaybackEnded();
@@ -176,7 +193,6 @@ class AudioProvider with ChangeNotifier {
     if (_isHandlingEnd || _isDisposed) return;
     _isHandlingEnd = true;
     
-    // Stop the player immediately to stop the music if duration estimation was wrong
     _player.pause(); 
     
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -391,6 +407,7 @@ class AudioProvider with ChangeNotifier {
         return;
       }
 
+      // Preparation for fade-in: Start at volume 0 and mark as internal change
       _isInternalChanging = true;
       _player.setVolume(0.0);
       
@@ -410,10 +427,11 @@ class AudioProvider with ChangeNotifier {
       
       _player.setSpeed(_playbackRate);
       _player.play();
-      _isInternalChanging = false;
-      _applyPlayMode(); 
       
-      _fadeVolume(_persistenceProvider?.volume ?? 0.5);
+      // Start fade-in to the target volume
+      _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
+      
+      _applyPlayMode(); 
       _savePlaybackState();
     } catch (e) {
       _handlePlayError(e);
@@ -533,15 +551,18 @@ class AudioProvider with ChangeNotifier {
         _savePlaybackState();
       });
     } else {
+      _player.setVolume(0.0);
       _player.play();
-      _fadeVolume(_persistenceProvider?.volume ?? 0.5);
+      _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
     }
   }
 
   void stop() {
-    _player.stop();
-    _savePlaybackState();
-    _safeNotify();
+    _fadeVolume(0.0, onComplete: () {
+      _player.stop();
+      _savePlaybackState();
+      _safeNotify();
+    });
   }
 
   void next() {
@@ -551,28 +572,30 @@ class AudioProvider with ChangeNotifier {
        _player.play();
        return;
     }
-    if (_player.processingState == ProcessingState.completed || !_player.playing) {
+    
+    if (_player.playing) {
+      _fadeVolume(0.0, onComplete: () {
+        _currentIndex = (_currentIndex + 1) % _playlist.length;
+        playSong(_playlist[_currentIndex]);
+      });
+    } else {
       _currentIndex = (_currentIndex + 1) % _playlist.length;
       playSong(_playlist[_currentIndex]);
-      return;
     }
-    _fadeVolume(0.0, onComplete: () {
-      _currentIndex = (_currentIndex + 1) % _playlist.length;
-      playSong(_playlist[_currentIndex]);
-    });
   }
 
   void previous() {
     if (_playlist.isEmpty) return;
-    if (_player.processingState == ProcessingState.completed || !_player.playing) {
+    
+    if (_player.playing) {
+      _fadeVolume(0.0, onComplete: () {
+        _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
+        playSong(_playlist[_currentIndex]);
+      });
+    } else {
       _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
       playSong(_playlist[_currentIndex]);
-      return;
     }
-    _fadeVolume(0.0, onComplete: () {
-      _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
-      playSong(_playlist[_currentIndex]);
-    });
   }
 
   void clearPlaylist() {
@@ -612,7 +635,6 @@ class AudioProvider with ChangeNotifier {
       final lyricData = await MusicApi.getLyric(target['id']?.toString() ?? '', target['accesskey']?.toString() ?? '');
       if (lyricData != null) {
         _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
-        // Sync highlighting immediately after parsing
         _lyricProvider?.updateHighlight(_player.position);
       }
     }
