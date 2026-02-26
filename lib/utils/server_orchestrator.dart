@@ -22,14 +22,12 @@ class ServerOrchestrator {
   }
 
   static Future<void> killPort() async {
+    LoggerService.i('[Server] Forcing cleanup of any existing server process...');
     try {
       if (Platform.isWindows) {
-        // 使用同步执行确保在启动新进程前，旧进程已经被标记清理
-        // 限制在 1.5 秒内，防止挂死
+        // 直接按进程名强制杀死，确保干净
         await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(milliseconds: 1500));
-        // 给系统一点点时间释放句柄
-        await Future.delayed(const Duration(milliseconds: 200));
+            .timeout(const Duration(milliseconds: 2000));
       } else {
         final result = await Process.run('lsof', ['-ti', ':10086'])
             .timeout(const Duration(seconds: 1));
@@ -39,21 +37,17 @@ class ServerOrchestrator {
         }
       }
     } catch (e) {
-      // 忽略清理错误
+      // 忽略可能的错误（如进程本身就不存在）
     }
   }
 
   static Future<bool> start() async {
     if (_serverProcess != null) return true;
 
-    // 重要：如果已经有服务器在跑且正常，绝对不要执行任何清理或重启逻辑
-    if (await isServerRunning()) {
-      LoggerService.i('[Server] Active server detected. Reusing existing instance.');
-      return true;
-    }
-
-    LoggerService.i('[Server] No active server. Cleaning up and starting new...');
+    // 1. 彻底清场
     await killPort();
+    // 2. 强制等待 500ms，确保操作系统释放端口
+    await Future.delayed(const Duration(milliseconds: 500));
 
     try {
       final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
@@ -72,6 +66,7 @@ class ServerOrchestrator {
         
         if (serverDir != null) {
           final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
+          LoggerService.i('[Server] Starting debug server in $serverDir');
           _serverProcess = await Process.start(
             npmCmd, 
             ['start', '--', ...args], 
@@ -86,15 +81,15 @@ class ServerOrchestrator {
             : p.join(appDir, 'server', executableName);
 
         if (File(serverPath).existsSync()) {
-          LoggerService.i('[Server] Launching: $serverPath');
-          // 修复关键：显式指定 workingDirectory 为可执行文件所在目录
+          LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
+          // 显式指定工作目录，确保后端程序能找到同目录资源
           _serverProcess = await Process.start(
             serverPath, 
             args,
             workingDirectory: p.dirname(serverPath)
           );
         } else {
-          LoggerService.e('[Server] Binary MISSING at $serverPath');
+          LoggerService.e('[Server] Binary not found at $serverPath');
         }
       }
 
@@ -103,16 +98,16 @@ class ServerOrchestrator {
       _serverProcess?.stdout.listen((data) => LoggerService.d('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
       _serverProcess?.stderr.listen((data) => LoggerService.e('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
 
-      // 健康检查，由于我们指定了工作目录，启动速度应该会变快
+      // 3. 健康检查
       for (int i = 0; i < 20; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await isServerRunning()) {
-          LoggerService.i('[Server] Server is UP and healthy.');
+          LoggerService.i('[Server] Server is now UP and responsive.');
           return true;
         }
       }
     } catch (e) {
-      LoggerService.e('[Server] Unexpected failure during startup', e);
+      LoggerService.e('[Server] Unexpected crash during start phase', e);
     }
 
     return false;
@@ -121,6 +116,6 @@ class ServerOrchestrator {
   static void stop() {
     _serverProcess?.kill();
     _serverProcess = null;
-    // 退出时不再暴力 taskkill，由操作系统回收
+    killPort();
   }
 }
