@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -11,8 +12,8 @@ class ServerOrchestrator {
   static bool _serverReady = false;
 
   static final Dio _pingDio = Dio(BaseOptions(
-    connectTimeout: const Duration(milliseconds: 800),
-    receiveTimeout: const Duration(milliseconds: 800),
+    connectTimeout: const Duration(milliseconds: 2000),
+    receiveTimeout: const Duration(milliseconds: 2000),
   ));
 
   static Future<bool> isServerRunning() async {
@@ -30,38 +31,25 @@ class ServerOrchestrator {
       LoggerService.i('[Server] Server is running, skipping killPort');
       return;
     }
-
-    LoggerService.i('[Server] Forcing cleanup of any existing server process...');
-    try {
-      if (Platform.isWindows) {
-        // 直接按进程名强制杀死，确保干净
-        await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(milliseconds: 2000));
-      } else {
-        final result = await Process.run('lsof', ['-ti', ':10086'])
-            .timeout(const Duration(seconds: 1));
-        final pid = result.stdout.toString().trim();
-        if (pid.isNotEmpty) {
-          await Process.run('kill', ['-9', pid]);
-        }
-      }
-    } catch (e) {
-      // 忽略可能的错误（如进程本身就不存在）
-    }
+    await _forceKillPort();
   }
 
   static Future<bool> start() async {
-    // If server is already ready, just return true
-    if (_serverReady && await isServerRunning()) {
-      LoggerService.i('[Server] Server already running and ready');
-      return true;
+    // If server is already ready, verify it's still running
+    if (_serverReady && _serverProcess != null) {
+      if (await isServerRunning()) {
+        LoggerService.i('[Server] Server already running and ready');
+        return true;
+      }
+      // Server died, reset state
+      _serverReady = false;
+      _serverProcess = null;
     }
 
     // Prevent concurrent start attempts
     if (_isStarting) {
       LoggerService.i('[Server] Server start already in progress, waiting...');
-      // Wait for the ongoing start to complete
-      for (int i = 0; i < 40; i++) {
+      for (int i = 0; i < 60; i++) {
         await Future.delayed(const Duration(milliseconds: 500));
         if (_serverReady) return true;
         if (!_isStarting) break;
@@ -72,55 +60,49 @@ class ServerOrchestrator {
     _isStarting = true;
     _serverReady = false;
 
-    // 1. 彻底清场 (only if no process)
-    if (_serverProcess == null) {
-      await _forceKillPort();
-      // 2. 强制等待 500ms，确保操作系统释放端口
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
     try {
+      // 1. Kill any existing process on the port
+      await _forceKillPort();
+
+      // 2. Wait for port to be released (Windows needs more time)
+      await Future.delayed(Duration(milliseconds: Platform.isWindows ? 1500 : 500));
+
       final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
 
       if (kDebugMode) {
-        String? serverDir;
-        Directory anchorDir = Directory(p.dirname(Platform.resolvedExecutable));
-        for (int i = 0; i < 10; i++) {
-          final potential = p.join(anchorDir.path, 'server');
-          if (Directory(potential).existsSync() && File(p.join(potential, 'package.json')).existsSync()) {
-            serverDir = potential;
-            break;
-          }
-          anchorDir = anchorDir.parent;
-        }
-
+        // Debug mode: use npm start
+        String? serverDir = _findServerDir();
         if (serverDir != null) {
           final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
           LoggerService.i('[Server] Starting debug server in $serverDir');
           _serverProcess = await Process.start(
             npmCmd,
             ['start', '--', ...args],
-            workingDirectory: serverDir
-          );
-        }
-      } else {
-        final executableName = Platform.isWindows ? 'app_win.exe' : (Platform.isMacOS ? 'app_macos' : 'app_linux');
-        final appDir = p.dirname(Platform.resolvedExecutable);
-        String serverPath = Platform.isMacOS
-            ? p.join(appDir, '..', 'Resources', 'server', executableName)
-            : p.join(appDir, 'server', executableName);
-
-        if (File(serverPath).existsSync()) {
-          LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
-          // 显式指定工作目录，确保后端程序能找到同目录资源
-          _serverProcess = await Process.start(
-            serverPath,
-            args,
-            workingDirectory: p.dirname(serverPath)
+            workingDirectory: serverDir,
+            mode: ProcessStartMode.normal,
           );
         } else {
-          LoggerService.e('[Server] Binary not found at $serverPath');
+          LoggerService.e('[Server] Server directory not found in debug mode');
+          _isStarting = false;
+          return false;
         }
+      } else {
+        // Release mode: use compiled binary
+        final serverPath = _getServerExecutablePath();
+        if (serverPath == null || !File(serverPath).existsSync()) {
+          LoggerService.e('[Server] Binary not found at $serverPath');
+          _isStarting = false;
+          return false;
+        }
+
+        LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
+
+        _serverProcess = await Process.start(
+          serverPath,
+          args,
+          workingDirectory: p.dirname(serverPath),
+          mode: ProcessStartMode.normal,
+        );
       }
 
       if (_serverProcess == null) {
@@ -128,50 +110,161 @@ class ServerOrchestrator {
         return false;
       }
 
-      _serverProcess?.stdout.listen((data) => LoggerService.d('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
-      _serverProcess?.stderr.listen((data) => LoggerService.e('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
+      // Use Completer to wait for server ready signal from stdout
+      final completer = Completer<bool>();
+      bool completed = false;
 
-      // 3. 健康检查
-      for (int i = 0; i < 20; i++) {
+      // Listen to stdout for "running" signal (like the reference project)
+      _serverProcess!.stdout.transform(utf8.decoder).listen((data) {
+        final output = data.trim();
+        if (output.isNotEmpty) {
+          LoggerService.d('[Server] $output');
+        }
+        // Check for server ready signal
+        if (!completed && (output.contains('running') || output.contains('listening') || output.contains('started'))) {
+          LoggerService.i('[Server] Detected server ready signal in stdout');
+          completed = true;
+          if (!completer.isCompleted) {
+            completer.complete(true);
+          }
+        }
+      });
+
+      _serverProcess!.stderr.transform(utf8.decoder).listen((data) {
+        final output = data.trim();
+        if (output.isNotEmpty) {
+          LoggerService.e('[Server] $output');
+        }
+      });
+
+      // Handle process exit
+      _serverProcess!.exitCode.then((code) {
+        LoggerService.i('[Server] Process exited with code: $code');
+        if (!completed && !completer.isCompleted) {
+          completer.complete(false);
+        }
+        if (code != 0) {
+          _serverReady = false;
+          _serverProcess = null;
+        }
+      });
+
+      // Wait for either: stdout signal, timeout, or health check success
+      // Timeout after 30 seconds
+      final startTime = DateTime.now();
+      while (!completed && DateTime.now().difference(startTime).inSeconds < 30) {
         await Future.delayed(const Duration(milliseconds: 500));
+
+        // Also try health check as backup
         if (await isServerRunning()) {
-          LoggerService.i('[Server] Server is now UP and responsive.');
-          _serverReady = true;
-          _isStarting = false;
-          return true;
+          LoggerService.i('[Server] Health check passed');
+          completed = true;
+          if (!completer.isCompleted) {
+            completer.complete(true);
+          }
+          break;
         }
       }
-    } catch (e) {
-      LoggerService.e('[Server] Unexpected crash during start phase', e);
-    }
 
-    _isStarting = false;
-    return false;
+      if (completed || await isServerRunning()) {
+        LoggerService.i('[Server] Server is now UP and responsive.');
+        _serverReady = true;
+        _isStarting = false;
+        return true;
+      }
+
+      LoggerService.e('[Server] Timeout waiting for server to start');
+      _isStarting = false;
+      return false;
+
+    } catch (e, stack) {
+      LoggerService.e('[Server] Unexpected crash during start phase', e, stack);
+      _isStarting = false;
+      return false;
+    }
   }
 
-  // Internal method that always kills, used during initial start
+  static String? _findServerDir() {
+    Directory anchorDir = Directory(p.dirname(Platform.resolvedExecutable));
+    for (int i = 0; i < 10; i++) {
+      final potential = p.join(anchorDir.path, 'server');
+      if (Directory(potential).existsSync() &&
+          File(p.join(potential, 'package.json')).existsSync()) {
+        return potential;
+      }
+      anchorDir = anchorDir.parent;
+    }
+    return null;
+  }
+
+  static String? _getServerExecutablePath() {
+    final appDir = p.dirname(Platform.resolvedExecutable);
+    String executableName;
+    String serverPath;
+
+    if (Platform.isWindows) {
+      executableName = 'app_win.exe';
+      serverPath = p.join(appDir, 'server', executableName);
+    } else if (Platform.isMacOS) {
+      executableName = 'app_macos';
+      // macOS: binary is in Resources folder
+      serverPath = p.join(appDir, '..', 'Resources', 'server', executableName);
+    } else if (Platform.isLinux) {
+      executableName = 'app_linux';
+      serverPath = p.join(appDir, 'server', executableName);
+    } else {
+      return null;
+    }
+
+    return serverPath;
+  }
+
   static Future<void> _forceKillPort() async {
     LoggerService.i('[Server] Forcing cleanup of any existing server process...');
     try {
       if (Platform.isWindows) {
+        // Kill by process name
         await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(milliseconds: 2000));
+            .timeout(const Duration(seconds: 3));
+        // Also try to kill by port using PowerShell (more reliable)
+        try {
+          await Process.run('powershell', [
+            '-Command',
+            "Get-NetTCPConnection -LocalPort 10086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+          ]).timeout(const Duration(seconds: 3));
+        } catch (_) {}
       } else {
+        // macOS/Linux: kill by port
         final result = await Process.run('lsof', ['-ti', ':10086'])
-            .timeout(const Duration(seconds: 1));
-        final pid = result.stdout.toString().trim();
-        if (pid.isNotEmpty) {
-          await Process.run('kill', ['-9', pid]);
+            .timeout(const Duration(seconds: 2));
+        final pids = result.stdout.toString().trim().split('\n');
+        for (final pid in pids) {
+          if (pid.isNotEmpty) {
+            await Process.run('kill', ['-9', pid]);
+          }
         }
       }
     } catch (e) {
-      // 忽略可能的错误
+      // Ignore errors (process might not exist)
+      LoggerService.d('[Server] Kill cleanup: $e');
     }
   }
 
   static void stop() {
-    _serverProcess?.kill();
-    _serverProcess = null;
+    if (_serverProcess != null) {
+      LoggerService.i('[Server] Stopping server process...');
+      try {
+        if (Platform.isWindows) {
+          // Windows: use taskkill for clean shutdown
+          Process.run('taskkill', ['/F', '/T', '/PID', '${_serverProcess!.pid}']);
+        } else {
+          _serverProcess!.kill(ProcessSignal.sigkill);
+        }
+      } catch (e) {
+        LoggerService.e('[Server] Error stopping process: $e');
+      }
+      _serverProcess = null;
+    }
     _serverReady = false;
     _forceKillPort();
   }
