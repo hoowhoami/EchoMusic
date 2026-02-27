@@ -59,6 +59,9 @@ class AudioProvider with ChangeNotifier {
   // during this window so stale pre-seek positions never reach the UI.
   bool _isSeeking = false;
 
+  // Timestamp of last seek, used to ignore false "completed" events shortly after seek
+  DateTime? _lastSeekTime;
+
   // True while the user is dragging the thumb. We suppress positionStream
   // events so the progress bar total cannot change under the user's finger.
   bool _isDragging = false;
@@ -167,17 +170,20 @@ class AudioProvider with ChangeNotifier {
 
     _subscriptions.add(_player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        // After a seek, just_audio may prematurely fire "completed" even though
-        // there's still audio left. Only trust it if position is truly near the end.
+        // On Windows with just_audio_media_kit, completed events can be unreliable.
+        // We use a simple approach: trust the completed event unless we just seeked.
+        if (_lastSeekTime != null) {
+          final sinceSeek = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
+          // Only ignore if seek was very recent (< 1 second) - give more tolerance
+          if (sinceSeek < 1000) {
+            LoggerService.i('[AudioProvider] Ignoring completed event ${sinceSeek}ms after seek');
+            return;
+          }
+        }
+
         final pos = _player.position;
         final dur = _player.duration ?? Duration.zero;
-        final remaining = dur.inMilliseconds - pos.inMilliseconds;
-        if (remaining > 1000) {
-          // False positive: more than 1 second remaining, ignore this event
-          LoggerService.i('[AudioProvider] Ignoring premature completed event: pos=$pos, dur=$dur, remaining=${remaining}ms');
-          return;
-        }
-        LoggerService.i('[AudioProvider] Playback completed naturally.');
+        LoggerService.i('[AudioProvider] Playback completed. pos=$pos, dur=$dur');
         _handlePlaybackEnded();
       }
       _safeNotify();
@@ -205,6 +211,16 @@ class AudioProvider with ChangeNotifier {
           _lastEmittedPosition = pos;
           if (!_positionController.isClosed) {
             _positionController.add(PositionSnapshot(pos, total));
+          }
+        }
+
+        // Fallback end detection: if position is very close to duration and player is playing,
+        // treat as end of track. This helps on Windows where completed event may not fire.
+        if (_player.playing && total.inMilliseconds > 0) {
+          final remaining = total.inMilliseconds - pos.inMilliseconds;
+          if (remaining >= 0 && remaining < 500 && !_isHandlingEnd) {
+            LoggerService.i('[AudioProvider] Position near end, triggering completion: pos=$pos, dur=$total');
+            _handlePlaybackEnded();
           }
         }
 
@@ -374,6 +390,9 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> seek(Duration pos) async {
     if (_isDisposed) return;
+
+    // Record seek time to ignore false "completed" events shortly after
+    _lastSeekTime = DateTime.now();
 
     // Cancel any active fade and restore target volume before seeking
     if (_fadeTimer != null) {
