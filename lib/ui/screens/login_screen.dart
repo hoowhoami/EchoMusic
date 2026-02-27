@@ -8,6 +8,7 @@ import '../../api/music_api.dart';
 import '../../providers/user_provider.dart';
 import '../../theme/app_theme.dart';
 import '../widgets/custom_toast.dart';
+import '../../utils/logger.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -91,7 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     } catch (e) {
-      debugPrint('Load QR error: $e');
+      LoggerService.e('Load QR error', e);
       setState(() {
         _errorMessage = '网络错误: $e';
         _isLoadingQr = false;
@@ -108,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (res != null) {
         // 从嵌套的 data 中获取实际状态
         final status = res['data']?['status'] ?? res['status'];
-        debugPrint('QR status: $status, full response: $res');
+        LoggerService.d('QR status: $status');
 
         setState(() {
           qrStatus = status;
@@ -383,7 +384,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Image.network(
                             account['pic'] ?? '',
                             width: 44, height: 44,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               color: accentColor.withAlpha(20),
                               width: 44, height: 44,
                               child: Icon(Icons.person, color: accentColor),

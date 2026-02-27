@@ -4,6 +4,7 @@ import '../api/music_api.dart';
 import 'persistence_provider.dart';
 import 'refresh_provider.dart';
 import '../models/song.dart';
+import '../utils/logger.dart';
 
 class UserProvider with ChangeNotifier {
   User? _user;
@@ -346,7 +347,7 @@ class UserProvider with ChangeNotifier {
       
       _userCloud = allSongs;
     } catch (e) {
-      debugPrint('Error fetching cloud songs: $e');
+      LoggerService.e('Error fetching cloud songs', e);
     }
     
     notifyListeners();

@@ -117,9 +117,6 @@ class MusicApi {
       // Rule 1: Global error code for expired token
       () => data['error_code'] == 20018,
       
-      // Rule 2: Song URL specifically indicates auth required/expired
-      () => path.contains('/song/url') && data['status'] == 2,
-      
       // Rule 3: VIP detail failure often means token invalid
       () => path.contains('/user/vip/detail') && data['status'] == 0,
       

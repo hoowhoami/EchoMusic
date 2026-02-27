@@ -18,17 +18,16 @@ import 'utils/logger.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main() async {
+void main(List<String> args) async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize JustAudioMediaKit for FLAC and other format support on Desktop
   JustAudioMediaKit.ensureInitialized(
     linux: true,
     windows: true,
+    macOS: true,
     android: false,
     iOS: false,
-    macOS: false,
   );
   
   await LoggerService.init();

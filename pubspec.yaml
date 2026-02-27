@@ -40,6 +40,7 @@ dependencies:
   just_audio_media_kit: any
   media_kit_libs_linux: any
   media_kit_libs_windows_audio: any
+  media_kit_libs_macos_audio: any
   audio_video_progress_bar: ^2.0.3
   provider: ^6.1.2
   dio: ^5.8.0+1

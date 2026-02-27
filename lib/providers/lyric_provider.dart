@@ -4,8 +4,8 @@ import 'persistence_provider.dart';
 
 class LyricCharacter {
   final String text;
-  final int startTime; 
-  final int endTime; 
+  final int startTime;
+  final int endTime;
   bool highlighted = false;
 
   LyricCharacter({
@@ -40,8 +40,7 @@ class LyricProvider with ChangeNotifier {
   LyricsMode _lyricsMode = LyricsMode.none;
   bool _hasTranslation = false;
   bool _hasRomanization = false;
-  
-  // New: Status tracking to prevent unnecessary processing and leaks
+
   bool _isPageOpen = false;
   String? _loadedHash;
 
@@ -56,7 +55,9 @@ class LyricProvider with ChangeNotifier {
   bool get isPageOpen => _isPageOpen;
   String? get loadedHash => _loadedHash;
 
-  void setPersistenceProvider(PersistenceProvider p) => _persistenceProvider = p;
+  void setPersistenceProvider(PersistenceProvider p) {
+    _persistenceProvider = p;
+  }
 
   void setPageOpen(bool open) {
     _isPageOpen = open;
@@ -95,7 +96,7 @@ class LyricProvider with ChangeNotifier {
     _hasRomanization = false;
     _currentLineIndex = -1;
     _loadedHash = hash;
-    
+
     final String content = (lyricData['decodeContent'] ?? lyricData['lyric'] ?? '').toString();
     if (content.isEmpty) {
       _tips = '暂无歌词';
@@ -203,7 +204,7 @@ class LyricProvider with ChangeNotifier {
     for (int i = 0; i < parsedLines.length; i++) {
       String? trans;
       String? roman;
-      
+
       if (translationLyrics != null && i < translationLyrics.length) {
         final transLine = translationLyrics[i];
         if (transLine is List && transLine.isNotEmpty) {
@@ -211,7 +212,7 @@ class LyricProvider with ChangeNotifier {
           if (trans.isNotEmpty) _hasTranslation = true;
         }
       }
-      
+
       if (romanizationLyrics != null && i < romanizationLyrics.length) {
         final romanLine = romanizationLyrics[i];
         if (romanLine is List) {
@@ -228,25 +229,25 @@ class LyricProvider with ChangeNotifier {
     }
 
     _tips = _lyrics.isEmpty ? '暂无歌词' : '歌词已加载';
-    _lyricsMode = LyricsMode.none; 
+    _lyricsMode = LyricsMode.none;
     notifyListeners();
   }
 
   /// Optimized Update Strategy: Incremental search with configurable offset
   void updateHighlight(Duration position) {
     if (_lyrics.isEmpty) return;
-    
+
     // Apply user-defined offset (positive offset means delay highlighting)
     final offset = _persistenceProvider?.settings['lyricOffset'] ?? 0;
     final posMs = position.inMilliseconds - (offset as int);
-    
+
     int newIndex = -1;
     bool needsNotify = false;
 
     // 1. Efficient Line Selection
     int startSearchIdx = _currentLineIndex >= 0 ? _currentLineIndex : 0;
     if (posMs < _lyrics[startSearchIdx].startTime) {
-      startSearchIdx = 0; 
+      startSearchIdx = 0;
     }
 
     for (int i = startSearchIdx; i < _lyrics.length; i++) {
