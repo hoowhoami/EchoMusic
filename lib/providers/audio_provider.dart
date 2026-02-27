@@ -11,20 +11,30 @@ import '../utils/media_session_handler.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
+/// Snapshot of position + duration emitted together so the two values
+/// are always consistent and never show a mismatch in the progress bar.
+class PositionSnapshot {
+  final Duration position;
+  final Duration duration;
+  const PositionSnapshot(this.position, this.duration);
+}
+
 class AudioProvider with ChangeNotifier {
   late AudioPlayer _player;
 
   // Getter for external use
   AudioPlayer get player => _player;
 
-  // New: Throttled stream for UI progress bars to reduce CPU usage
-  Stream<Duration> get throttledPositionStream => _player.positionStream.distinct((prev, curr) {
-    final diff = (curr.inMilliseconds - prev.inMilliseconds).abs();
-    return diff < 200 && curr.inMilliseconds > prev.inMilliseconds;
-  });
+  // Single stream that the UI listens to for position/duration updates.
+  // We drive it ourselves so we control exactly when and what gets emitted.
+  final StreamController<PositionSnapshot> _positionController =
+      StreamController<PositionSnapshot>.broadcast();
+  Stream<PositionSnapshot> get positionSnapshotStream =>
+      _positionController.stream;
 
   final List<StreamSubscription> _subscriptions = [];
-  final StreamController<double> _userVolumeController = StreamController<double>.broadcast();
+  final StreamController<double> _userVolumeController =
+      StreamController<double>.broadcast();
 
   Song? _currentSong;
   List<Song> _playlist = [];
@@ -45,28 +55,42 @@ class AudioProvider with ChangeNotifier {
   Timer? _volumeSaveTimer;
   bool _isInternalChanging = false;
 
+  // True while _player.seek() is in flight. We suppress positionStream events
+  // during this window so stale pre-seek positions never reach the UI.
+  bool _isSeeking = false;
+
+  // True while the user is dragging the thumb. We suppress positionStream
+  // events so the progress bar total cannot change under the user's finger.
+  bool _isDragging = false;
+
+  // Last position forwarded to the UI stream (used for 200 ms throttle).
+  Duration _lastEmittedPosition = Duration.zero;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   bool get isPlaying => _player.playing;
-  bool get isLoading => _isLoading || _player.processingState == ProcessingState.buffering || _player.processingState == ProcessingState.loading;
+  bool get isLoading =>
+      _isLoading ||
+      _player.processingState == ProcessingState.buffering ||
+      _player.processingState == ProcessingState.loading;
   String get playMode => _playMode;
-  String get loopMode => _playMode; 
+  String get loopMode => _playMode;
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
 
-  Duration get effectivePosition {
-    return _player.position;
-  }
+  Duration get effectivePosition => _player.position;
 
-  // FIX: Provide a more reliable duration based on both player metadata and song model
+  // Use player.duration as primary source for accurate seek positioning.
+  // Fall back to song.duration only when player hasn't loaded yet.
   Duration get effectiveDuration {
-    final playerDur = _player.duration;
-    if (playerDur != null && playerDur > Duration.zero) return playerDur;
+    final d = _player.duration;
+    if (d != null && d > Duration.zero) return d;
+    // Fallback to song model duration before player is ready
     if (_currentSong != null && _currentSong!.duration > 0) {
-      return Duration(seconds: _currentSong!.duration.toInt());
+      return Duration(seconds: _currentSong!.duration);
     }
     return Duration.zero;
   }
@@ -83,60 +107,51 @@ class AudioProvider with ChangeNotifier {
       onPause: () => togglePlay(),
       onNext: () => next(),
       onPrevious: () => previous(),
-      onSeek: (pos) => _player.seek(pos),
+      onSeek: (pos) => seek(pos),
     );
   }
 
   void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
     _fadeTimer?.cancel();
+    _fadeTimer = null;
+
     final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
-    
     if (!isFadeEnabled) {
       _player.setVolume(target);
+      _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
     final double startVolume = from ?? _player.volume;
     final int duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
-    
+
     if (duration <= 0 || (target - startVolume).abs() < 0.01) {
       _player.setVolume(target);
+      _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
     _isInternalChanging = true;
-    final int stepMs = 20; 
-    final int totalSteps = (duration / stepMs).round();
+    const int stepMs = 20;
+    final int totalSteps = (duration / stepMs).round().clamp(1, 9999);
     final double volumeStep = (target - startVolume) / totalSteps;
     int currentStep = 0;
 
-    LoggerService.d('[AudioProvider] Fade started: $startVolume -> $target (${duration}ms)');
-
-    _fadeTimer = Timer.periodic(Duration(milliseconds: stepMs), (timer) {
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: stepMs), (timer) {
       if (_isDisposed) {
         timer.cancel();
+        _fadeTimer = null;
         return;
       }
-
       currentStep++;
-      final double newVolume = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
-      _player.setVolume(newVolume);
-      
+      _player.setVolume((startVolume + volumeStep * currentStep).clamp(0.0, 1.0));
       if (currentStep >= totalSteps) {
         timer.cancel();
         _fadeTimer = null;
         _player.setVolume(target);
-        
-        // Windows/mpv settlement delay: wait for events to stop firing before allowing listener to save volume
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (!_isDisposed) {
-            _isInternalChanging = false;
-            LoggerService.d('[AudioProvider] Fade settled and internal flag released.');
-          }
-        });
-
+        _isInternalChanging = false;
         onComplete?.call();
       }
     });
@@ -152,41 +167,58 @@ class AudioProvider with ChangeNotifier {
 
     _subscriptions.add(_player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
+        // After a seek, just_audio may prematurely fire "completed" even though
+        // there's still audio left. Only trust it if position is truly near the end.
+        final pos = _player.position;
+        final dur = _player.duration ?? Duration.zero;
+        final remaining = dur.inMilliseconds - pos.inMilliseconds;
+        if (remaining > 1000) {
+          // False positive: more than 1 second remaining, ignore this event
+          LoggerService.i('[AudioProvider] Ignoring premature completed event: pos=$pos, dur=$dur, remaining=${remaining}ms');
+          return;
+        }
         LoggerService.i('[AudioProvider] Playback completed naturally.');
         _handlePlaybackEnded();
       }
       _safeNotify();
-      
+
       // Update Media Session State
       MediaSessionHandler.updatePlaybackState(_player.playing, _player.position);
     }));
 
+    // We no longer cache duration separately. effectiveDuration reads
+    // _player.duration directly, so no durationStream listener is needed.
+
     _subscriptions.add(_player.positionStream.listen((pos) {
       if (_isDisposed) return;
       final sec = pos.inSeconds;
-      
+
       try {
-        final total = _player.duration;
-        if (total != null && total > Duration.zero && !_isInternalChanging && _player.playing) {
-          final diff = total.inMilliseconds - pos.inMilliseconds;
-          if (diff <= 100) {
-             LoggerService.i('[AudioProvider] Proactively triggering completion (pos: ${pos.inMilliseconds}ms, dur: ${total.inMilliseconds}ms)');
-             _handlePlaybackEnded();
+        // During seek or drag, suppress position events to the UI
+        if (_isSeeking || _isDragging) return;
+
+        final total = effectiveDuration;
+
+        // Throttle: only emit to UI if position changed ≥200ms
+        final diff = (pos.inMilliseconds - _lastEmittedPosition.inMilliseconds).abs();
+        if (diff >= 200) {
+          _lastEmittedPosition = pos;
+          if (!_positionController.isClosed) {
+            _positionController.add(PositionSnapshot(pos, total));
           }
         }
 
         if (_lyricProvider?.isPageOpen == true) {
           _lyricProvider?.updateHighlight(pos);
         }
-        
+
         if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
           _lastSavedSecond = sec;
           _savePlaybackState();
         }
 
-        // Periodically sync position to Media Session
         if (sec % 1 == 0 && sec != _lastSavedSecond) {
-           MediaSessionHandler.updatePlaybackState(_player.playing, pos);
+          MediaSessionHandler.updatePlaybackState(_player.playing, pos);
         }
       } catch (_) {}
     }));
@@ -286,7 +318,7 @@ class AudioProvider with ChangeNotifier {
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
         await _player.setAudioSource(
-          AudioSource.uri(
+          ProgressiveAudioSource(
             Uri.parse(result['url']),
             tag: MediaItem(
               id: _currentSong!.hash,
@@ -295,6 +327,11 @@ class AudioProvider with ChangeNotifier {
               artist: _currentSong!.singerName,
               artUri: Uri.parse(_currentSong!.cover),
               duration: Duration(seconds: _currentSong!.duration.toInt()),
+            ),
+            options: const ProgressiveAudioSourceOptions(
+              darwinAssetOptions: DarwinAssetOptions(
+                preferPreciseDurationAndTiming: true,
+              ),
             ),
           ),
         );
@@ -320,6 +357,67 @@ class AudioProvider with ChangeNotifier {
         _playlist,
         _currentIndex,
       );
+    }
+  }
+
+  /// Called by the UI when the user starts dragging the progress bar.
+  /// Freezes the position stream so the ProgressBar's total never changes mid-drag.
+  void notifyDragStart() {
+    _isDragging = true;
+  }
+
+  /// Called by the UI when the user releases the progress bar thumb.
+  /// Re-enables the stream; seek() will emit the accurate final snapshot.
+  void notifyDragEnd() {
+    _isDragging = false;
+  }
+
+  Future<void> seek(Duration pos) async {
+    if (_isDisposed) return;
+
+    // Cancel any active fade and restore target volume before seeking
+    if (_fadeTimer != null) {
+      _fadeTimer!.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = false;
+    }
+    if (!_isInternalChanging) {
+      _player.setVolume(_persistenceProvider?.volume ?? 0.5);
+    }
+
+    // Guard proactive completion check during seek
+    _isSeeking = true;
+    _isHandlingEnd = false;
+
+    await _player.seek(pos);
+
+    // Wait for the player's position to actually reach near the target.
+    // just_audio's seek() Future completes before the native layer finishes,
+    // causing position drift. We poll until position is within tolerance.
+    // See: https://github.com/ryanheise/just_audio/issues/1084
+    const maxWaitMs = 500;
+    const pollIntervalMs = 20;
+    const toleranceMs = 300;
+    int waited = 0;
+    while (waited < maxWaitMs && !_isDisposed) {
+      final currentPos = _player.position;
+      final diff = (currentPos.inMilliseconds - pos.inMilliseconds).abs();
+      if (diff <= toleranceMs) break;
+      await Future.delayed(const Duration(milliseconds: pollIntervalMs));
+      waited += pollIntervalMs;
+    }
+
+    _isSeeking = false;
+
+    // Emit the position directly - no mapping needed since we use player.duration
+    if (!_isDisposed && !_positionController.isClosed) {
+      _lastEmittedPosition = pos;
+      _positionController.add(PositionSnapshot(pos, effectiveDuration));
+    }
+
+    // Sync lyric highlight to the new position
+    if (_lyricProvider?.isPageOpen == true) {
+      _lyricProvider?.updateHighlight(pos);
     }
   }
 
@@ -404,6 +502,14 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
+
+    // Immediately cancel any fade, silence, and mark as internal change
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isInternalChanging = true;
+    _player.setVolume(0.0);
+    _climaxMarks = {}; // Clear old climax marks immediately
+
     if (playlist != null) {
       _playlist = List.from(playlist);
       _originalPlaylist = [];
@@ -416,6 +522,7 @@ class AudioProvider with ChangeNotifier {
     }
     _currentIndex = _playlist.indexWhere((s) => s.isSameSong(song));
     _currentSong = song;
+    _climaxMarks = {}; // Clear old climax marks immediately
     _safeNotify();
 
     _isLoading = true;
@@ -435,12 +542,14 @@ class AudioProvider with ChangeNotifier {
         return;
       }
 
-      // Preparation for fade-in: Start at volume 0 and mark as internal change
-      _isInternalChanging = true;
+      // Ensure volume is still 0 before setting new source
       _player.setVolume(0.0);
       
+      // Use ProgressiveAudioSource with preferPreciseDurationAndTiming on macOS
+      // to fix position/duration drift issues with FLAC files.
+      // See: https://github.com/ryanheise/just_audio/issues/1267
       await _player.setAudioSource(
-        AudioSource.uri(
+        ProgressiveAudioSource(
           Uri.parse(result['url']),
           tag: MediaItem(
             id: song.hash,
@@ -449,6 +558,11 @@ class AudioProvider with ChangeNotifier {
             artist: song.singerName,
             artUri: Uri.parse(song.cover),
             duration: Duration(seconds: song.duration.toInt()),
+          ),
+          options: const ProgressiveAudioSourceOptions(
+            darwinAssetOptions: DarwinAssetOptions(
+              preferPreciseDurationAndTiming: true,
+            ),
           ),
         ),
       );
@@ -551,7 +665,7 @@ class AudioProvider with ChangeNotifier {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
           await _player.setAudioSource(
-            AudioSource.uri(
+            ProgressiveAudioSource(
               Uri.parse(result['url']),
               tag: MediaItem(
                 id: _currentSong!.hash,
@@ -560,6 +674,11 @@ class AudioProvider with ChangeNotifier {
                 artist: _currentSong!.singerName,
                 artUri: Uri.parse(_currentSong!.cover),
                 duration: Duration(seconds: _currentSong!.duration.toInt()),
+              ),
+              options: const ProgressiveAudioSourceOptions(
+                darwinAssetOptions: DarwinAssetOptions(
+                  preferPreciseDurationAndTiming: true,
+                ),
               ),
             ),
           );
@@ -582,6 +701,9 @@ class AudioProvider with ChangeNotifier {
         _savePlaybackState();
       });
     } else {
+      _fadeTimer?.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = true;
       _player.setVolume(0.0);
       _player.play();
       _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
@@ -589,6 +711,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   void stop() {
+    _climaxMarks = {};
     _fadeVolume(0.0, onComplete: () {
       _player.stop();
       _savePlaybackState();
@@ -599,13 +722,14 @@ class AudioProvider with ChangeNotifier {
   void next() {
     if (_playlist.isEmpty) return;
     if (_player.loopMode == LoopMode.one) {
-       _player.seek(Duration.zero);
+       seek(Duration.zero);
        _player.play();
        return;
     }
     
     if (_player.playing) {
       _fadeVolume(0.0, onComplete: () {
+        _player.pause(); // Ensure old song is stopped before switching
         _currentIndex = (_currentIndex + 1) % _playlist.length;
         playSong(_playlist[_currentIndex]);
       });
@@ -620,6 +744,7 @@ class AudioProvider with ChangeNotifier {
     
     if (_player.playing) {
       _fadeVolume(0.0, onComplete: () {
+        _player.pause(); // Ensure old song is stopped before switching
         _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
         playSong(_playlist[_currentIndex]);
       });
@@ -633,6 +758,7 @@ class AudioProvider with ChangeNotifier {
     _playlist = [];
     _originalPlaylist = [];
     _currentIndex = -1;
+    _climaxMarks = {};
     _savePlaybackState();
     _safeNotify();
   }
@@ -644,6 +770,7 @@ class AudioProvider with ChangeNotifier {
     if (_currentIndex == index) {
       if (_playlist.isEmpty) {
         _currentSong = null;
+        _climaxMarks = {};
         _player.stop();
       } else {
         _currentIndex = _currentIndex % _playlist.length;
@@ -699,6 +826,7 @@ class AudioProvider with ChangeNotifier {
     _volumeSaveTimer?.cancel();
     _cancelSubscriptions();
     _userVolumeController.close();
+    _positionController.close();
     WakelockPlus.disable();
     _player.dispose();
     super.dispose();

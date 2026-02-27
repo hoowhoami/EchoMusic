@@ -58,6 +58,8 @@ dependencies:
   url_launcher: ^6.3.2
   package_info_plus: ^9.0.0
   tray_manager: ^0.5.2
+  smtc_windows: ^1.1.0
+  audio_service_mpris: ^0.2.0
 
 dev_dependencies:
   flutter_test:

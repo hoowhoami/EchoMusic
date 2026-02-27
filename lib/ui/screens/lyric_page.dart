@@ -204,7 +204,7 @@ class _LyricPageState extends State<LyricPage> {
                     } else if (lyricProvider.showRomanization) {
                       secondary = line.romanized;
                     }
-                    return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.player.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
+                    return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
                   },
                 ),
               ),
@@ -221,23 +221,24 @@ class _LyricPageState extends State<LyricPage> {
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Column(
         children: [
-          StreamBuilder<Duration>(
-            stream: audioProvider.throttledPositionStream,
-            initialData: audioProvider.effectivePosition,
+          StreamBuilder<PositionSnapshot>(
+            stream: audioProvider.positionSnapshotStream,
+            initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
             builder: (context, snapshot) {
-              final position = snapshot.data ?? audioProvider.effectivePosition;
-              final total = audioProvider.player.duration ?? Duration.zero;
+              final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
               return Column(
                 children: [
                   MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: ProgressBar(
-                      progress: position, total: total, barHeight: 4, baseBarColor: Colors.white.withAlpha(30), progressBarColor: theme.colorScheme.primary, thumbColor: Colors.white, thumbRadius: 6, thumbGlowRadius: 0, timeLabelLocation: TimeLabelLocation.none,
-                      onSeek: (duration) => audioProvider.player.seek(duration),
+                      progress: snap.position, total: snap.duration, barHeight: 4, baseBarColor: Colors.white.withAlpha(30), progressBarColor: theme.colorScheme.primary, thumbColor: Colors.white, thumbRadius: 6, thumbGlowRadius: 0, timeLabelLocation: TimeLabelLocation.none,
+                      onSeek: (duration) => audioProvider.seek(duration),
+                      onDragStart: (_) => audioProvider.notifyDragStart(),
+                      onDragEnd: () => audioProvider.notifyDragEnd(),
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_buildTimeText(position), _buildTimeText(total)]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_buildTimeText(snap.position), _buildTimeText(snap.duration)]),
                 ],
               );
             },

@@ -92,9 +92,14 @@ class _PlayerProgressBar extends StatelessWidget {
   }
 }
 
-class _ProgressBarWidget extends StatelessWidget {
+class _ProgressBarWidget extends StatefulWidget {
   const _ProgressBarWidget();
 
+  @override
+  State<_ProgressBarWidget> createState() => _ProgressBarWidgetState();
+}
+
+class _ProgressBarWidgetState extends State<_ProgressBarWidget> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -102,22 +107,23 @@ class _ProgressBarWidget extends StatelessWidget {
 
     return Consumer<AudioProvider>(
       builder: (context, audioProvider, child) {
-        return StreamBuilder<Duration>(
-          stream: audioProvider.throttledPositionStream,
-          initialData: audioProvider.effectivePosition,
+        return StreamBuilder<PositionSnapshot>(
+          stream: audioProvider.positionSnapshotStream,
+          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
           builder: (context, snapshot) {
-            final position = snapshot.data ?? audioProvider.effectivePosition;
-            final total = audioProvider.effectiveDuration;
+            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
             return ProgressBar(
-              progress: position,
-              total: total,
+              progress: snap.position,
+              total: snap.duration,
               barHeight: 4.0,
               baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
               progressBarColor: accentColor,
               thumbColor: accentColor,
               thumbRadius: 7.0,
               thumbGlowRadius: 15.0,
-              onSeek: (duration) => audioProvider.player.seek(duration),
+              onSeek: (duration) => audioProvider.seek(duration),
+              onDragStart: (_) => audioProvider.notifyDragStart(),
+              onDragEnd: () => audioProvider.notifyDragEnd(),
               timeLabelLocation: TimeLabelLocation.none,
             );
           },
@@ -424,14 +430,13 @@ class _PlaybackTimeInfo extends StatelessWidget {
     final theme = Theme.of(context);
     return Consumer<AudioProvider>(
       builder: (context, audioProvider, child) {
-        return StreamBuilder<Duration>(
-          stream: audioProvider.player.positionStream,
-          initialData: audioProvider.effectivePosition,
+        return StreamBuilder<PositionSnapshot>(
+          stream: audioProvider.positionSnapshotStream,
+          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
           builder: (context, snapshot) {
-            final position = snapshot.data ?? audioProvider.effectivePosition;
-            final total = audioProvider.player.duration ?? Duration.zero;
+            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
             return Text(
-              '${_formatDuration(position)} / ${_formatDuration(total)}',
+              '${_formatDuration(snap.position)} / ${_formatDuration(snap.duration)}',
               style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
             );
           },
