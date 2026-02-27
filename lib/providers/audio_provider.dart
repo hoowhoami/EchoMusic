@@ -185,47 +185,7 @@ class AudioProvider with ChangeNotifier {
         final dur = _player.duration ?? Duration.zero;
         LoggerService.i('[AudioProvider] Playback completed. pos=$pos, dur=$dur');
         _handlePlaybackEnded();
-        _safeNotify();
-        return;
       }
-
-      // Windows fallback: just_audio_media_kit may stop playing (playing=false,
-      // state=idle/ready) without ever emitting ProcessingState.completed.
-      // Detect this by checking if we stopped unexpectedly near the end.
-      if (!state.playing &&
-          state.processingState == ProcessingState.ready &&
-          !_isHandlingEnd &&
-          !_isLoading &&
-          !_isSeeking) {
-        final pos = _player.position;
-        final dur = effectiveDuration;
-        if (dur.inMilliseconds > 0) {
-          final remaining = dur.inMilliseconds - pos.inMilliseconds;
-          if (remaining < 1500 && remaining > -2000 && _currentSong != null) {
-            LoggerService.i('[AudioProvider] Windows idle-at-end detected: pos=$pos dur=$dur remaining=${remaining}ms');
-            _handlePlaybackEnded();
-          }
-        }
-      }
-
-      // macOS/media_kit: MPV may emit log-level errors (e.g. FLAC decode errors)
-      // that don't propagate to Dart's onError. In that case, the player transitions
-      // to ProcessingState.idle without ever completing. Detect this and treat as error.
-      if (state.processingState == ProcessingState.idle &&
-          !_isHandlingEnd &&
-          !_isLoading &&
-          !_isInternalChanging &&
-          _currentSong != null) {
-        final pos = _player.position;
-        // Ignore idle at the very start (position < 2s) to avoid false positives
-        // during normal initialization / setAudioSource transitions.
-        if (pos.inMilliseconds > 2000) {
-          LoggerService.e('[AudioProvider] Unexpected idle at pos=$pos for "${_currentSong!.name}", treating as playback error');
-          _handlePlayError('unexpected_idle');
-          return;
-        }
-      }
-
       _safeNotify();
 
       // Update Media Session State
@@ -254,15 +214,12 @@ class AudioProvider with ChangeNotifier {
           }
         }
 
-        // Fallback end detection for Windows (just_audio_media_kit):
-        // - Drop the _player.playing guard: on Windows the player may go idle
-        //   without emitting ProcessingState.completed, so playing==false.
-        // - Allow remaining to be slightly negative (up to -2000ms): Windows
-        //   duration reporting can be off by 1-2s, causing pos to overshoot total.
-        if (total.inMilliseconds > 0 && !_isHandlingEnd) {
+        // Fallback end detection: if position is very close to duration and player is playing,
+        // treat as end of track. This helps on Windows where completed event may not fire.
+        if (_player.playing && total.inMilliseconds > 0) {
           final remaining = total.inMilliseconds - pos.inMilliseconds;
-          if (remaining < 500 && remaining > -2000) {
-            LoggerService.i('[AudioProvider] Fallback end: pos=$pos dur=$total remaining=${remaining}ms');
+          if (remaining >= 0 && remaining < 500 && !_isHandlingEnd) {
+            LoggerService.i('[AudioProvider] Position near end, triggering completion: pos=$pos, dur=$total');
             _handlePlaybackEnded();
           }
         }
@@ -604,8 +561,6 @@ class AudioProvider with ChangeNotifier {
         return;
       }
 
-      LoggerService.i('[AudioProvider] Playing: ${song.name} | quality: ${result['quality'] ?? 'default'} | url: ${result['url']}');
-
       // Ensure volume is still 0 before setting new source
       _player.setVolume(0.0);
       
@@ -705,7 +660,7 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> _handlePlayError(dynamic err) async {
     if (_isDisposed) return;
-    LoggerService.e('[AudioProvider] Playback error: $err | song: ${_currentSong?.name} | hash: ${_currentSong?.hash}');
+    LoggerService.e('[AudioProvider] Playback error: $err');
 
     final settings = _persistenceProvider?.settings ?? {};
     final autoNext = settings['autoNext'] ?? true;
