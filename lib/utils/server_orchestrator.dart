@@ -7,6 +7,9 @@ import 'logger.dart';
 
 class ServerOrchestrator {
   static Process? _serverProcess;
+  static bool _isStarting = false;
+  static bool _serverReady = false;
+
   static final Dio _pingDio = Dio(BaseOptions(
     connectTimeout: const Duration(milliseconds: 800),
     receiveTimeout: const Duration(milliseconds: 800),
@@ -22,6 +25,12 @@ class ServerOrchestrator {
   }
 
   static Future<void> killPort() async {
+    // Don't kill if server is already running and ready
+    if (_serverReady && _serverProcess != null) {
+      LoggerService.i('[Server] Server is running, skipping killPort');
+      return;
+    }
+
     LoggerService.i('[Server] Forcing cleanup of any existing server process...');
     try {
       if (Platform.isWindows) {
@@ -42,16 +51,37 @@ class ServerOrchestrator {
   }
 
   static Future<bool> start() async {
-    if (_serverProcess != null) return true;
+    // If server is already ready, just return true
+    if (_serverReady && await isServerRunning()) {
+      LoggerService.i('[Server] Server already running and ready');
+      return true;
+    }
 
-    // 1. 彻底清场
-    await killPort();
-    // 2. 强制等待 500ms，确保操作系统释放端口
-    await Future.delayed(const Duration(milliseconds: 500));
+    // Prevent concurrent start attempts
+    if (_isStarting) {
+      LoggerService.i('[Server] Server start already in progress, waiting...');
+      // Wait for the ongoing start to complete
+      for (int i = 0; i < 40; i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (_serverReady) return true;
+        if (!_isStarting) break;
+      }
+      return _serverReady;
+    }
+
+    _isStarting = true;
+    _serverReady = false;
+
+    // 1. 彻底清场 (only if no process)
+    if (_serverProcess == null) {
+      await _forceKillPort();
+      // 2. 强制等待 500ms，确保操作系统释放端口
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
 
     try {
       final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
-      
+
       if (kDebugMode) {
         String? serverDir;
         Directory anchorDir = Directory(p.dirname(Platform.resolvedExecutable));
@@ -63,20 +93,20 @@ class ServerOrchestrator {
           }
           anchorDir = anchorDir.parent;
         }
-        
+
         if (serverDir != null) {
           final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
           LoggerService.i('[Server] Starting debug server in $serverDir');
           _serverProcess = await Process.start(
-            npmCmd, 
-            ['start', '--', ...args], 
+            npmCmd,
+            ['start', '--', ...args],
             workingDirectory: serverDir
           );
         }
       } else {
         final executableName = Platform.isWindows ? 'app_win.exe' : (Platform.isMacOS ? 'app_macos' : 'app_linux');
         final appDir = p.dirname(Platform.resolvedExecutable);
-        String serverPath = Platform.isMacOS 
+        String serverPath = Platform.isMacOS
             ? p.join(appDir, '..', 'Resources', 'server', executableName)
             : p.join(appDir, 'server', executableName);
 
@@ -84,7 +114,7 @@ class ServerOrchestrator {
           LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
           // 显式指定工作目录，确保后端程序能找到同目录资源
           _serverProcess = await Process.start(
-            serverPath, 
+            serverPath,
             args,
             workingDirectory: p.dirname(serverPath)
           );
@@ -93,7 +123,10 @@ class ServerOrchestrator {
         }
       }
 
-      if (_serverProcess == null) return false;
+      if (_serverProcess == null) {
+        _isStarting = false;
+        return false;
+      }
 
       _serverProcess?.stdout.listen((data) => LoggerService.d('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
       _serverProcess?.stderr.listen((data) => LoggerService.e('[Server] ${utf8.decode(data, allowMalformed: true).trim()}'));
@@ -103,6 +136,8 @@ class ServerOrchestrator {
         await Future.delayed(const Duration(milliseconds: 500));
         if (await isServerRunning()) {
           LoggerService.i('[Server] Server is now UP and responsive.');
+          _serverReady = true;
+          _isStarting = false;
           return true;
         }
       }
@@ -110,12 +145,34 @@ class ServerOrchestrator {
       LoggerService.e('[Server] Unexpected crash during start phase', e);
     }
 
+    _isStarting = false;
     return false;
+  }
+
+  // Internal method that always kills, used during initial start
+  static Future<void> _forceKillPort() async {
+    LoggerService.i('[Server] Forcing cleanup of any existing server process...');
+    try {
+      if (Platform.isWindows) {
+        await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
+            .timeout(const Duration(milliseconds: 2000));
+      } else {
+        final result = await Process.run('lsof', ['-ti', ':10086'])
+            .timeout(const Duration(seconds: 1));
+        final pid = result.stdout.toString().trim();
+        if (pid.isNotEmpty) {
+          await Process.run('kill', ['-9', pid]);
+        }
+      }
+    } catch (e) {
+      // 忽略可能的错误
+    }
   }
 
   static void stop() {
     _serverProcess?.kill();
     _serverProcess = null;
-    killPort();
+    _serverReady = false;
+    _forceKillPort();
   }
 }
