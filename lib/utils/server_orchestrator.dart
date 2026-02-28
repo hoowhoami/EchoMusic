@@ -74,6 +74,21 @@ class ServerOrchestrator {
         String? serverDir = _findServerDir();
         if (serverDir != null) {
           final npmCmd = Platform.isWindows ? 'npm.cmd' : 'npm';
+
+          // Run npm install to ensure dependencies are up to date
+          LoggerService.i('[Server] Running npm install...');
+          final installResult = await Process.run(
+            npmCmd,
+            ['install'],
+            workingDirectory: serverDir,
+          );
+          if (installResult.exitCode != 0) {
+            LoggerService.e('[Server] npm install failed: ${installResult.stderr}');
+            _isStarting = false;
+            return false;
+          }
+          LoggerService.i('[Server] npm install completed');
+
           LoggerService.i('[Server] Starting debug server in $serverDir');
           _serverProcess = await Process.start(
             npmCmd,

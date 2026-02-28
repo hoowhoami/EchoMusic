@@ -663,7 +663,7 @@ class AudioProvider with ChangeNotifier {
     LoggerService.e('[AudioProvider] Playback error: $err');
 
     final settings = _persistenceProvider?.settings ?? {};
-    final autoNext = settings['autoNext'] ?? true;
+    final autoNext = settings['autoNext'] ?? false;
     final autoNextTime = settings['autoNextTime'] ?? 3000;
 
     if (autoNext) {

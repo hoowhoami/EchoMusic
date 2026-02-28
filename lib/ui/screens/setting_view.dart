@@ -199,7 +199,7 @@ class _SettingViewState extends State<SettingView> {
                 '歌曲加载失败时自动尝试下一首',
                 trailing: _buildSwitch(
                   context,
-                  settings['autoNext'] ?? true,
+                  settings['autoNext'] ?? false,
                   (v) => persistence.updateSetting('autoNext', v),
                 ),
               ),
