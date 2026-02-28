@@ -42,6 +42,10 @@
   ![发现](screenshots/discover.png)
 - 歌词  
   ![歌词](screenshots/lyric.png)
+- 歌曲详情
+  ![歌曲详情](screenshots/song_detail.png)
+- 歌曲评论
+  ![歌曲评论](screenshots/song_comment.png)    
 - 播放列表
   ![播放列表](screenshots/playlist.png)
 - 搜索

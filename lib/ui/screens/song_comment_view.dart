@@ -157,7 +157,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                '${widget.song.name} - 评论',
+                                widget.song.name,
                                 style: TextStyle(
                                   color: theme.colorScheme.onSurface,
                                   fontSize: 16,
