@@ -16,15 +16,23 @@ class SongCommentView extends StatefulWidget {
 
 class _SongCommentViewState extends State<SongCommentView> with TickerProviderStateMixin {
   bool _isLoading = true;
+  bool _isFetchingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final int _pageSize = 30;
+
   Map<String, dynamic>? _commentsData;
   Map<String, dynamic>? _commentCountData;
+  final List<dynamic> _allComments = [];
+  List<dynamic> _hotComments = [];
+  
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _fetchComments();
+    _fetchComments(isRefresh: true);
   }
 
   @override
@@ -33,31 +41,65 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
     super.dispose();
   }
 
-  Future<void> _fetchComments() async {
+  Future<void> _fetchComments({bool isRefresh = false}) async {
+    if (_isFetchingMore) return;
+
+    if (isRefresh) {
+      setState(() {
+        _isLoading = true;
+        _currentPage = 1;
+        _allComments.clear();
+        _hotComments.clear();
+      });
+    } else {
+      setState(() => _isFetchingMore = true);
+    }
+
     try {
       final results = await Future.wait([
-        MusicApi.getMusicComments(widget.song.mixSongId, pagesize: 50),
-        MusicApi.getCommentCount(widget.song.hash),
+        MusicApi.getMusicComments(widget.song.mixSongId, page: _currentPage, pagesize: _pageSize),
+        if (isRefresh) MusicApi.getCommentCount(widget.song.hash) else Future.value(null),
       ]);
       
+      final Map<String, dynamic> currentCommentsData = results[0] as Map<String, dynamic>;
+      final List newComments = currentCommentsData['list'] is List ? currentCommentsData['list'] : [];
+
       if (mounted) {
         setState(() {
-          _commentsData = results[0];
-          _commentCountData = results[1];
+          _commentsData = currentCommentsData;
+          if (isRefresh) {
+            if (results[1] != null) {
+              _commentCountData = results[1] as Map<String, dynamic>;
+            }
+            // 修正热门评论逻辑：如果接口没有显式的 weight_list，则取第一页的前 30 条作为热门
+            _hotComments = currentCommentsData['weight_list'] is List 
+                ? currentCommentsData['weight_list'] 
+                : newComments.take(30).toList();
+          }
+          
+          _allComments.addAll(newComments);
+          _hasMore = newComments.length >= _pageSize;
+          if (_hasMore) _currentPage++;
+          
           _isLoading = false;
+          _isFetchingMore = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+          _isFetchingMore = false;
+        });
       }
     }
   }
 
   String _getCommentCount() {
     try {
-      if (_commentCountData != null && _commentCountData!['count'] != null) {
-        return _commentCountData!['count'].toString();
+      final String hashKey = widget.song.hash.toLowerCase();
+      if (_commentCountData != null && _commentCountData![hashKey] != null) {
+        return _commentCountData![hashKey].toString();
       }
       if (_commentsData != null && _commentsData!['count'] != null) {
         return _commentsData!['count'].toString();
@@ -115,7 +157,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                widget.song.name,
+                                '${widget.song.name} - 评论',
                                 style: TextStyle(
                                   color: theme.colorScheme.onSurface,
                                   fontSize: 16,
@@ -251,38 +293,85 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
   }
 
   Widget _buildCommentList({required bool isHot}) {
-    final List normalList = _commentsData?['list'] is List ? _commentsData!['list'] : [];
-    
-    List displayList;
-    List? starList;
-
-    if (isHot) {
-      final starCmts = _commentsData?['star_cmts'];
-      starList = (starCmts != null && starCmts['list'] is List) ? starCmts['list'] : [];
-      displayList = normalList.take(20).toList();
-    } else {
-      displayList = normalList;
-    }
+    List displayList = isHot ? _hotComments : _allComments;
+    List? starList = (_commentsData?['star_cmts']?['list'] is List) ? _commentsData!['star_cmts']!['list'] : [];
 
     if (displayList.isEmpty && (starList == null || starList.isEmpty)) {
       return _buildEmptyState(context, '暂无评论', CupertinoIcons.chat_bubble_text);
     }
 
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
-        children: [
-          if (isHot && starList != null && starList.isNotEmpty) ...[
-            _buildSectionHeader('歌手说'),
-            ...starList.map((cmt) => _buildCommentItem(context, cmt, isStar: true)),
-            const SizedBox(height: 24),
-          ],
-          if (isHot && displayList.isNotEmpty) _buildSectionHeader('热门评论'),
-          ...displayList.map((cmt) => _buildCommentItem(context, cmt)),
-        ],
+    return NotificationListener<ScrollNotification>(
+      onNotification: (ScrollNotification notification) {
+        // 仅在“全部评论”页签且滚动到底部时触发加载
+        if (!isHot && 
+            notification is ScrollUpdateNotification && 
+            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+          if (!_isFetchingMore && _hasMore) {
+            _fetchComments();
+          }
+        }
+        return false;
+      },
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: ListView.builder(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
+          // 虚拟列表核心：使用 builder 只渲染可见项
+          itemCount: _calculateItemCount(isHot, displayList, starList),
+          itemBuilder: (context, index) => _buildItem(context, index, isHot, displayList, starList),
+        ),
       ),
     );
+  }
+
+  int _calculateItemCount(bool isHot, List displayList, List? starList) {
+    if (isHot) {
+      int count = displayList.length;
+      if (starList != null && starList.isNotEmpty) count += (starList.length + 2); // 标题 + 列表 + 间距
+      if (displayList.isNotEmpty) count += 1; // 热门标题
+      return count;
+    } else {
+      return displayList.length + 1; // 列表 + 加载更多提示
+    }
+  }
+
+  Widget _buildItem(BuildContext context, int index, bool isHot, List displayList, List? starList) {
+    int offset = 0;
+
+    if (isHot) {
+      // 1. 歌手说部分
+      if (starList != null && starList.isNotEmpty) {
+        if (index == 0) return _buildSectionHeader('歌手说');
+        if (index <= starList.length) return _buildCommentItem(context, starList[index - 1], isStar: true);
+        offset = starList.length + 1;
+        if (index == offset) return const SizedBox(height: 24);
+        offset++;
+      }
+
+      // 2. 热门评论标题
+      if (index == offset) return _buildSectionHeader('热门评论');
+      int cmtIndex = index - offset - 1;
+
+      // 3. 热门评论项
+      if (cmtIndex >= 0 && cmtIndex < displayList.length) {
+        return _buildCommentItem(context, displayList[cmtIndex]);
+      }
+    } else {
+      // 全部评论逻辑
+      if (index < displayList.length) {
+        return _buildCommentItem(context, displayList[index]);
+      }
+      // 加载状态
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: _hasMore 
+              ? const CupertinoActivityIndicator() 
+              : Text('已加载全部评论', style: TextStyle(color: Theme.of(context).disabledColor, fontSize: 12)),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   Widget _buildCommentItem(BuildContext context, Map comment, {bool isStar = false}) {
@@ -340,7 +429,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
 
   Widget _buildSectionHeader(String title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 12),
+      padding: const EdgeInsets.only(left: 4, bottom: 12, top: 8),
       child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.0)),
     );
   }

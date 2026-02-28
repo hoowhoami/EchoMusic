@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../api/music_api.dart';
-import '../../providers/navigation_provider.dart';
 import '../../utils/format_utils.dart';
 import '../widgets/cover_image.dart';
-import 'song_comment_view.dart';
 
 class SongDetailView extends StatefulWidget {
   final Song song;
