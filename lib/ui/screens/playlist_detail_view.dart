@@ -10,7 +10,6 @@ import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
-import '../widgets/custom_dialog.dart';
 import '../widgets/song_list_scaffold.dart';
 
 class PlaylistDetailView extends StatefulWidget {

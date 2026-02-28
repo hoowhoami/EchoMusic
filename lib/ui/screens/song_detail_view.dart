@@ -190,7 +190,6 @@ class _SongDetailViewState extends State<SongDetailView> {
   }
 
   Widget _buildInfoGrid(BuildContext context) {
-    final theme = Theme.of(context);
     final String language = _privilegeData?['trans_param']?['language'] ?? '未知';
     final int bitrate = _privilegeData?['info']?['bitrate'] ?? 0;
     final int filesize = _privilegeData?['info']?['filesize'] ?? 0;

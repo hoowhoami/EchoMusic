@@ -158,6 +158,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _indexNotifier.value = state.index;
       if (state.routeName == 'playlist_detail') {
         _selectedPlaylist = state.arguments as Playlist?;
+      } else if (state.routeName == 'album_detail' && state.arguments is Map) {
+        _selectedPlaylist = (state.arguments as Map)['playlist'] as Playlist?;
       } else {
         _selectedPlaylist = null;
       }
@@ -264,7 +266,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                    albumName: playlist.name,
                                  ),
                                  name: 'album_detail',
-                                 arguments: {'id': playlist.originalId, 'name': playlist.name}
+                                 arguments: {
+                                   'id': playlist.originalId, 
+                                   'name': playlist.name,
+                                   'playlist': playlist,
+                                 }
                                );
                              } else {
                                _pushRoute(
@@ -318,6 +324,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     setState(() {
                                       if (prevRoute?.settings.name == 'playlist_detail') {
                                         _selectedPlaylist = prevRoute?.settings.arguments as Playlist?;
+                                      } else if (prevRoute?.settings.name == 'album_detail' && prevRoute?.settings.arguments is Map) {
+                                        _selectedPlaylist = (prevRoute?.settings.arguments as Map)['playlist'] as Playlist?;
                                       } else {
                                         _selectedPlaylist = null;
                                       }
@@ -342,6 +350,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                       
                                       if (name == 'playlist_detail') {
                                         _selectedPlaylist = args as Playlist?;
+                                      } else if (name == 'album_detail' && args is Map) {
+                                        _selectedPlaylist = args['playlist'] as Playlist?;
                                       }
                                     });
                                   }
