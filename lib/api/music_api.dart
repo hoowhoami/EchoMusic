@@ -249,6 +249,61 @@ class MusicApi {
     }
   }
 
+  static Future<Map<String, dynamic>> getSongRanking(dynamic albumAudioId) async {
+    try {
+      final response = await _dio.get('/song/ranking', queryParameters: {'album_audio_id': albumAudioId});
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSongRankingFilter(dynamic albumAudioId, {int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/song/ranking/filter', queryParameters: {
+        'album_audio_id': albumAudioId,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getFavoriteCount(String mixSongIds) async {
+    try {
+      final response = await _dio.get('/favorite/count', queryParameters: {'mixsongids': mixSongIds});
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getCommentCount(String hash, {String? specialId}) async {
+    try {
+      final params = {'hash': hash};
+      if (specialId != null) params['special_id'] = specialId;
+      final response = await _dio.get('/comment/count', queryParameters: params);
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getMusicComments(dynamic mixSongId, {int page = 1, int pagesize = 30}) async {
+    try {
+      final response = await _dio.get('/comment/music', queryParameters: {
+        'mixsongid': mixSongId,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
   static Future<List<Song>> getNewSongs() async {
     try {
       final response = await _dio.get('/top/song');

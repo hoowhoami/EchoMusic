@@ -11,6 +11,7 @@ import '../../utils/constants.dart';
 import '../screens/lyric_page.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
+import 'song_detail_dialog.dart';
 
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
@@ -350,6 +351,12 @@ class _PlayerSongInfo extends StatelessWidget {
             if (song.source == 'cloud')
               _PlayerIconButton(icon: CupertinoIcons.cloud_fill, size: 16, activeColor: accentColor, isSelected: true, onPressed: (){}, tooltip: '云盘歌曲'),
             const _FavoriteButton(),
+            _PlayerIconButton(
+              icon: CupertinoIcons.ellipsis,
+              size: 20,
+              tooltip: '歌曲详情',
+              onPressed: () => SongDetailDialog.show(context, song),
+            ),
           ],
         );
       },

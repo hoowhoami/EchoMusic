@@ -10,6 +10,7 @@ import '../screens/artist_detail_view.dart';
 import '../screens/album_detail_view.dart';
 import 'cover_image.dart';
 import 'custom_toast.dart';
+import 'song_detail_dialog.dart';
 
 import '../../models/playlist.dart' as model;
 
@@ -38,7 +39,7 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
 
-  void _showContextMenu(BuildContext context, [Offset? tapPosition]) {
+  Future<void> _showContextMenu(BuildContext context, [Offset? tapPosition]) async {
     final userProvider = context.read<UserProvider>();
     final theme = Theme.of(context);
 
@@ -52,6 +53,16 @@ class _SongCardState extends State<SongCard> {
             Icon(CupertinoIcons.play_circle, size: 18),
             SizedBox(width: 12),
             Text('立即播放', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'songDetails',
+        child: Row(
+          children: [
+            Icon(CupertinoIcons.info_circle, size: 18),
+            SizedBox(width: 12),
+            Text('歌曲详情', style: TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -165,19 +176,26 @@ class _SongCardState extends State<SongCard> {
       );
     }
 
-    showMenu(
+    final value = await showMenu(
       context: context,
       position: position,
       items: menuItems,
       elevation: 8,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ).then((value) async {
-      if (mounted) setState(() => _isMenuOpen = false);
-      if (!context.mounted) return;
-      if (value == 'play') {
+    );
+
+    if (mounted) setState(() => _isMenuOpen = false);
+    if (value == null || !mounted) return;
+
+    if (value == 'play') {
+      if (context.mounted) {
         context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
-      } else if (value == 'artist') {
-        Navigator.of(context).push(
+      }
+    } else if (value == 'songDetails') {
+      SongDetailDialog.show(this.context, widget.song);
+    } else if (value == 'artist') {
+      if (mounted) {
+        Navigator.of(this.context).push(
           MaterialPageRoute(
             builder: (context) => ArtistDetailView(
               artistId: widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0,
@@ -185,8 +203,10 @@ class _SongCardState extends State<SongCard> {
             ),
           ),
         );
-      } else if (value == 'album') {
-        Navigator.of(context).push(
+      }
+    } else if (value == 'album') {
+      if (mounted) {
+        Navigator.of(this.context).push(
           MaterialPageRoute(
             builder: (context) => AlbumDetailView(
               albumId: int.tryParse(widget.song.albumId ?? '0') ?? 0,
@@ -194,19 +214,19 @@ class _SongCardState extends State<SongCard> {
             ),
           ),
         );
-      } else if (value == 'removeFromPlaylist') {
-        if (widget.parentPlaylist != null) {
-          final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
-          if (context.mounted) {
-            if (success) {
-              CustomToast.success(context, '已从歌单删除');
-            } else {
-              CustomToast.error(context, '删除失败');
-            }
+      }
+    } else if (value == 'removeFromPlaylist') {
+      if (widget.parentPlaylist != null) {
+        final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
+        if (mounted) {
+          if (success) {
+            CustomToast.success(this.context, '已从歌单删除');
+          } else {
+            CustomToast.error(this.context, '删除失败');
           }
         }
       }
-    });
+    }
   }
 
   @override
