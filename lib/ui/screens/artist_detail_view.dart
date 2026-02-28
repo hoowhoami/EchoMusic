@@ -64,7 +64,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
             SliverAppBar(
               backgroundColor: theme.scaffoldBackgroundColor,
               surfaceTintColor: Colors.transparent,
-              expandedHeight: 280,
+              expandedHeight: 180,
               pinned: true,
               automaticallyImplyLeading: false,
               elevation: 0,
@@ -92,7 +92,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                                     url: artist.pic,
                                     width: 32,
                                     height: 32,
-                                    borderRadius: 16, // 圆形头像
+                                    borderRadius: 16, 
                                     showShadow: false,
                                   ),
                                 const SizedBox(width: 12),
@@ -122,7 +122,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                     final artist = snapshot.data;
 
                     return Container(
-                      padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
@@ -141,16 +141,16 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                               child: ClipOval(
                                 child: CachedNetworkImage(
                                   imageUrl: artist.pic,
-                                  width: 140,
-                                  height: 140,
+                                  width: 130,
+                                  height: 130,
                                   fit: BoxFit.cover,
                                 ),
                               ),
                             )
                           else
                             Container(
-                              width: 140,
-                              height: 140,
+                              width: 130,
+                              height: 130,
                               decoration: BoxDecoration(
                                 color: theme.colorScheme.surfaceContainerHighest,
                                 shape: BoxShape.circle,
@@ -176,79 +176,79 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                                 Text(
                                   widget.artistName,
                                   style: theme.textTheme.titleLarge?.copyWith(
-                                    fontSize: 24,
+                                    fontSize: 22,
                                     fontWeight: FontWeight.w900,
                                     height: 1.1,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                                 if (artist != null)
-                                  Text(
-                                    '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${artist.fansCount} 粉丝',
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${artist.fansCount} 粉丝',
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      OutlinedButton.icon(
+                                        onPressed: () async {
+                                          bool success;
+                                          if (isFollowing) {
+                                            success = await userProvider.unfollowSinger(widget.artistId);
+                                            if (context.mounted) {
+                                              if (success) {
+                                                CustomToast.success(context, '已取消关注');
+                                              } else {
+                                                CustomToast.error(context, '操作失败');
+                                              }
+                                            }
+                                          } else {
+                                            success = await userProvider.followSinger(widget.artistId);
+                                            if (context.mounted) {
+                                              if (success) {
+                                                CustomToast.success(context, '关注成功');
+                                              } else {
+                                                CustomToast.error(context, '关注失败');
+                                              }
+                                            }
+                                          }
+                                        },
+                                        icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
+                                        label: Text(isFollowing ? '已关注' : '关注', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                        style: OutlinedButton.styleFrom(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          side: BorderSide(color: theme.colorScheme.outlineVariant),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          minimumSize: const Size(0, 36),
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      OutlinedButton.icon(
+                                        onPressed: () async {
+                                          final songs = await _songsFuture;
+                                          if (songs.isNotEmpty) {
+                                            context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                          }
+                                        },
+                                        icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                                        label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                        style: OutlinedButton.styleFrom(
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                          side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                                          minimumSize: const Size(0, 36),
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    OutlinedButton.icon(
-                                      onPressed: () async {
-                                        final songs = await _songsFuture;
-                                        if (songs.isNotEmpty) {
-                                          context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                                        }
-                                      },
-                                      icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                                      label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                                      style: OutlinedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                                        minimumSize: const Size(0, 40),
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    OutlinedButton.icon(
-                                      onPressed: () async {
-                                        bool success;
-                                        if (isFollowing) {
-                                          success = await userProvider.unfollowSinger(widget.artistId);
-                                          if (context.mounted) {
-                                            if (success) {
-                                              CustomToast.success(context, '已取消关注');
-                                            } else {
-                                              CustomToast.error(context, '操作失败');
-                                            }
-                                          }
-                                        } else {
-                                          success = await userProvider.followSinger(widget.artistId);
-                                          if (context.mounted) {
-                                            if (success) {
-                                              CustomToast.success(context, '关注成功');
-                                            } else {
-                                              CustomToast.error(context, '关注失败');
-                                            }
-                                          }
-                                        }
-                                      },
-                                      icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
-                                      label: Text(isFollowing ? '已关注' : '关注', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                      style: OutlinedButton.styleFrom(
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        side: BorderSide(color: theme.colorScheme.outlineVariant),
-                                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                                        minimumSize: const Size(0, 40),
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ],
                             ),
                           ),
@@ -268,7 +268,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                   if (bio == null || bio.isEmpty) return const SizedBox.shrink();
 
                   return Padding(
-                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -276,21 +276,22 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                           '歌手简介',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
-                            fontSize: 16,
+                            fontSize: 15,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
                           bio,
-                          maxLines: 3,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.6,
+                            height: 1.5,
                             fontWeight: FontWeight.w500,
+                            fontSize: 12,
                           ),
                         ),
-                        if (bio.length > 100)
+                        if (bio.length > 80)
                           InkWell(
                             onTap: () {
                               CustomDialog.show(
@@ -306,12 +307,12 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                             splashColor: Colors.transparent,
                             highlightColor: Colors.transparent,
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.symmetric(vertical: 2),
                               child: Text(
                                 '查看详情',
                                 style: TextStyle(
                                   color: theme.colorScheme.primary,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -325,12 +326,12 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(40, 0, 40, 12),
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                 child: Text(
                   '热门歌曲',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    fontSize: 16,
+                    fontSize: 15,
                   ),
                 ),
               ),

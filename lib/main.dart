@@ -10,6 +10,7 @@ import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/auth_listener.dart';
@@ -62,6 +63,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => PersistenceProvider()),
         ChangeNotifierProvider(create: (_) => RefreshProvider()),
+        ChangeNotifierProvider(create: (_) => NavigationProvider()),
         ChangeNotifierProxyProvider2<PersistenceProvider, RefreshProvider, UserProvider>(
           create: (_) => UserProvider(),
           update: (_, p, r, u) => u!
@@ -144,9 +146,6 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 
   @override
   void onWindowFocus() async {
-    // 窗口获得焦点时，通常已经是可见状态。
-    // 移除 setState(() {}) 以防止切换应用时触发全量重绘。
-    // 移除冗余的 windowManager.focus() 调用。
   }
 
   @override
@@ -157,7 +156,6 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 
   @override
   void onTrayIconMouseDown() async {
-    // 增加异步等待确保顺序，并统一调用 show/focus
     await windowManager.show();
     await windowManager.focus();
   }

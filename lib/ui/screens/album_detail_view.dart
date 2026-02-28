@@ -74,7 +74,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 280,
+          expandedHeight: 180,
           pinned: true,
           automaticallyImplyLeading: false,
           elevation: 0,
@@ -121,17 +121,17 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
               },
             ),
             background: Container(
-              padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   CoverImage(
                     url: _album?.pic ?? '',
-                    width: 150,
-                    height: 150,
+                    width: 130,
+                    height: 130,
                     borderRadius: 16,
                   ),
-                  const SizedBox(width: 32),
+                  const SizedBox(width: 24),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,14 +150,14 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                         Text(
                           widget.albumName,
                           style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 26,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                           ),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         if (_album != null)
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,7 +172,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 12),
                               Row(
                                 children: [
                                   _buildInfoSmall(context, Icons.favorite_rounded, _formatNumber(_album!.heat)),
@@ -187,81 +187,78 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                       const SizedBox(width: 8),
                                     ],
                                   ],
+                                  const Spacer(),
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      if (!userProvider.isAuthenticated) {
+                                        CustomToast.error(context, '请先登录');
+                                        return;
+                                      }
+                                      
+                                      if (_album == null) return;
+
+                                      bool success;
+                                      if (isFavorited) {
+                                        success = await userProvider.unfavoriteAlbum(widget.albumId);
+                                        if (context.mounted && success) {
+                                          CustomToast.success(context, '已取消收藏');
+                                        }
+                                      } else {
+                                        success = await userProvider.favoriteAlbum(
+                                          widget.albumId, 
+                                          widget.albumName,
+                                          singerId: _album!.singerId,
+                                        );
+                                        if (context.mounted && success) {
+                                          CustomToast.success(context, '已收藏专辑');
+                                        }
+                                      }
+                                    },
+                                    icon: Icon(
+                                      isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
+                                      size: 16,
+                                      color: isFavorited ? Colors.red : null,
+                                    ),
+                                    label: Text(
+                                      '收藏', 
+                                      style: TextStyle(
+                                        fontSize: 13, 
+                                        fontWeight: FontWeight.w700,
+                                        color: isFavorited ? Colors.red : null,
+                                      )
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      side: BorderSide(
+                                        color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      minimumSize: const Size(0, 36),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: () async {
+                                      final songs = _songs ?? [];
+                                      if (songs.isNotEmpty) {
+                                        context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                      }
+                                    },
+                                    icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                                    label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      minimumSize: const Size(0, 36),
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ],
                           ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: () async {
-                                final songs = _songs ?? [];
-                                if (songs.isNotEmpty) {
-                                  context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                                }
-                              },
-                              icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                              label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                              style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                minimumSize: const Size(0, 40),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                                                        OutlinedButton.icon(
-                                                          onPressed: () async {
-                                                            if (!userProvider.isAuthenticated) {
-                                                              CustomToast.error(context, '请先登录');
-                                                              return;
-                                                            }
-                                                            
-                                                            if (_album == null) return;
-                            
-                                                            bool success;
-                                                            if (isFavorited) {
-                                                              success = await userProvider.unfavoriteAlbum(widget.albumId);
-                                                              if (context.mounted && success) {
-                                                                CustomToast.success(context, '已取消收藏');
-                                                              }
-                                                            } else {
-                                                              success = await userProvider.favoriteAlbum(
-                                                                widget.albumId, 
-                                                                widget.albumName,
-                                                                singerId: _album!.singerId,
-                                                              );
-                                                              if (context.mounted && success) {
-                                                                CustomToast.success(context, '已收藏专辑');
-                                                              }
-                                                            }
-                                                          },
-                                                          icon: Icon(
-                                                            isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
-                                                            size: 16,
-                                                            color: isFavorited ? Colors.red : null,
-                                                          ),
-                                                          label: Text(
-                                                            '收藏', 
-                                                            style: TextStyle(
-                                                              fontSize: 13, 
-                                                              fontWeight: FontWeight.w700,
-                                                              color: isFavorited ? Colors.red : null,
-                                                            )
-                                                          ),
-                                                          style: OutlinedButton.styleFrom(
-                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                                            side: BorderSide(
-                                                              color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
-                                                            ),
-                                                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                            minimumSize: const Size(0, 40),
-                                                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                                          ),
-                                                        ),                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -272,7 +269,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         ),
         SliverToBoxAdapter(
           child: _album?.intro != null && _album!.intro.isNotEmpty ? Padding(
-            padding: const EdgeInsets.fromLTRB(40, 10, 40, 20),
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -280,21 +277,22 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                   '专辑介绍',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
-                    fontSize: 16,
+                    fontSize: 15,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   _album!.intro,
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.6,
+                    height: 1.5,
                     fontWeight: FontWeight.w500,
+                    fontSize: 12,
                   ),
                 ),
-                if (_album!.intro.length > 100)
+                if (_album!.intro.length > 80)
                   InkWell(
                     onTap: () {
                       CustomDialog.show(
@@ -310,12 +308,12 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                     splashColor: Colors.transparent,
                     highlightColor: Colors.transparent,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text(
                         '查看详情',
                         style: TextStyle(
                           color: theme.colorScheme.primary,
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

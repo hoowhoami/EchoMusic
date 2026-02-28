@@ -109,7 +109,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 280, // Match Album/Artist height
+          expandedHeight: 180, 
           pinned: true,
           elevation: 0,
           automaticallyImplyLeading: false,
@@ -157,17 +157,17 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
               },
             ),
             background: Padding(
-              padding: const EdgeInsets.fromLTRB(40, 20, 40, 20),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   CoverImage(
                     url: playlist.pic,
-                    width: 160,
-                    height: 160,
+                    width: 130,
+                    height: 130,
                     borderRadius: 16,
                   ),
-                  const SizedBox(width: 32),
+                  const SizedBox(width: 24),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,17 +186,17 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                         Text(
                           playlist.name,
                           style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 26,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                           ),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         if (playlist.nickname.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 10.0),
+                            padding: const EdgeInsets.only(bottom: 8.0),
                             child: Row(
                               children: [
                                 if (playlist.userPic.isNotEmpty)
@@ -205,8 +205,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                     child: ClipOval(
                                       child: CoverImage(
                                         url: playlist.userPic,
-                                        width: 24,
-                                        height: 24,
+                                        width: 20,
+                                        height: 20,
                                         borderRadius: 0,
                                         showShadow: false,
                                       ),
@@ -215,7 +215,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                 else
                                   Padding(
                                     padding: const EdgeInsets.only(right: 8.0),
-                                    child: Icon(CupertinoIcons.person_circle_fill, size: 24, color: theme.colorScheme.primary.withAlpha(180)),
+                                    child: Icon(CupertinoIcons.person_circle_fill, size: 20, color: theme.colorScheme.primary.withAlpha(180)),
                                   ),
                                 Text(
                                   playlist.nickname,
@@ -239,13 +239,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                           ),
                         if (playlist.intro.isNotEmpty)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 12.0),
+                            padding: const EdgeInsets.only(bottom: 8.0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
                                   playlist.intro,
-                                  maxLines: 2,
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: theme.colorScheme.onSurfaceVariant,
@@ -254,43 +254,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                     height: 1.4,
                                   ),
                                 ),
-                                if (playlist.intro.length > 60)
-                                  InkWell(
-                                    onTap: () {
-                                      CustomDialog.show(
-                                        context,
-                                        title: '歌单详情',
-                                        content: playlist.intro,
-                                        confirmText: '确定',
-                                        showCancel: false,
-                                        width: 600,
-                                      );
-                                    },
-                                    hoverColor: Colors.transparent,
-                                    splashColor: Colors.transparent,
-                                    highlightColor: Colors.transparent,
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 2),
-                                      child: Text(
-                                        '查看详情',
-                                        style: TextStyle(
-                                          color: theme.colorScheme.primary,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
                               ],
                             ),
                           ),
                         Row(
                           children: [
                             _buildInfoChip(context, CupertinoIcons.music_note_2, '${_songs?.length ?? playlist.count} 首歌曲'),
-                            if (playlist.updateTime != null) ...[
-                              const SizedBox(width: 12),
-                              _buildInfoChip(context, Icons.update_rounded, '更新于 ${_formatTimestamp(playlist.updateTime)}'),
-                            ],
                             const Spacer(),
                             if (userProvider.isAuthenticated && !isCreated) ...[
                               OutlinedButton.icon(
@@ -341,7 +310,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                     color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
                                   ),
                                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  minimumSize: const Size(0, 40),
+                                  minimumSize: const Size(0, 36),
                                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                 ),
                               ),
@@ -360,7 +329,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                                minimumSize: const Size(0, 40),
+                                minimumSize: const Size(0, 36),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                             ),

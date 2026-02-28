@@ -6,11 +6,13 @@ import '../../providers/audio_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/selection_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../screens/artist_detail_view.dart';
 import '../screens/album_detail_view.dart';
 import 'cover_image.dart';
 import 'custom_toast.dart';
-import 'song_detail_dialog.dart';
+import '../screens/song_detail_view.dart';
+import '../screens/song_comment_view.dart';
 
 import '../../models/playlist.dart' as model;
 
@@ -63,6 +65,16 @@ class _SongCardState extends State<SongCard> {
             Icon(CupertinoIcons.info_circle, size: 18),
             SizedBox(width: 12),
             Text('歌曲详情', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'songComments',
+        child: Row(
+          children: [
+            Icon(CupertinoIcons.chat_bubble_text, size: 18),
+            SizedBox(width: 12),
+            Text('查看评论', style: TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -192,27 +204,39 @@ class _SongCardState extends State<SongCard> {
         context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
       }
     } else if (value == 'songDetails') {
-      SongDetailDialog.show(this.context, widget.song);
+      context.read<NavigationProvider>().push(
+        SongDetailView(song: widget.song),
+        name: 'song_detail',
+        arguments: widget.song,
+      );
+    } else if (value == 'songComments') {
+      context.read<NavigationProvider>().push(
+        SongCommentView(song: widget.song),
+        name: 'song_comment',
+        arguments: widget.song,
+      );
     } else if (value == 'artist') {
       if (mounted) {
-        Navigator.of(this.context).push(
-          MaterialPageRoute(
-            builder: (context) => ArtistDetailView(
-              artistId: widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0,
-              artistName: widget.song.singerName,
-            ),
+        final artistId = widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0;
+        context.read<NavigationProvider>().push(
+          ArtistDetailView(
+            artistId: artistId,
+            artistName: widget.song.singerName,
           ),
+          name: 'artist_detail',
+          arguments: {'id': artistId, 'name': widget.song.singerName},
         );
       }
     } else if (value == 'album') {
       if (mounted) {
-        Navigator.of(this.context).push(
-          MaterialPageRoute(
-            builder: (context) => AlbumDetailView(
-              albumId: int.tryParse(widget.song.albumId ?? '0') ?? 0,
-              albumName: widget.song.albumName,
-            ),
+        final albumId = int.tryParse(widget.song.albumId ?? '0') ?? 0;
+        context.read<NavigationProvider>().push(
+          AlbumDetailView(
+            albumId: albumId,
+            albumName: widget.song.albumName,
           ),
+          name: 'album_detail',
+          arguments: {'id': albumId, 'name': widget.song.albumName},
         );
       }
     } else if (value == 'removeFromPlaylist') {

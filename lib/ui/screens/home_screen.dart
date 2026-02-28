@@ -14,13 +14,18 @@ import 'cloud_view.dart';
 import 'profile_view.dart';
 import 'playlist_detail_view.dart';
 import 'album_detail_view.dart';
+import 'artist_detail_view.dart';
 import 'recommend_song_view.dart';
 import 'rank_view.dart';
+import 'song_detail_view.dart';
+import 'song_comment_view.dart';
 import '../../models/playlist.dart';
+import '../../models/song.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../api/music_api.dart';
 import '../../utils/version_service.dart';
@@ -49,8 +54,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<_HistoryEntry> _history = [_HistoryEntry(index: 0)];
   int _historyIndex = 0;
   bool _isInternalNav = false;
-  
-  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -70,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context) => const UserAgreementDialog(),
       );
     } else {
-      // If already accepted, check for updates silently
       _checkForUpdates(silent: true);
     }
   }
@@ -87,7 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     } else if (!silent && mounted) {
-      // If manually checking and no update found
       final packageInfo = await PackageInfo.fromPlatform();
       showDialog(
         context: context,
@@ -123,20 +124,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedPlaylist = null;
       
       _isInternalNav = true;
-      _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      context.read<NavigationProvider>().popUntilFirst();
       _isInternalNav = false;
     });
   }
 
   void _pushRoute(Widget page, {String? name, dynamic arguments}) {
     context.read<SelectionProvider>().reset();
-    
-    _navigatorKey.currentState?.push(
-      CupertinoPageRoute(
-        builder: (_) => page,
-        settings: RouteSettings(name: name, arguments: arguments),
-      ),
-    );
+    context.read<NavigationProvider>().push(page, name: name, arguments: arguments);
   }
 
   void _goBack() {
@@ -168,14 +163,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
 
-    _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+    context.read<NavigationProvider>().popUntilFirst();
     
     if (state.routeName != null) {
-      _navigatorKey.currentState?.push(
-        CupertinoPageRoute(
-          builder: (_) => _rebuildPage(state.routeName!, state.arguments),
-          settings: RouteSettings(name: state.routeName, arguments: state.arguments),
-        ),
+      context.read<NavigationProvider>().push(
+        _rebuildPage(state.routeName!, state.arguments),
+        name: state.routeName,
+        arguments: state.arguments,
       );
     }
     _isInternalNav = false;
@@ -197,6 +191,15 @@ class _HomeScreenState extends State<HomeScreen> {
           isRecommend: arguments?['isRecommend'] ?? false,
           showTitle: arguments?['showTitle'] ?? true,
           initialRankId: arguments?['initialRankId'],
+        );
+      case 'song_detail':
+        return SongDetailView(song: arguments as Song);
+      case 'song_comment':
+        return SongCommentView(song: arguments as Song);
+      case 'artist_detail':
+        return ArtistDetailView(
+          artistId: arguments['id'],
+          artistName: arguments['name'],
         );
       default:
         return const SizedBox();
@@ -230,6 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final navProvider = context.watch<NavigationProvider>();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -303,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       Expanded(
                         child: Navigator(
-                          key: _navigatorKey,
+                          key: navProvider.navigatorKey,
                           observers: [
                             _NavigationObserver((route, prevRoute, type) {
                               if (_isInternalNav) return;
@@ -312,7 +316,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 WidgetsBinding.instance.addPostFrameCallback((_) {
                                   if (mounted) {
                                     setState(() {
-                                      // Sync state with the route we just returned to
                                       if (prevRoute?.settings.name == 'playlist_detail') {
                                         _selectedPlaylist = prevRoute?.settings.arguments as Playlist?;
                                       } else {

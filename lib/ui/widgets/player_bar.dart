@@ -9,9 +9,11 @@ import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import '../../utils/constants.dart';
 import '../screens/lyric_page.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
-import 'song_detail_dialog.dart';
+import '../screens/song_detail_view.dart';
+import '../screens/song_comment_view.dart';
 
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
@@ -352,10 +354,24 @@ class _PlayerSongInfo extends StatelessWidget {
               _PlayerIconButton(icon: CupertinoIcons.cloud_fill, size: 16, activeColor: accentColor, isSelected: true, onPressed: (){}, tooltip: '云盘歌曲'),
             const _FavoriteButton(),
             _PlayerIconButton(
-              icon: CupertinoIcons.ellipsis,
+              icon: CupertinoIcons.chat_bubble_text,
+              size: 20,
+              tooltip: '歌曲评论',
+              onPressed: () => context.read<NavigationProvider>().push(
+                SongCommentView(song: song),
+                name: 'song_comment',
+                arguments: song,
+              ),
+            ),
+            _PlayerIconButton(
+              icon: CupertinoIcons.info_circle,
               size: 20,
               tooltip: '歌曲详情',
-              onPressed: () => SongDetailDialog.show(context, song),
+              onPressed: () => context.read<NavigationProvider>().push(
+                SongDetailView(song: song),
+                name: 'song_detail',
+                arguments: song,
+              ),
             ),
           ],
         );
