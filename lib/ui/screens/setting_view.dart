@@ -519,7 +519,7 @@ class _SettingViewState extends State<SettingView> {
     switch (theme) {
       case 'light': return '浅色模式';
       case 'dark': return '深色模式';
-      default: return '跟随系统';
+      default: return 'auto';
     }
   }
 

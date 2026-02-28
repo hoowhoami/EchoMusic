@@ -18,9 +18,11 @@ import 'utils/logger.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-void main(List<String> args) async {
+void main() async {
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
+  
+  await LoggerService.init();
 
   JustAudioMediaKit.ensureInitialized(
     linux: true,
@@ -30,7 +32,6 @@ void main(List<String> args) async {
     iOS: false,
   );
   
-  await LoggerService.init();
   LoggerService.i('App starting...');
   
   await windowManager.ensureInitialized();

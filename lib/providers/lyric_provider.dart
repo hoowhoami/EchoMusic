@@ -87,6 +87,7 @@ class LyricProvider with ChangeNotifier {
     } else {
       _lyricsMode = LyricsMode.none;
     }
+    
     notifyListeners();
   }
 

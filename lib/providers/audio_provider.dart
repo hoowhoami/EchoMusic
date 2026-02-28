@@ -119,6 +119,7 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer = null;
 
     final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
+    
     if (!isFadeEnabled) {
       _player.setVolume(target);
       _isInternalChanging = false;
@@ -149,7 +150,8 @@ class AudioProvider with ChangeNotifier {
         return;
       }
       currentStep++;
-      _player.setVolume((startVolume + volumeStep * currentStep).clamp(0.0, 1.0));
+      final nextVol = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
+      _player.setVolume(nextVol);
       if (currentStep >= totalSteps) {
         timer.cancel();
         _fadeTimer = null;
@@ -164,11 +166,16 @@ class AudioProvider with ChangeNotifier {
 
   void _initListeners() {
     _subscriptions.add(_player.playbackEventStream.listen((event) {
+      if (event.processingState == ProcessingState.idle) {
+        LoggerService.d('[AudioProvider] Player is idle');
+      }
     }, onError: (Object e, StackTrace st) {
       _handlePlayError(e);
     }));
 
     _subscriptions.add(_player.playerStateStream.listen((state) {
+      LoggerService.d('[AudioProvider] PlayerState: playing=${state.playing}, processingState=${state.processingState}');
+      
       if (state.processingState == ProcessingState.completed) {
         // On Windows with just_audio_media_kit, completed events can be unreliable.
         // We use a simple approach: trust the completed event unless we just seeked.
@@ -183,7 +190,7 @@ class AudioProvider with ChangeNotifier {
 
         final pos = _player.position;
         final dur = _player.duration ?? Duration.zero;
-        LoggerService.i('[AudioProvider] Playback completed. pos=$pos, dur=$dur');
+        LoggerService.i('[AudioProvider] Playback completed normally. pos=$pos, dur=$dur');
         _handlePlaybackEnded();
       }
       _safeNotify();
@@ -218,8 +225,8 @@ class AudioProvider with ChangeNotifier {
         // treat as end of track. This helps on Windows where completed event may not fire.
         if (_player.playing && total.inMilliseconds > 0) {
           final remaining = total.inMilliseconds - pos.inMilliseconds;
-          if (remaining >= 0 && remaining < 500 && !_isHandlingEnd) {
-            LoggerService.i('[AudioProvider] Position near end, triggering completion: pos=$pos, dur=$total');
+          if (remaining >= 0 && remaining < 600 && !_isHandlingEnd) {
+            LoggerService.i('[AudioProvider] Position near end (remaining=${remaining}ms), triggering completion: pos=$pos, dur=$total');
             _handlePlaybackEnded();
           }
         }
@@ -243,12 +250,13 @@ class AudioProvider with ChangeNotifier {
       if (_isDisposed || _isInternalChanging) return;
       try {
         if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          _userVolumeController.add(v);
-          if (v > 0.001) {
-            _lastVolume = v;
+          final userVol = v;
+          _userVolumeController.add(userVol);
+          if (userVol > 0.001) {
+            _lastVolume = userVol;
             _volumeSaveTimer?.cancel();
             _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', v);
+              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', userVol);
             });
           }
         }
@@ -331,11 +339,13 @@ class AudioProvider with ChangeNotifier {
     _isLoading = true;
     _safeNotify();
     try {
+      LoggerService.i('[AudioProvider] _initRestore: ${_currentSong!.name}');
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
+        final url = result['url'];
         await _player.setAudioSource(
           ProgressiveAudioSource(
-            Uri.parse(result['url']),
+            Uri.parse(url),
             tag: MediaItem(
               id: _currentSong!.hash,
               album: _currentSong!.albumName,
@@ -391,6 +401,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> seek(Duration pos) async {
     if (_isDisposed) return;
 
+    LoggerService.d('[AudioProvider] Seeking to $pos');
     // Record seek time to ignore false "completed" events shortly after
     _lastSeekTime = DateTime.now();
 
@@ -444,7 +455,9 @@ class AudioProvider with ChangeNotifier {
     if (_isDisposed) return;
     _fadeTimer?.cancel(); 
     _fadeTimer = null;
+    
     _player.setVolume(v);
+    
     _userVolumeController.add(v);
     if (v > 0.001) _lastVolume = v;
     _volumeSaveTimer?.cancel();
@@ -521,6 +534,8 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
+    
+    LoggerService.i('[AudioProvider] playSong: ${song.name} - ${song.singerName} (${song.hash})');
 
     // Immediately cancel any fade, silence, and mark as internal change
     _fadeTimer?.cancel();
@@ -530,6 +545,7 @@ class AudioProvider with ChangeNotifier {
     _climaxMarks = {}; // Clear old climax marks immediately
 
     if (playlist != null) {
+      LoggerService.d('[AudioProvider] Updating playlist, size: ${playlist.length}');
       _playlist = List.from(playlist);
       _originalPlaylist = [];
       if (_playMode == 'shuffle') {
@@ -551,15 +567,27 @@ class AudioProvider with ChangeNotifier {
       _persistenceProvider?.addToHistory(song);
       MusicApi.uploadPlayHistory(song.mixSongId);
       _fetchClimax(song);
+      
+      LoggerService.d('[AudioProvider] Fetching audio URL...');
       final result = await _getAudioUrlWithQuality(song);
       
       if (_isDisposed) return;
       
       if (result == null || result['url'] == null) {
-        LoggerService.e('[AudioProvider] Failed to get URL for ${song.name}, skipping to next.');
-        Future.delayed(const Duration(seconds: 1), () => next());
+        LoggerService.e('[AudioProvider] Failed to get URL for ${song.name}');
+        
+        final settings = _persistenceProvider?.settings ?? {};
+        final autoNext = settings['autoNext'] ?? false;
+        
+        if (autoNext) {
+          LoggerService.i('[AudioProvider] Auto-next enabled, skipping to next song in 1s.');
+          Future.delayed(const Duration(seconds: 1), () => next());
+        }
         return;
       }
+      
+      final String url = result['url'];
+      LoggerService.d('[AudioProvider] URL obtained: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
 
       // Ensure volume is still 0 before setting new source
       _player.setVolume(0.0);
@@ -567,9 +595,10 @@ class AudioProvider with ChangeNotifier {
       // Use ProgressiveAudioSource with preferPreciseDurationAndTiming on macOS
       // to fix position/duration drift issues with FLAC files.
       // See: https://github.com/ryanheise/just_audio/issues/1267
+      LoggerService.d('[AudioProvider] Setting audio source...');
       await _player.setAudioSource(
         ProgressiveAudioSource(
-          Uri.parse(result['url']),
+          Uri.parse(url),
           tag: MediaItem(
             id: song.hash,
             album: song.albumName,
@@ -585,6 +614,8 @@ class AudioProvider with ChangeNotifier {
           ),
         ),
       );
+      
+      LoggerService.d('[AudioProvider] Audio source set successfully');
       
       // Update Media Session Metadata
       MediaSessionHandler.updateMetadata(song, Duration(seconds: song.duration.toInt()));
@@ -660,7 +691,20 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> _handlePlayError(dynamic err) async {
     if (_isDisposed) return;
-    LoggerService.e('[AudioProvider] Playback error: $err');
+    
+    final pos = _player.position;
+    final total = effectiveDuration;
+    final remaining = total.inMilliseconds - pos.inMilliseconds;
+    
+    LoggerService.e('[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err');
+
+    // Graceful handling for errors near the end of the song
+    // Decode errors often happen at the very tail of FLAC/MPV streams
+    if (total.inMilliseconds > 0 && remaining < 2000) {
+      LoggerService.i('[AudioProvider] Error occurred near end of song, treating as completed.');
+      _handlePlaybackEnded();
+      return;
+    }
 
     final settings = _persistenceProvider?.settings ?? {};
     final autoNext = settings['autoNext'] ?? false;

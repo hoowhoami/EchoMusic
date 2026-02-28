@@ -261,7 +261,7 @@ class _PlayerMainContent extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(CupertinoIcons.backward_fill, size: 22, color: theme.colorScheme.onSurface.withAlpha(40)),
+              _PlayerIconButton(icon: CupertinoIcons.backward_fill, onPressed: null, size: 22),
               const SizedBox(width: 28),
               Container(
                 width: 44, height: 44,
@@ -269,11 +269,11 @@ class _PlayerMainContent extends StatelessWidget {
                 child: Center(child: Icon(CupertinoIcons.play_fill, size: 24, color: theme.disabledColor)),
               ),
               const SizedBox(width: 28),
-              Icon(CupertinoIcons.forward_fill, size: 22, color: theme.colorScheme.onSurface.withAlpha(40)),
+              _PlayerIconButton(icon: CupertinoIcons.forward_fill, onPressed: null, size: 22),
             ],
           ),
         ),
-        const SizedBox(width: 540),
+        const SizedBox(width: 320),
       ],
     );
   }
@@ -281,10 +281,10 @@ class _PlayerMainContent extends StatelessWidget {
   Widget _buildPlayerContent(BuildContext context, ThemeData theme, Color accentColor) {
     return Row(
       children: [
-        // 1. Song Info - Balanced width
-        const SizedBox(width: 350, child: _PlayerSongInfo()),
+        // 1. Song Info
+        const SizedBox(width: 380, child: _PlayerSongInfo()),
 
-        // 2. Playback Controls - Will now be perfectly centered
+        // 2. Playback Controls
         Expanded(
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -298,8 +298,8 @@ class _PlayerMainContent extends StatelessWidget {
           ),
         ),
 
-        // 3. Functional Buttons - Balanced width
-        const SizedBox(width: 350, child: _PlayerRightActions()),
+        // 3. Functional Buttons
+        const SizedBox(width: 380, child: _PlayerRightActions()),
       ],
     );
   }
@@ -605,8 +605,6 @@ class _QueueButton extends StatelessWidget {
     );
   }
 }
-
-// --- Popup Widgets & Helpers ---
 
 void _showCustomPopup(BuildContext context, LayerLink link, Widget content, {required double width, required double height}) {
   late OverlayEntry entry;
