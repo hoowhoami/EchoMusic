@@ -10,6 +10,7 @@ import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/disclaimer_dialog.dart';
 import '../widgets/update_dialog.dart';
+import '../widgets/custom_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 
@@ -66,14 +67,7 @@ class _SettingViewState extends State<SettingView> {
     final logFile = LoggerService.logFile;
     if (logFile == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('当前处于开发模式，日志仅在控制台输出'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(20),
-          ),
-        );
+        CustomToast.info(context, '当前处于开发模式，日志仅在控制台输出');
       }
       return;
     }
@@ -93,9 +87,7 @@ class _SettingViewState extends State<SettingView> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('无法打开日志目录: $e')),
-          );
+          CustomToast.error(context, '无法打开日志目录: $e');
         }
       }
     }
@@ -583,14 +575,7 @@ class _SettingViewState extends State<SettingView> {
     ).then((confirmed) {
       if (confirmed == true) {
         persistence.clearAllData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('应用数据已重置'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(20),
-          ),
-        );
+        CustomToast.success(context, '应用数据已重置');
       }
     });
   }
