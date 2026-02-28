@@ -351,9 +351,9 @@ class SingerInfo {
     }
 
     return SingerInfo(
-      id: parseInt(json['id']),
-      name: (json['name'] ?? json['author_name'] ?? json['singername'] ?? '').toString(),
-      avatar: json['avatar']?.toString(),
+      id: parseInt(json['id'] ?? json['AuthorId'] ?? json['author_id'] ?? json['singerid'] ?? json['singer_id']),
+      name: (json['name'] ?? json['AuthorName'] ?? json['author_name'] ?? json['singername'] ?? '').toString(),
+      avatar: (json['avatar'] ?? json['Avatar'])?.toString(),
     );
   }
 }

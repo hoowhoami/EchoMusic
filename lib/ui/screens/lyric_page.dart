@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/custom_toast.dart';
 
 class LyricPage extends StatefulWidget {
   const LyricPage({super.key});
@@ -78,7 +80,16 @@ class _LyricPageState extends State<LyricPage> {
       });
     }
 
-    return Scaffold(
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) {
+        if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
+          Navigator.pop(context);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
@@ -125,6 +136,7 @@ class _LyricPageState extends State<LyricPage> {
           ),
         ],
       ),
+      ),
     );
   }
 
@@ -136,6 +148,8 @@ class _LyricPageState extends State<LyricPage> {
           _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
           const Spacer(),
           const _LyricsModeSwitcherWidget(),
+          const SizedBox(width: 8),
+          const _CopyLyricsButton(),
         ],
       ),
     );
@@ -286,6 +300,42 @@ class _LyricPageState extends State<LyricPage> {
   }
 
   Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 1))]));
+}
+
+class _CopyLyricsButton extends StatelessWidget {
+  const _CopyLyricsButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          final lyrics = context.read<LyricProvider>().lyrics;
+          if (lyrics.isEmpty) return;
+          final text = lyrics.map((line) => line.text).join('\n');
+          Clipboard.setData(ClipboardData(text: text));
+          CustomToast.success(context, '歌词已复制');
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(15),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withAlpha(20), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.copy_rounded, size: 16, color: Colors.white70),
+              const SizedBox(width: 10),
+              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _LyricsModeSwitcherWidget extends StatelessWidget {

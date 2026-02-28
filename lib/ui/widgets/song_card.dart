@@ -88,7 +88,10 @@ class _SongCardState extends State<SongCard> {
           ],
         ),
       ),
-      if (widget.song.albumId != null && widget.song.albumId != '0' && widget.song.albumId!.isNotEmpty)
+      if (widget.song.albumId != null && 
+          widget.song.albumId != '0' && 
+          widget.song.albumId!.isNotEmpty && 
+          !(widget.parentPlaylist?.source == 2 && widget.parentPlaylist?.originalId.toString() == widget.song.albumId))
         const PopupMenuItem(
           value: 'album',
           child: Row(
@@ -218,6 +221,10 @@ class _SongCardState extends State<SongCard> {
     } else if (value == 'artist') {
       if (mounted) {
         final artistId = widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0;
+        if (artistId == 0) {
+          if (context.mounted) CustomToast.error(context, '暂无歌手信息');
+          return;
+        }
         context.read<NavigationProvider>().push(
           ArtistDetailView(
             artistId: artistId,

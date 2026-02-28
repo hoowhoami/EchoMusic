@@ -11,6 +11,7 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/song_list_scaffold.dart';
+import '../../models/playlist.dart' as model;
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
@@ -70,6 +71,15 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
       songs: _songs ?? [],
       isLoading: _isLoading,
       sourceId: widget.albumId,
+      parentPlaylist: _album != null ? model.Playlist(
+        id: _album!.id,
+        listCreateListid: _album!.id,
+        name: _album!.name,
+        pic: _album!.pic,
+        intro: _album!.intro,
+        playCount: _album!.playCount,
+        source: 2,
+      ) : null,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
