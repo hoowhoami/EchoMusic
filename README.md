@@ -52,6 +52,8 @@
   ![搜索](screenshots/search.png)
   ![搜索](screenshots/search_hot.png)
   ![搜索](screenshots/search_suggest.png)  
+- 个人中心
+  ![个人中心](screenshots/profile.png)  
 - 设置  
   ![设置](screenshots/settings.png)
 
