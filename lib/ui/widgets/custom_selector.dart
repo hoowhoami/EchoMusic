@@ -23,7 +23,7 @@ class CustomSelector extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          height: 32,
+          height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
             color: theme.colorScheme.onSurface.withAlpha(15),

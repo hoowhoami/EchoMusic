@@ -135,15 +135,9 @@ class _RankViewState extends State<RankView> {
 
     final selectionProvider = context.watch<SelectionProvider>();
 
-    return GridView.builder(
+    return ListView.builder(
       padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
       physics: const BouncingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 400,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 16,
-        mainAxisExtent: 72,
-      ),
       itemCount: _rankSongs.length,
       itemBuilder: (context, index) {
         final song = _rankSongs[index];
@@ -152,7 +146,7 @@ class _RankViewState extends State<RankView> {
           playlist: _rankSongs,
           showCover: true,
           coverSize: 44,
-          showMore: false,
+          showMore: true,
         );
       },
     );

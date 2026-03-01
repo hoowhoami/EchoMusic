@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ class SearchView extends StatefulWidget {
 
 class _SearchViewState extends State<SearchView> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
 
   List<Song> _songResults = [];
@@ -31,24 +33,41 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   List<Artist> _artistResults = [];
   List<Playlist> _playlistResults = [];
 
-  List<String> _hotSearches = [];
+  List<Map<String, dynamic>> _hotSearchCategories = [];
+  int _selectedHotCategoryIndex = 0;
+  List<Map<String, dynamic>> _suggestions = [];
   String _defaultKeyword = '';
   bool _isLoading = false;
   bool _isLoadingHot = true;
   bool _hasSearched = false;
+  bool _showSuggestions = false;
+  bool _isIgnoringChanges = false;
+  
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadHotSearches();
+    _focusNode.addListener(_onFocusChange);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (_focusNode.hasFocus && _searchController.text.isNotEmpty && _suggestions.isNotEmpty) {
+      setState(() => _showSuggestions = true);
+    }
+    // 注意：不再在失去焦点时立即隐藏，以防止干扰点击事件
   }
 
   Future<void> _loadHotSearches() async {
@@ -57,10 +76,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     });
 
     try {
-      final hot = await MusicApi.getSearchHot();
+      final hotCategories = await MusicApi.getSearchHotCategorized();
       final defaultKeyword = await MusicApi.getSearchDefault();
       setState(() {
-        _hotSearches = hot;
+        _hotSearchCategories = hotCategories;
         _defaultKeyword = defaultKeyword;
         _isLoadingHot = false;
       });
@@ -71,21 +90,80 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     }
   }
 
-  void _onSearch() async {
-    final keywords = _searchController.text.trim();
+  void _onSearchChanged(String value) {
+    if (_isIgnoringChanges) return;
+
+    if (_debounce?.isActive ?? false) _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      if (value.isEmpty) {
+        setState(() {
+          _suggestions = [];
+          _showSuggestions = false;
+        });
+        return;
+      }
+
+      try {
+        final suggestions = await MusicApi.getSearchSuggest(value);
+        if (!mounted || _isIgnoringChanges) return;
+        setState(() {
+          _suggestions = suggestions;
+          _showSuggestions = _focusNode.hasFocus && _suggestions.isNotEmpty;
+        });
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    if (_hasSearched && value.isNotEmpty) {
+      setState(() {
+        _hasSearched = false;
+      });
+    }
+    setState(() {
+      _showSuggestions = _focusNode.hasFocus && value.isNotEmpty && _suggestions.isNotEmpty;
+    });
+  }
+
+  void _onSearch([String? keyword]) async {
+    final keywords = keyword ?? _searchController.text.trim();
+    if (keywords.isEmpty && _defaultKeyword.isNotEmpty) {
+      _onSearch(_defaultKeyword);
+      return;
+    }
     if (keywords.isEmpty) return;
 
+    // 关键修复：立即加锁并同步 UI
+    _isIgnoringChanges = true;
+    if (keyword != null) {
+      _searchController.text = keyword;
+      _searchController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _searchController.text.length),
+      );
+    }
+
+    // 立即隐藏建议和收起键盘
     setState(() {
+      _showSuggestions = false;
       _isLoading = true;
       _hasSearched = true;
     });
+    _focusNode.unfocus();
 
     try {
-      // Search for all types
-      final songRes = await MusicApi.search(keywords, type: 'song');
-      final albumRes = await MusicApi.getSearchResult(keywords, type: 'album');
-      final artistRes = await MusicApi.getSearchResult(keywords, type: 'author');
-      final playlistRes = await MusicApi.getSearchResult(keywords, type: 'special');
+      final results = await Future.wait([
+        MusicApi.search(keywords, type: 'song'),
+        MusicApi.getSearchResult(keywords, type: 'album'),
+        MusicApi.getSearchResult(keywords, type: 'author'),
+        MusicApi.getSearchResult(keywords, type: 'special'),
+      ]);
+
+      if (!mounted) return;
+
+      final songRes = results[0] as List<Song>;
+      final albumRes = results[1] as Map<String, dynamic>;
+      final artistRes = results[2] as Map<String, dynamic>;
+      final playlistRes = results[3] as Map<String, dynamic>;
 
       setState(() {
         _songResults = songRes;
@@ -94,10 +172,18 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         _playlistResults = (playlistRes['data']?['lists'] as List?)?.map((json) => Playlist.fromSearchJson(json)).toList().cast<Playlist>() ?? [];
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
+      
+      // 延迟解锁，确保 UI 重建完成
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _isIgnoringChanges = false;
       });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isIgnoringChanges = false;
+        });
+      }
     }
   }
 
@@ -124,7 +210,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                       _searchController.text.isNotEmpty &&
                       !_isLoading &&
                       !selectionProvider.isSelectionMode &&
-                      _tabController.index == 0)
+                      _tabController.index == 0 && 
+                      _hasSearched)
                     InkWell(
                       onTap: () {
                         selectionProvider.setSongList(_songResults);
@@ -162,103 +249,279 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 ],
               ),
               const SizedBox(height: 24),
-              Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withAlpha(10),
-                  borderRadius: BorderRadius.circular(12),
+              _buildSearchInput(theme),
+              const SizedBox(height: 24),
+              if (_hasSearched) ...[
+                CustomTabBar(
+                  controller: _tabController,
+                  tabs: const ['单曲', '歌单', '专辑', '歌手'],
+                  onTap: (_) => setState(() {}),
                 ),
-                child: Row(
+                const SizedBox(height: 16),
+              ],
+              Expanded(
+                child: Stack(
                   children: [
-                    const SizedBox(width: 12),
-                    Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        textAlignVertical: const TextAlignVertical(y: -0.6), // 中间值，适配 44px 高度容器
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
-                          hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
-                          border: InputBorder.none,
-                          isCollapsed: true, // 改用 collapsed
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10), // 配合 y 偏移实现精确居中
-                        ),
-                        onChanged: (val) {
-                          if (_hasSearched) {
-                            setState(() {
-                              _hasSearched = false;
-                            });
-                          } else if (val.isEmpty) {
-                            setState(() {});
-                          }
-                        },
-                        onSubmitted: (_) => _onSearch(),
+                    if (!_hasSearched) 
+                      _buildHotSearches()
+                    else if (_isLoading)
+                      const Center(child: CupertinoActivityIndicator())
+                    else
+                      TabBarView(
+                        controller: _tabController,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _buildSongList(),
+                          _buildPlaylistList(),
+                          _buildAlbumList(),
+                          _buildArtistList(),
+                        ],
                       ),
-                    ),
-                    if (_searchController.text.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _hasSearched = false;
-                          });
-                        },
-                        color: theme.colorScheme.onSurface.withAlpha(60),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                    if (_showSuggestions) 
+                      Positioned.fill(
+                        child: _buildSuggestions(theme),
                       ),
-                    const SizedBox(width: 8),
-                    Padding(
-                      padding: const EdgeInsets.all(4.0),
-                      child: ElevatedButton(
-                        onPressed: _onSearch,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          foregroundColor: theme.colorScheme.onPrimary,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          minimumSize: const Size(0, 36),
-                        ),
-                        child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                      ),
-                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              CustomTabBar(
-                controller: _tabController,
-                tabs: const ['单曲', '歌单', '专辑', '歌手'],
-                onTap: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: !_hasSearched
-                    ? _buildHotSearches()
-                    : _isLoading
-                        ? const Center(child: CupertinoActivityIndicator())
-                        : TabBarView(
-                            controller: _tabController,
-                            physics: const BouncingScrollPhysics(),
-                            children: [
-                              _buildSongList(),
-                              _buildPlaylistList(),
-                              _buildAlbumList(),
-                              _buildArtistList(),
-                            ],
-                          ),
               ),
             ],
           ),
         ),
         const BatchActionBar(),
+      ],
+    );
+  }
+
+  Widget _buildSearchInput(ThemeData theme) {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withAlpha(10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 12),
+          Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _focusNode,
+              textAlignVertical: const TextAlignVertical(y: -0.6),
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+              decoration: InputDecoration(
+                hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
+                hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
+                border: InputBorder.none,
+                isCollapsed: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onChanged: _onSearchChanged,
+              onSubmitted: (_) => _onSearch(),
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
+              onPressed: () {
+                _searchController.clear();
+                _onSearchChanged('');
+              },
+              color: theme.colorScheme.onSurface.withAlpha(60),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: ElevatedButton(
+              onPressed: () => _onSearch(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                minimumSize: const Size(0, 36),
+              ),
+              child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuggestions(ThemeData theme) {
+    if (_suggestions.isEmpty) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTap: () => setState(() => _showSuggestions = false),
+      behavior: HitTestBehavior.translucent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: _suggestions.length,
+          itemBuilder: (context, index) {
+            final category = _suggestions[index];
+            final label = category['LableName']?.toString() ?? '';
+            final records = (category['RecordDatas'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+            if (records.isEmpty || label == 'MV') return const SizedBox.shrink();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (label.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ...records.map((record) {
+                  final text = record['HintInfo']?.toString() ?? '';
+                  return ListTile(
+                    dense: true,
+                    leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
+                    title: Text(
+                      text,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                    onTap: () => _onSearch(text), // 触发搜索
+                  );
+                }),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHotSearches() {
+    if (_isLoadingHot) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    if (_hotSearchCategories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: _hotSearchCategories.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final category = entry.value;
+              final name = category['name']?.toString() ?? '';
+              final isSelected = _selectedHotCategoryIndex == idx;
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: ChoiceChip(
+                  label: Text(name),
+                  selected: isSelected,
+                  showCheckmark: false, // 去掉打勾
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedHotCategoryIndex = idx);
+                    }
+                  },
+                  labelStyle: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                  ),
+                  selectedColor: theme.colorScheme.primary,
+                  backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  side: BorderSide.none,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Expanded(
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            children: [
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: (_hotSearchCategories[_selectedHotCategoryIndex]['keywords'] as List? ?? [])
+                    .map((item) {
+                  final keyword = item['keyword']?.toString() ?? '';
+                  final reason = item['reason']?.toString() ?? '';
+                  return GestureDetector(
+                    onTap: () => _onSearch(keyword),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withAlpha(10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            keyword,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          if (reason.isNotEmpty && reason != keyword) ...[
+                            const SizedBox(width: 4),
+                            Text(
+                              '•',
+                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(50)),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              reason,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurface.withAlpha(100),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -441,64 +704,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildHotSearches() {
-    if (_isLoadingHot) {
-      return const Center(child: CupertinoActivityIndicator());
-    }
-
-    if (_hotSearches.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final theme = Theme.of(context);
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      children: [
-        Text(
-          '热门搜索',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: _hotSearches.map((keyword) {
-            return GestureDetector(
-              onTap: () {
-                _searchController.text = keyword;
-                _onSearch();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurface.withAlpha(10),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant,
-                    width: 0.8,
-                  ),
-                ),
-                child: Text(
-                  keyword,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-      ],
     );
   }
 }

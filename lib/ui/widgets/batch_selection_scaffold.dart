@@ -49,9 +49,39 @@ class BatchSelectionScaffold extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context, SelectionProvider selectionProvider) {
     final theme = Theme.of(context);
-    
+    final hasTwoRows = (title?.isNotEmpty ?? false) && appBarActions != null;
+
+    if (hasTwoRows) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(40, 10, 40, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title!,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface,
+                letterSpacing: -0.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                appBarActions!,
+                const Spacer(),
+                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
+                  _buildBatchButton(context, selectionProvider),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 10, 40, 10), // Reduced vertical padding
+      padding: const EdgeInsets.fromLTRB(40, 10, 40, 10),
       child: Row(
         children: [
           if (leading != null) ...[
@@ -69,7 +99,6 @@ class BatchSelectionScaffold extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          if (appBarActions != null) appBarActions!,
           if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
             _buildBatchButton(context, selectionProvider),
         ],

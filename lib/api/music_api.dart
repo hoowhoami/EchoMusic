@@ -1008,7 +1008,10 @@ class MusicApi {
   static Future<String> getSearchDefault() async {
     try {
       final response = await _dio.get('/search/default');
-      if (response.data['status'] == 1) return response.data['data']['keyword'] ?? '';
+      if (response.data['status'] == 1) {
+        final data = response.data['data'];
+        return data['keyword'] ?? data['show_keyword'] ?? data['fallback'] ?? '';
+      }
       return '';
     } catch (e) {
       return '';
@@ -1019,8 +1022,11 @@ class MusicApi {
     try {
       final response = await _dio.get('/search/hot');
       if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
-        return data.map((e) => e['keyword'].toString()).toList();
+        List list = response.data['data']['list'] ?? [];
+        if (list.isNotEmpty) {
+          List keywords = list[0]['keywords'] ?? [];
+          return keywords.map((e) => e['keyword'].toString()).toList();
+        }
       }
       return [];
     } catch (e) {
@@ -1028,13 +1034,28 @@ class MusicApi {
     }
   }
 
-  static Future<Map<String, dynamic>> getSearchSuggest(String keywords) async {
+  static Future<List<Map<String, dynamic>>> getSearchHotCategorized() async {
+    try {
+      final response = await _dio.get('/search/hot');
+      if (response.data['status'] == 1) {
+        List data = response.data['data']['list'] ?? [];
+        return data.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getSearchSuggest(String keywords) async {
     try {
       final response = await _dio.get('/search/suggest', queryParameters: {'keywords': keywords});
-      if (response.data['status'] == 1) return response.data['data'] ?? {};
-      return {};
+      if (response.data['status'] == 1) {
+        return (response.data['data'] as List).cast<Map<String, dynamic>>();
+      }
+      return [];
     } catch (e) {
-      return {};
+      return [];
     }
   }
 
