@@ -50,6 +50,8 @@
   ![播放列表](screenshots/playlist.png)
 - 搜索
   ![搜索](screenshots/search.png)
+  ![搜索](screenshots/search_hot.png)
+  ![搜索](screenshots/search_suggest.png)  
 - 设置  
   ![设置](screenshots/settings.png)
 
