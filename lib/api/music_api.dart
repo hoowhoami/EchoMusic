@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../utils/logger.dart';
+import '../utils/server_orchestrator.dart';
 
 class MusicApi {
   static VoidCallback? onAuthExpired;
@@ -17,6 +18,11 @@ class MusicApi {
   ))
     ..interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        // Wait for the local server to be ready before sending any request.
+        // This handles the race condition where providers make API calls
+        // during app init before the server process has fully started.
+        await ServerOrchestrator.waitUntilReady();
+
         options.extra['startTime'] = DateTime.now().millisecondsSinceEpoch;
         final prefs = await SharedPreferences.getInstance();
         

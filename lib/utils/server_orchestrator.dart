@@ -16,6 +16,20 @@ class ServerOrchestrator {
     receiveTimeout: const Duration(milliseconds: 2000),
   ));
 
+  static bool get isReady => _serverReady;
+
+  /// Waits until the server is ready, or until [timeout] elapses.
+  /// Returns true if the server became ready, false if timed out.
+  static Future<bool> waitUntilReady({Duration timeout = const Duration(seconds: 60)}) async {
+    if (_serverReady) return true;
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (_serverReady) return true;
+    }
+    return false;
+  }
+
   static Future<bool> isServerRunning() async {
     try {
       final response = await _pingDio.get('http://127.0.0.1:10086/server/now');
