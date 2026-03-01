@@ -346,7 +346,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>()!;
-    final accentColor = theme.colorScheme.primary;
 
     return Scaffold(
       body: Stack(
