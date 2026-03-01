@@ -64,21 +64,22 @@ void main() async {
         ChangeNotifierProvider(create: (_) => PersistenceProvider()),
         ChangeNotifierProvider(create: (_) => RefreshProvider()),
         ChangeNotifierProvider(create: (_) => NavigationProvider()),
-        ChangeNotifierProxyProvider2<PersistenceProvider, RefreshProvider, UserProvider>(
-          create: (_) => UserProvider(),
-          update: (_, p, r, u) => u!
-            ..setPersistenceProvider(p)
-            ..setRefreshProvider(r),
-        ),
         ChangeNotifierProxyProvider<PersistenceProvider, LyricProvider>(
           create: (_) => LyricProvider(),
           update: (_, p, l) => l!..setPersistenceProvider(p),
         ),
-        ChangeNotifierProvider(create: (_) => SelectionProvider()),
         ChangeNotifierProxyProvider2<PersistenceProvider, LyricProvider, AudioProvider>(
           create: (_) => AudioProvider(),
           update: (_, p, l, a) => a!..setPersistenceProvider(p)..setLyricProvider(l),
         ),
+        ChangeNotifierProxyProvider3<PersistenceProvider, RefreshProvider, AudioProvider, UserProvider>(
+          create: (_) => UserProvider(),
+          update: (_, p, r, a, u) => u!
+            ..setPersistenceProvider(p)
+            ..setRefreshProvider(r)
+            ..setAudioProvider(a),
+        ),
+        ChangeNotifierProvider(create: (_) => SelectionProvider()),
       ],
       child: const WindowHandler(child: AuthListener(child: MyApp())),
     ),

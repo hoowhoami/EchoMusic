@@ -782,6 +782,20 @@ class AudioProvider with ChangeNotifier {
     });
   }
 
+  void reset() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _player.stop();
+    _currentSong = null;
+    _playlist = [];
+    _originalPlaylist = [];
+    _currentIndex = -1;
+    _climaxMarks = {};
+    _isLoading = false;
+    _savePlaybackState();
+    _safeNotify();
+  }
+
   void next() {
     if (_playlist.isEmpty) return;
     if (_player.loopMode == LoopMode.one) {

@@ -721,6 +721,63 @@ class MusicApi {
     }
   }
 
+  static Future<Map<String, dynamic>?> loginWxCreate() async {
+    try {
+      final response = await _dio.get('/login/wx/create');
+      return response.data;
+    } catch (e) {
+      LoggerService.e('loginWxCreate error: $e');
+      return null;
+    }
+  }
+
+  static Future<dynamic> loginWxCheck(String uuid) async {
+    try {
+      // 增加超时时间到 60秒，并添加时间戳防止缓存
+      final response = await _dio.get('/login/wx/check', 
+        queryParameters: {
+          'uuid': uuid,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        },
+        options: Options(
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      return response.data;
+    } catch (e) {
+      LoggerService.w('loginWxCheck local failed, trying direct WeChat fallback: $e');
+      // 备选方案：直接请求微信官方接口
+      try {
+        final fallbackDio = Dio(BaseOptions(
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 60),
+        ));
+        final response = await fallbackDio.get(
+          'https://long.open.weixin.qq.com/connect/l/qrconnect',
+          queryParameters: {
+            'f': 'json',
+            'uuid': uuid,
+            '_': DateTime.now().millisecondsSinceEpoch,
+          },
+        );
+        return response.data;
+      } catch (e2) {
+        LoggerService.e('loginWxCheck all failed: $e2');
+        return null;
+      }
+    }
+  }
+
+  static Future<Map<String, dynamic>> loginOpenPlat(String code) async {
+    try {
+      final response = await _dio.get('/login/openplat', queryParameters: {'code': code});
+      return response.data;
+    } catch (e) {
+      LoggerService.e('loginOpenPlat error: $e');
+      return {'status': 0, 'error': e.toString()};
+    }
+  }
+
   static Future<Map<String, dynamic>?> userDetail() async {
     try {
       final response = await _dio.get('/user/detail');

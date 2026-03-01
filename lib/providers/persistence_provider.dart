@@ -133,6 +133,25 @@ class PersistenceProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearUserSession() async {
+    _userInfo = null;
+    _favorites = [];
+    _history = [];
+    _playlist = [];
+    _currentIndex = -1;
+    
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.remove(_keyUserInfo),
+      prefs.remove(_keyFavorites),
+      prefs.remove(_keyHistory),
+      prefs.remove(_keyPlaylist),
+      prefs.remove(_keyCurrentIndex),
+    ]);
+    
+    notifyListeners();
+  }
+
   Future<void> clearAllData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();

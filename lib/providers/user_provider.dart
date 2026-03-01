@@ -3,12 +3,14 @@ import '../models/user.dart';
 import '../api/music_api.dart';
 import 'persistence_provider.dart';
 import 'refresh_provider.dart';
+import 'audio_provider.dart';
 import '../models/song.dart';
 import '../utils/logger.dart';
 
 class UserProvider with ChangeNotifier {
   User? _user;
   PersistenceProvider? _persistenceProvider;
+  AudioProvider? _audioProvider;
   VoidCallback? onSessionExpired;
   Function(String)? onPlaylistError;
   
@@ -84,6 +86,10 @@ class UserProvider with ChangeNotifier {
       _refreshProvider = provider;
       _refreshProvider?.addListener(fetchAllUserData);
     }
+  }
+
+  void setAudioProvider(AudioProvider provider) {
+    _audioProvider = provider;
   }
 
   @override
@@ -191,10 +197,15 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Reset player state (stops playback and clears queue)
+    _audioProvider?.reset();
+    
+    // Clear all user-related persistence (history, favorites, saved playlist, user info)
+    await _persistenceProvider?.clearUserSession();
+
     _user = null;
     _likedPlaylistId = null;
     _likedSongs = [];
-    await _persistenceProvider?.clearUserInfo();
     _userPlaylists = [];
     _userFollows = [];
     _userHistory = [];
