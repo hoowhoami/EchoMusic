@@ -291,12 +291,45 @@ class MusicApi {
     }
   }
 
-  static Future<Map<String, dynamic>> getMusicComments(dynamic mixSongId, {int page = 1, int pagesize = 30}) async {
+  static Future<Map<String, dynamic>> getMusicComments(dynamic mixSongId, {int page = 1, int pagesize = 30, int sort = 2, bool showClassify = false, bool showHotwordList = false}) async {
     try {
       final response = await _dio.get('/comment/music', queryParameters: {
         'mixsongid': mixSongId,
         'page': page,
         'pagesize': pagesize,
+        'show_classify': showClassify ? 1 : 0,
+        'show_hotword_list': showHotwordList ? 1 : 0,
+        'sort': sort,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getMusicClassifyComments(dynamic mixSongId, int typeId, {int page = 1, int pagesize = 30, int sort = 2}) async {
+    try {
+      final response = await _dio.get('/comment/music/classify', queryParameters: {
+        'mixsongid': mixSongId,
+        'type_id': typeId,
+        'page': page,
+        'pagesize': pagesize,
+        'sort': sort,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getMusicHotwordComments(dynamic mixSongId, String hotWord, {int page = 1, int pagesize = 30, int sort = 2}) async {
+    try {
+      final response = await _dio.get('/comment/music/hotword', queryParameters: {
+        'mixsongid': mixSongId,
+        'hot_word': hotWord,
+        'page': page,
+        'pagesize': pagesize,
+        'sort': sort,
       });
       return response.data;
     } catch (e) {

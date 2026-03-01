@@ -26,18 +26,50 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
   final List<dynamic> _allComments = [];
   List<dynamic> _hotComments = [];
   
+  // New tabs data
+  List<dynamic> _classifyList = [];
+  List<dynamic> _hotWordList = [];
+  final List<dynamic> _classifyComments = [];
+  final List<dynamic> _hotwordComments = [];
+  int _classifyPage = 1;
+  int _hotwordPage = 1;
+  bool _hasMoreClassify = true;
+  bool _hasMoreHotword = true;
+  int? _selectedClassifyId;
+  String? _selectedHotWord;
+  bool _isFetchingClassify = false;
+  bool _isFetchingHotword = false;
+
   late TabController _tabController;
+  final ScrollController _classifyScrollController = ScrollController();
+  final ScrollController _hotwordScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_handleTabChange);
     _fetchComments(isRefresh: true);
+  }
+
+  void _handleTabChange() {
+    if (_tabController.indexIsChanging) return;
+    
+    if (_tabController.index == 2 && _classifyComments.isEmpty && _classifyList.isNotEmpty) {
+      _selectedClassifyId = _classifyList[0]['id'];
+      _fetchClassifyComments(isRefresh: true);
+    } else if (_tabController.index == 3 && _hotwordComments.isEmpty && _hotWordList.isNotEmpty) {
+      _selectedHotWord = _hotWordList[0]['content'];
+      _fetchHotwordComments(isRefresh: true);
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
+    _classifyScrollController.dispose();
+    _hotwordScrollController.dispose();
     super.dispose();
   }
 
@@ -57,28 +89,44 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
 
     try {
       final results = await Future.wait([
-        MusicApi.getMusicComments(widget.song.mixSongId, page: _currentPage, pagesize: _pageSize),
+        MusicApi.getMusicComments(
+          widget.song.mixSongId, 
+          page: _currentPage, 
+          pagesize: _pageSize,
+          showClassify: isRefresh,
+          showHotwordList: isRefresh,
+        ),
         if (isRefresh) MusicApi.getCommentCount(widget.song.hash) else Future.value(null),
       ]);
       
-      final Map<String, dynamic> currentCommentsData = results[0] as Map<String, dynamic>;
-      final List newComments = currentCommentsData['list'] is List ? currentCommentsData['list'] : [];
+      final Map<String, dynamic> data = results[0] as Map<String, dynamic>;
+      final Map<String, dynamic> payload = data['data'] is Map ? data['data'] : data;
+      final List newComments = payload['list'] is List ? payload['list'] : [];
 
       if (mounted) {
         setState(() {
-          _commentsData = currentCommentsData;
+          _commentsData = data;
           if (isRefresh) {
             if (results[1] != null) {
               _commentCountData = results[1] as Map<String, dynamic>;
             }
-            // 修正热门评论逻辑：如果接口没有显式的 weight_list，则取第一页的前 30 条作为热门
-            _hotComments = currentCommentsData['weight_list'] is List 
-                ? currentCommentsData['weight_list'] 
+            _hotComments = payload['weight_list'] is List 
+                ? payload['weight_list'] 
                 : newComments.take(30).toList();
+            
+            _classifyList = payload['classify_list'] is List ? payload['classify_list'] : [];
+            _hotWordList = payload['hot_word_list'] is List ? payload['hot_word_list'] : [];
           }
           
           _allComments.addAll(newComments);
-          _hasMore = newComments.length >= _pageSize;
+          
+          int total = payload['count'] ?? payload['total'] ?? 0;
+          if (total > 0) {
+            _hasMore = _allComments.length < total;
+          } else {
+            _hasMore = newComments.length >= _pageSize;
+          }
+          
           if (_hasMore) _currentPage++;
           
           _isLoading = false;
@@ -95,14 +143,107 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
     }
   }
 
+  Future<void> _fetchClassifyComments({bool isRefresh = false}) async {
+    if (_isFetchingClassify || _selectedClassifyId == null) return;
+
+    if (isRefresh) {
+      setState(() {
+        _classifyPage = 1;
+        _classifyComments.clear();
+        _hasMoreClassify = true;
+      });
+    }
+
+    setState(() => _isFetchingClassify = true);
+
+    try {
+      final data = await MusicApi.getMusicClassifyComments(
+        widget.song.mixSongId,
+        _selectedClassifyId!,
+        page: _classifyPage,
+        pagesize: _pageSize,
+      );
+      
+      final Map<String, dynamic> payload = data['data'] is Map ? data['data'] : data;
+      final List newComments = payload['list'] is List ? payload['list'] : [];
+
+      if (mounted) {
+        setState(() {
+          _classifyComments.addAll(newComments);
+          
+          final selectedItem = _classifyList.firstWhere((item) => item['id'] == _selectedClassifyId, orElse: () => null);
+          int total = payload['count'] ?? payload['total'] ?? (selectedItem != null ? selectedItem['cnt'] : 0);
+          
+          if (total > 0) {
+            _hasMoreClassify = _classifyComments.length < total;
+          } else {
+            _hasMoreClassify = newComments.length >= _pageSize;
+          }
+          
+          if (_hasMoreClassify) _classifyPage++;
+          _isFetchingClassify = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isFetchingClassify = false);
+    }
+  }
+
+  Future<void> _fetchHotwordComments({bool isRefresh = false}) async {
+    if (_isFetchingHotword || _selectedHotWord == null) return;
+
+    if (isRefresh) {
+      setState(() {
+        _hotwordPage = 1;
+        _hotwordComments.clear();
+        _hasMoreHotword = true;
+      });
+    }
+
+    setState(() => _isFetchingHotword = true);
+
+    try {
+      final data = await MusicApi.getMusicHotwordComments(
+        widget.song.mixSongId,
+        _selectedHotWord!,
+        page: _hotwordPage,
+        pagesize: _pageSize,
+      );
+      
+      final Map<String, dynamic> payload = data['data'] is Map ? data['data'] : data;
+      final List newComments = payload['list'] is List ? payload['list'] : [];
+
+      if (mounted) {
+        setState(() {
+          _hotwordComments.addAll(newComments);
+          
+          final selectedItem = _hotWordList.firstWhere((item) => item['content'] == _selectedHotWord, orElse: () => null);
+          int total = payload['count'] ?? payload['total'] ?? (selectedItem != null ? selectedItem['count'] : 0);
+          
+          if (total > 0) {
+            _hasMoreHotword = _hotwordComments.length < total;
+          } else {
+            _hasMoreHotword = newComments.length >= _pageSize;
+          }
+
+          if (_hasMoreHotword) _hotwordPage++;
+          _isFetchingHotword = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isFetchingHotword = false);
+    }
+  }
+
   String _getCommentCount() {
     try {
       final String hashKey = widget.song.hash.toLowerCase();
       if (_commentCountData != null && _commentCountData![hashKey] != null) {
         return _commentCountData![hashKey].toString();
       }
-      if (_commentsData != null && _commentsData!['count'] != null) {
-        return _commentsData!['count'].toString();
+      final Map<String, dynamic>? payload = _commentsData?['data'] is Map ? _commentsData!['data'] : _commentsData;
+      if (payload != null && payload['count'] != null) {
+        return payload['count'].toString();
       }
     } catch (_) {}
     return '0';
@@ -274,7 +415,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
                   child: CustomTabBar(
                     controller: _tabController,
-                    tabs: const ['精彩评论', '全部评论'],
+                    tabs: const ['精彩评论', '全部评论', '分类评论', '热词评论'],
                   ),
                 ),
               ),
@@ -284,17 +425,20 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
         body: TabBarView(
           controller: _tabController,
           children: [
-            _buildCommentList(isHot: true),
-            _buildCommentList(isHot: false),
+            _buildCommentList(type: 'hot'),
+            _buildCommentList(type: 'all'),
+            _buildClassifyCommentList(),
+            _buildHotwordCommentList(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCommentList({required bool isHot}) {
-    List displayList = isHot ? _hotComments : _allComments;
-    List? starList = (_commentsData?['star_cmts']?['list'] is List) ? _commentsData!['star_cmts']!['list'] : [];
+  Widget _buildCommentList({required String type}) {
+    List displayList = type == 'hot' ? _hotComments : _allComments;
+    final Map<String, dynamic>? payload = _commentsData?['data'] is Map ? _commentsData!['data'] : _commentsData;
+    List? starList = (payload?['star_cmts']?['list'] is List) ? payload!['star_cmts']!['list'] : [];
 
     if (displayList.isEmpty && (starList == null || starList.isEmpty)) {
       return _buildEmptyState(context, '暂无评论', CupertinoIcons.chat_bubble_text);
@@ -302,10 +446,10 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
 
     return NotificationListener<ScrollNotification>(
       onNotification: (ScrollNotification notification) {
-        // 仅在“全部评论”页签且滚动到底部时触发加载
-        if (!isHot && 
+        if (type == 'all' && 
+            notification.metrics.axis == Axis.vertical &&
             notification is ScrollUpdateNotification && 
-            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200) {
+            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 400) {
           if (!_isFetchingMore && _hasMore) {
             _fetchComments();
           }
@@ -316,30 +460,219 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
         child: ListView.builder(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
-          // 虚拟列表核心：使用 builder 只渲染可见项
-          itemCount: _calculateItemCount(isHot, displayList, starList),
-          itemBuilder: (context, index) => _buildItem(context, index, isHot, displayList, starList),
+          itemCount: _calculateItemCount(type, displayList, starList),
+          itemBuilder: (context, index) => _buildItem(context, index, type, displayList, starList),
         ),
       ),
     );
   }
 
-  int _calculateItemCount(bool isHot, List displayList, List? starList) {
-    if (isHot) {
+  Widget _buildClassifyCommentList() {
+    if (_classifyList.isEmpty) return _buildEmptyState(context, '暂无分类', CupertinoIcons.tag);
+    
+    return Column(
+      children: [
+        _buildClassifySelector(),
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) {
+              if (notification.metrics.axis == Axis.vertical &&
+                  notification is ScrollUpdateNotification && 
+                  notification.metrics.pixels >= notification.metrics.maxScrollExtent - 400) {
+                if (!_isFetchingClassify && _hasMoreClassify) {
+                  _fetchClassifyComments();
+                }
+              }
+              return false;
+            },
+            child: _classifyComments.isEmpty && !_isFetchingClassify
+                ? _buildEmptyState(context, '该分类下暂无评论', CupertinoIcons.chat_bubble_text)
+                : ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
+                      itemCount: _classifyComments.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index < _classifyComments.length) {
+                          return _buildCommentItem(context, _classifyComments[index]);
+                        }
+                        return _buildLoadingIndicator(_hasMoreClassify);
+                      },
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHotwordCommentList() {
+    if (_hotWordList.isEmpty) return _buildEmptyState(context, '暂无热词', CupertinoIcons.flame);
+
+    return Column(
+      children: [
+        _buildHotwordSelector(),
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (ScrollNotification notification) {
+              if (notification.metrics.axis == Axis.vertical &&
+                  notification is ScrollUpdateNotification && 
+                  notification.metrics.pixels >= notification.metrics.maxScrollExtent - 400) {
+                if (!_isFetchingHotword && _hasMoreHotword) {
+                  _fetchHotwordComments();
+                }
+              }
+              return false;
+            },
+            child: _hotwordComments.isEmpty && !_isFetchingHotword
+                ? _buildEmptyState(context, '该热词下暂无评论', CupertinoIcons.chat_bubble_text)
+                : ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
+                      itemCount: _hotwordComments.length + 1,
+                      itemBuilder: (context, index) {
+                        if (index < _hotwordComments.length) {
+                          return _buildCommentItem(context, _hotwordComments[index]);
+                        }
+                        return _buildLoadingIndicator(_hasMoreHotword);
+                      },
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildClassifySelector() {
+    final theme = Theme.of(context);
+    return Container(
+      height: 52,
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      child: ListView.builder(
+        controller: _classifyScrollController,
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _classifyList.length,
+        itemBuilder: (context, index) {
+          final item = _classifyList[index];
+          final isSelected = _selectedClassifyId == item['id'];
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ChoiceChip(
+              label: Text('${item['label']} ${item['cnt'] ?? ''}'),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() => _selectedClassifyId = item['id']);
+                  _fetchClassifyComments(isRefresh: true);
+                  _scrollToIndex(_classifyScrollController, index);
+                }
+              },
+              selectedColor: theme.colorScheme.primary,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+              ),
+              backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              side: BorderSide.none,
+              showCheckmark: false,
+              elevation: isSelected ? 4 : 0,
+              pressElevation: 0,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHotwordSelector() {
+    final theme = Theme.of(context);
+    return Container(
+      height: 52,
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      child: ListView.builder(
+        controller: _hotwordScrollController,
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemCount: _hotWordList.length,
+        itemBuilder: (context, index) {
+          final item = _hotWordList[index];
+          final isSelected = _selectedHotWord == item['content'];
+          return Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ChoiceChip(
+              label: Text('${item['content']} ${item['count'] ?? ''}'),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() => _selectedHotWord = item['content']);
+                  _fetchHotwordComments(isRefresh: true);
+                  _scrollToIndex(_hotwordScrollController, index);
+                }
+              },
+              selectedColor: theme.colorScheme.primary,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180),
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+              ),
+              backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              side: BorderSide.none,
+              showCheckmark: false,
+              elevation: isSelected ? 4 : 0,
+              pressElevation: 0,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _scrollToIndex(ScrollController controller, int index) {
+    double offset = index * 100.0; 
+    if (offset > controller.position.maxScrollExtent) {
+      offset = controller.position.maxScrollExtent;
+    }
+    controller.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  Widget _buildLoadingIndicator(bool hasMore) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: hasMore 
+            ? const CupertinoActivityIndicator() 
+            : Text('已加载全部评论', style: TextStyle(color: Theme.of(context).disabledColor, fontSize: 12)),
+      ),
+    );
+  }
+
+  int _calculateItemCount(String type, List displayList, List? starList) {
+    if (type == 'hot') {
       int count = displayList.length;
-      if (starList != null && starList.isNotEmpty) count += (starList.length + 2); // 标题 + 列表 + 间距
-      if (displayList.isNotEmpty) count += 1; // 热门标题
+      if (starList != null && starList.isNotEmpty) count += (starList.length + 2); 
+      if (displayList.isNotEmpty) count += 1; 
       return count;
     } else {
-      return displayList.length + 1; // 列表 + 加载更多提示
+      return displayList.length + 1; 
     }
   }
 
-  Widget _buildItem(BuildContext context, int index, bool isHot, List displayList, List? starList) {
+  Widget _buildItem(BuildContext context, int index, String type, List displayList, List? starList) {
     int offset = 0;
 
-    if (isHot) {
-      // 1. 歌手说部分
+    if (type == 'hot') {
       if (starList != null && starList.isNotEmpty) {
         if (index == 0) return _buildSectionHeader('歌手说');
         if (index <= starList.length) return _buildCommentItem(context, starList[index - 1], isStar: true);
@@ -348,28 +681,17 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
         offset++;
       }
 
-      // 2. 热门评论标题
       if (index == offset) return _buildSectionHeader('热门评论');
       int cmtIndex = index - offset - 1;
 
-      // 3. 热门评论项
       if (cmtIndex >= 0 && cmtIndex < displayList.length) {
         return _buildCommentItem(context, displayList[cmtIndex]);
       }
     } else {
-      // 全部评论逻辑
       if (index < displayList.length) {
         return _buildCommentItem(context, displayList[index]);
       }
-      // 加载状态
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Center(
-          child: _hasMore 
-              ? const CupertinoActivityIndicator() 
-              : Text('已加载全部评论', style: TextStyle(color: Theme.of(context).disabledColor, fontSize: 12)),
-        ),
-      );
+      return _buildLoadingIndicator(_hasMore);
     }
     return const SizedBox.shrink();
   }
