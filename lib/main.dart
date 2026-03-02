@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
@@ -16,36 +17,32 @@ import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
-import 'utils/single_instance.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Single-instance check MUST run before WidgetsFlutterBinding.ensureInitialized().
-  // The secondary instance exits here before any native plugin (including
-  // tray_manager) is registered — eliminating ghost menu-bar icons on macOS.
-  // ──────────────────────────────────────────────────────────────────────────
-  if (!await SingleInstance.acquire()) {
-    exit(0); // another instance is running; focus request already sent
-  }
-
   WidgetsFlutterBinding.ensureInitialized();
 
   await LoggerService.init();
-  LoggerService.i('App starting (primary instance).');
+  LoggerService.i('App process starting...');
+
+  final instance = FlutterSingleInstance();
+  if (!(await instance.isFirstInstance())) {
+    LoggerService.i('Another instance is running. Requesting focus and exiting.');
+    await instance.focus();
+    exit(0);
+  }
+
+  LoggerService.i('First instance confirmed.');
 
   await windowManager.ensureInitialized();
 
-  // Listen for focus requests from secondary instances.
-  // windowManager must be initialized before registering this.
-  SingleInstance.listenForFocus(() async {
+  FlutterSingleInstance.onFocus = (_) async {
     LoggerService.i('Focus requested by another instance. Restoring window...');
     await windowManager.show();
     await windowManager.focus();
-  });
+  };
 
   JustAudioMediaKit.ensureInitialized(
     linux: true,
@@ -56,9 +53,8 @@ void main() async {
   );
 
   if (!Platform.isWindows) {
-    ProcessSignal.sigint.watch().listen((_) async {
+    ProcessSignal.sigint.watch().listen((_) {
       ServerOrchestrator.stop();
-      await SingleInstance.release();
       exit(0);
     });
   }
@@ -125,6 +121,11 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   Future<void> _initTray() async {
+    // destroy() first to remove any stale NSStatusItem left by a previous
+    // plugin registration (e.g. after awakeFromNib re-runs on macOS),
+    // preventing ghost tray icons from accumulating.
+    await trayManager.destroy();
+
     await trayManager.setIcon(
       Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
     );
@@ -156,7 +157,6 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void onWindowClose() async {
-    // Hide to tray on all platforms; tray icon lets the user restore.
     await windowManager.hide();
   }
 
@@ -187,7 +187,7 @@ class _WindowHandlerState extends State<WindowHandler>
       await windowManager.focus();
     } else if (menuItem.key == 'exit_app') {
       ServerOrchestrator.stop();
-      await SingleInstance.release();
+      await trayManager.destroy();
       await windowManager.destroy();
     }
   }

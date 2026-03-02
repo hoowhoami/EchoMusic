@@ -61,6 +61,7 @@ dependencies:
   tray_manager: ^0.5.2
   smtc_windows: ^1.1.0
   audio_service_mpris: ^0.2.0
+  flutter_single_instance: ^1.5.0
 
 dev_dependencies:
   flutter_test:
