@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
-import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
@@ -17,40 +16,36 @@ import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
+import 'utils/single_instance.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  await LoggerService.init();
-  LoggerService.i('App process starting...');
 
-  // Check for single instance BEFORE initializing windowManager or other UI heavy resources
-  // This prevents the "ghost icon" in the macOS menu bar for the second instance
-  try {
-    final instance = FlutterSingleInstance();
-    if (!(await instance.isFirstInstance())) {
-      LoggerService.i('Another instance is already running. Requesting focus and exiting.');
-      await instance.focus();
-      exit(0); // Exit early: second instance never touches native UI loop
-    }
-    LoggerService.i('First instance confirmed.');
-  } catch (e) {
-    LoggerService.e('Error during single instance check: $e');
+  // ──────────────────────────────────────────────────────────────────────────
+  // Single-instance check MUST run before WidgetsFlutterBinding.ensureInitialized().
+  // The secondary instance exits here before any native plugin (including
+  // tray_manager) is registered — eliminating ghost menu-bar icons on macOS.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (!await SingleInstance.acquire()) {
+    exit(0); // another instance is running; focus request already sent
   }
 
-  // Only the first instance proceeds to initialize UI and window management
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await LoggerService.init();
+  LoggerService.i('App starting (primary instance).');
+
   await windowManager.ensureInitialized();
 
-  // Set focus callback to handle window restoration
-  FlutterSingleInstance.onFocus = (_) async {
-    LoggerService.i('Received focus request from another instance. Showing window...');
+  // Listen for focus requests from secondary instances.
+  // windowManager must be initialized before registering this.
+  SingleInstance.listenForFocus(() async {
+    LoggerService.i('Focus requested by another instance. Restoring window...');
     await windowManager.show();
     await windowManager.focus();
-    await windowManager.setSkipTaskbar(false);
-  };
+  });
 
   JustAudioMediaKit.ensureInitialized(
     linux: true,
@@ -59,15 +54,16 @@ void main() async {
     android: false,
     iOS: false,
   );
-  
+
   if (!Platform.isWindows) {
-    ProcessSignal.sigint.watch().listen((_) {
+    ProcessSignal.sigint.watch().listen((_) async {
       ServerOrchestrator.stop();
+      await SingleInstance.release();
       exit(0);
     });
   }
 
-  WindowOptions windowOptions = const WindowOptions(
+  const WindowOptions windowOptions = WindowOptions(
     size: Size(1100, 750),
     minimumSize: Size(1000, 700),
     center: true,
@@ -75,7 +71,7 @@ void main() async {
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
   );
-  
+
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
     await windowManager.focus();
@@ -116,39 +112,30 @@ class WindowHandler extends StatefulWidget {
   State<WindowHandler> createState() => _WindowHandlerState();
 }
 
-class _WindowHandlerState extends State<WindowHandler> with WindowListener, TrayListener, WidgetsBindingObserver {
+class _WindowHandlerState extends State<WindowHandler>
+    with WindowListener, TrayListener, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     windowManager.addListener(this);
-    if (!Platform.isMacOS) {
-      trayManager.addListener(this);
-    }
+    trayManager.addListener(this);
     windowManager.setPreventClose(true);
     _initTray();
   }
 
   Future<void> _initTray() async {
-    if (Platform.isMacOS) return; // Disable tray on macOS to prevent UI ghosting issues
-
     await trayManager.setIcon(
       Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
     );
-    
-    List<MenuItem> items = [
-      MenuItem(
-        key: 'show_window',
-        label: '显示窗口',
-      ),
-      MenuItem.separator(),
-      MenuItem(
-        key: 'exit_app',
-        label: '退出',
-      ),
-    ];
-    
-    Menu menu = Menu(items: items);
+
+    final menu = Menu(
+      items: [
+        MenuItem(key: 'show_window', label: '显示窗口'),
+        MenuItem.separator(),
+        MenuItem(key: 'exit_app', label: '退出'),
+      ],
+    );
     await trayManager.setContextMenu(menu);
   }
 
@@ -156,9 +143,7 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
-    if (!Platform.isMacOS) {
-      trayManager.removeListener(this);
-    }
+    trayManager.removeListener(this);
     super.dispose();
   }
 
@@ -171,18 +156,12 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 
   @override
   void onWindowClose() async {
-    if (Platform.isMacOS) {
-      // On macOS, standard behavior is to minimize or just stay in dock
-      // Since we disabled tray, we shouldn't hide() as it's hard to get back
-      await windowManager.minimize();
-    } else {
-      await windowManager.hide();
-    }
+    // Hide to tray on all platforms; tray icon lets the user restore.
+    await windowManager.hide();
   }
 
   @override
-  void onWindowFocus() async {
-  }
+  void onWindowFocus() {}
 
   @override
   void onWindowRestore() async {
@@ -208,6 +187,7 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
       await windowManager.focus();
     } else if (menuItem.key == 'exit_app') {
       ServerOrchestrator.stop();
+      await SingleInstance.release();
       await windowManager.destroy();
     }
   }
@@ -219,7 +199,8 @@ class _WindowHandlerState extends State<WindowHandler> with WindowListener, Tray
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)..badCertificateCallback = (_, _, _) => true;
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (_, _, _) => true;
   }
 }
 
@@ -234,7 +215,9 @@ class MyApp extends StatelessWidget {
           title: 'EchoMusic',
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
-          themeMode: theme == 'dark' ? ThemeMode.dark : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
+          themeMode: theme == 'dark'
+              ? ThemeMode.dark
+              : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           home: const LoadingScreen(),
