@@ -776,6 +776,7 @@ class _LoginScreenState extends State<LoginScreen> {
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 32),
+        // 手机号码输入框
         TextField(
           controller: _mobileController,
           keyboardType: TextInputType.phone,
@@ -785,56 +786,68 @@ class _LoginScreenState extends State<LoginScreen> {
           style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             hintText: '手机号码',
-            errorText: _mobileError,
             hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
             prefixIcon: Icon(Icons.phone_android, color: theme.colorScheme.onSurfaceVariant, size: 20),
             filled: true,
             fillColor: theme.colorScheme.onSurface.withAlpha(8),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
           ),
         ),
+        if (_mobileError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 12),
+            child: Text(_mobileError!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+          ),
         const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _codeController,
-                keyboardType: TextInputType.number,
-                onChanged: (_) {
-                  if (_codeError != null) setState(() => _codeError = null);
-                },
-                style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  hintText: '验证码',
-                  errorText: _codeError,
-                  hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
-                  prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.onSurfaceVariant, size: 20),
-                  filled: true,
-                  fillColor: theme.colorScheme.onSurface.withAlpha(8),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        // 验证码输入框和按钮
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _codeController,
+                  keyboardType: TextInputType.number,
+                  onChanged: (_) {
+                    if (_codeError != null) setState(() => _codeError = null);
+                  },
+                  style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    hintText: '验证码',
+                    hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withAlpha(150)),
+                    prefixIcon: Icon(Icons.lock_outline, color: theme.colorScheme.onSurfaceVariant, size: 20),
+                    filled: true,
+                    fillColor: theme.colorScheme.onSurface.withAlpha(8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
+              const SizedBox(width: 12),
+              ElevatedButton(
                 onPressed: _countdown > 0 || _isSendingCode ? null : _sendCode,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: accentColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
+                  minimumSize: const Size(0, 52),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码', style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
+        if (_codeError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 12),
+            child: Text(_codeError!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+          ),
         const SizedBox(height: 32),
+        // 登录按钮
         SizedBox(
           width: double.infinity,
           height: 52,
@@ -844,6 +857,7 @@ class _LoginScreenState extends State<LoginScreen> {
               backgroundColor: theme.colorScheme.onSurface,
               foregroundColor: theme.colorScheme.surface,
               elevation: 0,
+              minimumSize: const Size(double.infinity, 52),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             child: _isLoggingIn 

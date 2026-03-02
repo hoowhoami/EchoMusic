@@ -264,7 +264,7 @@ class _SettingViewState extends State<SettingView> {
               _buildItem(
                 context,
                 '自动领取 VIP',
-                '每次启动时自动领取每日 VIP，需已登录账号',
+                '每次启动时自动领取每日 VIP (需要先登录账号)',
                 trailing: _buildSwitch(
                   context,
                   settings['autoReceiveVip'] ?? false,
