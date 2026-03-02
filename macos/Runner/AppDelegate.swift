@@ -5,11 +5,15 @@ import FlutterMacOS
 class AppDelegate: FlutterAppDelegate {
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     // Dock icon click with no visible windows (e.g. window was hidden to tray).
-    // Show and focus the main window. This path is independent from the Dart-side
-    // flutter_single_instance onFocus callback (which only fires for a second instance via gRPC).
+    // Only restore the main Flutter window to avoid activating hidden windows from plugins (like tray_manager),
+    // which can cause duplicate tray icons or unexpected UI behavior.
     if !flag {
       for window in sender.windows {
-        window.makeKeyAndOrderFront(self)
+        if window.contentViewController is FlutterViewController {
+          window.makeKeyAndOrderFront(self)
+          NSApp.activate(ignoringOtherApps: true)
+          break
+        }
       }
     }
     return true
