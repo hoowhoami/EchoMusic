@@ -8,6 +8,7 @@ import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
+import '../widgets/back_to_top.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -27,6 +28,7 @@ class RankView extends StatefulWidget {
 }
 
 class _RankViewState extends State<RankView> {
+  final ScrollController _scrollController = ScrollController();
   List<Map<String, dynamic>> _ranks = [];
   List<Song> _rankSongs = [];
   int? _selectedRankId;
@@ -37,6 +39,12 @@ class _RankViewState extends State<RankView> {
   void initState() {
     super.initState();
     _loadRanks();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRanks() async {
@@ -135,20 +143,26 @@ class _RankViewState extends State<RankView> {
 
     final selectionProvider = context.watch<SelectionProvider>();
 
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
-      physics: const BouncingScrollPhysics(),
-      itemCount: _rankSongs.length,
-      itemBuilder: (context, index) {
-        final song = _rankSongs[index];
-        return SongCard(
-          song: song,
-          playlist: _rankSongs,
-          showCover: true,
-          coverSize: 44,
-          showMore: true,
-        );
-      },
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scrollController,
+          padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
+          physics: const BouncingScrollPhysics(),
+          itemCount: _rankSongs.length,
+          itemBuilder: (context, index) {
+            final song = _rankSongs[index];
+            return SongCard(
+              song: song,
+              playlist: _rankSongs,
+              showCover: true,
+              coverSize: 44,
+              showMore: true,
+            );
+          },
+        ),
+        BackToTop(controller: _scrollController),
+      ],
     );
   }
 }

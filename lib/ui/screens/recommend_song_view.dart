@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
@@ -5,6 +6,7 @@ import '../../models/song.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
+import '../widgets/back_to_top.dart';
 
 class RecommendSongView extends StatefulWidget {
   const RecommendSongView({super.key});
@@ -14,12 +16,19 @@ class RecommendSongView extends StatefulWidget {
 }
 
 class _RecommendSongViewState extends State<RecommendSongView> {
+  final ScrollController _scrollController = ScrollController();
   late Future<List<Song>> _recommendSongsFuture;
 
   @override
   void initState() {
     super.initState();
     _recommendSongsFuture = MusicApi.getEverydayRecommend();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -51,17 +60,23 @@ class _RecommendSongViewState extends State<RecommendSongView> {
       return const Center(child: Text('暂无推荐歌曲'));
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
-      itemCount: songs.length,
-      itemBuilder: (context, index) {
-        final song = songs[index];
-        return SongCard(
-          song: song,
-          playlist: songs,
-          showMore: true,
-        );
-      },
+    return Stack(
+      children: [
+        ListView.builder(
+          controller: _scrollController,
+          padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
+          itemCount: songs.length,
+          itemBuilder: (context, index) {
+            final song = songs[index];
+            return SongCard(
+              song: song,
+              playlist: songs,
+              showMore: true,
+            );
+          },
+        ),
+        BackToTop(controller: _scrollController),
+      ],
     );
   }
 }

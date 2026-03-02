@@ -12,6 +12,7 @@ import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
+import '../widgets/back_to_top.dart';
 import 'playlist_detail_view.dart';
 import 'album_detail_view.dart';
 import '../../models/album.dart';
@@ -72,15 +73,18 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        physics: const BouncingScrollPhysics(),
-        children: [
-          const _DiscoverPlaylistTab(),
-          const RankView(backgroundColor: Colors.transparent, showTitle: false),
-          const _DiscoverAlbumTab(),
-          const _DiscoverSongTab(),
-        ],
+      body: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: TabBarView(
+          controller: _tabController,
+          physics: const BouncingScrollPhysics(),
+          children: [
+            const _DiscoverPlaylistTab(),
+            const RankView(backgroundColor: Colors.transparent, showTitle: false),
+            const _DiscoverAlbumTab(),
+            const _DiscoverSongTab(),
+          ],
+        ),
       ),
     );
   }
@@ -94,6 +98,7 @@ class _DiscoverPlaylistTab extends StatefulWidget {
 }
 
 class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with RefreshableState {
+  final ScrollController _scrollController = ScrollController();
   List<Playlist> _playlists = [];
   List<Map<String, dynamic>> _categories = [];
   String? _selectedCategoryId;
@@ -104,6 +109,12 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
   void initState() {
     super.initState();
     _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -195,19 +206,25 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : GridView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 5,
-                  childAspectRatio: 0.75,
-                  crossAxisSpacing: 24,
-                  mainAxisSpacing: 24,
-                ),
-                itemCount: _playlists.length,
-                itemBuilder: (context, index) {
-                  final playlist = _playlists[index];
-                  return _PlaylistCard(playlist: playlist);
-                },
+            : Stack(
+                children: [
+                  GridView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 5,
+                      childAspectRatio: 0.75,
+                      crossAxisSpacing: 24,
+                      mainAxisSpacing: 24,
+                    ),
+                    itemCount: _playlists.length,
+                    itemBuilder: (context, index) {
+                      final playlist = _playlists[index];
+                      return _PlaylistCard(playlist: playlist);
+                    },
+                  ),
+                  BackToTop(controller: _scrollController),
+                ],
               ),
         ),
       ],
@@ -286,6 +303,7 @@ class _DiscoverAlbumTab extends StatefulWidget {
 }
 
 class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableState {
+  final ScrollController _scrollController = ScrollController();
   String _selectedTypeId = 'all';
   String _selectedTypeName = '全部';
   Map<String, dynamic> _allAlbums = {};
@@ -303,6 +321,12 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
   void initState() {
     super.initState();
     _loadAlbums();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -376,85 +400,91 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : GridView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 5,
-                  childAspectRatio: 0.75,
-                  crossAxisSpacing: 24,
-                  mainAxisSpacing: 24,
-                ),
-                itemCount: albums.length,
-                itemBuilder: (context, index) {
-                  final album = albums[index];
-                  return InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        CupertinoPageRoute(
-                          settings: RouteSettings(
-                            name: 'album_detail', 
-                            arguments: {
-                              'id': album.id,
-                              'name': album.name,
-                            }
-                          ),
-                          builder: (_) => AlbumDetailView(
-                            albumId: album.id,
-                            albumName: album.name,
-                          ),
+            : Stack(
+                children: [
+                  GridView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 5,
+                      childAspectRatio: 0.75,
+                      crossAxisSpacing: 24,
+                      mainAxisSpacing: 24,
+                    ),
+                    itemCount: albums.length,
+                    itemBuilder: (context, index) {
+                      final album = albums[index];
+                      return InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            CupertinoPageRoute(
+                              settings: RouteSettings(
+                                name: 'album_detail', 
+                                arguments: {
+                                  'id': album.id,
+                                  'name': album.name,
+                                }
+                              ),
+                              builder: (_) => AlbumDetailView(
+                                albumId: album.id,
+                                albumName: album.name,
+                              ),
+                            ),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withAlpha(30),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: CachedNetworkImage(
+                                    imageUrl: album.pic,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                                    errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              album.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.onSurface, 
+                                fontSize: 13, 
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              album.singerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
+                            ),
+                          ],
                         ),
                       );
                     },
-                    borderRadius: BorderRadius.circular(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withAlpha(30),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: CachedNetworkImage(
-                                imageUrl: album.pic,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
-                                errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          album.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.onSurface, 
-                            fontSize: 13, 
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          album.singerName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                  ),
+                  BackToTop(controller: _scrollController),
+                ],
               ),
         ),
       ],
@@ -470,12 +500,19 @@ class _DiscoverSongTab extends StatefulWidget {
 }
 
 class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableState {
+  final ScrollController _scrollController = ScrollController();
   late Future<List<Song>> _songsFuture;
 
   @override
   void initState() {
     super.initState();
     _songsFuture = MusicApi.getNewSongs();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -511,6 +548,7 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
                   ),
                 Expanded(
                   child: ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
                     itemCount: songs.length,
                     itemBuilder: (context, index) {
@@ -533,6 +571,7 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
               ],
             ),
             const BatchActionBar(),
+            BackToTop(controller: _scrollController),
           ],
         );
       },

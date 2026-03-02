@@ -6,6 +6,7 @@ import '../../models/playlist.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/selection_provider.dart';
 import 'song_card.dart';
+import 'back_to_top.dart';
 
 class SongList extends StatefulWidget {
   final List<Song> songs;
@@ -79,126 +80,131 @@ class _SongListState extends State<SongList> {
       );
     }
 
-    return CustomScrollView(
-      controller: _scrollController,
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        if (widget.headers != null) ...widget.headers!,
-        
-        // Sticky Toolbar (Search & Actions)
-        SliverPersistentHeader(
-          pinned: true,
-          delegate: _StickyToolbarDelegate(
-            child: Container(
-              color: theme.scaffoldBackgroundColor,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              child: Row(
-                children: [
-                  // 1. Batch Action on the Left
-                  Selector<SelectionProvider, bool>(
-                    selector: (_, p) => p.isSelectionMode,
-                    builder: (context, isSelectionMode, child) {
-                      if (widget.songs.isNotEmpty && !isSelectionMode) {
-                        return _buildBatchActionButton(context);
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                  
-                  const Spacer(), // Push others to the right
-                  
-                  // 2. Controlled Width Search Box
-                  Container(
-                    width: 240, // Fixed width to keep it neat
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withAlpha(15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (value) => setState(() => _searchQuery = value),
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      textAlignVertical: TextAlignVertical.center,
-                      decoration: InputDecoration(
-                        isCollapsed: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        hintText: '搜索列表内歌曲',
-                        hintStyle: TextStyle(
-                          color: theme.colorScheme.onSurface.withAlpha(100),
-                          fontSize: 12,
-                        ),
-                        prefixIcon: Icon(
-                          CupertinoIcons.search,
-                          size: 14,
-                          color: theme.colorScheme.onSurface.withAlpha(120),
-                        ),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? GestureDetector(
-                                onTap: () {
-                                  _searchController.clear();
-                                  setState(() => _searchQuery = '');
-                                },
-                                child: Icon(
-                                  CupertinoIcons.clear_fill,
-                                  size: 14,
-                                  color: theme.colorScheme.onSurface.withAlpha(120),
-                                ),
-                              )
-                            : null,
-                        border: InputBorder.none,
+    return Stack(
+      children: [
+        CustomScrollView(
+          controller: _scrollController,
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            if (widget.headers != null) ...widget.headers!,
+            
+            // Sticky Toolbar (Search & Actions)
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StickyToolbarDelegate(
+                child: Container(
+                  color: theme.scaffoldBackgroundColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                  child: Row(
+                    children: [
+                      // 1. Batch Action on the Left
+                      Selector<SelectionProvider, bool>(
+                        selector: (_, p) => p.isSelectionMode,
+                        builder: (context, isSelectionMode, child) {
+                          if (widget.songs.isNotEmpty && !isSelectionMode) {
+                            return _buildBatchActionButton(context);
+                          }
+                          return const SizedBox.shrink();
+                        },
                       ),
-                    ),
+                      
+                      const Spacer(), // Push others to the right
+                      
+                      // 2. Controlled Width Search Box
+                      Container(
+                        width: 240, // Fixed width to keep it neat
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.onSurface.withAlpha(15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (value) => setState(() => _searchQuery = value),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            hintText: '搜索列表内歌曲',
+                            hintStyle: TextStyle(
+                              color: theme.colorScheme.onSurface.withAlpha(100),
+                              fontSize: 12,
+                            ),
+                            prefixIcon: Icon(
+                              CupertinoIcons.search,
+                              size: 14,
+                              color: theme.colorScheme.onSurface.withAlpha(120),
+                            ),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? GestureDetector(
+                                    onTap: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                    child: Icon(
+                                      CupertinoIcons.clear_fill,
+                                      size: 14,
+                                      color: theme.colorScheme.onSurface.withAlpha(120),
+                                    ),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(width: 12),
+                      
+                      // 3. Locate Button on the Right
+                      _buildLocatePlayingButton(context, filteredSongs),
+                    ],
                   ),
-                  
-                  const SizedBox(width: 12),
-                  
-                  // 3. Locate Button on the Right
-                  _buildLocatePlayingButton(context, filteredSongs),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        if (filteredSongs.isEmpty)
-          SliverToBoxAdapter(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(40.0),
-                child: Text(
-                  _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
             ),
-          )
-        else
-          SliverPadding(
-            padding: widget.padding,
-            sliver: SliverFixedExtentList(
-              itemExtent: 72.0,
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final song = filteredSongs[index];
-                  return SongCard(
-                    song: song,
-                    playlist: filteredSongs,
-                    parentPlaylist: widget.parentPlaylist,
-                    showMore: true,
-                  );
-                },
-                childCount: filteredSongs.length,
+
+            if (filteredSongs.isEmpty)
+              SliverToBoxAdapter(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(40.0),
+                    child: Text(
+                      _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
+                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: widget.padding,
+                sliver: SliverFixedExtentList(
+                  itemExtent: 72.0,
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final song = filteredSongs[index];
+                      return SongCard(
+                        song: song,
+                        playlist: filteredSongs,
+                        parentPlaylist: widget.parentPlaylist,
+                        showMore: true,
+                      );
+                    },
+                    childCount: filteredSongs.length,
+                  ),
+                ),
+              ),
+            
+            Selector<SelectionProvider, bool>(
+              selector: (_, p) => p.isSelectionMode,
+              builder: (context, isMode, child) => SliverToBoxAdapter(
+                child: SizedBox(height: isMode ? 80 : 20),
               ),
             ),
-          ),
-        
-        Selector<SelectionProvider, bool>(
-          selector: (_, p) => p.isSelectionMode,
-          builder: (context, isMode, child) => SliverToBoxAdapter(
-            child: SizedBox(height: isMode ? 80 : 20),
-          ),
+          ],
         ),
+        BackToTop(controller: _scrollController),
       ],
     );
   }

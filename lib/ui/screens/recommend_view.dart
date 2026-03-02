@@ -5,6 +5,7 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/back_to_top.dart';
 import 'playlist_detail_view.dart';
 import 'rank_view.dart';
 import 'recommend_song_view.dart';
@@ -18,6 +19,7 @@ class RecommendView extends StatefulWidget {
 }
 
 class _RecommendViewState extends State<RecommendView> with RefreshableState {
+  final ScrollController _scrollController = ScrollController();
   late Future<List<Playlist>> _recommendedPlaylistsFuture;
   late Future<List<Map<String, dynamic>>> _topIpFuture;
 
@@ -25,6 +27,12 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -65,138 +73,144 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(40, 32, 40, 0),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    greeting,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontSize: 22, 
-                      letterSpacing: -0.5,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '由此开启好心情 ~',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurface.withAlpha(150),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
+      body: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scrollController,
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(40, 32, 40, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildLargeFeatureCard(
-                        context,
-                        title: '每日推荐',
-                        subtitle: '为你量身定制',
-                        iconContent: DateTime.now().day.toString(),
-                        onTap: () => Navigator.push(
-                          context, 
-                          CupertinoPageRoute(
-                            settings: const RouteSettings(name: 'recommend_song'),
-                            builder: (_) => const RecommendSongView()
-                          )
+                      Text(
+                        greeting,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontSize: 22, 
+                          letterSpacing: -0.5,
+                          color: theme.colorScheme.onSurface,
                         ),
-                        color: theme.colorScheme.primary,
                       ),
-                      const SizedBox(width: 16),
-                      _buildLargeFeatureCard(
-                        context,
-                        title: '排行榜',
-                        subtitle: '实时热门趋势',
-                        iconContent: 'TOP',
-                        onTap: () => Navigator.push(
-                          context, 
-                          CupertinoPageRoute(
-                            settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
-                            builder: (_) => const RankView(isRecommend: true)
-                          )
+                      const SizedBox(height: 4),
+                      Text(
+                        '由此开启好心情 ~',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface.withAlpha(150),
                         ),
-                        color: theme.colorScheme.secondary,
                       ),
+                      const SizedBox(height: 32),
+                      Row(
+                        children: [
+                          _buildLargeFeatureCard(
+                            context,
+                            title: '每日推荐',
+                            subtitle: '为你量身定制',
+                            iconContent: DateTime.now().day.toString(),
+                            onTap: () => Navigator.push(
+                              context, 
+                              CupertinoPageRoute(
+                                settings: const RouteSettings(name: 'recommend_song'),
+                                builder: (_) => const RecommendSongView()
+                              )
+                            ),
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 16),
+                          _buildLargeFeatureCard(
+                            context,
+                            title: '排行榜',
+                            subtitle: '实时热门趋势',
+                            iconContent: 'TOP',
+                            onTap: () => Navigator.push(
+                              context, 
+                              CupertinoPageRoute(
+                                settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
+                                builder: (_) => const RankView(isRecommend: true)
+                              )
+                            ),
+                            color: theme.colorScheme.secondary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 40),
+                      _buildHeader(context, '推荐歌单'),
+                      const SizedBox(height: 16),
                     ],
                   ),
-                  const SizedBox(height: 40),
-                  _buildHeader(context, '推荐歌单'),
-                  const SizedBox(height: 16),
-                ],
+                ),
               ),
-            ),
-          ),
-          
-          FutureBuilder<List<Playlist>>(
-            future: _recommendedPlaylistsFuture,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SliverToBoxAdapter(child: SizedBox(height: 200));
-              }
-              final playlists = snapshot.data!;
-              return SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 24,
-                    crossAxisSpacing: 20,
-                    mainAxisExtent: 210,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildPlaylistCard(playlists[index]),
-                    childCount: playlists.length,
-                  ),
+              
+              FutureBuilder<List<Playlist>>(
+                future: _recommendedPlaylistsFuture,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SliverToBoxAdapter(child: SizedBox(height: 200));
+                  }
+                  final playlists = snapshot.data!;
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 200,
+                        mainAxisSpacing: 24,
+                        crossAxisSpacing: 20,
+                        mainAxisExtent: 210,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildPlaylistCard(playlists[index]),
+                        childCount: playlists.length,
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(40, 40, 40, 16),
+                sliver: SliverToBoxAdapter(
+                  child: _buildHeader(context, '编辑精选'),
                 ),
-              );
-            },
-          ),
+              ),
 
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(40, 40, 40, 16),
-            sliver: SliverToBoxAdapter(
-              child: _buildHeader(context, '编辑精选'),
-            ),
-          ),
+              FutureBuilder<List<Map<String, dynamic>>>(
+                future: _topIpFuture,
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const SliverToBoxAdapter(child: SizedBox(height: 200));
+                  }
+                  final ipList = snapshot.data!.where((item) => 
+                    item['type'] == 1 && item['extra']?['global_collection_id'] != null
+                  ).toList();
 
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _topIpFuture,
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SliverToBoxAdapter(child: SizedBox(height: 200));
-              }
-              final ipList = snapshot.data!.where((item) => 
-                item['type'] == 1 && item['extra']?['global_collection_id'] != null
-              ).toList();
-
-              return SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                    maxCrossAxisExtent: 200,
-                    mainAxisSpacing: 24,
-                    crossAxisSpacing: 20,
-                    mainAxisExtent: 210,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final ip = ipList[index];
-                      final playlist = Playlist.fromIP(ip);
-                      return _buildPlaylistCard(playlist, subtitle: '编辑精选');
-                    },
-                    childCount: ipList.length,
-                  ),
-                ),
-              );
-            },
+                  return SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 200,
+                        mainAxisSpacing: 24,
+                        crossAxisSpacing: 20,
+                        mainAxisExtent: 210,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final ip = ipList[index];
+                          final playlist = Playlist.fromIP(ip);
+                          return _buildPlaylistCard(playlist, subtitle: '编辑精选');
+                        },
+                        childCount: ipList.length,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
           ),
-          
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          BackToTop(controller: _scrollController),
         ],
       ),
     );

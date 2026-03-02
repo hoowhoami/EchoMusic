@@ -4,6 +4,7 @@ import '../../models/song.dart';
 import '../../api/music_api.dart';
 import '../../utils/format_utils.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/back_to_top.dart';
 
 class SongDetailView extends StatefulWidget {
   final Song song;
@@ -19,11 +20,18 @@ class _SongDetailViewState extends State<SongDetailView> {
   Map<String, dynamic>? _privilegeData;
   Map<String, dynamic>? _rankingData;
   Map<String, dynamic>? _favoriteData;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchData() async {
@@ -56,118 +64,124 @@ class _SongDetailViewState extends State<SongDetailView> {
     
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            surfaceTintColor: Colors.transparent,
-            expandedHeight: 180,
-            pinned: true,
-            automaticallyImplyLeading: false,
-            elevation: 0,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: EdgeInsets.zero,
-              centerTitle: false,
-              expandedTitleScale: 1.0,
-              title: LayoutBuilder(
-                builder: (context, constraints) {
-                  final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
-                  return AnimatedOpacity(
-                    duration: const Duration(milliseconds: 200),
-                    opacity: isCollapsed ? 1.0 : 0.0,
-                    child: Container(
-                      height: kToolbarHeight,
-                      padding: const EdgeInsets.only(left: 20),
-                      child: Row(
-                        children: [
-                          CoverImage(
-                            url: widget.song.cover,
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            showShadow: false,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              widget.song.name,
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurface,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              SliverAppBar(
+                backgroundColor: theme.scaffoldBackgroundColor,
+                surfaceTintColor: Colors.transparent,
+                expandedHeight: 180,
+                pinned: true,
+                automaticallyImplyLeading: false,
+                elevation: 0,
+                flexibleSpace: FlexibleSpaceBar(
+                  titlePadding: EdgeInsets.zero,
+                  centerTitle: false,
+                  expandedTitleScale: 1.0,
+                  title: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                      return AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: isCollapsed ? 1.0 : 0.0,
+                        child: Container(
+                          height: kToolbarHeight,
+                          padding: const EdgeInsets.only(left: 20),
+                          child: Row(
+                            children: [
+                              CoverImage(
+                                url: widget.song.cover,
+                                width: 32,
+                                height: 32,
+                                borderRadius: 6,
+                                showShadow: false,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  widget.song.name,
+                                  style: TextStyle(
+                                    color: theme.colorScheme.onSurface,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      );
+                    },
+                  ),
+                  background: Container(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        CoverImage(
+                          url: widget.song.cover,
+                          width: 130,
+                          height: 130,
+                          borderRadius: 16,
+                          showShadow: true,
+                        ),
+                        const SizedBox(width: 24),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'SONG',
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 2.0,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.song.name,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.1,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                widget.song.singerName,
+                                style: TextStyle(
+                                  fontSize: 14, 
+                                  fontWeight: FontWeight.w700, 
+                                  color: theme.colorScheme.primary
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                },
-              ),
-              background: Container(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    CoverImage(
-                      url: widget.song.cover,
-                      width: 130,
-                      height: 130,
-                      borderRadius: 16,
-                      showShadow: true,
-                    ),
-                    const SizedBox(width: 24),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'SONG',
-                            style: TextStyle(
-                              color: theme.colorScheme.primary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2.0,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.song.name,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              height: 1.1,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            widget.song.singerName,
-                            style: TextStyle(
-                              fontSize: 14, 
-                              fontWeight: FontWeight.w700, 
-                              color: theme.colorScheme.primary
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+              SliverToBoxAdapter(
+                child: _isLoading
+                    ? const Center(child: Padding(padding: EdgeInsets.only(top: 100), child: CupertinoActivityIndicator()))
+                    : _buildContent(context),
+              ),
+            ],
           ),
-          SliverToBoxAdapter(
-            child: _isLoading
-                ? const Center(child: Padding(padding: EdgeInsets.only(top: 100), child: CupertinoActivityIndicator()))
-                : _buildContent(context),
-          ),
+          BackToTop(controller: _scrollController),
         ],
       ),
     );

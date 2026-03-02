@@ -15,6 +15,7 @@ import '../../models/artist.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/custom_tab_bar.dart';
+import '../widgets/back_to_top.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -27,6 +28,11 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
+
+  final ScrollController _songScrollController = ScrollController();
+  final ScrollController _playlistScrollController = ScrollController();
+  final ScrollController _albumScrollController = ScrollController();
+  final ScrollController _artistScrollController = ScrollController();
 
   List<Song> _songResults = [];
   List<Album> _albumResults = [];
@@ -43,23 +49,54 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   bool _showSuggestions = false;
   bool _isIgnoringChanges = false;
   
+  // 用于手动控制回到顶部按钮的显隐
+  bool _showBackToTop = false;
+
   Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(_handleTabChange);
     _loadHotSearches();
     _focusNode.addListener(_onFocusChange);
   }
 
+  // 切换 Tab 时根据对应列表的滚动位置更新按钮状态
+  void _handleTabChange() {
+    if (_tabController.indexIsChanging) return;
+    _updateBackToTopVisibility();
+  }
+
+  void _updateBackToTopVisibility() {
+    ScrollController currentController;
+    switch (_tabController.index) {
+      case 0: currentController = _songScrollController; break;
+      case 1: currentController = _playlistScrollController; break;
+      case 2: currentController = _albumScrollController; break;
+      case 3: currentController = _artistScrollController; break;
+      default: return;
+    }
+
+    final bool shouldShow = currentController.hasClients && currentController.offset > 300;
+    if (_showBackToTop != shouldShow) {
+      setState(() => _showBackToTop = shouldShow);
+    }
+  }
+
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     _searchController.dispose();
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _debounce?.cancel();
+    _songScrollController.dispose();
+    _playlistScrollController.dispose();
+    _albumScrollController.dispose();
+    _artistScrollController.dispose();
     super.dispose();
   }
 
@@ -67,14 +104,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     if (_focusNode.hasFocus && _searchController.text.isNotEmpty && _suggestions.isNotEmpty) {
       setState(() => _showSuggestions = true);
     }
-    // 注意：不再在失去焦点时立即隐藏，以防止干扰点击事件
   }
 
   Future<void> _loadHotSearches() async {
-    setState(() {
-      _isLoadingHot = true;
-    });
-
+    setState(() => _isLoadingHot = true);
     try {
       final hotCategories = await MusicApi.getSearchHotCategorized();
       final defaultKeyword = await MusicApi.getSearchDefault();
@@ -84,15 +117,12 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         _isLoadingHot = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoadingHot = false;
-      });
+      setState(() => _isLoadingHot = false);
     }
   }
 
   void _onSearchChanged(String value) {
     if (_isIgnoringChanges) return;
-
     if (_debounce?.isActive ?? false) _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       if (value.isEmpty) {
@@ -102,7 +132,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         });
         return;
       }
-
       try {
         final suggestions = await MusicApi.getSearchSuggest(value);
         if (!mounted || _isIgnoringChanges) return;
@@ -110,15 +139,11 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           _suggestions = suggestions;
           _showSuggestions = _focusNode.hasFocus && _suggestions.isNotEmpty;
         });
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     });
 
     if (_hasSearched && value.isNotEmpty) {
-      setState(() {
-        _hasSearched = false;
-      });
+      setState(() => _hasSearched = false);
     }
     setState(() {
       _showSuggestions = _focusNode.hasFocus && value.isNotEmpty && _suggestions.isNotEmpty;
@@ -133,7 +158,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     }
     if (keywords.isEmpty) return;
 
-    // 关键修复：立即加锁并同步 UI
     _isIgnoringChanges = true;
     if (keyword != null) {
       _searchController.text = keyword;
@@ -142,7 +166,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       );
     }
 
-    // 立即隐藏建议和收起键盘
     setState(() {
       _showSuggestions = false;
       _isLoading = true;
@@ -173,7 +196,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         _isLoading = false;
       });
       
-      // 延迟解锁，确保 UI 重建完成
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) _isIgnoringChanges = false;
       });
@@ -187,6 +209,23 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     }
   }
 
+  void _scrollToTop() {
+    ScrollController currentController;
+    switch (_tabController.index) {
+      case 0: currentController = _songScrollController; break;
+      case 1: currentController = _playlistScrollController; break;
+      case 2: currentController = _albumScrollController; break;
+      case 3: currentController = _artistScrollController; break;
+      default: return;
+    }
+    
+    currentController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -194,100 +233,116 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
     return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    '搜索',
-                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
-                  ),
-                  const Spacer(),
-                  if (_songResults.isNotEmpty &&
-                      _searchController.text.isNotEmpty &&
-                      !_isLoading &&
-                      !selectionProvider.isSelectionMode &&
-                      _tabController.index == 0 && 
-                      _hasSearched)
-                    InkWell(
-                      onTap: () {
-                        selectionProvider.setSongList(_songResults);
-                        selectionProvider.enterSelectionMode();
-                      },
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        height: 36,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.onSurface.withAlpha(15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              CupertinoIcons.checkmark_circle,
-                              size: 16,
-                              color: theme.colorScheme.onSurface.withAlpha(200),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '批量操作',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+        NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification.metrics.axis == Axis.vertical) {
+              _updateBackToTopVisibility();
+            }
+            return false;
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '搜索',
+                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
+                    ),
+                    const Spacer(),
+                    if (_songResults.isNotEmpty &&
+                        _searchController.text.isNotEmpty &&
+                        !_isLoading &&
+                        !selectionProvider.isSelectionMode &&
+                        _tabController.index == 0 && 
+                        _hasSearched)
+                      InkWell(
+                        onTap: () {
+                          selectionProvider.setSongList(_songResults);
+                          selectionProvider.enterSelectionMode();
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.onSurface.withAlpha(15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                CupertinoIcons.checkmark_circle,
+                                size: 16,
                                 color: theme.colorScheme.onSurface.withAlpha(200),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 6),
+                              Text(
+                                '批量操作',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onSurface.withAlpha(200),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              _buildSearchInput(theme),
-              const SizedBox(height: 24),
-              if (_hasSearched) ...[
-                CustomTabBar(
-                  controller: _tabController,
-                  tabs: const ['单曲', '歌单', '专辑', '歌手'],
-                  onTap: (_) => setState(() {}),
-                ),
-                const SizedBox(height: 16),
-              ],
-              Expanded(
-                child: Stack(
-                  children: [
-                    if (!_hasSearched) 
-                      _buildHotSearches()
-                    else if (_isLoading)
-                      const Center(child: CupertinoActivityIndicator())
-                    else
-                      TabBarView(
-                        controller: _tabController,
-                        physics: const BouncingScrollPhysics(),
-                        children: [
-                          _buildSongList(),
-                          _buildPlaylistList(),
-                          _buildAlbumList(),
-                          _buildArtistList(),
-                        ],
-                      ),
-                    if (_showSuggestions) 
-                      Positioned.fill(
-                        child: _buildSuggestions(theme),
                       ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 24),
+                _buildSearchInput(theme),
+                const SizedBox(height: 24),
+                if (_hasSearched) ...[
+                  CustomTabBar(
+                    controller: _tabController,
+                    tabs: const ['单曲', '歌单', '专辑', '歌手'],
+                    onTap: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                Expanded(
+                  child: Stack(
+                    children: [
+                      if (!_hasSearched) 
+                        _buildHotSearches()
+                      else if (_isLoading)
+                        const Center(child: CupertinoActivityIndicator())
+                      else
+                        // 统一隐藏滚动条
+                        ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                          child: TabBarView(
+                            controller: _tabController,
+                            physics: const BouncingScrollPhysics(),
+                            children: [
+                              _buildSongList(),
+                              _buildPlaylistList(),
+                              _buildAlbumList(),
+                              _buildArtistList(),
+                            ],
+                          ),
+                        ),
+                      if (_showSuggestions) 
+                        Positioned.fill(
+                          child: _buildSuggestions(theme),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         const BatchActionBar(),
+        BackToTop(
+          show: _showBackToTop,
+          onPressed: _scrollToTop,
+        ),
       ],
     );
   }
@@ -401,7 +456,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                       text,
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                     ),
-                    onTap: () => _onSearch(text), // 触发搜索
+                    onTap: () => _onSearch(text), 
                   );
                 }),
               ],
@@ -416,13 +471,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     if (_isLoadingHot) {
       return const Center(child: CupertinoActivityIndicator());
     }
-
-    if (_hotSearchCategories.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (_hotSearchCategories.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -441,7 +492,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 child: ChoiceChip(
                   label: Text(name),
                   selected: isSelected,
-                  showCheckmark: false, // 去掉打勾
+                  showCheckmark: false,
                   onSelected: (selected) {
                     if (selected) {
                       setState(() => _selectedHotCategoryIndex = idx);
@@ -528,10 +579,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildSongList() {
     if (_songResults.isEmpty) return _buildEmptyState();
-
     final selectionProvider = context.watch<SelectionProvider>();
-
     return ListView.builder(
+      controller: _songScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _songResults.length,
       padding: EdgeInsets.only(bottom: selectionProvider.isSelectionMode ? 80 : 20),
@@ -549,12 +599,12 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   Widget _buildPlaylistList() {
     if (_playlistResults.isEmpty) return _buildEmptyState();
     return ListView.builder(
+      controller: _playlistScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _playlistResults.length,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final playlist = _playlistResults[index];
-
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -592,12 +642,12 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   Widget _buildAlbumList() {
     if (_albumResults.isEmpty) return _buildEmptyState();
     return ListView.builder(
+      controller: _albumScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _albumResults.length,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final album = _albumResults[index];
-        
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -639,12 +689,12 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     if (_artistResults.isEmpty) return _buildEmptyState();
     final theme = Theme.of(context);
     return ListView.builder(
+      controller: _artistScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _artistResults.length,
       padding: EdgeInsets.zero,
       itemBuilder: (context, index) {
         final artist = _artistResults[index];
-        
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
