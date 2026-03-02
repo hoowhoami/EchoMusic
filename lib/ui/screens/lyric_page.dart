@@ -21,6 +21,7 @@ class _LyricPageState extends State<LyricPage> {
   LyricsMode? _lastMode;
   double _lastLineHeight = 0;
   String? _lastSongHash;
+  int _lastScrolledIndex = -1;
   
   late LyricProvider _lyricProvider;
 
@@ -186,9 +187,16 @@ class _LyricPageState extends State<LyricPage> {
           forceSync = true;
         }
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToCurrent(lineHeight, lyricProvider.currentLineIndex, force: forceSync);
-        });
+        // Only schedule a scroll callback when the active line actually changes
+        // or a force-sync is needed. This avoids queuing redundant callbacks on
+        // every character-highlight update (which fires ~every 300ms).
+        final currentIndex = lyricProvider.currentLineIndex;
+        if (currentIndex != _lastScrolledIndex || forceSync) {
+          _lastScrolledIndex = currentIndex;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToCurrent(lineHeight, currentIndex, force: forceSync);
+          });
+        }
 
         return LayoutBuilder(
           builder: (context, constraints) {

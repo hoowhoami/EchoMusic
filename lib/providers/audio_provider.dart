@@ -163,6 +163,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   int _lastSavedSecond = -1;
+  int _lastMediaSessionSecond = -1;
 
   void _initListeners() {
     _subscriptions.add(_player.playbackEventStream.listen((event) {
@@ -240,7 +241,8 @@ class AudioProvider with ChangeNotifier {
           _savePlaybackState();
         }
 
-        if (sec % 1 == 0 && sec != _lastSavedSecond) {
+        if (sec != _lastMediaSessionSecond) {
+          _lastMediaSessionSecond = sec;
           MediaSessionHandler.updatePlaybackState(_player.playing, pos);
         }
       } catch (_) {}

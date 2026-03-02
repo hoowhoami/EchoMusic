@@ -451,20 +451,24 @@ class _PlaybackTimeInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Consumer<AudioProvider>(
-      builder: (context, audioProvider, child) {
-        return StreamBuilder<PositionSnapshot>(
-          stream: audioProvider.positionSnapshotStream,
-          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-          builder: (context, snapshot) {
-            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-            return Text(
-              '${_formatDuration(snap.position)} / ${_formatDuration(snap.duration)}',
-              style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
-            );
-          },
-        );
-      },
+    // Use read instead of Consumer: positionSnapshotStream is stable for the
+    // provider's lifetime; Consumer would recreate the StreamBuilder on every
+    // AudioProvider.notifyListeners() call.
+    final audioProvider = context.read<AudioProvider>();
+    return RepaintBoundary(
+      // Isolate the 200 ms text-repaint from propagating to the root layer,
+      // which previously caused the entire screen to be rasterized 5× per second.
+      child: StreamBuilder<PositionSnapshot>(
+        stream: audioProvider.positionSnapshotStream,
+        initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
+        builder: (context, snapshot) {
+          final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+          return Text(
+            '${_formatDuration(snap.position)} / ${_formatDuration(snap.duration)}',
+            style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface.withAlpha(120), fontWeight: FontWeight.w600),
+          );
+        },
+      ),
     );
   }
   String _formatDuration(Duration duration) {

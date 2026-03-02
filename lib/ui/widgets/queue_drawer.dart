@@ -182,10 +182,12 @@ class _QueueDrawerState extends State<QueueDrawer> {
                     itemBuilder: (context, index) {
                       final song = playlist[index];
                       final isCurrent = index == currentIndex;
+                      final isPlaying = isCurrent && audioProvider.isPlaying;
 
                       return _QueueItem(
                         song: song,
                         isCurrent: isCurrent,
+                        isPlaying: isPlaying,
                         onTap: () => audioProvider.playSong(song, playlist: playlist),
                         onRemove: () => audioProvider.removeFromPlaylist(index),
                       );
@@ -205,12 +207,14 @@ class _QueueDrawerState extends State<QueueDrawer> {
 class _QueueItem extends StatefulWidget {
   final dynamic song;
   final bool isCurrent;
+  final bool isPlaying;
   final VoidCallback onTap;
   final VoidCallback onRemove;
 
   const _QueueItem({
     required this.song,
     required this.isCurrent,
+    required this.isPlaying,
     required this.onTap,
     required this.onRemove,
   });
@@ -259,8 +263,12 @@ class _QueueItemState extends State<_QueueItem> {
                             color: theme.colorScheme.primary.withAlpha(100),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Center(
-                            child: Icon(CupertinoIcons.play_fill, color: Colors.white, size: 16),
+                          child: Center(
+                            child: Icon(
+                              widget.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
                         ),
                     ],

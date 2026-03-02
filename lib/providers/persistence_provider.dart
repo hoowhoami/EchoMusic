@@ -14,6 +14,8 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyCurrentIndex = 'current_index';
 
   List<Song> _favorites = [];
+  Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
+  Set<int> _favoriteMixIds = {};    // non-zero mixSongId → O(1) isFavorite lookup
   List<Song> _history = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
@@ -71,6 +73,7 @@ class PersistenceProvider with ChangeNotifier {
     // Load favorites
     final favsJson = prefs.getStringList(_keyFavorites) ?? [];
     _favorites = favsJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
+    _rebuildFavoriteIndex();
     
     // Load history
     final historyJson = prefs.getStringList(_keyHistory) ?? [];
@@ -136,6 +139,8 @@ class PersistenceProvider with ChangeNotifier {
   Future<void> clearUserSession() async {
     _userInfo = null;
     _favorites = [];
+    _favoriteHashes = {};
+    _favoriteMixIds = {};
     _history = [];
     _playlist = [];
     _currentIndex = -1;
@@ -156,6 +161,8 @@ class PersistenceProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     _favorites = [];
+    _favoriteHashes = {};
+    _favoriteMixIds = {};
     _history = [];
     _playlist = [];
     _currentIndex = -1;
@@ -203,9 +210,8 @@ class PersistenceProvider with ChangeNotifier {
       _keyFavorites,
       _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
     );
+    _rebuildFavoriteIndex();
     notifyListeners();
-
-    // Cloud sync if authenticated
     if (userProvider != null && userProvider.isAuthenticated && userProvider.likedPlaylistId != null) {
       if (isAdding) {
         await userProvider.addSongToPlaylist(userProvider.likedPlaylistId!, song);
@@ -215,14 +221,27 @@ class PersistenceProvider with ChangeNotifier {
     }
   }
 
+  void _rebuildFavoriteIndex() {
+    _favoriteHashes = _favorites
+        .where((s) => s.hash.isNotEmpty)
+        .map((s) => s.hash.toLowerCase())
+        .toSet();
+    _favoriteMixIds = _favorites
+        .where((s) => s.mixSongId != 0)
+        .map((s) => s.mixSongId)
+        .toSet();
+  }
+
   bool isFavorite(Song song) {
-    return _favorites.any((s) => s.isSameSong(song));
+    if (song.mixSongId != 0 && _favoriteMixIds.contains(song.mixSongId)) return true;
+    if (song.hash.isNotEmpty && _favoriteHashes.contains(song.hash.toLowerCase())) return true;
+    return false;
   }
 
   Future<void> syncCloudFavorites(List<Song> cloudSongs) async {
     bool changed = false;
     for (var cloudSong in cloudSongs) {
-      if (!_favorites.any((s) => s.isSameSong(cloudSong))) {
+      if (!isFavorite(cloudSong)) {
         _favorites.add(cloudSong);
         changed = true;
       }
@@ -234,6 +253,7 @@ class PersistenceProvider with ChangeNotifier {
         _keyFavorites,
         _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
       );
+      _rebuildFavoriteIndex();
       notifyListeners();
     }
   }
@@ -247,6 +267,7 @@ class PersistenceProvider with ChangeNotifier {
         _keyFavorites,
         _favorites.map((s) => jsonEncode(_songToMap(s))).toList(),
       );
+      _rebuildFavoriteIndex();
       notifyListeners();
     }
   }

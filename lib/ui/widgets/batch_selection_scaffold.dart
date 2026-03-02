@@ -26,7 +26,6 @@ class BatchSelectionScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selectionProvider = context.watch<SelectionProvider>();
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -35,7 +34,11 @@ class BatchSelectionScaffold extends StatelessWidget {
           Column(
             children: [
               if (showAppBar)
-                _buildHeader(context, selectionProvider),
+                Selector<SelectionProvider, bool>(
+                  selector: (_, p) => p.isSelectionMode,
+                  builder: (context, isSelectionMode, _) =>
+                      _buildHeader(context, isSelectionMode),
+                ),
               Expanded(
                 child: body,
               ),
@@ -47,7 +50,7 @@ class BatchSelectionScaffold extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, SelectionProvider selectionProvider) {
+  Widget _buildHeader(BuildContext context, bool isSelectionMode) {
     final theme = Theme.of(context);
     final hasTwoRows = (title?.isNotEmpty ?? false) && appBarActions != null;
 
@@ -71,8 +74,8 @@ class BatchSelectionScaffold extends StatelessWidget {
               children: [
                 appBarActions!,
                 const Spacer(),
-                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
-                  _buildBatchButton(context, selectionProvider),
+                if (songs.isNotEmpty && !isSelectionMode)
+                  _buildBatchButton(context),
               ],
             ),
           ],
@@ -99,20 +102,21 @@ class BatchSelectionScaffold extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
-            _buildBatchButton(context, selectionProvider),
+          if (songs.isNotEmpty && !isSelectionMode)
+            _buildBatchButton(context),
         ],
       ),
     );
   }
 
-  Widget _buildBatchButton(BuildContext context, SelectionProvider selectionProvider) {
+  Widget _buildBatchButton(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return InkWell(
       onTap: () {
-        selectionProvider.setSongList(songs);
-        selectionProvider.enterSelectionMode();
+        final p = context.read<SelectionProvider>();
+        p.setSongList(songs);
+        p.enterSelectionMode();
       },
       borderRadius: BorderRadius.circular(10),
       child: Container(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ class MediaSessionHandler extends BaseAudioHandler with QueueHandler, SeekHandle
   static MediaSessionHandler? _instance;
   static SMTCWindows? _smtc;
   static bool _smtcInitialized = false;
+  static StreamSubscription? _smtcSubscription;
 
   // Callbacks
   static VoidCallback? _onPlayAction;
@@ -83,7 +85,7 @@ class MediaSessionHandler extends BaseAudioHandler with QueueHandler, SeekHandle
     );
 
     // Listen for button presses
-    _smtc!.buttonPressStream.listen((event) {
+    _smtcSubscription = _smtc!.buttonPressStream.listen((event) {
       switch (event) {
         case PressedButton.play:
           _onPlayAction?.call();
@@ -196,6 +198,8 @@ class MediaSessionHandler extends BaseAudioHandler with QueueHandler, SeekHandle
 
   /// Dispose resources
   static void dispose() {
+    _smtcSubscription?.cancel();
+    _smtcSubscription = null;
     _smtc?.dispose();
     _smtc = null;
     _instance = null;

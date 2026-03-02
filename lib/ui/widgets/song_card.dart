@@ -439,6 +439,7 @@ class _SongCardState extends State<SongCard> {
           _PlayingCoverOverlay(
             size: widget.coverSize,
             isPlaying: isPlaying,
+            shadowColor: Theme.of(context).colorScheme.shadow,
           ),
       ],
     );
@@ -472,140 +473,33 @@ class _SongCardState extends State<SongCard> {
   }
 }
 
-class _PlayingCoverOverlay extends StatefulWidget {
+class _PlayingCoverOverlay extends StatelessWidget {
   final double size;
   final bool isPlaying;
+  final Color shadowColor;
 
   const _PlayingCoverOverlay({
     required this.size,
     required this.isPlaying,
+    required this.shadowColor,
   });
 
   @override
-  State<_PlayingCoverOverlay> createState() => _PlayingCoverOverlayState();
-}
-
-class _PlayingCoverOverlayState extends State<_PlayingCoverOverlay> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _opacityAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-    _opacityAnimation = Tween<double>(begin: 0.4, end: 0.7).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-
-    if (widget.isPlaying) {
-      _controller.repeat(reverse: true);
-    }
-  }
-
-  @override
-  void didUpdateWidget(_PlayingCoverOverlay oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        _controller.repeat(reverse: true);
-      } else {
-        _controller.stop();
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AnimatedBuilder(
-      animation: _opacityAnimation,
-      builder: (context, child) {
-        return Container(
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.shadow.withValues(alpha: widget.isPlaying ? _opacityAnimation.value : 0.4),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Center(
-            child: widget.isPlaying 
-              ? const _PlayingIndicator(color: Colors.white)
-              : const Icon(CupertinoIcons.play_fill, color: Colors.white, size: 18),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _PlayingIndicator extends StatefulWidget {
-  final Color color;
-  const _PlayingIndicator({required this.color});
-
-  @override
-  State<_PlayingIndicator> createState() => _PlayingIndicatorState();
-}
-
-class _PlayingIndicatorState extends State<_PlayingIndicator> with TickerProviderStateMixin {
-  late List<AnimationController> _controllers;
-  late List<Animation<double>> _animations;
-  final int _barCount = 3;
-
-  @override
-  void initState() {
-    super.initState();
-    _controllers = List.generate(_barCount, (index) {
-      return AnimationController(
-        vsync: this,
-        duration: Duration(milliseconds: 400 + (index * 150)),
-      )..repeat(reverse: true);
-    });
-
-    _animations = _controllers.map((controller) {
-      return Tween<double>(begin: 4.0, end: 16.0).animate(
-        CurvedAnimation(parent: controller, curve: Curves.easeInOut),
-      );
-    }).toList();
-  }
-
-  @override
-  void dispose() {
-    for (var controller in _controllers) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(_barCount, (index) {
-        return AnimatedBuilder(
-          animation: _animations[index],
-          builder: (context, child) {
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              width: 3,
-              height: _animations[index].value,
-              decoration: BoxDecoration(
-                color: widget.color,
-                borderRadius: BorderRadius.circular(1.5),
-              ),
-            );
-          },
-        );
-      }),
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: shadowColor.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Icon(
+          isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
+          color: Colors.white,
+          size: size * 0.4,
+        ),
+      ),
     );
   }
 }
