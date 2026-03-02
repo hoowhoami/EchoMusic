@@ -258,6 +258,25 @@ class _SettingViewState extends State<SettingView> {
           const SizedBox(height: 32),
           _buildGroup(
             context,
+            '实验性功能',
+            CupertinoIcons.lab_flask,
+            [
+              _buildItem(
+                context,
+                '自动领取 VIP',
+                '每次启动时自动领取每日 VIP，需已登录账号',
+                trailing: _buildSwitch(
+                  context,
+                  settings['autoReceiveVip'] ?? false,
+                  (v) => persistence.updateSetting('autoReceiveVip', v),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+          _buildGroup(
+            context,
             '数据与安全',
             CupertinoIcons.shield,
             [
@@ -575,7 +594,7 @@ class _SettingViewState extends State<SettingView> {
     ).then((confirmed) {
       if (confirmed == true) {
         persistence.clearAllData();
-        CustomToast.success(context, '应用数据已重置');
+        if (mounted) CustomToast.success(this.context, '应用数据已重置');
       }
     });
   }

@@ -224,7 +224,7 @@ class UserProvider with ChangeNotifier {
 
   Future<void> fetchAllUserData() async {
     if (!isAuthenticated) return;
-    
+
     await Future.wait([
       fetchUserPlaylists(),
       fetchUserFollows(),
@@ -233,6 +233,36 @@ class UserProvider with ChangeNotifier {
       fetchUserDetails(),
       syncVipStatus(),
     ]);
+
+    await _autoClaimVipIfEnabled();
+  }
+
+  Future<void> _autoClaimVipIfEnabled() async {
+    final autoReceive = _persistenceProvider?.settings['autoReceiveVip'] as bool? ?? false;
+    if (!autoReceive) {
+      LoggerService.d('[AutoVIP] 自动领取未开启，跳过');
+      return;
+    }
+
+    LoggerService.i('[AutoVIP] 开始自动领取 VIP，当前状态：TVIP=$_isTvipClaimedToday，SVIP=$_isSvipClaimedToday');
+
+    if (_isTvipClaimedToday) {
+      LoggerService.i('[AutoVIP] TVIP 今日已领取，跳过');
+    } else {
+      LoggerService.i('[AutoVIP] 正在领取 TVIP...');
+      final success = await claimTvip();
+      LoggerService.i('[AutoVIP] TVIP 领取${success ? '成功' : '失败'}');
+    }
+
+    if (_isTvipClaimedToday && _isSvipClaimedToday) {
+      LoggerService.i('[AutoVIP] SVIP 今日已激活，跳过');
+    } else if (_isTvipClaimedToday) {
+      LoggerService.i('[AutoVIP] 正在升级 SVIP...');
+      final success = await upgradeSvip();
+      LoggerService.i('[AutoVIP] SVIP 升级${success ? '成功' : '失败'}');
+    } else {
+      LoggerService.w('[AutoVIP] TVIP 未领取成功，跳过 SVIP 升级');
+    }
   }
 
   Future<void> syncVipStatus() async {

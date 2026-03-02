@@ -1,96 +1,83 @@
 import 'dart:async';
 import 'dart:io';
 
-/// Single instance enforcement via Unix domain socket (macOS/Linux/Windows 10+).
+/// Single instance enforcement using a PID lock file + SIGUSR1 (macOS/Linux).
 ///
-/// MUST call [acquire] BEFORE WidgetsFlutterBinding.ensureInitialized() so the
-/// secondary instance exits with zero native-UI initialization — preventing
-/// ghost menu-bar / tray icons on macOS.
+/// Advantages over Unix-socket approach:
+/// - No persistent file descriptor — survives Flutter hot restarts cleanly.
+/// - Hot restart: same PID found in lock file → skip signal, re-register handler.
+/// - Second instance: sends SIGUSR1 to the running process, then exits.
+/// - Stale lock file (crash): kill() fails → treated as no existing instance.
+///
+/// MUST call [acquire] BEFORE WidgetsFlutterBinding.ensureInitialized().
 class SingleInstance {
   SingleInstance._();
 
-  static ServerSocket? _server;
-  static StreamSubscription<Socket>? _sub;
+  static void Function()? _onFocus;
 
-  static String get _socketPath {
+  static String get _lockFilePath {
     if (Platform.isWindows) {
       final tmp = Platform.environment['TEMP'] ??
           Platform.environment['TMP'] ??
           r'C:\Windows\Temp';
-      return '$tmp\\echomusic.sock';
+      return '$tmp\\echomusic.lock';
     }
-    // macOS: $TMPDIR is a per-user sandbox temp dir (e.g. /var/folders/…/T/)
-    // Linux:  prefer $XDG_RUNTIME_DIR (per-user), fall back to /tmp
     final dir = Platform.environment['TMPDIR'] ??
         Platform.environment['XDG_RUNTIME_DIR'] ??
         '/tmp';
-    return '$dir/echomusic.sock';
+    // $TMPDIR on macOS may end with '/'; use joinPath-style concatenation.
+    return dir.endsWith('/') ? '${dir}echomusic.lock' : '$dir/echomusic.lock';
   }
 
   /// Try to acquire the single-instance lock.
   ///
   /// Returns `true` if this is the **primary** instance.
-  /// Returns `false` if another instance is already running; a focus request
-  /// is automatically sent to that instance before returning.
+  /// Returns `false` if another live instance is running (signal already sent).
   static Future<bool> acquire() async {
-    return _tryBind();
-  }
+    if (Platform.isWindows) return true; // Windows: no-op for now
 
-  static Future<bool> _tryBind({bool afterCleanup = false}) async {
-    try {
-      _server = await ServerSocket.bind(
-        InternetAddress(_socketPath, type: InternetAddressType.unix),
-        0,
-      );
-      return true; // primary instance
-    } on SocketException {
-      if (afterCleanup) return true; // give up, let the app start
+    final lockFile = File(_lockFilePath);
 
-      // Socket file exists — check if a live instance owns it.
+    if (await lockFile.exists()) {
       try {
-        final sock = await Socket.connect(
-          InternetAddress(_socketPath, type: InternetAddressType.unix),
-          0,
-          timeout: const Duration(seconds: 2),
-        );
-        sock.write('focus');
-        await sock.flush();
-        await sock.close();
-        return false; // live primary instance found
+        final content = (await lockFile.readAsString()).trim();
+        final storedPid = int.tryParse(content);
+
+        if (storedPid != null && storedPid != pid) {
+          // Try to signal the stored PID. If it succeeds the process is alive.
+          final alive = Process.killPid(storedPid, ProcessSignal.sigusr1);
+          if (alive) return false; // another instance received the signal
+          // killPid returned false → process is gone, stale lock file
+        }
+        // storedPid == pid → hot restart within the same OS process, continue.
       } catch (_) {
-        // Stale socket (previous crash) — delete and retry once.
-        try {
-          await File(_socketPath).delete();
-        } catch (_) {}
-        return _tryBind(afterCleanup: true);
+        // Unreadable lock file — treat as stale.
       }
     }
-  }
 
-  /// Start listening for focus requests from secondary instances.
-  ///
-  /// Call this after the window / tray is ready so focus-raising works correctly.
-  static void listenForFocus(void Function() onFocus) {
-    _sub = _server?.listen((socket) {
-      socket.listen(
-        (_) {
-          onFocus();
-          socket.destroy();
-        },
-        onError: (_) => socket.destroy(),
-        cancelOnError: true,
-      );
+    // We are (or remain) the primary instance.
+    await lockFile.writeAsString(pid.toString());
+
+    // (Re-)register the SIGUSR1 handler each time acquire() is called so that
+    // hot restarts re-attach the listener to the new Dart VM.
+    ProcessSignal.sigusr1.watch().listen((_) {
+      _onFocus?.call();
     });
+
+    return true;
   }
 
-  /// Release the lock. Call on clean app exit.
+  /// Register a callback invoked when a secondary instance requests focus.
+  /// Safe to call multiple times (hot restarts).
+  static void listenForFocus(void Function() onFocus) {
+    _onFocus = onFocus;
+  }
+
+  /// Release the lock on clean exit.
   static Future<void> release() async {
-    await _sub?.cancel();
-    await _server?.close();
-    _server = null;
-    _sub = null;
+    _onFocus = null;
     try {
-      await File(_socketPath).delete();
+      await File(_lockFilePath).delete();
     } catch (_) {}
   }
 }
