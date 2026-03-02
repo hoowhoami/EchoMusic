@@ -32,6 +32,15 @@ void main() async {
   // preventing the ghost transparent window in the top-left corner of macOS.
   await windowManager.ensureInitialized();
 
+  // Set onFocus before isFirstInstance() to avoid a race where the gRPC server
+  // starts (inside isFirstInstance) but the callback is not yet registered.
+  FlutterSingleInstance.onFocus = (_) async {
+    LoggerService.i('Focus requested by another instance. Restoring window...');
+    if (await windowManager.isMinimized()) await windowManager.restore();
+    await windowManager.show();
+    await windowManager.focus();
+  };
+
   final instance = FlutterSingleInstance();
   if (!(await instance.isFirstInstance())) {
     LoggerService.i('Another instance is running. Requesting focus and exiting.');
@@ -40,13 +49,6 @@ void main() async {
   }
 
   LoggerService.i('First instance confirmed.');
-
-  FlutterSingleInstance.onFocus = (_) async {
-    LoggerService.i('Focus requested by another instance. Restoring window...');
-    if (await windowManager.isMinimized()) await windowManager.restore();
-    await windowManager.show();
-    await windowManager.focus();
-  };
 
   JustAudioMediaKit.ensureInitialized(
     linux: true,
