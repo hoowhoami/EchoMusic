@@ -27,6 +27,11 @@ void main() async {
   await LoggerService.init();
   LoggerService.i('App process starting...');
 
+  // windowManager.ensureInitialized() MUST be called before isFirstInstance()
+  // so that the secondary instance's window is hidden immediately on startup,
+  // preventing the ghost transparent window in the top-left corner of macOS.
+  await windowManager.ensureInitialized();
+
   final instance = FlutterSingleInstance();
   if (!(await instance.isFirstInstance())) {
     LoggerService.i('Another instance is running. Requesting focus and exiting.');
@@ -36,10 +41,9 @@ void main() async {
 
   LoggerService.i('First instance confirmed.');
 
-  await windowManager.ensureInitialized();
-
   FlutterSingleInstance.onFocus = (_) async {
     LoggerService.i('Focus requested by another instance. Restoring window...');
+    if (await windowManager.isMinimized()) await windowManager.restore();
     await windowManager.show();
     await windowManager.focus();
   };
@@ -121,14 +125,10 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   Future<void> _initTray() async {
-    // destroy() first to remove any stale NSStatusItem left by a previous
-    // plugin registration (e.g. after awakeFromNib re-runs on macOS),
-    // preventing ghost tray icons from accumulating.
-    await trayManager.destroy();
-
     await trayManager.setIcon(
       Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
     );
+    await trayManager.setToolTip('EchoMusic');
 
     final menu = Menu(
       items: [
