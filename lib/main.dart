@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -116,6 +117,9 @@ class WindowHandler extends StatefulWidget {
 
 class _WindowHandlerState extends State<WindowHandler>
     with WindowListener, TrayListener, WidgetsBindingObserver {
+  static final _lifecycleChannel =
+      MethodChannel('com.hoowhoami.echomusic/app_lifecycle');
+
   @override
   void initState() {
     super.initState();
@@ -124,6 +128,20 @@ class _WindowHandlerState extends State<WindowHandler>
     trayManager.addListener(this);
     windowManager.setPreventClose(true);
     _initTray();
+    if (Platform.isMacOS) {
+      _lifecycleChannel.setMethodCallHandler(_onLifecycleCall);
+    }
+  }
+
+  // Called by Swift's applicationShouldTerminate (Dock right-click → Quit,
+  // Cmd+Q) to let Flutter stop mpv before the process exits.
+  Future<void> _onLifecycleCall(MethodCall call) async {
+    if (call.method == 'prepareToTerminate') {
+      try {
+        await context.read<AudioProvider>().player.stop();
+      } catch (_) {}
+      ServerOrchestrator.stop();
+    }
   }
 
   Future<void> _initTray() async {
@@ -188,6 +206,12 @@ class _WindowHandlerState extends State<WindowHandler>
       await windowManager.show();
       await windowManager.focus();
     } else if (menuItem.key == 'exit_app') {
+      // Stop mpv player before destroying the window.
+      // mpv runs on a native thread; if Flutter tears down while mpv is
+      // playing, the native thread accesses freed memory → EXC_BAD_ACCESS.
+      try {
+        await context.read<AudioProvider>().player.stop();
+      } catch (_) {}
       ServerOrchestrator.stop();
       await trayManager.destroy();
       await windowManager.destroy();
