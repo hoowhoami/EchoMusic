@@ -79,6 +79,21 @@ class AppTheme {
         color: Color(0xFFE5E5EA),
         thickness: 0.8,
       ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(lightSurface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE5E5EA), width: 1))),
+          elevation: const WidgetStatePropertyAll(20),
+          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 8)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: lightSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE5E5EA), width: 1)),
+        elevation: 20,
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1D1D1F)),
+      ),
       textTheme: base.textTheme.apply(
         fontFamily: isWindows ? 'Segoe UI' : null,
         fontFamilyFallback: ['Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC'],
@@ -172,6 +187,21 @@ class AppTheme {
       dividerTheme: const DividerThemeData(
         color: Color(0xFF38383A),
         thickness: 0.8,
+      ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(darkSurface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF38383A), width: 1))),
+          elevation: const WidgetStatePropertyAll(20),
+          padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 8)),
+        ),
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: darkSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF38383A), width: 1)),
+        elevation: 20,
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFFF5F5F7)),
       ),
       textTheme: base.textTheme.apply(
         fontFamily: isWindows ? 'Segoe UI' : null,

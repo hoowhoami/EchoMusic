@@ -564,9 +564,9 @@ class _SettingViewState extends State<SettingView> {
         return MouseRegion(
           cursor: SystemMouseCursors.click,
           child: CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            color: theme.colorScheme.onSurface.withAlpha(10),
-            borderRadius: BorderRadius.circular(10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            color: theme.colorScheme.onSurface.withAlpha(15),
+            borderRadius: BorderRadius.circular(12),
             onPressed: () => controller.isOpen ? controller.close() : controller.open(),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -575,7 +575,7 @@ class _SettingViewState extends State<SettingView> {
                   options.contains(value) ? value : options.first,
                   style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
               ],
             ),
@@ -586,11 +586,19 @@ class _SettingViewState extends State<SettingView> {
         final isSelected = option == value;
         return MenuItemButton(
           style: ButtonStyle(
-            backgroundColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.hovered) ? accentColor.withAlpha(20) : null),
-            padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+            backgroundColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.hovered) ? accentColor.withAlpha(isSelected ? 40 : 20) : Colors.transparent),
+            padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
             mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
-          child: Text(option, style: TextStyle(fontSize: 13, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500, color: isSelected ? accentColor : null)),
+          child: Text(
+            option, 
+            style: TextStyle(
+              fontSize: 13, 
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600, 
+              color: isSelected ? accentColor : theme.colorScheme.onSurface,
+            )
+          ),
           onPressed: () => onChanged(option),
         );
       }).toList(),

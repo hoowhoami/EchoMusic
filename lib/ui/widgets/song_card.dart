@@ -195,8 +195,6 @@ class _SongCardState extends State<SongCard> {
       context: context,
       position: position,
       items: menuItems,
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
 
     if (mounted) setState(() => _isMenuOpen = false);
