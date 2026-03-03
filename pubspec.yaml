@@ -51,7 +51,6 @@ dependencies:
   shared_preferences: ^2.5.2
   intl: ^0.20.2
   flutter_spinkit: ^5.2.1
-  google_fonts: ^6.2.1
   bitsdojo_window: ^0.1.6
   qr_flutter: ^4.1.0
   path: ^1.8.3
