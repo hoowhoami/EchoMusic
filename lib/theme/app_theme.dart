@@ -96,10 +96,6 @@ class AppTheme {
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1D1D1F)),
       ),
       textTheme: base.textTheme.apply(
-        fontFamily: useMiSans ? 'MiSans' : null,
-        fontFamilyFallback: useMiSans
-            ? (isWindows ? ['Microsoft YaHei UI', 'Noto Sans CJK SC'] : ['Noto Sans CJK SC'])
-            : ['PingFang SC', 'Noto Sans CJK SC'],
         bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
@@ -108,6 +104,11 @@ class AppTheme {
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF1D1D1F)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF4B5563)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+      ).apply(
+        fontFamily: useMiSans ? 'MiSans' : null,
+        fontFamilyFallback: useMiSans
+            ? (isWindows ? ['Microsoft YaHei UI', 'Noto Sans CJK SC'] : ['Noto Sans CJK SC'])
+            : ['PingFang SC', 'Noto Sans CJK SC'],
       ),
       extensions: [
         AppModernTheme(
@@ -208,10 +209,6 @@ class AppTheme {
         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFFF5F5F7)),
       ),
       textTheme: base.textTheme.apply(
-        fontFamily: useMiSans ? 'MiSans' : null,
-        fontFamilyFallback: useMiSans
-            ? (isWindows ? ['Microsoft YaHei UI', 'Noto Sans CJK SC'] : ['Noto Sans CJK SC'])
-            : ['PingFang SC', 'Noto Sans CJK SC'],
         bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(
@@ -220,6 +217,11 @@ class AppTheme {
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFFF5F5F7)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF9CA3AF)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+      ).apply(
+        fontFamily: useMiSans ? 'MiSans' : null,
+        fontFamilyFallback: useMiSans
+            ? (isWindows ? ['Microsoft YaHei UI', 'Noto Sans CJK SC'] : ['Noto Sans CJK SC'])
+            : ['PingFang SC', 'Noto Sans CJK SC'],
       ),
       extensions: [
         AppModernTheme(
