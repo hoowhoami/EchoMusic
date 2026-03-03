@@ -85,9 +85,9 @@ class AppTheme {
         bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
-        titleLarge: TextStyle(fontWeight: isWindows ? FontWeight.bold : FontWeight.w800, fontSize: 22, letterSpacing: isWindows ? 0 : -0.6, color: const Color(0xFF1D1D1F)),
+        titleLarge: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, letterSpacing: isWindows ? 0 : -0.6, color: const Color(0xFF1D1D1F)),
         titleMedium: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: isWindows ? 0 : -0.3, color: const Color(0xFF1D1D1F)),
-        bodyLarge: TextStyle(fontSize: 14, height: 1.5, fontWeight: isWindows ? FontWeight.normal : FontWeight.w500, color: const Color(0xFF1D1D1F)),
+        bodyLarge: TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, color: const Color(0xFF1D1D1F)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, color: Color(0xFF4B5563)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ),
@@ -179,9 +179,9 @@ class AppTheme {
         bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(
-        titleLarge: TextStyle(fontWeight: isWindows ? FontWeight.bold : FontWeight.w800, fontSize: 22, letterSpacing: isWindows ? 0 : -0.6, color: const Color(0xFFF5F5F7)),
+        titleLarge: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, letterSpacing: isWindows ? 0 : -0.6, color: const Color(0xFFF5F5F7)),
         titleMedium: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: isWindows ? 0 : -0.3, color: const Color(0xFFF5F5F7)),
-        bodyLarge: TextStyle(fontSize: 14, height: 1.5, fontWeight: isWindows ? FontWeight.normal : FontWeight.w500, color: const Color(0xFFF5F5F7)),
+        bodyLarge: TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, color: const Color(0xFFF5F5F7)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, color: Color(0xFF9CA3AF)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ),
