@@ -51,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<int> _indexNotifier = ValueNotifier(0);
   Playlist? _selectedPlaylist;
   
-  List<_HistoryEntry> _history = [_HistoryEntry(index: 0)];
+  final List<_HistoryEntry> _history = [_HistoryEntry(index: 0)];
   int _historyIndex = 0;
   bool _isInternalNav = false;
 
@@ -214,12 +214,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
+    
+    // 1. 确保设备注册完成（获取 dfid, mid 等标识符）
     if (persistence.device == null || persistence.device?['dfid'] == null) {
       final device = await MusicApi.registerDevice();
-      if (device != null && device['dfid'] != null) await persistence.setDevice(device);
+      if (device != null && device['dfid'] != null) {
+        await persistence.setDevice(device);
+      }
     }
-    final userProvider = context.read<UserProvider>();
-    if (userProvider.isAuthenticated) userProvider.fetchAllUserData();
+
+    // 2. 设备就绪后，再发起用户信息同步
+    if (mounted) {
+      final userProvider = context.read<UserProvider>();
+      if (userProvider.isAuthenticated) {
+        userProvider.fetchAllUserData();
+      }
+    }
   }
 
   final List<Widget> _views = [
@@ -363,9 +373,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             settings: const RouteSettings(name: 'root'),
                             pageBuilder: (context, _, __) => ValueListenableBuilder<int>(
                               valueListenable: _indexNotifier,
-                              builder: (context, index, _) => IndexedStack(
-                                index: index, 
-                                children: _views
+                              builder: (context, index, _) => _LazyIndexedStack(
+                                index: index,
+                                children: _views,
                               ),
                             ),
                           ),
@@ -406,6 +416,45 @@ class _NavigationObserver extends NavigatorObserver {
   void didPush(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.push);
   @override
   void didPop(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.pop);
+}
+
+/// IndexedStack that defers building children until their tab is first visited.
+class _LazyIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget> children;
+  const _LazyIndexedStack({required this.index, required this.children});
+
+  @override
+  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
+}
+
+class _LazyIndexedStackState extends State<_LazyIndexedStack> {
+  late final List<bool> _activated;
+
+  @override
+  void initState() {
+    super.initState();
+    _activated = List.generate(widget.children.length, (i) => i == widget.index);
+  }
+
+  @override
+  void didUpdateWidget(_LazyIndexedStack old) {
+    super.didUpdateWidget(old);
+    if (!_activated[widget.index]) {
+      setState(() => _activated[widget.index] = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IndexedStack(
+      index: widget.index,
+      children: [
+        for (int i = 0; i < widget.children.length; i++)
+          _activated[i] ? widget.children[i] : const SizedBox.shrink(),
+      ],
+    );
+  }
 }
 
 class WindowButtons extends StatelessWidget {

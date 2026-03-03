@@ -78,6 +78,7 @@ class AppTheme {
       ),
       textTheme: base.textTheme.apply(
         fontFamily: 'Inter',
+        fontFamilyFallback: ['Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC'],
         bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
@@ -169,6 +170,7 @@ class AppTheme {
       ),
       textTheme: base.textTheme.apply(
         fontFamily: 'Inter',
+        fontFamilyFallback: ['Microsoft YaHei UI', 'PingFang SC', 'Noto Sans CJK SC'],
         bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(

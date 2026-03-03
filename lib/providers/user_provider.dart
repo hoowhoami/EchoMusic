@@ -24,7 +24,6 @@ class UserProvider with ChangeNotifier {
   List<Song> _likedSongs = [];
 
   dynamic _likedPlaylistId;
-  bool _isInitialSynced = false;
   final ValueNotifier<int> playlistSongsChangeNotifier = ValueNotifier<int>(0);
   RefreshProvider? _refreshProvider;
 
@@ -69,13 +68,6 @@ class UserProvider with ChangeNotifier {
       if (_user?.userid != newUser.userid) {
         _user = newUser;
         _likedPlaylistId = _user?.extendsInfo?['likedPlaylistId'];
-        _isInitialSynced = false;
-      }
-      
-      if (!_isInitialSynced && isAuthenticated) {
-        _isInitialSynced = true;
-        // Background sync
-        fetchAllUserData();
       }
     }
   }
@@ -228,8 +220,6 @@ class UserProvider with ChangeNotifier {
     await Future.wait([
       fetchUserPlaylists(),
       fetchUserFollows(),
-      fetchUserHistory(),
-      fetchUserCloud(),
       fetchUserDetails(),
       syncVipStatus(),
     ]);
@@ -297,7 +287,7 @@ class UserProvider with ChangeNotifier {
 
   Future<bool> upgradeSvip() async {
     if (!_isTvipClaimedToday) return false;
-    final success = await MusicApi.upgradeDayVip();
+    final success = await upgradeSvip();
     if (success) {
       _isSvipClaimedToday = true;
       await fetchUserDetails(); // Refresh VIP info
@@ -360,7 +350,8 @@ class UserProvider with ChangeNotifier {
   }
 
   Future<void> fetchUserHistory() async {
-    _userHistory = await MusicApi.getUserPlayHistory();
+    final result = await MusicApi.getUserPlayHistory();
+    _userHistory = List<Song>.from(result['songs'] ?? []);
     notifyListeners();
   }
 

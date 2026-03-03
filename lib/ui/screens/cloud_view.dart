@@ -15,27 +15,31 @@ class CloudView extends StatefulWidget {
   State<CloudView> createState() => _CloudViewState();
 }
 
-class _CloudViewState extends State<CloudView> {
-  late RefreshProvider _refreshProvider;
+class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> {
+  bool _loaded = false;
+  bool _wasAuthenticated = false;
+
+  @override
+  void onRefresh() {
+    final userProvider = context.read<UserProvider>();
+    if (userProvider.isAuthenticated) {
+      userProvider.fetchUserCloud();
+    }
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _refreshProvider = context.watch<RefreshProvider>();
-    _refreshProvider.addListener(_onRefresh);
-  }
 
-  @override
-  void dispose() {
-    _refreshProvider.removeListener(_onRefresh);
-    super.dispose();
-  }
-
-  void _onRefresh() {
-    if (mounted) {
-      // UserProvider.fetchAllUserData() is already called by the title bar refresh button,
-      // which will update userProvider.userCloud and trigger a rebuild here.
-      setState(() {});
+    final userProvider = context.read<UserProvider>();
+    final isAuthenticated = userProvider.isAuthenticated;
+    if (isAuthenticated && (!_loaded || !_wasAuthenticated)) {
+      _loaded = true;
+      _wasAuthenticated = true;
+      userProvider.fetchUserCloud();
+    } else if (!isAuthenticated) {
+      _wasAuthenticated = false;
+      _loaded = false;
     }
   }
 

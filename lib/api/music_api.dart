@@ -24,6 +24,12 @@ class MusicApi {
         await ServerOrchestrator.waitUntilReady();
 
         options.extra['startTime'] = DateTime.now().millisecondsSinceEpoch;
+
+        if (options.extra['skipAuth'] == true) {
+          options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
+          return handler.next(options);
+        }
+
         final prefs = await SharedPreferences.getInstance();
         
         // Retrieve device and user info from storage
@@ -146,7 +152,10 @@ class MusicApi {
 
   static Future<Map<String, dynamic>?> registerDevice() async {
     try {
-      final response = await _dio.get('/register/dev');
+      final response = await _dio.get(
+        '/register/dev',
+        options: Options(extra: {'skipAuth': true}),
+      );
       if (response.data['status'] == 1) {
         return response.data['data'];
       }
@@ -850,20 +859,24 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getUserPlayHistory({int? bp}) async {
+  static Future<Map<String, dynamic>> getUserPlayHistory({String? bp}) async {
     try {
       final response = await _dio.get('/user/history', queryParameters: bp != null ? {'bp': bp} : {});
       if (response.data['status'] == 1) {
         final payload = response.data['data'] ?? {};
         List data = payload['list'] ?? payload['songs'] ?? [];
-        return data
-            .where((item) => item['info'] != null)
-            .map((item) => Song.fromPlaylistJson(item['info']))
-            .toList();
+        return {
+          'songs': data
+              .where((item) => item['info'] != null)
+              .map((item) => Song.fromPlaylistJson(item['info']))
+              .toList(),
+          'bp': payload['bp'],
+          'has_more': payload['has_more'] ?? (data.isNotEmpty),
+        };
       }
-      return [];
+      return {'songs': <Song>[], 'bp': null, 'has_more': false};
     } catch (e) {
-      return [];
+      return {'songs': <Song>[], 'bp': null, 'has_more': false};
     }
   }
 
