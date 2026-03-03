@@ -253,6 +253,7 @@ class MyApp extends StatelessWidget {
           title: 'EchoMusic',
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
+          locale: const Locale('zh', 'CN'),
           themeMode: theme == 'dark'
               ? ThemeMode.dark
               : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
