@@ -177,7 +177,19 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void onWindowClose() async {
-    await windowManager.hide();
+    final persistence = context.read<PersistenceProvider>();
+    final closeBehavior = persistence.settings['closeBehavior'] ?? 'tray';
+
+    if (closeBehavior == 'exit') {
+      try {
+        await context.read<AudioProvider>().player.stop();
+      } catch (_) {}
+      ServerOrchestrator.stop();
+      await trayManager.destroy();
+      await windowManager.destroy();
+    } else {
+      await windowManager.hide();
+    }
   }
 
   @override

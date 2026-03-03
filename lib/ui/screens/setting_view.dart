@@ -136,6 +136,19 @@ class _SettingViewState extends State<SettingView> {
                   (v) => persistence.updateSetting('showPlaylistCount', v),
                 ),
               ),
+              _buildItem(
+                context,
+                '关闭行为',
+                '点击窗口关闭按钮时的应用程序行为',
+                trailing: _buildDropdown(
+                  context,
+                  ['最小化到托盘', '彻底退出程序'],
+                  settings['closeBehavior'] == 'exit' ? '彻底退出程序' : '最小化到托盘',
+                  (label) {
+                    persistence.updateSetting('closeBehavior', label == '彻底退出程序' ? 'exit' : 'tray');
+                  },
+                ),
+              ),
             ],
           ),
 
