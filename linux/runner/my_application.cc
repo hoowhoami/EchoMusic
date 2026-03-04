@@ -5,66 +5,14 @@
 #include <gdk/gdkx.h>
 #endif
 
-#include <cstdio>
-#include <string>
-
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
-  // Native audio-device method channel – kept alive for the app lifetime.
-  FlMethodChannel* audio_device_channel;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
-
-// ---------------------------------------------------------------------------
-// Helper: query PulseAudio / PipeWire for the current default output sink.
-// The sink name is identical to what libmpv uses as AudioDevice.name on Linux
-// when using the pulse audio backend.
-// ---------------------------------------------------------------------------
-static std::string GetDefaultPulseAudioSink() {
-  FILE* pipe = popen(
-      "pactl info 2>/dev/null | grep '^Default Sink:' | awk '{print $3}'",
-      "r");
-  if (!pipe) return {};
-  char buffer[512];
-  std::string result;
-  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-    result += buffer;
-  }
-  pclose(pipe);
-  // Trim trailing whitespace / newline.
-  auto pos = result.find_last_not_of(" \t\n\r");
-  if (pos != std::string::npos) result.erase(pos + 1);
-  else result.clear();
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Method call handler for "com.hoowhoami.echomusic/audio_device"
-// ---------------------------------------------------------------------------
-static void audio_device_method_call_cb(FlMethodChannel* channel,
-                                        FlMethodCall* method_call,
-                                        gpointer /*user_data*/) {
-  const gchar* method = fl_method_call_get_name(method_call);
-  if (g_strcmp0(method, "getDefaultOutputDeviceId") == 0) {
-    auto sink = GetDefaultPulseAudioSink();
-    g_autoptr(GError) error = nullptr;
-    if (sink.empty()) {
-      fl_method_call_respond_success(method_call, nullptr, &error);
-    } else {
-      g_autoptr(FlValue) value = fl_value_new_string(sink.c_str());
-      fl_method_call_respond_success(method_call, value, &error);
-    }
-  } else {
-    g_autoptr(GError) error = nullptr;
-    fl_method_call_respond_not_implemented(method_call, &error);
-  }
-}
-
-// ---------------------------------------------------------------------------
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
@@ -127,19 +75,6 @@ static void my_application_activate(GApplication* application) {
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 
-  // Register the native audio-device channel so Dart can resolve the
-  // "auto" placeholder to the actual PulseAudio / PipeWire default sink.
-  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
-  self->audio_device_channel = fl_method_channel_new(
-      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
-      "com.hoowhoami.echomusic/audio_device",
-      FL_METHOD_CODEC(codec));
-  fl_method_channel_set_method_call_handler(
-      self->audio_device_channel,
-      audio_device_method_call_cb,
-      self,
-      nullptr);
-
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
 
@@ -186,7 +121,6 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
-  g_clear_object(&self->audio_device_channel);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
