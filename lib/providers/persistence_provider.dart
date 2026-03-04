@@ -40,9 +40,10 @@ class PersistenceProvider with ChangeNotifier {
     'userAgreementAccepted': false,
     'lyricOffset': 0,
     'closeBehavior': 'tray',
+    'pauseOnDeviceChange': true,
   };
   Map<String, dynamic> _playerSettings = {
-    'volume': 0.5,
+    'volume': 50.0,
     'playMode': 'repeat',
     'audioQuality': 'flac',
     'audioEffect': 'none',
@@ -52,7 +53,7 @@ class PersistenceProvider with ChangeNotifier {
   List<Song> get history => _history;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  double get volume => _playerSettings['volume'] ?? 0.5;
+  double get volume => _playerSettings['volume'] ?? 50.0;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
   Map<String, dynamic> get settings => _settings;
@@ -187,9 +188,10 @@ class PersistenceProvider with ChangeNotifier {
       'autoReceiveVip': false,
       'userAgreementAccepted': false,
       'closeBehavior': 'tray',
+      'pauseOnDeviceChange': true,
     };
     _playerSettings = {
-      'volume': 0.5,
+      'volume': 50.0,
       'playMode': 'repeat',
       'audioQuality': 'flac',
       'audioEffect': 'none',

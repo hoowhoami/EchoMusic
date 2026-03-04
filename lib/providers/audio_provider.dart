@@ -42,7 +42,7 @@ class AudioProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _isDisposed = false;
   double _playbackRate = 1.0;
-  double _lastVolume = 0.5;
+  double _lastVolume = 50.0;
   Map<double, double> _climaxMarks = {};
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
@@ -79,6 +79,8 @@ class AudioProvider with ChangeNotifier {
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
+  List<AudioDevice> get audioDevices => _player.state.audioDevices;
+  AudioDevice get currentAudioDevice => _player.state.audioDevice;
 
   Duration get effectivePosition => _player.state.position;
 
@@ -107,11 +109,7 @@ class AudioProvider with ChangeNotifier {
     );
   }
 
-  // Internal volume helpers: AudioProvider public API uses 0.0-1.0 scale.
-  // media_kit uses 0-100 scale internally.
-  double get _playerVolume => _player.state.volume / 100.0;
-  void _setPlayerVolume(double v) => _player.setVolume(v * 100);
-
+  // Internal volume helpers: AudioProvider public API uses 0-100 scale (matching media_kit).
   void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -119,17 +117,17 @@ class AudioProvider with ChangeNotifier {
     final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
 
     if (!isFadeEnabled) {
-      _setPlayerVolume(target);
+      _player.setVolume(target);
       _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
-    final double startVolume = from ?? _playerVolume;
+    final double startVolume = from ?? _player.state.volume;
     final int duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
-    if (duration <= 0 || (target - startVolume).abs() < 0.01) {
-      _setPlayerVolume(target);
+    if (duration <= 0 || (target - startVolume).abs() < 1.0) {
+      _player.setVolume(target);
       _isInternalChanging = false;
       onComplete?.call();
       return;
@@ -148,12 +146,12 @@ class AudioProvider with ChangeNotifier {
         return;
       }
       currentStep++;
-      final nextVol = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
-      _setPlayerVolume(nextVol);
+      final nextVol = (startVolume + volumeStep * currentStep).clamp(0.0, 100.0);
+      _player.setVolume(nextVol);
       if (currentStep >= totalSteps) {
         timer.cancel();
         _fadeTimer = null;
-        _setPlayerVolume(target);
+        _player.setVolume(target);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -247,17 +245,38 @@ class AudioProvider with ChangeNotifier {
       } catch (_) {}
     }));
 
+    // Audio device changes
+    _subscriptions.add(_player.stream.audioDevice.listen((_) {
+      if (_isDisposed) return;
+      _safeNotify();
+    }));
+
+    _subscriptions.add(_player.stream.audioDevices.listen((devices) {
+      if (_isDisposed) return;
+      _safeNotify();
+
+      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? true;
+      if (!pauseOnChange || !_player.state.playing) return;
+
+      final current = _player.state.audioDevice;
+      if (current.name == 'auto') return;
+
+      if (!devices.any((d) => d.name == current.name)) {
+        LoggerService.i('[AudioProvider] Audio device "${current.description}" disconnected, pausing');
+        _player.pause();
+      }
+    }));
+
     _subscriptions.add(_player.stream.volume.listen((v) {
       if (_isDisposed || _isInternalChanging) return;
       try {
         if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          final userVol = v / 100.0;
-          _userVolumeController.add(userVol);
-          if (userVol > 0.001) {
-            _lastVolume = userVol;
+          _userVolumeController.add(v);
+          if (v > 0.1) {
+            _lastVolume = v;
             _volumeSaveTimer?.cancel();
             _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', userVol);
+              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', v);
             });
           }
         }
@@ -313,9 +332,9 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
-    _setPlayerVolume(savedVol);
+    _player.setVolume(savedVol);
     _userVolumeController.add(savedVol);
-    _lastVolume = savedVol > 0.001 ? savedVol : 0.5;
+    _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
 
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
@@ -386,7 +405,7 @@ class AudioProvider with ChangeNotifier {
       _isInternalChanging = false;
     }
     if (!_isInternalChanging) {
-      _setPlayerVolume(_persistenceProvider?.volume ?? 0.5);
+      _player.setVolume(_persistenceProvider?.volume ?? 50.0);
     }
 
     _isSeeking = true;
@@ -424,30 +443,32 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
-    _setPlayerVolume(v);
+    _player.setVolume(v);
 
     _userVolumeController.add(v);
-    if (v > 0.001) _lastVolume = v;
+    if (v > 0.1) _lastVolume = v;
     _volumeSaveTimer?.cancel();
     _volumeSaveTimer = Timer(const Duration(milliseconds: 500), () {
-      if (!_isDisposed && v > 0.001) {
+      if (!_isDisposed && v > 0.1) {
         _persistenceProvider?.updatePlayerSetting('volume', v);
       }
     });
   }
 
   void toggleMute() {
-    if (_playerVolume > 0.01) {
-      _lastVolume = _playerVolume;
+    if (_player.state.volume > 1.0) {
+      _lastVolume = _player.state.volume;
       _isInternalChanging = true;
-      _setPlayerVolume(0.0);
+      _player.setVolume(0.0);
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
-      final target = _lastVolume > 0.001 ? _lastVolume : (_persistenceProvider?.volume ?? 0.5);
+      final target = _lastVolume > 0.1 ? _lastVolume : (_persistenceProvider?.volume ?? 50.0);
       setVolume(target);
     }
   }
+
+  Future<void> setAudioDevice(AudioDevice device) => _player.setAudioDevice(device);
 
   void setPlaybackRate(double r) {
     _playbackRate = r;
@@ -506,7 +527,7 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
-    _setPlayerVolume(0.0);
+    _player.setVolume(0.0);
     _climaxMarks = {};
 
     if (playlist != null) {
@@ -554,7 +575,7 @@ class AudioProvider with ChangeNotifier {
       final String url = result['url'];
       LoggerService.d('[AudioProvider] URL obtained: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
 
-      _setPlayerVolume(0.0);
+      _player.setVolume(0.0);
 
       LoggerService.d('[AudioProvider] Opening media...');
       await _player.open(Media(url), play: false);
@@ -566,7 +587,7 @@ class AudioProvider with ChangeNotifier {
       _player.setRate(_playbackRate);
       _player.play();
 
-      _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
+      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
 
       _applyPlayMode();
       _savePlaybackState();
@@ -690,9 +711,9 @@ class AudioProvider with ChangeNotifier {
       _fadeTimer?.cancel();
       _fadeTimer = null;
       _isInternalChanging = true;
-      _setPlayerVolume(0.0);
+      _player.setVolume(0.0);
       _player.play();
-      _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
+      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
     }
   }
 

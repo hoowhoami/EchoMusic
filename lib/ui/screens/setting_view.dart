@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:media_kit/media_kit.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/audio_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/version_service.dart';
 import '../../utils/logger.dart';
@@ -97,6 +99,7 @@ class _SettingViewState extends State<SettingView> {
   Widget build(BuildContext context) {
     final persistence = context.watch<PersistenceProvider>();
     final settings = persistence.settings;
+    final audio = context.watch<AudioProvider>();
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
@@ -263,6 +266,31 @@ class _SettingViewState extends State<SettingView> {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('backupQuality', value);
                   },
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+          _buildGroup(
+            context,
+            '音频设备',
+            CupertinoIcons.speaker_2,
+            [
+              _buildItem(
+                context,
+                '输出设备',
+                '选择音频播放输出设备',
+                trailing: _buildAudioDeviceDropdown(context, audio),
+              ),
+              _buildItem(
+                context,
+                '设备断开时暂停',
+                '所选输出设备断开连接时自动暂停播放',
+                trailing: _buildSwitch(
+                  context,
+                  settings['pauseOnDeviceChange'] ?? true,
+                  (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
             ],
@@ -600,6 +628,64 @@ class _SettingViewState extends State<SettingView> {
             )
           ),
           onPressed: () => onChanged(option),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildAudioDeviceDropdown(BuildContext context, AudioProvider audio) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+    final devices = [AudioDevice.auto(), ...audio.audioDevices];
+    final current = audio.currentAudioDevice;
+
+    String label(AudioDevice d) =>
+        d.name == 'auto' ? '自动' : (d.description.isNotEmpty ? d.description : d.name);
+
+    return MenuAnchor(
+      builder: (context, controller, child) {
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            color: theme.colorScheme.onSurface.withAlpha(15),
+            borderRadius: BorderRadius.circular(12),
+            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label(current),
+                  style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(width: 8),
+                Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
+              ],
+            ),
+          ),
+        );
+      },
+      menuChildren: devices.map((device) {
+        final isSelected = device.name == current.name;
+        return MenuItemButton(
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) =>
+                states.contains(WidgetState.hovered)
+                    ? accentColor.withAlpha(isSelected ? 40 : 20)
+                    : Colors.transparent),
+            padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
+            mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          ),
+          child: Text(
+            label(device),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: isSelected ? accentColor : theme.colorScheme.onSurface,
+            ),
+          ),
+          onPressed: () => audio.setAudioDevice(device),
         );
       }).toList(),
     );

@@ -563,11 +563,11 @@ class _VolumeButton extends StatelessWidget {
         selector: (_, p) => p.volume,
         builder: (context, vol, child) {
           return _PlayerIconButton(
-            icon: vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 0.5 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill),
+            icon: vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 50 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill),
             isSelected: vol > 0,
             onPressed: () => _showCustomPopup(context, _volumeLink, const _VolumePopup(), width: 50, height: 200),
             onScroll: (delta) {
-              final newVol = (vol + (delta > 0 ? -0.05 : 0.05)).clamp(0.0, 1.0);
+              final newVol = (vol + (delta > 0 ? -5.0 : 5.0)).clamp(0.0, 100.0);
               audioProvider.setVolume(newVol);
             },
             size: 20, tooltip: '音量',
@@ -746,18 +746,18 @@ class _VolumePopup extends StatelessWidget {
     return StreamBuilder<double>(
       stream: audio.userVolumeStream, initialData: persistence.volume,
       builder: (context, snapshot) {
-        final vol = snapshot.data ?? 1.0;
+        final vol = snapshot.data ?? 100.0;
         return Column(
           children: [
             const SizedBox(height: 12),
-            Text('${(vol * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            Expanded(child: RotatedBox(quarterTurns: 3, child: SliderTheme(data: theme.sliderTheme.copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)), child: Slider(value: vol, onChanged: (v) => audio.setVolume(v))))),
+            Text('${vol.toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            Expanded(child: RotatedBox(quarterTurns: 3, child: SliderTheme(data: theme.sliderTheme.copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)), child: Slider(value: vol, min: 0, max: 100, onChanged: (v) => audio.setVolume(v))))),
             const SizedBox(height: 8),
             MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
                 onTap: () => audio.toggleMute(),
-                child: Icon(vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 0.5 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill), size: 18, color: theme.colorScheme.primary),
+                child: Icon(vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 50 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill), size: 18, color: theme.colorScheme.primary),
               ),
             ),
             const SizedBox(height: 12),
