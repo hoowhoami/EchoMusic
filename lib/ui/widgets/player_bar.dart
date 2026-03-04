@@ -103,33 +103,40 @@ class _ProgressBarWidget extends StatefulWidget {
 }
 
 class _ProgressBarWidgetState extends State<_ProgressBarWidget> {
+  late AudioProvider _audioProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Use read instead of Consumer: positionSnapshotStream is stable for the
+    // provider's lifetime; Consumer would recreate the StreamBuilder (and tear
+    // down / recreate the stream subscription) on every notifyListeners() call.
+    _audioProvider = context.read<AudioProvider>();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
-    return Consumer<AudioProvider>(
-      builder: (context, audioProvider, child) {
-        return StreamBuilder<PositionSnapshot>(
-          stream: audioProvider.positionSnapshotStream,
-          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-          builder: (context, snapshot) {
-            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-            return ProgressBar(
-              progress: snap.position,
-              total: snap.duration,
-              barHeight: 4.0,
-              baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
-              progressBarColor: accentColor,
-              thumbColor: accentColor,
-              thumbRadius: 7.0,
-              thumbGlowRadius: 15.0,
-              onSeek: (duration) => audioProvider.seek(duration),
-              onDragStart: (_) => audioProvider.notifyDragStart(),
-              onDragEnd: () => audioProvider.notifyDragEnd(),
-              timeLabelLocation: TimeLabelLocation.none,
-            );
-          },
+    return StreamBuilder<PositionSnapshot>(
+      stream: _audioProvider.positionSnapshotStream,
+      initialData: PositionSnapshot(_audioProvider.effectivePosition, _audioProvider.effectiveDuration),
+      builder: (context, snapshot) {
+        final snap = snapshot.data ?? PositionSnapshot(_audioProvider.effectivePosition, _audioProvider.effectiveDuration);
+        return ProgressBar(
+          progress: snap.position,
+          total: snap.duration,
+          barHeight: 4.0,
+          baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
+          progressBarColor: accentColor,
+          thumbColor: accentColor,
+          thumbRadius: 7.0,
+          thumbGlowRadius: 15.0,
+          onSeek: (duration) => _audioProvider.seek(duration),
+          onDragStart: (_) => _audioProvider.notifyDragStart(),
+          onDragEnd: () => _audioProvider.notifyDragEnd(),
+          timeLabelLocation: TimeLabelLocation.none,
         );
       },
     );

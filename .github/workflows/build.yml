@@ -105,7 +105,7 @@ jobs:
           CLEAN_VERSION=${VERSION#v}
           mkdir -p dmg_root
           cp -r "build/macos/Build/Products/Release/EchoMusic.app" dmg_root/
-          
+
           create-dmg \
             --volname "EchoMusic" \
             --volicon "dmg_root/EchoMusic.app/Contents/Resources/AppIcon.icns" \
@@ -138,10 +138,10 @@ jobs:
           mkdir -p deb/usr/share/echomusic
           mkdir -p deb/usr/share/applications
           mkdir -p deb/DEBIAN
-          
+
           cp -r build/linux/x64/release/bundle/* deb/usr/share/echomusic/
           ln -s /usr/share/echomusic/echomusic deb/usr/bin/echomusic
-          
+
           cat > deb/DEBIAN/control <<EOF
           Package: echomusic
           Version: ${CLEAN_VERSION}
@@ -151,7 +151,7 @@ jobs:
           Maintainer: EchoMusic Team
           Description: A minimalist music player.
           EOF
-          
+
           cat > deb/usr/share/applications/echomusic.desktop <<EOF
           [Desktop Entry]
           Name=EchoMusic
@@ -160,7 +160,7 @@ jobs:
           Type=Application
           Categories=AudioVideo;Audio;Player;
           EOF
-          
+
           dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Linux.deb"
 
       - name: Create Release
@@ -172,6 +172,6 @@ jobs:
             EchoMusic-*-Setup.exe
             EchoMusic-*.deb
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -286,10 +286,10 @@ class _SettingViewState extends State<SettingView> {
               _buildItem(
                 context,
                 '设备断开时暂停',
-                '所选输出设备断开连接时自动暂停播放',
+                '所选输出设备断开连接时自动暂停，恢复连接后继续播放',
                 trailing: _buildSwitch(
                   context,
-                  settings['pauseOnDeviceChange'] ?? true,
+                  settings['pauseOnDeviceChange'] ?? false,
                   (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
@@ -636,11 +636,27 @@ class _SettingViewState extends State<SettingView> {
   Widget _buildAudioDeviceDropdown(BuildContext context, AudioProvider audio) {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
-    final devices = [AudioDevice.auto(), ...audio.audioDevices];
-    final current = audio.currentAudioDevice;
+    final realDevices = audio.audioDevices.where((d) => d.name != 'auto').toList();
+    final devices = [AudioDevice.auto(), ...realDevices];
 
-    String label(AudioDevice d) =>
-        d.name == 'auto' ? '自动' : (d.description.isNotEmpty ? d.description : d.name);
+    final isAuto = audio.userSelectedDevice == null;
+    // 用户选 auto 时，尝试从 mpv 实际上报的 currentAudioDevice 取真实设备名；
+    // 仅当 mpv 上报的不是 'auto' 时展示（说明 mpv 已告知实际使用的设备）
+    final actualDevice = audio.currentAudioDevice;
+    final autoHint = isAuto && actualDevice.name != 'auto'
+        ? (actualDevice.description.isNotEmpty ? actualDevice.description : actualDevice.name)
+        : null;
+
+    String deviceLabel(AudioDevice d) =>
+        d.description.isNotEmpty ? d.description : d.name;
+
+    // 按钮主标签来源：auto 显示「自动」，否则从 devices 列表取完整 description
+    final selectedDevice = isAuto
+        ? AudioDevice.auto()
+        : devices.firstWhere(
+            (d) => d.name == audio.userSelectedDevice!.name,
+            orElse: () => audio.userSelectedDevice!,
+          );
 
     return MenuAnchor(
       builder: (context, controller, child) {
@@ -655,9 +671,16 @@ class _SettingViewState extends State<SettingView> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  label(current),
+                  isAuto ? '自动' : deviceLabel(selectedDevice),
                   style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
                 ),
+                if (autoHint != null) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '($autoHint)',
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
               ],
@@ -666,7 +689,7 @@ class _SettingViewState extends State<SettingView> {
         );
       },
       menuChildren: devices.map((device) {
-        final isSelected = device.name == current.name;
+        final isSelected = isAuto ? device.name == 'auto' : device.name == audio.userSelectedDevice?.name;
         return MenuItemButton(
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) =>
@@ -678,7 +701,7 @@ class _SettingViewState extends State<SettingView> {
             overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
           child: Text(
-            label(device),
+            device.name == 'auto' ? '自动' : deviceLabel(device),
             style: TextStyle(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,

@@ -287,7 +287,7 @@ class UserProvider with ChangeNotifier {
 
   Future<bool> upgradeSvip() async {
     if (!_isTvipClaimedToday) return false;
-    final success = await upgradeSvip();
+    final success = await MusicApi.upgradeDayVip();
     if (success) {
       _isSvipClaimedToday = true;
       await fetchUserDetails(); // Refresh VIP info

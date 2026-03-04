@@ -68,6 +68,18 @@ class AudioProvider with ChangeNotifier {
   // Last position forwarded to the UI stream (used for 200 ms throttle).
   Duration _lastEmittedPosition = Duration.zero;
 
+  // When non-null, we auto-paused because this device disconnected; resume when it reconnects.
+  String? _pausedForDevice;
+
+  // Previous device list snapshot for connect/disconnect detection.
+  Set<String> _lastDeviceNames = {};
+
+  // Last wakelock state sent to the platform; avoids redundant platform channel calls.
+  bool _lastWakelockEnabled = false;
+
+  // Tracks the device the user explicitly selected; null means 'auto'.
+  AudioDevice? _userSelectedDevice;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
@@ -81,6 +93,8 @@ class AudioProvider with ChangeNotifier {
   Stream<double> get userVolumeStream => _userVolumeController.stream;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
+  // The device the user explicitly chose; null means 'auto'.
+  AudioDevice? get userSelectedDevice => _userSelectedDevice;
 
   Duration get effectivePosition => _player.state.position;
 
@@ -246,23 +260,55 @@ class AudioProvider with ChangeNotifier {
     }));
 
     // Audio device changes
-    _subscriptions.add(_player.stream.audioDevice.listen((_) {
+    _subscriptions.add(_player.stream.audioDevice.listen((device) {
       if (_isDisposed) return;
+      LoggerService.i('[AudioProvider] Active audio device changed → "${device.description}" (${device.name})');
       _safeNotify();
     }));
 
     _subscriptions.add(_player.stream.audioDevices.listen((devices) {
       if (_isDisposed) return;
-      _safeNotify();
 
-      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? true;
-      if (!pauseOnChange || !_player.state.playing) return;
+      final currentNames = devices.where((d) => d.name != 'auto').map((d) => d.name).toSet();
+      final connected = currentNames.difference(_lastDeviceNames);
+      final disconnected = _lastDeviceNames.difference(currentNames);
+      _lastDeviceNames = currentNames;
 
-      final current = _player.state.audioDevice;
-      if (current.name == 'auto') return;
+      // Only rebuild the UI when the device list actually changed.
+      if (connected.isNotEmpty || disconnected.isNotEmpty) {
+        _safeNotify();
 
-      if (!devices.any((d) => d.name == current.name)) {
-        LoggerService.i('[AudioProvider] Audio device "${current.description}" disconnected, pausing');
+        for (final name in connected) {
+          final d = devices.firstWhere((d) => d.name == name);
+          LoggerService.i('[AudioProvider] Device connected: "${d.description}" ($name)');
+        }
+        for (final name in disconnected) {
+          LoggerService.i('[AudioProvider] Device disconnected: "$name"');
+        }
+      }
+
+      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+      if (!pauseOnChange) return;
+
+      // Only handle manual mode (user explicitly selected a device).
+      // In auto mode we can't reliably know which physical device is active.
+      final targetName = _userSelectedDevice?.name;
+      if (targetName == null) return;
+
+      if (_pausedForDevice != null) {
+        if (currentNames.contains(_pausedForDevice)) {
+          LoggerService.i('[AudioProvider] Paused device "$_pausedForDevice" reconnected, resuming playback');
+          _pausedForDevice = null;
+          _player.play();
+        }
+        return;
+      }
+
+      if (!_player.state.playing) return;
+
+      if (disconnected.contains(targetName)) {
+        LoggerService.i('[AudioProvider] Selected device "$targetName" disconnected, pausing');
+        _pausedForDevice = targetName;
         _player.pause();
       }
     }));
@@ -271,7 +317,10 @@ class AudioProvider with ChangeNotifier {
       if (_isDisposed || _isInternalChanging) return;
       try {
         if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          _userVolumeController.add(v);
+          // Do NOT emit to _userVolumeController here. The displayed volume must
+          // reflect only the user's intent, not the player's physical volume which
+          // fluctuates during fades. All UI-visible volume updates go through
+          // setVolume() and toggleMute() explicitly.
           if (v > 0.1) {
             _lastVolume = v;
             _volumeSaveTimer?.cancel();
@@ -323,7 +372,11 @@ class AudioProvider with ChangeNotifier {
   void _updateWakelock() {
     if (_isDisposed) return;
     final preventSleep = _persistenceProvider?.settings['preventSleep'] ?? true;
-    WakelockPlus.toggle(enable: preventSleep && _player.state.playing);
+    final shouldEnable = preventSleep && _player.state.playing;
+    // Avoid redundant Win32/platform-channel calls when the state hasn't changed.
+    if (shouldEnable == _lastWakelockEnabled) return;
+    _lastWakelockEnabled = shouldEnable;
+    WakelockPlus.toggle(enable: shouldEnable);
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
@@ -468,7 +521,11 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
-  Future<void> setAudioDevice(AudioDevice device) => _player.setAudioDevice(device);
+  Future<void> setAudioDevice(AudioDevice device) async {
+    _userSelectedDevice = device.name == 'auto' ? null : device;
+    await _player.setAudioDevice(device);
+    notifyListeners();
+  }
 
   void setPlaybackRate(double r) {
     _playbackRate = r;
@@ -839,6 +896,7 @@ class AudioProvider with ChangeNotifier {
       _safeNotify();
     } catch (_) {}
   }
+
 
   @override
   void dispose() {
