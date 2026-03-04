@@ -8,7 +8,6 @@ import '../api/music_api.dart';
 import '../utils/constants.dart' as app_const;
 import '../utils/logger.dart';
 import '../utils/media_session_handler.dart';
-import '../utils/native_audio_helper.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
@@ -70,9 +69,6 @@ class AudioProvider with ChangeNotifier {
   // Last position forwarded to the UI stream (used for 200 ms throttle).
   Duration _lastEmittedPosition = Duration.zero;
 
-  // When non-null, we auto-paused because this device disconnected; resume when it reconnects.
-  String? _pausedForDevice;
-
   // Previous device list snapshot for connect/disconnect detection.
   Set<String> _lastDeviceNames = {};
 
@@ -82,9 +78,10 @@ class AudioProvider with ChangeNotifier {
   // Tracks the device the user explicitly selected; null means 'auto'.
   AudioDevice? _userSelectedDevice;
 
-  // When 'auto' is active, the OS-resolved physical device (may be null if
-  // the native query hasn't completed yet or the platform is unsupported).
-  AudioDevice? _resolvedAutoDevice;
+  // Persisted preferred device: name = libmpv ID (for matching), description = display label.
+  // Tracked dynamically: switches to preferred when it appears, falls back to auto when it disappears.
+  String? _preferredDeviceName;
+  String? _preferredDeviceDescription;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -101,15 +98,13 @@ class AudioProvider with ChangeNotifier {
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   // The device the user explicitly chose; null means 'auto'.
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
-  /// The actual physical device currently in use.
-  /// When the user chose 'auto', returns the OS-resolved default device
-  /// (populated asynchronously via native code). Falls back to the raw
-  /// 'auto' AudioDevice if the native query hasn't completed yet.
-  AudioDevice get resolvedCurrentDevice {
-    final dev = _player.state.audioDevice;
-    if (dev.name != 'auto') return dev;
-    return _resolvedAutoDevice ?? dev;
-  }
+  // Display label of the persisted preferred device (for UI when device is unavailable).
+  String? get preferredDeviceDescription => _preferredDeviceDescription;
+  // True when a preferred device is saved but not currently active (unavailable or not yet restored).
+  bool get isPreferredDeviceUnavailable =>
+      _preferredDeviceName != null && _userSelectedDevice?.name != _preferredDeviceName;
+  // True when the user has a saved preferred device (not pure auto mode).
+  bool get hasPreferredDevice => _preferredDeviceName != null;
 
   Duration get effectivePosition => _player.state.position;
 
@@ -126,8 +121,6 @@ class AudioProvider with ChangeNotifier {
     _player = Player();
     _initListeners();
     _initMediaSession();
-    // Resolve the initial "auto" device once the Flutter engine is ready.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshResolvedDevice());
   }
 
   Future<void> _initMediaSession() async {
@@ -280,7 +273,6 @@ class AudioProvider with ChangeNotifier {
     _subscriptions.add(_player.stream.audioDevice.listen((device) {
       if (_isDisposed) return;
       LoggerService.i('[AudioProvider] Active audio device changed → "${device.description}" (${device.name})');
-      _refreshResolvedDevice();
       _safeNotify();
     }));
 
@@ -294,8 +286,6 @@ class AudioProvider with ChangeNotifier {
 
       // Only rebuild the UI when the device list actually changed.
       if (connected.isNotEmpty || disconnected.isNotEmpty) {
-        // Re-resolve auto → real device since the device list changed.
-        _refreshResolvedDevice();
         _safeNotify();
 
         for (final name in connected) {
@@ -307,38 +297,31 @@ class AudioProvider with ChangeNotifier {
         }
       }
 
-      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-      if (!pauseOnChange) return;
+      // Dynamic preferred device tracking: switch to preferred when available,
+      // fall back to auto when it disappears.
+      if (_preferredDeviceName != null) {
+        final isPreferredAvailable = currentNames.contains(_preferredDeviceName);
+        final isPreferredActive = _userSelectedDevice?.name == _preferredDeviceName;
 
-      // macOS handles device switching at the OS level (e.g. AirPods drop →
-      // speakers take over silently), so pause-on-disconnect is never useful
-      // there regardless of auto/manual mode.
-      if (Platform.isMacOS) return;
-
-      // Determine which device to watch for disconnect:
-      //   Manual mode  – watch the explicitly selected device.
-      //   Auto mode    – watch the OS-resolved device; without a seamless
-      //                  OS fallback, audio simply stops when it disconnects.
-      // NOTE: _refreshResolvedDevice() above is unawaited, so _resolvedAutoDevice
-      // still holds the pre-disconnect device name at this point – safe to use.
-      final targetName = _userSelectedDevice?.name ?? _resolvedAutoDevice?.name;
-      if (targetName == null) return;
-
-      if (_pausedForDevice != null) {
-        if (currentNames.contains(_pausedForDevice)) {
-          LoggerService.i('[AudioProvider] Paused device "$_pausedForDevice" reconnected, resuming playback');
-          _pausedForDevice = null;
-          _player.play();
+        if (isPreferredAvailable && !isPreferredActive) {
+          // Preferred device appeared (initial load or reconnect) → switch to it.
+          final match = devices.firstWhere((d) => d.name == _preferredDeviceName);
+          _userSelectedDevice = match;
+          _player.setAudioDevice(match);
+          LoggerService.i('[AudioProvider] Preferred device available, switching: "${match.description}" (${match.name})');
+          _safeNotify();
+        } else if (!isPreferredAvailable && isPreferredActive) {
+          // Preferred device disconnected → pause if enabled, fall back to auto.
+          final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+          if (!Platform.isMacOS && pauseOnChange && _player.state.playing) {
+            LoggerService.i('[AudioProvider] Preferred device disconnected, pausing');
+            _player.pause();
+          }
+          _userSelectedDevice = null;
+          _player.setAudioDevice(AudioDevice.auto());
+          LoggerService.i('[AudioProvider] Preferred device disconnected, using auto');
+          _safeNotify();
         }
-        return;
-      }
-
-      if (!_player.state.playing) return;
-
-      if (disconnected.contains(targetName)) {
-        LoggerService.i('[AudioProvider] Selected device "$targetName" disconnected, pausing');
-        _pausedForDevice = targetName;
-        _player.pause();
       }
     }));
 
@@ -391,47 +374,6 @@ class AudioProvider with ChangeNotifier {
     _subscriptions.clear();
   }
 
-  /// Queries the OS for the actual default output device and caches it in
-  /// [_resolvedAutoDevice].  Only runs when the player reports "auto".
-  /// Notifies listeners after the async query completes so the UI updates.
-  Future<void> _refreshResolvedDevice() async {
-    final current = _player.state.audioDevice;
-    if (current.name != 'auto') {
-      // User explicitly selected a real device; no native query needed.
-      if (_resolvedAutoDevice != null) {
-        _resolvedAutoDevice = null;
-        _safeNotify();
-      }
-      return;
-    }
-
-    final deviceId = await NativeAudioHelper.getDefaultOutputDeviceId();
-    if (_isDisposed) return;
-
-    if (deviceId == null || deviceId.isEmpty) {
-      LoggerService.w('[AudioProvider] _refreshResolvedDevice: native returned null/empty');
-      return;
-    }
-
-    final devices = _player.state.audioDevices;
-    // libmpv prefixes CoreAudio UIDs with "coreaudio/" (e.g. "coreaudio/BuiltInSpeakerDevice").
-    // The OS returns the bare UID, so match both the exact name and the prefixed form.
-    final matched = devices
-        .where((d) => d.name == deviceId || d.name.endsWith('/$deviceId'))
-        .firstOrNull;
-
-    LoggerService.i('[AudioProvider] _refreshResolvedDevice: '
-        'osId="$deviceId" matched="${matched?.description ?? "none"}"');
-
-    // Skip notify only when the matched object is the same non-null instance.
-    // Do NOT early-return when both are null – that hides the first resolution
-    // attempt and leaves _resolvedAutoDevice stale.
-    if (matched != null && identical(matched, _resolvedAutoDevice)) return;
-
-    _resolvedAutoDevice = matched;
-    _safeNotify();
-  }
-
   void _safeNotify() {
     if (!_isDisposed) {
       notifyListeners();
@@ -459,6 +401,14 @@ class AudioProvider with ChangeNotifier {
     _userVolumeController.add(savedVol);
     _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
+
+    // Load the persisted preferred audio device name (applied later when the
+    // device list is first populated via the audioDevices stream).
+    final savedDeviceName = p.playerSettings['preferredAudioDevice'] as String?;
+    if (savedDeviceName != null && savedDeviceName != 'auto') {
+      _preferredDeviceName = savedDeviceName;
+      _preferredDeviceDescription = p.playerSettings['preferredAudioDeviceDescription'] as String?;
+    }
 
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
@@ -592,8 +542,13 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<void> setAudioDevice(AudioDevice device) async {
-    _userSelectedDevice = device.name == 'auto' ? null : device;
+    final isAuto = device.name == 'auto';
+    _userSelectedDevice = isAuto ? null : device;
+    _preferredDeviceName = isAuto ? null : device.name;
+    _preferredDeviceDescription = isAuto ? null : (device.description.isNotEmpty ? device.description : device.name);
     await _player.setAudioDevice(device);
+    _persistenceProvider?.updatePlayerSetting('preferredAudioDevice', isAuto ? null : device.name);
+    _persistenceProvider?.updatePlayerSetting('preferredAudioDeviceDescription', _preferredDeviceDescription);
     notifyListeners();
   }
 

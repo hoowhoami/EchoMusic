@@ -39,6 +39,7 @@ class LoggerService {
         colors: !kReleaseMode,
         printEmojis: true,
         dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+        noBoxingByDefault: true,
       ),
       output: output,
     );

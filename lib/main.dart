@@ -190,6 +190,7 @@ class _WindowHandlerState extends State<WindowHandler>
       ServerOrchestrator.stop();
       await trayManager.destroy();
       await windowManager.destroy();
+      exit(0);
     } else {
       await windowManager.hide();
     }

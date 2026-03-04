@@ -287,12 +287,12 @@ class _SettingViewState extends State<SettingView> {
                 context,
                 '设备断开时暂停',
                 Platform.isMacOS
-                    ? '在 macOS 上，系统会自动接管设备切换，此功能不适用'
-                    : '输出设备断开连接时自动暂停，恢复连接后继续播放',
+                    ? '在 macOS 上由系统自动处理，此功能不适用'
+                    : '选定输出设备断开连接时自动暂停播放（仅在手动选择设备时生效）',
                 trailing: _buildSwitch(
                   context,
-                  Platform.isMacOS ? false : (settings['pauseOnDeviceChange'] ?? false),
-                  Platform.isMacOS ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
+                  (Platform.isMacOS || !audio.hasPreferredDevice) ? false : (settings['pauseOnDeviceChange'] ?? false),
+                  (Platform.isMacOS || !audio.hasPreferredDevice) ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
             ],
@@ -642,23 +642,26 @@ class _SettingViewState extends State<SettingView> {
     final devices = [AudioDevice.auto(), ...realDevices];
 
     final isAuto = audio.userSelectedDevice == null;
-    // When in auto mode, show the OS-resolved physical device in parentheses
-    // so the user knows where audio is actually going.
-    final resolved = audio.resolvedCurrentDevice;
-    final autoHint = isAuto && resolved.name != 'auto'
-        ? (resolved.description.isNotEmpty ? resolved.description : resolved.name)
-        : null;
+    final isPreferredUnavailable = audio.isPreferredDeviceUnavailable;
+    final preferredLabel = audio.preferredDeviceDescription ?? '';
 
     String deviceLabel(AudioDevice d) =>
         d.description.isNotEmpty ? d.description : d.name;
 
-    // 按钮主标签来源：auto 显示「自动」，否则从 devices 列表取完整 description
     final selectedDevice = isAuto
         ? AudioDevice.auto()
         : devices.firstWhere(
             (d) => d.name == audio.userSelectedDevice!.name,
             orElse: () => audio.userSelectedDevice!,
           );
+
+    // Button label: active device, or preferred device name (grayed) if unavailable, or '自动'
+    String buttonText = isAuto ? '自动' : deviceLabel(selectedDevice);
+    Color buttonTextColor = theme.colorScheme.onSurface;
+    if (isPreferredUnavailable && preferredLabel.isNotEmpty) {
+      buttonText = preferredLabel;
+      buttonTextColor = theme.colorScheme.onSurfaceVariant;
+    }
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 200),
@@ -676,22 +679,15 @@ class _SettingViewState extends State<SettingView> {
                 children: [
                   Flexible(
                     child: Text(
-                      isAuto ? '自动' : deviceLabel(selectedDevice),
+                      buttonText,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
-                      style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
+                      style: TextStyle(color: buttonTextColor, fontSize: 13, fontWeight: FontWeight.w700),
                     ),
                   ),
-                  if (autoHint != null) ...[
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        '($autoHint)',
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                    ),
+                  if (isPreferredUnavailable) ...[
+                    const SizedBox(width: 4),
+                    Icon(CupertinoIcons.bolt_slash, size: 11, color: theme.colorScheme.onSurfaceVariant),
                   ],
                   const SizedBox(width: 8),
                   Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
@@ -701,7 +697,9 @@ class _SettingViewState extends State<SettingView> {
           );
         },
         menuChildren: devices.map((device) {
-          final isSelected = isAuto ? device.name == 'auto' : device.name == audio.userSelectedDevice?.name;
+          final isSelected = isAuto && !isPreferredUnavailable
+              ? device.name == 'auto'
+              : device.name == audio.userSelectedDevice?.name;
           return MenuItemButton(
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.resolveWith((states) =>

@@ -130,7 +130,10 @@ class ServerOrchestrator {
           serverPath,
           args,
           workingDirectory: p.dirname(serverPath),
-          mode: ProcessStartMode.normal,
+          // detachedWithStdio avoids creating a conhost.exe console window on
+          // Windows, which causes synchronous I/O blocking on every console.log
+          // and significantly degrades UI performance.
+          mode: ProcessStartMode.detachedWithStdio,
         );
       }
 
@@ -143,14 +146,16 @@ class ServerOrchestrator {
       final completer = Completer<bool>();
       bool completed = false;
 
-      // Listen to stdout for "running" signal (like the reference project)
+      // Listen to stdout for "running" signal. Once the server is ready we
+      // switch to silently draining the pipe so the child process never blocks
+      // on a full pipe buffer (which on Windows causes visible UI stutter).
       _serverProcess!.stdout.transform(utf8.decoder).listen((data) {
+        if (completed) return; // drain only, no logging after server is ready
         final output = data.trim();
         if (output.isNotEmpty) {
           LoggerService.d('[Server] $output');
         }
-        // Check for server ready signal
-        if (!completed && (output.contains('running') || output.contains('listening') || output.contains('started'))) {
+        if (output.contains('running') || output.contains('listening') || output.contains('started')) {
           LoggerService.i('[Server] Detected server ready signal in stdout');
           completed = true;
           if (!completer.isCompleted) {
@@ -159,12 +164,9 @@ class ServerOrchestrator {
         }
       });
 
-      _serverProcess!.stderr.transform(utf8.decoder).listen((data) {
-        final output = data.trim();
-        if (output.isNotEmpty) {
-          LoggerService.e('[Server] $output');
-        }
-      });
+      // Drain stderr silently; errors are rare and logging them through the
+      // pipe on Windows adds unnecessary synchronous I/O overhead.
+      _serverProcess!.stderr.drain<void>();
 
       // Handle process exit
       _serverProcess!.exitCode.then((code) {
@@ -284,7 +286,7 @@ class ServerOrchestrator {
       LoggerService.i('[Server] Stopping server process...');
       try {
         if (Platform.isWindows) {
-          // Windows: use taskkill for clean shutdown
+          // taskkill /F /T kills the entire process tree, no need for _forceKillPort
           Process.run('taskkill', ['/F', '/T', '/PID', '${_serverProcess!.pid}']);
         } else {
           _serverProcess!.kill(ProcessSignal.sigkill);
@@ -295,6 +297,5 @@ class ServerOrchestrator {
       _serverProcess = null;
     }
     _serverReady = false;
-    _forceKillPort();
   }
 }
