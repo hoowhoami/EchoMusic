@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
@@ -41,6 +42,14 @@ void main() async {
     await windowManager.show();
     await windowManager.focus();
   };
+
+  if (Platform.isMacOS) {
+    // Ensure cache directory exists for FlutterSingleInstance PID file
+    final cacheDir = await getApplicationCacheDirectory();
+    if (!await cacheDir.exists()) {
+      await cacheDir.create(recursive: true);
+    }
+  }
 
   final instance = FlutterSingleInstance();
   if (!(await instance.isFirstInstance())) {
