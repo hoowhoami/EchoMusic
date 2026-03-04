@@ -286,11 +286,13 @@ class _SettingViewState extends State<SettingView> {
               _buildItem(
                 context,
                 '设备断开时暂停',
-                '所选输出设备断开连接时自动暂停，恢复连接后继续播放',
+                Platform.isMacOS
+                    ? '在 macOS 上，系统会自动接管设备切换，此功能不适用'
+                    : '输出设备断开连接时自动暂停，恢复连接后继续播放',
                 trailing: _buildSwitch(
                   context,
-                  settings['pauseOnDeviceChange'] ?? false,
-                  (v) => persistence.updateSetting('pauseOnDeviceChange', v),
+                  Platform.isMacOS ? false : (settings['pauseOnDeviceChange'] ?? false),
+                  Platform.isMacOS ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
             ],
@@ -501,9 +503,9 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  Widget _buildSwitch(BuildContext context, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildSwitch(BuildContext context, bool value, ValueChanged<bool>? onChanged) {
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: onChanged == null ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
       child: Transform.scale(
         scale: 0.8,
         child: CupertinoSwitch(
@@ -640,11 +642,11 @@ class _SettingViewState extends State<SettingView> {
     final devices = [AudioDevice.auto(), ...realDevices];
 
     final isAuto = audio.userSelectedDevice == null;
-    // 用户选 auto 时，尝试从 mpv 实际上报的 currentAudioDevice 取真实设备名；
-    // 仅当 mpv 上报的不是 'auto' 时展示（说明 mpv 已告知实际使用的设备）
-    final actualDevice = audio.currentAudioDevice;
-    final autoHint = isAuto && actualDevice.name != 'auto'
-        ? (actualDevice.description.isNotEmpty ? actualDevice.description : actualDevice.name)
+    // When in auto mode, show the OS-resolved physical device in parentheses
+    // so the user knows where audio is actually going.
+    final resolved = audio.resolvedCurrentDevice;
+    final autoHint = isAuto && resolved.name != 'auto'
+        ? (resolved.description.isNotEmpty ? resolved.description : resolved.name)
         : null;
 
     String deviceLabel(AudioDevice d) =>
@@ -658,59 +660,75 @@ class _SettingViewState extends State<SettingView> {
             orElse: () => audio.userSelectedDevice!,
           );
 
-    return MenuAnchor(
-      builder: (context, controller, child) {
-        return MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            color: theme.colorScheme.onSurface.withAlpha(15),
-            borderRadius: BorderRadius.circular(12),
-            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isAuto ? '自动' : deviceLabel(selectedDevice),
-                  style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
-                ),
-                if (autoHint != null) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    '($autoHint)',
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: MenuAnchor(
+        builder: (context, controller, child) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: theme.colorScheme.onSurface.withAlpha(15),
+              borderRadius: BorderRadius.circular(12),
+              onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      isAuto ? '自动' : deviceLabel(selectedDevice),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
                   ),
+                  if (autoHint != null) ...[
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '($autoHint)',
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
                 ],
-                const SizedBox(width: 8),
-                Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
-              ],
+              ),
             ),
-          ),
-        );
-      },
-      menuChildren: devices.map((device) {
-        final isSelected = isAuto ? device.name == 'auto' : device.name == audio.userSelectedDevice?.name;
-        return MenuItemButton(
-          style: ButtonStyle(
-            backgroundColor: WidgetStateProperty.resolveWith((states) =>
-                states.contains(WidgetState.hovered)
-                    ? accentColor.withAlpha(isSelected ? 40 : 20)
-                    : Colors.transparent),
-            padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
-            mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          ),
-          child: Text(
-            device.name == 'auto' ? '自动' : deviceLabel(device),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-              color: isSelected ? accentColor : theme.colorScheme.onSurface,
+          );
+        },
+        menuChildren: devices.map((device) {
+          final isSelected = isAuto ? device.name == 'auto' : device.name == audio.userSelectedDevice?.name;
+          return MenuItemButton(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith((states) =>
+                  states.contains(WidgetState.hovered)
+                      ? accentColor.withAlpha(isSelected ? 40 : 20)
+                      : Colors.transparent),
+              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
+              mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             ),
-          ),
-          onPressed: () => audio.setAudioDevice(device),
-        );
-      }).toList(),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: Text(
+                device.name == 'auto' ? '自动' : deviceLabel(device),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? accentColor : theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            onPressed: () => audio.setAudioDevice(device),
+          );
+        }).toList(),
+      ),
     );
   }
 

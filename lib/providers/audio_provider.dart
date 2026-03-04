@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -7,6 +8,7 @@ import '../api/music_api.dart';
 import '../utils/constants.dart' as app_const;
 import '../utils/logger.dart';
 import '../utils/media_session_handler.dart';
+import '../utils/native_audio_helper.dart';
 import 'lyric_provider.dart';
 import 'persistence_provider.dart';
 
@@ -80,6 +82,10 @@ class AudioProvider with ChangeNotifier {
   // Tracks the device the user explicitly selected; null means 'auto'.
   AudioDevice? _userSelectedDevice;
 
+  // When 'auto' is active, the OS-resolved physical device (may be null if
+  // the native query hasn't completed yet or the platform is unsupported).
+  AudioDevice? _resolvedAutoDevice;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
@@ -95,6 +101,15 @@ class AudioProvider with ChangeNotifier {
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   // The device the user explicitly chose; null means 'auto'.
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
+  /// The actual physical device currently in use.
+  /// When the user chose 'auto', returns the OS-resolved default device
+  /// (populated asynchronously via native code). Falls back to the raw
+  /// 'auto' AudioDevice if the native query hasn't completed yet.
+  AudioDevice get resolvedCurrentDevice {
+    final dev = _player.state.audioDevice;
+    if (dev.name != 'auto') return dev;
+    return _resolvedAutoDevice ?? dev;
+  }
 
   Duration get effectivePosition => _player.state.position;
 
@@ -111,6 +126,8 @@ class AudioProvider with ChangeNotifier {
     _player = Player();
     _initListeners();
     _initMediaSession();
+    // Resolve the initial "auto" device once the Flutter engine is ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshResolvedDevice());
   }
 
   Future<void> _initMediaSession() async {
@@ -263,6 +280,7 @@ class AudioProvider with ChangeNotifier {
     _subscriptions.add(_player.stream.audioDevice.listen((device) {
       if (_isDisposed) return;
       LoggerService.i('[AudioProvider] Active audio device changed → "${device.description}" (${device.name})');
+      _refreshResolvedDevice();
       _safeNotify();
     }));
 
@@ -276,6 +294,8 @@ class AudioProvider with ChangeNotifier {
 
       // Only rebuild the UI when the device list actually changed.
       if (connected.isNotEmpty || disconnected.isNotEmpty) {
+        // Re-resolve auto → real device since the device list changed.
+        _refreshResolvedDevice();
         _safeNotify();
 
         for (final name in connected) {
@@ -290,9 +310,18 @@ class AudioProvider with ChangeNotifier {
       final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
       if (!pauseOnChange) return;
 
-      // Only handle manual mode (user explicitly selected a device).
-      // In auto mode we can't reliably know which physical device is active.
-      final targetName = _userSelectedDevice?.name;
+      // macOS handles device switching at the OS level (e.g. AirPods drop →
+      // speakers take over silently), so pause-on-disconnect is never useful
+      // there regardless of auto/manual mode.
+      if (Platform.isMacOS) return;
+
+      // Determine which device to watch for disconnect:
+      //   Manual mode  – watch the explicitly selected device.
+      //   Auto mode    – watch the OS-resolved device; without a seamless
+      //                  OS fallback, audio simply stops when it disconnects.
+      // NOTE: _refreshResolvedDevice() above is unawaited, so _resolvedAutoDevice
+      // still holds the pre-disconnect device name at this point – safe to use.
+      final targetName = _userSelectedDevice?.name ?? _resolvedAutoDevice?.name;
       if (targetName == null) return;
 
       if (_pausedForDevice != null) {
@@ -360,6 +389,47 @@ class AudioProvider with ChangeNotifier {
       sub.cancel();
     }
     _subscriptions.clear();
+  }
+
+  /// Queries the OS for the actual default output device and caches it in
+  /// [_resolvedAutoDevice].  Only runs when the player reports "auto".
+  /// Notifies listeners after the async query completes so the UI updates.
+  Future<void> _refreshResolvedDevice() async {
+    final current = _player.state.audioDevice;
+    if (current.name != 'auto') {
+      // User explicitly selected a real device; no native query needed.
+      if (_resolvedAutoDevice != null) {
+        _resolvedAutoDevice = null;
+        _safeNotify();
+      }
+      return;
+    }
+
+    final deviceId = await NativeAudioHelper.getDefaultOutputDeviceId();
+    if (_isDisposed) return;
+
+    if (deviceId == null || deviceId.isEmpty) {
+      LoggerService.w('[AudioProvider] _refreshResolvedDevice: native returned null/empty');
+      return;
+    }
+
+    final devices = _player.state.audioDevices;
+    // libmpv prefixes CoreAudio UIDs with "coreaudio/" (e.g. "coreaudio/BuiltInSpeakerDevice").
+    // The OS returns the bare UID, so match both the exact name and the prefixed form.
+    final matched = devices
+        .where((d) => d.name == deviceId || d.name.endsWith('/$deviceId'))
+        .firstOrNull;
+
+    LoggerService.i('[AudioProvider] _refreshResolvedDevice: '
+        'osId="$deviceId" matched="${matched?.description ?? "none"}"');
+
+    // Skip notify only when the matched object is the same non-null instance.
+    // Do NOT early-return when both are null – that hides the first resolution
+    // attempt and leaves _resolvedAutoDevice stale.
+    if (matched != null && identical(matched, _resolvedAutoDevice)) return;
+
+    _resolvedAutoDevice = matched;
+    _safeNotify();
   }
 
   void _safeNotify() {
