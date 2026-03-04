@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
@@ -20,10 +19,10 @@ class PositionSnapshot {
 }
 
 class AudioProvider with ChangeNotifier {
-  late AudioPlayer _player;
+  late Player _player;
 
   // Getter for external use
-  AudioPlayer get player => _player;
+  Player get player => _player;
 
   // Single stream that the UI listens to for position/duration updates.
   // We drive it ourselves so we control exactly when and what gets emitted.
@@ -73,25 +72,19 @@ class AudioProvider with ChangeNotifier {
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
-  bool get isPlaying => _player.playing;
-  bool get isLoading =>
-      _isLoading ||
-      _player.processingState == ProcessingState.buffering ||
-      _player.processingState == ProcessingState.loading;
+  bool get isPlaying => _player.state.playing;
+  bool get isLoading => _isLoading || _player.state.buffering;
   String get playMode => _playMode;
   String get loopMode => _playMode;
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
 
-  Duration get effectivePosition => _player.position;
+  Duration get effectivePosition => _player.state.position;
 
-  // Use player.duration as primary source for accurate seek positioning.
-  // Fall back to song.duration only when player hasn't loaded yet.
   Duration get effectiveDuration {
-    final d = _player.duration;
-    if (d != null && d > Duration.zero) return d;
-    // Fallback to song model duration before player is ready
+    final d = _player.state.duration;
+    if (d > Duration.zero) return d;
     if (_currentSong != null && _currentSong!.duration > 0) {
       return Duration(seconds: _currentSong!.duration);
     }
@@ -99,7 +92,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   AudioProvider() {
-    _player = AudioPlayer();
+    _player = Player();
     _initListeners();
     _initMediaSession();
   }
@@ -114,24 +107,29 @@ class AudioProvider with ChangeNotifier {
     );
   }
 
+  // Internal volume helpers: AudioProvider public API uses 0.0-1.0 scale.
+  // media_kit uses 0-100 scale internally.
+  double get _playerVolume => _player.state.volume / 100.0;
+  void _setPlayerVolume(double v) => _player.setVolume(v * 100);
+
   void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
     final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
-    
+
     if (!isFadeEnabled) {
-      _player.setVolume(target);
+      _setPlayerVolume(target);
       _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
-    final double startVolume = from ?? _player.volume;
+    final double startVolume = from ?? _playerVolume;
     final int duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
     if (duration <= 0 || (target - startVolume).abs() < 0.01) {
-      _player.setVolume(target);
+      _setPlayerVolume(target);
       _isInternalChanging = false;
       onComplete?.call();
       return;
@@ -151,11 +149,11 @@ class AudioProvider with ChangeNotifier {
       }
       currentStep++;
       final nextVol = (startVolume + volumeStep * currentStep).clamp(0.0, 1.0);
-      _player.setVolume(nextVol);
+      _setPlayerVolume(nextVol);
       if (currentStep >= totalSteps) {
         timer.cancel();
         _fadeTimer = null;
-        _player.setVolume(target);
+        _setPlayerVolume(target);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -166,44 +164,45 @@ class AudioProvider with ChangeNotifier {
   int _lastMediaSessionSecond = -1;
 
   void _initListeners() {
-    _subscriptions.add(_player.playbackEventStream.listen((event) {
-      if (event.processingState == ProcessingState.idle) {
-        LoggerService.d('[AudioProvider] Player is idle');
-      }
-    }, onError: (Object e, StackTrace st) {
-      _handlePlayError(e);
+    // Error handling
+    _subscriptions.add(_player.stream.error.listen((error) {
+      _handlePlayError(error);
     }));
 
-    _subscriptions.add(_player.playerStateStream.listen((state) {
-      LoggerService.d('[AudioProvider] PlayerState: playing=${state.playing}, processingState=${state.processingState}');
-      
-      if (state.processingState == ProcessingState.completed) {
-        // On Windows with just_audio_media_kit, completed events can be unreliable.
-        // We use a simple approach: trust the completed event unless we just seeked.
-        if (_lastSeekTime != null) {
-          final sinceSeek = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
-          // Only ignore if seek was very recent (< 1 second) - give more tolerance
-          if (sinceSeek < 1000) {
-            LoggerService.i('[AudioProvider] Ignoring completed event ${sinceSeek}ms after seek');
-            return;
-          }
-        }
-
-        final pos = _player.position;
-        final dur = _player.duration ?? Duration.zero;
-        LoggerService.i('[AudioProvider] Playback completed normally. pos=$pos, dur=$dur');
-        _handlePlaybackEnded();
-      }
+    // Playing state changes → notify UI + MediaSession
+    _subscriptions.add(_player.stream.playing.listen((playing) {
+      if (_isDisposed) return;
+      LoggerService.d('[AudioProvider] playing=$playing');
       _safeNotify();
-
-      // Update Media Session State
-      MediaSessionHandler.updatePlaybackState(_player.playing, _player.position);
+      MediaSessionHandler.updatePlaybackState(playing, _player.state.position);
     }));
 
-    // We no longer cache duration separately. effectiveDuration reads
-    // _player.duration directly, so no durationStream listener is needed.
+    // Buffering state changes → notify UI
+    _subscriptions.add(_player.stream.buffering.listen((_) {
+      if (_isDisposed) return;
+      _safeNotify();
+    }));
 
-    _subscriptions.add(_player.positionStream.listen((pos) {
+    // Track completed
+    _subscriptions.add(_player.stream.completed.listen((completed) {
+      if (_isDisposed || !completed) return;
+
+      if (_lastSeekTime != null) {
+        final sinceSeek = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
+        if (sinceSeek < 1000) {
+          LoggerService.i('[AudioProvider] Ignoring completed event ${sinceSeek}ms after seek');
+          return;
+        }
+      }
+
+      final pos = _player.state.position;
+      final dur = _player.state.duration;
+      LoggerService.i('[AudioProvider] Playback completed normally. pos=$pos, dur=$dur');
+      _handlePlaybackEnded();
+      _safeNotify();
+    }));
+
+    _subscriptions.add(_player.stream.position.listen((pos) {
       if (_isDisposed) return;
       final sec = pos.inSeconds;
 
@@ -223,8 +222,8 @@ class AudioProvider with ChangeNotifier {
         }
 
         // Fallback end detection: if position is very close to duration and player is playing,
-        // treat as end of track. This helps on Windows where completed event may not fire.
-        if (_player.playing && total.inMilliseconds > 0) {
+        // treat as end of track.
+        if (_player.state.playing && total.inMilliseconds > 0) {
           final remaining = total.inMilliseconds - pos.inMilliseconds;
           if (remaining >= 0 && remaining < 600 && !_isHandlingEnd) {
             LoggerService.i('[AudioProvider] Position near end (remaining=${remaining}ms), triggering completion: pos=$pos, dur=$total');
@@ -243,16 +242,16 @@ class AudioProvider with ChangeNotifier {
 
         if (sec != _lastMediaSessionSecond) {
           _lastMediaSessionSecond = sec;
-          MediaSessionHandler.updatePlaybackState(_player.playing, pos);
+          MediaSessionHandler.updatePlaybackState(_player.state.playing, pos);
         }
       } catch (_) {}
     }));
 
-    _subscriptions.add(_player.volumeStream.listen((v) {
+    _subscriptions.add(_player.stream.volume.listen((v) {
       if (_isDisposed || _isInternalChanging) return;
       try {
         if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          final userVol = v;
+          final userVol = v / 100.0;
           _userVolumeController.add(userVol);
           if (userVol > 0.001) {
             _lastVolume = userVol;
@@ -270,13 +269,13 @@ class AudioProvider with ChangeNotifier {
   void _handlePlaybackEnded() {
     if (_isHandlingEnd || _isDisposed) return;
     _isHandlingEnd = true;
-    
-    _player.pause(); 
-    
+
+    _player.pause();
+
     Future.delayed(const Duration(milliseconds: 500), () {
       _isHandlingEnd = false;
       if (_isDisposed) return;
-      
+
       if (_playMode != 'repeat-once') {
         next();
       } else {
@@ -305,8 +304,7 @@ class AudioProvider with ChangeNotifier {
   void _updateWakelock() {
     if (_isDisposed) return;
     final preventSleep = _persistenceProvider?.settings['preventSleep'] ?? true;
-    final isPlaying = _player.playing;
-    WakelockPlus.toggle(enable: preventSleep && isPlaying);
+    WakelockPlus.toggle(enable: preventSleep && _player.state.playing);
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
@@ -315,14 +313,14 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
-    _player.setVolume(savedVol);
+    _setPlayerVolume(savedVol);
     _userVolumeController.add(savedVol);
     _lastVolume = savedVol > 0.001 ? savedVol : 0.5;
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
-    
+
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
-      _originalPlaylist = []; 
+      _originalPlaylist = [];
       _currentIndex = p.currentIndex;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
@@ -332,7 +330,7 @@ class AudioProvider with ChangeNotifier {
         });
       }
     }
-    
+
     _applyPlayMode();
   }
 
@@ -344,31 +342,9 @@ class AudioProvider with ChangeNotifier {
       LoggerService.i('[AudioProvider] _initRestore: ${_currentSong!.name}');
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
-        final url = result['url'];
-        await _player.setAudioSource(
-          ProgressiveAudioSource(
-            Uri.parse(url),
-            tag: MediaItem(
-              id: _currentSong!.hash,
-              album: _currentSong!.albumName,
-              title: _currentSong!.name,
-              artist: _currentSong!.singerName,
-              artUri: Uri.parse(_currentSong!.cover),
-              duration: Duration(seconds: _currentSong!.duration.toInt()),
-            ),
-            options: const ProgressiveAudioSourceOptions(
-              darwinAssetOptions: DarwinAssetOptions(
-                preferPreciseDurationAndTiming: true,
-              ),
-            ),
-          ),
-        );
-
-        _player.setSpeed(_playbackRate);
-        
-        // Update Media Session Metadata
+        await _player.open(Media(result['url']), play: false);
+        _player.setRate(_playbackRate);
         MediaSessionHandler.updateMetadata(_currentSong, Duration(seconds: _currentSong!.duration.toInt()));
-        
         _fetchClimax(_currentSong!);
       }
     } catch (e) {
@@ -389,13 +365,11 @@ class AudioProvider with ChangeNotifier {
   }
 
   /// Called by the UI when the user starts dragging the progress bar.
-  /// Freezes the position stream so the ProgressBar's total never changes mid-drag.
   void notifyDragStart() {
     _isDragging = true;
   }
 
   /// Called by the UI when the user releases the progress bar thumb.
-  /// Re-enables the stream; seek() will emit the accurate final snapshot.
   void notifyDragEnd() {
     _isDragging = false;
   }
@@ -404,35 +378,29 @@ class AudioProvider with ChangeNotifier {
     if (_isDisposed) return;
 
     LoggerService.d('[AudioProvider] Seeking to $pos');
-    // Record seek time to ignore false "completed" events shortly after
     _lastSeekTime = DateTime.now();
 
-    // Cancel any active fade and restore target volume before seeking
     if (_fadeTimer != null) {
       _fadeTimer!.cancel();
       _fadeTimer = null;
       _isInternalChanging = false;
     }
     if (!_isInternalChanging) {
-      _player.setVolume(_persistenceProvider?.volume ?? 0.5);
+      _setPlayerVolume(_persistenceProvider?.volume ?? 0.5);
     }
 
-    // Guard proactive completion check during seek
     _isSeeking = true;
     _isHandlingEnd = false;
 
     await _player.seek(pos);
 
-    // Wait for the player's position to actually reach near the target.
-    // just_audio's seek() Future completes before the native layer finishes,
-    // causing position drift. We poll until position is within tolerance.
-    // See: https://github.com/ryanheise/just_audio/issues/1084
+    // Poll until position reaches the target (mpv seek can have a short lag).
     const maxWaitMs = 500;
     const pollIntervalMs = 20;
     const toleranceMs = 300;
     int waited = 0;
     while (waited < maxWaitMs && !_isDisposed) {
-      final currentPos = _player.position;
+      final currentPos = _player.state.position;
       final diff = (currentPos.inMilliseconds - pos.inMilliseconds).abs();
       if (diff <= toleranceMs) break;
       await Future.delayed(const Duration(milliseconds: pollIntervalMs));
@@ -441,13 +409,11 @@ class AudioProvider with ChangeNotifier {
 
     _isSeeking = false;
 
-    // Emit the position directly - no mapping needed since we use player.duration
     if (!_isDisposed && !_positionController.isClosed) {
       _lastEmittedPosition = pos;
       _positionController.add(PositionSnapshot(pos, effectiveDuration));
     }
 
-    // Sync lyric highlight to the new position
     if (_lyricProvider?.isPageOpen == true) {
       _lyricProvider?.updateHighlight(pos);
     }
@@ -455,11 +421,11 @@ class AudioProvider with ChangeNotifier {
 
   void setVolume(double v) {
     if (_isDisposed) return;
-    _fadeTimer?.cancel(); 
+    _fadeTimer?.cancel();
     _fadeTimer = null;
-    
-    _player.setVolume(v);
-    
+
+    _setPlayerVolume(v);
+
     _userVolumeController.add(v);
     if (v > 0.001) _lastVolume = v;
     _volumeSaveTimer?.cancel();
@@ -471,10 +437,10 @@ class AudioProvider with ChangeNotifier {
   }
 
   void toggleMute() {
-    if (_player.volume > 0.01) {
-      _lastVolume = _player.volume;
+    if (_playerVolume > 0.01) {
+      _lastVolume = _playerVolume;
       _isInternalChanging = true;
-      _player.setVolume(0.0);
+      _setPlayerVolume(0.0);
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
@@ -485,7 +451,7 @@ class AudioProvider with ChangeNotifier {
 
   void setPlaybackRate(double r) {
     _playbackRate = r;
-    _player.setSpeed(r);
+    _player.setRate(r);
     _safeNotify();
   }
 
@@ -497,11 +463,9 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _applyPlayMode() {
-    if (_playMode == 'repeat-once') {
-      _player.setLoopMode(LoopMode.one);
-    } else {
-      _player.setLoopMode(LoopMode.off);
-    }
+    // Always PlaylistMode.none — all repetition logic is handled manually
+    // via the completed stream and _handlePlaybackEnded().
+    _player.setPlaylistMode(PlaylistMode.none);
 
     if (_playMode == 'shuffle' && _playlist.isNotEmpty) {
       if (_originalPlaylist.isEmpty) {
@@ -536,15 +500,14 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
-    
+
     LoggerService.i('[AudioProvider] playSong: ${song.name} - ${song.singerName} (${song.hash})');
 
-    // Immediately cancel any fade, silence, and mark as internal change
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
-    _player.setVolume(0.0);
-    _climaxMarks = {}; // Clear old climax marks immediately
+    _setPlayerVolume(0.0);
+    _climaxMarks = {};
 
     if (playlist != null) {
       LoggerService.d('[AudioProvider] Updating playlist, size: ${playlist.length}');
@@ -559,7 +522,7 @@ class AudioProvider with ChangeNotifier {
     }
     _currentIndex = _playlist.indexWhere((s) => s.isSameSong(song));
     _currentSong = song;
-    _climaxMarks = {}; // Clear old climax marks immediately
+    _climaxMarks = {};
     _safeNotify();
 
     _isLoading = true;
@@ -569,66 +532,43 @@ class AudioProvider with ChangeNotifier {
       _persistenceProvider?.addToHistory(song);
       MusicApi.uploadPlayHistory(song.mixSongId);
       _fetchClimax(song);
-      
+
       LoggerService.d('[AudioProvider] Fetching audio URL...');
       final result = await _getAudioUrlWithQuality(song);
-      
+
       if (_isDisposed) return;
-      
+
       if (result == null || result['url'] == null) {
         LoggerService.e('[AudioProvider] Failed to get URL for ${song.name}');
-        
+
         final settings = _persistenceProvider?.settings ?? {};
         final autoNext = settings['autoNext'] ?? false;
-        
+
         if (autoNext) {
           LoggerService.i('[AudioProvider] Auto-next enabled, skipping to next song in 1s.');
           Future.delayed(const Duration(seconds: 1), () => next());
         }
         return;
       }
-      
+
       final String url = result['url'];
       LoggerService.d('[AudioProvider] URL obtained: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
 
-      // Ensure volume is still 0 before setting new source
-      _player.setVolume(0.0);
-      
-      // Use ProgressiveAudioSource with preferPreciseDurationAndTiming on macOS
-      // to fix position/duration drift issues with FLAC files.
-      // See: https://github.com/ryanheise/just_audio/issues/1267
-      LoggerService.d('[AudioProvider] Setting audio source...');
-      await _player.setAudioSource(
-        ProgressiveAudioSource(
-          Uri.parse(url),
-          tag: MediaItem(
-            id: song.hash,
-            album: song.albumName,
-            title: song.name,
-            artist: song.singerName,
-            artUri: Uri.parse(song.cover),
-            duration: Duration(seconds: song.duration.toInt()),
-          ),
-          options: const ProgressiveAudioSourceOptions(
-            darwinAssetOptions: DarwinAssetOptions(
-              preferPreciseDurationAndTiming: true,
-            ),
-          ),
-        ),
-      );
-      
-      LoggerService.d('[AudioProvider] Audio source set successfully');
-      
-      // Update Media Session Metadata
+      _setPlayerVolume(0.0);
+
+      LoggerService.d('[AudioProvider] Opening media...');
+      await _player.open(Media(url), play: false);
+
+      LoggerService.d('[AudioProvider] Media opened successfully');
+
       MediaSessionHandler.updateMetadata(song, Duration(seconds: song.duration.toInt()));
-      
-      _player.setSpeed(_playbackRate);
+
+      _player.setRate(_playbackRate);
       _player.play();
-      
-      // Start fade-in to the target volume
+
       _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
-      
-      _applyPlayMode(); 
+
+      _applyPlayMode();
       _savePlaybackState();
     } catch (e) {
       _handlePlayError(e);
@@ -646,7 +586,7 @@ class AudioProvider with ChangeNotifier {
 
     final settings = _persistenceProvider?.settings ?? {};
     final playerSettings = _persistenceProvider?.playerSettings ?? {};
-    
+
     final audioQuality = playerSettings['audioQuality'] ?? settings['audioQuality'] ?? 'flac';
     final audioEffect = playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final backupQuality = settings['backupQuality'] ?? '128';
@@ -656,7 +596,7 @@ class AudioProvider with ChangeNotifier {
     if (audioEffect != 'none') qualityList.add(audioEffect);
     qualityList.add(audioQuality);
     if (compatibilityMode) qualityList.add(backupQuality);
-    
+
     final uniqueQualities = qualityList.toSet().toList();
 
     final privilege = await MusicApi.getSongPrivilege(song.hash);
@@ -665,7 +605,7 @@ class AudioProvider with ChangeNotifier {
     for (final quality in uniqueQualities) {
       try {
         final isEffect = app_const.AudioEffect.options.any((e) => e.value == quality && e.value != 'none');
-        
+
         String targetHash = song.hash;
         if (!isEffect) {
           final good = relateGoods.firstWhere((item) => item['quality']?.toString() == quality, orElse: () => null);
@@ -693,15 +633,13 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> _handlePlayError(dynamic err) async {
     if (_isDisposed) return;
-    
-    final pos = _player.position;
+
+    final pos = _player.state.position;
     final total = effectiveDuration;
     final remaining = total.inMilliseconds - pos.inMilliseconds;
-    
+
     LoggerService.e('[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err');
 
-    // Graceful handling for errors near the end of the song
-    // Decode errors often happen at the very tail of FLAC/MPV streams
     if (total.inMilliseconds > 0 && remaining < 2000) {
       LoggerService.i('[AudioProvider] Error occurred near end of song, treating as completed.');
       _handlePlaybackEnded();
@@ -722,34 +660,17 @@ class AudioProvider with ChangeNotifier {
   Future<void> updateAudioSetting(String key, String value) async {
     _persistenceProvider?.updatePlayerSetting(key, value);
     if (_currentSong != null) {
-      final pos = _player.position;
-      final playing = _player.playing;
+      final pos = _player.state.position;
+      final playing = _player.state.playing;
       _isLoading = true;
       _safeNotify();
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
-          await _player.setAudioSource(
-            ProgressiveAudioSource(
-              Uri.parse(result['url']),
-              tag: MediaItem(
-                id: _currentSong!.hash,
-                album: _currentSong!.albumName,
-                title: _currentSong!.name,
-                artist: _currentSong!.singerName,
-                artUri: Uri.parse(_currentSong!.cover),
-                duration: Duration(seconds: _currentSong!.duration.toInt()),
-              ),
-              options: const ProgressiveAudioSourceOptions(
-                darwinAssetOptions: DarwinAssetOptions(
-                  preferPreciseDurationAndTiming: true,
-                ),
-              ),
-            ),
-          );
+          await _player.open(Media(result['url']), play: false);
           await _player.seek(pos);
           if (playing) _player.play();
-          _player.setSpeed(_playbackRate);
+          _player.setRate(_playbackRate);
         }
       } catch (_) {
       } finally {
@@ -760,7 +681,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   void togglePlay() {
-    if (_player.playing) {
+    if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
         _savePlaybackState();
@@ -769,7 +690,7 @@ class AudioProvider with ChangeNotifier {
       _fadeTimer?.cancel();
       _fadeTimer = null;
       _isInternalChanging = true;
-      _player.setVolume(0.0);
+      _setPlayerVolume(0.0);
       _player.play();
       _fadeVolume(_persistenceProvider?.volume ?? 0.5, from: 0.0);
     }
@@ -800,15 +721,15 @@ class AudioProvider with ChangeNotifier {
 
   void next() {
     if (_playlist.isEmpty) return;
-    if (_player.loopMode == LoopMode.one) {
-       seek(Duration.zero);
-       _player.play();
-       return;
+    if (_playMode == 'repeat-once') {
+      seek(Duration.zero);
+      _player.play();
+      return;
     }
-    
-    if (_player.playing) {
+
+    if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
-        _player.pause(); // Ensure old song is stopped before switching
+        _player.pause();
         _currentIndex = (_currentIndex + 1) % _playlist.length;
         playSong(_playlist[_currentIndex]);
       });
@@ -820,10 +741,10 @@ class AudioProvider with ChangeNotifier {
 
   void previous() {
     if (_playlist.isEmpty) return;
-    
-    if (_player.playing) {
+
+    if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
-        _player.pause(); // Ensure old song is stopped before switching
+        _player.pause();
         _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
         playSong(_playlist[_currentIndex]);
       });
@@ -872,7 +793,7 @@ class AudioProvider with ChangeNotifier {
       final lyricData = await MusicApi.getLyric(target['id']?.toString() ?? '', target['accesskey']?.toString() ?? '');
       if (lyricData != null) {
         _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
-        _lyricProvider?.updateHighlight(_player.position);
+        _lyricProvider?.updateHighlight(_player.state.position);
       }
     }
   }
@@ -887,7 +808,7 @@ class AudioProvider with ChangeNotifier {
         final end = item['end_time'] ?? item['endtime'];
         if (start != null) {
           final startTime = start is String ? int.parse(start) : (start as num).toInt();
-          final endTime = end != null 
+          final endTime = end != null
               ? (end is String ? int.parse(end) : (end as num).toInt())
               : startTime + 15000;
           newMarks[startTime / 1000 / songDur] = endTime / 1000 / songDur;

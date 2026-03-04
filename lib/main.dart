@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
-import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:flutter_single_instance/flutter_single_instance.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:echomusic/providers/audio_provider.dart';
@@ -60,13 +60,7 @@ void main() async {
 
   LoggerService.i('First instance confirmed.');
 
-  JustAudioMediaKit.ensureInitialized(
-    linux: true,
-    windows: true,
-    macOS: true,
-    android: false,
-    iOS: false,
-  );
+  MediaKit.ensureInitialized();
 
   if (!Platform.isWindows) {
     ProcessSignal.sigint.watch().listen((_) {

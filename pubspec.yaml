@@ -35,9 +35,8 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   logger: ^2.4.0
-  just_audio: ^0.9.44
   audio_service: ^0.18.12
-  just_audio_media_kit: any
+  media_kit: ^1.2.6
   media_kit_libs_linux: any
   media_kit_libs_windows_audio: any
   media_kit_libs_macos_audio: any
