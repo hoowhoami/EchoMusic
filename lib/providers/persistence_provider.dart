@@ -33,7 +33,7 @@ class PersistenceProvider with ChangeNotifier {
     'preventSleep': true,
     'compatibilityMode': true,
     'backupQuality': '128',
-    'audioQuality': 'flac',
+    'audioQuality': 'high',
     'audioEffect': 'none',
     'autoSign': false,
     'autoReceiveVip': false,
@@ -45,7 +45,7 @@ class PersistenceProvider with ChangeNotifier {
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,
     'playMode': 'repeat',
-    'audioQuality': 'flac',
+    'audioQuality': 'high',
     'audioEffect': 'none',
   };
 
@@ -182,7 +182,7 @@ class PersistenceProvider with ChangeNotifier {
       'preventSleep': true,
       'compatibilityMode': true,
       'backupQuality': '128',
-      'audioQuality': 'flac',
+      'audioQuality': 'high',
       'audioEffect': 'none',
       'autoSign': false,
       'autoReceiveVip': false,
@@ -193,7 +193,7 @@ class PersistenceProvider with ChangeNotifier {
     _playerSettings = {
       'volume': 50.0,
       'playMode': 'repeat',
-      'audioQuality': 'flac',
+      'audioQuality': 'high',
       'audioEffect': 'none',
     };
     notifyListeners();

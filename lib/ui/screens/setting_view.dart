@@ -237,7 +237,7 @@ class _SettingViewState extends State<SettingView> {
                 trailing: _buildDropdown(
                   context,
                   AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['audioQuality'] ?? 'flac'),
+                  AudioQuality.getLabel(settings['audioQuality'] ?? 'high'),
                   (label) {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('audioQuality', value);
