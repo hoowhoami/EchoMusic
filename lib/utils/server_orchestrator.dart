@@ -168,17 +168,22 @@ class ServerOrchestrator {
       // pipe on Windows adds unnecessary synchronous I/O overhead.
       _serverProcess!.stderr.drain<void>();
 
-      // Handle process exit
-      _serverProcess!.exitCode.then((code) {
-        LoggerService.i('[Server] Process exited with code: $code');
-        if (!completed && !completer.isCompleted) {
-          completer.complete(false);
-        }
-        if (code != 0) {
-          _serverReady = false;
-          _serverProcess = null;
-        }
-      });
+      // Handle process exit.
+      // detachedWithStdio processes don't support exitCode — guard against that.
+      try {
+        _serverProcess!.exitCode.then((code) {
+          LoggerService.i('[Server] Process exited with code: $code');
+          if (!completed && !completer.isCompleted) {
+            completer.complete(false);
+          }
+          if (code != 0) {
+            _serverReady = false;
+            _serverProcess = null;
+          }
+        });
+      } on StateError {
+        // Detached process: exitCode is unavailable, completion is driven by stdout/health-check.
+      }
 
       // Wait for either: stdout signal, timeout, or health check success
       // Timeout after 30 seconds

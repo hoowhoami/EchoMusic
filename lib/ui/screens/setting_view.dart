@@ -283,6 +283,7 @@ class _SettingViewState extends State<SettingView> {
                 '选择音频播放输出设备',
                 trailing: _buildAudioDeviceDropdown(context, audio),
               ),
+              if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
               _buildItem(
                 context,
                 '设备断开时暂停',
@@ -700,32 +701,93 @@ class _SettingViewState extends State<SettingView> {
           final isSelected = isAuto && !isPreferredUnavailable
               ? device.name == 'auto'
               : device.name == audio.userSelectedDevice?.name;
+          final typeLabel = _deviceTypeLabel(device.name);
+          final isWasapi = typeLabel == 'WASAPI';
+          final typeBadgeColor = isWasapi
+              ? const Color(0xFFF59E0B)
+              : theme.colorScheme.onSurfaceVariant;
           return MenuItemButton(
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.resolveWith((states) =>
                   states.contains(WidgetState.hovered)
                       ? accentColor.withAlpha(isSelected ? 40 : 20)
                       : Colors.transparent),
-              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 14)),
+              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
               mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),
             ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 240),
-              child: Text(
-                device.name == 'auto' ? '自动' : deviceLabel(device),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected ? accentColor : theme.colorScheme.onSurface,
-                ),
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    device.name == 'auto' ? '自动' : deviceLabel(device),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? accentColor : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  if (typeLabel.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      typeLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: typeBadgeColor,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             onPressed: () => audio.setAudioDevice(device),
           );
         }).toList(),
+      ),
+    );
+  }
+
+  String _deviceTypeLabel(String name) {
+    if (name == 'auto') return '';
+    final lower = name.toLowerCase();
+    if (lower.startsWith('wasapi/')) return 'WASAPI';
+    if (lower.startsWith('coreaudio/')) return 'CoreAudio';
+    if (lower.startsWith('pulse/')) return 'PulseAudio';
+    if (lower.startsWith('alsa/')) return 'ALSA';
+    if (lower.startsWith('jack/')) return 'JACK';
+    if (lower.startsWith('openal/')) return 'OpenAL';
+    return '';
+  }
+
+  bool _isWasapiSelected(AudioProvider audio) {
+    return audio.userSelectedDevice?.name.toLowerCase().startsWith('wasapi/') ?? false;
+  }
+
+  Widget _buildWasapiWarning(BuildContext context) {
+    const warningColor = Color(0xFFF59E0B);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          const Icon(CupertinoIcons.exclamationmark_triangle, size: 13, color: warningColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'WASAPI 将独占音频输出设备，其他应用的声音将被静音',
+              style: TextStyle(
+                color: warningColor.withAlpha(220),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
