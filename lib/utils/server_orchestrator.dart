@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:dio/dio.dart';
@@ -108,7 +106,7 @@ class ServerOrchestrator {
             npmCmd,
             ['start', '--', ...args],
             workingDirectory: serverDir,
-            mode: ProcessStartMode.normal,
+            mode: ProcessStartMode.detached,
           );
         } else {
           LoggerService.e('[Server] Server directory not found in debug mode');
@@ -126,14 +124,16 @@ class ServerOrchestrator {
 
         LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
 
+        // Release mode: use detached (no stdio pipes) on all platforms.
+        // The server process gets no stdout/stderr handles, so the Node.js/libuv
+        // runtime never interacts with the OS console subsystem during startup,
+        // eliminating the synchronous I/O stutter seen with detachedWithStdio.
+        // Readiness is detected via HTTP health-check polling.
         _serverProcess = await Process.start(
           serverPath,
           args,
           workingDirectory: p.dirname(serverPath),
-          // detachedWithStdio avoids creating a conhost.exe console window on
-          // Windows, which causes synchronous I/O blocking on every console.log
-          // and significantly degrades UI performance.
-          mode: ProcessStartMode.detachedWithStdio,
+          mode: ProcessStartMode.detached,
         );
       }
 
@@ -142,62 +142,16 @@ class ServerOrchestrator {
         return false;
       }
 
-      // Use Completer to wait for server ready signal from stdout
-      final completer = Completer<bool>();
       bool completed = false;
 
-      // Listen to stdout for "running" signal. Once the server is ready we
-      // switch to silently draining the pipe so the child process never blocks
-      // on a full pipe buffer (which on Windows causes visible UI stutter).
-      _serverProcess!.stdout.transform(utf8.decoder).listen((data) {
-        if (completed) return; // drain only, no logging after server is ready
-        final output = data.trim();
-        if (output.isNotEmpty) {
-          LoggerService.d('[Server] $output');
-        }
-        if (output.contains('running') || output.contains('listening') || output.contains('started')) {
-          LoggerService.i('[Server] Detected server ready signal in stdout');
-          completed = true;
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
-        }
-      });
-
-      // Drain stderr silently; errors are rare and logging them through the
-      // pipe on Windows adds unnecessary synchronous I/O overhead.
-      _serverProcess!.stderr.drain<void>();
-
-      // Handle process exit.
-      // detachedWithStdio processes don't support exitCode — guard against that.
-      try {
-        _serverProcess!.exitCode.then((code) {
-          LoggerService.i('[Server] Process exited with code: $code');
-          if (!completed && !completer.isCompleted) {
-            completer.complete(false);
-          }
-          if (code != 0) {
-            _serverReady = false;
-            _serverProcess = null;
-          }
-        });
-      } on StateError {
-        // Detached process: exitCode is unavailable, completion is driven by stdout/health-check.
-      }
-
-      // Wait for either: stdout signal, timeout, or health check success
-      // Timeout after 30 seconds
+      // Poll via HTTP until the server responds or we time out (30 s).
       final startTime = DateTime.now();
       while (!completed && DateTime.now().difference(startTime).inSeconds < 30) {
         await Future.delayed(const Duration(milliseconds: 500));
 
-        // Also try health check as backup
         if (await isServerRunning()) {
           LoggerService.i('[Server] Health check passed');
           completed = true;
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
           break;
         }
       }
@@ -259,16 +213,10 @@ class ServerOrchestrator {
     LoggerService.i('[Server] Forcing cleanup of any existing server process...');
     try {
       if (Platform.isWindows) {
-        // Kill by process name
+        // Kill by process name — sufficient since port 10086 is exclusively
+        // used by app_win.exe. No need for a secondary port-based lookup.
         await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(seconds: 3));
-        // Also try to kill by port using PowerShell (more reliable)
-        try {
-          await Process.run('powershell', [
-            '-Command',
-            "Get-NetTCPConnection -LocalPort 10086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }"
-          ]).timeout(const Duration(seconds: 3));
-        } catch (_) {}
+            .timeout(const Duration(seconds: 3), onTimeout: () => ProcessResult(0, 1, '', ''));
       } else {
         // macOS/Linux: kill by port
         final result = await Process.run('lsof', ['-ti', ':10086'])
