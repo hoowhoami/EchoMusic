@@ -279,8 +279,8 @@ class _SongDetailViewState extends State<SongDetailView> {
     switch (q) {
       case '128': return '标准 (128K)';
       case '320': return '极高 (320K)';
-      case 'flac':
-      case 'high': return '无损 (FLAC)';
+      case 'flac': return '无损 (FLAC)';
+      case 'high': return 'Hi-Res';
       case 'viper_atmos': return '杜比全景声';
       case 'viper_tape': return '磁带音效';
       case 'viper_clear': return '清澈人声';
