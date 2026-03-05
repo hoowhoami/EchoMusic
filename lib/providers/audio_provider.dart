@@ -5,7 +5,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
-import '../utils/constants.dart' as app_const;
 import '../utils/logger.dart';
 import '../utils/media_session_handler.dart';
 import 'lyric_provider.dart';
@@ -604,7 +603,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
 
-    LoggerService.i('[AudioProvider] playSong: ${song.name} - ${song.singerName} (${song.hash})');
+    LoggerService.i('[AudioProvider] Playing: ${song.name} - ${song.singerName} (${song.hash})');
 
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -636,33 +635,32 @@ class AudioProvider with ChangeNotifier {
       MusicApi.uploadPlayHistory(song.mixSongId);
       _fetchClimax(song);
 
-      LoggerService.d('[AudioProvider] Fetching audio URL...');
       final result = await _getAudioUrlWithQuality(song);
 
       if (_isDisposed) return;
 
       if (result == null || result['url'] == null) {
-        LoggerService.e('[AudioProvider] Failed to get URL for ${song.name}');
+        LoggerService.e('[AudioProvider] Failed to get URL');
 
         final settings = _persistenceProvider?.settings ?? {};
         final autoNext = settings['autoNext'] ?? false;
 
         if (autoNext) {
-          LoggerService.i('[AudioProvider] Auto-next enabled, skipping to next song in 1s.');
+          LoggerService.i('[AudioProvider] Auto-next enabled, skipping to next song in 1s');
           Future.delayed(const Duration(seconds: 1), () => next());
         }
         return;
       }
 
       final String url = result['url'];
-      LoggerService.d('[AudioProvider] URL obtained: ${url.substring(0, url.length > 50 ? 50 : url.length)}...');
+
+      LoggerService.d('[AudioProvider] URL: $url');
 
       _player.setVolume(0.0);
 
-      LoggerService.d('[AudioProvider] Opening media...');
       await _player.open(Media(url), play: false);
 
-      LoggerService.d('[AudioProvider] Media opened successfully');
+      LoggerService.i('[AudioProvider] Playback started');
 
       MediaSessionHandler.updateMetadata(song, Duration(seconds: song.duration.toInt()));
 
@@ -674,6 +672,7 @@ class AudioProvider with ChangeNotifier {
       _applyPlayMode();
       _savePlaybackState();
     } catch (e) {
+      LoggerService.e('[AudioProvider] Error during playSong: $e');
       _handlePlayError(e);
     } finally {
       _isLoading = false;
@@ -683,6 +682,7 @@ class AudioProvider with ChangeNotifier {
 
   Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
     if (song.source == 'cloud') {
+      LoggerService.d('[AudioProvider] Fetching cloud URL');
       final url = await MusicApi.getCloudSongUrl(song.hash);
       return url != null ? {'url': url} : null;
     }
@@ -690,47 +690,89 @@ class AudioProvider with ChangeNotifier {
     final settings = _persistenceProvider?.settings ?? {};
     final playerSettings = _persistenceProvider?.playerSettings ?? {};
 
-    final audioQuality = playerSettings['audioQuality'] ?? settings['audioQuality'] ?? 'flac';
+    final audioQuality = playerSettings['audioQuality'] ?? settings['audioQuality'] ?? '128';
     final audioEffect = playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final backupQuality = settings['backupQuality'] ?? '128';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
-    final List<String> qualityList = [];
-    if (audioEffect != 'none') qualityList.add(audioEffect);
-    qualityList.add(audioQuality);
-    if (compatibilityMode) qualityList.add(backupQuality);
-
-    final uniqueQualities = qualityList.toSet().toList();
+    LoggerService.d('[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, Backup: $backupQuality');
 
     final privilege = await MusicApi.getSongPrivilege(song.hash);
     final List<dynamic> relateGoods = (privilege.isNotEmpty) ? (privilege[0]['relate_goods'] ?? []) : [];
 
-    for (final quality in uniqueQualities) {
+    // 1. 如果有音效，先尝试用音效获取
+    if (audioEffect != 'none') {
       try {
-        final isEffect = app_const.AudioEffect.options.any((e) => e.value == quality && e.value != 'none');
-
-        String targetHash = song.hash;
-        if (!isEffect) {
-          final good = relateGoods.firstWhere((item) => item['quality']?.toString() == quality, orElse: () => null);
-          if (good != null && good['hash'] != null) {
-            targetHash = good['hash'];
-          } else {
-            if (quality != audioQuality) continue;
-          }
-        }
-
-        final result = await MusicApi.getSongUrl(targetHash, quality: quality);
+        LoggerService.d('[AudioProvider] [1/4] Trying effect: $audioEffect');
+        final result = await MusicApi.getSongUrl(song.hash, quality: audioEffect);
         if (result != null && result['status'] == 1 && result['url'] != null) {
+          LoggerService.i('[AudioProvider] ✓ Got URL with effect: $audioEffect');
           return result;
         }
-      } catch (_) {}
+      } catch (e) {
+        LoggerService.w('[AudioProvider] ✗ Effect failed: $e');
+      }
     }
 
+    // 2. 尝试用用户选择的音质获取
+    try {
+      LoggerService.d('[AudioProvider] [2/4] Trying quality: $audioQuality');
+      String targetHash = song.hash;
+      final good = relateGoods.firstWhere(
+        (item) => item['quality']?.toString() == audioQuality,
+        orElse: () => null
+      );
+      if (good != null && good['hash'] != null) {
+        targetHash = good['hash'];
+      }
+
+      final result = await MusicApi.getSongUrl(targetHash, quality: audioQuality);
+      if (result != null && result['status'] == 1 && result['url'] != null) {
+        LoggerService.i('[AudioProvider] ✓ Got URL with quality: $audioQuality');
+        return result;
+      }
+    } catch (e) {
+      LoggerService.w('[AudioProvider] ✗ Quality failed: $e');
+    }
+
+    // 3. 如果开启了兼容模式，尝试用兜底音质获取
+    if (compatibilityMode && backupQuality != audioQuality) {
+      try {
+        LoggerService.d('[AudioProvider] [3/4] Trying backup: $backupQuality');
+        String targetHash = song.hash;
+        final good = relateGoods.firstWhere(
+          (item) => item['quality']?.toString() == backupQuality,
+          orElse: () => null
+        );
+        if (good != null && good['hash'] != null) {
+          targetHash = good['hash'];
+        }
+
+        final result = await MusicApi.getSongUrl(targetHash, quality: backupQuality);
+        if (result != null && result['status'] == 1 && result['url'] != null) {
+          LoggerService.i('[AudioProvider] ✓ Got URL with backup: $backupQuality');
+          return result;
+        }
+      } catch (e) {
+        LoggerService.w('[AudioProvider] ✗ Backup failed: $e');
+      }
+    }
+
+    // 4. 最后的兜底：不指定音质，让服务器返回任何可用的
     if (compatibilityMode) {
-      final lastResort = await MusicApi.getSongUrl(song.hash);
-      if (lastResort != null && lastResort['url'] != null) return lastResort;
+      try {
+        LoggerService.d('[AudioProvider] [4/4] Trying last resort');
+        final lastResort = await MusicApi.getSongUrl(song.hash);
+        if (lastResort != null && lastResort['url'] != null) {
+          LoggerService.i('[AudioProvider] ✓ Got URL with last resort');
+          return lastResort;
+        }
+      } catch (e) {
+        LoggerService.w('[AudioProvider] ✗ Last resort failed: $e');
+      }
     }
 
+    LoggerService.e('[AudioProvider] ✗ All attempts failed');
     return null;
   }
 

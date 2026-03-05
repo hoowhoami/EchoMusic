@@ -31,7 +31,7 @@ class LoggerService {
     }
 
     _logger = Logger(
-      filter: ProductionFilter(), // Show logs in release mode too if we use FileOutput
+      filter: ProductionFilter(),
       printer: PrettyPrinter(
         methodCount: 0,
         errorMethodCount: 8,

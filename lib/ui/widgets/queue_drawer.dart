@@ -16,6 +16,15 @@ class _QueueDrawerState extends State<QueueDrawer> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final audioProvider = context.read<AudioProvider>();
+      _scrollToCurrent(audioProvider);
+    });
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
@@ -25,6 +34,16 @@ class _QueueDrawerState extends State<QueueDrawer> {
     if (audioProvider.currentIndex >= 0 && _scrollController.hasClients) {
       _scrollController.animateTo(
         audioProvider.currentIndex * 60.0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
@@ -101,6 +120,17 @@ class _QueueDrawerState extends State<QueueDrawer> {
                     if (audioProvider.playlist.isEmpty) return const SizedBox.shrink();
                     return Row(
                       children: [
+                        Tooltip(
+                          message: '滚动到顶部',
+                          child: IconButton(
+                            onPressed: _scrollToTop,
+                            icon: Icon(
+                              CupertinoIcons.arrow_up,
+                              size: 18,
+                              color: theme.colorScheme.onSurface.withAlpha(150),
+                            ),
+                          ),
+                        ),
                         Tooltip(
                           message: '滚动到当前播放',
                           child: IconButton(
