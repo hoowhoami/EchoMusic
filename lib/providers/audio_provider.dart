@@ -82,8 +82,8 @@ class AudioProvider with ChangeNotifier {
   String? _preferredDeviceName;
   String? _preferredDeviceDescription;
 
-  // Flag to suppress auto-next when error is caused by device disconnection
-  bool _isDeviceDisconnecting = false;
+  // Flag to mark device-related errors (should not trigger auto-next)
+  bool _isDeviceError = false;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -300,19 +300,26 @@ class AudioProvider with ChangeNotifier {
           LoggerService.i('[AudioProvider] Device disconnected: "$name"');
 
           final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-          if (!Platform.isMacOS && pauseOnChange && _player.state.playing) {
+          if (!Platform.isMacOS && _player.state.playing) {
             // 检查断开的是否是当前正在使用的设备
             final currentDevice = _player.state.audioDevice;
             if (currentDevice.name == name || currentDevice.name == 'auto') {
               // auto 模式下，任何设备断开都可能影响播放
-              LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
-              _isDeviceDisconnecting = true;
-              _player.pause();
+              // 标记为设备错误，避免触发自动下一首
+              _isDeviceError = true;
+
+              if (pauseOnChange) {
+                LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
+                _player.pause();
+              } else {
+                LoggerService.i('[AudioProvider] Active device disconnected, marked as device error');
+              }
+
               // 延迟重置标志，确保错误处理器能看到这个标志
               Future.delayed(const Duration(milliseconds: 500), () {
-                _isDeviceDisconnecting = false;
+                _isDeviceError = false;
               });
-              break; // 只需要暂停一次
+              break; // 只需要处理一次
             }
           }
         }
@@ -364,6 +371,13 @@ class AudioProvider with ChangeNotifier {
   bool _isHandlingEnd = false;
   void _handlePlaybackEnded() {
     if (_isHandlingEnd || _isDisposed) return;
+
+    // 如果是设备错误引起的，不触发自动下一首
+    if (_isDeviceError) {
+      LoggerService.i('[AudioProvider] Playback ended due to device error, skipping auto-next');
+      return;
+    }
+
     _isHandlingEnd = true;
 
     _player.pause();
@@ -802,26 +816,36 @@ class AudioProvider with ChangeNotifier {
 
     LoggerService.e('[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err');
 
-    // 如果错误是由设备断开引起的，不触发自动下一首
-    if (_isDeviceDisconnecting) {
-      LoggerService.i('[AudioProvider] Error caused by device disconnection, skipping auto-next');
+    // 判断是否是设备相关的错误
+    final isDeviceError = _isDeviceError ||
+                          err.toString().toLowerCase().contains('audio device') ||
+                          err.toString().toLowerCase().contains('no sound');
+
+    if (isDeviceError) {
+      LoggerService.i('[AudioProvider] Device-related error, stopping playback without auto-next');
+      // 设备错误：停止播放，不触发自动下一首
       return;
     }
 
+    // 接近结尾的错误，当作播放完成处理
     if (total.inMilliseconds > 0 && remaining < 2000) {
       LoggerService.i('[AudioProvider] Error occurred near end of song, treating as completed.');
       _handlePlaybackEnded();
       return;
     }
 
+    // 其他播放错误：根据 autoNext 设置决定是否跳过
     final settings = _persistenceProvider?.settings ?? {};
     final autoNext = settings['autoNext'] ?? false;
     final autoNextTime = settings['autoNextTime'] ?? 3000;
 
     if (autoNext) {
-      LoggerService.i('[AudioProvider] Auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
+      LoggerService.i('[AudioProvider] Playback error, auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
       await Future.delayed(Duration(milliseconds: autoNextTime));
       next();
+    } else {
+      LoggerService.i('[AudioProvider] Playback error, auto-next disabled. Stopping playback.');
+      // 不自动下一首，停止播放
     }
   }
 
