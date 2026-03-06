@@ -85,6 +85,10 @@ class AudioProvider with ChangeNotifier {
   // Flag to mark device-related errors (should not trigger auto-next)
   bool _isDeviceError = false;
 
+  // Position and URL to restore after device reconnection
+  Duration? _positionBeforeDeviceError;
+  String? _currentUrl;  // 当前播放的 URL
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
@@ -300,24 +304,38 @@ class AudioProvider with ChangeNotifier {
           LoggerService.i('[AudioProvider] Device disconnected: "$name"');
 
           final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-          if (!Platform.isMacOS && _player.state.playing) {
+          final wasPlaying = _player.state.playing;
+          LoggerService.d('[AudioProvider] Device disconnect check: playing=$wasPlaying, currentSong=${_currentSong?.name}');
+
+          // 非 macOS 平台，检查断开的是否是当前正在使用的设备
+          if (!Platform.isMacOS) {
             // 检查断开的是否是当前正在使用的设备
             final currentDevice = _player.state.audioDevice;
+            LoggerService.d('[AudioProvider] Current device: ${currentDevice.name}, disconnected: $name');
+
             if (currentDevice.name == name || currentDevice.name == 'auto') {
               // auto 模式下，任何设备断开都可能影响播放
               // 标记为设备错误，避免触发自动下一首
+              LoggerService.i('[AudioProvider] Setting _isDeviceError = true');
               _isDeviceError = true;
 
               if (pauseOnChange) {
                 LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
+                // 保存当前播放位置，用于恢复
+                _positionBeforeDeviceError = _player.state.position;
+                LoggerService.d('[AudioProvider] Saved position: $_positionBeforeDeviceError');
+
                 _player.pause();
               } else {
                 LoggerService.i('[AudioProvider] Active device disconnected, marked as device error');
               }
 
               // 延迟重置标志，确保错误处理器能看到这个标志
-              Future.delayed(const Duration(milliseconds: 500), () {
-                _isDeviceError = false;
+              Future.delayed(const Duration(milliseconds: 1000), () {
+                if (!_isDisposed) {
+                  LoggerService.d('[AudioProvider] Resetting _isDeviceError flag');
+                  _isDeviceError = false;
+                }
               });
               break; // 只需要处理一次
             }
@@ -342,6 +360,7 @@ class AudioProvider with ChangeNotifier {
           // Preferred device disconnected → fall back to auto.
           _userSelectedDevice = null;
           _player.setAudioDevice(AudioDevice.auto());
+          // 注意：不清除 _positionBeforeDeviceError，因为用户可能需要恢复播放
           LoggerService.i('[AudioProvider] Preferred device disconnected, using auto');
           _safeNotify();
         }
@@ -374,10 +393,12 @@ class AudioProvider with ChangeNotifier {
 
     // 如果是设备错误引起的，不触发自动下一首
     if (_isDeviceError) {
-      LoggerService.i('[AudioProvider] Playback ended due to device error, skipping auto-next');
+      LoggerService.i('[AudioProvider] Playback ended due to device error (_isDeviceError=$_isDeviceError), skipping auto-next');
+      _player.pause();  // 确保播放器停止
       return;
     }
 
+    LoggerService.d('[AudioProvider] Playback ended normally (_isDeviceError=$_isDeviceError), proceeding with auto-next logic');
     _isHandlingEnd = true;
 
     _player.pause();
@@ -464,6 +485,7 @@ class AudioProvider with ChangeNotifier {
       LoggerService.i('[AudioProvider] _initRestore: ${_currentSong!.name}');
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
+        _currentUrl = result['url'];  // 保存 URL
         await _player.open(Media(result['url']), play: false);
         _player.setRate(_playbackRate);
         MediaSessionHandler.updateMetadata(_currentSong, Duration(seconds: _currentSong!.duration.toInt()));
@@ -687,6 +709,8 @@ class AudioProvider with ChangeNotifier {
 
       LoggerService.d('[AudioProvider] URL: $url');
 
+      _currentUrl = url;  // 保存当前 URL
+
       _player.setVolume(0.0);
 
       await _player.open(Media(url), play: false);
@@ -723,10 +747,9 @@ class AudioProvider with ChangeNotifier {
 
     final audioQuality = playerSettings['audioQuality'] ?? settings['audioQuality'] ?? '128';
     final audioEffect = playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
-    final backupQuality = settings['backupQuality'] ?? '128';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
-    LoggerService.d('[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, Backup: $backupQuality');
+    LoggerService.d('[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, CompatibilityMode: $compatibilityMode');
 
     final privilege = await MusicApi.getSongPrivilege(song.hash);
     final List<dynamic> relateGoods = (privilege.isNotEmpty) ? (privilege[0]['relate_goods'] ?? []) : [];
@@ -734,7 +757,7 @@ class AudioProvider with ChangeNotifier {
     // 1. 如果有音效，先尝试用音效获取
     if (audioEffect != 'none') {
       try {
-        LoggerService.d('[AudioProvider] [1/4] Trying effect: $audioEffect');
+        LoggerService.d('[AudioProvider] Trying effect: $audioEffect');
         final result = await MusicApi.getSongUrl(song.hash, quality: audioEffect);
         if (result != null && result['status'] == 1 && result['url'] != null) {
           LoggerService.i('[AudioProvider] ✓ Got URL with effect: $audioEffect');
@@ -745,61 +768,61 @@ class AudioProvider with ChangeNotifier {
       }
     }
 
-    // 2. 尝试用用户选择的音质获取
-    try {
-      LoggerService.d('[AudioProvider] [2/4] Trying quality: $audioQuality');
-      String targetHash = song.hash;
-      final good = relateGoods.firstWhere(
-        (item) => item['quality']?.toString() == audioQuality,
-        orElse: () => null
-      );
-      if (good != null && good['hash'] != null) {
-        targetHash = good['hash'];
+    // 2. 尝试用用户选择的音质获取，兼容模式下按优先级降级
+    {
+      // 构建候选音质列表：先尝试用户选择的，若兼容模式则按优先级依次降级
+      final qualityPriority = ['high', 'flac', '320', '128'];
+      final userQualityIndex = qualityPriority.indexOf(audioQuality);
+      final candidates = <String>[audioQuality];
+      if (compatibilityMode) {
+        // 从用户选择的音质开始，依次添加更低优先级的音质
+        for (int i = userQualityIndex + 1; i < qualityPriority.length; i++) {
+          if (qualityPriority[i] != audioQuality) {
+            candidates.add(qualityPriority[i]);
+          }
+        }
       }
 
-      final result = await MusicApi.getSongUrl(targetHash, quality: audioQuality);
-      if (result != null && result['status'] == 1 && result['url'] != null) {
-        LoggerService.i('[AudioProvider] ✓ Got URL with quality: $audioQuality');
-        return result;
-      }
-    } catch (e) {
-      LoggerService.w('[AudioProvider] ✗ Quality failed: $e');
-    }
-
-    // 3. 如果开启了兼容模式，尝试用兜底音质获取
-    if (compatibilityMode && backupQuality != audioQuality) {
-      try {
-        LoggerService.d('[AudioProvider] [3/4] Trying backup: $backupQuality');
-        String targetHash = song.hash;
+      for (int i = 0; i < candidates.length; i++) {
+        final quality = candidates[i];
+        // 从 relateGoods 中查找对应音质的 hash
         final good = relateGoods.firstWhere(
-          (item) => item['quality']?.toString() == backupQuality,
-          orElse: () => null
+          (item) => item['quality']?.toString() == quality,
+          orElse: () => null,
         );
-        if (good != null && good['hash'] != null) {
-          targetHash = good['hash'];
+
+        // 如果 relateGoods 里没有这个音质，跳过
+        if (good == null || good['hash'] == null) {
+          LoggerService.d('[AudioProvider] Skip quality: $quality (not in relateGoods)');
+          continue;
         }
 
-        final result = await MusicApi.getSongUrl(targetHash, quality: backupQuality);
-        if (result != null && result['status'] == 1 && result['url'] != null) {
-          LoggerService.i('[AudioProvider] ✓ Got URL with backup: $backupQuality');
-          return result;
+        try {
+          final targetHash = good['hash'] as String;
+          LoggerService.d('[AudioProvider] Trying quality: $quality (hash: ${targetHash.substring(0, 8)}...)');
+
+          final result = await MusicApi.getSongUrl(targetHash, quality: quality);
+          if (result != null && result['status'] == 1 && result['url'] != null) {
+            LoggerService.i('[AudioProvider] ✓ Got URL with quality: $quality');
+            return result;
+          }
+        } catch (e) {
+          LoggerService.w('[AudioProvider] ✗ Quality $quality failed: $e');
         }
-      } catch (e) {
-        LoggerService.w('[AudioProvider] ✗ Backup failed: $e');
       }
-    }
 
-    // 4. 最后的兜底：不指定音质，让服务器返回任何可用的
-    if (compatibilityMode) {
-      try {
-        LoggerService.d('[AudioProvider] [4/4] Trying last resort');
-        final lastResort = await MusicApi.getSongUrl(song.hash);
-        if (lastResort != null && lastResort['url'] != null) {
-          LoggerService.i('[AudioProvider] ✓ Got URL with last resort');
-          return lastResort;
+      // 兼容模式：最后尝试不指定音质，用原始 hash
+      if (compatibilityMode) {
+        try {
+          LoggerService.d('[AudioProvider] Trying fallback with original hash');
+          final result = await MusicApi.getSongUrl(song.hash);
+          if (result != null && result['url'] != null) {
+            LoggerService.i('[AudioProvider] ✓ Got URL with fallback');
+            return result;
+          }
+        } catch (e) {
+          LoggerService.w('[AudioProvider] ✗ Fallback failed: $e');
         }
-      } catch (e) {
-        LoggerService.w('[AudioProvider] ✗ Last resort failed: $e');
       }
     }
 
@@ -824,6 +847,7 @@ class AudioProvider with ChangeNotifier {
     if (isDeviceError) {
       LoggerService.i('[AudioProvider] Device-related error, stopping playback without auto-next');
       // 设备错误：停止播放，不触发自动下一首
+      _player.pause();  // 确保播放器停止
       return;
     }
 
@@ -859,6 +883,7 @@ class AudioProvider with ChangeNotifier {
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
+          _currentUrl = result['url'];  // 保存 URL
           await _player.open(Media(result['url']), play: false);
           await _player.seek(pos);
           if (playing) _player.play();
@@ -874,17 +899,64 @@ class AudioProvider with ChangeNotifier {
 
   void togglePlay() {
     if (_player.state.playing) {
+      // 暂停逻辑不变
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
         _savePlaybackState();
       });
     } else {
+      // 播放前检查是否需要恢复设备错误后的状态
+      if (_positionBeforeDeviceError != null && _currentUrl != null) {
+        LoggerService.i('[AudioProvider] Recovering from device error, rebuilding audio pipeline');
+        final savedPosition = _positionBeforeDeviceError!;
+        final savedUrl = _currentUrl!;
+        _positionBeforeDeviceError = null;
+
+        // 重建音频管道：使用保存的 URL 重新加载
+        _rebuildAudioPipeline(savedUrl, savedPosition);
+        return;
+      }
+
+      // 检查当前设备是否可用
+      final currentDevice = _player.state.audioDevice;
+      final availableDevices = _player.state.audioDevices;
+
+      if (currentDevice.name != 'auto' &&
+          !availableDevices.any((d) => d.name == currentDevice.name)) {
+        LoggerService.i('[AudioProvider] Current device "${currentDevice.name}" unavailable, switching to auto');
+        _player.setAudioDevice(AudioDevice.auto());
+      }
+
+      // 正常播放
       _fadeTimer?.cancel();
       _fadeTimer = null;
       _isInternalChanging = true;
       _player.setVolume(0.0);
       _player.play();
       _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+    }
+  }
+
+  Future<void> _rebuildAudioPipeline(String url, Duration position) async {
+    if (_isDisposed) return;
+
+    _isLoading = true;
+    _safeNotify();
+
+    try {
+      LoggerService.i('[AudioProvider] Rebuilding audio pipeline with saved URL');
+      _isInternalChanging = true;
+      _player.setVolume(0.0);
+      await _player.open(Media(url), play: false);
+      await _player.seek(position);
+      _player.setRate(_playbackRate);
+      _player.play();
+      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+    } catch (e) {
+      LoggerService.e('[AudioProvider] Failed to rebuild audio pipeline: $e');
+    } finally {
+      _isLoading = false;
+      _safeNotify();
     }
   }
 
@@ -919,6 +991,9 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    // 清除设备错误恢复状态，因为用户主动切歌
+    _positionBeforeDeviceError = null;
+
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
@@ -933,6 +1008,9 @@ class AudioProvider with ChangeNotifier {
 
   void previous() {
     if (_playlist.isEmpty) return;
+
+    // 清除设备错误恢复状态，因为用户主动切歌
+    _positionBeforeDeviceError = null;
 
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {

@@ -254,20 +254,6 @@ class _SettingViewState extends State<SettingView> {
                   (v) => persistence.updateSetting('compatibilityMode', v),
                 ),
               ),
-              _buildItem(
-                context,
-                '备选音质',
-                '兼容模式下的备选音质级别',
-                trailing: _buildDropdown(
-                  context,
-                  AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['backupQuality'] ?? '128'),
-                  (label) {
-                    final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
-                    persistence.updateSetting('backupQuality', value);
-                  },
-                ),
-              ),
             ],
           ),
 
