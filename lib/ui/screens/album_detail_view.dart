@@ -26,6 +26,9 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
   Album? _album;
   List<Song>? _songs;
   bool _isLoading = true;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
@@ -40,13 +43,15 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
 
   Future<void> _loadData() async {
     if (!mounted) return;
-    if (_songs == null) {
-      setState(() => _isLoading = true);
-    }
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+    });
 
     final results = await Future.wait([
       MusicApi.getAlbumDetail(widget.albumId),
-      MusicApi.getAlbumSongs(widget.albumId),
+      MusicApi.getAlbumSongs(widget.albumId, page: 1, pagesize: 200),
     ]);
 
     if (mounted) {
@@ -55,8 +60,36 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         if (albumJson != null) {
           _album = Album.fromDetailJson(albumJson);
         }
-        _songs = results[1] as List<Song>?;
+        final songs = results[1] as List<Song>?;
+        _songs = songs;
         _isLoading = false;
+        _hasMore = (songs?.length ?? 0) >= 200;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || !mounted) return;
+
+    setState(() => _isLoadingMore = true);
+
+    final nextPage = _currentPage + 1;
+    final moreSongs = await MusicApi.getAlbumSongs(
+      widget.albumId,
+      page: nextPage,
+      pagesize: 200,
+    );
+
+    if (mounted) {
+      setState(() {
+        if (moreSongs.isNotEmpty) {
+          _songs = [...?_songs, ...moreSongs];
+          _currentPage = nextPage;
+          _hasMore = moreSongs.length >= 200;
+        } else {
+          _hasMore = false;
+        }
+        _isLoadingMore = false;
       });
     }
   }
@@ -71,6 +104,9 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
       songs: _songs ?? [],
       isLoading: _isLoading,
       sourceId: widget.albumId,
+      onLoadMore: _loadMore,
+      hasMore: _hasMore,
+      isLoadingMore: _isLoadingMore,
       parentPlaylist: _album != null ? model.Playlist(
         id: _album!.id,
         listCreateListid: _album!.id,

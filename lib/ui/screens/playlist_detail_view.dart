@@ -25,6 +25,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   Playlist? _detailedPlaylist;
   bool _isLoading = true;
   late UserProvider _userProvider;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
@@ -47,15 +50,17 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
 
   Future<void> _loadData() async {
     if (!mounted) return;
-    if (_songs == null) {
-      setState(() => _isLoading = true);
-    }
-    
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+    });
+
     // Fetch detailed info to get creator and timestamps
     final detailJson = await MusicApi.getPlaylistDetail(
       widget.playlist.globalCollectionId ?? widget.playlist.id.toString()
     );
-    
+
     if (detailJson != null && mounted) {
       setState(() {
         _detailedPlaylist = Playlist.fromUserPlaylist(detailJson);
@@ -67,12 +72,44 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       listid: widget.playlist.listid,
       listCreateGid: widget.playlist.listCreateGid,
       listCreateUserid: widget.playlist.listCreateUserid,
+      page: 1,
+      pagesize: 200,
     );
 
     if (mounted) {
       setState(() {
         _songs = songs;
         _isLoading = false;
+        _hasMore = songs.length >= 200;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || !mounted) return;
+
+    setState(() => _isLoadingMore = true);
+
+    final nextPage = _currentPage + 1;
+    final moreSongs = await MusicApi.getPlaylistSongs(
+      widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),
+      listid: widget.playlist.listid,
+      listCreateGid: widget.playlist.listCreateGid,
+      listCreateUserid: widget.playlist.listCreateUserid,
+      page: nextPage,
+      pagesize: 200,
+    );
+
+    if (mounted) {
+      setState(() {
+        if (moreSongs.isNotEmpty) {
+          _songs = [...?_songs, ...moreSongs];
+          _currentPage = nextPage;
+          _hasMore = moreSongs.length >= 200;
+        } else {
+          _hasMore = false;
+        }
+        _isLoadingMore = false;
       });
     }
   }
@@ -104,6 +141,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       isLoading: _isLoading,
       parentPlaylist: playlist,
       sourceId: playlist.id,
+      onLoadMore: _loadMore,
+      hasMore: _hasMore,
+      isLoadingMore: _isLoadingMore,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
@@ -258,7 +298,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                           ),
                         Row(
                           children: [
-                            _buildInfoChip(context, CupertinoIcons.music_note_2, '${_songs?.length ?? playlist.count} 首歌曲'),
+                            _buildInfoChip(context, CupertinoIcons.music_note_2, '${playlist.count} 首歌曲'),
                             const Spacer(),
                             if (userProvider.isAuthenticated && !isCreated) ...[
                               OutlinedButton.icon(

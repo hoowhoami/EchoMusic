@@ -11,6 +11,9 @@ class SongListScaffold extends StatelessWidget {
   final List<Widget>? headers;
   final dynamic sourceId;
   final Color? backgroundColor;
+  final VoidCallback? onLoadMore;
+  final bool hasMore;
+  final bool isLoadingMore;
 
   const SongListScaffold({
     super.key,
@@ -20,6 +23,9 @@ class SongListScaffold extends StatelessWidget {
     this.headers,
     this.sourceId,
     this.backgroundColor,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.isLoadingMore = false,
   });
 
   @override
@@ -36,6 +42,9 @@ class SongListScaffold extends StatelessWidget {
             isLoading: isLoading,
             headers: headers,
             sourceId: sourceId,
+            onLoadMore: onLoadMore,
+            hasMore: hasMore,
+            isLoadingMore: isLoadingMore,
           ),
           const BatchActionBar(),
         ],

@@ -459,7 +459,7 @@ class MusicApi {
     }
   }
 
-  static Future<Map<String, dynamic>> getPlaylistTrackAllNew(int listid, {int page = 1, int pagesize = 100}) async {
+  static Future<Map<String, dynamic>> getPlaylistTrackAllNew(int listid, {int page = 1, int pagesize = 200}) async {
     try {
       final response = await _dio.get('/playlist/track/all/new', queryParameters: {
         'listid': listid,
@@ -477,10 +477,12 @@ class MusicApi {
     int? listid,
     String? listCreateGid,
     int? listCreateUserid,
+    int page = 1,
+    int pagesize = 200,
   }) async {
     try {
       String queryId = id?.toString() ?? '';
-      
+
       if (listid != null && listid != 0) {
         // 获取当前用户 ID 用于判定所有权
         final prefs = await SharedPreferences.getInstance();
@@ -499,8 +501,8 @@ class MusicApi {
       }
 
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
-      
-      final responseData = await getPlaylistTrackAll(queryId, pagesize: 500);
+
+      final responseData = await getPlaylistTrackAll(queryId, page: page, pagesize: pagesize);
       return parseSongsFromResponse(responseData);
     } catch (e) {
       LoggerService.e('getPlaylistSongs error: $e');
@@ -581,7 +583,7 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getSingerSongs(int id, {int page = 1, int pagesize = 30, String sort = 'hot'}) async {
+  static Future<List<Song>> getSingerSongs(int id, {int page = 1, int pagesize = 200, String sort = 'hot'}) async {
     try {
       final response = await _dio.get('/artist/audios', queryParameters: {
         'id': id,
@@ -633,7 +635,7 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 30}) async {
+  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 200}) async {
     try {
       final response = await _dio.get('/album/songs', queryParameters: {
         'id': id,

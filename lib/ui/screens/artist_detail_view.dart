@@ -23,8 +23,12 @@ class ArtistDetailView extends StatefulWidget {
 }
 
 class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
-  late Future<Artist?> _detailFuture;
-  late Future<List<Song>> _songsFuture;
+  Artist? _artist;
+  List<Song>? _songs;
+  bool _isLoading = true;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
@@ -34,14 +38,60 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
 
   @override
   void onRefresh() {
-    setState(() {
-      _loadData();
-    });
+    _loadData();
   }
 
-  void _loadData() {
-    _detailFuture = MusicApi.getSingerDetail(widget.artistId).then((json) => json != null ? Artist.fromDetailJson(json) : null);
-    _songsFuture = MusicApi.getSingerSongs(widget.artistId);
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+    });
+
+    final results = await Future.wait([
+      MusicApi.getSingerDetail(widget.artistId),
+      MusicApi.getSingerSongs(widget.artistId, page: 1, pagesize: 200),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        final artistJson = results[0] as Map<String, dynamic>?;
+        if (artistJson != null) {
+          _artist = Artist.fromDetailJson(artistJson);
+        }
+        final songs = results[1] as List<Song>?;
+        _songs = songs;
+        _isLoading = false;
+        _hasMore = (songs?.length ?? 0) >= 200;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || !mounted) return;
+
+    setState(() => _isLoadingMore = true);
+
+    final nextPage = _currentPage + 1;
+    final moreSongs = await MusicApi.getSingerSongs(
+      widget.artistId,
+      page: nextPage,
+      pagesize: 200,
+    );
+
+    if (mounted) {
+      setState(() {
+        if (moreSongs.isNotEmpty) {
+          _songs = [...?_songs, ...moreSongs];
+          _currentPage = nextPage;
+          _hasMore = moreSongs.length >= 200;
+        } else {
+          _hasMore = false;
+        }
+        _isLoadingMore = false;
+      });
+    }
   }
 
   @override
@@ -50,295 +100,269 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
     final isFollowing = userProvider.isFollowingSinger(widget.artistId);
     final theme = Theme.of(context);
 
-    return FutureBuilder<List<Song>>(
-      future: _songsFuture,
-      builder: (context, snapshot) {
-        final songs = snapshot.data ?? [];
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
-
-        return SongListScaffold(
-          songs: songs,
-          isLoading: isLoading,
-          sourceId: widget.artistId,
-          headers: [
-            SliverAppBar(
-              backgroundColor: theme.scaffoldBackgroundColor,
-              surfaceTintColor: Colors.transparent,
-              expandedHeight: 180,
-              pinned: true,
-              automaticallyImplyLeading: false,
-              elevation: 0,
-              flexibleSpace: FlexibleSpaceBar(
-                titlePadding: EdgeInsets.zero,
-                centerTitle: false,
-                expandedTitleScale: 1.0,
-                title: FutureBuilder<Artist?>(
-                  future: _detailFuture,
-                  builder: (context, snapshot) {
-                    final artist = snapshot.data;
-                    return LayoutBuilder(
-                      builder: (context, constraints) {
-                        final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
-                        return AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: isCollapsed ? 1.0 : 0.0,
-                          child: Container(
-                            height: kToolbarHeight,
-                            padding: const EdgeInsets.only(left: 20),
-                            child: Row(
-                              children: [
-                                if (artist != null)
-                                  CoverImage(
-                                    url: artist.pic,
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 16, 
-                                    showShadow: false,
-                                  ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    widget.artistName,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSurface,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
+    return SongListScaffold(
+      songs: _songs ?? [],
+      isLoading: _isLoading,
+      sourceId: widget.artistId,
+      onLoadMore: _loadMore,
+      hasMore: _hasMore,
+      isLoadingMore: _isLoadingMore,
+      headers: [
+        SliverAppBar(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          surfaceTintColor: Colors.transparent,
+          expandedHeight: 180,
+          pinned: true,
+          automaticallyImplyLeading: false,
+          elevation: 0,
+          flexibleSpace: FlexibleSpaceBar(
+            titlePadding: EdgeInsets.zero,
+            centerTitle: false,
+            expandedTitleScale: 1.0,
+            title: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                return AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: isCollapsed ? 1.0 : 0.0,
+                  child: Container(
+                    height: kToolbarHeight,
+                    padding: const EdgeInsets.only(left: 20),
+                    child: Row(
+                      children: [
+                        if (_artist != null)
+                          CoverImage(
+                            url: _artist!.pic,
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            showShadow: false,
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
-                background: FutureBuilder<Artist?>(
-                  future: _detailFuture,
-                  builder: (context, snapshot) {
-                    final artist = snapshot.data;
-
-                    return Container(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          if (artist != null)
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: theme.colorScheme.shadow.withAlpha(50),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: ClipOval(
-                                child: CachedNetworkImage(
-                                  imageUrl: artist.pic,
-                                  width: 130,
-                                  height: 130,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              width: 130,
-                              height: 130,
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceContainerHighest,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(CupertinoIcons.person_fill, size: 52, color: theme.colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.artistName,
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurface,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
                             ),
-                          const SizedBox(width: 32),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'ARTIST',
-                                  style: TextStyle(
-                                    color: theme.colorScheme.primary,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 2.0,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  widget.artistName,
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.1,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                if (artist != null)
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${artist.fansCount} 粉丝',
-                                        style: TextStyle(
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      OutlinedButton.icon(
-                                        onPressed: () async {
-                                          bool success;
-                                          if (isFollowing) {
-                                            success = await userProvider.unfollowSinger(widget.artistId);
-                                            if (context.mounted) {
-                                              if (success) {
-                                                CustomToast.success(context, '已取消关注');
-                                              } else {
-                                                CustomToast.error(context, '操作失败');
-                                              }
-                                            }
-                                          } else {
-                                            success = await userProvider.followSinger(widget.artistId);
-                                            if (context.mounted) {
-                                              if (success) {
-                                                CustomToast.success(context, '关注成功');
-                                              } else {
-                                                CustomToast.error(context, '关注失败');
-                                              }
-                                            }
-                                          }
-                                        },
-                                        icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
-                                        label: Text(isFollowing ? '已关注' : '关注', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                        style: OutlinedButton.styleFrom(
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          side: BorderSide(color: theme.colorScheme.outlineVariant),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          minimumSize: const Size(0, 36),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      OutlinedButton.icon(
-                                        onPressed: () async {
-                                          final songs = await _songsFuture;
-                                          if (songs.isNotEmpty) {
-                                            context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                                          }
-                                        },
-                                        icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                                        label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                                        style: OutlinedButton.styleFrom(
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          minimumSize: const Size(0, 36),
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            background: Container(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (_artist != null)
+                    Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: theme.colorScheme.shadow.withAlpha(50),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
                           ),
                         ],
                       ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: FutureBuilder<Artist?>(
-                future: _detailFuture,
-                builder: (context, snapshot) {
-                  final artist = snapshot.data;
-                  final String? bio = artist?.intro;
-                  if (bio == null || bio.isEmpty) return const SizedBox.shrink();
-
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                      child: ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: _artist!.pic,
+                          width: 130,
+                          height: 130,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 130,
+                      height: 130,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(CupertinoIcons.person_fill, size: 52, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  const SizedBox(width: 32),
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          '歌手简介',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
+                          'ARTIST',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 2.0,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
-                          bio,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                            height: 1.5,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
+                          widget.artistName,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            height: 1.1,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        if (bio.length > 80)
-                          InkWell(
-                            onTap: () {
-                              CustomDialog.show(
-                                context,
-                                title: '歌手简介',
-                                content: bio,
-                                confirmText: '确定',
-                                showCancel: false,
-                                width: 600,
-                              );
-                            },
-                            hoverColor: Colors.transparent,
-                            splashColor: Colors.transparent,
-                            highlightColor: Colors.transparent,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Text(
-                                '查看详情',
+                        const SizedBox(height: 8),
+                        if (_artist != null)
+                          Row(
+                            children: [
+                              Text(
+                                '${_artist!.songCount} 首歌曲 • ${_artist!.albumCount} 张专辑 • ${_artist!.fansCount} 粉丝',
                                 style: TextStyle(
-                                  color: theme.colorScheme.primary,
-                                  fontSize: 11,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                            ),
+                              const Spacer(),
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  bool success;
+                                  if (isFollowing) {
+                                    success = await userProvider.unfollowSinger(widget.artistId);
+                                    if (mounted) {
+                                      if (success) {
+                                        CustomToast.success(context, '已取消关注');
+                                      } else {
+                                        CustomToast.error(context, '操作失败');
+                                      }
+                                    }
+                                  } else {
+                                    success = await userProvider.followSinger(widget.artistId);
+                                    if (mounted) {
+                                      if (success) {
+                                        CustomToast.success(context, '关注成功');
+                                      } else {
+                                        CustomToast.error(context, '关注失败');
+                                      }
+                                    }
+                                  }
+                                },
+                                icon: Icon(isFollowing ? CupertinoIcons.check_mark : CupertinoIcons.add, size: 16),
+                                label: Text(isFollowing ? '已关注' : '关注', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  side: BorderSide(color: theme.colorScheme.outlineVariant),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  minimumSize: const Size(0, 36),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  final songs = _songs ?? [];
+                                  if (songs.isNotEmpty) {
+                                    context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                  }
+                                },
+                                icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
+                                label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
+                                style: OutlinedButton.styleFrom(
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  minimumSize: const Size(0, 36),
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                            ],
                           ),
                       ],
                     ),
-                  );
-                },
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-                child: Text(
-                  '热门歌曲',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
                   ),
-                ),
+                ],
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        if (_artist != null && _artist!.intro.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '歌手简介',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _artist!.intro,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (_artist!.intro.length > 80)
+                    InkWell(
+                      onTap: () {
+                        CustomDialog.show(
+                          context,
+                          title: '歌手简介',
+                          content: _artist!.intro,
+                          confirmText: '确定',
+                          showCancel: false,
+                          width: 600,
+                        );
+                      },
+                      hoverColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          '查看详情',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              '热门歌曲',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

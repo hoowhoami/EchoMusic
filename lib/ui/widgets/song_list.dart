@@ -15,6 +15,9 @@ class SongList extends StatefulWidget {
   final List<Widget>? headers;
   final EdgeInsetsGeometry padding;
   final dynamic sourceId;
+  final VoidCallback? onLoadMore;
+  final bool hasMore;
+  final bool isLoadingMore;
 
   const SongList({
     super.key,
@@ -24,6 +27,9 @@ class SongList extends StatefulWidget {
     this.headers,
     this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
     this.sourceId,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.isLoadingMore = false,
   });
 
   @override
@@ -39,10 +45,30 @@ class _SongListState extends State<SongList> {
   String? _lastSearchQuery;
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (widget.isLoadingMore || !widget.hasMore) return;
+
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    final threshold = 200.0;
+
+    if (maxScroll - currentScroll <= threshold) {
+      widget.onLoadMore?.call();
+    }
   }
 
   List<Song> get _filteredSongs {
@@ -196,6 +222,14 @@ class _SongListState extends State<SongList> {
                 ),
               ),
             
+            if (widget.isLoadingMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CupertinoActivityIndicator()),
+                ),
+              ),
+
             Selector<SelectionProvider, bool>(
               selector: (_, p) => p.isSelectionMode,
               builder: (context, isMode, child) => SliverToBoxAdapter(
