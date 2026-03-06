@@ -82,6 +82,9 @@ class AudioProvider with ChangeNotifier {
   String? _preferredDeviceName;
   String? _preferredDeviceDescription;
 
+  // Flag to suppress auto-next when error is caused by device disconnection
+  bool _isDeviceDisconnecting = false;
+
   // Getters
   Song? get currentSong => _currentSong;
   List<Song> get playlist => _playlist;
@@ -291,8 +294,27 @@ class AudioProvider with ChangeNotifier {
           final d = devices.firstWhere((d) => d.name == name);
           LoggerService.i('[AudioProvider] Device connected: "${d.description}" ($name)');
         }
+
+        // 检测到设备断开，如果启用了暂停功能，则暂停播放
         for (final name in disconnected) {
           LoggerService.i('[AudioProvider] Device disconnected: "$name"');
+
+          final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+          if (!Platform.isMacOS && pauseOnChange && _player.state.playing) {
+            // 检查断开的是否是当前正在使用的设备
+            final currentDevice = _player.state.audioDevice;
+            if (currentDevice.name == name || currentDevice.name == 'auto') {
+              // auto 模式下，任何设备断开都可能影响播放
+              LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
+              _isDeviceDisconnecting = true;
+              _player.pause();
+              // 延迟重置标志，确保错误处理器能看到这个标志
+              Future.delayed(const Duration(milliseconds: 500), () {
+                _isDeviceDisconnecting = false;
+              });
+              break; // 只需要暂停一次
+            }
+          }
         }
       }
 
@@ -310,12 +332,7 @@ class AudioProvider with ChangeNotifier {
           LoggerService.i('[AudioProvider] Preferred device available, switching: "${match.description}" (${match.name})');
           _safeNotify();
         } else if (!isPreferredAvailable && isPreferredActive) {
-          // Preferred device disconnected → pause if enabled, fall back to auto.
-          final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-          if (!Platform.isMacOS && pauseOnChange && _player.state.playing) {
-            LoggerService.i('[AudioProvider] Preferred device disconnected, pausing');
-            _player.pause();
-          }
+          // Preferred device disconnected → fall back to auto.
           _userSelectedDevice = null;
           _player.setAudioDevice(AudioDevice.auto());
           LoggerService.i('[AudioProvider] Preferred device disconnected, using auto');
@@ -784,6 +801,12 @@ class AudioProvider with ChangeNotifier {
     final remaining = total.inMilliseconds - pos.inMilliseconds;
 
     LoggerService.e('[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err');
+
+    // 如果错误是由设备断开引起的，不触发自动下一首
+    if (_isDeviceDisconnecting) {
+      LoggerService.i('[AudioProvider] Error caused by device disconnection, skipping auto-next');
+      return;
+    }
 
     if (total.inMilliseconds > 0 && remaining < 2000) {
       LoggerService.i('[AudioProvider] Error occurred near end of song, treating as completed.');

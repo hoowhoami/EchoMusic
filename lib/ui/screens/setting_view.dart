@@ -289,11 +289,11 @@ class _SettingViewState extends State<SettingView> {
                 '设备断开时暂停',
                 Platform.isMacOS
                     ? '在 macOS 上由系统自动处理，此功能不适用'
-                    : '选定输出设备断开连接时自动暂停播放（仅在手动选择设备时生效）',
+                    : '检测到音频输出设备断开连接时自动暂停播放',
                 trailing: _buildSwitch(
                   context,
-                  (Platform.isMacOS || !audio.hasPreferredDevice) ? false : (settings['pauseOnDeviceChange'] ?? false),
-                  (Platform.isMacOS || !audio.hasPreferredDevice) ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
+                  Platform.isMacOS ? false : (settings['pauseOnDeviceChange'] ?? false),
+                  Platform.isMacOS ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
             ],
@@ -762,6 +762,12 @@ class _SettingViewState extends State<SettingView> {
     if (lower.startsWith('alsa/')) return 'ALSA';
     if (lower.startsWith('jack/')) return 'JACK';
     if (lower.startsWith('openal/')) return 'OpenAL';
+
+    // 兜底：按首个 / 分割，取前缀并转大写
+    final slashIndex = name.indexOf('/');
+    if (slashIndex > 0) {
+      return name.substring(0, slashIndex).toUpperCase();
+    }
     return '';
   }
 
