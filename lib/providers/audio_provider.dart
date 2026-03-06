@@ -476,6 +476,7 @@ class AudioProvider with ChangeNotifier {
       _playlist = List.from(p.playlist);
       _originalPlaylist = [];
       _currentIndex = p.currentIndex;
+      _activePlaylistFilteredInvalidSongCount = p.playlistFilteredInvalidSongCount;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
         _safeNotify();
@@ -511,10 +512,11 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _savePlaybackState() {
-    if (_persistenceProvider != null && _playlist.isNotEmpty) {
+    if (_persistenceProvider != null) {
       _persistenceProvider!.savePlaybackState(
         _playlist,
         _currentIndex,
+        filteredInvalidSongCount: _activePlaylistFilteredInvalidSongCount,
       );
     }
   }
@@ -655,6 +657,7 @@ class AudioProvider with ChangeNotifier {
     }
 
     _activePlaylistFilteredInvalidSongCount += count;
+    _savePlaybackState();
     _safeNotify();
   }
 

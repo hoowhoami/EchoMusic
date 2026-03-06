@@ -177,7 +177,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
 
               return Container(
                 width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                margin: const EdgeInsets.fromLTRB(24, 12, 24, 4),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary.withAlpha(12),
@@ -244,27 +244,24 @@ class _QueueDrawerState extends State<QueueDrawer> {
                   );
                 }
 
-                return ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    itemCount: playlist.length,
-                    itemExtent: 60,
-                    itemBuilder: (context, index) {
-                      final song = playlist[index];
-                      final isCurrent = index == currentIndex;
-                      final isPlaying = isCurrent && audioProvider.isPlaying;
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(14, 8, 18, 8),
+                  itemCount: playlist.length,
+                  itemExtent: 60,
+                  itemBuilder: (context, index) {
+                    final song = playlist[index];
+                    final isCurrent = index == currentIndex;
+                    final isPlaying = isCurrent && audioProvider.isPlaying;
 
-                      return _QueueItem(
-                        song: song,
-                        isCurrent: isCurrent,
-                        isPlaying: isPlaying,
-                        onTap: () => audioProvider.playSong(song, playlist: playlist),
-                        onRemove: () => audioProvider.removeFromPlaylist(index),
-                      );
-                    },
-                  ),
+                    return _QueueItem(
+                      song: song,
+                      isCurrent: isCurrent,
+                      isPlaying: isPlaying,
+                      onTap: () => audioProvider.playSong(song, playlist: playlist),
+                      onRemove: () => audioProvider.removeFromPlaylist(index),
+                    );
+                  },
                 );
               },
             ),
@@ -316,7 +313,7 @@ class _QueueItemState extends State<_QueueItem> {
             borderRadius: BorderRadius.circular(12),
             hoverColor: theme.colorScheme.primary.withAlpha(15),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
               child: Row(
                 children: [
                   Stack(

@@ -1,9 +1,13 @@
 import 'package:echomusic/api/music_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echomusic/models/song.dart';
+import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   Song buildSong({
     required String name,
     String hash = '',
@@ -112,5 +116,23 @@ void main() {
     expect(result.sourceCount, 2);
     expect(result.songs, hasLength(1));
     expect(result.songs.first.name, '正常歌曲');
+  });
+
+  test('PersistenceProvider persists playlist filtered invalid-song count', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    final song = buildSong(name: 'Persisted Song', hash: 'persisted-hash', mixSongId: 123);
+    final provider = PersistenceProvider();
+    await Future<void>.delayed(Duration.zero);
+
+    await provider.savePlaybackState([song], 0, filteredInvalidSongCount: 7);
+
+    final restored = PersistenceProvider();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(restored.playlist, hasLength(1));
+    expect(restored.currentIndex, 0);
+    expect(restored.playlistFilteredInvalidSongCount, 7);
+    expect(restored.playlist.first.name, 'Persisted Song');
   });
 }

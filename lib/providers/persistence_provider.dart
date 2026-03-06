@@ -12,6 +12,7 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlayerSettings = 'player_settings';
   static const String _keyPlaylist = 'current_playlist';
   static const String _keyCurrentIndex = 'current_index';
+  static const String _keyPlaylistFilteredInvalidSongCount = 'current_playlist_filtered_invalid_song_count';
 
   List<Song> _favorites = [];
   Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
@@ -19,6 +20,7 @@ class PersistenceProvider with ChangeNotifier {
   List<Song> _history = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
+  int _playlistFilteredInvalidSongCount = 0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
   Map<String, dynamic> _settings = {
@@ -52,6 +54,7 @@ class PersistenceProvider with ChangeNotifier {
   List<Song> get history => _history;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
+  int get playlistFilteredInvalidSongCount => _playlistFilteredInvalidSongCount;
   double get volume => _playerSettings['volume'] ?? 50.0;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
@@ -86,6 +89,10 @@ class PersistenceProvider with ChangeNotifier {
 
     // Load Index
     _currentIndex = prefs.getInt(_keyCurrentIndex) ?? -1;
+
+    // Load current playlist filtered invalid-song count
+    _playlistFilteredInvalidSongCount =
+        prefs.getInt(_keyPlaylistFilteredInvalidSongCount) ?? 0;
     
     // Load player settings
     final playerSettingsJson = prefs.getString(_keyPlayerSettings);
@@ -108,12 +115,18 @@ class PersistenceProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> savePlaybackState(List<Song> playlist, int index) async {
+  Future<void> savePlaybackState(
+    List<Song> playlist,
+    int index, {
+    int filteredInvalidSongCount = 0,
+  }) async {
     _playlist = playlist;
     _currentIndex = index;
+    _playlistFilteredInvalidSongCount = filteredInvalidSongCount;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_keyPlaylist, playlist.map((s) => jsonEncode(_songToMap(s))).toList());
     await prefs.setInt(_keyCurrentIndex, index);
+    await prefs.setInt(_keyPlaylistFilteredInvalidSongCount, filteredInvalidSongCount);
   }
 
   Future<void> setDevice(Map<String, dynamic> device) async {
@@ -145,6 +158,7 @@ class PersistenceProvider with ChangeNotifier {
     _history = [];
     _playlist = [];
     _currentIndex = -1;
+    _playlistFilteredInvalidSongCount = 0;
     
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
@@ -153,6 +167,7 @@ class PersistenceProvider with ChangeNotifier {
       prefs.remove(_keyHistory),
       prefs.remove(_keyPlaylist),
       prefs.remove(_keyCurrentIndex),
+      prefs.remove(_keyPlaylistFilteredInvalidSongCount),
     ]);
     
     notifyListeners();
@@ -167,6 +182,7 @@ class PersistenceProvider with ChangeNotifier {
     _history = [];
     _playlist = [];
     _currentIndex = -1;
+    _playlistFilteredInvalidSongCount = 0;
     _device = null;
     _userInfo = null;
     _settings = {
