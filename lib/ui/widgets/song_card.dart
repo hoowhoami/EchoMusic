@@ -41,7 +41,19 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
 
-  Future<void> _showContextMenu(BuildContext context, [Offset? tapPosition]) async {
+  void _showUnavailableToast(BuildContext context) {
+    CustomToast.error(context, '该歌曲暂无可用音源');
+  }
+
+  void _showActionToast({required bool success, required String successMessage, required String failureMessage}) {
+    if (success) {
+      CustomToast.success(context, successMessage);
+    } else {
+      CustomToast.error(context, failureMessage);
+    }
+  }
+
+  Future<void> _showContextMenu([Offset? tapPosition]) async {
     final userProvider = context.read<UserProvider>();
     final theme = Theme.of(context);
 
@@ -132,13 +144,8 @@ class _SongCardState extends State<SongCard> {
                 Navigator.of(context).pop();
                 
                 final success = await userProvider.addSongToPlaylist(listId, widget.song);
-                if (context.mounted) {
-                  if (success) {
-                    CustomToast.success(context, '已添加到歌单');
-                  } else {
-                    CustomToast.error(context, '添加失败');
-                  }
-                }
+                if (!mounted) return;
+                _showActionToast(success: success, successMessage: '已添加到歌单', failureMessage: '添加失败');
               },
               onCanceled: () {
                 Navigator.of(context).pop();
@@ -201,9 +208,11 @@ class _SongCardState extends State<SongCard> {
     if (value == null || !mounted) return;
 
     if (value == 'play') {
-      if (context.mounted) {
-        context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
+      if (!widget.song.isPlayable) {
+        _showUnavailableToast(context);
+        return;
       }
+      context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
     } else if (value == 'songDetails') {
       context.read<NavigationProvider>().push(
         SongDetailView(song: widget.song),
@@ -220,7 +229,7 @@ class _SongCardState extends State<SongCard> {
       if (mounted) {
         final artistId = widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0;
         if (artistId == 0) {
-          if (context.mounted) CustomToast.error(context, '暂无歌手信息');
+          CustomToast.error(context, '暂无歌手信息');
           return;
         }
         context.read<NavigationProvider>().push(
@@ -247,13 +256,8 @@ class _SongCardState extends State<SongCard> {
     } else if (value == 'removeFromPlaylist') {
       if (widget.parentPlaylist != null) {
         final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
-        if (mounted) {
-          if (success) {
-            CustomToast.success(this.context, '已从歌单删除');
-          } else {
-            CustomToast.error(this.context, '删除失败');
-          }
-        }
+        if (!mounted) return;
+        _showActionToast(success: success, successMessage: '已从歌单删除', failureMessage: '删除失败');
       }
     }
   }
@@ -281,16 +285,20 @@ class _SongCardState extends State<SongCard> {
             builder: (context, playbackState, child) {
               final isCurrent = playbackState.isCurrent;
               final isPlaying = isCurrent && playbackState.isPlaying;
+              final isPlayable = widget.song.isPlayable;
+              final contentOpacity = isPlayable ? 1.0 : 0.45;
 
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
                 builder: (context, isFavorite, child) {
                   return GestureDetector(
-                    onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
+                    onSecondaryTapDown: (details) => _showContextMenu(details.globalPosition),
                     child: InkWell(
                       onTap: () {
                         if (isSelectionMode) {
                           context.read<SelectionProvider>().toggleSelection(widget.song.hash);
+                        } else if (!isPlayable) {
+                          _showUnavailableToast(context);
                         } else {
                           context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
                         }
@@ -323,7 +331,10 @@ class _SongCardState extends State<SongCard> {
                                   ),
                                 ),
                               if (widget.showCover)
-                                _buildCover(context, isCurrent, isPlaying, primaryColor),
+                                Opacity(
+                                  opacity: contentOpacity,
+                                  child: _buildCover(context, isCurrent, isPlaying, primaryColor),
+                                ),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: Column(
@@ -338,7 +349,9 @@ class _SongCardState extends State<SongCard> {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: isCurrent ? primaryColor : theme.colorScheme.onSurface,
+                                              color: isCurrent
+                                                  ? primaryColor.withAlpha(isPlayable ? 255 : 170)
+                                                  : theme.colorScheme.onSurface.withAlpha(isPlayable ? 255 : 140),
                                               fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
                                               fontSize: 15,
                                               letterSpacing: -0.3,
@@ -348,8 +361,10 @@ class _SongCardState extends State<SongCard> {
                                         if (isFavorite)
                                           Padding(
                                             padding: const EdgeInsets.only(left: 6),
-                                            child: Icon(CupertinoIcons.heart_fill, size: 14, color: Colors.redAccent.withAlpha(200)),
+                                            child: Icon(CupertinoIcons.heart_fill, size: 14, color: Colors.redAccent.withAlpha(isPlayable ? 200 : 120)),
                                           ),
+                                        if (!isPlayable)
+                                          _buildTag(context, '无音源', theme.colorScheme.outline),
                                         if (widget.song.isPaid)
                                           _buildTag(context, '付费', const Color(0xFF8B5CF6))
                                         else if (widget.song.isVip)
@@ -364,7 +379,7 @@ class _SongCardState extends State<SongCard> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        color: theme.colorScheme.onSurfaceVariant,
+                                        color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -381,7 +396,7 @@ class _SongCardState extends State<SongCard> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant, 
+                                      color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140), 
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -391,7 +406,7 @@ class _SongCardState extends State<SongCard> {
                                 Text(
                                   _formatDuration(widget.song.duration),
                                   style: TextStyle(
-                                    color: theme.colorScheme.onSurfaceVariant.withAlpha(150), 
+                                    color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 150 : 100), 
                                     fontSize: 13,
                                     fontFamily: 'monospace',
                                     fontWeight: FontWeight.w500,
@@ -402,8 +417,8 @@ class _SongCardState extends State<SongCard> {
                               Builder(
                                 builder: (buttonContext) => IconButton(
                                   icon: const Icon(CupertinoIcons.ellipsis, size: 20),
-                                  onPressed: () => _showContextMenu(buttonContext),
-                                  color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                                  onPressed: _showContextMenu,
+                                  color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 180 : 120),
                                   splashRadius: 24,
                                 ),
                               ),

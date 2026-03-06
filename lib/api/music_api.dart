@@ -7,6 +7,18 @@ import '../models/playlist.dart';
 import '../utils/logger.dart';
 import '../utils/server_orchestrator.dart';
 
+class PlaylistSongsParseResult {
+  final List<Song> songs;
+  final int filteredCount;
+
+  const PlaylistSongsParseResult({
+    required this.songs,
+    this.filteredCount = 0,
+  });
+
+  int get sourceCount => songs.length + filteredCount;
+}
+
 class MusicApi {
   static VoidCallback? onAuthExpired;
   static bool _isAuthExpiredNotified = false;
@@ -503,14 +515,56 @@ class MusicApi {
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
 
       final responseData = await getPlaylistTrackAll(queryId, page: page, pagesize: pagesize);
-      return parseSongsFromResponse(responseData);
+      return parsePlaylistSongsFromResponse(responseData).songs;
     } catch (e) {
       LoggerService.e('getPlaylistSongs error: $e');
       return [];
     }
   }
 
+  static Future<PlaylistSongsParseResult> getPlaylistSongsWithMetadata(
+    dynamic id, {
+    int? listid,
+    String? listCreateGid,
+    int? listCreateUserid,
+    int page = 1,
+    int pagesize = 200,
+  }) async {
+    try {
+      String queryId = id?.toString() ?? '';
+
+      if (listid != null && listid != 0) {
+        final prefs = await SharedPreferences.getInstance();
+        final userInfoJson = prefs.getString('user_info');
+        int? currentUserId;
+        if (userInfoJson != null) {
+          currentUserId = jsonDecode(userInfoJson)['userid'];
+        }
+
+        if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
+          if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
+            queryId = listCreateGid;
+          }
+        }
+      }
+
+      if (queryId.isEmpty || queryId == '0' || queryId == 'null') {
+        return const PlaylistSongsParseResult(songs: []);
+      }
+
+      final responseData = await getPlaylistTrackAll(queryId, page: page, pagesize: pagesize);
+      return parsePlaylistSongsFromResponse(responseData);
+    } catch (e) {
+      LoggerService.e('getPlaylistSongsWithMetadata error: $e');
+      return const PlaylistSongsParseResult(songs: []);
+    }
+  }
+
   static List<Song> parseSongsFromResponse(Map<String, dynamic> responseData) {
+    return parsePlaylistSongsFromResponse(responseData).songs;
+  }
+
+  static PlaylistSongsParseResult parsePlaylistSongsFromResponse(Map<String, dynamic> responseData) {
     final data = responseData['data'] ?? responseData;
     List? list;
     
@@ -527,12 +581,30 @@ class MusicApi {
     }
     
     final List songsData = list ?? [];
-    
-    return songsData
-        .whereType<Map<String, dynamic>>()
-        .map((json) => Song.fromPlaylistJson(json))
-        .where((song) => song.hash.isNotEmpty)
-        .toList();
+
+    final songs = <Song>[];
+    var filteredCount = 0;
+    for (final rawSong in songsData.whereType<Map<String, dynamic>>()) {
+      final song = Song.fromPlaylistJson(rawSong);
+
+      if (_isMeaninglessHashlessSong(song)) {
+        filteredCount++;
+        continue;
+      }
+
+      songs.add(song);
+    }
+
+    return PlaylistSongsParseResult(songs: songs, filteredCount: filteredCount);
+  }
+
+  static bool _isMeaninglessHashlessSong(Song song) {
+    return song.hash.isEmpty &&
+        song.name.trim().isEmpty &&
+        song.singers.isEmpty &&
+        song.albumName.trim().isEmpty &&
+        song.cover.trim().isEmpty &&
+        song.mixSongId == 0;
   }
 
   static Future<Map<String, dynamic>?> searchLyric(String hash) async {

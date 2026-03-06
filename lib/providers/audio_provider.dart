@@ -93,6 +93,7 @@ class AudioProvider with ChangeNotifier {
 
   // Monotonic token for the currently active playlist-loading session.
   int _playlistSessionId = 0;
+  int _activePlaylistFilteredInvalidSongCount = 0;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -108,6 +109,7 @@ class AudioProvider with ChangeNotifier {
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   int get playlistSessionId => _playlistSessionId;
+  int get activePlaylistFilteredInvalidSongCount => _activePlaylistFilteredInvalidSongCount;
   // The device the user explicitly chose; null means 'auto'.
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
   // Display label of the persisted preferred device (for UI when device is unavailable).
@@ -645,6 +647,17 @@ class AudioProvider with ChangeNotifier {
     return true;
   }
 
+  void addFilteredInvalidSongsToActivePlaylist(int count, {required int sessionId}) {
+    if (_isDisposed || count <= 0) return;
+    if (sessionId != _playlistSessionId) {
+      LoggerService.d('[AudioProvider] Ignoring stale filtered-count update for session=$sessionId, active=$_playlistSessionId');
+      return;
+    }
+
+    _activePlaylistFilteredInvalidSongCount += count;
+    _safeNotify();
+  }
+
   /// Called by the UI when the user starts dragging the progress bar.
   void notifyDragStart() {
     _isDragging = true;
@@ -790,8 +803,82 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
+  int _indexOfSongInList(List<Song> songs, Song song) {
+    return songs.indexWhere(
+      (candidate) => identical(candidate, song) || candidate.isSameSong(song),
+    );
+  }
+
+  int _findPlayableIndex({
+    required List<Song> songs,
+    required int startIndex,
+    required bool forward,
+    bool inclusive = true,
+  }) {
+    if (songs.isEmpty) return -1;
+
+    final normalizedStart = startIndex >= 0 ? startIndex % songs.length : 0;
+    for (var step = 0; step < songs.length; step++) {
+      final offset = inclusive ? step : step + 1;
+      final index = forward
+          ? (normalizedStart + offset) % songs.length
+          : (normalizedStart - offset + songs.length) % songs.length;
+      if (songs[index].isPlayable) return index;
+    }
+
+    return -1;
+  }
+
+  Song? _resolvePlayableSongForRequest(Song requestedSong, {List<Song>? playlist}) {
+    if (requestedSong.isPlayable) return requestedSong;
+
+    final sourcePlaylist = playlist ?? _playlist;
+    if (sourcePlaylist.isEmpty) return null;
+
+    final requestedIndex = _indexOfSongInList(sourcePlaylist, requestedSong);
+    final playableIndex = _findPlayableIndex(
+      songs: sourcePlaylist,
+      startIndex: requestedIndex == -1 ? 0 : requestedIndex,
+      forward: true,
+      inclusive: requestedIndex == -1,
+    );
+
+    if (playableIndex == -1) return null;
+    return sourcePlaylist[playableIndex];
+  }
+
+  int _findAdjacentPlayableIndex({required bool forward}) {
+    if (_playlist.isEmpty) return -1;
+
+    final hasCurrent = _currentIndex >= 0 && _currentIndex < _playlist.length;
+    return _findPlayableIndex(
+      songs: _playlist,
+      startIndex: hasCurrent ? _currentIndex : 0,
+      forward: forward,
+      inclusive: !hasCurrent,
+    );
+  }
+
+  void _playPlaylistIndex(int index) {
+    if (index < 0 || index >= _playlist.length) return;
+    _currentIndex = index;
+    unawaited(playSong(_playlist[_currentIndex]));
+  }
+
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
+
+    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: playlist);
+    if (resolvedSong == null) {
+      LoggerService.w('[AudioProvider] No playable song found for request: ${song.name}');
+      return;
+    }
+
+    if (!identical(resolvedSong, song) && !resolvedSong.isSameSong(song)) {
+      LoggerService.i('[AudioProvider] Requested song is not playable, skipping to: ${resolvedSong.name}');
+    }
+
+    song = resolvedSong;
 
     LoggerService.i('[AudioProvider] Playing: ${song.name} - ${song.singerName} (${song.hash})');
 
@@ -804,17 +891,18 @@ class AudioProvider with ChangeNotifier {
 
     if (playlist != null) {
       _playlistSessionId++;
+      _activePlaylistFilteredInvalidSongCount = 0;
       LoggerService.d('[AudioProvider] Updating playlist, size: ${playlist.length}');
       _playlist = List.from(playlist);
       _originalPlaylist = [];
       if (_playMode == 'shuffle') {
         _originalPlaylist = List.from(playlist);
         _playlist.shuffle();
-        _playlist.removeWhere((s) => s.isSameSong(song));
+        _playlist.removeWhere((s) => identical(s, song) || s.isSameSong(song));
         _playlist.insert(0, song);
       }
     }
-    _currentIndex = _playlist.indexWhere((s) => s.isSameSong(song));
+    _currentIndex = _indexOfSongInList(_playlist, song);
     _currentSong = song;
     _climaxMarks = {};
     _safeNotify();
@@ -1112,6 +1200,7 @@ class AudioProvider with ChangeNotifier {
 
   void reset() {
     _playlistSessionId++;
+    _activePlaylistFilteredInvalidSongCount = 0;
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _clearDeviceRecoveryState();
@@ -1138,15 +1227,19 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
+    final nextIndex = _findAdjacentPlayableIndex(forward: true);
+    if (nextIndex == -1) {
+      LoggerService.w('[AudioProvider] No playable song available when skipping to next');
+      return;
+    }
+
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
-        _currentIndex = (_currentIndex + 1) % _playlist.length;
-        playSong(_playlist[_currentIndex]);
+        _playPlaylistIndex(nextIndex);
       });
     } else {
-      _currentIndex = (_currentIndex + 1) % _playlist.length;
-      playSong(_playlist[_currentIndex]);
+      _playPlaylistIndex(nextIndex);
     }
   }
 
@@ -1156,20 +1249,25 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
+    final previousIndex = _findAdjacentPlayableIndex(forward: false);
+    if (previousIndex == -1) {
+      LoggerService.w('[AudioProvider] No playable song available when skipping to previous');
+      return;
+    }
+
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
-        _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
-        playSong(_playlist[_currentIndex]);
+        _playPlaylistIndex(previousIndex);
       });
     } else {
-      _currentIndex = (_currentIndex - 1 + _playlist.length) % _playlist.length;
-      playSong(_playlist[_currentIndex]);
+      _playPlaylistIndex(previousIndex);
     }
   }
 
   void clearPlaylist() {
     _playlistSessionId++;
+    _activePlaylistFilteredInvalidSongCount = 0;
     _clearDeviceRecoveryState();
     _playlist = [];
     _originalPlaylist = [];

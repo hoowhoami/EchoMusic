@@ -10,11 +10,11 @@ class SelectionProvider with ChangeNotifier {
 
   Set<String> get selectedHashes => _selectedHashes;
   List<Song> get selectedSongs {
-    return _currentSongList.where((s) => _selectedHashes.contains(s.hash)).toList();
+    return _currentSongList.where((s) => s.hash.isNotEmpty && _selectedHashes.contains(s.hash)).toList();
   }
   List<Song> get currentSongList => _currentSongList;
   bool get isSelectionMode => _isSelectionMode;
-  int get selectedCount => _selectedHashes.length;
+  int get selectedCount => selectedSongs.length;
   bool get hasSelection => _selectedHashes.isNotEmpty;
   dynamic get sourcePlaylistId => _sourcePlaylistId;
 
@@ -36,6 +36,8 @@ class SelectionProvider with ChangeNotifier {
   }
 
   void toggleSelection(String hash) {
+    if (hash.isEmpty) return;
+
     if (_selectedHashes.contains(hash)) {
       _selectedHashes.remove(hash);
     } else {
@@ -47,7 +49,9 @@ class SelectionProvider with ChangeNotifier {
   void selectAll() {
     _selectedHashes.clear();
     for (final song in _currentSongList) {
-      _selectedHashes.add(song.hash);
+      if (song.hash.isNotEmpty) {
+        _selectedHashes.add(song.hash);
+      }
     }
     notifyListeners();
   }
@@ -66,15 +70,15 @@ class SelectionProvider with ChangeNotifier {
   }
 
   bool isSelected(String hash) {
-    return _selectedHashes.contains(hash);
+    return hash.isNotEmpty && _selectedHashes.contains(hash);
   }
 
   // Batch operations
   Future<bool> addAllToPlaylist(int listId) async {
-    if (_selectedHashes.isEmpty) return false;
+    final hashes = selectedSongs.map((song) => song.hash).where((hash) => hash.isNotEmpty).join(',');
+    if (hashes.isEmpty) return false;
 
-    final data = _selectedHashes.join(',');
-    final success = await MusicApi.addPlaylistTrack(listId, data);
+    final success = await MusicApi.addPlaylistTrack(listId, hashes);
     if (success) {
       exitSelectionMode();
     }
@@ -82,9 +86,12 @@ class SelectionProvider with ChangeNotifier {
   }
 
   Future<bool> deleteAllFromPlaylist(int listId) async {
-    if (_selectedHashes.isEmpty) return false;
+    final fileids = selectedSongs
+        .map((song) => song.fileId?.toString() ?? song.hash)
+        .where((value) => value.isNotEmpty)
+        .join(',');
+    if (fileids.isEmpty) return false;
 
-    final fileids = _selectedHashes.join(',');
     final success = await MusicApi.deletePlaylistTrack(listId, fileids);
     if (success) {
       exitSelectionMode();

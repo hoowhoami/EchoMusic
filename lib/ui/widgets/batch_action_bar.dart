@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../../models/song.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/audio_provider.dart';
@@ -230,10 +231,19 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
 
   void _playSelected(BuildContext context, SelectionProvider selectionProvider) {
     selectionProvider.exitSelectionMode();
-    final songs = selectionProvider.selectedSongs;
-    if (songs.isNotEmpty) {
-      context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+    _playSongs(context, selectionProvider.selectedSongs);
+  }
+
+  void _playSongs(BuildContext context, List<Song> songs) {
+    if (songs.isEmpty) return;
+
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '所选歌曲暂无可用音源');
+      return;
     }
+
+    context.read<AudioProvider>().playSong(songs[firstPlayableIndex], playlist: songs);
   }
 
   void _showBatchActions(BuildContext context, SelectionProvider selectionProvider) {
@@ -402,10 +412,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                   onTap: () {
                                     Navigator.pop(context);
                                     selectionProvider.exitSelectionMode();
-                                    final songs = selectionProvider.selectedSongs;
-                                    if (songs.isNotEmpty) {
-                                      context.read<AudioProvider>().playSong(songs.first, playlist: songs);
-                                    }
+                                    _playSongs(context, selectionProvider.selectedSongs);
                                   },
                                 ),
                                 if (isAuthenticated)

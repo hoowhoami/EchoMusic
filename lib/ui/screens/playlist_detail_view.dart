@@ -30,8 +30,24 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   bool _isLoading = true;
   late UserProvider _userProvider;
   int _currentPage = 1;
+  int _loadedSongEntryCount = 0;
+  int _filteredInvalidSongCount = 0;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+
+  int get _totalSongCount {
+    final detailedCount = _detailedPlaylist?.count ?? 0;
+    if (detailedCount > 0) return detailedCount;
+    final playlistCount = widget.playlist.count;
+    if (playlistCount > 0) return playlistCount;
+    return 0;
+  }
+
+  bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
+    final totalSongCount = _totalSongCount;
+    if (totalSongCount > 0) return loadedCount < totalSongCount;
+    return lastPageCount >= _pageSize;
+  }
 
   @override
   void initState() {
@@ -57,6 +73,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     setState(() {
       _isLoading = true;
       _currentPage = 1;
+      _loadedSongEntryCount = 0;
+      _filteredInvalidSongCount = 0;
       _hasMore = true;
     });
 
@@ -71,19 +89,25 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       });
     }
 
-    final songs = await _fetchSongsPage(1);
+    final result = await _fetchSongsPage(1);
+    final songs = result.songs;
 
     if (mounted) {
       setState(() {
         _songs = songs;
         _isLoading = false;
-        _hasMore = songs.length >= _pageSize;
+        _loadedSongEntryCount = result.sourceCount;
+        _filteredInvalidSongCount = result.filteredCount;
+        _hasMore = _computeHasMore(
+          loadedCount: _loadedSongEntryCount,
+          lastPageCount: result.sourceCount,
+        );
       });
     }
   }
 
-  Future<List<Song>> _fetchSongsPage(int page) {
-    return MusicApi.getPlaylistSongs(
+  Future<PlaylistSongsParseResult> _fetchSongsPage(int page) {
+    return MusicApi.getPlaylistSongsWithMetadata(
       widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),
       listid: widget.playlist.listid,
       listCreateGid: widget.playlist.listCreateGid,
@@ -99,14 +123,21 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     setState(() => _isLoadingMore = true);
 
     final nextPage = _currentPage + 1;
-    final moreSongs = await _fetchSongsPage(nextPage);
+    final result = await _fetchSongsPage(nextPage);
+    final moreSongs = result.songs;
+    final pageEntryCount = result.sourceCount;
 
     if (mounted) {
       setState(() {
-        if (moreSongs.isNotEmpty) {
+        if (pageEntryCount > 0) {
           _songs = [...?_songs, ...moreSongs];
           _currentPage = nextPage;
-          _hasMore = moreSongs.length >= _pageSize;
+          _loadedSongEntryCount += pageEntryCount;
+          _filteredInvalidSongCount += result.filteredCount;
+          _hasMore = _computeHasMore(
+            loadedCount: _loadedSongEntryCount,
+            lastPageCount: pageEntryCount,
+          );
         } else {
           _hasMore = false;
         }
@@ -123,13 +154,23 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     if (!_hasMore) return;
 
     var page = startPage;
+    var loadedCount = _loadedSongEntryCount;
     while (audioProvider.playlistSessionId == sessionId) {
-      final moreSongs = await _fetchSongsPage(page);
-      if (moreSongs.isEmpty) return;
-      if (!audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
+      final result = await _fetchSongsPage(page);
+      final moreSongs = result.songs;
+      final pageEntryCount = result.sourceCount;
+      if (pageEntryCount == 0) return;
+      if (result.filteredCount > 0) {
+        audioProvider.addFilteredInvalidSongsToActivePlaylist(result.filteredCount, sessionId: sessionId);
+      }
+      if (moreSongs.isNotEmpty &&
+          !audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
         return;
       }
-      if (moreSongs.length < _pageSize) return;
+      loadedCount += pageEntryCount;
+      if (!_computeHasMore(loadedCount: loadedCount, lastPageCount: pageEntryCount)) {
+        return;
+      }
       page++;
     }
   }
@@ -379,9 +420,20 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                               onPressed: () {
                                 final songs = _songs ?? [];
                                 if (songs.isNotEmpty) {
+                                  final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+                                  if (firstPlayableIndex == -1) {
+                                    CustomToast.error(context, '当前列表暂无可播放歌曲');
+                                    return;
+                                  }
                                   final audioProvider = context.read<AudioProvider>();
-                                  unawaited(audioProvider.playSong(songs.first, playlist: songs));
+                                  unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
                                   final sessionId = audioProvider.playlistSessionId;
+                                  if (_filteredInvalidSongCount > 0) {
+                                    audioProvider.addFilteredInvalidSongsToActivePlaylist(
+                                      _filteredInvalidSongCount,
+                                      sessionId: sessionId,
+                                    );
+                                  }
                                   unawaited(_preloadRemainingSongsForPlayback(
                                     audioProvider,
                                     sessionId: sessionId,

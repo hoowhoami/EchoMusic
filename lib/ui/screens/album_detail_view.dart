@@ -34,6 +34,14 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
   bool _hasMore = true;
   bool _isLoadingMore = false;
 
+  int get _totalSongCount => _album?.songCount ?? 0;
+
+  bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
+    final totalSongCount = _totalSongCount;
+    if (totalSongCount > 0) return loadedCount < totalSongCount;
+    return lastPageCount >= _pageSize;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -67,7 +75,8 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         final songs = results[1] as List<Song>?;
         _songs = songs;
         _isLoading = false;
-        _hasMore = (songs?.length ?? 0) >= _pageSize;
+        final loadedCount = songs?.length ?? 0;
+        _hasMore = _computeHasMore(loadedCount: loadedCount, lastPageCount: loadedCount);
       });
     }
   }
@@ -89,7 +98,10 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         if (moreSongs.isNotEmpty) {
           _songs = [...?_songs, ...moreSongs];
           _currentPage = nextPage;
-          _hasMore = moreSongs.length >= _pageSize;
+          _hasMore = _computeHasMore(
+            loadedCount: _songs?.length ?? 0,
+            lastPageCount: moreSongs.length,
+          );
         } else {
           _hasMore = false;
         }
@@ -106,13 +118,17 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
     if (!_hasMore) return;
 
     var page = startPage;
+    var loadedCount = _songs?.length ?? 0;
     while (audioProvider.playlistSessionId == sessionId) {
       final moreSongs = await _fetchSongsPage(page);
       if (moreSongs.isEmpty) return;
       if (!audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
         return;
       }
-      if (moreSongs.length < _pageSize) return;
+      loadedCount += moreSongs.length;
+      if (!_computeHasMore(loadedCount: loadedCount, lastPageCount: moreSongs.length)) {
+        return;
+      }
       page++;
     }
   }
@@ -311,8 +327,13 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                     onPressed: () {
                                       final songs = _songs ?? [];
                                       if (songs.isNotEmpty) {
+                                        final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+                                        if (firstPlayableIndex == -1) {
+                                          CustomToast.error(context, '当前专辑暂无可播放歌曲');
+                                          return;
+                                        }
                                         final audioProvider = context.read<AudioProvider>();
-                                        unawaited(audioProvider.playSong(songs.first, playlist: songs));
+                                        unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
                                         final sessionId = audioProvider.playlistSessionId;
                                         unawaited(_preloadRemainingSongsForPlayback(
                                           audioProvider,

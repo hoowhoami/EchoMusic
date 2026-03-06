@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
+import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
 import 'cover_image.dart';
 import 'custom_dialog.dart';
+import 'custom_toast.dart';
 
 class QueueDrawer extends StatefulWidget {
   const QueueDrawer({super.key});
@@ -168,6 +170,46 @@ class _QueueDrawerState extends State<QueueDrawer> {
 
           const Divider(height: 1, indent: 24, endIndent: 24),
 
+          Selector<AudioProvider, int>(
+            selector: (_, audio) => audio.activePlaylistFilteredInvalidSongCount,
+            builder: (context, filteredCount, child) {
+              if (filteredCount <= 0) return const SizedBox.shrink();
+
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: theme.colorScheme.primary.withAlpha(35)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      CupertinoIcons.info_circle,
+                      size: 16,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '当前播放列表已过滤 $filteredCount 条无效歌曲数据',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurface,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+
           // Queue List
           Flexible(
             child: Consumer<AudioProvider>(
@@ -235,7 +277,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
 }
 
 class _QueueItem extends StatefulWidget {
-  final dynamic song;
+  final Song song;
   final bool isCurrent;
   final bool isPlaying;
   final VoidCallback onTap;
@@ -259,8 +301,10 @@ class _QueueItemState extends State<_QueueItem> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isPlayable = widget.song.isPlayable;
 
     return MouseRegion(
+      cursor: isPlayable ? SystemMouseCursors.click : SystemMouseCursors.forbidden,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: Container(
@@ -268,7 +312,7 @@ class _QueueItemState extends State<_QueueItem> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: widget.onTap,
+            onTap: isPlayable ? widget.onTap : () => CustomToast.error(context, '该歌曲暂无可用音源'),
             borderRadius: BorderRadius.circular(12),
             hoverColor: theme.colorScheme.primary.withAlpha(15),
             child: Padding(
@@ -285,6 +329,15 @@ class _QueueItemState extends State<_QueueItem> {
                         showShadow: false,
                         size: 100,
                       ),
+                      if (!isPlayable)
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface.withAlpha(120),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
                       if (widget.isCurrent)
                         Container(
                           width: 44,
@@ -314,18 +367,19 @@ class _QueueItemState extends State<_QueueItem> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: widget.isCurrent ? FontWeight.w800 : FontWeight.w700,
-                            color: widget.isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurface,
+                            color: (widget.isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurface)
+                                .withAlpha(isPlayable ? 255 : 140),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          widget.song.singerName,
+                          isPlayable ? widget.song.singerName : '${widget.song.singerName} · 无音源',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -341,7 +395,7 @@ class _QueueItemState extends State<_QueueItem> {
                       constraints: const BoxConstraints(),
                       splashRadius: 20,
                       hoverColor: theme.colorScheme.error.withAlpha(20),
-                      color: theme.colorScheme.onSurface.withAlpha(80),
+                      color: theme.colorScheme.onSurface.withAlpha(isPlayable ? 80 : 60),
                     ),
                 ],
               ),

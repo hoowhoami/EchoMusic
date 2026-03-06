@@ -74,28 +74,70 @@ class Song {
       return int.tryParse(value.toString()) ?? 0;
     }
 
+    String rawName = (json['songname'] ??
+            json['filename'] ??
+            json['name'] ??
+            json['audio_name'] ??
+            audioInfo['songname'] ??
+            audioInfo['filename'] ??
+            audioInfo['name'] ??
+            '')
+        .toString();
+    String singerName = (json['author_name'] ??
+            json['singername'] ??
+            json['singer'] ??
+            audioInfo['author_name'] ??
+            audioInfo['singername'] ??
+            '')
+        .toString();
+
+    if (singerName.isEmpty && rawName.contains(' - ')) {
+      singerName = rawName.split(' - ')[0];
+    }
+
+    String title = _processName(rawName);
+    final extensions = ['.mp3', '.flac', '.wav', '.aac', '.m4a', '.ape'];
+    for (final ext in extensions) {
+      if (title.toLowerCase().endsWith(ext)) {
+        title = title.substring(0, title.length - ext.length);
+      }
+      if (singerName.toLowerCase().endsWith(ext)) {
+        singerName = singerName.substring(0, singerName.length - ext.length);
+      }
+    }
+
     var singersList = json['singerinfo'] as List? ?? json['authors'] as List? ?? [];
     List<SingerInfo> singers = singersList.map((i) => SingerInfo.fromJson(i)).toList();
-    if (singers.isEmpty && json['author_name'] != null) {
-      singers = [SingerInfo(id: 0, name: json['author_name'].toString())];
+    if (singers.isEmpty && singerName.isNotEmpty) {
+      singers = [SingerInfo(id: 0, name: singerName)];
     }
-    
+
     final albumInfo = json['albuminfo'] ?? json['album_info'] ?? {};
-    String cover = json['cover'] ?? albumInfo['cover'] ?? albumInfo['sizable_cover'] ?? '';
+    final transParam = json['trans_param'] ?? {};
+    String cover = (json['cover'] ??
+            json['pic'] ??
+            json['img'] ??
+            json['album_sizable_cover'] ??
+            audioInfo['img'] ??
+            transParam['union_cover'] ??
+            albumInfo['cover'] ??
+            albumInfo['sizable_cover'] ??
+            '')
+        .toString();
     cover = cover.replaceAll('{size}', '400');
 
     int duration = parseInt(json['timelen'] ?? audioInfo['duration_128'] ?? audioInfo['duration'] ?? 0);
 
     return Song(
       hash: hash,
-      name: _processName((json['name'] ?? json['songname'] ?? '').toString()),
-      albumName: (albumInfo['name'] ?? albumInfo['album_name'] ?? '').toString(),
-      albumId: (albumInfo['id'] ?? json['album_id'])?.toString(),
+      name: title,
+      albumName: (json['albumname'] ?? json['album_name'] ?? albumInfo['name'] ?? albumInfo['album_name'] ?? '').toString(),
+      albumId: (albumInfo['id'] ?? albumInfo['album_id'] ?? json['album_id'] ?? json['albumid'])?.toString(),
       singers: singers,
       duration: duration ~/ 1000,
       cover: cover,
       mvHash: (json['mvhash'] ?? json['video_hash'])?.toString(),
-      mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? 0),
+      mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? audioInfo['audio_id'] ?? 0),
       fileId: json['fileid'] != null ? parseInt(json['fileid']) : null,
       privilege: parseInt(json['privilege'] ?? 0),
       relateGoods: (json['relate_goods'] as List?)?.cast<Map<String, dynamic>>(),
@@ -305,6 +347,8 @@ class Song {
   bool get isUnavailable => privilege == 0 || privilege == 40;
 
   bool get canPlay => !isUnavailable;
+
+  bool get isPlayable => hash.isNotEmpty;
 
   String get privilegeLabel {
     if (isUnavailable) return '不可用';
