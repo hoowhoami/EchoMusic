@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
@@ -23,6 +25,8 @@ class ArtistDetailView extends StatefulWidget {
 }
 
 class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
+  static const int _pageSize = 200;
+
   Artist? _artist;
   List<Song>? _songs;
   bool _isLoading = true;
@@ -51,7 +55,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
 
     final results = await Future.wait([
       MusicApi.getSingerDetail(widget.artistId),
-      MusicApi.getSingerSongs(widget.artistId, page: 1, pagesize: 200),
+      _fetchSongsPage(1),
     ]);
 
     if (mounted) {
@@ -63,9 +67,13 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
         final songs = results[1] as List<Song>?;
         _songs = songs;
         _isLoading = false;
-        _hasMore = (songs?.length ?? 0) >= 200;
+        _hasMore = (songs?.length ?? 0) >= _pageSize;
       });
     }
+  }
+
+  Future<List<Song>> _fetchSongsPage(int page) {
+    return MusicApi.getSingerSongs(widget.artistId, page: page, pagesize: _pageSize);
   }
 
   Future<void> _loadMore() async {
@@ -74,23 +82,38 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
     setState(() => _isLoadingMore = true);
 
     final nextPage = _currentPage + 1;
-    final moreSongs = await MusicApi.getSingerSongs(
-      widget.artistId,
-      page: nextPage,
-      pagesize: 200,
-    );
+    final moreSongs = await _fetchSongsPage(nextPage);
 
     if (mounted) {
       setState(() {
         if (moreSongs.isNotEmpty) {
           _songs = [...?_songs, ...moreSongs];
           _currentPage = nextPage;
-          _hasMore = moreSongs.length >= 200;
+          _hasMore = moreSongs.length >= _pageSize;
         } else {
           _hasMore = false;
         }
         _isLoadingMore = false;
       });
+    }
+  }
+
+  Future<void> _preloadRemainingSongsForPlayback(
+    AudioProvider audioProvider, {
+    required int sessionId,
+    required int startPage,
+  }) async {
+    if (!_hasMore) return;
+
+    var page = startPage;
+    while (audioProvider.playlistSessionId == sessionId) {
+      final moreSongs = await _fetchSongsPage(page);
+      if (moreSongs.isEmpty) return;
+      if (!audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
+        return;
+      }
+      if (moreSongs.length < _pageSize) return;
+      page++;
     }
   }
 
@@ -237,21 +260,19 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                                   bool success;
                                   if (isFollowing) {
                                     success = await userProvider.unfollowSinger(widget.artistId);
-                                    if (mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '已取消关注');
-                                      } else {
-                                        CustomToast.error(context, '操作失败');
-                                      }
+                                    if (!context.mounted) return;
+                                    if (success) {
+                                      CustomToast.success(context, '已取消关注');
+                                    } else {
+                                      CustomToast.error(context, '操作失败');
                                     }
                                   } else {
                                     success = await userProvider.followSinger(widget.artistId);
-                                    if (mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '关注成功');
-                                      } else {
-                                        CustomToast.error(context, '关注失败');
-                                      }
+                                    if (!context.mounted) return;
+                                    if (success) {
+                                      CustomToast.success(context, '关注成功');
+                                    } else {
+                                      CustomToast.error(context, '关注失败');
                                     }
                                   }
                                 },
@@ -270,7 +291,14 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                                 onPressed: () {
                                   final songs = _songs ?? [];
                                   if (songs.isNotEmpty) {
-                                    context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                    final audioProvider = context.read<AudioProvider>();
+                                    unawaited(audioProvider.playSong(songs.first, playlist: songs));
+                                    final sessionId = audioProvider.playlistSessionId;
+                                    unawaited(_preloadRemainingSongsForPlayback(
+                                      audioProvider,
+                                      sessionId: sessionId,
+                                      startPage: _currentPage + 1,
+                                    ));
                                   }
                                 },
                                 icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),

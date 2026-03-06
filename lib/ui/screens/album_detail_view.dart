@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +25,8 @@ class AlbumDetailView extends StatefulWidget {
 }
 
 class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
+  static const int _pageSize = 200;
+
   Album? _album;
   List<Song>? _songs;
   bool _isLoading = true;
@@ -51,7 +55,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
 
     final results = await Future.wait([
       MusicApi.getAlbumDetail(widget.albumId),
-      MusicApi.getAlbumSongs(widget.albumId, page: 1, pagesize: 200),
+      _fetchSongsPage(1),
     ]);
 
     if (mounted) {
@@ -63,9 +67,13 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         final songs = results[1] as List<Song>?;
         _songs = songs;
         _isLoading = false;
-        _hasMore = (songs?.length ?? 0) >= 200;
+        _hasMore = (songs?.length ?? 0) >= _pageSize;
       });
     }
+  }
+
+  Future<List<Song>> _fetchSongsPage(int page) {
+    return MusicApi.getAlbumSongs(widget.albumId, page: page, pagesize: _pageSize);
   }
 
   Future<void> _loadMore() async {
@@ -74,23 +82,38 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
     setState(() => _isLoadingMore = true);
 
     final nextPage = _currentPage + 1;
-    final moreSongs = await MusicApi.getAlbumSongs(
-      widget.albumId,
-      page: nextPage,
-      pagesize: 200,
-    );
+    final moreSongs = await _fetchSongsPage(nextPage);
 
     if (mounted) {
       setState(() {
         if (moreSongs.isNotEmpty) {
           _songs = [...?_songs, ...moreSongs];
           _currentPage = nextPage;
-          _hasMore = moreSongs.length >= 200;
+          _hasMore = moreSongs.length >= _pageSize;
         } else {
           _hasMore = false;
         }
         _isLoadingMore = false;
       });
+    }
+  }
+
+  Future<void> _preloadRemainingSongsForPlayback(
+    AudioProvider audioProvider, {
+    required int sessionId,
+    required int startPage,
+  }) async {
+    if (!_hasMore) return;
+
+    var page = startPage;
+    while (audioProvider.playlistSessionId == sessionId) {
+      final moreSongs = await _fetchSongsPage(page);
+      if (moreSongs.isEmpty) return;
+      if (!audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
+        return;
+      }
+      if (moreSongs.length < _pageSize) return;
+      page++;
     }
   }
 
@@ -285,10 +308,17 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                   ),
                                   const SizedBox(width: 12),
                                   OutlinedButton.icon(
-                                    onPressed: () async {
+                                    onPressed: () {
                                       final songs = _songs ?? [];
                                       if (songs.isNotEmpty) {
-                                        context.read<AudioProvider>().playSong(songs.first, playlist: songs);
+                                        final audioProvider = context.read<AudioProvider>();
+                                        unawaited(audioProvider.playSong(songs.first, playlist: songs));
+                                        final sessionId = audioProvider.playlistSessionId;
+                                        unawaited(_preloadRemainingSongsForPlayback(
+                                          audioProvider,
+                                          sessionId: sessionId,
+                                          startPage: _currentPage + 1,
+                                        ));
                                       }
                                     },
                                     icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),

@@ -88,6 +88,11 @@ class AudioProvider with ChangeNotifier {
   // Position and URL to restore after device reconnection
   Duration? _positionBeforeDeviceError;
   String? _currentUrl;  // 当前播放的 URL
+  bool _shouldResumeAfterDeviceRecovery = false;
+  bool _isRecoveringFromDeviceChange = false;
+
+  // Monotonic token for the currently active playlist-loading session.
+  int _playlistSessionId = 0;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -102,6 +107,7 @@ class AudioProvider with ChangeNotifier {
   Stream<double> get userVolumeStream => _userVolumeController.stream;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
+  int get playlistSessionId => _playlistSessionId;
   // The device the user explicitly chose; null means 'auto'.
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
   // Display label of the persisted preferred device (for UI when device is unavailable).
@@ -318,16 +324,19 @@ class AudioProvider with ChangeNotifier {
               // 标记为设备错误，避免触发自动下一首
               LoggerService.i('[AudioProvider] Setting _isDeviceError = true');
               _isDeviceError = true;
+              _rememberDeviceRecoveryPosition();
 
               if (pauseOnChange) {
+                _shouldResumeAfterDeviceRecovery = false;
                 LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
-                // 保存当前播放位置，用于恢复
-                _positionBeforeDeviceError = _player.state.position;
-                LoggerService.d('[AudioProvider] Saved position: $_positionBeforeDeviceError');
-
                 _player.pause();
               } else {
-                LoggerService.i('[AudioProvider] Active device disconnected, marked as device error');
+                _shouldResumeAfterDeviceRecovery = wasPlaying;
+                LoggerService.i('[AudioProvider] Active device disconnected, keeping playback intent for auto recovery');
+                unawaited(_switchToAutoDeviceIfNeeded('after disconnect'));
+                if (wasPlaying) {
+                  _scheduleDeviceRecovery();
+                }
               }
 
               // 延迟重置标志，确保错误处理器能看到这个标志
@@ -508,6 +517,134 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
+  void _rememberDeviceRecoveryPosition() {
+    final playerPosition = _player.state.position;
+    final fallbackPosition = _lastEmittedPosition;
+    final candidatePosition = playerPosition.compareTo(fallbackPosition) >= 0
+        ? playerPosition
+        : fallbackPosition;
+
+    if (_positionBeforeDeviceError == null ||
+        candidatePosition.compareTo(_positionBeforeDeviceError!) > 0) {
+      _positionBeforeDeviceError = candidatePosition;
+    }
+
+    LoggerService.d(
+      '[AudioProvider] Saved recovery position: $_positionBeforeDeviceError '
+      '(player=$playerPosition, ui=$fallbackPosition)',
+    );
+  }
+
+  void _clearDeviceRecoveryState() {
+    _positionBeforeDeviceError = null;
+    _shouldResumeAfterDeviceRecovery = false;
+    _isDeviceError = false;
+  }
+
+  Future<void> _switchToAutoDeviceIfNeeded(String reason) async {
+    final currentDevice = _player.state.audioDevice;
+    final availableDevices = _player.state.audioDevices;
+
+    if (currentDevice.name != 'auto' &&
+        !availableDevices.any((d) => d.name == currentDevice.name)) {
+      LoggerService.i(
+        '[AudioProvider] Current device "${currentDevice.name}" unavailable $reason, switching to auto',
+      );
+      await _player.setAudioDevice(AudioDevice.auto());
+    }
+  }
+
+  void _scheduleDeviceRecovery({
+    Duration delay = const Duration(milliseconds: 350),
+  }) {
+    if (_isDisposed || !_shouldResumeAfterDeviceRecovery) return;
+    if (_currentUrl == null || _positionBeforeDeviceError == null) return;
+    unawaited(_attemptDeviceRecovery(delay: delay));
+  }
+
+  Future<void> _recoverFromSavedDeviceState(String url, Duration position) async {
+    if (_isDisposed || _isRecoveringFromDeviceChange) return;
+
+    _isRecoveringFromDeviceChange = true;
+    try {
+      await _rebuildAudioPipeline(url, position);
+    } finally {
+      _isRecoveringFromDeviceChange = false;
+    }
+  }
+
+  Future<void> _resumePlaybackWithAvailableDevice() async {
+    if (_isDisposed) return;
+
+    await _switchToAutoDeviceIfNeeded('before playback');
+
+    if (_isDisposed || _player.state.playing) return;
+
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isInternalChanging = true;
+    _player.setVolume(0.0);
+    _player.play();
+    _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+  }
+
+  Future<void> _attemptDeviceRecovery({
+    Duration delay = Duration.zero,
+  }) async {
+    if (_isDisposed || _isRecoveringFromDeviceChange) return;
+    if (!_shouldResumeAfterDeviceRecovery) return;
+
+    final savedUrl = _currentUrl;
+    final savedPosition = _positionBeforeDeviceError;
+    if (savedUrl == null || savedPosition == null) return;
+
+    try {
+      if (delay > Duration.zero) {
+        await Future.delayed(delay);
+      }
+
+      if (_isDisposed || !_shouldResumeAfterDeviceRecovery) return;
+      if (_player.state.playing) {
+        LoggerService.d('[AudioProvider] Skip device recovery because playback is already active');
+        return;
+      }
+
+      await _recoverFromSavedDeviceState(savedUrl, savedPosition);
+    } catch (e) {
+      LoggerService.e('[AudioProvider] Device auto-recovery attempt failed: $e');
+    }
+  }
+
+  bool appendSongsToActivePlaylist(List<Song> songs, {required int sessionId}) {
+    if (_isDisposed || songs.isEmpty) return false;
+    if (sessionId != _playlistSessionId) {
+      LoggerService.d('[AudioProvider] Ignoring stale playlist append for session=$sessionId, active=$_playlistSessionId');
+      return false;
+    }
+
+    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
+      final newSongs = songs
+          .where((song) => !_originalPlaylist.any((existing) => existing.isSameSong(song)))
+          .toList();
+      if (newSongs.isEmpty) return true;
+
+      _originalPlaylist.addAll(newSongs);
+      final shuffledNewSongs = List<Song>.from(newSongs)..shuffle();
+      _playlist.addAll(shuffledNewSongs);
+    } else {
+      final newSongs = songs
+          .where((song) => !_playlist.any((existing) => existing.isSameSong(song)))
+          .toList();
+      if (newSongs.isEmpty) return true;
+
+      _playlist.addAll(newSongs);
+    }
+
+    _savePlaybackState();
+    _safeNotify();
+    return true;
+  }
+
   /// Called by the UI when the user starts dragging the progress bar.
   void notifyDragStart() {
     _isDragging = true;
@@ -661,10 +798,12 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
+    _clearDeviceRecoveryState();
     _player.setVolume(0.0);
     _climaxMarks = {};
 
     if (playlist != null) {
+      _playlistSessionId++;
       LoggerService.d('[AudioProvider] Updating playlist, size: ${playlist.length}');
       _playlist = List.from(playlist);
       _originalPlaylist = [];
@@ -845,9 +984,22 @@ class AudioProvider with ChangeNotifier {
                           err.toString().toLowerCase().contains('no sound');
 
     if (isDeviceError) {
-      LoggerService.i('[AudioProvider] Device-related error, stopping playback without auto-next');
+      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+      final shouldAutoResume = !pauseOnChange &&
+          (_shouldResumeAfterDeviceRecovery || _player.state.playing);
+
+      LoggerService.i(
+        '[AudioProvider] Device-related error, stopping playback without auto-next '
+        '(autoResume=$shouldAutoResume)',
+      );
+      _isDeviceError = true;
+      _rememberDeviceRecoveryPosition();
       // 设备错误：停止播放，不触发自动下一首
       _player.pause();  // 确保播放器停止
+      _shouldResumeAfterDeviceRecovery = shouldAutoResume;
+      if (shouldAutoResume) {
+        _scheduleDeviceRecovery(delay: const Duration(milliseconds: 200));
+      }
       return;
     }
 
@@ -899,6 +1051,7 @@ class AudioProvider with ChangeNotifier {
 
   void togglePlay() {
     if (_player.state.playing) {
+      _shouldResumeAfterDeviceRecovery = false;
       // 暂停逻辑不变
       _fadeVolume(0.0, onComplete: () {
         _player.pause();
@@ -910,30 +1063,13 @@ class AudioProvider with ChangeNotifier {
         LoggerService.i('[AudioProvider] Recovering from device error, rebuilding audio pipeline');
         final savedPosition = _positionBeforeDeviceError!;
         final savedUrl = _currentUrl!;
-        _positionBeforeDeviceError = null;
 
         // 重建音频管道：使用保存的 URL 重新加载
-        _rebuildAudioPipeline(savedUrl, savedPosition);
+        unawaited(_recoverFromSavedDeviceState(savedUrl, savedPosition));
         return;
       }
 
-      // 检查当前设备是否可用
-      final currentDevice = _player.state.audioDevice;
-      final availableDevices = _player.state.audioDevices;
-
-      if (currentDevice.name != 'auto' &&
-          !availableDevices.any((d) => d.name == currentDevice.name)) {
-        LoggerService.i('[AudioProvider] Current device "${currentDevice.name}" unavailable, switching to auto');
-        _player.setAudioDevice(AudioDevice.auto());
-      }
-
-      // 正常播放
-      _fadeTimer?.cancel();
-      _fadeTimer = null;
-      _isInternalChanging = true;
-      _player.setVolume(0.0);
-      _player.play();
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      unawaited(_resumePlaybackWithAvailableDevice());
     }
   }
 
@@ -945,13 +1081,17 @@ class AudioProvider with ChangeNotifier {
 
     try {
       LoggerService.i('[AudioProvider] Rebuilding audio pipeline with saved URL');
+
+      await _switchToAutoDeviceIfNeeded('during recovery');
+
       _isInternalChanging = true;
       _player.setVolume(0.0);
       await _player.open(Media(url), play: false);
-      await _player.seek(position);
+      await seek(position);
       _player.setRate(_playbackRate);
       _player.play();
       _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      _clearDeviceRecoveryState();
     } catch (e) {
       LoggerService.e('[AudioProvider] Failed to rebuild audio pipeline: $e');
     } finally {
@@ -962,6 +1102,7 @@ class AudioProvider with ChangeNotifier {
 
   void stop() {
     _climaxMarks = {};
+    _clearDeviceRecoveryState();
     _fadeVolume(0.0, onComplete: () {
       _player.stop();
       _savePlaybackState();
@@ -970,8 +1111,10 @@ class AudioProvider with ChangeNotifier {
   }
 
   void reset() {
+    _playlistSessionId++;
     _fadeTimer?.cancel();
     _fadeTimer = null;
+    _clearDeviceRecoveryState();
     _player.stop();
     _currentSong = null;
     _playlist = [];
@@ -986,13 +1129,14 @@ class AudioProvider with ChangeNotifier {
   void next() {
     if (_playlist.isEmpty) return;
     if (_playMode == 'repeat-once') {
+      _clearDeviceRecoveryState();
       seek(Duration.zero);
       _player.play();
       return;
     }
 
     // 清除设备错误恢复状态，因为用户主动切歌
-    _positionBeforeDeviceError = null;
+    _clearDeviceRecoveryState();
 
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
@@ -1010,7 +1154,7 @@ class AudioProvider with ChangeNotifier {
     if (_playlist.isEmpty) return;
 
     // 清除设备错误恢复状态，因为用户主动切歌
-    _positionBeforeDeviceError = null;
+    _clearDeviceRecoveryState();
 
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
@@ -1025,6 +1169,8 @@ class AudioProvider with ChangeNotifier {
   }
 
   void clearPlaylist() {
+    _playlistSessionId++;
+    _clearDeviceRecoveryState();
     _playlist = [];
     _originalPlaylist = [];
     _currentIndex = -1;
