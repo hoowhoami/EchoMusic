@@ -1,0 +1,50 @@
+version: 1
+
+script:
+  - rm -rf AppDir || true
+  - mkdir -p AppDir
+  - cp -r build/linux/x64/release/bundle/* AppDir/
+  - mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
+  - cp assets/icons/icon.png AppDir/usr/share/icons/hicolor/512x512/apps/echomusic.png
+
+AppDir:
+  path: ./AppDir
+  app_info:
+    id: com.hoowhoami.echomusic
+    name: EchoMusic
+    icon: echomusic
+    version: "{{APPIMAGE_VERSION}}"
+    exec: EchoMusic
+    exec_args: $@
+  apt:
+    arch: amd64
+    allow_unauthenticated: true
+    sources:
+      - sourceline: deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+      - sourceline: deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+      - sourceline: deb [arch=amd64] http://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+    include:
+      - libgtk-3-0
+      - libsecret-1-0
+      - libjsoncpp25
+      - libayatana-appindicator3-1
+      - libmpv2
+    exclude:
+      - humanity-icon-theme
+      - hicolor-icon-theme
+      - adwaita-icon-theme
+      - ubuntu-mono
+  files:
+    exclude:
+      - usr/share/man
+      - usr/share/doc/*/README.*
+      - usr/share/doc/*/changelog.*
+      - usr/share/doc/*/NEWS.*
+      - usr/share/doc/*/TODO.*
+  runtime:
+    env:
+      GIO_MODULE_DIR: $APPDIR/usr/lib/x86_64-linux-gnu/gio/modules/
+
+AppImage:
+  arch: x86_64
+  file_name: EchoMusic-{{APPIMAGE_VERSION}}-Linux-x86_64.AppImage

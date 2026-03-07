@@ -14,7 +14,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest, ubuntu-22.04]
         include:
           - os: macos-latest
             platform: macos
@@ -22,7 +22,7 @@ jobs:
           - os: windows-latest
             platform: windows
             server_bin: app_win.exe
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             platform: linux
             server_bin: app_linux
 
@@ -80,6 +80,12 @@ jobs:
         run: |
           mkdir -p build/linux/x64/release/bundle/server
           cp server/bin/app_linux build/linux/x64/release/bundle/server/
+
+      - name: Set AppImage version (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          echo "APPIMAGE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Verify Build Artifacts
         shell: bash
@@ -163,6 +169,15 @@ jobs:
 
           dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Linux.deb"
 
+      - name: Build AppImage (Linux)
+        if: matrix.platform == 'linux'
+        uses: AppImageCrafters/build-appimage@master
+        env:
+          APPIMAGE_VERSION: ${{ env.APPIMAGE_VERSION }}
+        with:
+          recipe: AppImageBuilder.yml
+          args: --skip-test
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -171,7 +186,9 @@ jobs:
             EchoMusic-*.dmg
             EchoMusic-*-Setup.exe
             EchoMusic-*.deb
+            EchoMusic-*.AppImage
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
