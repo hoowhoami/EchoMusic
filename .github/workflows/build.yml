@@ -155,6 +155,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: EchoMusic Team
+          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25, libayatana-appindicator3-1, libmpv1
           Description: A minimalist music player.
           EOF
 

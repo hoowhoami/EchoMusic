@@ -123,6 +123,14 @@ class _WindowHandlerState extends State<WindowHandler>
   static final _lifecycleChannel =
       MethodChannel('com.hoowhoami.echomusic/app_lifecycle');
 
+  Future<void> _showWindowFromTray() async {
+    if (await windowManager.isMinimized()) {
+      await windowManager.restore();
+    }
+    await windowManager.show();
+    await windowManager.focus();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -201,26 +209,34 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void onWindowRestore() async {
-    await windowManager.show();
-    await windowManager.focus();
+    await _showWindowFromTray();
   }
 
   @override
   void onTrayIconMouseDown() async {
-    await windowManager.show();
-    await windowManager.focus();
+    if (!Platform.isLinux) {
+      await _showWindowFromTray();
+    }
+  }
+
+  @override
+  void onTrayIconMouseUp() async {
+    if (Platform.isLinux) {
+      await _showWindowFromTray();
+    }
   }
 
   @override
   void onTrayIconRightMouseDown() {
-    trayManager.popUpContextMenu();
+    if (!Platform.isLinux) {
+      trayManager.popUpContextMenu();
+    }
   }
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) async {
     if (menuItem.key == 'show_window') {
-      await windowManager.show();
-      await windowManager.focus();
+      await _showWindowFromTray();
     } else if (menuItem.key == 'exit_app') {
       // Stop mpv player before destroying the window.
       // mpv runs on a native thread; if Flutter tears down while mpv is

@@ -5,6 +5,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
 class LoggerService {
+  static const String _logFilePrefix = 'echomusic_app_log_';
+  static const List<String> _managedLogFilePrefixes = [
+    _logFilePrefix,
+    'app_log_',
+  ];
+  static const Duration _logRetention = Duration(days: 3);
+
   static late Logger _logger;
   static File? _logFile;
 
@@ -18,8 +25,15 @@ class LoggerService {
       if (!await logDir.exists()) {
         await logDir.create(recursive: true);
       }
+
+      await _cleanupExpiredLogs(logDir);
       
-      _logFile = File(p.join(logDir.path, 'app_log_${DateTime.now().toIso8601String().replaceAll(':', '-')}.log'));
+      _logFile = File(
+        p.join(
+          logDir.path,
+          buildLogFileName(DateTime.now()),
+        ),
+      );
       
       output = MultiOutput([
         ConsoleOutput(),
@@ -63,6 +77,41 @@ class LoggerService {
 
   static void f(dynamic message, [dynamic error, StackTrace? stackTrace]) {
     _logger.f(message, error: error, stackTrace: stackTrace);
+  }
+
+  @visibleForTesting
+  static String buildLogFileName(DateTime timestamp) {
+    return '$_logFilePrefix${timestamp.toIso8601String().replaceAll(':', '-')}.log';
+  }
+
+  @visibleForTesting
+  static Future<void> cleanupExpiredLogsForTesting(
+    Directory logDir, {
+    DateTime? now,
+  }) {
+    return _cleanupExpiredLogs(logDir, now: now);
+  }
+
+  static Future<void> _cleanupExpiredLogs(
+    Directory logDir, {
+    DateTime? now,
+  }) async {
+    final cutoff = (now ?? DateTime.now()).subtract(_logRetention);
+
+    await for (final entity in logDir.list(followLinks: false)) {
+      if (entity is! File) continue;
+
+      final fileName = p.basename(entity.path);
+      final isManagedLog = _managedLogFilePrefixes.any(fileName.startsWith);
+      if (!isManagedLog) continue;
+
+      try {
+        final stat = await entity.stat();
+        if (stat.modified.isBefore(cutoff)) {
+          await entity.delete();
+        }
+      } catch (_) {}
+    }
   }
   
   static File? get logFile => _logFile;

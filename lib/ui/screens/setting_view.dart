@@ -75,24 +75,59 @@ class _SettingViewState extends State<SettingView> {
     }
 
     final logDir = logFile.parent;
-    if (await logDir.exists()) {
-      try {
-        if (Platform.isMacOS) {
-          await Process.run('open', [logDir.path]);
-        } else if (Platform.isWindows) {
-          await Process.run('explorer.exe', [logDir.path]);
-        } else {
-          final url = Uri.file(logDir.path);
-          if (await canLaunchUrl(url)) {
-            await launchUrl(url);
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          CustomToast.error(context, '无法打开日志目录: $e');
-        }
+    if (!await logDir.exists()) {
+      if (mounted) {
+        CustomToast.error(context, '日志目录不存在');
+      }
+      return;
+    }
+
+    try {
+      await _openDirectory(logDir.path);
+      if (mounted) {
+        CustomToast.success(context, '已打开日志目录');
+      }
+    } catch (e) {
+      if (mounted) {
+        CustomToast.error(context, '无法打开日志目录: $e');
       }
     }
+  }
+
+  Future<void> _openDirectory(String path) async {
+    final List<List<String>> commands = Platform.isMacOS
+        ? const [
+            ['open'],
+          ]
+        : Platform.isWindows
+            ? const [
+                ['explorer.exe'],
+              ]
+            : const [
+                ['xdg-open'],
+                ['gio', 'open'],
+              ];
+
+    Object? lastError;
+    for (final command in commands) {
+      try {
+        final executable = command.first;
+        final arguments = [...command.skip(1), path];
+        final result = await Process.run(executable, arguments);
+        if (result.exitCode == 0) {
+          return;
+        }
+
+        final stderr = result.stderr?.toString().trim();
+        lastError = stderr != null && stderr.isNotEmpty
+            ? stderr
+            : 'exit code ${result.exitCode}';
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw Exception(lastError ?? '未找到可用的目录打开方式');
   }
 
   @override
