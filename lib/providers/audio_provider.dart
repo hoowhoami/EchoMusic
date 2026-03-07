@@ -566,6 +566,24 @@ class AudioProvider with ChangeNotifier {
     await _player.setAudioDevice(match);
   }
 
+  Future<void> _preparePlaybackDeviceForRecovery(String reason) async {
+    final preferredDeviceName = _preferredDeviceName;
+    final availableDevices = _player.state.audioDevices;
+
+    if (preferredDeviceName != null &&
+        availableDevices.any((d) => d.name == preferredDeviceName)) {
+      await _restorePreferredDeviceIfAvailable(reason);
+    } else {
+      LoggerService.i(
+        '[AudioProvider] Preferred device unavailable $reason, forcing auto output before recovery',
+      );
+      _userSelectedDevice = null;
+      await _player.setAudioDevice(AudioDevice.auto());
+    }
+
+    await Future.delayed(const Duration(milliseconds: 150));
+  }
+
   Future<void> _switchToAutoDeviceIfNeeded(String reason) async {
     final currentDevice = _player.state.audioDevice;
     final availableDevices = _player.state.audioDevices;
@@ -592,7 +610,7 @@ class AudioProvider with ChangeNotifier {
 
     _isRecoveringFromDeviceChange = true;
     try {
-      await _restorePreferredDeviceIfAvailable('during recovery');
+      await _preparePlaybackDeviceForRecovery('during recovery');
       await _switchToAutoDeviceIfNeeded('during recovery');
       LoggerService.i(
         '[AudioProvider] Recovering from device change by rebuilding audio pipeline at $position',
@@ -606,7 +624,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> _resumePlaybackWithAvailableDevice() async {
     if (_isDisposed) return;
 
-    await _restorePreferredDeviceIfAvailable('before playback');
+    await _preparePlaybackDeviceForRecovery('before playback');
     await _switchToAutoDeviceIfNeeded('before playback');
 
     if (_isDisposed || _player.state.playing) return;
@@ -1200,7 +1218,7 @@ class AudioProvider with ChangeNotifier {
     try {
       LoggerService.i('[AudioProvider] Rebuilding audio pipeline with saved URL');
 
-      await _restorePreferredDeviceIfAvailable('before pipeline rebuild');
+      await _preparePlaybackDeviceForRecovery('before pipeline rebuild');
       await _switchToAutoDeviceIfNeeded('during recovery');
 
       _isInternalChanging = true;
