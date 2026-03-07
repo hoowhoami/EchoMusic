@@ -90,6 +90,10 @@ class AudioProvider with ChangeNotifier {
   String? _currentUrl;  // 当前播放的 URL
   bool _shouldResumeAfterDeviceRecovery = false;
   bool _isRecoveringFromDeviceChange = false;
+  bool _isTracingRecoveryPosition = false;
+  int _recoveryTraceRemainingLogs = 0;
+  Duration? _recoveryTraceTargetPosition;
+  String? _recoveryTraceTrigger;
 
   // Monotonic token for the currently active playlist-loading session.
   int _playlistSessionId = 0;
@@ -255,6 +259,7 @@ class AudioProvider with ChangeNotifier {
           if (!_positionController.isClosed) {
             _positionController.add(PositionSnapshot(pos, total));
           }
+          _traceRecoveryPositionTick(pos);
         }
 
         // Fallback end detection: if position is very close to duration and player is playing,
@@ -530,16 +535,68 @@ class AudioProvider with ChangeNotifier {
     final candidatePosition = playerPosition.compareTo(fallbackPosition) >= 0
         ? playerPosition
         : fallbackPosition;
+    final previousSavedPosition = _positionBeforeDeviceError;
+    final shouldUpdate = previousSavedPosition == null ||
+        candidatePosition.compareTo(previousSavedPosition) > 0;
 
-    if (_positionBeforeDeviceError == null ||
-        candidatePosition.compareTo(_positionBeforeDeviceError!) > 0) {
+    if (shouldUpdate) {
       _positionBeforeDeviceError = candidatePosition;
     }
 
-    LoggerService.d(
-      '[AudioProvider] Saved recovery position: $_positionBeforeDeviceError '
-      '(player=$playerPosition, ui=$fallbackPosition)',
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] Remember recovery position: '
+      'saved=$_positionBeforeDeviceError, player=$playerPosition, ui=$fallbackPosition, '
+      'candidate=$candidatePosition, previous=$previousSavedPosition, updated=$shouldUpdate',
     );
+  }
+
+  void _startRecoveryPositionTrace(
+    String trigger, {
+    required Duration targetPosition,
+  }) {
+    _isTracingRecoveryPosition = true;
+    _recoveryTraceRemainingLogs = 8;
+    _recoveryTraceTargetPosition = targetPosition;
+    _recoveryTraceTrigger = trigger;
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] Start trace: trigger=$trigger, '
+      'target=$targetPosition, current=${_player.state.position}, '
+      'saved=$_positionBeforeDeviceError, lastUi=$_lastEmittedPosition, '
+      'playing=${_player.state.playing}, buffering=${_player.state.buffering}, '
+      'device=${_player.state.audioDevice.name}',
+    );
+  }
+
+  void _logRecoveryTraceState(String stage, {Duration? positionOverride}) {
+    if (!_isTracingRecoveryPosition) return;
+    final currentPosition = positionOverride ?? _player.state.position;
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] $stage: '
+      'trigger=${_recoveryTraceTrigger ?? '-'}, current=$currentPosition, '
+      'target=${_recoveryTraceTargetPosition ?? '-'}, saved=$_positionBeforeDeviceError, '
+      'playing=${_player.state.playing}, buffering=${_player.state.buffering}, '
+      'device=${_player.state.audioDevice.name}',
+    );
+  }
+
+  void _traceRecoveryPositionTick(Duration position) {
+    if (!_isTracingRecoveryPosition || _recoveryTraceRemainingLogs <= 0) return;
+    final target = _recoveryTraceTargetPosition;
+    final deltaText = target == null
+        ? '-'
+        : '${position.inMilliseconds - target.inMilliseconds}ms';
+    final logIndex = 9 - _recoveryTraceRemainingLogs;
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] Position tick #$logIndex: '
+      'trigger=${_recoveryTraceTrigger ?? '-'}, pos=$position, '
+      'target=${target ?? '-'}, delta=$deltaText, '
+      'playing=${_player.state.playing}, buffering=${_player.state.buffering}',
+    );
+    _recoveryTraceRemainingLogs -= 1;
+    if (_recoveryTraceRemainingLogs <= 0) {
+      _isTracingRecoveryPosition = false;
+      LoggerService.i('[AudioProvider][RecoveryTrace] Position trace finished');
+    }
   }
 
   void _clearDeviceRecoveryState() {
@@ -605,17 +662,25 @@ class AudioProvider with ChangeNotifier {
     unawaited(_attemptDeviceRecovery(delay: delay));
   }
 
-  Future<void> _recoverFromSavedDeviceState(String url, Duration position) async {
+  Future<void> _recoverFromSavedDeviceState(
+    String url,
+    Duration position, {
+    required String trigger,
+  }) async {
     if (_isDisposed || _isRecoveringFromDeviceChange) return;
 
     _isRecoveringFromDeviceChange = true;
     try {
+      _startRecoveryPositionTrace(trigger, targetPosition: position);
+      _logRecoveryTraceState('Before preparing playback device');
       await _preparePlaybackDeviceForRecovery('during recovery');
+      _logRecoveryTraceState('After preparing playback device');
       await _switchToAutoDeviceIfNeeded('during recovery');
       LoggerService.i(
-        '[AudioProvider] Recovering from device change by rebuilding audio pipeline at $position',
+        '[AudioProvider] Recovering from device change by rebuilding audio pipeline at $position '
+        '(trigger=$trigger)',
       );
-      await _rebuildAudioPipeline(url, position);
+      await _rebuildAudioPipeline(url, position, trigger: trigger);
     } finally {
       _isRecoveringFromDeviceChange = false;
     }
@@ -648,6 +713,11 @@ class AudioProvider with ChangeNotifier {
     if (savedUrl == null || savedPosition == null) return;
 
     try {
+      LoggerService.i(
+        '[AudioProvider][RecoveryTrace] Scheduling auto recovery: '
+        'delay=$delay, savedPosition=$savedPosition, current=${_player.state.position}, '
+        'playing=${_player.state.playing}, device=${_player.state.audioDevice.name}',
+      );
       if (delay > Duration.zero) {
         await Future.delayed(delay);
       }
@@ -658,10 +728,113 @@ class AudioProvider with ChangeNotifier {
         return;
       }
 
-      await _recoverFromSavedDeviceState(savedUrl, savedPosition);
+      await _recoverFromSavedDeviceState(
+        savedUrl,
+        savedPosition,
+        trigger: 'auto recovery',
+      );
     } catch (e) {
       LoggerService.e('[AudioProvider] Device auto-recovery attempt failed: $e');
     }
+  }
+
+  void _emitPositionSnapshot(Duration pos) {
+    if (_isDisposed || _positionController.isClosed) return;
+    _lastEmittedPosition = pos;
+    _positionController.add(PositionSnapshot(pos, effectiveDuration));
+    if (_lyricProvider?.isPageOpen == true) {
+      _lyricProvider?.updateHighlight(pos);
+    }
+  }
+
+  Future<bool> _seekAndVerify(
+    Duration pos, {
+    required String reason,
+  }) async {
+    if (_isDisposed) return false;
+
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] Seek start: target=$pos, reason=$reason, '
+      'current=${_player.state.position}, playing=${_player.state.playing}, '
+      'buffering=${_player.state.buffering}',
+    );
+    _lastSeekTime = DateTime.now();
+
+    if (_fadeTimer != null) {
+      _fadeTimer!.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = false;
+    }
+    if (!_isInternalChanging) {
+      _player.setVolume(_persistenceProvider?.volume ?? 50.0);
+    }
+
+    _isSeeking = true;
+    _isHandlingEnd = false;
+
+    const maxWaitMs = 800;
+    const pollIntervalMs = 25;
+    const toleranceMs = 350;
+    int waited = 0;
+    var finalPosition = _player.state.position;
+
+    try {
+      await _player.seek(pos);
+      LoggerService.i(
+        '[AudioProvider][RecoveryTrace] Seek issued: target=$pos, reason=$reason, '
+        'immediateCurrent=${_player.state.position}',
+      );
+
+      while (waited < maxWaitMs && !_isDisposed) {
+        final currentPos = _player.state.position;
+        finalPosition = currentPos;
+        final diff = (currentPos.inMilliseconds - pos.inMilliseconds).abs();
+        if (diff <= toleranceMs) {
+          LoggerService.i(
+            '[AudioProvider][RecoveryTrace] Seek verified: target=$pos, reason=$reason, '
+            'current=$currentPos, waited=${waited}ms, diff=${diff}ms',
+          );
+          _emitPositionSnapshot(pos);
+          return true;
+        }
+        await Future.delayed(const Duration(milliseconds: pollIntervalMs));
+        waited += pollIntervalMs;
+      }
+    } finally {
+      _isSeeking = false;
+    }
+
+    finalPosition = _player.state.position;
+    LoggerService.w(
+      '[AudioProvider][RecoveryTrace] Seek target not reached: '
+      'target=$pos, reason=$reason, current=$finalPosition, waited=${waited}ms',
+    );
+    _emitPositionSnapshot(finalPosition);
+    return false;
+  }
+
+  Future<bool> _seekWithRetry(
+    Duration pos, {
+    required String reason,
+    int attempts = 2,
+    Duration retryDelay = const Duration(milliseconds: 150),
+  }) async {
+    if (_isDisposed || pos <= Duration.zero) {
+      if (pos <= Duration.zero) {
+        _emitPositionSnapshot(Duration.zero);
+      }
+      return true;
+    }
+
+    for (var attempt = 1; attempt <= attempts; attempt++) {
+      final ok = await _seekAndVerify(pos, reason: '$reason (attempt $attempt/$attempts)');
+      if (ok) return true;
+      if (attempt < attempts) {
+        await Future.delayed(retryDelay);
+      }
+    }
+
+    return false;
   }
 
   bool appendSongsToActivePlaylist(List<Song> songs, {required int sessionId}) {
@@ -719,46 +892,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> seek(Duration pos) async {
     if (_isDisposed) return;
 
-    LoggerService.d('[AudioProvider] Seeking to $pos');
-    _lastSeekTime = DateTime.now();
-
-    if (_fadeTimer != null) {
-      _fadeTimer!.cancel();
-      _fadeTimer = null;
-      _isInternalChanging = false;
-    }
-    if (!_isInternalChanging) {
-      _player.setVolume(_persistenceProvider?.volume ?? 50.0);
-    }
-
-    _isSeeking = true;
-    _isHandlingEnd = false;
-
-    await _player.seek(pos);
-
-    // Poll until position reaches the target (mpv seek can have a short lag).
-    const maxWaitMs = 500;
-    const pollIntervalMs = 20;
-    const toleranceMs = 300;
-    int waited = 0;
-    while (waited < maxWaitMs && !_isDisposed) {
-      final currentPos = _player.state.position;
-      final diff = (currentPos.inMilliseconds - pos.inMilliseconds).abs();
-      if (diff <= toleranceMs) break;
-      await Future.delayed(const Duration(milliseconds: pollIntervalMs));
-      waited += pollIntervalMs;
-    }
-
-    _isSeeking = false;
-
-    if (!_isDisposed && !_positionController.isClosed) {
-      _lastEmittedPosition = pos;
-      _positionController.add(PositionSnapshot(pos, effectiveDuration));
-    }
-
-    if (_lyricProvider?.isPageOpen == true) {
-      _lyricProvider?.updateHighlight(pos);
-    }
+    await _seekAndVerify(pos, reason: 'user seek');
   }
 
   void setVolume(double v) {
@@ -1186,6 +1320,12 @@ class AudioProvider with ChangeNotifier {
   }
 
   void togglePlay() {
+    LoggerService.i(
+      '[AudioProvider][RecoveryTrace] togglePlay: '
+      'playing=${_player.state.playing}, saved=$_positionBeforeDeviceError, '
+      'hasUrl=${_currentUrl != null}, device=${_player.state.audioDevice.name}, '
+      'buffering=${_player.state.buffering}',
+    );
     if (_player.state.playing) {
       _shouldResumeAfterDeviceRecovery = false;
       // 暂停逻辑不变
@@ -1196,12 +1336,19 @@ class AudioProvider with ChangeNotifier {
     } else {
       // 播放前检查是否需要恢复设备错误后的状态
       if (_positionBeforeDeviceError != null && _currentUrl != null) {
-        LoggerService.i('[AudioProvider] Recovering from device error, rebuilding audio pipeline');
+        LoggerService.i(
+          '[AudioProvider] Recovering from device error, rebuilding audio pipeline '
+          '(trigger=manual toggle)',
+        );
         final savedPosition = _positionBeforeDeviceError!;
         final savedUrl = _currentUrl!;
 
         // 重建音频管道：使用保存的 URL 重新加载
-        unawaited(_recoverFromSavedDeviceState(savedUrl, savedPosition));
+        unawaited(_recoverFromSavedDeviceState(
+          savedUrl,
+          savedPosition,
+          trigger: 'manual toggle',
+        ));
         return;
       }
 
@@ -1209,24 +1356,62 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _rebuildAudioPipeline(String url, Duration position) async {
+  Future<void> _rebuildAudioPipeline(
+    String url,
+    Duration position, {
+    required String trigger,
+  }) async {
     if (_isDisposed) return;
 
     _isLoading = true;
     _safeNotify();
 
     try {
-      LoggerService.i('[AudioProvider] Rebuilding audio pipeline with saved URL');
+      LoggerService.i(
+        '[AudioProvider] Rebuilding audio pipeline with saved URL '
+        '(trigger=$trigger, target=$position)',
+      );
+      _logRecoveryTraceState('Before pipeline rebuild');
 
       await _preparePlaybackDeviceForRecovery('before pipeline rebuild');
+      _logRecoveryTraceState('After preparePlaybackDeviceForRecovery');
       await _switchToAutoDeviceIfNeeded('during recovery');
+      _logRecoveryTraceState('After switchToAutoDeviceIfNeeded');
 
       _isInternalChanging = true;
       _player.setVolume(0.0);
       await _player.open(Media(url), play: false);
-      await seek(position);
+      _logRecoveryTraceState('After open(play: false)');
       _player.setRate(_playbackRate);
-      _player.play();
+
+      await Future.delayed(const Duration(milliseconds: 120));
+      _logRecoveryTraceState('After settle delay before first recovery seek');
+
+      var restored = await _seekWithRetry(
+        position,
+        reason: 'before playback start during device recovery',
+      );
+      _logRecoveryTraceState('After first seekWithRetry');
+
+      await _player.play();
+      _logRecoveryTraceState('Immediately after play()');
+
+      if (!restored && position > Duration.zero) {
+        await Future.delayed(const Duration(milliseconds: 180));
+        _logRecoveryTraceState('Before second recovery seek after play()');
+        restored = await _seekWithRetry(
+          position,
+          reason: 'after playback start during device recovery',
+        );
+        _logRecoveryTraceState('After second seekWithRetry');
+      }
+
+      if (!restored && position > Duration.zero) {
+        LoggerService.w(
+          '[AudioProvider] Playback recovery seek may have failed, current position=${_player.state.position}, target=$position',
+        );
+      }
+
       _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
       _clearDeviceRecoveryState();
     } catch (e) {
