@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:media_kit/media_kit.dart';
 import '../../providers/persistence_provider.dart';
+import '../../providers/audio_provider.dart';
 import '../../utils/constants.dart';
 import '../../utils/version_service.dart';
 import '../../utils/logger.dart';
@@ -97,6 +99,7 @@ class _SettingViewState extends State<SettingView> {
   Widget build(BuildContext context) {
     final persistence = context.watch<PersistenceProvider>();
     final settings = persistence.settings;
+    final audio = context.watch<AudioProvider>();
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
@@ -234,7 +237,7 @@ class _SettingViewState extends State<SettingView> {
                 trailing: _buildDropdown(
                   context,
                   AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['audioQuality'] ?? 'flac'),
+                  AudioQuality.getLabel(settings['audioQuality'] ?? 'high'),
                   (label) {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('audioQuality', value);
@@ -251,18 +254,32 @@ class _SettingViewState extends State<SettingView> {
                   (v) => persistence.updateSetting('compatibilityMode', v),
                 ),
               ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+          _buildGroup(
+            context,
+            '音频设备',
+            CupertinoIcons.speaker_2,
+            [
               _buildItem(
                 context,
-                '备选音质',
-                '兼容模式下的备选音质级别',
-                trailing: _buildDropdown(
+                '输出设备',
+                '选择音频播放输出设备',
+                trailing: _buildAudioDeviceDropdown(context, audio),
+              ),
+              if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
+              _buildItem(
+                context,
+                '设备断开时暂停',
+                Platform.isMacOS
+                    ? '在 macOS 上由系统自动处理，此功能不适用'
+                    : '检测到音频输出设备断开连接时自动暂停播放',
+                trailing: _buildSwitch(
                   context,
-                  AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['backupQuality'] ?? '128'),
-                  (label) {
-                    final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
-                    persistence.updateSetting('backupQuality', value);
-                  },
+                  Platform.isMacOS ? false : (settings['pauseOnDeviceChange'] ?? false),
+                  Platform.isMacOS ? null : (v) => persistence.updateSetting('pauseOnDeviceChange', v),
                 ),
               ),
             ],
@@ -473,9 +490,9 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  Widget _buildSwitch(BuildContext context, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildSwitch(BuildContext context, bool value, ValueChanged<bool>? onChanged) {
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: onChanged == null ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
       child: Transform.scale(
         scale: 0.8,
         child: CupertinoSwitch(
@@ -602,6 +619,168 @@ class _SettingViewState extends State<SettingView> {
           onPressed: () => onChanged(option),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildAudioDeviceDropdown(BuildContext context, AudioProvider audio) {
+    final theme = Theme.of(context);
+    final accentColor = theme.colorScheme.primary;
+    final realDevices = audio.audioDevices.where((d) => d.name != 'auto').toList();
+    final devices = [AudioDevice.auto(), ...realDevices];
+
+    final isAuto = audio.userSelectedDevice == null;
+    final isPreferredUnavailable = audio.isPreferredDeviceUnavailable;
+    final preferredLabel = audio.preferredDeviceDescription ?? '';
+
+    String deviceLabel(AudioDevice d) =>
+        d.description.isNotEmpty ? d.description : d.name;
+
+    final selectedDevice = isAuto
+        ? AudioDevice.auto()
+        : devices.firstWhere(
+            (d) => d.name == audio.userSelectedDevice!.name,
+            orElse: () => audio.userSelectedDevice!,
+          );
+
+    // Button label: active device, or preferred device name (grayed) if unavailable, or '自动'
+    String buttonText = isAuto ? '自动' : deviceLabel(selectedDevice);
+    Color buttonTextColor = theme.colorScheme.onSurface;
+    if (isPreferredUnavailable && preferredLabel.isNotEmpty) {
+      buttonText = preferredLabel;
+      buttonTextColor = theme.colorScheme.onSurfaceVariant;
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: MenuAnchor(
+        builder: (context, controller, child) {
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: theme.colorScheme.onSurface.withAlpha(15),
+              borderRadius: BorderRadius.circular(12),
+              onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      buttonText,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: TextStyle(color: buttonTextColor, fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (isPreferredUnavailable) ...[
+                    const SizedBox(width: 4),
+                    Icon(CupertinoIcons.bolt_slash, size: 11, color: theme.colorScheme.onSurfaceVariant),
+                  ],
+                  const SizedBox(width: 8),
+                  Icon(CupertinoIcons.chevron_down, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                ],
+              ),
+            ),
+          );
+        },
+        menuChildren: devices.map((device) {
+          final isSelected = isAuto && !isPreferredUnavailable
+              ? device.name == 'auto'
+              : device.name == audio.userSelectedDevice?.name;
+          final typeLabel = _deviceTypeLabel(device.name);
+          final isWasapi = typeLabel == 'WASAPI';
+          final typeBadgeColor = isWasapi
+              ? const Color(0xFFF59E0B)
+              : theme.colorScheme.onSurfaceVariant;
+          return MenuItemButton(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith((states) =>
+                  states.contains(WidgetState.hovered)
+                      ? accentColor.withAlpha(isSelected ? 40 : 20)
+                      : Colors.transparent),
+              padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+              mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 300),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    device.name == 'auto' ? '自动' : deviceLabel(device),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? accentColor : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  if (typeLabel.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      typeLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: typeBadgeColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            onPressed: () => audio.setAudioDevice(device),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  String _deviceTypeLabel(String name) {
+    if (name == 'auto') return '';
+    final lower = name.toLowerCase();
+    if (lower.startsWith('wasapi/')) return 'WASAPI';
+    if (lower.startsWith('coreaudio/')) return 'CoreAudio';
+    if (lower.startsWith('pulse/')) return 'PulseAudio';
+    if (lower.startsWith('alsa/')) return 'ALSA';
+    if (lower.startsWith('jack/')) return 'JACK';
+    if (lower.startsWith('openal/')) return 'OpenAL';
+
+    // 兜底：按首个 / 分割，取前缀并转大写
+    final slashIndex = name.indexOf('/');
+    if (slashIndex > 0) {
+      return name.substring(0, slashIndex).toUpperCase();
+    }
+    return '';
+  }
+
+  bool _isWasapiSelected(AudioProvider audio) {
+    return audio.userSelectedDevice?.name.toLowerCase().startsWith('wasapi/') ?? false;
+  }
+
+  Widget _buildWasapiWarning(BuildContext context) {
+    const warningColor = Color(0xFFF59E0B);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          const Icon(CupertinoIcons.exclamationmark_triangle, size: 13, color: warningColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'WASAPI 将独占音频输出设备，其他应用的声音将被静音',
+              style: TextStyle(
+                color: warningColor.withAlpha(220),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:dio/dio.dart';
@@ -108,7 +106,7 @@ class ServerOrchestrator {
             npmCmd,
             ['start', '--', ...args],
             workingDirectory: serverDir,
-            mode: ProcessStartMode.normal,
+            mode: ProcessStartMode.detached,
           );
         } else {
           LoggerService.e('[Server] Server directory not found in debug mode');
@@ -126,11 +124,16 @@ class ServerOrchestrator {
 
         LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
 
+        // Release mode: use detached (no stdio pipes) on all platforms.
+        // The server process gets no stdout/stderr handles, so the Node.js/libuv
+        // runtime never interacts with the OS console subsystem during startup,
+        // eliminating the synchronous I/O stutter seen with detachedWithStdio.
+        // Readiness is detected via HTTP health-check polling.
         _serverProcess = await Process.start(
           serverPath,
           args,
           workingDirectory: p.dirname(serverPath),
-          mode: ProcessStartMode.normal,
+          mode: ProcessStartMode.detached,
         );
       }
 
@@ -139,58 +142,16 @@ class ServerOrchestrator {
         return false;
       }
 
-      // Use Completer to wait for server ready signal from stdout
-      final completer = Completer<bool>();
       bool completed = false;
 
-      // Listen to stdout for "running" signal (like the reference project)
-      _serverProcess!.stdout.transform(utf8.decoder).listen((data) {
-        final output = data.trim();
-        if (output.isNotEmpty) {
-          LoggerService.d('[Server] $output');
-        }
-        // Check for server ready signal
-        if (!completed && (output.contains('running') || output.contains('listening') || output.contains('started'))) {
-          LoggerService.i('[Server] Detected server ready signal in stdout');
-          completed = true;
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
-        }
-      });
-
-      _serverProcess!.stderr.transform(utf8.decoder).listen((data) {
-        final output = data.trim();
-        if (output.isNotEmpty) {
-          LoggerService.e('[Server] $output');
-        }
-      });
-
-      // Handle process exit
-      _serverProcess!.exitCode.then((code) {
-        LoggerService.i('[Server] Process exited with code: $code');
-        if (!completed && !completer.isCompleted) {
-          completer.complete(false);
-        }
-        if (code != 0) {
-          _serverReady = false;
-          _serverProcess = null;
-        }
-      });
-
-      // Wait for either: stdout signal, timeout, or health check success
-      // Timeout after 30 seconds
+      // Poll via HTTP until the server responds or we time out (30 s).
       final startTime = DateTime.now();
       while (!completed && DateTime.now().difference(startTime).inSeconds < 30) {
         await Future.delayed(const Duration(milliseconds: 500));
 
-        // Also try health check as backup
         if (await isServerRunning()) {
           LoggerService.i('[Server] Health check passed');
           completed = true;
-          if (!completer.isCompleted) {
-            completer.complete(true);
-          }
           break;
         }
       }
@@ -252,16 +213,10 @@ class ServerOrchestrator {
     LoggerService.i('[Server] Forcing cleanup of any existing server process...');
     try {
       if (Platform.isWindows) {
-        // Kill by process name
+        // Kill by process name — sufficient since port 10086 is exclusively
+        // used by app_win.exe. No need for a secondary port-based lookup.
         await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(seconds: 3));
-        // Also try to kill by port using PowerShell (more reliable)
-        try {
-          await Process.run('powershell', [
-            '-Command',
-            "Get-NetTCPConnection -LocalPort 10086 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force -ErrorAction SilentlyContinue }"
-          ]).timeout(const Duration(seconds: 3));
-        } catch (_) {}
+            .timeout(const Duration(seconds: 3), onTimeout: () => ProcessResult(0, 1, '', ''));
       } else {
         // macOS/Linux: kill by port
         final result = await Process.run('lsof', ['-ti', ':10086'])
@@ -284,7 +239,7 @@ class ServerOrchestrator {
       LoggerService.i('[Server] Stopping server process...');
       try {
         if (Platform.isWindows) {
-          // Windows: use taskkill for clean shutdown
+          // taskkill /F /T kills the entire process tree, no need for _forceKillPort
           Process.run('taskkill', ['/F', '/T', '/PID', '${_serverProcess!.pid}']);
         } else {
           _serverProcess!.kill(ProcessSignal.sigkill);
@@ -295,6 +250,5 @@ class ServerOrchestrator {
       _serverProcess = null;
     }
     _serverReady = false;
-    _forceKillPort();
   }
 }

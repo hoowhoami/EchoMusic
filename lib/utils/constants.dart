@@ -4,13 +4,14 @@ class AudioQuality {
   const AudioQuality(this.label, this.value);
 
   static const standard = AudioQuality('标准品质', '128');
-  static const high = AudioQuality('HQ高品质', '320');
+  static const hq = AudioQuality('HQ高品质', '320');
   static const lossless = AudioQuality('SQ无损品质', 'flac');
+  static const high = AudioQuality('Hi-Res品质', 'high');
 
-  static const options = [standard, high, lossless];
-  
+  static const options = [standard, hq, lossless, high];
+
   static String getLabel(String value) {
-    return options.firstWhere((o) => o.value == value, orElse: () => standard).label;
+    return options.firstWhere((o) => o.value == value, orElse: () => high).label;
   }
 }
 

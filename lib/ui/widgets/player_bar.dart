@@ -103,33 +103,40 @@ class _ProgressBarWidget extends StatefulWidget {
 }
 
 class _ProgressBarWidgetState extends State<_ProgressBarWidget> {
+  late AudioProvider _audioProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Use read instead of Consumer: positionSnapshotStream is stable for the
+    // provider's lifetime; Consumer would recreate the StreamBuilder (and tear
+    // down / recreate the stream subscription) on every notifyListeners() call.
+    _audioProvider = context.read<AudioProvider>();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
-    return Consumer<AudioProvider>(
-      builder: (context, audioProvider, child) {
-        return StreamBuilder<PositionSnapshot>(
-          stream: audioProvider.positionSnapshotStream,
-          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-          builder: (context, snapshot) {
-            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-            return ProgressBar(
-              progress: snap.position,
-              total: snap.duration,
-              barHeight: 4.0,
-              baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
-              progressBarColor: accentColor,
-              thumbColor: accentColor,
-              thumbRadius: 7.0,
-              thumbGlowRadius: 15.0,
-              onSeek: (duration) => audioProvider.seek(duration),
-              onDragStart: (_) => audioProvider.notifyDragStart(),
-              onDragEnd: () => audioProvider.notifyDragEnd(),
-              timeLabelLocation: TimeLabelLocation.none,
-            );
-          },
+    return StreamBuilder<PositionSnapshot>(
+      stream: _audioProvider.positionSnapshotStream,
+      initialData: PositionSnapshot(_audioProvider.effectivePosition, _audioProvider.effectiveDuration),
+      builder: (context, snapshot) {
+        final snap = snapshot.data ?? PositionSnapshot(_audioProvider.effectivePosition, _audioProvider.effectiveDuration);
+        return ProgressBar(
+          progress: snap.position,
+          total: snap.duration,
+          barHeight: 4.0,
+          baseBarColor: theme.colorScheme.onSurface.withAlpha(20),
+          progressBarColor: accentColor,
+          thumbColor: accentColor,
+          thumbRadius: 7.0,
+          thumbGlowRadius: 15.0,
+          onSeek: (duration) => _audioProvider.seek(duration),
+          onDragStart: (_) => _audioProvider.notifyDragStart(),
+          onDragEnd: () => _audioProvider.notifyDragEnd(),
+          timeLabelLocation: TimeLabelLocation.none,
         );
       },
     );
@@ -563,11 +570,11 @@ class _VolumeButton extends StatelessWidget {
         selector: (_, p) => p.volume,
         builder: (context, vol, child) {
           return _PlayerIconButton(
-            icon: vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 0.5 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill),
+            icon: vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 50 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill),
             isSelected: vol > 0,
             onPressed: () => _showCustomPopup(context, _volumeLink, const _VolumePopup(), width: 50, height: 200),
             onScroll: (delta) {
-              final newVol = (vol + (delta > 0 ? -0.05 : 0.05)).clamp(0.0, 1.0);
+              final newVol = (vol + (delta > 0 ? -5.0 : 5.0)).clamp(0.0, 100.0);
               audioProvider.setVolume(newVol);
             },
             size: 20, tooltip: '音量',
@@ -746,18 +753,18 @@ class _VolumePopup extends StatelessWidget {
     return StreamBuilder<double>(
       stream: audio.userVolumeStream, initialData: persistence.volume,
       builder: (context, snapshot) {
-        final vol = snapshot.data ?? 1.0;
+        final vol = snapshot.data ?? 100.0;
         return Column(
           children: [
             const SizedBox(height: 12),
-            Text('${(vol * 100).toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            Expanded(child: RotatedBox(quarterTurns: 3, child: SliderTheme(data: theme.sliderTheme.copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)), child: Slider(value: vol, onChanged: (v) => audio.setVolume(v))))),
+            Text('${vol.toInt()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            Expanded(child: RotatedBox(quarterTurns: 3, child: SliderTheme(data: theme.sliderTheme.copyWith(trackHeight: 4, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)), child: Slider(value: vol, min: 0, max: 100, onChanged: (v) => audio.setVolume(v))))),
             const SizedBox(height: 8),
             MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
                 onTap: () => audio.toggleMute(),
-                child: Icon(vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 0.5 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill), size: 18, color: theme.colorScheme.primary),
+                child: Icon(vol == 0 ? CupertinoIcons.speaker_slash_fill : (vol < 50 ? CupertinoIcons.speaker_1_fill : CupertinoIcons.speaker_2_fill), size: 18, color: theme.colorScheme.primary),
               ),
             ),
             const SizedBox(height: 12),
