@@ -42,6 +42,7 @@ AppDir:
       - libsecret-1-0
       - libjsoncpp25
       - libayatana-appindicator3-1
+      - libmpv1
       - libgdk-pixbuf-2.0-0
       - libgdk-pixbuf2.0-bin
       - librsvg2-common
@@ -61,6 +62,7 @@ AppDir:
     env:
       GIO_MODULE_DIR: $APPDIR/usr/lib/x86_64-linux-gnu/gio/modules/
       GDK_PIXBUF_MODULE_FILE: $APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache
+      LIBMPV_LIBRARY_PATH: $APPDIR/usr/lib/x86_64-linux-gnu/libmpv.so.1
       XDG_DATA_DIRS: $APPDIR/usr/share/:$XDG_DATA_DIRS
 
 AppImage:
