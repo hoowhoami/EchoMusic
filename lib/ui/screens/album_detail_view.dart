@@ -25,7 +25,7 @@ class AlbumDetailView extends StatefulWidget {
 }
 
 class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
-  static const int _pageSize = 200;
+  static const int _pageSize = 50;
 
   Album? _album;
   List<Song>? _songs;

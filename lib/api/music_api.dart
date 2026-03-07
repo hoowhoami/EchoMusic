@@ -707,7 +707,7 @@ class MusicApi {
     }
   }
 
-  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 200}) async {
+  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 50}) async {
     try {
       final response = await _dio.get('/album/songs', queryParameters: {
         'id': id,

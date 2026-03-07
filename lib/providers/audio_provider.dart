@@ -361,16 +361,19 @@ class AudioProvider with ChangeNotifier {
         final isPreferredActive = _userSelectedDevice?.name == _preferredDeviceName;
 
         if (isPreferredAvailable && !isPreferredActive) {
-          // Preferred device appeared (initial load or reconnect) → switch to it.
-          final match = devices.firstWhere((d) => d.name == _preferredDeviceName);
-          _userSelectedDevice = match;
-          _player.setAudioDevice(match);
-          LoggerService.i('[AudioProvider] Preferred device available, switching: "${match.description}" (${match.name})');
+          if (_positionBeforeDeviceError != null || _isRecoveringFromDeviceChange) {
+            LoggerService.i(
+              '[AudioProvider] Preferred device available, deferring switch until device recovery completes',
+            );
+          } else {
+            // Preferred device appeared (initial load or reconnect) → switch to it.
+            unawaited(_restorePreferredDeviceIfAvailable('after reconnect'));
+          }
           _safeNotify();
         } else if (!isPreferredAvailable && isPreferredActive) {
           // Preferred device disconnected → fall back to auto.
           _userSelectedDevice = null;
-          _player.setAudioDevice(AudioDevice.auto());
+          unawaited(_player.setAudioDevice(AudioDevice.auto()));
           // 注意：不清除 _positionBeforeDeviceError，因为用户可能需要恢复播放
           LoggerService.i('[AudioProvider] Preferred device disconnected, using auto');
           _safeNotify();
@@ -545,6 +548,24 @@ class AudioProvider with ChangeNotifier {
     _isDeviceError = false;
   }
 
+  Future<void> _restorePreferredDeviceIfAvailable(String reason) async {
+    final preferredDeviceName = _preferredDeviceName;
+    if (preferredDeviceName == null) return;
+
+    final currentDevice = _player.state.audioDevice;
+    if (currentDevice.name == preferredDeviceName) return;
+
+    final availableDevices = _player.state.audioDevices;
+    if (!availableDevices.any((d) => d.name == preferredDeviceName)) return;
+
+    final match = availableDevices.firstWhere((d) => d.name == preferredDeviceName);
+    LoggerService.i(
+      '[AudioProvider] Preferred device available $reason, switching: "${match.description}" (${match.name})',
+    );
+    _userSelectedDevice = match;
+    await _player.setAudioDevice(match);
+  }
+
   Future<void> _switchToAutoDeviceIfNeeded(String reason) async {
     final currentDevice = _player.state.audioDevice;
     final availableDevices = _player.state.audioDevices;
@@ -571,6 +592,15 @@ class AudioProvider with ChangeNotifier {
 
     _isRecoveringFromDeviceChange = true;
     try {
+      await _restorePreferredDeviceIfAvailable('during recovery');
+      await _switchToAutoDeviceIfNeeded('during recovery');
+
+      final resumedInPlace = await _resumeCurrentPlaybackFromSavedPosition(position);
+      if (resumedInPlace) {
+        _clearDeviceRecoveryState();
+        return;
+      }
+
       await _rebuildAudioPipeline(url, position);
     } finally {
       _isRecoveringFromDeviceChange = false;
@@ -580,6 +610,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> _resumePlaybackWithAvailableDevice() async {
     if (_isDisposed) return;
 
+    await _restorePreferredDeviceIfAvailable('before playback');
     await _switchToAutoDeviceIfNeeded('before playback');
 
     if (_isDisposed || _player.state.playing) return;
@@ -590,6 +621,42 @@ class AudioProvider with ChangeNotifier {
     _player.setVolume(0.0);
     _player.play();
     _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+  }
+
+  Future<bool> _resumeCurrentPlaybackFromSavedPosition(Duration position) async {
+    if (_isDisposed) return false;
+
+    try {
+      LoggerService.i(
+        '[AudioProvider] Attempting in-place resume from saved position: $position',
+      );
+
+      _fadeTimer?.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = true;
+      _player.setVolume(0.0);
+
+      await seek(position);
+
+      final actualPosition = _player.state.position;
+      final seekDiff =
+          (actualPosition.inMilliseconds - position.inMilliseconds).abs();
+      if (position > Duration.zero && seekDiff > 1500) {
+        LoggerService.w(
+          '[AudioProvider] In-place recovery seek mismatch '
+          '(target=$position, actual=$actualPosition), rebuilding pipeline instead',
+        );
+        return false;
+      }
+
+      _player.setRate(_playbackRate);
+      _player.play();
+      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      return true;
+    } catch (e) {
+      LoggerService.e('[AudioProvider] Failed in-place recovery: $e');
+      return false;
+    }
   }
 
   Future<void> _attemptDeviceRecovery({
@@ -1173,6 +1240,7 @@ class AudioProvider with ChangeNotifier {
     try {
       LoggerService.i('[AudioProvider] Rebuilding audio pipeline with saved URL');
 
+      await _restorePreferredDeviceIfAvailable('before pipeline rebuild');
       await _switchToAutoDeviceIfNeeded('during recovery');
 
       _isInternalChanging = true;
