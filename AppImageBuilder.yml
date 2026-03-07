@@ -31,7 +31,6 @@ AppDir:
       - libsecret-1-0
       - libjsoncpp25
       - libayatana-appindicator3-1
-      - libmpv2
     exclude:
       - humanity-icon-theme
       - hicolor-icon-theme
