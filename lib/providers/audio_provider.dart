@@ -594,13 +594,9 @@ class AudioProvider with ChangeNotifier {
     try {
       await _restorePreferredDeviceIfAvailable('during recovery');
       await _switchToAutoDeviceIfNeeded('during recovery');
-
-      final resumedInPlace = await _resumeCurrentPlaybackFromSavedPosition(position);
-      if (resumedInPlace) {
-        _clearDeviceRecoveryState();
-        return;
-      }
-
+      LoggerService.i(
+        '[AudioProvider] Recovering from device change by rebuilding audio pipeline at $position',
+      );
       await _rebuildAudioPipeline(url, position);
     } finally {
       _isRecoveringFromDeviceChange = false;
@@ -621,42 +617,6 @@ class AudioProvider with ChangeNotifier {
     _player.setVolume(0.0);
     _player.play();
     _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
-  }
-
-  Future<bool> _resumeCurrentPlaybackFromSavedPosition(Duration position) async {
-    if (_isDisposed) return false;
-
-    try {
-      LoggerService.i(
-        '[AudioProvider] Attempting in-place resume from saved position: $position',
-      );
-
-      _fadeTimer?.cancel();
-      _fadeTimer = null;
-      _isInternalChanging = true;
-      _player.setVolume(0.0);
-
-      await seek(position);
-
-      final actualPosition = _player.state.position;
-      final seekDiff =
-          (actualPosition.inMilliseconds - position.inMilliseconds).abs();
-      if (position > Duration.zero && seekDiff > 1500) {
-        LoggerService.w(
-          '[AudioProvider] In-place recovery seek mismatch '
-          '(target=$position, actual=$actualPosition), rebuilding pipeline instead',
-        );
-        return false;
-      }
-
-      _player.setRate(_playbackRate);
-      _player.play();
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
-      return true;
-    } catch (e) {
-      LoggerService.e('[AudioProvider] Failed in-place recovery: $e');
-      return false;
-    }
   }
 
   Future<void> _attemptDeviceRecovery({
