@@ -272,7 +272,9 @@ class _SettingViewState extends State<SettingView> {
                 trailing: _buildDropdown(
                   context,
                   AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['audioQuality'] ?? 'high'),
+                  AudioQuality.getLabel(
+                    AudioQuality.normalize(settings['audioQuality']?.toString()),
+                  ),
                   (label) {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('audioQuality', value);
@@ -298,13 +300,7 @@ class _SettingViewState extends State<SettingView> {
             '音频设备',
             CupertinoIcons.speaker_2,
             [
-              _buildItem(
-                context,
-                '输出设备',
-                '选择音频播放输出设备',
-                trailing: _buildAudioDeviceDropdown(context, audio),
-              ),
-              if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
+              _buildAudioDeviceItem(context, audio),
               _buildItem(
                 context,
                 '设备断开时暂停',
@@ -522,6 +518,21 @@ class _SettingViewState extends State<SettingView> {
           trailing,
         ],
       ),
+    );
+  }
+
+  Widget _buildAudioDeviceItem(BuildContext context, AudioProvider audio) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildItem(
+          context,
+          '输出设备',
+          '选择音频播放输出设备',
+          trailing: _buildAudioDeviceDropdown(context, audio),
+        ),
+        if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
+      ],
     );
   }
 
@@ -799,7 +810,7 @@ class _SettingViewState extends State<SettingView> {
   Widget _buildWasapiWarning(BuildContext context) {
     const warningColor = Color(0xFFF59E0B);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
       child: Row(
         children: [
           const Icon(CupertinoIcons.exclamationmark_triangle, size: 13, color: warningColor),

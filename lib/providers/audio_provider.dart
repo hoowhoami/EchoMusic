@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/song.dart';
 import '../api/music_api.dart';
+import '../utils/constants.dart';
 import '../utils/logger.dart';
 import '../utils/media_session_handler.dart';
 import 'lyric_provider.dart';
@@ -114,9 +115,11 @@ class AudioProvider with ChangeNotifier {
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
   // Display label of the persisted preferred device (for UI when device is unavailable).
   String? get preferredDeviceDescription => _preferredDeviceDescription;
-  // True when a preferred device is saved but not currently active (unavailable or not yet restored).
+  // True when a preferred device is saved but not currently present in the
+  // available device list.
   bool get isPreferredDeviceUnavailable =>
-      _preferredDeviceName != null && _userSelectedDevice?.name != _preferredDeviceName;
+      _preferredDeviceName != null &&
+      !_player.state.audioDevices.any((d) => d.name == _preferredDeviceName);
   // True when the user has a saved preferred device (not pure auto mode).
   bool get hasPreferredDevice => _preferredDeviceName != null;
 
@@ -369,7 +372,6 @@ class AudioProvider with ChangeNotifier {
             // Preferred device appeared (initial load or reconnect) → switch to it.
             unawaited(_restorePreferredDeviceIfAvailable('after reconnect'));
           }
-          _safeNotify();
         } else if (!isPreferredAvailable && isPreferredActive) {
           // Preferred device disconnected → fall back to auto.
           _userSelectedDevice = null;
@@ -563,7 +565,13 @@ class AudioProvider with ChangeNotifier {
       '[AudioProvider] Preferred device available $reason, switching: "${match.description}" (${match.name})',
     );
     _userSelectedDevice = match;
-    await _player.setAudioDevice(match);
+    _safeNotify();
+
+    try {
+      await _player.setAudioDevice(match);
+    } finally {
+      _safeNotify();
+    }
   }
 
   Future<void> _preparePlaybackDeviceForRecovery(String reason) async {
@@ -1076,7 +1084,9 @@ class AudioProvider with ChangeNotifier {
     final settings = _persistenceProvider?.settings ?? {};
     final playerSettings = _persistenceProvider?.playerSettings ?? {};
 
-    final audioQuality = playerSettings['audioQuality'] ?? settings['audioQuality'] ?? '128';
+    final audioQuality = AudioQuality.normalize(
+      (playerSettings['audioQuality'] ?? settings['audioQuality'])?.toString(),
+    );
     final audioEffect = playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
@@ -1102,7 +1112,7 @@ class AudioProvider with ChangeNotifier {
     // 2. 尝试用用户选择的音质获取，兼容模式下按优先级降级
     {
       // 构建候选音质列表：先尝试用户选择的，若兼容模式则按优先级依次降级
-      final qualityPriority = ['high', 'flac', '320', '128'];
+      final qualityPriority = AudioQuality.priorityOptions.map((q) => q.value).toList(growable: false);
       final userQualityIndex = qualityPriority.indexOf(audioQuality);
       final candidates = <String>[audioQuality];
       if (compatibilityMode) {
