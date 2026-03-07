@@ -171,12 +171,17 @@ jobs:
 
       - name: Build AppImage (Linux)
         if: matrix.platform == 'linux'
-        uses: AppImageCrafters/build-appimage@master
+        shell: bash
         env:
           APPIMAGE_VERSION: ${{ env.APPIMAGE_VERSION }}
-        with:
-          recipe: AppImageBuilder.yml
-          args: --skip-test
+        run: |
+          docker run --rm \
+            -e APPIMAGE_VERSION \
+            -v "${{ github.workspace }}:/github/workspace" \
+            -w /github/workspace \
+            --entrypoint /bin/sh \
+            appimagecrafters/appimage-builder:1.1.0 \
+            -lc 'apt-get update && apt-get install -y squashfs-tools && appimage-builder --recipe AppImageBuilder.yml --skip-test'
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

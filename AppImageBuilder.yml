@@ -6,6 +6,17 @@ script:
   - cp -r build/linux/x64/release/bundle/* AppDir/
   - mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
   - cp assets/icons/icon.png AppDir/usr/share/icons/hicolor/512x512/apps/echomusic.png
+  - mkdir -p AppDir/usr/share/applications
+  - |
+      cat > AppDir/usr/share/applications/com.hoowhoami.echomusic.desktop <<'EOF'
+      [Desktop Entry]
+      Type=Application
+      Name=EchoMusic
+      Exec=EchoMusic
+      Icon=echomusic
+      Categories=AudioVideo;Audio;Player;
+      Terminal=false
+      EOF
 
 AppDir:
   path: ./AppDir
