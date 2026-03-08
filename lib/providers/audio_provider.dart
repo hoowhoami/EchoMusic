@@ -212,7 +212,8 @@ class AudioProvider with ChangeNotifier {
     _subscriptions.add(_player.stream.playing.listen((playing) {
       if (_isDisposed) return;
       LoggerService.d('[AudioProvider] playing=$playing');
-      _safeNotify();
+      _updateWakelock(isPlaying: playing);
+      notifyListeners();
       MediaSessionHandler.updatePlaybackState(playing, _player.state.position);
     }));
 
@@ -334,7 +335,7 @@ class AudioProvider with ChangeNotifier {
               if (pauseOnChange) {
                 _shouldResumeAfterDeviceRecovery = false;
                 LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
-                _player.pause();
+                _pausePlayer();
               } else {
                 _shouldResumeAfterDeviceRecovery = wasPlaying;
                 LoggerService.i('[AudioProvider] Active device disconnected, keeping playback intent for auto recovery');
@@ -410,14 +411,14 @@ class AudioProvider with ChangeNotifier {
     // 如果是设备错误引起的，不触发自动下一首
     if (_isDeviceError) {
       LoggerService.i('[AudioProvider] Playback ended due to device error (_isDeviceError=$_isDeviceError), skipping auto-next');
-      _player.pause();  // 确保播放器停止
+      _pausePlayer();  // 确保播放器停止
       return;
     }
 
     LoggerService.d('[AudioProvider] Playback ended normally (_isDeviceError=$_isDeviceError), proceeding with auto-next logic');
     _isHandlingEnd = true;
 
-    _player.pause();
+    _pausePlayer();
 
     Future.delayed(const Duration(milliseconds: 500), () {
       _isHandlingEnd = false;
@@ -443,24 +444,47 @@ class AudioProvider with ChangeNotifier {
 
   void _safeNotify() {
     if (!_isDisposed) {
-      notifyListeners();
       _updateWakelock();
+      notifyListeners();
     }
   }
 
-  void _updateWakelock() {
+  void _updateWakelock({bool? isPlaying}) {
     if (_isDisposed) return;
     final preventSleep = _persistenceProvider?.settings['preventSleep'] ?? true;
-    final shouldEnable = preventSleep && _player.state.playing;
+    final shouldEnable = preventSleep && (isPlaying ?? _player.state.playing);
     // Avoid redundant Win32/platform-channel calls when the state hasn't changed.
     if (shouldEnable == _lastWakelockEnabled) return;
     _lastWakelockEnabled = shouldEnable;
-    WakelockPlus.toggle(enable: shouldEnable);
+    unawaited(WakelockPlus.toggle(enable: shouldEnable));
+  }
+
+  void _forceDisableWakelock() {
+    _lastWakelockEnabled = false;
+    unawaited(WakelockPlus.disable());
+  }
+
+  void _pausePlayer() {
+    _player.pause();
+    _forceDisableWakelock();
+  }
+
+  void _stopPlayer() {
+    _player.stop();
+    _forceDisableWakelock();
+  }
+
+  void _handlePersistenceChanged() {
+    _updateWakelock();
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
 
   void setPersistenceProvider(PersistenceProvider p) {
+    if (!identical(_persistenceProvider, p)) {
+      _persistenceProvider?.removeListener(_handlePersistenceChanged);
+      p.addListener(_handlePersistenceChanged);
+    }
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
@@ -1197,7 +1221,7 @@ class AudioProvider with ChangeNotifier {
       _isDeviceError = true;
       _rememberDeviceRecoveryPosition();
       // 设备错误：停止播放，不触发自动下一首
-      _player.pause();  // 确保播放器停止
+      _pausePlayer();  // 确保播放器停止
       _shouldResumeAfterDeviceRecovery = shouldAutoResume;
       if (shouldAutoResume) {
         _scheduleDeviceRecovery(delay: const Duration(milliseconds: 200));
@@ -1256,7 +1280,7 @@ class AudioProvider with ChangeNotifier {
       _shouldResumeAfterDeviceRecovery = false;
       // 暂停逻辑不变
       _fadeVolume(0.0, onComplete: () {
-        _player.pause();
+        _pausePlayer();
         _savePlaybackState();
       });
     } else {
@@ -1337,7 +1361,7 @@ class AudioProvider with ChangeNotifier {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
     _fadeVolume(0.0, onComplete: () {
-      _player.stop();
+      _stopPlayer();
       _savePlaybackState();
       _safeNotify();
     });
@@ -1349,7 +1373,7 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _clearDeviceRecoveryState();
-    _player.stop();
+    _stopPlayer();
     _currentSong = null;
     _playlist = [];
     _originalPlaylist = [];
@@ -1380,7 +1404,7 @@ class AudioProvider with ChangeNotifier {
 
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
-        _player.pause();
+        _pausePlayer();
         _playPlaylistIndex(nextIndex);
       });
     } else {
@@ -1402,7 +1426,7 @@ class AudioProvider with ChangeNotifier {
 
     if (_player.state.playing) {
       _fadeVolume(0.0, onComplete: () {
-        _player.pause();
+        _pausePlayer();
         _playPlaylistIndex(previousIndex);
       });
     } else {
@@ -1430,7 +1454,7 @@ class AudioProvider with ChangeNotifier {
       if (_playlist.isEmpty) {
         _currentSong = null;
         _climaxMarks = {};
-        _player.stop();
+        _stopPlayer();
       } else {
         _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);
@@ -1481,13 +1505,14 @@ class AudioProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _persistenceProvider?.removeListener(_handlePersistenceChanged);
     _isDisposed = true;
     _fadeTimer?.cancel();
     _volumeSaveTimer?.cancel();
     _cancelSubscriptions();
     _userVolumeController.close();
     _positionController.close();
-    WakelockPlus.disable();
+    _forceDisableWakelock();
     _player.dispose();
     super.dispose();
   }
