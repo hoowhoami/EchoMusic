@@ -1367,6 +1367,15 @@ class AudioProvider with ChangeNotifier {
     });
   }
 
+  void prepareForExit() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _climaxMarks = {};
+    _clearDeviceRecoveryState();
+    _stopPlayer();
+    _savePlaybackState();
+  }
+
   void reset() {
     _playlistSessionId++;
     _activePlaylistFilteredInvalidSongCount = 0;
