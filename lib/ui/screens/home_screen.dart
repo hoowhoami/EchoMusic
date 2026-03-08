@@ -90,6 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } else if (!silent && mounted) {
       final packageInfo = await PackageInfo.fromPlatform();
+      if (!mounted) return;
       showDialog(
         context: context,
         builder: (context) => UpdateDialog(
@@ -325,6 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Navigator(
                           key: navProvider.navigatorKey,
                           observers: [
+                            navProvider.observer,
                             _NavigationObserver((route, prevRoute, type) {
                               if (_isInternalNav) return;
                               
@@ -371,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                           onGenerateRoute: (settings) => PageRouteBuilder(
                             settings: const RouteSettings(name: 'root'),
-                            pageBuilder: (context, _, __) => ValueListenableBuilder<int>(
+                            pageBuilder: (context, _, _) => ValueListenableBuilder<int>(
                               valueListenable: _indexNotifier,
                               builder: (context, index, _) => _LazyIndexedStack(
                                 index: index,

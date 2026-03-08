@@ -41,6 +41,19 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
 
+  SingerInfo? get _primarySinger {
+    for (final singer in widget.song.singers) {
+      if (singer.id > 0) return singer;
+    }
+    return widget.song.singers.isNotEmpty ? widget.song.singers.first : null;
+  }
+
+  bool get _hasArtistDetail => (_primarySinger?.id ?? 0) > 0;
+
+  int get _albumDetailId => int.tryParse(widget.song.albumId ?? '0') ?? 0;
+
+  bool get _hasAlbumDetail => _albumDetailId > 0 && widget.song.albumName.trim().isNotEmpty;
+
   void _showUnavailableToast(BuildContext context) {
     CustomToast.error(context, '该歌曲暂无可用音源');
   }
@@ -51,6 +64,72 @@ class _SongCardState extends State<SongCard> {
     } else {
       CustomToast.error(context, failureMessage);
     }
+  }
+
+  void _openArtistDetail() {
+    final singer = _primarySinger;
+    if (singer == null || singer.id <= 0) {
+      CustomToast.error(context, '暂无歌手信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute('artist_detail', id: singer.id)) {
+      return;
+    }
+    context.read<NavigationProvider>().push(
+      ArtistDetailView(
+        artistId: singer.id,
+        artistName: singer.name,
+      ),
+      name: 'artist_detail',
+      arguments: {'id': singer.id, 'name': singer.name},
+    );
+  }
+
+  void _openAlbumDetail() {
+    if (!_hasAlbumDetail) {
+      CustomToast.error(context, '暂无专辑信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute('album_detail', id: _albumDetailId)) {
+      return;
+    }
+    context.read<NavigationProvider>().push(
+      AlbumDetailView(
+        albumId: _albumDetailId,
+        albumName: widget.song.albumName,
+      ),
+      name: 'album_detail',
+      arguments: {'id': _albumDetailId, 'name': widget.song.albumName},
+    );
+  }
+
+  Widget _buildLinkText({
+    required String text,
+    required TextStyle style,
+    required VoidCallback? onTap,
+  }) {
+    final child = Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: onTap == null
+          ? style
+          : style.copyWith(
+              decoration: TextDecoration.underline,
+              decorationColor: style.color,
+            ),
+    );
+
+    if (onTap == null) return child;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: child,
+      ),
+    );
   }
 
   Future<void> _showContextMenu([Offset? tapPosition]) async {
@@ -90,30 +169,6 @@ class _SongCardState extends State<SongCard> {
           ],
         ),
       ),
-      const PopupMenuItem(
-        value: 'artist',
-        child: Row(
-          children: [
-            Icon(CupertinoIcons.person, size: 18),
-            SizedBox(width: 12),
-            Text('歌手详情', style: TextStyle(fontSize: 14)),
-          ],
-        ),
-      ),
-      if (widget.song.albumId != null && 
-          widget.song.albumId != '0' && 
-          widget.song.albumId!.isNotEmpty && 
-          !(widget.parentPlaylist?.source == 2 && widget.parentPlaylist?.originalId.toString() == widget.song.albumId))
-        const PopupMenuItem(
-          value: 'album',
-          child: Row(
-            children: [
-              Icon(CupertinoIcons.music_albums, size: 18),
-              SizedBox(width: 12),
-              Text('专辑详情', style: TextStyle(fontSize: 14)),
-            ],
-          ),
-        ),
     ];
 
     if (userProvider.isAuthenticated) {
@@ -225,34 +280,6 @@ class _SongCardState extends State<SongCard> {
         name: 'song_comment',
         arguments: widget.song,
       );
-    } else if (value == 'artist') {
-      if (mounted) {
-        final artistId = widget.song.singers.isNotEmpty ? widget.song.singers.first.id : 0;
-        if (artistId == 0) {
-          CustomToast.error(context, '暂无歌手信息');
-          return;
-        }
-        context.read<NavigationProvider>().push(
-          ArtistDetailView(
-            artistId: artistId,
-            artistName: widget.song.singerName,
-          ),
-          name: 'artist_detail',
-          arguments: {'id': artistId, 'name': widget.song.singerName},
-        );
-      }
-    } else if (value == 'album') {
-      if (mounted) {
-        final albumId = int.tryParse(widget.song.albumId ?? '0') ?? 0;
-        context.read<NavigationProvider>().push(
-          AlbumDetailView(
-            albumId: albumId,
-            albumName: widget.song.albumName,
-          ),
-          name: 'album_detail',
-          arguments: {'id': albumId, 'name': widget.song.albumName},
-        );
-      }
     } else if (value == 'removeFromPlaylist') {
       if (widget.parentPlaylist != null) {
         final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
@@ -266,6 +293,12 @@ class _SongCardState extends State<SongCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
+    final isCurrentArtistDetail = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoute('artist_detail', id: _primarySinger?.id),
+    );
+    final isCurrentAlbumDetail = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoute('album_detail', id: _albumDetailId),
+    );
 
     return RepaintBoundary(
       child: Selector<SelectionProvider, ({bool isMode, bool isSelected})>(
@@ -374,10 +407,9 @@ class _SongCardState extends State<SongCard> {
                                       ],
                                     ),
                                     const SizedBox(height: 4),
-                                    Text(
-                                      widget.song.singerName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    _buildLinkText(
+                                      text: widget.song.singerName,
+                                      onTap: !isSelectionMode && _hasArtistDetail && !isCurrentArtistDetail ? _openArtistDetail : null,
                                       style: TextStyle(
                                         color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                                         fontSize: 13,
@@ -391,10 +423,9 @@ class _SongCardState extends State<SongCard> {
                                 const SizedBox(width: 24),
                                 SizedBox(
                                   width: 180,
-                                  child: Text(
-                                    widget.song.albumName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                  child: _buildLinkText(
+                                    text: widget.song.albumName,
+                                    onTap: !isSelectionMode && _hasAlbumDetail && !isCurrentAlbumDetail ? _openAlbumDetail : null,
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140), 
                                       fontSize: 13,

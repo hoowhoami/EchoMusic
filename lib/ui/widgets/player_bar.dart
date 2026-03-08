@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
+import '../../models/song.dart';
 import '../../theme/app_theme.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
@@ -12,6 +13,9 @@ import '../screens/lyric_page.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
+import 'custom_toast.dart';
+import '../screens/artist_detail_view.dart';
+import '../screens/album_detail_view.dart';
 import '../screens/song_detail_view.dart';
 import '../screens/song_comment_view.dart';
 
@@ -318,41 +322,147 @@ class _PlayerMainContent extends StatelessWidget {
 class _PlayerSongInfo extends StatelessWidget {
   const _PlayerSongInfo();
 
+  SingerInfo? _primarySinger(Song song) {
+    for (final singer in song.singers) {
+      if (singer.id > 0) return singer;
+    }
+    return song.singers.isNotEmpty ? song.singers.first : null;
+  }
+
+  void _openArtistDetail(BuildContext context, Song song) {
+    final singer = _primarySinger(song);
+    if (singer == null || singer.id <= 0) {
+      CustomToast.error(context, '暂无歌手信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute('artist_detail', id: singer.id)) {
+      return;
+    }
+    context.read<NavigationProvider>().push(
+      ArtistDetailView(
+        artistId: singer.id,
+        artistName: singer.name,
+      ),
+      name: 'artist_detail',
+      arguments: {'id': singer.id, 'name': singer.name},
+    );
+  }
+
+  void _openAlbumDetail(BuildContext context, Song song) {
+    final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+    if (albumId <= 0 || song.albumName.trim().isEmpty) {
+      CustomToast.error(context, '暂无专辑信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute('album_detail', id: albumId)) {
+      return;
+    }
+    context.read<NavigationProvider>().push(
+      AlbumDetailView(
+        albumId: albumId,
+        albumName: song.albumName,
+      ),
+      name: 'album_detail',
+      arguments: {'id': albumId, 'name': song.albumName},
+    );
+  }
+
+  Widget _buildMetaLink({
+    required String text,
+    required TextStyle style,
+    VoidCallback? onTap,
+  }) {
+    final enabled = onTap != null && text.trim().isNotEmpty;
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style.copyWith(
+            decoration: enabled ? TextDecoration.underline : TextDecoration.none,
+            decorationColor: style.color,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
-    return Selector<AudioProvider, dynamic>(
+    return Selector<AudioProvider, Song?>(
       selector: (_, p) => p.currentSong,
       builder: (context, song, child) {
         if (song == null) return const SizedBox.shrink();
+
+        final currentArtistId = _primarySinger(song)?.id;
+        final isCurrentArtistDetail = context.select<NavigationProvider, bool>(
+          (provider) => provider.isCurrentRoute('artist_detail', id: currentArtistId),
+        );
+        final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+        final isCurrentAlbumDetail = context.select<NavigationProvider, bool>(
+          (provider) => provider.isCurrentRoute('album_detail', id: albumId),
+        );
+        final canOpenArtist = (_primarySinger(song)?.id ?? 0) > 0;
+        final canOpenAlbum = albumId > 0 && song.albumName.trim().isNotEmpty;
+
+        final metaStyle = TextStyle(
+          color: theme.colorScheme.onSurface.withAlpha(140),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        );
+        final albumStyle = TextStyle(
+          color: theme.colorScheme.onSurface.withAlpha(120),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        );
 
         return Row(
           children: [
             InkWell(
               onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const LyricPage())),
               borderRadius: BorderRadius.circular(12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Hero(
+                tag: 'player_cover',
+                child: CoverImage(url: song.cover, width: 52, height: 52, borderRadius: 8, size: 100, showShadow: true),
+              ),
+            ),
+            const SizedBox(width: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Hero(
-                    tag: 'player_cover',
-                    child: CoverImage(url: song.cover, width: 52, height: 52, borderRadius: 8, size: 100, showShadow: true),
-                  ),
-                  const SizedBox(width: 14),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 140),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(song.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 2),
-                        Text(song.singerName, style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(140), fontSize: 12, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      ],
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => const LyricPage())),
+                    child: Text(
+                      song.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  const SizedBox(height: 2),
+                  _buildMetaLink(
+                    text: song.singerName,
+                    style: metaStyle,
+                    onTap: canOpenArtist && !isCurrentArtistDetail ? () => _openArtistDetail(context, song) : null,
+                  ),
+                  if (song.albumName.isNotEmpty) ...[
+                    const SizedBox(height: 1),
+                    _buildMetaLink(
+                      text: song.albumName,
+                      style: albumStyle,
+                      onTap: canOpenAlbum && !isCurrentAlbumDetail ? () => _openAlbumDetail(context, song) : null,
+                    ),
+                  ],
                 ],
               ),
             ),
