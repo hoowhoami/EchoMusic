@@ -196,10 +196,23 @@ class _WindowHandlerState extends State<WindowHandler>
         Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
       );
       _logTray('_initTray setIcon done');
+    } catch (e, stackTrace) {
+      _logTrayError('_initTray setIcon failed', e, stackTrace);
+      return;
+    }
 
-      await trayManager.setToolTip('EchoMusic');
-      _logTray('_initTray setToolTip done');
+    if (Platform.isLinux) {
+      _logTray('_initTray skipping setToolTip on linux');
+    } else {
+      try {
+        await trayManager.setToolTip('EchoMusic');
+        _logTray('_initTray setToolTip done');
+      } catch (e, stackTrace) {
+        _logTrayError('_initTray setToolTip failed', e, stackTrace);
+      }
+    }
 
+    try {
       final menu = Menu(
         items: [
           MenuItem(key: 'show_window', label: '显示窗口'),
@@ -210,7 +223,7 @@ class _WindowHandlerState extends State<WindowHandler>
       await trayManager.setContextMenu(menu);
       _logTray('_initTray setContextMenu done');
     } catch (e, stackTrace) {
-      _logTrayError('_initTray failed', e, stackTrace);
+      _logTrayError('_initTray setContextMenu failed', e, stackTrace);
     }
   }
 

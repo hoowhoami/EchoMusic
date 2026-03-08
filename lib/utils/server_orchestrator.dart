@@ -219,9 +219,7 @@ class ServerOrchestrator {
             .timeout(const Duration(seconds: 3), onTimeout: () => ProcessResult(0, 1, '', ''));
       } else {
         // macOS/Linux: kill by port
-        final result = await Process.run('lsof', ['-ti', ':10086'])
-            .timeout(const Duration(seconds: 2));
-        final pids = result.stdout.toString().trim().split('\n');
+        final pids = await _findPidsListeningOnPort(10086);
         for (final pid in pids) {
           if (pid.isNotEmpty) {
             await Process.run('kill', ['-9', pid]);
@@ -232,6 +230,40 @@ class ServerOrchestrator {
       // Ignore errors (process might not exist)
       LoggerService.d('[Server] Kill cleanup: $e');
     }
+  }
+
+  static Future<List<String>> _findPidsListeningOnPort(int port) async {
+    Future<List<String>> runPidLookup(String command, List<String> args) async {
+      final result = await Process.run(command, args)
+          .timeout(const Duration(seconds: 2), onTimeout: () => ProcessResult(0, 1, '', ''));
+      return result.stdout
+          .toString()
+          .split(RegExp(r'[\s\n]+'))
+          .map((pid) => pid.trim())
+          .where((pid) => RegExp(r'^[0-9]+$').hasMatch(pid))
+          .toList();
+    }
+
+    Future<bool> commandExists(String command) async {
+      try {
+        final result = await Process.run('/bin/sh', ['-c', 'command -v $command >/dev/null 2>&1'])
+            .timeout(const Duration(seconds: 2), onTimeout: () => ProcessResult(0, 1, '', ''));
+        return result.exitCode == 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (await commandExists('lsof')) {
+      return runPidLookup('lsof', ['-ti', ':$port']);
+    }
+
+    if (Platform.isLinux && await commandExists('fuser')) {
+      return runPidLookup('fuser', ['$port/tcp']);
+    }
+
+    LoggerService.d('[Server] Port cleanup skipped: no supported port lookup tool found');
+    return const [];
   }
 
   static void stop() {
