@@ -7,14 +7,13 @@ import '../../models/song.dart';
 import '../../models/playlist.dart';
 import 'package:echomusic/providers/selection_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_action_bar.dart';
 import '../widgets/back_to_top.dart';
-import 'playlist_detail_view.dart';
-import 'album_detail_view.dart';
 import '../../models/album.dart';
 import 'rank_view.dart';
 
@@ -27,6 +26,9 @@ class DiscoverView extends StatefulWidget {
 
 class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin, RefreshableState {
   late TabController _tabController;
+
+  @override
+  String get refreshKey => 'root:1';
 
   @override
   void initState() {
@@ -104,6 +106,9 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isLoading = true;
+
+  @override
+  String get refreshKey => 'root:1';
 
   @override
   void initState() {
@@ -241,15 +246,7 @@ class _PlaylistCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            settings: RouteSettings(name: 'playlist_detail', arguments: playlist),
-            builder: (_) => PlaylistDetailView(playlist: playlist),
-          ),
-        );
-      },
+      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
       borderRadius: BorderRadius.circular(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,6 +305,9 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
   String _selectedTypeName = '全部';
   Map<String, dynamic> _allAlbums = {};
   bool _isLoading = true;
+
+  @override
+  String get refreshKey => 'root:1';
 
   final List<Map<String, String>> _types = [
     {'id': 'all', 'name': '全部'},
@@ -415,24 +415,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                     itemBuilder: (context, index) {
                       final album = albums[index];
                       return InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            CupertinoPageRoute(
-                              settings: RouteSettings(
-                                name: 'album_detail', 
-                                arguments: {
-                                  'id': album.id,
-                                  'name': album.name,
-                                }
-                              ),
-                              builder: (_) => AlbumDetailView(
-                                albumId: album.id,
-                                albumName: album.name,
-                              ),
-                            ),
-                          );
-                        },
+                        onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
                         borderRadius: BorderRadius.circular(10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,6 +485,9 @@ class _DiscoverSongTab extends StatefulWidget {
 class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableState {
   final ScrollController _scrollController = ScrollController();
   late Future<List<Song>> _songsFuture;
+
+  @override
+  String get refreshKey => 'root:1';
 
   @override
   void initState() {

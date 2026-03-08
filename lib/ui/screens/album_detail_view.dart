@@ -27,6 +27,9 @@ class AlbumDetailView extends StatefulWidget {
 class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
   static const int _pageSize = 50;
 
+  @override
+  String get refreshKey => 'album_detail:${widget.albumId}';
+
   Album? _album;
   List<Song>? _songs;
   bool _isLoading = true;

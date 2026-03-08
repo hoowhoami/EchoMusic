@@ -14,9 +14,35 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/song_list_scaffold.dart';
 
-class PlaylistDetailView extends StatefulWidget {
+class PlaylistDetailRouteArgs {
+  const PlaylistDetailRouteArgs({
+    required this.playlist,
+  });
+
   final Playlist playlist;
-  const PlaylistDetailView({super.key, required this.playlist});
+
+  int get playlistId => playlist.id;
+
+  String get lookupId => playlist.globalCollectionId ?? playlist.id.toString();
+
+  int? get trackListId => playlist.listid;
+
+  String? get trackListCreateGid => playlist.listCreateGid;
+
+  int? get trackListCreateUserid => playlist.listCreateUserid;
+
+  factory PlaylistDetailRouteArgs.fromPlaylist(Playlist playlist) {
+    return PlaylistDetailRouteArgs(playlist: playlist);
+  }
+}
+
+class PlaylistDetailView extends StatefulWidget {
+  final PlaylistDetailRouteArgs routeArgs;
+
+  const PlaylistDetailView({
+    super.key,
+    required this.routeArgs,
+  });
 
   @override
   State<PlaylistDetailView> createState() => _PlaylistDetailViewState();
@@ -24,6 +50,11 @@ class PlaylistDetailView extends StatefulWidget {
 
 class _PlaylistDetailViewState extends State<PlaylistDetailView> with RefreshableState {
   static const int _pageSize = 200;
+
+  late final PlaylistDetailRouteArgs _routeArgs;
+
+  @override
+  String get refreshKey => 'playlist:${_routeArgs.lookupId}';
 
   List<Song>? _songs;
   Playlist? _detailedPlaylist;
@@ -38,10 +69,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   int get _totalSongCount {
     final detailedCount = _detailedPlaylist?.count ?? 0;
     if (detailedCount > 0) return detailedCount;
-    final playlistCount = widget.playlist.count;
+    final playlistCount = _routeArgs.playlist.count;
     if (playlistCount > 0) return playlistCount;
     return 0;
   }
+
+  String get _lookupId => _routeArgs.lookupId;
 
   bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
     final totalSongCount = _totalSongCount;
@@ -52,6 +85,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   @override
   void initState() {
     super.initState();
+    _routeArgs = widget.routeArgs;
     _userProvider = context.read<UserProvider>();
     _userProvider.playlistSongsChangeNotifier.addListener(_onPlaylistSongsChanged);
     _loadData();
@@ -79,9 +113,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     });
 
     // Fetch detailed info to get creator and timestamps
-    final detailJson = await MusicApi.getPlaylistDetail(
-      widget.playlist.globalCollectionId ?? widget.playlist.id.toString()
-    );
+    final detailJson = await MusicApi.getPlaylistDetail(_lookupId);
 
     if (detailJson != null && mounted) {
       setState(() {
@@ -108,10 +140,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
 
   Future<PlaylistSongsParseResult> _fetchSongsPage(int page) {
     return MusicApi.getPlaylistSongsWithMetadata(
-      widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),
-      listid: widget.playlist.listid,
-      listCreateGid: widget.playlist.listCreateGid,
-      listCreateUserid: widget.playlist.listCreateUserid,
+      _lookupId,
+      listid: _routeArgs.trackListId,
+      listCreateGid: _routeArgs.trackListCreateGid,
+      listCreateUserid: _routeArgs.trackListCreateUserid,
       page: page,
       pagesize: _pageSize,
     );
@@ -178,7 +210,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   void _onPlaylistSongsChanged() {
     if (!mounted) return;
     final changedListId = _userProvider.playlistSongsChangeNotifier.value;
-    if (changedListId == widget.playlist.id || changedListId == widget.playlist.listid) {
+    if (changedListId == _routeArgs.playlistId || changedListId == _routeArgs.trackListId) {
       _loadData();
     }
   }
@@ -193,7 +225,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
-    final playlist = _detailedPlaylist ?? widget.playlist;
+    final playlist = _detailedPlaylist ?? _routeArgs.playlist;
     final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
 

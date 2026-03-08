@@ -1,7 +1,9 @@
 import 'package:echomusic/api/music_api.dart';
+import 'package:echomusic/models/playlist.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echomusic/models/song.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
+import 'package:echomusic/ui/screens/playlist_detail_view.dart';
 import 'package:echomusic/providers/selection_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,16 +15,21 @@ void main() {
     String hash = '',
     int mixSongId = 0,
     int? fileId,
+    String albumName = 'Album',
+    String? albumId,
+    String? source,
   }) {
     return Song(
       hash: hash,
       name: name,
-      albumName: 'Album',
+      albumName: albumName,
+      albumId: albumId,
       singers: [SingerInfo(id: 1, name: 'Singer')],
       duration: 180,
       cover: '',
       mixSongId: mixSongId,
       fileId: fileId,
+      source: source,
     );
   }
 
@@ -32,6 +39,25 @@ void main() {
 
     expect(playableSong.isPlayable, isTrue);
     expect(unavailableSong.isPlayable, isFalse);
+  });
+
+  test('Song display metadata normalizes underscores for UI', () {
+    final song = Song(
+      hash: 'meta-hash',
+      name: 'Meta Song',
+      albumName: 'Album__Name',
+      singers: [
+        SingerInfo(id: 1, name: 'Singer_One'),
+        SingerInfo(id: 2, name: 'Singer__Two'),
+      ],
+      duration: 180,
+      cover: '',
+      mixSongId: 0,
+    );
+
+    expect(Song.normalizeDisplayText('A__B___C'), 'A B C');
+    expect(song.displaySingerName, 'Singer One, Singer Two');
+    expect(song.displayAlbumName, 'Album Name');
   });
 
   test('SelectionProvider selects songs by hash and ignores empty hash', () {
@@ -121,7 +147,14 @@ void main() {
   test('PersistenceProvider persists playlist filtered invalid-song count', () async {
     SharedPreferences.setMockInitialValues({});
 
-    final song = buildSong(name: 'Persisted Song', hash: 'persisted-hash', mixSongId: 123);
+    final song = buildSong(
+      name: 'Persisted Song',
+      hash: 'persisted-hash',
+      mixSongId: 123,
+      albumName: 'Persisted Album',
+      albumId: '456',
+      source: 'cloud',
+    );
     final provider = PersistenceProvider();
     await Future<void>.delayed(Duration.zero);
 
@@ -134,5 +167,48 @@ void main() {
     expect(restored.currentIndex, 0);
     expect(restored.playlistFilteredInvalidSongCount, 7);
     expect(restored.playlist.first.name, 'Persisted Song');
+    expect(restored.playlist.first.albumName, 'Persisted Album');
+    expect(restored.playlist.first.albumId, '456');
+    expect(restored.playlist.first.source, 'cloud');
+  });
+
+  test('MusicApi preserves route-provided playlist track id for owned playlists', () async {
+    SharedPreferences.setMockInitialValues({
+      'user_info': '{"userid":1}',
+    });
+
+    final ownPlaylistId = await MusicApi.resolvePlaylistTrackQueryId(
+      'collection_3_2025543655_273_0',
+      listid: 273,
+      listCreateUserid: 1,
+      listCreateGid: 'collection_3_2025543655_273_0',
+    );
+
+    expect(ownPlaylistId, 'collection_3_2025543655_273_0');
+  });
+
+  test('PlaylistDetailRouteArgs snapshots playlist query parameters', () {
+    final playlist = Playlist(
+      id: 273,
+      name: 'Snapshot Playlist',
+      pic: '',
+      intro: '',
+      playCount: 0,
+      count: 12,
+      nickname: 'tester',
+      globalCollectionId: 'collection_3_2025543655_273_0',
+      listid: 998,
+      listCreateGid: 'creator_gid_998',
+      listCreateUserid: 2,
+    );
+
+    final args = PlaylistDetailRouteArgs.fromPlaylist(playlist);
+
+    expect(args.playlist, same(playlist));
+    expect(args.playlistId, 273);
+    expect(args.lookupId, 'collection_3_2025543655_273_0');
+    expect(args.trackListId, 998);
+    expect(args.trackListCreateGid, 'creator_gid_998');
+    expect(args.trackListCreateUserid, 2);
   });
 }

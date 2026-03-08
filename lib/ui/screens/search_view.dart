@@ -4,11 +4,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import '../../providers/navigation_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../widgets/cover_image.dart';
-import 'artist_detail_view.dart';
-import 'playlist_detail_view.dart';
-import 'album_detail_view.dart';
 import '../../models/playlist.dart';
 import '../../models/album.dart';
 import '../../models/artist.dart';
@@ -626,9 +624,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             '${playlist.count} 首歌曲 • ${playlist.nickname.isNotEmpty ? playlist.nickname : "未知作者"} • ${_formatPlayCount(playlist.playCount)} 次播放', 
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
-          onTap: () {
-            Navigator.push(context, CupertinoPageRoute(builder: (_) => PlaylistDetailView(playlist: playlist)));
-          },
+          onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
         );
       },
     );
@@ -669,17 +665,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             '${album.singerName} • ${album.publishTime} • ${album.songCount} 首歌曲', 
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
-          onTap: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(
-                builder: (_) => AlbumDetailView(
-                  albumId: album.id,
-                  albumName: album.name,
-                ),
-              ),
-            );
-          },
+          onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
         );
       },
     );
@@ -724,17 +710,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${_formatPlayCount(artist.fansCount)} 粉丝',
             style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
           ),
-          onTap: () {
-            Navigator.push(
-              context,
-              CupertinoPageRoute(
-                builder: (_) => ArtistDetailView(
-                  artistId: artist.id,
-                  artistName: artist.name,
-                ),
-              ),
-            );
-          },
+          onTap: () => context.read<NavigationProvider>().openArtist(artist.id, artist.name),
         );
       },
     );

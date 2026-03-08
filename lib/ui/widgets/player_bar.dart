@@ -14,10 +14,6 @@ import 'package:echomusic/providers/navigation_provider.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
 import 'custom_toast.dart';
-import '../screens/artist_detail_view.dart';
-import '../screens/album_detail_view.dart';
-import '../screens/song_detail_view.dart';
-import '../screens/song_comment_view.dart';
 
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
@@ -293,15 +289,12 @@ class _PlayerMainContent extends StatelessWidget {
   }
 
   Widget _buildPlayerContent(BuildContext context, ThemeData theme, Color accentColor) {
-    return Row(
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        // 1. Song Info
-        const SizedBox(width: 380, child: _PlayerSongInfo()),
-
-        // 2. Playback Controls
-        Expanded(
+        Center(
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               _PlayerIconButton(icon: CupertinoIcons.backward_fill, onPressed: context.read<AudioProvider>().previous, size: 26, tooltip: '上一首'),
               const SizedBox(width: 24),
@@ -311,9 +304,28 @@ class _PlayerMainContent extends StatelessWidget {
             ],
           ),
         ),
-
-        // 3. Functional Buttons
-        const SizedBox(width: 380, child: _PlayerRightActions()),
+        Positioned.fill(
+          child: Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 280),
+                  child: const Align(
+                    alignment: Alignment.centerLeft,
+                    child: _PlayerSongInfo(),
+                  ),
+                ),
+              ),
+              const SizedBox(
+                width: 380,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _PlayerRightActions(),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -322,30 +334,18 @@ class _PlayerMainContent extends StatelessWidget {
 class _PlayerSongInfo extends StatelessWidget {
   const _PlayerSongInfo();
 
-  SingerInfo? _primarySinger(Song song) {
-    for (final singer in song.singers) {
-      if (singer.id > 0) return singer;
-    }
-    return song.singers.isNotEmpty ? song.singers.first : null;
-  }
+  List<SingerInfo> _displaySingers(Song song) =>
+      song.singers.where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty).toList(growable: false);
 
-  void _openArtistDetail(BuildContext context, Song song) {
-    final singer = _primarySinger(song);
-    if (singer == null || singer.id <= 0) {
+  void _openArtistDetail(BuildContext context, SingerInfo singer) {
+    if (singer.id <= 0) {
       CustomToast.error(context, '暂无歌手信息');
       return;
     }
     if (context.read<NavigationProvider>().isCurrentRoute('artist_detail', id: singer.id)) {
       return;
     }
-    context.read<NavigationProvider>().push(
-      ArtistDetailView(
-        artistId: singer.id,
-        artistName: singer.name,
-      ),
-      name: 'artist_detail',
-      arguments: {'id': singer.id, 'name': singer.name},
-    );
+    context.read<NavigationProvider>().openArtist(singer.id, Song.normalizeDisplayText(singer.name));
   }
 
   void _openAlbumDetail(BuildContext context, Song song) {
@@ -357,37 +357,113 @@ class _PlayerSongInfo extends StatelessWidget {
     if (context.read<NavigationProvider>().isCurrentRoute('album_detail', id: albumId)) {
       return;
     }
-    context.read<NavigationProvider>().push(
-      AlbumDetailView(
-        albumId: albumId,
-        albumName: song.albumName,
-      ),
-      name: 'album_detail',
-      arguments: {'id': albumId, 'name': song.albumName},
-    );
+    context.read<NavigationProvider>().openAlbum(albumId, song.displayAlbumName);
   }
 
   Widget _buildMetaLink({
     required String text,
     required TextStyle style,
     VoidCallback? onTap,
+    String? tooltip,
   }) {
+    final displayText = Song.normalizeDisplayText(text);
     final enabled = onTap != null && text.trim().isNotEmpty;
-    return MouseRegion(
+    final child = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Text(
-          text,
+          displayText,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: style.copyWith(
-            decoration: enabled ? TextDecoration.underline : TextDecoration.none,
-            decorationColor: style.color,
-          ),
+          style: style,
         ),
       ),
+    );
+
+    final tooltipText = Song.normalizeDisplayText(tooltip ?? text);
+    if (tooltipText.isEmpty) return child;
+
+    return Tooltip(
+      message: tooltipText,
+      waitDuration: const Duration(milliseconds: 300),
+      child: child,
+    );
+  }
+
+  Widget _buildSingerLinks({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+    required NavigationProvider navigationProvider,
+  }) {
+    final singers = _displaySingers(song);
+    if (singers.isEmpty) {
+      return Text(
+        song.displaySingerName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    final spans = <InlineSpan>[];
+    for (int index = 0; index < singers.length; index++) {
+      final singer = singers[index];
+      final canOpenSinger = singer.id > 0 && !navigationProvider.isCurrentRoute('artist_detail', id: singer.id);
+      spans.add(
+        TextSpan(
+          text: Song.normalizeDisplayText(singer.name),
+          style: style,
+          recognizer: canOpenSinger ? (TapGestureRecognizer()..onTap = () => _openArtistDetail(context, singer)) : null,
+        ),
+      );
+      if (index < singers.length - 1) {
+        spans.add(
+          TextSpan(
+            text: ' / ',
+            style: style.copyWith(color: style.color?.withAlpha(180)),
+          ),
+        );
+      }
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+    );
+  }
+
+  Widget _buildTitleActions(BuildContext context, Song song, Color accentColor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (song.source == 'cloud')
+          _PlayerIconButton(
+            icon: CupertinoIcons.cloud_fill,
+            size: 16,
+            activeColor: accentColor,
+            isSelected: true,
+            onPressed: () {},
+            tooltip: '云盘歌曲',
+          ),
+        const _FavoriteButton(),
+        _PlayerIconButton(
+          icon: CupertinoIcons.chat_bubble_text,
+          size: 20,
+          tooltip: '歌曲评论',
+          onPressed: () => context.read<NavigationProvider>().openSongComment(song),
+        ),
+        _PlayerIconButton(
+          icon: CupertinoIcons.info_circle,
+          size: 20,
+          tooltip: '歌曲详情',
+          onPressed: () => context.read<NavigationProvider>().openSongDetail(song),
+        ),
+      ],
     );
   }
 
@@ -401,15 +477,11 @@ class _PlayerSongInfo extends StatelessWidget {
       builder: (context, song, child) {
         if (song == null) return const SizedBox.shrink();
 
-        final currentArtistId = _primarySinger(song)?.id;
-        final isCurrentArtistDetail = context.select<NavigationProvider, bool>(
-          (provider) => provider.isCurrentRoute('artist_detail', id: currentArtistId),
-        );
+        final navigationProvider = context.watch<NavigationProvider>();
         final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
         final isCurrentAlbumDetail = context.select<NavigationProvider, bool>(
           (provider) => provider.isCurrentRoute('album_detail', id: albumId),
         );
-        final canOpenArtist = (_primarySinger(song)?.id ?? 0) > 0;
         final canOpenAlbum = albumId > 0 && song.albumName.trim().isNotEmpty;
 
         final metaStyle = TextStyle(
@@ -422,7 +494,6 @@ class _PlayerSongInfo extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w500,
         );
-
         return Row(
           children: [
             InkWell(
@@ -434,8 +505,7 @@ class _PlayerSongInfo extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 14),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 160),
+            Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -450,46 +520,26 @@ class _PlayerSongInfo extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  _buildMetaLink(
-                    text: song.singerName,
+                  _buildSingerLinks(
+                    context: context,
+                    song: song,
                     style: metaStyle,
-                    onTap: canOpenArtist && !isCurrentArtistDetail ? () => _openArtistDetail(context, song) : null,
+                    navigationProvider: navigationProvider,
                   ),
                   if (song.albumName.isNotEmpty) ...[
                     const SizedBox(height: 1),
                     _buildMetaLink(
-                      text: song.albumName,
+                      text: song.displayAlbumName,
                       style: albumStyle,
                       onTap: canOpenAlbum && !isCurrentAlbumDetail ? () => _openAlbumDetail(context, song) : null,
+                      tooltip: song.displayAlbumName,
                     ),
                   ],
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            if (song.source == 'cloud')
-              _PlayerIconButton(icon: CupertinoIcons.cloud_fill, size: 16, activeColor: accentColor, isSelected: true, onPressed: (){}, tooltip: '云盘歌曲'),
-            const _FavoriteButton(),
-            _PlayerIconButton(
-              icon: CupertinoIcons.chat_bubble_text,
-              size: 20,
-              tooltip: '歌曲评论',
-              onPressed: () => context.read<NavigationProvider>().push(
-                SongCommentView(song: song),
-                name: 'song_comment',
-                arguments: song,
-              ),
-            ),
-            _PlayerIconButton(
-              icon: CupertinoIcons.info_circle,
-              size: 20,
-              tooltip: '歌曲详情',
-              onPressed: () => context.read<NavigationProvider>().push(
-                SongDetailView(song: song),
-                name: 'song_detail',
-                arguments: song,
-              ),
-            ),
+            _buildTitleActions(context, song, accentColor),
           ],
         );
       },
@@ -517,7 +567,8 @@ class _FavoriteButton extends StatelessWidget {
           isSelected: data.isFav,
           activeColor: Colors.redAccent,
           onPressed: () => context.read<PersistenceProvider>().toggleFavorite(data.song, userProvider: userProvider),
-          size: 20, tooltip: '收藏',
+          size: 20,
+          tooltip: '收藏',
         );
       },
     );
@@ -547,15 +598,15 @@ class _PlayerRightActions extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         const _PlaybackTimeInfo(),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         const _PlayModeButton(),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         const _PlaybackRateButton(),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         const _QualityButton(),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         const _VolumeButton(),
-        const SizedBox(width: 12),
+        const SizedBox(width: 8),
         const _QueueButton(),
       ],
     );

@@ -12,15 +12,7 @@ import 'setting_view.dart';
 import 'history_view.dart';
 import 'cloud_view.dart';
 import 'profile_view.dart';
-import 'playlist_detail_view.dart';
-import 'album_detail_view.dart';
-import 'artist_detail_view.dart';
-import 'recommend_song_view.dart';
-import 'rank_view.dart';
-import 'song_detail_view.dart';
-import 'song_comment_view.dart';
 import '../../models/playlist.dart';
-import '../../models/song.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
@@ -39,22 +31,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HistoryEntry {
-  final int index;
-  final String? routeName;
-  final dynamic arguments;
-  _HistoryEntry({required this.index, this.routeName, this.arguments});
-}
-
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-  final ValueNotifier<int> _indexNotifier = ValueNotifier(0);
-  Playlist? _selectedPlaylist;
-  
-  final List<_HistoryEntry> _history = [_HistoryEntry(index: 0)];
-  int _historyIndex = 0;
-  bool _isInternalNav = false;
-
   @override
   void initState() {
     super.initState();
@@ -100,117 +77,34 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-
-  @override
-  void dispose() {
-    _indexNotifier.dispose();
-    super.dispose();
-  }
-
   void _navigateTo(int index) {
-    if (_selectedIndex == index && _selectedPlaylist == null) return;
-
     context.read<SelectionProvider>().reset();
-
-    setState(() {
-      if (_historyIndex < _history.length - 1) {
-        _history.removeRange(_historyIndex + 1, _history.length);
-      }
-      
-      _history.add(_HistoryEntry(index: index));
-      _historyIndex = _history.length - 1;
-      
-      _selectedIndex = index;
-      _indexNotifier.value = index;
-      _selectedPlaylist = null;
-      
-      _isInternalNav = true;
-      context.read<NavigationProvider>().popUntilFirst();
-      _isInternalNav = false;
-    });
+    context.read<NavigationProvider>().navigateToRoot(index);
   }
 
-  void _pushRoute(Widget page, {String? name, dynamic arguments}) {
+  void _pushPlaylist(Playlist playlist) {
     context.read<SelectionProvider>().reset();
-    context.read<NavigationProvider>().push(page, name: name, arguments: arguments);
-  }
-
-  void _goBack() {
-    if (_historyIndex > 0) {
-      _historyIndex--;
-      _syncHistoryState();
-    }
-  }
-
-  void _goForward() {
-    if (_historyIndex < _history.length - 1) {
-      _historyIndex++;
-      _syncHistoryState();
-    }
-  }
-
-  void _syncHistoryState() {
-    final state = _history[_historyIndex];
-    context.read<SelectionProvider>().reset();
-    
-    _isInternalNav = true;
-    setState(() {
-      _selectedIndex = state.index;
-      _indexNotifier.value = state.index;
-      if (state.routeName == 'playlist_detail') {
-        _selectedPlaylist = state.arguments as Playlist?;
-      } else if (state.routeName == 'album_detail' && state.arguments is Map) {
-        _selectedPlaylist = (state.arguments as Map)['playlist'] as Playlist?;
-      } else {
-        _selectedPlaylist = null;
-      }
-    });
-
-    context.read<NavigationProvider>().popUntilFirst();
-    
-    if (state.routeName != null) {
-      context.read<NavigationProvider>().push(
-        _rebuildPage(state.routeName!, state.arguments),
-        name: state.routeName,
-        arguments: state.arguments,
+    final navigation = context.read<NavigationProvider>();
+    if (playlist.source == 2) {
+      navigation.openAlbum(
+        playlist.originalId,
+        playlist.name,
+        playlist: playlist,
       );
-    }
-    _isInternalNav = false;
-  }
-
-  Widget _rebuildPage(String name, dynamic arguments) {
-    switch (name) {
-      case 'playlist_detail':
-        return PlaylistDetailView(playlist: arguments as Playlist);
-      case 'album_detail':
-        return AlbumDetailView(
-          albumId: arguments['id'],
-          albumName: arguments['name'],
-        );
-      case 'recommend_song':
-        return RecommendSongView();
-      case 'rank_view':
-        return RankView(
-          isRecommend: arguments?['isRecommend'] ?? false,
-          showTitle: arguments?['showTitle'] ?? true,
-          initialRankId: arguments?['initialRankId'],
-        );
-      case 'song_detail':
-        return SongDetailView(song: arguments as Song);
-      case 'song_comment':
-        return SongCommentView(song: arguments as Song);
-      case 'artist_detail':
-        return ArtistDetailView(
-          artistId: arguments['id'],
-          artistName: arguments['name'],
-        );
-      default:
-        return const SizedBox();
+    } else {
+      navigation.openPlaylist(playlist);
     }
   }
 
-  bool get canGoBack => _historyIndex > 0;
-  bool get canGoForward => _historyIndex < _history.length - 1;
+  Future<void> _goBack() async {
+    context.read<SelectionProvider>().reset();
+    await context.read<NavigationProvider>().goBack();
+  }
+
+  Future<void> _goForward() async {
+    context.read<SelectionProvider>().reset();
+    await context.read<NavigationProvider>().goForward();
+  }
 
 
   Future<void> _initDevice() async {
@@ -266,31 +160,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       SizedBox(height: 48, child: MoveWindow()),
                       Expanded(
                         child: Sidebar(
-                          selectedIndex: _selectedIndex,
-                          selectedPlaylistId: _selectedPlaylist?.id,
+                          selectedIndex: navProvider.currentRootIndex,
+                          selectedPlaylistId: navProvider.selectedSidebarPlaylistId,
                           onDestinationSelected: _navigateTo,
-                          onPushPlaylist: (playlist) {
-                             if (playlist.source == 2) {
-                               _pushRoute(
-                                 AlbumDetailView(
-                                   albumId: playlist.originalId, 
-                                   albumName: playlist.name,
-                                 ),
-                                 name: 'album_detail',
-                                 arguments: {
-                                   'id': playlist.originalId, 
-                                   'name': playlist.name,
-                                   'playlist': playlist,
-                                 }
-                               );
-                             } else {
-                               _pushRoute(
-                                 PlaylistDetailView(playlist: playlist), 
-                                 name: 'playlist_detail', 
-                                 arguments: playlist
-                               );
-                             }
-                          },
+                          onPushPlaylist: _pushPlaylist,
                         ),
                       ),
                     ],
@@ -308,13 +181,21 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           children: [
                             const SizedBox(width: 12),
-                            _buildNavButton(icon: CupertinoIcons.chevron_left, onPressed: canGoBack ? _goBack : null, tooltip: '后退'),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_left,
+                              onPressed: navProvider.canGoBack ? _goBack : null,
+                              tooltip: '后退',
+                            ),
                             const SizedBox(width: 8),
-                            _buildNavButton(icon: CupertinoIcons.chevron_right, onPressed: canGoForward ? _goForward : null, tooltip: '前进'),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_right,
+                              onPressed: navProvider.canGoForward ? _goForward : null,
+                              tooltip: '前进',
+                            ),
                             const SizedBox(width: 8),
                             _buildNavButton(
                               icon: CupertinoIcons.refresh, 
-                              onPressed: () => context.read<RefreshProvider>().triggerRefresh(), 
+                              onPressed: () => context.read<RefreshProvider>().triggerRefresh(navProvider.currentRefreshKey), 
                               tooltip: '刷新'
                             ),
                             Expanded(child: MoveWindow()),
@@ -325,58 +206,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       Expanded(
                         child: Navigator(
                           key: navProvider.navigatorKey,
-                          observers: [
-                            navProvider.observer,
-                            _NavigationObserver((route, prevRoute, type) {
-                              if (_isInternalNav) return;
-                              
-                              if (type == _NavChangeType.pop) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) {
-                                    setState(() {
-                                      if (prevRoute?.settings.name == 'playlist_detail') {
-                                        _selectedPlaylist = prevRoute?.settings.arguments as Playlist?;
-                                      } else if (prevRoute?.settings.name == 'album_detail' && prevRoute?.settings.arguments is Map) {
-                                        _selectedPlaylist = (prevRoute?.settings.arguments as Map)['playlist'] as Playlist?;
-                                      } else {
-                                        _selectedPlaylist = null;
-                                      }
-                                      
-                                      if (_historyIndex > 0) {
-                                        _historyIndex--;
-                                      }
-                                    });
-                                  }
-                                });
-                              } else if (type == _NavChangeType.push && route?.settings.name != 'root') {
-                                final name = route?.settings.name;
-                                final args = route?.settings.arguments;
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted) {
-                                    setState(() {
-                                      if (_historyIndex < _history.length - 1) {
-                                        _history.removeRange(_historyIndex + 1, _history.length);
-                                      }
-                                      _history.add(_HistoryEntry(index: _selectedIndex, routeName: name, arguments: args));
-                                      _historyIndex = _history.length - 1;
-                                      
-                                      if (name == 'playlist_detail') {
-                                        _selectedPlaylist = args as Playlist?;
-                                      } else if (name == 'album_detail' && args is Map) {
-                                        _selectedPlaylist = args['playlist'] as Playlist?;
-                                      }
-                                    });
-                                  }
-                                });
-                              }
-                            })
-                          ],
+                          observers: [navProvider.observer],
                           onGenerateRoute: (settings) => PageRouteBuilder(
                             settings: const RouteSettings(name: 'root'),
-                            pageBuilder: (context, _, _) => ValueListenableBuilder<int>(
-                              valueListenable: _indexNotifier,
-                              builder: (context, index, _) => _LazyIndexedStack(
-                                index: index,
+                            pageBuilder: (context, _, _) => Consumer<NavigationProvider>(
+                              builder: (context, provider, _) => _LazyIndexedStack(
+                                index: provider.currentRootIndex,
                                 children: _views,
                               ),
                             ),
@@ -407,17 +242,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
-
-enum _NavChangeType { push, pop }
-
-class _NavigationObserver extends NavigatorObserver {
-  final Function(Route?, Route?, _NavChangeType) onStateChanged;
-  _NavigationObserver(this.onStateChanged);
-  @override
-  void didPush(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.push);
-  @override
-  void didPop(Route route, Route? prev) => onStateChanged(route, prev, _NavChangeType.pop);
 }
 
 /// IndexedStack that defers building children until their tab is first visited.

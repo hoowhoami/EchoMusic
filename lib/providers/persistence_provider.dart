@@ -322,15 +322,6 @@ class PersistenceProvider with ChangeNotifier {
   }
 
   Map<String, dynamic> _songToMap(Song song) {
-    return {
-      'hash': song.hash,
-      'name': song.name,
-      'albuminfo': {'name': song.albumName},
-      'singerinfo': song.singers.map((s) => {'id': s.id, 'name': s.name, 'avatar': s.avatar}).toList(),
-      'timelen': song.duration * 1000,
-      'cover': song.cover,
-      'mixsongid': song.mixSongId,
-      'mvhash': song.mvHash,
-    };
+    return song.toJson();
   }
 }

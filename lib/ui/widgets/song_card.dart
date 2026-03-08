@@ -7,12 +7,8 @@ import '../../providers/user_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/navigation_provider.dart';
-import '../screens/artist_detail_view.dart';
-import '../screens/album_detail_view.dart';
 import 'cover_image.dart';
 import 'custom_toast.dart';
-import '../screens/song_detail_view.dart';
-import '../screens/song_comment_view.dart';
 
 import '../../models/playlist.dart' as model;
 
@@ -41,14 +37,8 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
 
-  SingerInfo? get _primarySinger {
-    for (final singer in widget.song.singers) {
-      if (singer.id > 0) return singer;
-    }
-    return widget.song.singers.isNotEmpty ? widget.song.singers.first : null;
-  }
-
-  bool get _hasArtistDetail => (_primarySinger?.id ?? 0) > 0;
+  List<SingerInfo> get _displaySingers =>
+      widget.song.singers.where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty).toList(growable: false);
 
   int get _albumDetailId => int.tryParse(widget.song.albumId ?? '0') ?? 0;
 
@@ -66,23 +56,15 @@ class _SongCardState extends State<SongCard> {
     }
   }
 
-  void _openArtistDetail() {
-    final singer = _primarySinger;
-    if (singer == null || singer.id <= 0) {
+  void _openArtistDetail(SingerInfo singer) {
+    if (singer.id <= 0) {
       CustomToast.error(context, '暂无歌手信息');
       return;
     }
     if (context.read<NavigationProvider>().isCurrentRoute('artist_detail', id: singer.id)) {
       return;
     }
-    context.read<NavigationProvider>().push(
-      ArtistDetailView(
-        artistId: singer.id,
-        artistName: singer.name,
-      ),
-      name: 'artist_detail',
-      arguments: {'id': singer.id, 'name': singer.name},
-    );
+    context.read<NavigationProvider>().openArtist(singer.id, Song.normalizeDisplayText(singer.name));
   }
 
   void _openAlbumDetail() {
@@ -93,14 +75,7 @@ class _SongCardState extends State<SongCard> {
     if (context.read<NavigationProvider>().isCurrentRoute('album_detail', id: _albumDetailId)) {
       return;
     }
-    context.read<NavigationProvider>().push(
-      AlbumDetailView(
-        albumId: _albumDetailId,
-        albumName: widget.song.albumName,
-      ),
-      name: 'album_detail',
-      arguments: {'id': _albumDetailId, 'name': widget.song.albumName},
-    );
+    context.read<NavigationProvider>().openAlbum(_albumDetailId, widget.song.displayAlbumName);
   }
 
   Widget _buildLinkText({
@@ -109,15 +84,10 @@ class _SongCardState extends State<SongCard> {
     required VoidCallback? onTap,
   }) {
     final child = Text(
-      text,
+      Song.normalizeDisplayText(text),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: onTap == null
-          ? style
-          : style.copyWith(
-              decoration: TextDecoration.underline,
-              decorationColor: style.color,
-            ),
+      style: style,
     );
 
     if (onTap == null) return child;
@@ -129,6 +99,45 @@ class _SongCardState extends State<SongCard> {
         onTap: onTap,
         child: child,
       ),
+    );
+  }
+
+  Widget _buildSingerLinks({
+    required TextStyle style,
+    required bool enabled,
+    required bool isPlayable,
+    required NavigationProvider navigationProvider,
+  }) {
+    final singers = _displaySingers;
+    if (singers.isEmpty) {
+      return Text(
+        widget.song.displaySingerName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return Wrap(
+      spacing: 0,
+      runSpacing: 0,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (int index = 0; index < singers.length; index++) ...[
+          _buildLinkText(
+            text: singers[index].name,
+            style: style,
+            onTap: enabled && singers[index].id > 0 && !navigationProvider.isCurrentRoute('artist_detail', id: singers[index].id)
+                ? () => _openArtistDetail(singers[index])
+                : null,
+          ),
+          if (index < singers.length - 1)
+            Text(
+              ' / ',
+              style: style.copyWith(color: style.color?.withAlpha(isPlayable ? 180 : 120)),
+            ),
+        ],
+      ],
     );
   }
 
@@ -269,17 +278,9 @@ class _SongCardState extends State<SongCard> {
       }
       context.read<AudioProvider>().playSong(widget.song, playlist: widget.playlist);
     } else if (value == 'songDetails') {
-      context.read<NavigationProvider>().push(
-        SongDetailView(song: widget.song),
-        name: 'song_detail',
-        arguments: widget.song,
-      );
+      context.read<NavigationProvider>().openSongDetail(widget.song);
     } else if (value == 'songComments') {
-      context.read<NavigationProvider>().push(
-        SongCommentView(song: widget.song),
-        name: 'song_comment',
-        arguments: widget.song,
-      );
+      context.read<NavigationProvider>().openSongComment(widget.song);
     } else if (value == 'removeFromPlaylist') {
       if (widget.parentPlaylist != null) {
         final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
@@ -293,9 +294,7 @@ class _SongCardState extends State<SongCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
-    final isCurrentArtistDetail = context.select<NavigationProvider, bool>(
-      (provider) => provider.isCurrentRoute('artist_detail', id: _primarySinger?.id),
-    );
+    final navigationProvider = context.watch<NavigationProvider>();
     final isCurrentAlbumDetail = context.select<NavigationProvider, bool>(
       (provider) => provider.isCurrentRoute('album_detail', id: _albumDetailId),
     );
@@ -407,14 +406,15 @@ class _SongCardState extends State<SongCard> {
                                       ],
                                     ),
                                     const SizedBox(height: 4),
-                                    _buildLinkText(
-                                      text: widget.song.singerName,
-                                      onTap: !isSelectionMode && _hasArtistDetail && !isCurrentArtistDetail ? _openArtistDetail : null,
+                                    _buildSingerLinks(
                                       style: TextStyle(
                                         color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                       ),
+                                      enabled: !isSelectionMode,
+                                      isPlayable: isPlayable,
+                                      navigationProvider: navigationProvider,
                                     ),
                                   ],
                                 ),
@@ -424,7 +424,7 @@ class _SongCardState extends State<SongCard> {
                                 SizedBox(
                                   width: 180,
                                   child: _buildLinkText(
-                                    text: widget.song.albumName,
+                                    text: widget.song.displayAlbumName,
                                     onTap: !isSelectionMode && _hasAlbumDetail && !isCurrentAlbumDetail ? _openAlbumDetail : null,
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140), 

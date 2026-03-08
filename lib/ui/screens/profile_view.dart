@@ -19,6 +19,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
   bool _isLoading = false;
 
   @override
+  String get refreshKey => 'root:6';
+
+  @override
   void onRefresh() {
     setState(() {});
   }

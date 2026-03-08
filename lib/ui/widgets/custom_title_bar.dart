@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:ui';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import 'package:echomusic/theme/app_theme.dart';
 
 class CustomTitleBar extends StatelessWidget {
@@ -13,6 +14,7 @@ class CustomTitleBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final modernTheme = theme.extension<AppModernTheme>()!;
+    final navigation = context.watch<NavigationProvider>();
 
     return WindowTitleBarBox(
       child: ClipRect(
@@ -40,17 +42,17 @@ class CustomTitleBar extends StatelessWidget {
                 // Navigation Controls (Note: These need integration with HomeScreen state for full functionality)
                 _NavButton(
                   icon: CupertinoIcons.chevron_left,
-                  onPressed: () => Navigator.maybePop(context),
+                  onPressed: navigation.canGoBack ? () => navigation.goBack() : null,
                   tooltip: '后退',
                 ),
                 _NavButton(
                   icon: CupertinoIcons.chevron_right,
-                  onPressed: null, // Placeholder
+                  onPressed: navigation.canGoForward ? () => navigation.goForward() : null,
                   tooltip: '前进',
                 ),
                 _NavButton(
                   icon: CupertinoIcons.refresh,
-                  onPressed: () => context.read<RefreshProvider>().triggerRefresh(),
+                  onPressed: () => context.read<RefreshProvider>().triggerRefresh(navigation.currentRefreshKey),
                   tooltip: '刷新',
                 ),
 

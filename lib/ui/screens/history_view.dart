@@ -17,6 +17,9 @@ class _HistoryViewState extends State<HistoryView> with RefreshableState<History
   bool _wasAuthenticated = false;
 
   @override
+  String get refreshKey => 'root:3';
+
+  @override
   void onRefresh() {
     final userProvider = context.read<UserProvider>();
     if (userProvider.isAuthenticated) {

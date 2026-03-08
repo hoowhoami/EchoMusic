@@ -20,6 +20,9 @@ class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> 
   bool _wasAuthenticated = false;
 
   @override
+  String get refreshKey => 'root:4';
+
+  @override
   void onRefresh() {
     final userProvider = context.read<UserProvider>();
     if (userProvider.isAuthenticated) {

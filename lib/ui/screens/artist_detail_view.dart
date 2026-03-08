@@ -27,6 +27,9 @@ class ArtistDetailView extends StatefulWidget {
 class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
   static const int _pageSize = 200;
 
+  @override
+  String get refreshKey => 'artist_detail:${widget.artistId}';
+
   Artist? _artist;
   List<Song>? _songs;
   bool _isLoading = true;

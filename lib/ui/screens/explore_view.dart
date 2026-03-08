@@ -4,8 +4,8 @@ import '../../models/song.dart';
 import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/navigation_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'playlist_detail_view.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
@@ -74,12 +74,7 @@ class _ExploreViewState extends State<ExploreView> {
                 padding: const EdgeInsets.only(right: 20),
                 child: InkWell(
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PlaylistDetailView(playlist: playlist),
-                      ),
-                    );
+                    context.read<NavigationProvider>().openPlaylist(playlist);
                   },
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

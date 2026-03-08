@@ -493,24 +493,12 @@ class MusicApi {
     int pagesize = 200,
   }) async {
     try {
-      String queryId = id?.toString() ?? '';
-
-      if (listid != null && listid != 0) {
-        // 获取当前用户 ID 用于判定所有权
-        final prefs = await SharedPreferences.getInstance();
-        final userInfoJson = prefs.getString('user_info');
-        int? currentUserId;
-        if (userInfoJson != null) {
-          currentUserId = jsonDecode(userInfoJson)['userid'];
-        }
-
-        // 判定逻辑：如果创建者不是自己，说明是收藏的他人歌单，必须换用 listCreateGid
-        if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
-          if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
-            queryId = listCreateGid;
-          }
-        }
-      }
+      final queryId = await resolvePlaylistTrackQueryId(
+        id,
+        listid: listid,
+        listCreateGid: listCreateGid,
+        listCreateUserid: listCreateUserid,
+      );
 
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
 
@@ -531,22 +519,12 @@ class MusicApi {
     int pagesize = 200,
   }) async {
     try {
-      String queryId = id?.toString() ?? '';
-
-      if (listid != null && listid != 0) {
-        final prefs = await SharedPreferences.getInstance();
-        final userInfoJson = prefs.getString('user_info');
-        int? currentUserId;
-        if (userInfoJson != null) {
-          currentUserId = jsonDecode(userInfoJson)['userid'];
-        }
-
-        if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
-          if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
-            queryId = listCreateGid;
-          }
-        }
-      }
+      final queryId = await resolvePlaylistTrackQueryId(
+        id,
+        listid: listid,
+        listCreateGid: listCreateGid,
+        listCreateUserid: listCreateUserid,
+      );
 
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') {
         return const PlaylistSongsParseResult(songs: []);
@@ -558,6 +536,32 @@ class MusicApi {
       LoggerService.e('getPlaylistSongsWithMetadata error: $e');
       return const PlaylistSongsParseResult(songs: []);
     }
+  }
+
+  static Future<String> resolvePlaylistTrackQueryId(
+    dynamic id, {
+    int? listid,
+    String? listCreateGid,
+    int? listCreateUserid,
+  }) async {
+    String queryId = id?.toString() ?? '';
+
+    if (listid != null && listid != 0) {
+      final prefs = await SharedPreferences.getInstance();
+      final userInfoJson = prefs.getString('user_info');
+      int? currentUserId;
+      if (userInfoJson != null) {
+        currentUserId = jsonDecode(userInfoJson)['userid'];
+      }
+
+      if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
+        if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
+          queryId = listCreateGid;
+        }
+      }
+    }
+
+    return queryId;
   }
 
   static List<Song> parseSongsFromResponse(Map<String, dynamic> responseData) {

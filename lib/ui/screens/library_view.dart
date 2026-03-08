@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/navigation_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/song_card.dart';
-import 'artist_detail_view.dart';
 import 'login_screen.dart';
 
 class LibraryView extends StatelessWidget {
@@ -115,14 +115,9 @@ class _FollowList extends StatelessWidget {
           ),
           title: Text(follow['singername'] ?? '', style: TextStyle(color: theme.colorScheme.onSurface)),
           onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ArtistDetailView(
-                  artistId: follow['singerid'],
-                  artistName: follow['singername'],
-                ),
-              ),
+            context.read<NavigationProvider>().openArtist(
+              follow['singerid'],
+              follow['singername'],
             );
           },
         );
