@@ -258,6 +258,10 @@ class LyricProvider with ChangeNotifier {
       }
     }
 
+    if (newIndex != _currentLineIndex) {
+      needsNotify = _setLineHighlightState(_currentLineIndex, false) || needsNotify;
+    }
+
     // 2. Character Highlight Update
     if (newIndex != -1) {
       final line = _lyrics[newIndex];
@@ -279,6 +283,19 @@ class LyricProvider with ChangeNotifier {
     if (needsNotify) {
       notifyListeners();
     }
+  }
+
+  bool _setLineHighlightState(int index, bool highlighted) {
+    if (index < 0 || index >= _lyrics.length) return false;
+
+    bool changed = false;
+    for (final char in _lyrics[index].characters) {
+      if (char.highlighted != highlighted) {
+        char.highlighted = highlighted;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   void clear() {

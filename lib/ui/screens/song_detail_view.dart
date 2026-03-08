@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../models/song.dart';
 import '../../api/music_api.dart';
-import '../../utils/format_utils.dart';
+import '../../utils/constants.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/back_to_top.dart';
 
@@ -159,13 +159,15 @@ class _SongDetailViewState extends State<SongDetailView> {
                               Text(
                                 widget.song.singerName,
                                 style: TextStyle(
-                                  fontSize: 14, 
-                                  fontWeight: FontWeight.w700, 
-                                  color: theme.colorScheme.primary
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.primary,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                              const SizedBox(height: 14),
+                              _buildHeaderMetaWrap(context),
                             ],
                           ),
                         ),
@@ -193,8 +195,6 @@ class _SongDetailViewState extends State<SongDetailView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoGrid(context),
-          const SizedBox(height: 32),
           _buildQualitySection(context),
           const SizedBox(height: 40),
           _buildRankingsSection(context),
@@ -203,11 +203,8 @@ class _SongDetailViewState extends State<SongDetailView> {
     );
   }
 
-  Widget _buildInfoGrid(BuildContext context) {
+  Widget _buildHeaderMetaWrap(BuildContext context) {
     final String language = _privilegeData?['trans_param']?['language'] ?? '未知';
-    final int bitrate = _privilegeData?['info']?['bitrate'] ?? 0;
-    final int filesize = _privilegeData?['info']?['filesize'] ?? 0;
-    final String ext = _privilegeData?['info']?['extname']?.toString().toUpperCase() ?? 'MP3';
 
     String favoriteCount = '0';
     try {
@@ -217,23 +214,13 @@ class _SongDetailViewState extends State<SongDetailView> {
       }
     } catch (_) {}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: 24,
+      runSpacing: 12,
       children: [
-        _buildSectionTitle('音频档案'),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 40,
-          runSpacing: 20,
-          children: [
-            _buildMetaItem('专辑', widget.song.albumName.isEmpty ? "单曲" : widget.song.albumName),
-            _buildMetaItem('语言', language),
-            _buildMetaItem('格式', ext),
-            if (bitrate > 0) _buildMetaItem('比特率', '${bitrate}kbps'),
-            if (filesize > 0) _buildMetaItem('文件大小', formatBytes(filesize)),
-            _buildMetaItem('累计收藏', favoriteCount),
-          ],
-        ),
+        _buildMetaItem('专辑', widget.song.albumName.isEmpty ? '单曲' : widget.song.albumName),
+        _buildMetaItem('语言', language),
+        _buildMetaItem('累计收藏', favoriteCount),
       ],
     );
   }
@@ -242,50 +229,95 @@ class _SongDetailViewState extends State<SongDetailView> {
     final List relateGoods = _privilegeData?['relate_goods'] ?? [];
     if (relateGoods.isEmpty) return const SizedBox.shrink();
 
+    final uniqueItems = _dedupeRelateGoods(relateGoods);
+
+    final qualityItems = uniqueItems.where((item) {
+      final q = item['quality']?.toString() ?? '';
+      return q.isNotEmpty && !_isAudioEffect(q);
+    }).toList();
+
+    final effectItems = uniqueItems.where((item) {
+      final q = item['quality']?.toString() ?? '';
+      return q.isNotEmpty && _isAudioEffect(q);
+    }).toList();
+
+    if (qualityItems.isEmpty && effectItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle('可选音质'),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: relateGoods.map((item) {
-            String q = item['quality']?.toString() ?? '';
-            String label = _getQualityLabel(q);
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withAlpha(10),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha(20)),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
+        if (qualityItems.isNotEmpty) ...[
+          _buildSectionTitle('可选音质'),
+          const SizedBox(height: 12),
+          _buildQualityTags(context, qualityItems),
+        ],
+        if (qualityItems.isNotEmpty && effectItems.isNotEmpty) const SizedBox(height: 24),
+        if (effectItems.isNotEmpty) ...[
+          _buildSectionTitle('可用音效'),
+          const SizedBox(height: 12),
+          _buildQualityTags(context, effectItems),
+        ],
       ],
     );
   }
 
-  String _getQualityLabel(String q) {
-    switch (q) {
-      case '128': return '标准 (128K)';
-      case '320': return '极高 (320K)';
-      case 'flac': return '无损 (FLAC)';
-      case 'high': return 'Hi-Res';
-      case 'viper_atmos': return '杜比全景声';
-      case 'viper_tape': return '磁带音效';
-      case 'viper_clear': return '清澈人声';
-      default: return q.toUpperCase();
+  List<Map<String, dynamic>> _dedupeRelateGoods(List items) {
+    final seen = <String>{};
+    final result = <Map<String, dynamic>>[];
+
+    for (final item in items) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final q = map['quality']?.toString() ?? '';
+      if (q.isEmpty || seen.contains(q)) continue;
+      seen.add(q);
+      result.add(map);
     }
+
+    return result;
+  }
+
+  Widget _buildQualityTags(BuildContext context, List items) {
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items.map((item) {
+        final q = item['quality']?.toString() ?? '';
+        final label = _getQualityLabel(q);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primary.withAlpha(10),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: theme.colorScheme.primary.withAlpha(20)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  bool _isAudioEffect(String q) {
+    return q != AudioEffect.none.value &&
+        AudioEffect.options.any((effect) => effect.value == q);
+  }
+
+  String _getQualityLabel(String q) {
+    if (_isAudioEffect(q)) {
+      return AudioEffect.getLabel(q);
+    }
+
+    return AudioQuality.getLabelOrRaw(q);
   }
 
   Widget _buildSectionTitle(String title) {

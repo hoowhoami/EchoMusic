@@ -75,24 +75,59 @@ class _SettingViewState extends State<SettingView> {
     }
 
     final logDir = logFile.parent;
-    if (await logDir.exists()) {
-      try {
-        if (Platform.isMacOS) {
-          await Process.run('open', [logDir.path]);
-        } else if (Platform.isWindows) {
-          await Process.run('explorer.exe', [logDir.path]);
-        } else {
-          final url = Uri.file(logDir.path);
-          if (await canLaunchUrl(url)) {
-            await launchUrl(url);
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          CustomToast.error(context, '无法打开日志目录: $e');
-        }
+    if (!await logDir.exists()) {
+      if (mounted) {
+        CustomToast.error(context, '日志目录不存在');
+      }
+      return;
+    }
+
+    try {
+      await _openDirectory(logDir.path);
+      if (mounted) {
+        CustomToast.success(context, '已打开日志目录');
+      }
+    } catch (e) {
+      if (mounted) {
+        CustomToast.error(context, '无法打开日志目录: $e');
       }
     }
+  }
+
+  Future<void> _openDirectory(String path) async {
+    final List<List<String>> commands = Platform.isMacOS
+        ? const [
+            ['open'],
+          ]
+        : Platform.isWindows
+            ? const [
+                ['explorer.exe'],
+              ]
+            : const [
+                ['xdg-open'],
+                ['gio', 'open'],
+              ];
+
+    Object? lastError;
+    for (final command in commands) {
+      try {
+        final executable = command.first;
+        final arguments = [...command.skip(1), path];
+        final result = await Process.run(executable, arguments);
+        if (result.exitCode == 0) {
+          return;
+        }
+
+        final stderr = result.stderr?.toString().trim();
+        lastError = stderr != null && stderr.isNotEmpty
+            ? stderr
+            : 'exit code ${result.exitCode}';
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw Exception(lastError ?? '未找到可用的目录打开方式');
   }
 
   @override
@@ -237,7 +272,9 @@ class _SettingViewState extends State<SettingView> {
                 trailing: _buildDropdown(
                   context,
                   AudioQuality.options.map((o) => o.label).toList(),
-                  AudioQuality.getLabel(settings['audioQuality'] ?? 'high'),
+                  AudioQuality.getLabel(
+                    AudioQuality.normalize(settings['audioQuality']?.toString()),
+                  ),
                   (label) {
                     final value = AudioQuality.options.firstWhere((o) => o.label == label).value;
                     persistence.updateSetting('audioQuality', value);
@@ -263,13 +300,7 @@ class _SettingViewState extends State<SettingView> {
             '音频设备',
             CupertinoIcons.speaker_2,
             [
-              _buildItem(
-                context,
-                '输出设备',
-                '选择音频播放输出设备',
-                trailing: _buildAudioDeviceDropdown(context, audio),
-              ),
-              if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
+              _buildAudioDeviceItem(context, audio),
               _buildItem(
                 context,
                 '设备断开时暂停',
@@ -487,6 +518,21 @@ class _SettingViewState extends State<SettingView> {
           trailing,
         ],
       ),
+    );
+  }
+
+  Widget _buildAudioDeviceItem(BuildContext context, AudioProvider audio) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildItem(
+          context,
+          '输出设备',
+          '选择音频播放输出设备',
+          trailing: _buildAudioDeviceDropdown(context, audio),
+        ),
+        if (_isWasapiSelected(audio)) _buildWasapiWarning(context),
+      ],
     );
   }
 
@@ -764,7 +810,7 @@ class _SettingViewState extends State<SettingView> {
   Widget _buildWasapiWarning(BuildContext context) {
     const warningColor = Color(0xFFF59E0B);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
       child: Row(
         children: [
           const Icon(CupertinoIcons.exclamationmark_triangle, size: 13, color: warningColor),

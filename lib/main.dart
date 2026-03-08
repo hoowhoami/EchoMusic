@@ -123,6 +123,45 @@ class _WindowHandlerState extends State<WindowHandler>
   static final _lifecycleChannel =
       MethodChannel('com.hoowhoami.echomusic/app_lifecycle');
 
+  void _logTray(String message) {
+    LoggerService.i('[tray] $message');
+  }
+
+  void _logTrayError(String message, Object error, StackTrace stackTrace) {
+    LoggerService.e('[tray] $message', error, stackTrace);
+  }
+
+  void _logLinuxTrayEnvironment() {
+    if (!Platform.isLinux) return;
+
+    _logTray(
+      'linux env: os=${Platform.operatingSystemVersion}; '
+      'desktop=${Platform.environment['XDG_CURRENT_DESKTOP'] ?? 'unknown'}; '
+      'session=${Platform.environment['XDG_SESSION_TYPE'] ?? 'unknown'}; '
+      'display=${Platform.environment['DISPLAY'] ?? 'unset'}; '
+      'wayland=${Platform.environment['WAYLAND_DISPLAY'] ?? 'unset'}',
+    );
+  }
+
+  Future<void> _showWindowFromTray() async {
+    try {
+      final minimized = await windowManager.isMinimized();
+      _logTray('_showWindowFromTray start: minimized=$minimized');
+
+      if (minimized) {
+        await windowManager.restore();
+        _logTray('_showWindowFromTray restore done');
+      }
+
+      await windowManager.show();
+      await windowManager.focus();
+      _logTray('_showWindowFromTray completed');
+    } catch (e, stackTrace) {
+      _logTrayError('_showWindowFromTray failed', e, stackTrace);
+      rethrow;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -130,6 +169,8 @@ class _WindowHandlerState extends State<WindowHandler>
     windowManager.addListener(this);
     trayManager.addListener(this);
     windowManager.setPreventClose(true);
+    _logTray('initState: listener registered, preventClose=true');
+    _logLinuxTrayEnvironment();
     _initTray();
     if (Platform.isMacOS) {
       _lifecycleChannel.setMethodCallHandler(_onLifecycleCall);
@@ -148,19 +189,29 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   Future<void> _initTray() async {
-    await trayManager.setIcon(
-      Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
-    );
-    await trayManager.setToolTip('EchoMusic');
+    _logTray('_initTray start');
 
-    final menu = Menu(
-      items: [
-        MenuItem(key: 'show_window', label: '显示窗口'),
-        MenuItem.separator(),
-        MenuItem(key: 'exit_app', label: '退出'),
-      ],
-    );
-    await trayManager.setContextMenu(menu);
+    try {
+      await trayManager.setIcon(
+        Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
+      );
+      _logTray('_initTray setIcon done');
+
+      await trayManager.setToolTip('EchoMusic');
+      _logTray('_initTray setToolTip done');
+
+      final menu = Menu(
+        items: [
+          MenuItem(key: 'show_window', label: '显示窗口'),
+          MenuItem.separator(),
+          MenuItem(key: 'exit_app', label: '退出'),
+        ],
+      );
+      await trayManager.setContextMenu(menu);
+      _logTray('_initTray setContextMenu done');
+    } catch (e, stackTrace) {
+      _logTrayError('_initTray failed', e, stackTrace);
+    }
   }
 
   @override
@@ -173,6 +224,7 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _logTray('didChangeAppLifecycleState: $state');
     if (state == AppLifecycleState.detached) {
       ServerOrchestrator.stop();
     }
@@ -182,6 +234,7 @@ class _WindowHandlerState extends State<WindowHandler>
   void onWindowClose() async {
     final persistence = context.read<PersistenceProvider>();
     final closeBehavior = persistence.settings['closeBehavior'] ?? 'tray';
+    _logTray('onWindowClose: closeBehavior=$closeBehavior');
 
     if (closeBehavior == 'exit') {
       try {
@@ -192,6 +245,7 @@ class _WindowHandlerState extends State<WindowHandler>
       await windowManager.destroy();
       exit(0);
     } else {
+      _logTray('onWindowClose: hiding window to tray');
       await windowManager.hide();
     }
   }
@@ -201,26 +255,46 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void onWindowRestore() async {
-    await windowManager.show();
-    await windowManager.focus();
+    _logTray('onWindowRestore');
+    await _showWindowFromTray();
   }
 
   @override
   void onTrayIconMouseDown() async {
-    await windowManager.show();
-    await windowManager.focus();
+    _logTray('onTrayIconMouseDown: platform=${Platform.operatingSystem}');
+    if (!Platform.isLinux) {
+      await _showWindowFromTray();
+    }
+  }
+
+  @override
+  void onTrayIconMouseUp() async {
+    _logTray('onTrayIconMouseUp: platform=${Platform.operatingSystem}');
+    if (Platform.isLinux) {
+      await _showWindowFromTray();
+    }
   }
 
   @override
   void onTrayIconRightMouseDown() {
-    trayManager.popUpContextMenu();
+    _logTray('onTrayIconRightMouseDown: platform=${Platform.operatingSystem}');
+    if (!Platform.isLinux) {
+      trayManager.popUpContextMenu();
+    } else {
+      _logTray('onTrayIconRightMouseDown: linux uses native tray context menu');
+    }
+  }
+
+  @override
+  void onTrayIconRightMouseUp() {
+    _logTray('onTrayIconRightMouseUp: platform=${Platform.operatingSystem}');
   }
 
   @override
   void onTrayMenuItemClick(MenuItem menuItem) async {
+    _logTray('onTrayMenuItemClick: key=${menuItem.key}');
     if (menuItem.key == 'show_window') {
-      await windowManager.show();
-      await windowManager.focus();
+      await _showWindowFromTray();
     } else if (menuItem.key == 'exit_app') {
       // Stop mpv player before destroying the window.
       // mpv runs on a native thread; if Flutter tears down while mpv is

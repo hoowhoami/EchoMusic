@@ -10,8 +10,36 @@ class AudioQuality {
 
   static const options = [standard, hq, lossless, high];
 
+  static const defaultOption = high;
+
+  static const priorityOptions = [high, lossless, hq, standard];
+
+  static String get defaultValue => defaultOption.value;
+
+  static bool contains(String value) {
+    return options.any((o) => o.value == value);
+  }
+
+  static AudioQuality? find(String? value) {
+    if (value == null) return null;
+    for (final option in options) {
+      if (option.value == value) return option;
+    }
+    return null;
+  }
+
+  static String normalize(String? value) {
+    if (value == null) return defaultValue;
+    return contains(value) ? value : defaultValue;
+  }
+
   static String getLabel(String value) {
-    return options.firstWhere((o) => o.value == value, orElse: () => high).label;
+    final normalized = normalize(value);
+    return options.firstWhere((o) => o.value == normalized, orElse: () => defaultOption).label;
+  }
+
+  static String getLabelOrRaw(String value) {
+    return find(value)?.label ?? value.toUpperCase();
   }
 }
 

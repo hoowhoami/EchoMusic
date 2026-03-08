@@ -6,6 +6,17 @@ script:
   - cp -r build/linux/x64/release/bundle/* AppDir/
   - mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
   - cp assets/icons/icon.png AppDir/usr/share/icons/hicolor/512x512/apps/echomusic.png
+  - mkdir -p AppDir/usr/share/applications
+  - |
+      cat > AppDir/usr/share/applications/com.hoowhoami.echomusic.desktop <<'EOF'
+      [Desktop Entry]
+      Type=Application
+      Name=EchoMusic
+      Exec=EchoMusic
+      Icon=echomusic
+      Categories=AudioVideo;Audio;Player;
+      Terminal=false
+      EOF
 
 AppDir:
   path: ./AppDir
@@ -21,18 +32,24 @@ AppDir:
     allow_unauthenticated: true
     sources:
       - sourceline: deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+        key_url: http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
       - sourceline: deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+        key_url: http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
       - sourceline: deb [arch=amd64] http://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+        key_url: http://keyserver.ubuntu.com/pks/lookup?op=get&search=0x871920D1991BC93C
     include:
       - libgtk-3-0
       - libsecret-1-0
       - libjsoncpp25
       - libayatana-appindicator3-1
-      - libmpv2
+      - libmpv1
+      - libgdk-pixbuf-2.0-0
+      - libgdk-pixbuf2.0-bin
+      - librsvg2-common
+      - shared-mime-info
+      - gtk-update-icon-cache
     exclude:
       - humanity-icon-theme
-      - hicolor-icon-theme
-      - adwaita-icon-theme
       - ubuntu-mono
   files:
     exclude:
@@ -44,6 +61,9 @@ AppDir:
   runtime:
     env:
       GIO_MODULE_DIR: $APPDIR/usr/lib/x86_64-linux-gnu/gio/modules/
+      GDK_PIXBUF_MODULE_FILE: $APPDIR/usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders.cache
+      LIBMPV_LIBRARY_PATH: $APPDIR/usr/lib/x86_64-linux-gnu/libmpv.so.1
+      XDG_DATA_DIRS: $APPDIR/usr/share/:$XDG_DATA_DIRS
 
 AppImage:
   arch: x86_64

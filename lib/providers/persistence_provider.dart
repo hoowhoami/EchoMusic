@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../utils/constants.dart';
 
 class PersistenceProvider with ChangeNotifier {
   static const String _keyFavorites = 'favorites';
@@ -34,7 +35,7 @@ class PersistenceProvider with ChangeNotifier {
     'replacePlaylist': false,
     'preventSleep': true,
     'compatibilityMode': true,
-    'audioQuality': 'high',
+    'audioQuality': AudioQuality.defaultValue,
     'audioEffect': 'none',
     'autoSign': false,
     'autoReceiveVip': false,
@@ -46,7 +47,7 @@ class PersistenceProvider with ChangeNotifier {
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,
     'playMode': 'repeat',
-    'audioQuality': 'high',
+    'audioQuality': AudioQuality.defaultValue,
     'audioEffect': 'none',
   };
 
@@ -196,7 +197,7 @@ class PersistenceProvider with ChangeNotifier {
       'replacePlaylist': false,
       'preventSleep': true,
       'compatibilityMode': true,
-      'audioQuality': 'high',
+      'audioQuality': AudioQuality.defaultValue,
       'audioEffect': 'none',
       'autoSign': false,
       'autoReceiveVip': false,
@@ -207,7 +208,7 @@ class PersistenceProvider with ChangeNotifier {
     _playerSettings = {
       'volume': 50.0,
       'playMode': 'repeat',
-      'audioQuality': 'high',
+      'audioQuality': AudioQuality.defaultValue,
       'audioEffect': 'none',
     };
     notifyListeners();

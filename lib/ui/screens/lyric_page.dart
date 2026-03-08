@@ -54,14 +54,22 @@ class _LyricPageState extends State<LyricPage> {
 
   void _scrollToCurrent(double lineHeight, int index, {bool force = false}) {
     if (!_scrollController.hasClients || index < 0) return;
-    final targetOffset = index * lineHeight;
+    final targetOffset = (index * lineHeight)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
     if (force) {
-      _scrollController.jumpTo(targetOffset.clamp(0, _scrollController.position.maxScrollExtent));
+      _scrollController.jumpTo(targetOffset);
     } else if (_isAutoScrolling) {
+      final distance = (targetOffset - _scrollController.offset).abs();
+      final normalizedDistance =
+          lineHeight <= 0 ? 1.0 : (distance / lineHeight).clamp(1.0, 3.0);
+      final duration = Duration(
+        milliseconds: (420 + normalizedDistance * 100).round(),
+      );
+
       _scrollController.animateTo(
-        targetOffset.clamp(0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.fastEaseInToSlowEaseOut,
+        targetOffset,
+        duration: duration,
+        curve: Curves.easeInOutCubic,
       );
     }
   }
@@ -378,6 +386,9 @@ class _LyricsModeSwitcherWidget extends StatelessWidget {
 }
 
 class _LyricLineWidget extends StatelessWidget {
+  static const Duration _lineTransitionDuration = Duration(milliseconds: 260);
+  static const Duration _characterTransitionDuration = Duration(milliseconds: 180);
+
   final LyricLine line;
   final String? secondaryText;
   final bool isCurrent;
@@ -389,49 +400,104 @@ class _LyricLineWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const primaryFontSize = 25.0;
+    final baseTextStyle = TextStyle(
+      fontSize: primaryFontSize,
+      fontWeight: FontWeight.w900,
+      color: Colors.white,
+      letterSpacing: 0.5,
+      height: 1.3,
+    );
+
     return InkWell(
       onTap: onTap,
       hoverColor: Colors.transparent,
       splashColor: Colors.transparent,
-      child: Opacity(
-        opacity: isCurrent ? 1.0 : 0.3,
-        child: Container(
-          width: maxWidth,
-          alignment: Alignment.center,
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+      child: AnimatedOpacity(
+        duration: _lineTransitionDuration,
+        curve: Curves.easeOutCubic,
+        opacity: isCurrent ? 1.0 : 0.38,
+        child: AnimatedSlide(
+          duration: _lineTransitionDuration,
+          curve: Curves.easeOutCubic,
+          offset: isCurrent ? Offset.zero : const Offset(0, 0.06),
+          child: AnimatedScale(
+            duration: _lineTransitionDuration,
+            curve: Curves.easeOutCubic,
+            scale: isCurrent ? 1.0 : 0.9,
             alignment: Alignment.center,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: RichText(
-                    textAlign: TextAlign.center,
-                    softWrap: true,
-                    text: TextSpan(
-                      children: line.characters.map((char) {
-                        return TextSpan(
-                          text: char.text,
-                          style: TextStyle(
-                            fontSize: isCurrent ? 26 : 20,
-                            fontWeight: FontWeight.w900,
-                            color: char.highlighted ? theme.colorScheme.primary : Colors.white,
-                            letterSpacing: 0.5,
-                            height: 1.3,
-                            shadows: char.highlighted ? [Shadow(color: theme.colorScheme.primary.withAlpha(100), blurRadius: 8)] : null,
-                          ),
-                        );
-                      }).toList(),
+            child: Container(
+              width: maxWidth,
+              alignment: Alignment.center,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      constraints: BoxConstraints(maxWidth: maxWidth),
+                      child: RichText(
+                        textAlign: TextAlign.center,
+                        softWrap: true,
+                        text: TextSpan(
+                          children: line.characters.map((char) {
+                            final textStyle = baseTextStyle.copyWith(
+                              color: char.highlighted
+                                  ? theme.colorScheme.primary
+                                  : Colors.white,
+                              shadows: char.highlighted
+                                  ? [
+                                      Shadow(
+                                        color: theme.colorScheme.primary
+                                            .withAlpha(100),
+                                        blurRadius: 8,
+                                      ),
+                                    ]
+                                  : null,
+                            );
+
+                            return WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: AnimatedDefaultTextStyle(
+                                duration: _characterTransitionDuration,
+                                curve: Curves.easeOutCubic,
+                                style: textStyle,
+                                child: Text(char.text),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
                     ),
-                  ),
+                    if (secondaryText != null && secondaryText!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: AnimatedDefaultTextStyle(
+                          duration: _lineTransitionDuration,
+                          curve: Curves.easeOutCubic,
+                          style: TextStyle(
+                            fontSize: isCurrent ? 14 : 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withAlpha(isCurrent ? 160 : 120),
+                            height: 1.2,
+                          ),
+                          child: Text(
+                            secondaryText!,
+                            textAlign: TextAlign.center,
+                            softWrap: true,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                if (secondaryText != null && secondaryText!.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Container(constraints: BoxConstraints(maxWidth: maxWidth), child: Text(secondaryText!, textAlign: TextAlign.center, softWrap: true, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: isCurrent ? 14 : 12, fontWeight: FontWeight.w600, color: Colors.white.withAlpha(isCurrent ? 160 : 120), height: 1.2))),
-                ],
-              ],
+              ),
             ),
           ),
         ),

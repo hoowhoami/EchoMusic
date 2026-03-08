@@ -719,7 +719,9 @@ class _QualityEffectPopup extends StatelessWidget {
   Widget build(BuildContext context) {
     final audio = context.watch<AudioProvider>();
     final persistence = context.watch<PersistenceProvider>();
-    final currentQuality = persistence.playerSettings['audioQuality'] ?? persistence.settings['audioQuality'] ?? 'flac';
+    final currentQuality = AudioQuality.normalize(
+      (persistence.playerSettings['audioQuality'] ?? persistence.settings['audioQuality'])?.toString(),
+    );
     final currentEffect = persistence.playerSettings['audioEffect'] ?? persistence.settings['audioEffect'] ?? 'none';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,9 +834,9 @@ class _PopupArrowPainter extends CustomPainter {
 }
 
 class _PlayerIconButton extends StatefulWidget {
-  final IconData icon; final VoidCallback? onPressed; final VoidCallback? onSecondaryPressed; final Function(double)? onScroll;
+  final IconData icon; final VoidCallback? onPressed; final Function(double)? onScroll;
   final double size; final bool isSelected; final Color? activeColor; final String? tooltip;
-  const _PlayerIconButton({super.key, required this.icon, this.onPressed, this.onSecondaryPressed, this.onScroll, this.size = 20, this.isSelected = false, this.activeColor, this.tooltip});
+  const _PlayerIconButton({required this.icon, this.onPressed, this.onScroll, this.size = 20, this.isSelected = false, this.activeColor, this.tooltip});
   @override
   State<_PlayerIconButton> createState() => _PlayerIconButtonState();
 }
@@ -856,7 +858,7 @@ class _PlayerIconButtonState extends State<_PlayerIconButton> {
       child: Tooltip(
         message: widget.tooltip ?? '', waitDuration: const Duration(milliseconds: 500),
         child: GestureDetector(
-          onTap: widget.onPressed, onSecondaryTap: widget.onSecondaryPressed,
+          onTap: widget.onPressed,
           child: Listener(
             onPointerSignal: (pointerSignal) { if (pointerSignal is PointerScrollEvent && widget.onScroll != null) widget.onScroll!(pointerSignal.scrollDelta.dy); },
             child: AnimatedScale(
