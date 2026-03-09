@@ -113,7 +113,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     });
 
     // Fetch detailed info to get creator and timestamps
-    final detailJson = await MusicApi.getPlaylistDetail(_lookupId);
+    final detailJson = await MusicApi.getPlaylistDetail(_routeArgs.trackListCreateGid ?? _lookupId);
 
     if (detailJson != null && mounted) {
       setState(() {

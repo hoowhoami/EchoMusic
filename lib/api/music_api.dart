@@ -1,20 +1,20 @@
 import 'dart:convert';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'backend/music_api_backend.dart';
+import 'backend/http_music_api_backend.dart';
+import 'music_api_auth.dart';
+import 'transport/http_music_transport.dart';
+import 'transport/music_transport.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../utils/logger.dart';
-import '../utils/server_orchestrator.dart';
 
 class PlaylistSongsParseResult {
   final List<Song> songs;
   final int filteredCount;
 
-  const PlaylistSongsParseResult({
-    required this.songs,
-    this.filteredCount = 0,
-  });
+  const PlaylistSongsParseResult({required this.songs, this.filteredCount = 0});
 
   int get sourceCount => songs.length + filteredCount;
 }
@@ -23,107 +23,43 @@ class MusicApi {
   static VoidCallback? onAuthExpired;
   static bool _isAuthExpiredNotified = false;
 
-  static final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'http://127.0.0.1:10086',
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
-  ))
-    ..interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) async {
-        // Wait for the local server to be ready before sending any request.
-        // This handles the race condition where providers make API calls
-        // during app init before the server process has fully started.
-        await ServerOrchestrator.waitUntilReady();
+  static MusicTransport _createDefaultTransport() => HttpMusicTransport(
+    authExpirationHandler: _checkAuthExpiration,
+    dataFormatter: _truncateData,
+  );
 
-        options.extra['startTime'] = DateTime.now().millisecondsSinceEpoch;
+  static MusicApiBackend _createDefaultBackend() =>
+      HttpMusicApiBackend(transportProvider: () => _transport);
 
-        if (options.extra['skipAuth'] == true) {
-          options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
-          return handler.next(options);
-        }
+  static MusicTransport _transport = _createDefaultTransport();
+  static MusicApiBackend _backend = _createDefaultBackend();
 
-        final prefs = await SharedPreferences.getInstance();
-        
-        // Retrieve device and user info from storage
-        final deviceJson = prefs.getString('device_info');
-        final userInfoJson = prefs.getString('user_info');
-        
-        final device = deviceJson != null ? jsonDecode(deviceJson) : null;
-        final userInfo = userInfoJson != null ? jsonDecode(userInfoJson) : null;
+  static Future<void> setTransport(MusicTransport transport) async {
+    await _transport.dispose();
+    _transport = transport;
+  }
 
-        final token = userInfo?['token'];
-        final userid = userInfo?['userid'];
-        final t1 = userInfo?['t1'];
-        final dfid = device?['dfid'];
-        final mid = device?['mid'];
-        final guid = device?['guid'];
-        final serverDev = device?['serverDev'];
-        final mac = device?['mac'];
+  @visibleForTesting
+  static Future<void> setBackend(MusicApiBackend backend) async {
+    await _backend.dispose();
+    _backend = backend;
+    await syncBackendAuthState();
+  }
 
-        final authParts = <String>[];
-        if (token != null) authParts.add('token=$token');
-        if (userid != null) authParts.add('userid=$userid');
-        if (dfid != null) authParts.add('dfid=$dfid');
-        if (t1 != null) authParts.add('t1=$t1');
-        if (mid != null) authParts.add('KUGOU_API_MID=$mid');
-        if (guid != null) authParts.add('KUGOU_API_GUID=$guid');
-        if (serverDev != null) authParts.add('KUGOU_API_DEV=$serverDev');
-        if (mac != null) authParts.add('KUGOU_API_MAC=$mac');
+  @visibleForTesting
+  static Future<void> resetTransport() async {
+    await _backend.dispose();
+    await _transport.dispose();
+    _transport = _createDefaultTransport();
+    _backend = _createDefaultBackend();
+    _isAuthExpiredNotified = false;
+    await syncBackendAuthState();
+  }
 
-        if (authParts.isNotEmpty) {
-          options.headers['Authorization'] = authParts.join(';');
-        }
-
-        options.queryParameters['t'] = DateTime.now().millisecondsSinceEpoch;
-
-        return handler.next(options);
-      },
-      onResponse: (response, handler) {
-        _checkAuthExpiration(response.requestOptions.path, response.data);
-        
-        final startTime = response.requestOptions.extra['startTime'] as int?;
-        final endTime = DateTime.now().millisecondsSinceEpoch;
-        final duration = startTime != null ? endTime - startTime : null;
-        
-        final logMsg = StringBuffer();
-        logMsg.writeln('HTTP [${response.requestOptions.method}] ${response.requestOptions.uri}');
-        logMsg.writeln('Status: ${response.statusCode} ${response.statusMessage} | Duration: ${duration}ms');
-        logMsg.writeln('Headers: ${response.requestOptions.headers}');
-        if (response.requestOptions.data != null) {
-          logMsg.writeln('Request Body: ${response.requestOptions.data}');
-        }
-        logMsg.write('Response: ${_truncateData(response.data)}');
-        
-        LoggerService.i(logMsg.toString());
-            
-        return handler.next(response);
-      },
-      onError: (err, handler) {
-        if (err.response != null) {
-          _checkAuthExpiration(err.requestOptions.path, err.response!.data);
-        }
-        
-        final startTime = err.requestOptions.extra['startTime'] as int?;
-        final endTime = DateTime.now().millisecondsSinceEpoch;
-        final duration = startTime != null ? endTime - startTime : null;
-
-        final logMsg = StringBuffer();
-        logMsg.writeln('HTTP Error [${err.requestOptions.method}] ${err.requestOptions.uri}');
-        logMsg.writeln('Status: ${err.response?.statusCode} | Duration: ${duration}ms');
-        logMsg.writeln('Headers: ${err.requestOptions.headers}');
-        logMsg.writeln('Error: ${err.message}');
-        if (err.requestOptions.data != null) {
-          logMsg.writeln('Request Body: ${err.requestOptions.data}');
-        }
-        if (err.response?.data != null) {
-          logMsg.write('Response: ${_truncateData(err.response?.data)}');
-        }
-        
-        LoggerService.e(logMsg.toString());
-            
-        return handler.next(err);
-      },
-    ));
+  static Future<void> syncBackendAuthState() async {
+    final cookie = await MusicApiStoredAuth.loadCookieValue();
+    await _backend.syncAuthCookie(cookie);
+  }
 
   static String _truncateData(dynamic data) {
     if (data == null) return 'null';
@@ -140,10 +76,10 @@ class MusicApi {
     final rules = [
       // Rule 1: Global error code for expired token
       () => data['error_code'] == 20018,
-      
+
       // Rule 3: VIP detail failure often means token invalid
       () => path.contains('/user/vip/detail') && data['status'] == 0,
-      
+
       // Rule 4: General session expired message in data
       () => (data['msg']?.toString().contains('登录已过期') ?? false),
     ];
@@ -152,9 +88,11 @@ class MusicApi {
 
     if (isExpired && !_isAuthExpiredNotified) {
       _isAuthExpiredNotified = true;
-      LoggerService.w('[MusicApi] Auth expiration detected at $path. Data: $data');
+      LoggerService.w(
+        '[MusicApi] Auth expiration detected at $path. Data: $data',
+      );
       onAuthExpired?.call();
-      
+
       // Reset after a delay to allow future notifications if user logs in and expires again
       Future.delayed(const Duration(seconds: 5), () {
         _isAuthExpiredNotified = false;
@@ -163,326 +101,139 @@ class MusicApi {
   }
 
   static Future<Map<String, dynamic>?> registerDevice() async {
-    try {
-      final response = await _dio.get(
-        '/register/dev',
-        options: Options(extra: {'skipAuth': true}),
-      );
-      if (response.data['status'] == 1) {
-        return response.data['data'];
-      }
-      return null;
-    } catch (e) {
-      // Error is already printed by interceptor
-      return null;
-    }
+    return _backend.registerDevice();
   }
 
-  static Future<List<Song>> search(String keywords, {int page = 1, int pagesize = 30, String type = 'song'}) async {
-    try {
-      final response = await _dio.get('/search', queryParameters: {
-        'keywords': keywords,
-        'page': page,
-        'pagesize': pagesize,
-        'type': type,
-      });
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['lists'] ?? [];
-        return data.map((json) => Song.fromSearchJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
+  static Future<List<Song>> search(
+    String keywords, {
+    int page = 1,
+    int pagesize = 30,
+    String type = 'song',
+  }) => _backend.search(keywords, page: page, pagesize: pagesize, type: type);
+
+  static Future<Map<String, dynamic>> getSearchResult(
+    String keywords, {
+    String type = 'song',
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getSearchResult(
+    keywords,
+    type: type,
+    page: page,
+    pagesize: pagesize,
+  );
+
+  static Future<Map<String, dynamic>?> getSongUrl(
+    String hash, {
+    String quality = '',
+  }) async {
+    return _backend.getSongUrl(hash, quality: quality);
   }
 
-  static Future<Map<String, dynamic>> getSearchResult(String keywords, {String type = 'song', int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/search', queryParameters: {
-        'keywords': keywords,
-        'page': page,
-        'pagesize': pagesize,
-        'type': type,
-      });
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<String?> getCloudSongUrl(String hash) =>
+      _backend.getCloudSongUrl(hash);
 
-  static Future<Map<String, dynamic>?> getSongUrl(String hash, {String quality = ''}) async {
-    try {
-      final params = <String, dynamic>{
-        'hash': hash,
-      };
-      if (quality.isNotEmpty) {
-        params['quality'] = quality;
-      }
-      final response = await _dio.get('/song/url', queryParameters: params);
-      
-      if (response.data != null) {
-        final status = response.data['status'];
-        // Some responses have data at root, some in a 'data' field
-        final payload = response.data['data'] ?? response.data;
-        final urlData = payload['url'];
-        
-        String? url;
-        if (urlData is List && urlData.isNotEmpty) {
-          url = urlData[0].toString();
-        } else if (urlData is String) {
-          url = urlData;
-        }
+  static Future<List<Map<String, dynamic>>> getSongPrivilege(
+    String hash, {
+    String? albumId,
+  }) => _backend.getSongPrivilege(hash, albumId: albumId);
 
-        return {
-          'url': url,
-          'status': status,
-        };
-      }
-      return null;
-    } catch (e) {
-      LoggerService.e('getSongUrl error: $e');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>> getSongRanking(dynamic albumAudioId) =>
+      _backend.getSongRanking(albumAudioId);
 
-  static Future<String?> getCloudSongUrl(String hash) async {
-    try {
-      final response = await _dio.get('/user/cloud/url', queryParameters: {'hash': hash});
-      if (response.data['status'] == 1) {
-        return response.data['data']?['url'];
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>> getSongRankingFilter(
+    dynamic albumAudioId, {
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getSongRankingFilter(
+    albumAudioId,
+    page: page,
+    pagesize: pagesize,
+  );
 
-  static Future<List<Map<String, dynamic>>> getSongPrivilege(String hash, {String? albumId}) async {
-    try {
-      final params = {'hash': hash};
-      if (albumId != null && albumId != '0' && albumId.isNotEmpty) {
-        params['album_id'] = albumId;
-      }
-      
-      final response = await _dio.get('/privilege/lite', queryParameters: params);
-      if (response.data['status'] == 1) {
-        final List data = response.data['data'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      LoggerService.e('getSongPrivilege error: $e');
-      return [];
-    }
-  }
+  static Future<Map<String, dynamic>> getFavoriteCount(String mixSongIds) =>
+      _backend.getFavoriteCount(mixSongIds);
 
-  static Future<Map<String, dynamic>> getSongRanking(dynamic albumAudioId) async {
-    try {
-      final response = await _dio.get('/song/ranking', queryParameters: {'album_audio_id': albumAudioId});
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getCommentCount(
+    String hash, {
+    String? specialId,
+  }) => _backend.getCommentCount(hash, specialId: specialId);
 
-  static Future<Map<String, dynamic>> getSongRankingFilter(dynamic albumAudioId, {int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/song/ranking/filter', queryParameters: {
-        'album_audio_id': albumAudioId,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getMusicComments(
+    dynamic mixSongId, {
+    int page = 1,
+    int pagesize = 30,
+    int sort = 2,
+    bool showClassify = false,
+    bool showHotwordList = false,
+  }) => _backend.getMusicComments(
+    mixSongId,
+    page: page,
+    pagesize: pagesize,
+    sort: sort,
+    showClassify: showClassify,
+    showHotwordList: showHotwordList,
+  );
 
-  static Future<Map<String, dynamic>> getFavoriteCount(String mixSongIds) async {
-    try {
-      final response = await _dio.get('/favorite/count', queryParameters: {'mixsongids': mixSongIds});
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getMusicClassifyComments(
+    dynamic mixSongId,
+    int typeId, {
+    int page = 1,
+    int pagesize = 30,
+    int sort = 2,
+  }) => _backend.getMusicClassifyComments(
+    mixSongId,
+    typeId,
+    page: page,
+    pagesize: pagesize,
+    sort: sort,
+  );
 
-  static Future<Map<String, dynamic>> getCommentCount(String hash, {String? specialId}) async {
-    try {
-      final params = {'hash': hash};
-      if (specialId != null) params['special_id'] = specialId;
-      final response = await _dio.get('/comment/count', queryParameters: params);
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  static Future<Map<String, dynamic>> getMusicComments(dynamic mixSongId, {int page = 1, int pagesize = 30, int sort = 2, bool showClassify = false, bool showHotwordList = false}) async {
-    try {
-      final response = await _dio.get('/comment/music', queryParameters: {
-        'mixsongid': mixSongId,
-        'page': page,
-        'pagesize': pagesize,
-        'show_classify': showClassify ? 1 : 0,
-        'show_hotword_list': showHotwordList ? 1 : 0,
-        'sort': sort,
-      });
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  static Future<Map<String, dynamic>> getMusicClassifyComments(dynamic mixSongId, int typeId, {int page = 1, int pagesize = 30, int sort = 2}) async {
-    try {
-      final response = await _dio.get('/comment/music/classify', queryParameters: {
-        'mixsongid': mixSongId,
-        'type_id': typeId,
-        'page': page,
-        'pagesize': pagesize,
-        'sort': sort,
-      });
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  static Future<Map<String, dynamic>> getMusicHotwordComments(dynamic mixSongId, String hotWord, {int page = 1, int pagesize = 30, int sort = 2}) async {
-    try {
-      final response = await _dio.get('/comment/music/hotword', queryParameters: {
-        'mixsongid': mixSongId,
-        'hot_word': hotWord,
-        'page': page,
-        'pagesize': pagesize,
-        'sort': sort,
-      });
-      return response.data;
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getMusicHotwordComments(
+    dynamic mixSongId,
+    String hotWord, {
+    int page = 1,
+    int pagesize = 30,
+    int sort = 2,
+  }) => _backend.getMusicHotwordComments(
+    mixSongId,
+    hotWord,
+    page: page,
+    pagesize: pagesize,
+    sort: sort,
+  );
 
   static Future<List<Song>> getNewSongs() async {
-    try {
-      final response = await _dio.get('/top/song');
-      if (response.data['status'] == 1) {
-        List data = response.data['data'] ?? [];
-        return data.map((json) => Song.fromTopSongJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
+    return _backend.getNewSongs();
   }
 
-  static Future<List<Map<String, dynamic>>> getRanks() async {
-    try {
-      final response = await _dio.get('/rank/list');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['info'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      LoggerService.w('getRanks status != 1: ${response.data}');
-      return [];
-    } catch (e) {
-      LoggerService.e('getRanks error: $e');
-      return [];
-    }
+  static Future<List<Map<String, dynamic>>> getRanks() => _backend.getRanks();
+
+  static Future<List<Map<String, dynamic>>> getRankTop() =>
+      _backend.getRankTop();
+
+  static Future<List<Song>> getRankSongs(int rankId) =>
+      _backend.getRankSongs(rankId);
+
+  static Future<List<Playlist>> getRecommendPlaylists() =>
+      _backend.getRecommendPlaylists();
+
+  static Future<Map<String, dynamic>?> getPlaylistDetail(String ids) =>
+      _backend.getPlaylistDetail(ids);
+
+  static Future<Map<String, dynamic>> getPlaylistTrackAll(
+    String id, {
+    int page = 1,
+    int pagesize = 30,
+  }) async {
+    return _backend.getPlaylistTrackAll(id, page: page, pagesize: pagesize);
   }
 
-  static Future<List<Map<String, dynamic>>> getRankTop() async {
-    try {
-      final response = await _dio.get('/rank/top');
-      if (response.data['status'] == 1) {
-        // Based on EchoMusicLegacy, the data is in response.data['data']['list'] or similar
-        // Looking at server/module/rank_top.js, it returns the raw response from Kugou
-        List data = response.data['data']?['list'] ?? response.data['list'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<List<Song>> getRankSongs(int rankId) async {
-    try {
-      final response = await _dio.get('/rank/audio', queryParameters: {
-        'rankid': rankId,
-        'pagesize': 100, // Fetch more songs
-      });
-      if (response.data['status'] == 1) {
-        var data = response.data['data'];
-        List? list;
-        if (data is Map) {
-          list = data['list'] ?? data['info'] ?? data['songlist'] ?? data['songs']?['list'];
-        } else if (data is List) {
-          list = data;
-        }
-        
-        if (list != null) {
-          return list.map((json) => Song.fromRankJson(json)).toList();
-        }
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<List<Playlist>> getRecommendPlaylists() async {
-    try {
-      final response = await _dio.get('/playlist/recommend');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['list'] ?? response.data['data']['special_list'] ?? [];
-        return data.map((json) => Playlist.fromSpecialPlaylist(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<Map<String, dynamic>?> getPlaylistDetail(String ids) async {
-    try {
-      final response = await _dio.get('/playlist/detail', queryParameters: {'ids': ids});
-      if (response.data['status'] == 1) {
-        List data = response.data['data'] ?? [];
-        return data.isNotEmpty ? data[0] : null;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>> getPlaylistTrackAll(String id, {int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/playlist/track/all', queryParameters: {
-        'id': id,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      return response.data ?? {};
-    } catch (e) {
-      return {};
-    }
-  }
-
-  static Future<Map<String, dynamic>> getPlaylistTrackAllNew(int listid, {int page = 1, int pagesize = 200}) async {
-    try {
-      final response = await _dio.get('/playlist/track/all/new', queryParameters: {
-        'listid': listid,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      return response.data ?? {};
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getPlaylistTrackAllNew(
+    int listid, {
+    int page = 1,
+    int pagesize = 200,
+  }) => _backend.getPlaylistTrackAllNew(listid, page: page, pagesize: pagesize);
 
   static Future<List<Song>> getPlaylistSongs(
     dynamic id, {
@@ -502,7 +253,11 @@ class MusicApi {
 
       if (queryId.isEmpty || queryId == '0' || queryId == 'null') return [];
 
-      final responseData = await getPlaylistTrackAll(queryId, page: page, pagesize: pagesize);
+      final responseData = await getPlaylistTrackAll(
+        queryId,
+        page: page,
+        pagesize: pagesize,
+      );
       return parsePlaylistSongsFromResponse(responseData).songs;
     } catch (e) {
       LoggerService.e('getPlaylistSongs error: $e');
@@ -530,7 +285,11 @@ class MusicApi {
         return const PlaylistSongsParseResult(songs: []);
       }
 
-      final responseData = await getPlaylistTrackAll(queryId, page: page, pagesize: pagesize);
+      final responseData = await getPlaylistTrackAll(
+        queryId,
+        page: page,
+        pagesize: pagesize,
+      );
       return parsePlaylistSongsFromResponse(responseData);
     } catch (e) {
       LoggerService.e('getPlaylistSongsWithMetadata error: $e');
@@ -554,8 +313,12 @@ class MusicApi {
         currentUserId = jsonDecode(userInfoJson)['userid'];
       }
 
-      if (listCreateUserid != null && currentUserId != null && listCreateUserid != currentUserId) {
-        if (listCreateGid != null && listCreateGid != '0' && listCreateGid != 'null') {
+      if (listCreateUserid != null &&
+          currentUserId != null &&
+          listCreateUserid != currentUserId) {
+        if (listCreateGid != null &&
+            listCreateGid != '0' &&
+            listCreateGid != 'null') {
           queryId = listCreateGid;
         }
       }
@@ -568,22 +331,32 @@ class MusicApi {
     return parsePlaylistSongsFromResponse(responseData).songs;
   }
 
-  static PlaylistSongsParseResult parsePlaylistSongsFromResponse(Map<String, dynamic> responseData) {
+  static PlaylistSongsParseResult parsePlaylistSongsFromResponse(
+    Map<String, dynamic> responseData,
+  ) {
     final data = responseData['data'] ?? responseData;
     List? list;
-    
+
     if (data is Map) {
       // 优先提取歌曲列表字段
-      list = data['songs'] ?? data['info'] ?? data['list'] ?? data['songlist'] ?? data['song_list'];
-      
+      list =
+          data['songs'] ??
+          data['info'] ??
+          data['list'] ??
+          data['songlist'] ??
+          data['song_list'];
+
       // 兼容嵌套结构
       if (list == null && data['info'] is Map) {
-        list = data['info']['list'] ?? data['info']['songs'] ?? data['info']['songlist'];
+        list =
+            data['info']['list'] ??
+            data['info']['songs'] ??
+            data['info']['songlist'];
       }
     } else if (data is List) {
       list = data;
     }
-    
+
     final List songsData = list ?? [];
 
     final songs = <Song>[];
@@ -611,385 +384,95 @@ class MusicApi {
         song.mixSongId == 0;
   }
 
-  static Future<Map<String, dynamic>?> searchLyric(String hash) async {
-    try {
-      final response = await _dio.get('/search/lyric', queryParameters: {
-        'hash': hash,
-      });
-      if (response.data != null && (response.data['status'] == 1 || response.data['status'] == 200)) {
-        return response.data;
-      }
-      return null;
-    } catch (e) {
-      LoggerService.e('searchLyric Error: $e');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>?> searchLyric(String hash) =>
+      _backend.searchLyric(hash);
 
-  static Future<Map<String, dynamic>?> getLyric(String id, String accesskey) async {
-    try {
-      final response = await _dio.get('/lyric', queryParameters: {
-        'id': id,
-        'accesskey': accesskey,
-        'decode': 'true',
-        'fmt': 'krc',
-      });
-      if (response.data != null) {
-        // Support direct body return or wrapped in 'data'
-        final data = response.data['data'] ?? response.data;
-        if (response.data['status'] == 1 || response.data['status'] == 200 || data['decodeContent'] != null) {
-          return data is Map ? Map<String, dynamic>.from(data) : null;
-        }
-      }
-      return null;
-    } catch (e) {
-      LoggerService.e('getLyric Error: $e');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>?> getLyric(String id, String accesskey) =>
+      _backend.getLyric(id, accesskey);
 
   // --- Artist ---
-  static Future<Map<String, dynamic>?> getSingerDetail(int id) async {
-    try {
-      final response = await _dio.get('/artist/detail', queryParameters: {'id': id});
-      if (response.data['status'] == 1) return response.data['data'];
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>?> getSingerDetail(int id) =>
+      _backend.getSingerDetail(id);
 
-  static Future<List<Song>> getSingerSongs(int id, {int page = 1, int pagesize = 200, String sort = 'hot'}) async {
-    try {
-      final response = await _dio.get('/artist/audios', queryParameters: {
-        'id': id,
-        'page': page,
-        'pagesize': pagesize,
-        'sort': sort,
-      });
-      if (response.data['status'] == 1) {
-        final rawData = response.data['data'];
-        final List data = rawData is List ? rawData : (rawData['info'] ?? rawData['list'] ?? []);
-        return data.map((json) => Song.fromArtistSongJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Song>> getSingerSongs(
+    int id, {
+    int page = 1,
+    int pagesize = 200,
+    String sort = 'hot',
+  }) => _backend.getSingerSongs(id, page: page, pagesize: pagesize, sort: sort);
 
-  static Future<bool> followSinger(int id) async {
-    try {
-      final response = await _dio.get('/artist/follow', queryParameters: {'id': id});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> followSinger(int id) => _backend.followSinger(id);
 
-  static Future<bool> unfollowSinger(int id) async {
-    try {
-      final response = await _dio.get('/artist/unfollow', queryParameters: {'id': id});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> unfollowSinger(int id) => _backend.unfollowSinger(id);
 
   // --- Album ---
-  static Future<Map<String, dynamic>?> getAlbumDetail(int id) async {
-    try {
-      final response = await _dio.get('/album/detail', queryParameters: {'id': id});
-      if (response.data['status'] == 1) {
-        final data = response.data['data'];
-        if (data is List && data.isNotEmpty) return data[0];
-        if (data is Map<String, dynamic>) return data;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>?> getAlbumDetail(int id) =>
+      _backend.getAlbumDetail(id);
 
-  static Future<List<Song>> getAlbumSongs(int id, {int page = 1, int pagesize = 50}) async {
-    try {
-      final response = await _dio.get('/album/songs', queryParameters: {
-        'id': id,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      if (response.data['status'] == 1) {
-        final rawData = response.data['data'];
-        final List data = rawData is List ? rawData : (rawData['songs'] ?? rawData['info'] ?? rawData['list'] ?? []);
-        return data.map((json) => Song.fromAlbumJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Song>> getAlbumSongs(
+    int id, {
+    int page = 1,
+    int pagesize = 50,
+  }) => _backend.getAlbumSongs(id, page: page, pagesize: pagesize);
 
-  static Future<Map<String, dynamic>> getAlbumTop() async {
-    try {
-      final response = await _dio.get('/top/album');
-      if (response.data['status'] == 1) {
-        return response.data['data'] ?? {};
-      }
-      return {};
-    } catch (e) {
-      return {};
-    }
-  }
+  static Future<Map<String, dynamic>> getAlbumTop() => _backend.getAlbumTop();
 
   // --- User / Auth ---
-  static Future<bool> captchaSent(String mobile) async {
-    try {
-      final response = await _dio.get('/captcha/sent', queryParameters: {'mobile': mobile});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> captchaSent(String mobile) =>
+      _backend.captchaSent(mobile);
 
-  static Future<Map<String, dynamic>> loginCellphone(String mobile, String code, {int? userid}) async {
-    try {
-      final queryParams = {
-        'mobile': mobile,
-        'code': code,
-      };
-      if (userid != null) {
-        queryParams['userid'] = userid.toString();
-      }
-      final response = await _dio.get('/login/cellphone', queryParameters: queryParams);
-      return response.data;
-    } on DioException catch (e) {
-      if (e.response?.data != null) {
-        return e.response!.data is Map ? e.response!.data : {'status': 0, 'error': e.message};
-      }
-      return {'status': 0, 'error': e.message};
-    } catch (e) {
-      return {'status': 0, 'error': e.toString()};
-    }
-  }
+  static Future<Map<String, dynamic>> loginCellphone(
+    String mobile,
+    String code, {
+    int? userid,
+  }) => _backend.loginCellphone(mobile, code, userid: userid);
 
-  static Future<Map<String, dynamic>?> loginQrKey() async {
-    try {
-      final response = await _dio.get('/login/qr/key');
+  static Future<Map<String, dynamic>?> loginQrKey() => _backend.loginQrKey();
 
-      // 检查响应格式
-      if (response.data != null && response.data['status'] == 1 && response.data['data'] != null) {
-        final data = response.data['data'];
+  static Future<Map<String, dynamic>?> loginQrCreate(String key) =>
+      _backend.loginQrCreate(key);
 
-        // 实际API返回格式：{qrcode: "xxx", qrcode_img: "data:image/png;base64,..."}
-        // 转换为期望格式：{key: "xxx", qrcode_url: "xxx"}
-        if (data['qrcode'] != null) {
-          return {
-            'key': data['qrcode'],
-            'qrcode_url': data['qrcode_img'], // 直接使用 base64 图片
-          };
-        }
+  static Future<Map<String, dynamic>?> loginQrCheck(String key) =>
+      _backend.loginQrCheck(key);
 
-        // 标准格式：{key: xxx, qrcode_url: xxx}
-        if (data['key'] != null) {
-          return data;
-        }
+  static Future<Map<String, dynamic>?> loginWxCreate() =>
+      _backend.loginWxCreate();
 
-        return data;
-      }
+  static Future<dynamic> loginWxCheck(String uuid) =>
+      _backend.loginWxCheck(uuid);
 
-      LoggerService.w('loginQrKey: 无法解析响应数据');
-      return null;
-    } catch (e) {
-      LoggerService.e('loginQrKey error: $e');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>> loginOpenPlat(String code) =>
+      _backend.loginOpenPlat(code);
 
-  static Future<Map<String, dynamic>?> loginQrCreate(String key) async {
-    try {
-      final response = await _dio.get('/login/qr/create', queryParameters: {'key': key, 'qrimg': 'true'});
+  static Future<Map<String, dynamic>?> userDetail() => _backend.userDetail();
 
-      if (response.data != null) {
-        // 格式1: {code: 200, data: {url: "xxx", base64: "xxx"}}
-        if (response.data['code'] == 200 && response.data['data'] != null) {
-          final data = response.data['data'];
-          if (data['base64'] != null || data['url'] != null) {
-            return {
-              'qrcode_url': data['base64'] ?? data['url'],
-            };
-          }
-        }
+  static Future<Map<String, dynamic>?> userVipDetail() =>
+      _backend.userVipDetail();
 
-        // 格式2: {status: 1, data: {qrcode_url: xxx}}
-        if (response.data['status'] == 1 && response.data['data'] != null) {
-          return response.data['data'];
-        }
+  static Future<List<Map<String, dynamic>>> getUserFollow() =>
+      _backend.getUserFollow();
 
-        // 格式3: 直接返回 {qrcode_url: xxx}
-        if (response.data['qrcode_url'] != null) {
-          return response.data;
-        }
-      }
-      LoggerService.w('loginQrCreate: 无法解析响应数据');
-      return null;
-    } catch (e) {
-      LoggerService.e('loginQrCreate error: $e');
-      return null;
-    }
-  }
+  static Future<Map<String, dynamic>> getUserPlayHistory({String? bp}) =>
+      _backend.getUserPlayHistory(bp: bp);
 
-  static Future<Map<String, dynamic>?> loginQrCheck(String key) async {
-    try {
-      final response = await _dio.get('/login/qr/check', queryParameters: {'key': key});
-      return response.data;
-    } catch (e) {
-      return null;
-    }
-  }
+  static Future<bool> uploadPlayHistory(int mixSongId) =>
+      _backend.uploadPlayHistory(mixSongId);
 
-  static Future<Map<String, dynamic>?> loginWxCreate() async {
-    try {
-      final response = await _dio.get('/login/wx/create');
-      return response.data;
-    } catch (e) {
-      LoggerService.e('loginWxCreate error: $e');
-      return null;
-    }
-  }
-
-  static Future<dynamic> loginWxCheck(String uuid) async {
-    try {
-      // 增加超时时间到 60秒，并添加时间戳防止缓存
-      final response = await _dio.get('/login/wx/check', 
-        queryParameters: {
-          'uuid': uuid,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        },
-        options: Options(
-          receiveTimeout: const Duration(seconds: 60),
-        ),
-      );
-      return response.data;
-    } catch (e) {
-      LoggerService.w('loginWxCheck local failed, trying direct WeChat fallback: $e');
-      // 备选方案：直接请求微信官方接口
-      try {
-        final fallbackDio = Dio(BaseOptions(
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 60),
-        ));
-        final response = await fallbackDio.get(
-          'https://long.open.weixin.qq.com/connect/l/qrconnect',
-          queryParameters: {
-            'f': 'json',
-            'uuid': uuid,
-            '_': DateTime.now().millisecondsSinceEpoch,
-          },
-        );
-        return response.data;
-      } catch (e2) {
-        LoggerService.e('loginWxCheck all failed: $e2');
-        return null;
-      }
-    }
-  }
-
-  static Future<Map<String, dynamic>> loginOpenPlat(String code) async {
-    try {
-      final response = await _dio.get('/login/openplat', queryParameters: {'code': code});
-      return response.data;
-    } catch (e) {
-      LoggerService.e('loginOpenPlat error: $e');
-      return {'status': 0, 'error': e.toString()};
-    }
-  }
-
-  static Future<Map<String, dynamic>?> userDetail() async {
-    try {
-      final response = await _dio.get('/user/detail');
-      if (response.data['status'] == 1) return response.data['data'];
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<Map<String, dynamic>?> userVipDetail() async {
-    try {
-      final response = await _dio.get('/user/vip/detail');
-      if (response.data['status'] == 1) return response.data['data'];
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  static Future<List<Map<String, dynamic>>> getUserFollow() async {
-    try {
-      final response = await _dio.get('/user/follow');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['lists'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<Map<String, dynamic>> getUserPlayHistory({String? bp}) async {
-    try {
-      final response = await _dio.get('/user/history', queryParameters: bp != null ? {'bp': bp} : {});
-      if (response.data['status'] == 1) {
-        final payload = response.data['data'] ?? {};
-        List data = payload['list'] ?? payload['songs'] ?? [];
-        return {
-          'songs': data
-              .where((item) => item['info'] != null)
-              .map((item) => Song.fromPlaylistJson(item['info']))
-              .toList(),
-          'bp': payload['bp'],
-          'has_more': payload['has_more'] ?? (data.isNotEmpty),
-        };
-      }
-      return {'songs': <Song>[], 'bp': null, 'has_more': false};
-    } catch (e) {
-      return {'songs': <Song>[], 'bp': null, 'has_more': false};
-    }
-  }
-
-  static Future<bool> uploadPlayHistory(int mixSongId) async {
-    try {
-      final response = await _dio.get('/playhistory/upload', queryParameters: {'mxid': mixSongId});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  static Future<Map<String, dynamic>> getUserCloud({int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/user/cloud', queryParameters: {'page': page, 'pagesize': pagesize});
-      if (response.data['status'] == 1) {
-        final payload = response.data['data'] ?? {};
-        List data = payload['list'] ?? [];
-        return {
-          'songs': data.map((json) => Song.fromCloudJson(json)).toList(),
-          'count': payload['list_count'] ?? 0,
-          'capacity': payload['max_size'] ?? 0,
-          'available': payload['availble_size'] ?? 0,
-        };
-      }
-      return {'songs': <Song>[], 'count': 0, 'capacity': 0, 'available': 0};
-    } catch (e) {
-      return {'songs': <Song>[], 'count': 0, 'capacity': 0, 'available': 0};
-    }
-  }
+  static Future<Map<String, dynamic>> getUserCloud({
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getUserCloud(page: page, pagesize: pagesize);
 
   // --- Playlist ---
-  static Future<List<Map<String, dynamic>>> getUserPlaylists({int page = 1, int pagesize = 30}) async {
+  static Future<List<Map<String, dynamic>>> getUserPlaylists({
+    int page = 1,
+    int pagesize = 30,
+  }) async {
     try {
-      final response = await getUserPlaylistsRaw(page: page, pagesize: pagesize);
+      final response = await getUserPlaylistsRaw(
+        page: page,
+        pagesize: pagesize,
+      );
       if (response['status'] == 1) {
         List data = response['data']['info'] ?? [];
         return data.cast<Map<String, dynamic>>();
@@ -1000,313 +483,112 @@ class MusicApi {
     }
   }
 
-  static Future<Map<String, dynamic>> getUserPlaylistsRaw({int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/user/playlist', queryParameters: {'page': page, 'pagesize': pagesize});
-      return response.data ?? {};
-    } catch (e) {
-      return {'status': 0, 'error': e.toString()};
-    }
-  }
+  static Future<Map<String, dynamic>> getUserPlaylistsRaw({
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getUserPlaylistsRaw(page: page, pagesize: pagesize);
 
-  static Future<bool> copyPlaylist(int playlistId, String name, {int? listCreateUserid, String? listCreateGid, int? listCreateListid, bool isPrivate = false, int source = 1}) async {
+  static Future<bool> copyPlaylist(
+    int playlistId,
+    String name, {
+    int? listCreateUserid,
+    String? listCreateGid,
+    int? listCreateListid,
+    bool isPrivate = false,
+    int source = 1,
+  }) async {
     return addPlaylist(
       name,
       isPri: isPrivate ? 1 : 0,
       type: 1, // Type 1 as per legacy project for collecting/liking playlist
-      list_create_listid: listCreateListid ?? playlistId,
-      list_create_userid: listCreateUserid,
-      list_create_gid: listCreateGid,
+      listCreateListid: listCreateListid ?? playlistId,
+      listCreateUserid: listCreateUserid,
+      listCreateGid: listCreateGid,
       source: source,
     );
   }
 
-  static Future<bool> addPlaylist(String name, {int isPri = 0, int type = 0, int? list_create_userid, int? list_create_listid, String? list_create_gid, int source = 1}) async {
-    try {
-      final params = {
-        'name': name,
-        'is_pri': isPri,
-        'type': type,
-        'source': source,
-      };
-      if (list_create_userid != null) params['list_create_userid'] = list_create_userid;
-      if (list_create_listid != null) params['list_create_listid'] = list_create_listid;
-      if (list_create_gid != null) params['list_create_gid'] = list_create_gid;
+  static Future<bool> addPlaylist(
+    String name, {
+    int isPri = 0,
+    int type = 0,
+    int? listCreateUserid,
+    int? listCreateListid,
+    String? listCreateGid,
+    int source = 1,
+  }) => _backend.addPlaylist(
+    name,
+    isPri: isPri,
+    type: type,
+    listCreateUserid: listCreateUserid,
+    listCreateListid: listCreateListid,
+    listCreateGid: listCreateGid,
+    source: source,
+  );
 
-      final response = await _dio.get('/playlist/add', queryParameters: params);
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> deletePlaylist(int listid) =>
+      _backend.deletePlaylist(listid);
 
-  static Future<bool> deletePlaylist(int listid) async {
-    try {
-      final response = await _dio.get('/playlist/del', queryParameters: {'listid': listid});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> addPlaylistTrack(dynamic listid, String data) =>
+      _backend.addPlaylistTrack(listid, data);
 
-  static Future<bool> addPlaylistTrack(dynamic listid, String data) async {
-    try {
-      final response = await _dio.get('/playlist/tracks/add', queryParameters: {'listid': listid, 'data': data});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<bool> deletePlaylistTrack(dynamic listid, String fileids) =>
+      _backend.deletePlaylistTrack(listid, fileids);
 
-  static Future<bool> deletePlaylistTrack(dynamic listid, String fileids) async {
-    try {
-      final response = await _dio.get('/playlist/tracks/del', queryParameters: {'listid': listid, 'fileids': fileids});
-      return response.data['status'] == 1;
-    } catch (e) {
-      return false;
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getPlaylistCategory() =>
+      _backend.getPlaylistCategory();
 
-  static Future<List<Map<String, dynamic>>> getPlaylistCategory() async {
-    try {
-      final response = await _dio.get('/playlist/tags');
-      if (response.data['status'] == 1) {
-        List data = response.data['data'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
-
-  static Future<List<Playlist>> getPlaylistByCategory(String categoryId, {int withsong = 0, int withtag = 1}) async {
-    try {
-      final response = await _dio.get('/top/playlist', queryParameters: {
-        'category_id': categoryId,
-        'withsong': withsong,
-        'withtag': withtag,
-      });
-      final root = response.data is Map ? response.data : {};
-      if (root['status'] == 1) {
-        final List data = root['data']?['special_list'] ?? 
-                         root['data']?['list'] ?? 
-                         root['special_list'] ?? 
-                         root['list'] ?? [];
-        return data.map((json) => Playlist.fromSpecialPlaylist(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Playlist>> getPlaylistByCategory(
+    String categoryId, {
+    int withsong = 0,
+    int withtag = 1,
+  }) => _backend.getPlaylistByCategory(
+    categoryId,
+    withsong: withsong,
+    withtag: withtag,
+  );
 
   // --- Search Expanded ---
-  static Future<String> getSearchDefault() async {
-    try {
-      final response = await _dio.get('/search/default');
-      if (response.data['status'] == 1) {
-        final data = response.data['data'];
-        return data['keyword'] ?? data['show_keyword'] ?? data['fallback'] ?? '';
-      }
-      return '';
-    } catch (e) {
-      return '';
-    }
-  }
+  static Future<String> getSearchDefault() => _backend.getSearchDefault();
 
-  static Future<List<String>> getSearchHot() async {
-    try {
-      final response = await _dio.get('/search/hot');
-      if (response.data['status'] == 1) {
-        List list = response.data['data']['list'] ?? [];
-        if (list.isNotEmpty) {
-          List keywords = list[0]['keywords'] ?? [];
-          return keywords.map((e) => e['keyword'].toString()).toList();
-        }
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<String>> getSearchHot() => _backend.getSearchHot();
 
-  static Future<List<Map<String, dynamic>>> getSearchHotCategorized() async {
-    try {
-      final response = await _dio.get('/search/hot');
-      if (response.data['status'] == 1) {
-        List data = response.data['data']['list'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getSearchHotCategorized() =>
+      _backend.getSearchHotCategorized();
 
-  static Future<List<Map<String, dynamic>>> getSearchSuggest(String keywords) async {
-    try {
-      final response = await _dio.get('/search/suggest', queryParameters: {'keywords': keywords});
-      if (response.data['status'] == 1) {
-        return (response.data['data'] as List).cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getSearchSuggest(String keywords) =>
+      _backend.getSearchSuggest(keywords);
 
-  static Future<List<Song>> getEverydayRecommend() async {
-    try {
-      final response = await _dio.get('/everyday/recommend');
-      final root = response.data is Map ? response.data : {};
-      if (root['status'] == 1) {
-        final List data = root['data']?['song_list'] ?? 
-                         root['song_list'] ?? 
-                         root['data'] ?? [];
-        return data.map((json) => Song.fromTopSongJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Song>> getEverydayRecommend() =>
+      _backend.getEverydayRecommend();
 
-  static Future<List<Map<String, dynamic>>> getTopIP() async {
-    try {
-      final response = await _dio.get('/top/ip');
-      final root = response.data is Map ? response.data : {};
-      if (root['status'] == 1) {
-        final List data = root['data']?['list'] ?? 
-                         root['data'] ?? 
-                         root['list'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getTopIP() => _backend.getTopIP();
 
-  static Future<List<Map<String, dynamic>>> getIPData(int id, {String type = '', int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/ip', queryParameters: {
-        'id': id,
-        'type': type,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      if (response.data['status'] == 1) {
-        return (response.data['data']['list'] as List).cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getIPData(
+    int id, {
+    String type = '',
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getIPData(id, type: type, page: page, pagesize: pagesize);
 
-  static Future<List<Map<String, dynamic>>> getTopPlaylistByIP(int id, {int page = 1, int pagesize = 30}) async {
-    try {
-      final response = await _dio.get('/ip/playlist', queryParameters: {
-        'id': id,
-        'page': page,
-        'pagesize': pagesize,
-      });
-      if (response.data['status'] == 1) {
-        return (response.data['data']['list'] as List).cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getTopPlaylistByIP(
+    int id, {
+    int page = 1,
+    int pagesize = 30,
+  }) => _backend.getTopPlaylistByIP(id, page: page, pagesize: pagesize);
 
-  static Future<List<Song>> getSongClimax(String hash) async {
-    try {
-      final response = await _dio.get('/song/climax', queryParameters: {'hash': hash});
-      if (response.data['status'] == 1) {
-        List data = response.data['data'] ?? [];
-        return data.map((json) => Song.fromJson(json)).toList();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Song>> getSongClimax(String hash) =>
+      _backend.getSongClimax(hash);
 
-  static Future<List<Map<String, dynamic>>> getSongClimaxRaw(String hash) async {
-    try {
-      final response = await _dio.get('/song/climax', queryParameters: {'hash': hash});
-      if (response.data['status'] == 1) {
-        List data = response.data['data'] ?? [];
-        return data.cast<Map<String, dynamic>>();
-      }
-      return [];
-    } catch (e) {
-      return [];
-    }
-  }
+  static Future<List<Map<String, dynamic>>> getSongClimaxRaw(String hash) =>
+      _backend.getSongClimaxRaw(hash);
 
-    // --- VIP Claiming (Experimental) ---
+  // --- VIP Claiming (Experimental) ---
 
-    static Future<bool> claimDayVip(String day) async {
+  static Future<bool> claimDayVip(String day) => _backend.claimDayVip(day);
 
-      try {
+  static Future<bool> upgradeDayVip() => _backend.upgradeDayVip();
 
-        final response = await _dio.get('/youth/day/vip', queryParameters: {'receive_day': day});
-
-        return response.data['status'] == 1;
-
-      } catch (e) {
-
-        return false;
-
-      }
-
-    }
-
-  
-
-    static Future<bool> upgradeDayVip() async {
-
-      try {
-
-        final response = await _dio.get('/youth/day/vip/upgrade');
-
-        return response.data['status'] == 1;
-
-      } catch (e) {
-
-        return false;
-
-      }
-
-    }
-
-  
-
-    static Future<Map<String, dynamic>> getVipMonthRecord() async {
-
-      try {
-
-        final response = await _dio.get('/youth/month/vip/record');
-
-        if (response.data['status'] == 1) {
-
-          return response.data['data'] ?? {};
-
-        }
-
-        return {};
-
-      } catch (e) {
-
-        return {};
-
-      }
-
-    }
-
-  }
-
-  
+  static Future<Map<String, dynamic>> getVipMonthRecord() =>
+      _backend.getVipMonthRecord();
+}

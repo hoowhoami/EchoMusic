@@ -1,3 +1,6 @@
 [submodule "server"]
 	path = server
 	url = https://github.com/MakcRe/KuGouMusicApi.git
+[submodule "server_library"]
+	path = server_library
+	url = https://github.com/2061360308/MusicLibrary.git

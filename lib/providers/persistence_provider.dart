@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../api/music_api.dart';
 import '../models/song.dart';
 import '../utils/constants.dart';
 
@@ -13,11 +14,12 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlayerSettings = 'player_settings';
   static const String _keyPlaylist = 'current_playlist';
   static const String _keyCurrentIndex = 'current_index';
-  static const String _keyPlaylistFilteredInvalidSongCount = 'current_playlist_filtered_invalid_song_count';
+  static const String _keyPlaylistFilteredInvalidSongCount =
+      'current_playlist_filtered_invalid_song_count';
 
   List<Song> _favorites = [];
   Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
-  Set<int> _favoriteMixIds = {};    // non-zero mixSongId → O(1) isFavorite lookup
+  Set<int> _favoriteMixIds = {}; // non-zero mixSongId → O(1) isFavorite lookup
   List<Song> _history = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
@@ -68,18 +70,18 @@ class PersistenceProvider with ChangeNotifier {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Load settings
     final settingsJson = prefs.getString(_keySettings);
     if (settingsJson != null) {
       _settings = {..._settings, ...jsonDecode(settingsJson)};
     }
-    
+
     // Load favorites
     final favsJson = prefs.getStringList(_keyFavorites) ?? [];
     _favorites = favsJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
     _rebuildFavoriteIndex();
-    
+
     // Load history
     final historyJson = prefs.getStringList(_keyHistory) ?? [];
     _history = historyJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
@@ -94,7 +96,7 @@ class PersistenceProvider with ChangeNotifier {
     // Load current playlist filtered invalid-song count
     _playlistFilteredInvalidSongCount =
         prefs.getInt(_keyPlaylistFilteredInvalidSongCount) ?? 0;
-    
+
     // Load player settings
     final playerSettingsJson = prefs.getString(_keyPlayerSettings);
     if (playerSettingsJson != null) {
@@ -112,7 +114,7 @@ class PersistenceProvider with ChangeNotifier {
     if (userJson != null) {
       _userInfo = jsonDecode(userJson);
     }
-    
+
     notifyListeners();
   }
 
@@ -125,15 +127,22 @@ class PersistenceProvider with ChangeNotifier {
     _currentIndex = index;
     _playlistFilteredInvalidSongCount = filteredInvalidSongCount;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_keyPlaylist, playlist.map((s) => jsonEncode(_songToMap(s))).toList());
+    await prefs.setStringList(
+      _keyPlaylist,
+      playlist.map((s) => jsonEncode(_songToMap(s))).toList(),
+    );
     await prefs.setInt(_keyCurrentIndex, index);
-    await prefs.setInt(_keyPlaylistFilteredInvalidSongCount, filteredInvalidSongCount);
+    await prefs.setInt(
+      _keyPlaylistFilteredInvalidSongCount,
+      filteredInvalidSongCount,
+    );
   }
 
   Future<void> setDevice(Map<String, dynamic> device) async {
     _device = device;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyDevice, jsonEncode(device));
+    await MusicApi.syncBackendAuthState();
     notifyListeners();
   }
 
@@ -141,6 +150,7 @@ class PersistenceProvider with ChangeNotifier {
     _userInfo = userInfo;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyUserInfo, jsonEncode(userInfo));
+    await MusicApi.syncBackendAuthState();
     notifyListeners();
   }
 
@@ -148,6 +158,7 @@ class PersistenceProvider with ChangeNotifier {
     _userInfo = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyUserInfo);
+    await MusicApi.syncBackendAuthState();
     notifyListeners();
   }
 
@@ -160,7 +171,7 @@ class PersistenceProvider with ChangeNotifier {
     _playlist = [];
     _currentIndex = -1;
     _playlistFilteredInvalidSongCount = 0;
-    
+
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       prefs.remove(_keyUserInfo),
@@ -170,7 +181,8 @@ class PersistenceProvider with ChangeNotifier {
       prefs.remove(_keyCurrentIndex),
       prefs.remove(_keyPlaylistFilteredInvalidSongCount),
     ]);
-    
+
+    await MusicApi.syncBackendAuthState();
     notifyListeners();
   }
 
@@ -211,6 +223,7 @@ class PersistenceProvider with ChangeNotifier {
       'audioQuality': AudioQuality.defaultValue,
       'audioEffect': 'none',
     };
+    await MusicApi.syncBackendAuthState();
     notifyListeners();
   }
 
@@ -223,7 +236,7 @@ class PersistenceProvider with ChangeNotifier {
     } else {
       _favorites.removeAt(index);
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _keyFavorites,
@@ -231,11 +244,19 @@ class PersistenceProvider with ChangeNotifier {
     );
     _rebuildFavoriteIndex();
     notifyListeners();
-    if (userProvider != null && userProvider.isAuthenticated && userProvider.likedPlaylistId != null) {
+    if (userProvider != null &&
+        userProvider.isAuthenticated &&
+        userProvider.likedPlaylistId != null) {
       if (isAdding) {
-        await userProvider.addSongToPlaylist(userProvider.likedPlaylistId!, song);
+        await userProvider.addSongToPlaylist(
+          userProvider.likedPlaylistId!,
+          song,
+        );
       } else {
-        await userProvider.removeSongFromPlaylist(userProvider.likedPlaylistId!, song);
+        await userProvider.removeSongFromPlaylist(
+          userProvider.likedPlaylistId!,
+          song,
+        );
       }
     }
   }
@@ -252,8 +273,13 @@ class PersistenceProvider with ChangeNotifier {
   }
 
   bool isFavorite(Song song) {
-    if (song.mixSongId != 0 && _favoriteMixIds.contains(song.mixSongId)) return true;
-    if (song.hash.isNotEmpty && _favoriteHashes.contains(song.hash.toLowerCase())) return true;
+    if (song.mixSongId != 0 && _favoriteMixIds.contains(song.mixSongId)) {
+      return true;
+    }
+    if (song.hash.isNotEmpty &&
+        _favoriteHashes.contains(song.hash.toLowerCase())) {
+      return true;
+    }
     return false;
   }
 
@@ -265,7 +291,7 @@ class PersistenceProvider with ChangeNotifier {
         changed = true;
       }
     }
-    
+
     if (changed) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
@@ -294,11 +320,11 @@ class PersistenceProvider with ChangeNotifier {
   Future<void> addToHistory(Song song) async {
     _history.removeWhere((s) => s.isSameSong(song));
     _history.insert(0, song);
-    
+
     if (_history.length > 100) {
       _history = _history.sublist(0, 100);
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _keyHistory,
