@@ -5,6 +5,7 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'dart:io';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
+import '../widgets/app_shortcuts.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
@@ -20,6 +21,7 @@ import 'package:echomusic/providers/refresh_provider.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../api/music_api.dart';
+import '../../utils/player_shortcut_actions.dart';
 import '../../utils/version_service.dart';
 import '../widgets/user_agreement_dialog.dart';
 import '../widgets/update_dialog.dart';
@@ -56,7 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _checkForUpdates({bool silent = false}) async {
     final updateInfo = await VersionService.checkForUpdates();
-    
+
     if (updateInfo != null && updateInfo.hasUpdate && mounted) {
       showDialog(
         context: context,
@@ -70,13 +72,12 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       showDialog(
         context: context,
-        builder: (context) => UpdateDialog(
-          version: packageInfo.version,
-          isLatest: true,
-        ),
+        builder: (context) =>
+            UpdateDialog(version: packageInfo.version, isLatest: true),
       );
     }
   }
+
   void _navigateTo(int index) {
     context.read<SelectionProvider>().reset();
     context.read<NavigationProvider>().navigateToRoot(index);
@@ -106,10 +107,16 @@ class _HomeScreenState extends State<HomeScreen> {
     await context.read<NavigationProvider>().goForward();
   }
 
+  void _refreshCurrentView() {
+    final navProvider = context.read<NavigationProvider>();
+    context.read<RefreshProvider>().triggerRefresh(
+      navProvider.currentRefreshKey,
+    );
+  }
 
   Future<void> _initDevice() async {
     final persistence = context.read<PersistenceProvider>();
-    
+
     // 1. 确保设备注册完成（获取 dfid, mid 等标识符）
     if (persistence.device == null || persistence.device?['dfid'] == null) {
       final device = await MusicApi.registerDevice();
@@ -142,100 +149,137 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final navProvider = context.watch<NavigationProvider>();
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      body: Column(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 260,
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
-                    border: Border(right: BorderSide(color: theme.dividerColor.withAlpha(40), width: 0.5)),
-                  ),
-                  child: Column(
-                    children: [
-                      SizedBox(height: 48, child: MoveWindow()),
-                      Expanded(
-                        child: Sidebar(
-                          selectedIndex: navProvider.currentRootIndex,
-                          selectedPlaylistId: navProvider.selectedSidebarPlaylistId,
-                          onDestinationSelected: _navigateTo,
-                          onPushPlaylist: _pushPlaylist,
+    return AppShortcuts(
+      onTogglePlayback: () => PlayerShortcutActions.togglePlayback(context),
+      onPreviousTrack: () => PlayerShortcutActions.previousTrack(context),
+      onNextTrack: () => PlayerShortcutActions.nextTrack(context),
+      onVolumeUp: () => PlayerShortcutActions.increaseVolume(context),
+      onVolumeDown: () => PlayerShortcutActions.decreaseVolume(context),
+      onToggleMute: () => PlayerShortcutActions.toggleMute(context),
+      onToggleFavorite: () => PlayerShortcutActions.toggleFavorite(context),
+      onTogglePlayMode: () => PlayerShortcutActions.togglePlayMode(context),
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: Column(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 260,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      border: Border(
+                        right: BorderSide(
+                          color: theme.dividerColor.withAlpha(40),
+                          width: 0.5,
                         ),
                       ),
-                    ],
+                    ),
+                    child: Column(
+                      children: [
+                        SizedBox(height: 48, child: MoveWindow()),
+                        Expanded(
+                          child: Sidebar(
+                            selectedIndex: navProvider.currentRootIndex,
+                            selectedPlaylistId:
+                                navProvider.selectedSidebarPlaylistId,
+                            onDestinationSelected: _navigateTo,
+                            onPushPlaylist: _pushPlaylist,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: theme.scaffoldBackgroundColor,
-                          border: Border(bottom: BorderSide(color: theme.dividerColor.withAlpha(30), width: 0.5)),
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 12),
-                            _buildNavButton(
-                              icon: CupertinoIcons.chevron_left,
-                              onPressed: navProvider.canGoBack ? _goBack : null,
-                              tooltip: '后退',
-                            ),
-                            const SizedBox(width: 8),
-                            _buildNavButton(
-                              icon: CupertinoIcons.chevron_right,
-                              onPressed: navProvider.canGoForward ? _goForward : null,
-                              tooltip: '前进',
-                            ),
-                            const SizedBox(width: 8),
-                            _buildNavButton(
-                              icon: CupertinoIcons.refresh, 
-                              onPressed: () => context.read<RefreshProvider>().triggerRefresh(navProvider.currentRefreshKey), 
-                              tooltip: '刷新'
-                            ),
-                            Expanded(child: MoveWindow()),
-                            if (!Platform.isMacOS) const WindowButtons(),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Navigator(
-                          key: navProvider.navigatorKey,
-                          observers: [navProvider.observer],
-                          onGenerateRoute: (settings) => PageRouteBuilder(
-                            settings: const RouteSettings(name: 'root'),
-                            pageBuilder: (context, _, _) => Consumer<NavigationProvider>(
-                              builder: (context, provider, _) => _LazyIndexedStack(
-                                index: provider.currentRootIndex,
-                                children: _views,
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            border: Border(
+                              bottom: BorderSide(
+                                color: theme.dividerColor.withAlpha(30),
+                                width: 0.5,
                               ),
                             ),
                           ),
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 12),
+                              _buildNavButton(
+                                icon: CupertinoIcons.chevron_left,
+                                onPressed: navProvider.canGoBack
+                                    ? _goBack
+                                    : null,
+                                tooltip: '后退',
+                              ),
+                              const SizedBox(width: 8),
+                              _buildNavButton(
+                                icon: CupertinoIcons.chevron_right,
+                                onPressed: navProvider.canGoForward
+                                    ? _goForward
+                                    : null,
+                                tooltip: '前进',
+                              ),
+                              const SizedBox(width: 8),
+                              _buildNavButton(
+                                icon: CupertinoIcons.refresh,
+                                onPressed: _refreshCurrentView,
+                                tooltip: '刷新',
+                              ),
+                              Expanded(child: MoveWindow()),
+                              if (!Platform.isMacOS) const WindowButtons(),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        Expanded(
+                          child: Navigator(
+                            key: navProvider.navigatorKey,
+                            observers: [navProvider.observer],
+                            onGenerateRoute: (settings) => PageRouteBuilder(
+                              settings: const RouteSettings(name: 'root'),
+                              pageBuilder: (context, _, _) =>
+                                  Consumer<NavigationProvider>(
+                                    builder: (context, provider, _) =>
+                                        _LazyIndexedStack(
+                                          index: provider.currentRootIndex,
+                                          children: _views,
+                                        ),
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const PlayerBar(),
-        ],
+            const PlayerBar(),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildNavButton({required IconData icon, required VoidCallback? onPressed, required String tooltip}) {
+  Widget _buildNavButton({
+    required IconData icon,
+    required VoidCallback? onPressed,
+    required String tooltip,
+  }) {
     final theme = Theme.of(context);
     return Tooltip(
       message: tooltip,
       child: IconButton(
-        icon: Icon(icon, size: 18, color: onPressed != null ? theme.colorScheme.onSurface : theme.colorScheme.onSurface.withAlpha(60)),
+        icon: Icon(
+          icon,
+          size: 18,
+          color: onPressed != null
+              ? theme.colorScheme.onSurface
+              : theme.colorScheme.onSurface.withAlpha(60),
+        ),
         onPressed: onPressed,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -260,7 +304,10 @@ class _LazyIndexedStackState extends State<_LazyIndexedStack> {
   @override
   void initState() {
     super.initState();
-    _activated = List.generate(widget.children.length, (i) => i == widget.index);
+    _activated = List.generate(
+      widget.children.length,
+      (i) => i == widget.index,
+    );
   }
 
   @override
@@ -288,7 +335,26 @@ class WindowButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final buttonColors = WindowButtonColors(iconNormal: theme.colorScheme.onSurfaceVariant, mouseOver: theme.colorScheme.onSurface.withAlpha(25), mouseDown: theme.colorScheme.onSurface.withAlpha(50), iconMouseOver: theme.colorScheme.onSurface, iconMouseDown: theme.colorScheme.onSurface);
-    return Row(children: [MinimizeWindowButton(colors: buttonColors), MaximizeWindowButton(colors: buttonColors), CloseWindowButton(colors: WindowButtonColors(mouseOver: const Color(0xFFD32F2F), mouseDown: const Color(0xFFB71C1C), iconNormal: theme.colorScheme.onSurfaceVariant, iconMouseOver: Colors.white))]);
+    final buttonColors = WindowButtonColors(
+      iconNormal: theme.colorScheme.onSurfaceVariant,
+      mouseOver: theme.colorScheme.onSurface.withAlpha(25),
+      mouseDown: theme.colorScheme.onSurface.withAlpha(50),
+      iconMouseOver: theme.colorScheme.onSurface,
+      iconMouseDown: theme.colorScheme.onSurface,
+    );
+    return Row(
+      children: [
+        MinimizeWindowButton(colors: buttonColors),
+        MaximizeWindowButton(colors: buttonColors),
+        CloseWindowButton(
+          colors: WindowButtonColors(
+            mouseOver: const Color(0xFFD32F2F),
+            mouseDown: const Color(0xFFB71C1C),
+            iconNormal: theme.colorScheme.onSurfaceVariant,
+            iconMouseOver: Colors.white,
+          ),
+        ),
+      ],
+    );
   }
 }
