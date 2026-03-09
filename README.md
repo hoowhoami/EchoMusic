@@ -82,6 +82,7 @@
    ```bash
    git clone https://github.com/hoowhoami/EchoMusic.git
    cd EchoMusic
+   git submodule update --init --recursive
    ```
 
 2. **安装服务端依赖**
