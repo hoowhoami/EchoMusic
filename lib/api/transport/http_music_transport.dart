@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../music_api_auth.dart';
 import '../../utils/logger.dart';
-import '../../utils/server_orchestrator.dart';
+import '../../utils/music_server_runtime.dart';
 import 'music_transport.dart';
 
 typedef MusicTransportAuthExpirationHandler =
@@ -116,7 +116,7 @@ class HttpMusicTransport implements MusicTransport {
 
   @override
   Future<void> ensureReady() async {
-    await ServerOrchestrator.waitUntilReady();
+    await MusicServerRuntimeController.ensureReady();
   }
 
   @override

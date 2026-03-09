@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/music_server_runtime.dart';
 import 'backend/music_api_backend.dart';
 import 'backend/http_music_api_backend.dart';
+import 'backend/library_music_api_backend.dart';
 import 'music_api_auth.dart';
 import 'transport/http_music_transport.dart';
 import 'transport/music_transport.dart';
@@ -44,6 +46,28 @@ class MusicApi {
     await _backend.dispose();
     _backend = backend;
     await syncBackendAuthState();
+  }
+
+  static Future<void> setRuntimeMode(
+    MusicServerRuntimeMode mode, {
+    String? libraryDir,
+  }) async {
+    await MusicServerRuntimeController.setMode(mode);
+    switch (mode) {
+      case MusicServerRuntimeMode.http:
+        await setBackend(_createDefaultBackend());
+        return;
+      case MusicServerRuntimeMode.library:
+        await setBackend(
+          LibraryMusicApiBackend(
+            libraryDir:
+                libraryDir ?? MusicServerRuntimeController.currentLibraryDir,
+            authExpirationHandler: _checkAuthExpiration,
+            dataFormatter: _truncateData,
+          ),
+        );
+        return;
+    }
   }
 
   @visibleForTesting

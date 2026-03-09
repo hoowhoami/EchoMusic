@@ -21,7 +21,9 @@ import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/app_shortcuts.dart';
 import 'ui/widgets/auth_listener.dart';
-import 'utils/server_orchestrator.dart';
+import 'api/music_api.dart';
+import 'utils/music_server_runtime.dart';
+import 'utils/music_runtime_startup.dart';
 import 'utils/logger.dart';
 import 'utils/player_shortcut_actions.dart';
 
@@ -69,6 +71,10 @@ void main() async {
 
   LoggerService.i('First instance confirmed.');
 
+  final startupRuntimeMode = resolveStartupMusicRuntimeMode();
+  await MusicApi.setRuntimeMode(startupRuntimeMode);
+  LoggerService.i('Music runtime mode: ${startupRuntimeMode.name}');
+
   MediaKit.ensureInitialized();
 
   if (_supportsSystemWideHotKeys) {
@@ -78,7 +84,7 @@ void main() async {
   if (!Platform.isWindows) {
     ProcessSignal.sigint.watch().listen((_) {
       unawaited(WakelockPlus.disable());
-      ServerOrchestrator.stop();
+      MusicServerRuntimeController.stop();
       exit(0);
     });
   }
@@ -179,7 +185,7 @@ class _WindowHandlerState extends State<WindowHandler>
     try {
       audioProvider.prepareForExit();
     } catch (_) {}
-    ServerOrchestrator.stop();
+    await MusicServerRuntimeController.stop();
   }
 
   Future<void> _registerGlobalHotKeys() async {

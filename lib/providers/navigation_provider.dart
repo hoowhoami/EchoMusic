@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../models/playlist.dart';
 import '../models/song.dart';
@@ -13,7 +14,8 @@ import '../ui/screens/song_detail_view.dart';
 class NavigationProvider extends ChangeNotifier {
   NavigationProvider();
 
-  final GlobalKey<NavigatorState> _contentNavigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _contentNavigatorKey =
+      GlobalKey<NavigatorState>();
   late final NavigatorObserver _observer = _NavigationStateObserver(this);
 
   final List<_ContentHistorySnapshot> _history = [
@@ -24,6 +26,8 @@ class NavigationProvider extends ChangeNotifier {
   int _historyIndex = 0;
   int _currentRootIndex = 0;
   bool _suppressHistory = false;
+  bool _notificationScheduled = false;
+  bool _isDisposed = false;
   String? _currentRouteName;
   dynamic _currentRouteArguments;
 
@@ -96,13 +100,14 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   void openRecommendSong() {
-    push(
-      const RecommendSongView(),
-      name: 'recommend_song',
-    );
+    push(const RecommendSongView(), name: 'recommend_song');
   }
 
-  void openRank({bool isRecommend = false, bool showTitle = true, int? initialRankId}) {
+  void openRank({
+    bool isRecommend = false,
+    bool showTitle = true,
+    int? initialRankId,
+  }) {
     final arguments = {
       'isRecommend': isRecommend,
       'showTitle': showTitle,
@@ -186,13 +191,23 @@ class NavigationProvider extends ChangeNotifier {
     await Future<void>.delayed(Duration.zero);
 
     for (final entry in snapshot.details) {
-      push(_buildPage(entry.name, entry.arguments), name: entry.name, arguments: entry.arguments);
+      push(
+        _buildPage(entry.name, entry.arguments),
+        name: entry.name,
+        arguments: entry.arguments,
+      );
     }
 
     await Future<void>.delayed(Duration.zero);
     _suppressHistory = false;
     _updateCurrentRouteFromStack(notify: false);
-    notifyListeners();
+    _notifyListenersSafely();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
   }
 
   Widget _buildPage(String name, dynamic arguments) {
@@ -201,7 +216,11 @@ class NavigationProvider extends ChangeNotifier {
         if (arguments is PlaylistDetailRouteArgs) {
           return PlaylistDetailView(routeArgs: arguments);
         }
-        return PlaylistDetailView(routeArgs: PlaylistDetailRouteArgs.fromPlaylist(arguments as Playlist));
+        return PlaylistDetailView(
+          routeArgs: PlaylistDetailRouteArgs.fromPlaylist(
+            arguments as Playlist,
+          ),
+        );
       case 'album_detail':
         final args = arguments as Map;
         return AlbumDetailView(
@@ -308,19 +327,19 @@ class NavigationProvider extends ChangeNotifier {
       _history.removeRange(_historyIndex + 1, _history.length);
     }
     if (_history[_historyIndex].equals(snapshot)) {
-      notifyListeners();
+      _notifyListenersSafely();
       return;
     }
     _history.add(snapshot);
     _historyIndex = _history.length - 1;
-    notifyListeners();
+    _notifyListenersSafely();
   }
 
   void _recordPopSnapshot() {
     final snapshot = _currentSnapshot();
     if (_historyIndex > 0 && _history[_historyIndex - 1].equals(snapshot)) {
       _historyIndex--;
-      notifyListeners();
+      _notifyListenersSafely();
       return;
     }
     if (_historyIndex < _history.length - 1) {
@@ -330,25 +349,58 @@ class NavigationProvider extends ChangeNotifier {
       _history.add(snapshot);
       _historyIndex = _history.length - 1;
     }
-    notifyListeners();
+    _notifyListenersSafely();
   }
 
   _ContentHistorySnapshot _currentSnapshot() {
     return _ContentHistorySnapshot(
       rootIndex: _currentRootIndex,
-      details: _detailStack.map((entry) => entry.copy()).toList(growable: false),
+      details: _detailStack
+          .map((entry) => entry.copy())
+          .toList(growable: false),
     );
   }
 
   void _updateCurrentRouteFromStack({required bool notify}) {
     final entry = _detailStack.isNotEmpty ? _detailStack.last : null;
-    final changed = _currentRouteName != entry?.name || !identical(_currentRouteArguments, entry?.arguments);
+    final changed =
+        _currentRouteName != entry?.name ||
+        !identical(_currentRouteArguments, entry?.arguments);
     _currentRouteName = entry?.name;
     _currentRouteArguments = entry?.arguments;
 
     if (notify && changed) {
-      notifyListeners();
+      _notifyListenersSafely();
     }
+  }
+
+  void _notifyListenersSafely() {
+    if (_isDisposed) {
+      return;
+    }
+
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    final shouldDefer =
+        phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks ||
+        phase == SchedulerPhase.persistentCallbacks;
+
+    if (!shouldDefer) {
+      notifyListeners();
+      return;
+    }
+
+    if (_notificationScheduled) {
+      return;
+    }
+    _notificationScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notificationScheduled = false;
+      if (_isDisposed) {
+        return;
+      }
+      notifyListeners();
+    });
   }
 
   String _routeRefreshKey(String name, dynamic arguments) {
@@ -356,7 +408,8 @@ class NavigationProvider extends ChangeNotifier {
       case 'playlist_detail':
         final id = arguments is PlaylistDetailRouteArgs
             ? arguments.lookupId
-            : ((arguments as Playlist).globalCollectionId ?? arguments.id.toString());
+            : ((arguments as Playlist).globalCollectionId ??
+                  arguments.id.toString());
         return 'playlist:$id';
       case 'album_detail':
       case 'artist_detail':
@@ -367,7 +420,9 @@ class NavigationProvider extends ChangeNotifier {
       case 'song_detail':
       case 'song_comment':
         final song = arguments as Song;
-        final songKey = song.mixSongId != 0 ? song.mixSongId.toString() : song.hash;
+        final songKey = song.mixSongId != 0
+            ? song.mixSongId.toString()
+            : song.hash;
         return '$name:$songKey';
       case 'rank_view':
         if (arguments is Map) {
@@ -418,9 +473,13 @@ class _ContentRouteEntry {
   final String name;
   final dynamic arguments;
 
-  _ContentRouteEntry copy() => _ContentRouteEntry(name: name, arguments: arguments);
+  _ContentRouteEntry copy() =>
+      _ContentRouteEntry(name: name, arguments: arguments);
 
-  bool isSameRoute(_ContentRouteEntry other) => name == other.name && _identityKey(name, arguments) == _identityKey(other.name, other.arguments);
+  bool isSameRoute(_ContentRouteEntry other) =>
+      name == other.name &&
+      _identityKey(name, arguments) ==
+          _identityKey(other.name, other.arguments);
 
   static String _identityKey(String name, dynamic arguments) {
     switch (name) {
@@ -440,7 +499,9 @@ class _ContentRouteEntry {
       case 'song_detail':
       case 'song_comment':
         final song = arguments as Song;
-        return song.mixSongId != 0 ? 'mix:${song.mixSongId}' : 'hash:${song.hash}';
+        return song.mixSongId != 0
+            ? 'mix:${song.mixSongId}'
+            : 'hash:${song.hash}';
       case 'rank_view':
         if (arguments is Map) {
           return '${arguments['initialRankId'] ?? ''}:${arguments['isRecommend'] == true}:${arguments['showTitle'] != false}';
@@ -453,13 +514,17 @@ class _ContentRouteEntry {
 }
 
 class _ContentHistorySnapshot {
-  const _ContentHistorySnapshot({required this.rootIndex, required this.details});
+  const _ContentHistorySnapshot({
+    required this.rootIndex,
+    required this.details,
+  });
 
   final int rootIndex;
   final List<_ContentRouteEntry> details;
 
   bool equals(_ContentHistorySnapshot other) {
-    if (rootIndex != other.rootIndex || details.length != other.details.length) {
+    if (rootIndex != other.rootIndex ||
+        details.length != other.details.length) {
       return false;
     }
     for (int index = 0; index < details.length; index++) {

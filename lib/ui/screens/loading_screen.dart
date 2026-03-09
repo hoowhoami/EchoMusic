@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import '../../utils/server_orchestrator.dart';
+import '../../utils/music_server_runtime.dart';
 import 'home_screen.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -24,7 +24,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
 
   Future<void> _startServer() async {
     try {
-      final success = await ServerOrchestrator.start();
+      final success = await MusicServerRuntimeController.start();
       if (success) {
         if (mounted) {
           // 增加一点点延迟，让动画展示完整
@@ -32,10 +32,12 @@ class _LoadingScreenState extends State<LoadingScreen> {
           if (mounted) {
             Navigator.of(context).pushReplacement(
               PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    const HomeScreen(),
+                transitionsBuilder:
+                    (context, animation, secondaryAnimation, child) {
+                      return FadeTransition(opacity: animation, child: child);
+                    },
                 transitionDuration: const Duration(milliseconds: 600),
               ),
             );
@@ -44,7 +46,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
       } else {
         if (mounted) {
           setState(() {
-            _statusMessage = '服务启动失败';
+            _statusMessage = MusicServerRuntimeController.lastError ?? '服务启动失败';
             _hasError = true;
           });
         }
@@ -63,7 +65,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor, // 基础背景色
       body: Stack(
@@ -81,7 +83,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ),
             ),
           ),
-          
+
           // 装饰性的圆：颜色随主色调和亮度变化
           Positioned(
             top: -100,
@@ -95,7 +97,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ),
             ),
           ),
-          
+
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -105,10 +107,14 @@ class _LoadingScreenState extends State<LoadingScreen> {
                   width: 120,
                   height: 120,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withAlpha(isDark ? 10 : 5),
+                    color: theme.colorScheme.onSurface.withAlpha(
+                      isDark ? 10 : 5,
+                    ),
                     borderRadius: BorderRadius.circular(32),
                     border: Border.all(
-                      color: theme.colorScheme.onSurface.withAlpha(isDark ? 15 : 10),
+                      color: theme.colorScheme.onSurface.withAlpha(
+                        isDark ? 15 : 10,
+                      ),
                       width: 1,
                     ),
                   ),
@@ -138,9 +144,9 @@ class _LoadingScreenState extends State<LoadingScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 60),
-                
+
                 // 状态显示
                 if (!_hasError) ...[
                   SizedBox(
@@ -167,14 +173,20 @@ class _LoadingScreenState extends State<LoadingScreen> {
                   ),
                 ] else ...[
                   // 错误显示
-                  Icon(CupertinoIcons.exclamationmark_triangle_fill, 
-                    color: theme.colorScheme.error.withAlpha(200), size: 48),
+                  Icon(
+                    CupertinoIcons.exclamationmark_triangle_fill,
+                    color: theme.colorScheme.error.withAlpha(200),
+                    size: 48,
+                  ),
                   const SizedBox(height: 24),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: Text(
                       _statusMessage,
-                      style: TextStyle(color: theme.colorScheme.error.withAlpha(180), fontSize: 14),
+                      style: TextStyle(
+                        color: theme.colorScheme.error.withAlpha(180),
+                        fontSize: 14,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -188,7 +200,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                             _hasError = false;
                             _statusMessage = '正在重新尝试启动...';
                           });
-                          await ServerOrchestrator.killPort();
+                          await MusicServerRuntimeController.restart();
                           _startServer();
                         },
                         label: '重试',
@@ -198,7 +210,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                       const SizedBox(width: 16),
                       _buildButton(
                         onPressed: () async {
-                          await ServerOrchestrator.killPort();
+                          await MusicServerRuntimeController.stop();
                           exit(0);
                         },
                         label: '退出',
@@ -211,7 +223,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ],
             ),
           ),
-          
+
           // 底部版权或版本信息
           Positioned(
             bottom: 40,
@@ -246,13 +258,17 @@ class _LoadingScreenState extends State<LoadingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: isPrimary ? theme.colorScheme.primary : theme.colorScheme.onSurface.withAlpha(10),
+          color: isPrimary
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurface.withAlpha(10),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isPrimary ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(200),
+            color: isPrimary
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onSurface.withAlpha(200),
             fontWeight: FontWeight.w700,
             fontSize: 14,
           ),

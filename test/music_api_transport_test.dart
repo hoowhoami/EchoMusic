@@ -1,6 +1,11 @@
 import 'package:dio/dio.dart';
+import 'package:echomusic/api/backend/library/common.dart';
+import 'package:echomusic/api/backend/library/core.dart';
+import 'package:echomusic/api/backend/library/kugou_bridge.dart';
 import 'package:echomusic/api/music_api.dart';
+import 'package:echomusic/api/transport/library_music_transport.dart';
 import 'package:echomusic/api/transport/music_transport.dart';
+import 'package:echomusic/utils/logger.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -64,11 +69,40 @@ class _FakeMusicTransport implements MusicTransport {
   Future<void> dispose() async {}
 }
 
+class _FakeLibraryBridge implements LibraryMusicBridge {
+  int requestCount = 0;
+
+  @override
+  Map<String, String> get debugCookie => const <String, String>{};
+
+  @override
+  Future<void> setCookie(Map<String, String> cookie) async {}
+
+  @override
+  Future<LibraryMusicResponse> request(
+    String route, {
+    Map<String, String>? cookie,
+    KugouProcessEnv? env,
+    Map<String, dynamic>? query,
+  }) async {
+    requestCount += 1;
+    return LibraryMusicResponse(
+      headers: const {},
+      body: const {'status': 1},
+      status: 200,
+    );
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    await LoggerService.init();
     await MusicApi.resetTransport();
   });
 
@@ -150,4 +184,29 @@ void main() {
     expect(songs.single.singers.single.name, 'Transport Singer');
     expect(transport.requests.single.path, '/top/song');
   });
+
+  test(
+    'LibraryMusicTransport does not call bridge when runtime is not ready',
+    () async {
+      final bridge = _FakeLibraryBridge();
+      final transport = LibraryMusicTransport(
+        bridgeProvider: () => bridge,
+        readyEnsurer: () async {
+          throw StateError('runtime not ready');
+        },
+      );
+
+      final response = await transport.get(
+        '/song/url',
+        queryParameters: {'hash': 'hash-1'},
+      );
+
+      expect(bridge.requestCount, 0);
+      expect(response.statusCode, 503);
+      expect(response.data, {
+        'status': 0,
+        'error': 'Bad state: runtime not ready',
+      });
+    },
+  );
 }
