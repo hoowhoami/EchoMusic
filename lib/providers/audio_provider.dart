@@ -540,11 +540,11 @@ class AudioProvider with ChangeNotifier {
     _forceDisableWakelock();
   }
 
-  void _stopPlayer() {
+  Future<void> _stopPlayer() async {
     final stopwatch = Stopwatch()..start();
     LoggerService.i('[AudioProvider] _stopPlayer start');
     try {
-      _player.stop();
+      await _player.stop();
       LoggerService.i(
         '[AudioProvider] _player.stop completed in ${stopwatch.elapsedMilliseconds}ms',
       );
@@ -1625,15 +1625,15 @@ class AudioProvider with ChangeNotifier {
     _clearDeviceRecoveryState();
     _fadeVolume(
       0.0,
-      onComplete: () {
-        _stopPlayer();
+      onComplete: () async {
+        await _stopPlayer();
         _savePlaybackState();
         _safeNotify();
       },
     );
   }
 
-  void prepareForExit() {
+  Future<void> prepareForExit() async {
     final stopwatch = Stopwatch()..start();
     LoggerService.i('[AudioProvider] prepareForExit start');
     try {
@@ -1643,7 +1643,7 @@ class AudioProvider with ChangeNotifier {
       _clearDeviceRecoveryState();
 
       final stopPlayerStopwatch = Stopwatch()..start();
-      _stopPlayer();
+      await _stopPlayer();
       LoggerService.i(
         '[AudioProvider] prepareForExit _stopPlayer done '
         '(${stopPlayerStopwatch.elapsedMilliseconds}ms)',
@@ -1675,7 +1675,7 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _clearDeviceRecoveryState();
-    _stopPlayer();
+    unawaited(_stopPlayer());
     _currentSong = null;
     _playlist = [];
     _originalPlaylist = [];
@@ -1766,7 +1766,7 @@ class AudioProvider with ChangeNotifier {
       if (_playlist.isEmpty) {
         _currentSong = null;
         _climaxMarks = {};
-        _stopPlayer();
+        unawaited(_stopPlayer());
       } else {
         _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);

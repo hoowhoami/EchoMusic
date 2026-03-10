@@ -78,7 +78,7 @@ void main() async {
   if (!Platform.isWindows) {
     ProcessSignal.sigint.watch().listen((_) {
       unawaited(WakelockPlus.disable());
-      ServerOrchestrator.stop();
+      unawaited(ServerOrchestrator.stop(reason: 'ProcessSignal.sigint'));
       exit(0);
     });
   }
@@ -148,7 +148,9 @@ class _WindowHandlerState extends State<WindowHandler>
   static final _lifecycleChannel = MethodChannel(
     'com.hoowhoami.echomusic/app_lifecycle',
   );
+  static const Duration _windowsExitWatchdogTimeout = Duration(seconds: 8);
   int _exitTraceSerial = 0;
+  bool _isExiting = false;
 
   void _logHotKeyError(String message, Object error, StackTrace stackTrace) {
     LoggerService.e('[hotkey] $message', error, stackTrace);
@@ -163,6 +165,14 @@ class _WindowHandlerState extends State<WindowHandler>
   void _logExit(String traceId, String message) {
     LoggerService.i('[Exit][$traceId] $message');
   }
+
+  Duration get _exitCleanupTimeout => Platform.isWindows
+      ? const Duration(seconds: 3)
+      : const Duration(seconds: 5);
+
+  Duration get _exitDestroyTimeout => Platform.isWindows
+      ? const Duration(seconds: 2)
+      : const Duration(seconds: 4);
 
   Future<T> _traceExitStep<T>(
     String traceId,
@@ -182,6 +192,40 @@ class _WindowHandlerState extends State<WindowHandler>
         stackTrace,
       );
       rethrow;
+    }
+  }
+
+  Future<void> _runBestEffortExitStep(
+    String traceId,
+    String stepName,
+    Future<void> Function() action, {
+    Duration? timeout,
+  }) async {
+    try {
+      await _traceExitStep(
+        traceId,
+        stepName,
+        () async {
+          if (timeout == null) {
+            await action();
+            return;
+          }
+          await action().timeout(timeout);
+        },
+      );
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.w(
+        '[Exit][$traceId] $stepName.timedOut '
+        '(timeout=${timeout?.inMilliseconds ?? 0}ms); continuing exit',
+        e,
+        stackTrace,
+      );
+    } catch (e, stackTrace) {
+      LoggerService.e(
+        '[Exit][$traceId] $stepName.failed but exit will continue',
+        e,
+        stackTrace,
+      );
     }
   }
 
@@ -212,26 +256,87 @@ class _WindowHandlerState extends State<WindowHandler>
     );
     final audioProvider = context.read<AudioProvider>();
 
-    await _traceExitStep(
+    await _runBestEffortExitStep(
       traceId,
       '_unregisterGlobalHotKeys',
       _unregisterGlobalHotKeys,
+      timeout: _exitCleanupTimeout,
     );
 
-    try {
-      await _traceExitStep(traceId, 'audioProvider.prepareForExit', () {
-        audioProvider.prepareForExit();
-      });
-    } catch (_) {}
+    await _runBestEffortExitStep(
+      traceId,
+      'audioProvider.prepareForExit',
+      audioProvider.prepareForExit,
+      timeout: _exitCleanupTimeout,
+    );
 
-    await _traceExitStep(traceId, 'ServerOrchestrator.stop', () {
-      ServerOrchestrator.stop(reason: 'trigger=$trigger traceId=$traceId');
-    });
+    await _runBestEffortExitStep(
+      traceId,
+      'ServerOrchestrator.stop',
+      () => ServerOrchestrator.stop(
+        reason: 'trigger=$trigger traceId=$traceId',
+      ),
+      timeout: _exitCleanupTimeout,
+    );
 
     _logExit(
       traceId,
       'prepareForAppExit.done (${stopwatch.elapsedMilliseconds}ms)',
     );
+  }
+
+  Future<void> _performFullAppExit({
+    required String traceId,
+    required String trigger,
+  }) async {
+    if (_isExiting) {
+      _logExit(traceId, 'fullExit.ignored (already exiting)');
+      return;
+    }
+
+    _isExiting = true;
+    final stopwatch = Stopwatch()..start();
+    Timer? watchdog;
+
+    if (Platform.isWindows) {
+      watchdog = Timer(_windowsExitWatchdogTimeout, () {
+        LoggerService.w(
+          '[Exit][$traceId] fullExit.watchdogFired '
+          '(${_windowsExitWatchdogTimeout.inMilliseconds}ms), forcing exit(0)',
+        );
+        exit(0);
+      });
+      _logExit(
+        traceId,
+        'fullExit.watchdogArmed '
+        '(${_windowsExitWatchdogTimeout.inMilliseconds}ms)',
+      );
+    }
+
+    try {
+      await _prepareForAppExit(traceId: traceId, trigger: trigger);
+      await _runBestEffortExitStep(
+        traceId,
+        'trayManager.destroy',
+        trayManager.destroy,
+        timeout: _exitDestroyTimeout,
+      );
+      await _runBestEffortExitStep(
+        traceId,
+        'windowManager.destroy',
+        windowManager.destroy,
+        timeout: _exitDestroyTimeout,
+      );
+      _logExit(
+        traceId,
+        'fullExit.readyForProcessExit (${stopwatch.elapsedMilliseconds}ms)',
+      );
+      _logExit(traceId, 'exit(0).start');
+      exit(0);
+    } finally {
+      watchdog?.cancel();
+      _isExiting = false;
+    }
   }
 
   Future<void> _registerGlobalHotKeys() async {
@@ -359,15 +464,7 @@ class _WindowHandlerState extends State<WindowHandler>
     _logExit(traceId, 'onWindowClose.received (closeBehavior=$closeBehavior)');
 
     if (closeBehavior == 'exit') {
-      await _prepareForAppExit(traceId: traceId, trigger: 'onWindowClose');
-      await _traceExitStep(traceId, 'trayManager.destroy', trayManager.destroy);
-      await _traceExitStep(
-        traceId,
-        'windowManager.destroy',
-        windowManager.destroy,
-      );
-      _logExit(traceId, 'exit(0).start');
-      exit(0);
+      await _performFullAppExit(traceId: traceId, trigger: 'onWindowClose');
     } else {
       await _traceExitStep(traceId, 'windowManager.hide', windowManager.hide);
     }
@@ -412,15 +509,9 @@ class _WindowHandlerState extends State<WindowHandler>
     } else if (menuItem.key == 'exit_app') {
       final traceId = _nextExitTraceId('trayMenu:${menuItem.key}');
       _logExit(traceId, 'trayMenu.exit_app.clicked');
-      // Stop mpv player before destroying the window.
-      // mpv runs on a native thread; if Flutter tears down while mpv is
-      // playing, the native thread accesses freed memory → EXC_BAD_ACCESS.
-      await _prepareForAppExit(traceId: traceId, trigger: 'trayMenu.exit_app');
-      await _traceExitStep(traceId, 'trayManager.destroy', trayManager.destroy);
-      await _traceExitStep(
-        traceId,
-        'windowManager.destroy',
-        windowManager.destroy,
+      await _performFullAppExit(
+        traceId: traceId,
+        trigger: 'trayMenu.exit_app',
       );
     }
   }

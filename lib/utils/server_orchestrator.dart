@@ -302,7 +302,7 @@ class ServerOrchestrator {
     return const [];
   }
 
-  static void stop({String reason = 'unspecified'}) {
+  static Future<void> stop({String reason = 'unspecified'}) async {
     final stopwatch = Stopwatch()..start();
     final process = _serverProcess;
     final pid = process?.pid;
@@ -313,30 +313,32 @@ class ServerOrchestrator {
     );
 
     if (process != null) {
+      _serverProcess = null;
       try {
         if (Platform.isWindows) {
           // taskkill /F /T kills the entire process tree, no need for _forceKillPort
           final taskkillStopwatch = Stopwatch()..start();
           LoggerService.i('[Server] stop() issuing taskkill for pid=$pid');
-          unawaited(
-            Process.run('taskkill', ['/F', '/T', '/PID', '$pid'])
-                .then((result) {
-                  LoggerService.i(
-                    '[Server] taskkill completed for pid=$pid '
-                    'in ${taskkillStopwatch.elapsedMilliseconds}ms '
-                    '(exitCode=${result.exitCode}, '
-                    'stdout=${_summarizeProcessOutput(result.stdout)}, '
-                    'stderr=${_summarizeProcessOutput(result.stderr)})',
-                  );
-                })
-                .catchError((error, stackTrace) {
-                  LoggerService.e(
-                    '[Server] taskkill failed for pid=$pid '
-                    'after ${taskkillStopwatch.elapsedMilliseconds}ms',
-                    error,
-                    stackTrace,
-                  );
-                }),
+          final result = await Process.run('taskkill', [
+            '/F',
+            '/T',
+            '/PID',
+            '$pid',
+          ]).timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => ProcessResult(
+              pid ?? 0,
+              124,
+              '',
+              'taskkill timed out',
+            ),
+          );
+          LoggerService.i(
+            '[Server] taskkill completed for pid=$pid '
+            'in ${taskkillStopwatch.elapsedMilliseconds}ms '
+            '(exitCode=${result.exitCode}, '
+            'stdout=${_summarizeProcessOutput(result.stdout)}, '
+            'stderr=${_summarizeProcessOutput(result.stderr)})',
           );
         } else {
           final killed = process.kill(ProcessSignal.sigkill);
@@ -352,7 +354,6 @@ class ServerOrchestrator {
           stackTrace,
         );
       }
-      _serverProcess = null;
     } else {
       LoggerService.i(
         '[Server] stop() skipped because no tracked process exists',
