@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
-import '../../providers/selection_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
 import '../widgets/custom_picker.dart';
@@ -141,13 +139,11 @@ class _RankViewState extends State<RankView> {
       return const Center(child: Text('暂无歌曲'));
     }
 
-    final selectionProvider = context.watch<SelectionProvider>();
-
     return Stack(
       children: [
         ListView.builder(
           controller: _scrollController,
-          padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
+          padding: const EdgeInsets.fromLTRB(28, 0, 28, 20),
           physics: const BouncingScrollPhysics(),
           itemCount: _rankSongs.length,
           itemBuilder: (context, index) {

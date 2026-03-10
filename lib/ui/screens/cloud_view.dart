@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../providers/user_provider.dart';
-import '../../providers/selection_provider.dart';
 import '../../providers/refresh_provider.dart';
 import '../widgets/song_card.dart';
 import '../widgets/batch_selection_scaffold.dart';
@@ -49,7 +48,6 @@ class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> 
   @override
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
-    final selectionProvider = context.watch<SelectionProvider>();
 
     if (!userProvider.isAuthenticated) {
       final theme = Theme.of(context);
@@ -68,7 +66,7 @@ class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> 
     return BatchSelectionScaffold(
       title: '音乐云盘',
       songs: songs,
-      body: _buildBody(songs, selectionProvider, userProvider),
+      body: _buildBody(songs, userProvider),
     );
   }
 
@@ -151,7 +149,7 @@ class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> 
     );
   }
 
-  Widget _buildBody(List<Song> songs, SelectionProvider selectionProvider, UserProvider userProvider) {
+  Widget _buildBody(List<Song> songs, UserProvider userProvider) {
     if (songs.isEmpty && userProvider.cloudCapacity == 0) {
       final theme = Theme.of(context);
       return Center(
@@ -166,7 +164,7 @@ class _CloudViewState extends State<CloudView> with RefreshableState<CloudView> 
     }
 
     return ListView.builder(
-      padding: EdgeInsets.fromLTRB(28, 0, 28, selectionProvider.isSelectionMode ? 100 : 20),
+      padding: const EdgeInsets.fromLTRB(28, 0, 28, 20),
       itemCount: songs.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {

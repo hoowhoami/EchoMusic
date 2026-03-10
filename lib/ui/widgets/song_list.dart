@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
 import '../../providers/audio_provider.dart';
-import '../../providers/selection_provider.dart';
 import 'song_card.dart';
 import 'back_to_top.dart';
 
@@ -21,6 +20,7 @@ class SongList extends StatefulWidget {
   final bool isLoadingMore;
   final Future<void> Function(Song song)? onSongDoubleTapPlay;
   final bool enableDefaultDoubleTapPlay;
+  final Future<List<Song>> Function()? onResolveBatchSongs;
 
   const SongList({
     super.key,
@@ -35,6 +35,7 @@ class SongList extends StatefulWidget {
     this.isLoadingMore = false,
     this.onSongDoubleTapPlay,
     this.enableDefaultDoubleTapPlay = false,
+    this.onResolveBatchSongs,
   });
 
   @override
@@ -42,7 +43,7 @@ class SongList extends StatefulWidget {
 }
 
 class _SongListState extends State<SongList> {
-  static const double _songItemExtent = 72.0;
+  static const double _songItemExtent = 64.0;
   static const double _stickyToolbarHeight = 56.0;
 
   final ScrollController _scrollController = ScrollController();
@@ -66,7 +67,10 @@ class _SongListState extends State<SongList> {
     final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
     final headerHeight = hasHeaders ? 200.0 : 0.0;
     final targetOffset =
-        (index * _songItemExtent) + headerHeight + _stickyToolbarHeight - _locatePinnedHeight;
+        (index * _songItemExtent) +
+        headerHeight +
+        _stickyToolbarHeight -
+        _locatePinnedHeight;
     return targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent).toDouble();
   }
 
@@ -173,6 +177,7 @@ class _SongListState extends State<SongList> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final filteredSongs = _filteredSongs;
+    final listPadding = widget.padding.resolve(Directionality.of(context));
 
     if (widget.isLoading) {
       return const Center(
@@ -196,28 +201,18 @@ class _SongListState extends State<SongList> {
             // Sticky Toolbar (Search & Actions)
             SliverPersistentHeader(
               pinned: true,
-              delegate: _StickyToolbarDelegate(
+              delegate: _FixedHeightHeaderDelegate(
+                height: _stickyToolbarHeight,
                 child: Container(
                   color: theme.scaffoldBackgroundColor,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
                   child: Row(
                     children: [
-                      // 1. Batch Action on the Left
-                      Selector<SelectionProvider, bool>(
-                        selector: (_, p) => p.isSelectionMode,
-                        builder: (context, isSelectionMode, child) {
-                          if (widget.songs.isNotEmpty && !isSelectionMode) {
-                            return _buildBatchActionButton(context);
-                          }
-                          return const SizedBox.shrink();
-                        },
-                      ),
-                      
-                      const Spacer(), // Push others to the right
-                      
-                      // 2. Controlled Width Search Box
+                      const Spacer(),
+
+                      // Search Box
                       Container(
-                        width: 240, // Fixed width to keep it neat
+                        width: 240,
                         height: 36,
                         decoration: BoxDecoration(
                           color: theme.colorScheme.onSurface.withAlpha(15),
@@ -258,10 +253,10 @@ class _SongListState extends State<SongList> {
                           ),
                         ),
                       ),
-                      
+
                       const SizedBox(width: 12),
-                      
-                      // 3. Locate Button on the Right
+
+                      // Locate Button
                       _buildLocatePlayingButton(context, filteredSongs),
                     ],
                   ),
@@ -281,9 +276,9 @@ class _SongListState extends State<SongList> {
                   ),
                 ),
               )
-            else
+            else ...[
               SliverPadding(
-                padding: widget.padding,
+                padding: EdgeInsets.fromLTRB(listPadding.left, 0, listPadding.right, listPadding.bottom),
                 sliver: SliverFixedExtentList(
                   itemExtent: _songItemExtent,
                   delegate: SliverChildBuilderDelegate(
@@ -304,6 +299,7 @@ class _SongListState extends State<SongList> {
                   ),
                 ),
               ),
+            ],
             
             if (widget.isLoadingMore)
               const SliverToBoxAdapter(
@@ -313,55 +309,12 @@ class _SongListState extends State<SongList> {
                 ),
               ),
 
-              Selector<SelectionProvider, bool>(
-                selector: (_, p) => p.isSelectionMode,
-                builder: (context, isMode, child) => SliverToBoxAdapter(
-                  child: SizedBox(height: isMode ? 80 : 20),
-                ),
-              ),
+            const SliverToBoxAdapter(child: SizedBox(height: 20)),
             ],
           ),
         ),
         BackToTop(controller: _scrollController),
       ],
-    );
-  }
-
-  Widget _buildBatchActionButton(BuildContext context) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        context.read<SelectionProvider>().setSongList(widget.songs, playlistId: widget.sourceId);
-        context.read<SelectionProvider>().enterSelectionMode();
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.onSurface.withAlpha(15),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              CupertinoIcons.checkmark_circle,
-              size: 16,
-              color: theme.colorScheme.onSurface.withAlpha(200),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '批量操作',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface.withAlpha(200),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -387,10 +340,11 @@ class _SongListState extends State<SongList> {
   }
 }
 
-class _StickyToolbarDelegate extends SliverPersistentHeaderDelegate {
+class _FixedHeightHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
+  final double height;
 
-  _StickyToolbarDelegate({required this.child});
+  _FixedHeightHeaderDelegate({required this.child, required this.height});
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
@@ -398,13 +352,13 @@ class _StickyToolbarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  double get maxExtent => 56.0;
+  double get maxExtent => height;
 
   @override
-  double get minExtent => 56.0;
+  double get minExtent => height;
 
   @override
-  bool shouldRebuild(covariant _StickyToolbarDelegate oldDelegate) {
-    return false;
+  bool shouldRebuild(covariant _FixedHeightHeaderDelegate oldDelegate) {
+    return oldDelegate.height != height || oldDelegate.child != child;
   }
 }

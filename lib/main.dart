@@ -148,8 +148,6 @@ class _WindowHandlerState extends State<WindowHandler>
   static final _lifecycleChannel = MethodChannel(
     'com.hoowhoami.echomusic/app_lifecycle',
   );
-  static const Duration _windowsExitWatchdogTimeout = Duration(seconds: 8);
-  int _exitTraceSerial = 0;
   bool _isExiting = false;
 
   void _logHotKeyError(String message, Object error, StackTrace stackTrace) {
@@ -160,69 +158,15 @@ class _WindowHandlerState extends State<WindowHandler>
     LoggerService.e('[tray] $message', error, stackTrace);
   }
 
-  String _nextExitTraceId(String source) => '$source#${++_exitTraceSerial}';
-
-  void _logExit(String traceId, String message) {
-    LoggerService.i('[Exit][$traceId] $message');
-  }
-
-  Duration get _exitCleanupTimeout => Platform.isWindows
-      ? const Duration(seconds: 3)
-      : const Duration(seconds: 5);
-
-  Duration get _exitDestroyTimeout => Platform.isWindows
-      ? const Duration(seconds: 2)
-      : const Duration(seconds: 4);
-
-  Future<T> _traceExitStep<T>(
-    String traceId,
-    String stepName,
-    FutureOr<T> Function() action,
-  ) async {
-    final stopwatch = Stopwatch()..start();
-    _logExit(traceId, '$stepName.start');
-    try {
-      final result = await Future.sync(action);
-      _logExit(traceId, '$stepName.done (${stopwatch.elapsedMilliseconds}ms)');
-      return result;
-    } catch (e, stackTrace) {
-      LoggerService.e(
-        '[Exit][$traceId] $stepName.failed after ${stopwatch.elapsedMilliseconds}ms',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-  }
-
   Future<void> _runBestEffortExitStep(
-    String traceId,
     String stepName,
-    Future<void> Function() action, {
-    Duration? timeout,
-  }) async {
+    Future<void> Function() action,
+  ) async {
     try {
-      await _traceExitStep(
-        traceId,
-        stepName,
-        () async {
-          if (timeout == null) {
-            await action();
-            return;
-          }
-          await action().timeout(timeout);
-        },
-      );
-    } on TimeoutException catch (e, stackTrace) {
-      LoggerService.w(
-        '[Exit][$traceId] $stepName.timedOut '
-        '(timeout=${timeout?.inMilliseconds ?? 0}ms); continuing exit',
-        e,
-        stackTrace,
-      );
+      await action();
     } catch (e, stackTrace) {
       LoggerService.e(
-        '[Exit][$traceId] $stepName.failed but exit will continue',
+        '[Exit] $stepName failed during exit',
         e,
         stackTrace,
       );
@@ -245,96 +189,44 @@ class _WindowHandlerState extends State<WindowHandler>
     }
   }
 
-  Future<void> _prepareForAppExit({
-    required String traceId,
-    required String trigger,
-  }) async {
-    final stopwatch = Stopwatch()..start();
-    _logExit(
-      traceId,
-      'prepareForAppExit.begin (trigger=$trigger, platform=${Platform.operatingSystem})',
-    );
+  Future<void> _prepareForAppExit() async {
     final audioProvider = context.read<AudioProvider>();
 
     await _runBestEffortExitStep(
-      traceId,
       '_unregisterGlobalHotKeys',
       _unregisterGlobalHotKeys,
-      timeout: _exitCleanupTimeout,
     );
 
     await _runBestEffortExitStep(
-      traceId,
       'audioProvider.prepareForExit',
       audioProvider.prepareForExit,
-      timeout: _exitCleanupTimeout,
     );
 
     await _runBestEffortExitStep(
-      traceId,
       'ServerOrchestrator.stop',
-      () => ServerOrchestrator.stop(
-        reason: 'trigger=$trigger traceId=$traceId',
-      ),
-      timeout: _exitCleanupTimeout,
-    );
-
-    _logExit(
-      traceId,
-      'prepareForAppExit.done (${stopwatch.elapsedMilliseconds}ms)',
+      () => ServerOrchestrator.stop(reason: 'app exit'),
     );
   }
 
-  Future<void> _performFullAppExit({
-    required String traceId,
-    required String trigger,
-  }) async {
+  Future<void> _performFullAppExit() async {
     if (_isExiting) {
-      _logExit(traceId, 'fullExit.ignored (already exiting)');
       return;
     }
 
     _isExiting = true;
-    final stopwatch = Stopwatch()..start();
-    Timer? watchdog;
-
-    if (Platform.isWindows) {
-      watchdog = Timer(_windowsExitWatchdogTimeout, () {
-        LoggerService.w(
-          '[Exit][$traceId] fullExit.watchdogFired '
-          '(${_windowsExitWatchdogTimeout.inMilliseconds}ms), forcing exit(0)',
-        );
-        exit(0);
-      });
-      _logExit(
-        traceId,
-        'fullExit.watchdogArmed '
-        '(${_windowsExitWatchdogTimeout.inMilliseconds}ms)',
-      );
-    }
 
     try {
-      await _prepareForAppExit(traceId: traceId, trigger: trigger);
+      await _prepareForAppExit();
       await _runBestEffortExitStep(
-        traceId,
         'trayManager.destroy',
         trayManager.destroy,
-        timeout: _exitDestroyTimeout,
       );
       await _runBestEffortExitStep(
-        traceId,
         'windowManager.destroy',
         windowManager.destroy,
-        timeout: _exitDestroyTimeout,
       );
-      _logExit(
-        traceId,
-        'fullExit.readyForProcessExit (${stopwatch.elapsedMilliseconds}ms)',
-      );
-      _logExit(traceId, 'exit(0).start');
       exit(0);
     } finally {
-      watchdog?.cancel();
       _isExiting = false;
     }
   }
@@ -390,13 +282,8 @@ class _WindowHandlerState extends State<WindowHandler>
   // Called by Swift's applicationShouldTerminate (Dock right-click → Quit,
   // Cmd+Q) to let Flutter stop mpv before the process exits.
   Future<void> _onLifecycleCall(MethodCall call) async {
-    final traceId = _nextExitTraceId('lifecycle:${call.method}');
-    _logExit(traceId, 'lifecycleCall.received');
     if (call.method == 'prepareToTerminate') {
-      await _prepareForAppExit(
-        traceId: traceId,
-        trigger: 'lifecycle.prepareToTerminate',
-      );
+      await _prepareForAppExit();
     }
   }
 
@@ -444,14 +331,7 @@ class _WindowHandlerState extends State<WindowHandler>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      final traceId = _nextExitTraceId('lifecycleState:$state');
-      _logExit(traceId, 'didChangeAppLifecycleState.detached');
-      unawaited(
-        _prepareForAppExit(
-          traceId: traceId,
-          trigger: 'didChangeAppLifecycleState.$state',
-        ),
-      );
+      unawaited(_prepareForAppExit());
     }
   }
 
@@ -459,14 +339,11 @@ class _WindowHandlerState extends State<WindowHandler>
   void onWindowClose() async {
     final persistence = context.read<PersistenceProvider>();
     final closeBehavior = persistence.settings['closeBehavior'] ?? 'tray';
-    final traceId = _nextExitTraceId('onWindowClose');
-
-    _logExit(traceId, 'onWindowClose.received (closeBehavior=$closeBehavior)');
 
     if (closeBehavior == 'exit') {
-      await _performFullAppExit(traceId: traceId, trigger: 'onWindowClose');
+      await _performFullAppExit();
     } else {
-      await _traceExitStep(traceId, 'windowManager.hide', windowManager.hide);
+      await windowManager.hide();
     }
   }
 
@@ -507,12 +384,7 @@ class _WindowHandlerState extends State<WindowHandler>
     if (menuItem.key == 'show_window') {
       await _showWindowFromTray();
     } else if (menuItem.key == 'exit_app') {
-      final traceId = _nextExitTraceId('trayMenu:${menuItem.key}');
-      _logExit(traceId, 'trayMenu.exit_app.clicked');
-      await _performFullAppExit(
-        traceId: traceId,
-        trigger: 'trayMenu.exit_app',
-      );
+      await _performFullAppExit();
     }
   }
 

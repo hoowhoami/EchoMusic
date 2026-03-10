@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:provider/provider.dart';
 import '../../models/song.dart';
-import '../../providers/selection_provider.dart';
-import 'batch_action_bar.dart';
+import 'song_batch_selection_dialog.dart';
 
 class BatchSelectionScaffold extends StatelessWidget {
   final Widget body;
@@ -12,6 +9,8 @@ class BatchSelectionScaffold extends StatelessWidget {
   final Widget? leading;
   final Widget? appBarActions;
   final bool showAppBar;
+  final dynamic sourceId;
+  final Future<List<Song>> Function()? onResolveBatchSongs;
 
   const BatchSelectionScaffold({
     super.key,
@@ -21,6 +20,8 @@ class BatchSelectionScaffold extends StatelessWidget {
     this.leading,
     this.appBarActions,
     this.showAppBar = true,
+    this.sourceId,
+    this.onResolveBatchSongs,
   });
 
   @override
@@ -29,28 +30,16 @@ class BatchSelectionScaffold extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              if (showAppBar)
-                Selector<SelectionProvider, bool>(
-                  selector: (_, p) => p.isSelectionMode,
-                  builder: (context, isSelectionMode, _) =>
-                      _buildHeader(context, isSelectionMode),
-                ),
-              Expanded(
-                child: body,
-              ),
-            ],
-          ),
-          const BatchActionBar(),
+          if (showAppBar) _buildHeader(context),
+          Expanded(child: body),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context, bool isSelectionMode) {
+  Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
     final hasTwoRows = (title?.isNotEmpty ?? false) && appBarActions != null;
 
@@ -74,8 +63,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               children: [
                 appBarActions!,
                 const Spacer(),
-                if (songs.isNotEmpty && !isSelectionMode)
-                  _buildBatchButton(context),
+                if (songs.isNotEmpty) _buildBatchButton(),
               ],
             ),
           ],
@@ -102,50 +90,17 @@ class BatchSelectionScaffold extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          if (songs.isNotEmpty && !isSelectionMode)
-            _buildBatchButton(context),
+          if (songs.isNotEmpty) _buildBatchButton(),
         ],
       ),
     );
   }
 
-  Widget _buildBatchButton(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      onTap: () {
-        final p = context.read<SelectionProvider>();
-        p.setSongList(songs);
-        p.enterSelectionMode();
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.onSurface.withAlpha(15),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              CupertinoIcons.checkmark_circle,
-              size: 16,
-              color: theme.colorScheme.onSurface.withAlpha(200),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '批量操作',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface.withAlpha(200),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildBatchButton() {
+    return SongBatchActionButton(
+      songs: songs,
+      sourceId: sourceId,
+      onResolveSongs: onResolveBatchSongs,
     );
   }
 }

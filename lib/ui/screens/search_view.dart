@@ -5,15 +5,14 @@ import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../providers/navigation_provider.dart';
-import '../../providers/selection_provider.dart';
 import '../widgets/cover_image.dart';
 import '../../models/playlist.dart';
 import '../../models/album.dart';
 import '../../models/artist.dart';
 import '../widgets/song_card.dart';
-import '../widgets/batch_action_bar.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/back_to_top.dart';
+import '../widgets/song_batch_selection_dialog.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -137,7 +136,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           _suggestions = suggestions;
           _showSuggestions = _focusNode.hasFocus && _suggestions.isNotEmpty;
         });
-      } catch (e) {}
+      } catch (_) {
+        // Ignore suggestion fetch failures and keep the current UI state.
+      }
     });
 
     if (_hasSearched && value.isNotEmpty) {
@@ -227,7 +228,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final selectionProvider = context.watch<SelectionProvider>();
 
     return Stack(
       children: [
@@ -253,43 +253,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                     if (_songResults.isNotEmpty &&
                         _searchController.text.isNotEmpty &&
                         !_isLoading &&
-                        !selectionProvider.isSelectionMode &&
                         _tabController.index == 0 && 
                         _hasSearched)
-                      InkWell(
-                        onTap: () {
-                          selectionProvider.setSongList(_songResults);
-                          selectionProvider.enterSelectionMode();
-                        },
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          height: 36,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.onSurface.withAlpha(15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                CupertinoIcons.checkmark_circle,
-                                size: 16,
-                                color: theme.colorScheme.onSurface.withAlpha(200),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '批量操作',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurface.withAlpha(200),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      SongBatchActionButton(songs: _songResults),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -336,7 +302,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             ),
           ),
         ),
-        const BatchActionBar(),
         BackToTop(
           show: _showBackToTop,
           onPressed: _scrollToTop,
@@ -577,12 +542,11 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildSongList() {
     if (_songResults.isEmpty) return _buildEmptyState();
-    final selectionProvider = context.watch<SelectionProvider>();
     return ListView.builder(
       controller: _songScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _songResults.length,
-      padding: EdgeInsets.only(bottom: selectionProvider.isSelectionMode ? 80 : 20),
+      padding: const EdgeInsets.only(bottom: 20),
       itemBuilder: (context, index) {
         final song = _songResults[index];
         return SongCard(

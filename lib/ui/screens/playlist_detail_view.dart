@@ -14,6 +14,7 @@ import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_action_row.dart';
 
 class PlaylistDetailRouteArgs {
   const PlaylistDetailRouteArgs({
@@ -66,6 +67,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   int _filteredInvalidSongCount = 0;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  bool _isResolvingAllSongs = false;
+  bool _hasScheduledWarmUp = false;
+  List<Song>? _allSongsCache;
+  Future<List<Song>>? _resolveAllSongsFuture;
+  AudioProvider? _playbackAppendProvider;
+  int? _playbackAppendSessionId;
 
   int get _totalSongCount {
     final detailedCount = _detailedPlaylist?.count ?? 0;
@@ -111,6 +118,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       _loadedSongEntryCount = 0;
       _filteredInvalidSongCount = 0;
       _hasMore = true;
+      _isLoadingMore = false;
+      _isResolvingAllSongs = false;
+      _hasScheduledWarmUp = false;
+      _allSongsCache = null;
+      _resolveAllSongsFuture = null;
+      _playbackAppendProvider = null;
+      _playbackAppendSessionId = null;
     });
 
     // Fetch detailed info to get creator and timestamps
@@ -135,8 +149,22 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
           loadedCount: _loadedSongEntryCount,
           lastPageCount: result.sourceCount,
         );
+        if (!_hasMore) {
+          _allSongsCache = List.unmodifiable(songs);
+        }
       });
+
+      _scheduleBackgroundResolve();
     }
+  }
+
+  void _scheduleBackgroundResolve() {
+    if (_hasScheduledWarmUp || !_hasMore || !mounted) return;
+    _hasScheduledWarmUp = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_hasMore) return;
+      unawaited(_ensureAllSongsLoaded());
+    });
   }
 
   Future<PlaylistSongsParseResult> _fetchSongsPage(int page) {
@@ -154,58 +182,145 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     if (_isLoadingMore || !_hasMore || !mounted) return;
 
     setState(() => _isLoadingMore = true);
-
-    final nextPage = _currentPage + 1;
-    final result = await _fetchSongsPage(nextPage);
-    final moreSongs = result.songs;
-    final pageEntryCount = result.sourceCount;
-
-    if (mounted) {
-      setState(() {
-        if (pageEntryCount > 0) {
-          _songs = [...?_songs, ...moreSongs];
-          _currentPage = nextPage;
-          _loadedSongEntryCount += pageEntryCount;
-          _filteredInvalidSongCount += result.filteredCount;
-          _hasMore = _computeHasMore(
-            loadedCount: _loadedSongEntryCount,
-            lastPageCount: pageEntryCount,
-          );
-        } else {
-          _hasMore = false;
-        }
-        _isLoadingMore = false;
-      });
+    try {
+      await _ensureAllSongsLoaded();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
-  Future<void> _preloadRemainingSongsForPlayback(
-    AudioProvider audioProvider, {
-    required int sessionId,
-    required int startPage,
-  }) async {
-    if (!_hasMore) return;
+  Future<List<Song>> _loadAllSongsForBatch() => _ensureAllSongsLoaded();
 
-    var page = startPage;
-    var loadedCount = _loadedSongEntryCount;
-    while (audioProvider.playlistSessionId == sessionId) {
-      final result = await _fetchSongsPage(page);
-      final moreSongs = result.songs;
-      final pageEntryCount = result.sourceCount;
-      if (pageEntryCount == 0) return;
-      if (result.filteredCount > 0) {
-        audioProvider.addFilteredInvalidSongsToActivePlaylist(result.filteredCount, sessionId: sessionId);
-      }
-      if (moreSongs.isNotEmpty &&
-          !audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
-        return;
-      }
-      loadedCount += pageEntryCount;
-      if (!_computeHasMore(loadedCount: loadedCount, lastPageCount: pageEntryCount)) {
-        return;
-      }
-      page++;
+  Future<List<Song>> _ensureAllSongsLoaded() async {
+    if (_allSongsCache != null) {
+      return _allSongsCache!;
     }
+
+    final existingFuture = _resolveAllSongsFuture;
+    if (existingFuture != null) {
+      return existingFuture;
+    }
+
+    if (_isLoading) return List<Song>.from(_songs ?? const <Song>[]);
+
+    if (!_hasMore) {
+      final songs = List<Song>.unmodifiable(_songs ?? const <Song>[]);
+      _allSongsCache = songs;
+      return songs;
+    }
+
+    if (mounted) {
+      setState(() => _isResolvingAllSongs = true);
+    } else {
+      _isResolvingAllSongs = true;
+    }
+
+    final future = _resolveAllSongsInternal();
+    _resolveAllSongsFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (mounted) {
+        setState(() => _isResolvingAllSongs = false);
+      } else {
+        _isResolvingAllSongs = false;
+      }
+    }
+  }
+
+  Future<List<Song>> _resolveAllSongsInternal() async {
+    final songs = [...?_songs];
+    var nextPage = _currentPage + 1;
+    var lastLoadedPage = _currentPage;
+    var loadedCount = _loadedSongEntryCount;
+    var filteredCount = _filteredInvalidSongCount;
+    var hasMore = _hasMore;
+
+    try {
+      while (hasMore) {
+        final result = await _fetchSongsPage(nextPage);
+        final pageEntryCount = result.sourceCount;
+        if (pageEntryCount == 0) {
+          hasMore = false;
+          break;
+        }
+
+        songs.addAll(result.songs);
+        lastLoadedPage = nextPage;
+        loadedCount += pageEntryCount;
+        filteredCount += result.filteredCount;
+        hasMore = _computeHasMore(loadedCount: loadedCount, lastPageCount: pageEntryCount);
+
+        final playbackProvider = _playbackAppendProvider;
+        final playbackSessionId = _playbackAppendSessionId;
+        if (playbackProvider != null && playbackSessionId != null) {
+          if (playbackProvider.playlistSessionId == playbackSessionId) {
+            if (result.filteredCount > 0) {
+              playbackProvider.addFilteredInvalidSongsToActivePlaylist(
+                result.filteredCount,
+                sessionId: playbackSessionId,
+              );
+            }
+            if (result.songs.isNotEmpty &&
+                !playbackProvider.appendSongsToActivePlaylist(result.songs, sessionId: playbackSessionId)) {
+              _playbackAppendProvider = null;
+              _playbackAppendSessionId = null;
+            }
+          } else {
+            _playbackAppendProvider = null;
+            _playbackAppendSessionId = null;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _songs = List<Song>.from(songs);
+            _currentPage = lastLoadedPage;
+            _loadedSongEntryCount = loadedCount;
+            _filteredInvalidSongCount = filteredCount;
+            _hasMore = hasMore;
+          });
+        }
+        nextPage++;
+      }
+
+      final resolvedSongs = List<Song>.unmodifiable(songs);
+      _allSongsCache = resolvedSongs;
+      _resolveAllSongsFuture = Future.value(resolvedSongs);
+
+      if (mounted) {
+        setState(() {
+          _songs = List<Song>.from(songs);
+          _currentPage = lastLoadedPage;
+          _loadedSongEntryCount = loadedCount;
+          _filteredInvalidSongCount = filteredCount;
+          _hasMore = hasMore;
+        });
+      }
+
+      return resolvedSongs;
+    } catch (_) {
+      _resolveAllSongsFuture = null;
+      rethrow;
+    }
+  }
+
+  void _attachPlaybackPrefetch(AudioProvider audioProvider, int sessionId) {
+    _playbackAppendProvider = audioProvider;
+    _playbackAppendSessionId = sessionId;
+  }
+
+  void _playPlaylist() {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前列表暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithPlaylistSongs(songs[firstPlayableIndex]));
   }
 
   Future<void> _replacePlaybackWithPlaylistSongs(Song song) async {
@@ -225,11 +340,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
         sessionId: sessionId,
       );
     }
-    unawaited(_preloadRemainingSongsForPlayback(
-      audioProvider,
-      sessionId: sessionId,
-      startPage: _currentPage + 1,
-    ));
+    _attachPlaybackPrefetch(audioProvider, sessionId);
+    unawaited(_ensureAllSongsLoaded());
   }
 
   void _onPlaylistSongsChanged() {
@@ -256,15 +368,51 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     final playlist = _detailedPlaylist ?? _routeArgs.playlist;
     final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
+    final songs = _songs ?? const <Song>[];
+    final batchPreparing = _isResolvingAllSongs && _hasMore;
+    final secondaryAction = userProvider.isAuthenticated && !isCreated
+        ? DetailPageSecondaryAction(
+            icon: isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+            label: '收藏',
+            emphasized: isFavorited,
+            onTap: () async {
+              bool success;
+              if (isFavorited) {
+                success = await userProvider.unfavoritePlaylist(playlist.id, globalId: playlist.listCreateGid);
+                if (context.mounted) {
+                  if (success) {
+                    CustomToast.success(context, '已取消收藏');
+                  } else {
+                    CustomToast.error(context, '操作失败');
+                  }
+                }
+              } else {
+                success = await userProvider.favoritePlaylist(
+                  playlist.originalId,
+                  playlist.name,
+                  listCreateUserid: playlist.listCreateUserid,
+                  listCreateGid: playlist.listCreateGid,
+                  listCreateListid: playlist.listCreateListid,
+                );
+                if (context.mounted) {
+                  if (success) {
+                    CustomToast.success(context, '已收藏歌单');
+                  } else {
+                    CustomToast.error(context, '收藏失败');
+                  }
+                }
+              }
+            },
+          )
+        : null;
 
     return SongListScaffold(
-      songs: _songs ?? [],
+      songs: songs,
       isLoading: _isLoading,
       parentPlaylist: playlist,
-      sourceId: playlist.id,
       onLoadMore: _loadMore,
       hasMore: _hasMore,
-      isLoadingMore: _isLoadingMore,
+      isLoadingMore: _isLoadingMore || batchPreparing,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithPlaylistSongs
@@ -291,7 +439,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                   opacity: isCollapsed ? 1.0 : 0.0,
                   child: Container(
                     height: kToolbarHeight,
-                    padding: const EdgeInsets.only(left: 20),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                     child: Row(
                       children: [
                         CoverImage(
@@ -313,6 +461,16 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        ),
+                        const SizedBox(width: 12),
+                        DetailPageActionRow(
+                          playLabel: '播放',
+                          onPlay: _playPlaylist,
+                          songs: songs,
+                          sourceId: playlist.id,
+                          onResolveSongs: _loadAllSongsForBatch,
+                          isBatchPreparing: batchPreparing,
+                          secondaryAction: secondaryAction,
                         ),
                       ],
                     ),
@@ -425,81 +583,14 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                           children: [
                             _buildInfoChip(context, CupertinoIcons.music_note_2, '${playlist.count} 首歌曲'),
                             const Spacer(),
-                            if (userProvider.isAuthenticated && !isCreated) ...[
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  bool success;
-                                  if (isFavorited) {
-                                    success = await userProvider.unfavoritePlaylist(playlist.id, globalId: playlist.listCreateGid);
-                                    if (context.mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '已取消收藏');
-                                      } else {
-                                        CustomToast.error(context, '操作失败');
-                                      }
-                                    }
-                                  } else {
-                                    success = await userProvider.favoritePlaylist(
-                                      playlist.originalId, 
-                                      playlist.name,
-                                      listCreateUserid: playlist.listCreateUserid,
-                                      listCreateGid: playlist.listCreateGid,
-                                      listCreateListid: playlist.listCreateListid,
-                                    );
-                                    if (context.mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '已收藏歌单');
-                                      } else {
-                                        CustomToast.error(context, '收藏失败');
-                                      }
-                                    }
-                                  }
-                                },
-                                icon: Icon(
-                                  isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
-                                  size: 16,
-                                  color: isFavorited ? Colors.red : null,
-                                ),
-                                label: Text(
-                                  '收藏', 
-                                  style: TextStyle(
-                                    fontSize: 13, 
-                                    fontWeight: FontWeight.w700,
-                                    color: isFavorited ? Colors.red : null,
-                                  )
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  side: BorderSide(
-                                    color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  minimumSize: const Size(0, 36),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                            ],
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                final songs = _songs ?? [];
-                                if (songs.isEmpty) return;
-                                final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-                                if (firstPlayableIndex == -1) {
-                                  CustomToast.error(context, '当前列表暂无可播放歌曲');
-                                  return;
-                                }
-                                unawaited(_replacePlaybackWithPlaylistSongs(songs[firstPlayableIndex]));
-                              },
-                              icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                              label: Text('播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                              style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                minimumSize: const Size(0, 36),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
+                            DetailPageActionRow(
+                              playLabel: '播放',
+                              onPlay: _playPlaylist,
+                              songs: songs,
+                              sourceId: playlist.id,
+                              onResolveSongs: _loadAllSongsForBatch,
+                              isBatchPreparing: batchPreparing,
+                              secondaryAction: secondaryAction,
                             ),
                           ],
                         ),

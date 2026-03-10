@@ -541,25 +541,10 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<void> _stopPlayer() async {
-    final stopwatch = Stopwatch()..start();
-    LoggerService.i('[AudioProvider] _stopPlayer start');
     try {
       await _player.stop();
-      LoggerService.i(
-        '[AudioProvider] _player.stop completed in ${stopwatch.elapsedMilliseconds}ms',
-      );
-    } catch (e, stackTrace) {
-      LoggerService.e(
-        '[AudioProvider] _player.stop failed after ${stopwatch.elapsedMilliseconds}ms',
-        e,
-        stackTrace,
-      );
-      rethrow;
     } finally {
       _forceDisableWakelock();
-      LoggerService.i(
-        '[AudioProvider] _stopPlayer end (${stopwatch.elapsedMilliseconds}ms)',
-      );
     }
   }
 
@@ -1634,39 +1619,13 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<void> prepareForExit() async {
-    final stopwatch = Stopwatch()..start();
-    LoggerService.i('[AudioProvider] prepareForExit start');
-    try {
-      _fadeTimer?.cancel();
-      _fadeTimer = null;
-      _climaxMarks = {};
-      _clearDeviceRecoveryState();
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _climaxMarks = {};
+    _clearDeviceRecoveryState();
 
-      final stopPlayerStopwatch = Stopwatch()..start();
-      await _stopPlayer();
-      LoggerService.i(
-        '[AudioProvider] prepareForExit _stopPlayer done '
-        '(${stopPlayerStopwatch.elapsedMilliseconds}ms)',
-      );
-
-      final saveStateStopwatch = Stopwatch()..start();
-      _savePlaybackState();
-      LoggerService.i(
-        '[AudioProvider] prepareForExit _savePlaybackState done '
-        '(${saveStateStopwatch.elapsedMilliseconds}ms)',
-      );
-    } catch (e, stackTrace) {
-      LoggerService.e(
-        '[AudioProvider] prepareForExit failed after ${stopwatch.elapsedMilliseconds}ms',
-        e,
-        stackTrace,
-      );
-      rethrow;
-    }
-
-    LoggerService.i(
-      '[AudioProvider] prepareForExit end (${stopwatch.elapsedMilliseconds}ms)',
-    );
+    await _stopPlayer();
+    _savePlaybackState();
   }
 
   void reset() {

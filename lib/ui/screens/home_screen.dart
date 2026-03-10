@@ -1,10 +1,8 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'dart:io';
-import 'package:window_manager/window_manager.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/app_shortcuts.dart';
@@ -35,40 +33,14 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WindowListener {
-  static const Duration _startupFocusRecoveryWindow = Duration(seconds: 8);
-  int _startupLayoutEpoch = 0;
-  Timer? _startupFocusRecoveryTimer;
-  bool _startupFocusRecoveryActive = Platform.isWindows;
-  bool _startupFocusSeen = false;
-  bool _startupLostFocus = false;
-  bool _startupFocusRelayoutScheduled = false;
-  bool _startupRelayoutPending = false;
+class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
     _initDevice();
-    _scheduleStartupRelayout();
-    _startupFocusRecoveryTimer = Timer(_startupFocusRecoveryWindow, () {
-      _startupFocusRecoveryActive = false;
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInitialState();
-    });
-  }
-
-  void _scheduleStartupRelayout() {
-    if (_startupRelayoutPending) return;
-    _startupRelayoutPending = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await WidgetsBinding.instance.endOfFrame;
-      _startupRelayoutPending = false;
-      if (!mounted) return;
-      setState(() {
-        _startupLayoutEpoch++;
-      });
     });
   }
 
@@ -163,36 +135,6 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
     }
   }
 
-  void _recoverFromStartupFocusLoss() {
-    if (!_startupFocusRecoveryActive || _startupFocusRelayoutScheduled) return;
-    _startupFocusRelayoutScheduled = true;
-    _scheduleStartupRelayout();
-  }
-
-  @override
-  void onWindowBlur() {
-    if (!_startupFocusRecoveryActive) return;
-    _startupLostFocus = true;
-  }
-
-  @override
-  void onWindowFocus() {
-    if (!_startupFocusRecoveryActive) return;
-    final shouldRecover = !_startupFocusSeen || _startupLostFocus;
-    _startupFocusSeen = true;
-    _startupLostFocus = false;
-    if (shouldRecover) {
-      _recoverFromStartupFocusLoss();
-    }
-  }
-
-  @override
-  void dispose() {
-    _startupFocusRecoveryTimer?.cancel();
-    windowManager.removeListener(this);
-    super.dispose();
-  }
-
   final List<Widget> _views = [
     const RecommendView(),
     const DiscoverView(),
@@ -222,101 +164,98 @@ class _HomeScreenState extends State<HomeScreen> with WindowListener {
         body: Column(
           children: [
             Expanded(
-              child: KeyedSubtree(
-                key: ValueKey(_startupLayoutEpoch),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 260,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        border: Border(
-                          right: BorderSide(
-                            color: theme.dividerColor.withAlpha(40),
-                            width: 0.5,
-                          ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 260,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surface,
+                      border: Border(
+                        right: BorderSide(
+                          color: theme.dividerColor.withAlpha(40),
+                          width: 0.5,
                         ),
                       ),
-                      child: Column(
-                        children: [
-                          SizedBox(height: 48, child: MoveWindow()),
-                          Expanded(
-                            child: Sidebar(
-                              selectedIndex: navProvider.currentRootIndex,
-                              selectedPlaylistId:
-                                  navProvider.selectedSidebarPlaylistId,
-                              onDestinationSelected: _navigateTo,
-                              onPushPlaylist: _pushPlaylist,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Container(
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: theme.scaffoldBackgroundColor,
-                              border: Border(
-                                bottom: BorderSide(
-                                  color: theme.dividerColor.withAlpha(30),
-                                  width: 0.5,
-                                ),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 12),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.chevron_left,
-                                  onPressed: navProvider.canGoBack
-                                      ? _goBack
-                                      : null,
-                                  tooltip: '后退',
-                                ),
-                                const SizedBox(width: 8),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.chevron_right,
-                                  onPressed: navProvider.canGoForward
-                                      ? _goForward
-                                      : null,
-                                  tooltip: '前进',
-                                ),
-                                const SizedBox(width: 8),
-                                _buildNavButton(
-                                  icon: CupertinoIcons.refresh,
-                                  onPressed: _refreshCurrentView,
-                                  tooltip: '刷新',
-                                ),
-                                Expanded(child: MoveWindow()),
-                                if (!Platform.isMacOS) const WindowButtons(),
-                              ],
-                            ),
+                    child: Column(
+                      children: [
+                        SizedBox(height: 48, child: MoveWindow()),
+                        Expanded(
+                          child: Sidebar(
+                            selectedIndex: navProvider.currentRootIndex,
+                            selectedPlaylistId:
+                                navProvider.selectedSidebarPlaylistId,
+                            onDestinationSelected: _navigateTo,
+                            onPushPlaylist: _pushPlaylist,
                           ),
-                          Expanded(
-                            child: Navigator(
-                              key: navProvider.navigatorKey,
-                              observers: [navProvider.observer],
-                              onGenerateRoute: (settings) => PageRouteBuilder(
-                                settings: const RouteSettings(name: 'root'),
-                                pageBuilder: (context, _, _) =>
-                                    Consumer<NavigationProvider>(
-                                      builder: (context, provider, _) =>
-                                          _LazyIndexedStack(
-                                            index: provider.currentRootIndex,
-                                            children: _views,
-                                          ),
-                                    ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: theme.scaffoldBackgroundColor,
+                            border: Border(
+                              bottom: BorderSide(
+                                color: theme.dividerColor.withAlpha(30),
+                                width: 0.5,
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 12),
+                              _buildNavButton(
+                                icon: CupertinoIcons.chevron_left,
+                                onPressed: navProvider.canGoBack
+                                    ? _goBack
+                                    : null,
+                                tooltip: '后退',
+                              ),
+                              const SizedBox(width: 8),
+                              _buildNavButton(
+                                icon: CupertinoIcons.chevron_right,
+                                onPressed: navProvider.canGoForward
+                                    ? _goForward
+                                    : null,
+                                tooltip: '前进',
+                              ),
+                              const SizedBox(width: 8),
+                              _buildNavButton(
+                                icon: CupertinoIcons.refresh,
+                                onPressed: _refreshCurrentView,
+                                tooltip: '刷新',
+                              ),
+                              Expanded(child: MoveWindow()),
+                              if (!Platform.isMacOS) const WindowButtons(),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: Navigator(
+                            key: navProvider.navigatorKey,
+                            observers: [navProvider.observer],
+                            onGenerateRoute: (settings) => PageRouteBuilder(
+                              settings: const RouteSettings(name: 'root'),
+                              pageBuilder: (context, _, _) =>
+                                  Consumer<NavigationProvider>(
+                                    builder: (context, provider, _) =>
+                                        _LazyIndexedStack(
+                                          index: provider.currentRootIndex,
+                                          children: _views,
+                                        ),
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             const PlayerBar(),

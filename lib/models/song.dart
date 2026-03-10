@@ -54,7 +54,7 @@ class Song {
       albumName: (json['album_name'] ?? json['albumname'] ?? '').toString(),
       albumId: (json['album_id'] ?? json['albumid'])?.toString(),
       singers: singers,
-      duration: parseInt(json['timelength'] ?? json['duration'] ?? 0) ~/ 1000,
+      duration: parseInt(json['time_length'] ?? 0) != 0 ? parseInt(json['time_length']) : parseInt(json['timelength'] ?? json['duration'] ?? 0) ~/ 1000,
       cover: cover,
       mvHash: (json['video_hash'] ?? json['mvhash'])?.toString(),
       mixSongId: parseInt(json['audio_id'] ?? json['album_audio_id'] ?? json['mixsongid'] ?? 0),

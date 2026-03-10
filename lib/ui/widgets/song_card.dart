@@ -11,6 +11,7 @@ import '../../providers/selection_provider.dart';
 import '../../providers/navigation_provider.dart';
 import 'cover_image.dart';
 import 'custom_toast.dart';
+import 'song_table_layout.dart';
 
 import '../../models/playlist.dart' as model;
 
@@ -31,7 +32,7 @@ class SongCard extends StatefulWidget {
     required this.playlist,
     this.parentPlaylist,
     this.showCover = true,
-    this.coverSize = 52,
+    this.coverSize = 46,
     this.showMore = false,
     this.suppressHover = false,
     this.onDoubleTapPlay,
@@ -465,12 +466,15 @@ class _SongCardState extends State<SongCard> {
                                 )
                               : null,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: SongTableLayout.listRowHorizontalPadding,
+                              vertical: 5,
+                            ),
                             child: Row(
                               children: [
                               if (isSelectionMode)
                                 Padding(
-                                  padding: const EdgeInsets.only(right: 12),
+                                  padding: const EdgeInsets.only(right: 10),
                                   child: Checkbox(
                                     value: isSelected,
                                     onChanged: (value) => context.read<SelectionProvider>().toggleSelection(widget.song.hash),
@@ -479,6 +483,7 @@ class _SongCardState extends State<SongCard> {
                                       color: theme.colorScheme.outline,
                                       width: 1.5,
                                     ),
+                                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
                                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   ),
                                 ),
@@ -493,7 +498,7 @@ class _SongCardState extends State<SongCard> {
                                     primaryColor,
                                   ),
                                 ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -511,7 +516,7 @@ class _SongCardState extends State<SongCard> {
                                                   ? primaryColor.withAlpha(isPlayable ? 255 : 170)
                                                   : theme.colorScheme.onSurface.withAlpha(isPlayable ? 255 : 140),
                                               fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
-                                              fontSize: 15,
+                                              fontSize: 14,
                                               height: 1,
                                               letterSpacing: -0.3,
                                             ),
@@ -527,12 +532,12 @@ class _SongCardState extends State<SongCard> {
                                               behavior: HitTestBehavior.opaque,
                                               onTap: _toggleFavorite,
                                               child: Padding(
-                                                padding: const EdgeInsets.only(left: 6),
+                                                padding: const EdgeInsets.only(left: 4),
                                                 child: Icon(
                                                   isFavorite
                                                       ? CupertinoIcons.heart_fill
                                                       : CupertinoIcons.heart,
-                                                  size: 16,
+                                                  size: 15,
                                                   color: isFavorite
                                                       ? Colors.redAccent.withAlpha(
                                                           isPlayable ? 200 : 120,
@@ -554,12 +559,12 @@ class _SongCardState extends State<SongCard> {
                                           _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
                                       ],
                                     ),
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 4),
                                     _buildSingerLinks(
                                       style: TextStyle(
                                         color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
-                                        fontSize: 13,
-                                        height: 1,
+                                        fontSize: 12,
+                                        height: 1.1,
                                         fontWeight: FontWeight.w600,
                                       ),
                                       enabled: !isSelectionMode,
@@ -570,38 +575,47 @@ class _SongCardState extends State<SongCard> {
                                 ),
                               ),
                               if (widget.showMore) ...[
-                                const SizedBox(width: 24),
+                                const SizedBox(width: SongTableLayout.listAlbumGap),
                                 SizedBox(
-                                  width: 180,
+                                  width: SongTableLayout.listAlbumWidth,
                                   child: _buildLinkText(
                                     text: widget.song.displayAlbumName,
                                     onTap: !isSelectionMode && _hasAlbumDetail && !isCurrentAlbumDetail ? _openAlbumDetail : null,
                                     style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140), 
-                                      fontSize: 13,
+                                      color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 24),
-                                Text(
-                                  _formatDuration(widget.song.duration),
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 150 : 100), 
-                                    fontSize: 13,
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w500,
+                                const SizedBox(width: SongTableLayout.listDurationGap),
+                                SizedBox(
+                                  width: SongTableLayout.listDurationWidth,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _formatDuration(widget.song.duration),
+                                      style: TextStyle(
+                                        color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 150 : 100),
+                                        fontSize: 12,
+                                        fontFamily: 'monospace',
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
-                              const SizedBox(width: 12),
+                              const SizedBox(width: 8),
                               Builder(
                                 builder: (buttonContext) => IconButton(
-                                  icon: const Icon(CupertinoIcons.ellipsis, size: 20),
+                                  icon: const Icon(CupertinoIcons.ellipsis, size: 17),
                                   onPressed: () =>
                                       _showContextMenu(anchorContext: buttonContext),
                                   color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 180 : 120),
-                                  splashRadius: 24,
+                                  splashRadius: 22,
+                                  padding: const EdgeInsets.all(2),
+                                  constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                                  visualDensity: const VisualDensity(horizontal: -1.5, vertical: -1.5),
                                 ),
                               ),
                               ],
