@@ -7,6 +7,7 @@ import '../../models/artist.dart';
 import '../../models/song.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -136,11 +137,32 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
     }
   }
 
+  Future<void> _replacePlaybackWithArtistSongs(Song song) async {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前列表暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
+    final sessionId = audioProvider.playlistSessionId;
+    unawaited(_preloadRemainingSongsForPlayback(
+      audioProvider,
+      sessionId: sessionId,
+      startPage: _currentPage + 1,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final isFollowing = userProvider.isFollowingSinger(widget.artistId);
     final theme = Theme.of(context);
+    final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
+      (provider) => provider.settings['replacePlaylist'] ?? false,
+    );
 
     return SongListScaffold(
       songs: _songs ?? [],
@@ -149,6 +171,10 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore,
+      enableDefaultDoubleTapPlay: true,
+      onSongDoubleTapPlay: replacePlaylistEnabled
+          ? _replacePlaybackWithArtistSongs
+          : null,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
@@ -309,21 +335,13 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                               OutlinedButton.icon(
                                 onPressed: () {
                                   final songs = _songs ?? [];
-                                  if (songs.isNotEmpty) {
-                                    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-                                    if (firstPlayableIndex == -1) {
-                                      CustomToast.error(context, '当前列表暂无可播放歌曲');
-                                      return;
-                                    }
-                                    final audioProvider = context.read<AudioProvider>();
-                                    unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
-                                    final sessionId = audioProvider.playlistSessionId;
-                                    unawaited(_preloadRemainingSongsForPlayback(
-                                      audioProvider,
-                                      sessionId: sessionId,
-                                      startPage: _currentPage + 1,
-                                    ));
+                                  if (songs.isEmpty) return;
+                                  final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+                                  if (firstPlayableIndex == -1) {
+                                    CustomToast.error(context, '当前列表暂无可播放歌曲');
+                                    return;
                                   }
+                                  unawaited(_replacePlaybackWithArtistSongs(songs[firstPlayableIndex]));
                                 },
                                 icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
                                 label: Text('播放热门', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),

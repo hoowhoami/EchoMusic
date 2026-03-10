@@ -909,6 +909,23 @@ class AudioProvider with ChangeNotifier {
     return true;
   }
 
+  Future<void> queueAndPlaySong(Song song) async {
+    if (_isDisposed) return;
+
+    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: [song]);
+    if (resolvedSong == null) {
+      LoggerService.w(
+        '[AudioProvider] No playable song found for queue request: ${song.name}',
+      );
+      return;
+    }
+
+    song = resolvedSong;
+
+    appendSongsToActivePlaylist([song], sessionId: _playlistSessionId);
+    await playSong(song);
+  }
+
   void addFilteredInvalidSongsToActivePlaylist(
     int count, {
     required int sessionId,

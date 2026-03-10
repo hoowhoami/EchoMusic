@@ -191,18 +191,8 @@ class _SettingViewState extends State<SettingView> {
           _buildGroup(context, '播放体验', CupertinoIcons.play_circle, [
             _buildItem(
               context,
-              '自动添加歌曲',
-              '播放歌曲时将整个列表添加到队列',
-              trailing: _buildSwitch(
-                context,
-                settings['addSongsToPlaylist'] ?? true,
-                (v) => persistence.updateSetting('addSongsToPlaylist', v),
-              ),
-            ),
-            _buildItem(
-              context,
               '播放替换队列',
-              '点击播放全部时替换当前播放列表',
+              '在歌单/专辑/歌手列表中，双击播放单曲时，用当前单曲所在的歌曲列表替换播放列表',
               trailing: _buildSwitch(
                 context,
                 settings['replacePlaylist'] ?? false,

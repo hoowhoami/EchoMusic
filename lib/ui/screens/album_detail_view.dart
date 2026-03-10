@@ -7,6 +7,7 @@ import '../../api/music_api.dart';
 import '../../models/album.dart';
 import '../../models/song.dart';
 import '../../providers/audio_provider.dart';
+import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
@@ -136,10 +137,31 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
     }
   }
 
+  Future<void> _replacePlaybackWithAlbumSongs(Song song) async {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前专辑暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
+    final sessionId = audioProvider.playlistSessionId;
+    unawaited(_preloadRemainingSongsForPlayback(
+      audioProvider,
+      sessionId: sessionId,
+      startPage: _currentPage + 1,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final theme = Theme.of(context);
+    final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
+      (provider) => provider.settings['replacePlaylist'] ?? false,
+    );
     final isFavorited = userProvider.isPlaylistFavorited(widget.albumId);
 
     return SongListScaffold(
@@ -149,6 +171,10 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore,
+      enableDefaultDoubleTapPlay: true,
+      onSongDoubleTapPlay: replacePlaylistEnabled
+          ? _replacePlaybackWithAlbumSongs
+          : null,
       parentPlaylist: _album != null ? model.Playlist(
         id: _album!.id,
         listCreateListid: _album!.id,
@@ -329,21 +355,13 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                                   OutlinedButton.icon(
                                     onPressed: () {
                                       final songs = _songs ?? [];
-                                      if (songs.isNotEmpty) {
-                                        final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-                                        if (firstPlayableIndex == -1) {
-                                          CustomToast.error(context, '当前专辑暂无可播放歌曲');
-                                          return;
-                                        }
-                                        final audioProvider = context.read<AudioProvider>();
-                                        unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
-                                        final sessionId = audioProvider.playlistSessionId;
-                                        unawaited(_preloadRemainingSongsForPlayback(
-                                          audioProvider,
-                                          sessionId: sessionId,
-                                          startPage: _currentPage + 1,
-                                        ));
+                                      if (songs.isEmpty) return;
+                                      final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+                                      if (firstPlayableIndex == -1) {
+                                        CustomToast.error(context, '当前专辑暂无可播放歌曲');
+                                        return;
                                       }
+                                      unawaited(_replacePlaybackWithAlbumSongs(songs[firstPlayableIndex]));
                                     },
                                     icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
                                     label: Text('播放专辑', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),

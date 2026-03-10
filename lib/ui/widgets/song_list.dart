@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
@@ -18,6 +19,8 @@ class SongList extends StatefulWidget {
   final VoidCallback? onLoadMore;
   final bool hasMore;
   final bool isLoadingMore;
+  final Future<void> Function(Song song)? onSongDoubleTapPlay;
+  final bool enableDefaultDoubleTapPlay;
 
   const SongList({
     super.key,
@@ -30,6 +33,8 @@ class SongList extends StatefulWidget {
     this.onLoadMore,
     this.hasMore = false,
     this.isLoadingMore = false,
+    this.onSongDoubleTapPlay,
+    this.enableDefaultDoubleTapPlay = false,
   });
 
   @override
@@ -37,12 +42,67 @@ class SongList extends StatefulWidget {
 }
 
 class _SongListState extends State<SongList> {
+  static const double _songItemExtent = 72.0;
+  static const double _stickyToolbarHeight = 56.0;
+
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<Song>? _cachedFilteredSongs;
   List<Song>? _lastSourceSongs;
   String? _lastSearchQuery;
+  bool _suppressSongCardHover = false;
+
+  bool get _hasPinnedPrimaryHeader {
+    final headers = widget.headers;
+    if (headers == null) return false;
+    return headers.any((header) => header is SliverAppBar && header.pinned);
+  }
+
+  double get _locatePinnedHeight =>
+      _stickyToolbarHeight + (_hasPinnedPrimaryHeader ? kToolbarHeight : 0.0);
+
+  double _calculateLocateTargetOffset(int index) {
+    final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
+    final headerHeight = hasHeaders ? 200.0 : 0.0;
+    final targetOffset =
+        (index * _songItemExtent) + headerHeight + _stickyToolbarHeight - _locatePinnedHeight;
+    return targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent).toDouble();
+  }
+
+  Future<void> _locateCurrentSong(List<Song> filteredSongs) async {
+    final audioProvider = context.read<AudioProvider>();
+    final currentSong = audioProvider.currentSong;
+    if (currentSong == null || !_scrollController.hasClients) return;
+
+    final index = filteredSongs.indexWhere((song) => song.isSameSong(currentSong));
+    if (index == -1) return;
+
+    final position = _scrollController.position;
+    final visibleExtent = position.viewportDimension - _locatePinnedHeight;
+    if (visibleExtent <= 0) return;
+
+    final itemTop = _calculateLocateTargetOffset(index);
+    final itemBottom = itemTop + _songItemExtent;
+    final visibleTop = position.pixels;
+    final visibleBottom = visibleTop + visibleExtent;
+
+    if (itemTop >= visibleTop && itemBottom <= visibleBottom) return;
+
+    final targetOffset = itemTop < visibleTop
+        ? itemTop
+        : (itemBottom - visibleExtent)
+            .clamp(0.0, position.maxScrollExtent)
+            .toDouble();
+
+    if ((targetOffset - position.pixels).abs() < 1.0) return;
+
+    await _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   void initState() {
@@ -69,6 +129,23 @@ class _SongListState extends State<SongList> {
     if (maxScroll - currentScroll <= threshold) {
       widget.onLoadMore?.call();
     }
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final shouldSuppress = notification is ScrollStartNotification ||
+        notification is ScrollUpdateNotification ||
+        notification is OverscrollNotification;
+    final shouldRestore = notification is ScrollEndNotification ||
+        (notification is UserScrollNotification &&
+            notification.direction == ScrollDirection.idle);
+
+    if (shouldSuppress && !_suppressSongCardHover) {
+      setState(() => _suppressSongCardHover = true);
+    } else if (shouldRestore && _suppressSongCardHover) {
+      setState(() => _suppressSongCardHover = false);
+    }
+
+    return false;
   }
 
   List<Song> get _filteredSongs {
@@ -108,11 +185,13 @@ class _SongListState extends State<SongList> {
 
     return Stack(
       children: [
-        CustomScrollView(
-          controller: _scrollController,
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            if (widget.headers != null) ...widget.headers!,
+        NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              if (widget.headers != null) ...widget.headers!,
             
             // Sticky Toolbar (Search & Actions)
             SliverPersistentHeader(
@@ -206,7 +285,7 @@ class _SongListState extends State<SongList> {
               SliverPadding(
                 padding: widget.padding,
                 sliver: SliverFixedExtentList(
-                  itemExtent: 72.0,
+                  itemExtent: _songItemExtent,
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       final song = filteredSongs[index];
@@ -215,6 +294,10 @@ class _SongListState extends State<SongList> {
                         playlist: filteredSongs,
                         parentPlaylist: widget.parentPlaylist,
                         showMore: true,
+                        suppressHover: _suppressSongCardHover,
+                        onDoubleTapPlay: widget.onSongDoubleTapPlay,
+                        enableDefaultDoubleTapPlay:
+                            widget.enableDefaultDoubleTapPlay,
                       );
                     },
                     childCount: filteredSongs.length,
@@ -230,13 +313,14 @@ class _SongListState extends State<SongList> {
                 ),
               ),
 
-            Selector<SelectionProvider, bool>(
-              selector: (_, p) => p.isSelectionMode,
-              builder: (context, isMode, child) => SliverToBoxAdapter(
-                child: SizedBox(height: isMode ? 80 : 20),
+              Selector<SelectionProvider, bool>(
+                selector: (_, p) => p.isSelectionMode,
+                builder: (context, isMode, child) => SliverToBoxAdapter(
+                  child: SizedBox(height: isMode ? 80 : 20),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         BackToTop(controller: _scrollController),
       ],
@@ -284,27 +368,7 @@ class _SongListState extends State<SongList> {
   Widget _buildLocatePlayingButton(BuildContext context, List<Song> filteredSongs) {
     final theme = Theme.of(context);
     return InkWell(
-      onTap: () {
-        final audioProvider = context.read<AudioProvider>();
-        final currentSong = audioProvider.currentSong;
-        if (currentSong != null) {
-          final index = filteredSongs.indexWhere((s) => s.isSameSong(currentSong));
-          if (index != -1 && _scrollController.hasClients) {
-            final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
-            final headerHeight = hasHeaders ? 200.0 : 0.0;
-            final toolbarHeight = 56.0;
-            final pinnedHeight = (hasHeaders ? 56.0 : 0.0) + 56.0;
-            
-            final targetOffset = (index * 72.0) + headerHeight + toolbarHeight - pinnedHeight;
-            
-            _scrollController.animateTo(
-              targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        }
-      },
+      onTap: () => _locateCurrentSong(filteredSongs),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         height: 36,

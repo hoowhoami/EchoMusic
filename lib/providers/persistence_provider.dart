@@ -31,7 +31,6 @@ class PersistenceProvider with ChangeNotifier {
     'autoNext': false,
     'autoNextTime': 3000,
     'showPlaylistCount': true,
-    'addSongsToPlaylist': true,
     'replacePlaylist': false,
     'preventSleep': true,
     'compatibilityMode': true,
@@ -73,6 +72,9 @@ class PersistenceProvider with ChangeNotifier {
     final settingsJson = prefs.getString(_keySettings);
     if (settingsJson != null) {
       _settings = {..._settings, ...jsonDecode(settingsJson)};
+      if (_settings.remove('addSongsToPlaylist') != null) {
+        await prefs.setString(_keySettings, jsonEncode(_settings));
+      }
     }
     
     // Load favorites
@@ -193,7 +195,6 @@ class PersistenceProvider with ChangeNotifier {
       'autoNext': false,
       'autoNextTime': 3000,
       'showPlaylistCount': true,
-      'addSongsToPlaylist': true,
       'replacePlaylist': false,
       'preventSleep': true,
       'compatibilityMode': true,

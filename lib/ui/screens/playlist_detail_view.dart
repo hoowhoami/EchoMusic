@@ -8,6 +8,7 @@ import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
 import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
@@ -113,7 +114,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     });
 
     // Fetch detailed info to get creator and timestamps
-    final detailJson = await MusicApi.getPlaylistDetail(_lookupId);
+    final detailJson = await MusicApi.getPlaylistDetail(_routeArgs.trackListCreateGid ?? _lookupId);
 
     if (detailJson != null && mounted) {
       setState(() {
@@ -207,6 +208,30 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     }
   }
 
+  Future<void> _replacePlaybackWithPlaylistSongs(Song song) async {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前列表暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
+    final sessionId = audioProvider.playlistSessionId;
+    if (_filteredInvalidSongCount > 0) {
+      audioProvider.addFilteredInvalidSongsToActivePlaylist(
+        _filteredInvalidSongCount,
+        sessionId: sessionId,
+      );
+    }
+    unawaited(_preloadRemainingSongsForPlayback(
+      audioProvider,
+      sessionId: sessionId,
+      startPage: _currentPage + 1,
+    ));
+  }
+
   void _onPlaylistSongsChanged() {
     if (!mounted) return;
     final changedListId = _userProvider.playlistSongsChangeNotifier.value;
@@ -225,6 +250,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
+    final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
+      (provider) => provider.settings['replacePlaylist'] ?? false,
+    );
     final playlist = _detailedPlaylist ?? _routeArgs.playlist;
     final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
@@ -237,6 +265,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore,
+      enableDefaultDoubleTapPlay: true,
+      onSongDoubleTapPlay: replacePlaylistEnabled
+          ? _replacePlaybackWithPlaylistSongs
+          : null,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
@@ -451,27 +483,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                             OutlinedButton.icon(
                               onPressed: () {
                                 final songs = _songs ?? [];
-                                if (songs.isNotEmpty) {
-                                  final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-                                  if (firstPlayableIndex == -1) {
-                                    CustomToast.error(context, '当前列表暂无可播放歌曲');
-                                    return;
-                                  }
-                                  final audioProvider = context.read<AudioProvider>();
-                                  unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
-                                  final sessionId = audioProvider.playlistSessionId;
-                                  if (_filteredInvalidSongCount > 0) {
-                                    audioProvider.addFilteredInvalidSongsToActivePlaylist(
-                                      _filteredInvalidSongCount,
-                                      sessionId: sessionId,
-                                    );
-                                  }
-                                  unawaited(_preloadRemainingSongsForPlayback(
-                                    audioProvider,
-                                    sessionId: sessionId,
-                                    startPage: _currentPage + 1,
-                                  ));
+                                if (songs.isEmpty) return;
+                                final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+                                if (firstPlayableIndex == -1) {
+                                  CustomToast.error(context, '当前列表暂无可播放歌曲');
+                                  return;
                                 }
+                                unawaited(_replacePlaybackWithPlaylistSongs(songs[firstPlayableIndex]));
                               },
                               icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
                               label: Text('播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),

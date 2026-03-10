@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 
 import 'package:echomusic/api/music_api.dart';
 import 'package:echomusic/models/playlist.dart';
@@ -10,7 +11,11 @@ import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/ui/screens/playlist_detail_view.dart';
 import 'package:echomusic/ui/widgets/app_shortcuts.dart';
+import 'package:echomusic/ui/widgets/cover_image.dart';
 import 'package:echomusic/ui/widgets/player_bar.dart';
+import 'package:echomusic/ui/widgets/queue_drawer.dart';
+import 'package:echomusic/ui/widgets/song_card.dart';
+import 'package:echomusic/ui/widgets/song_list.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -18,8 +23,21 @@ import 'package:echomusic/providers/selection_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
-  _FakeAudioProvider({required Song currentSong, required double initialVolume})
-    : _currentSong = currentSong,
+  _FakeAudioProvider({
+    required Song currentSong,
+    required double initialVolume,
+    bool isPlaying = false,
+    bool isLoading = false,
+    List<Song> playlist = const [],
+    int currentIndex = -1,
+    int activePlaylistFilteredInvalidSongCount = 0,
+  })  : _currentSong = currentSong,
+      _isPlaying = isPlaying,
+      _isLoading = isLoading,
+      _playlist = playlist,
+      _currentIndex = currentIndex,
+      _activePlaylistFilteredInvalidSongCount =
+          activePlaylistFilteredInvalidSongCount,
       _displayVolume = initialVolume,
       _lastAudibleVolume = initialVolume > 0 ? initialVolume : 50.0;
 
@@ -28,17 +46,28 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   final StreamController<PositionSnapshot> _positionController =
       StreamController<PositionSnapshot>.broadcast();
   final Song _currentSong;
+  final bool _isPlaying;
+  final bool _isLoading;
+  final List<Song> _playlist;
+  final int _currentIndex;
+  final int _activePlaylistFilteredInvalidSongCount;
   double _displayVolume;
   double _lastAudibleVolume;
+  int playSongCallCount = 0;
+  int queueAndPlaySongCallCount = 0;
+  int togglePlayCallCount = 0;
+  Song? lastPlayedSong;
+  List<Song>? lastPlayedPlaylist;
+  Song? queuedSong;
 
   @override
   Song? get currentSong => _currentSong;
 
   @override
-  bool get isPlaying => false;
+  bool get isPlaying => _isPlaying;
 
   @override
-  bool get isLoading => false;
+  bool get isLoading => _isLoading;
 
   @override
   String get playMode => 'repeat';
@@ -66,7 +95,27 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   double get displayVolume => _displayVolume;
 
   @override
-  List<Song> get playlist => const [];
+  List<Song> get playlist => _playlist;
+
+  @override
+  int get currentIndex => _currentIndex;
+
+  @override
+  int get activePlaylistFilteredInvalidSongCount =>
+      _activePlaylistFilteredInvalidSongCount;
+
+  @override
+  Future<void> playSong(Song song, {List<Song>? playlist}) async {
+    playSongCallCount++;
+    lastPlayedSong = song;
+    lastPlayedPlaylist = playlist;
+  }
+
+  @override
+  Future<void> queueAndPlaySong(Song song) async {
+    queueAndPlaySongCallCount++;
+    queuedSong = song;
+  }
 
   @override
   void previous() {}
@@ -75,7 +124,9 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   void next() {}
 
   @override
-  void togglePlay() {}
+  void togglePlay() {
+    togglePlayCallCount++;
+  }
 
   @override
   void setPlayMode(String mode) {}
@@ -117,6 +168,72 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
     _userVolumeController.close();
     _positionController.close();
     super.dispose();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakePersistenceProvider extends ChangeNotifier
+    implements PersistenceProvider {
+  _FakePersistenceProvider({Set<String> favoriteHashes = const {}})
+      : _favoriteHashes = favoriteHashes.map((hash) => hash.toLowerCase()).toSet();
+
+  final Set<String> _favoriteHashes;
+  int toggleFavoriteCallCount = 0;
+
+  @override
+  bool isFavorite(Song song) {
+    return song.hash.isNotEmpty && _favoriteHashes.contains(song.hash.toLowerCase());
+  }
+
+  @override
+  Future<void> toggleFavorite(Song song, {dynamic userProvider}) async {
+    toggleFavoriteCallCount++;
+    final normalizedHash = song.hash.toLowerCase();
+    if (normalizedHash.isEmpty) return;
+    if (_favoriteHashes.contains(normalizedHash)) {
+      _favoriteHashes.remove(normalizedHash);
+    } else {
+      _favoriteHashes.add(normalizedHash);
+    }
+    notifyListeners();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeNavigationProvider extends ChangeNotifier
+    implements NavigationProvider {
+  @override
+  bool isCurrentRoute(String routeName, {int? id}) => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeSelectionProvider extends ChangeNotifier
+    implements SelectionProvider {
+  final Set<String> _selectedHashes = <String>{};
+
+  @override
+  bool get isSelectionMode => false;
+
+  @override
+  bool isSelected(String hash) {
+    return hash.isNotEmpty && _selectedHashes.contains(hash);
+  }
+
+  @override
+  void toggleSelection(String hash) {
+    if (hash.isEmpty) return;
+    if (_selectedHashes.contains(hash)) {
+      _selectedHashes.remove(hash);
+    } else {
+      _selectedHashes.add(hash);
+    }
+    notifyListeners();
   }
 
   @override
@@ -297,6 +414,18 @@ void main() {
     },
   );
 
+  test('PersistenceProvider removes legacy addSongsToPlaylist setting', () async {
+    SharedPreferences.setMockInitialValues({
+      'app_settings': '{"addSongsToPlaylist":true,"replacePlaylist":true}',
+    });
+
+    final provider = PersistenceProvider();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(provider.settings.containsKey('addSongsToPlaylist'), isFalse);
+    expect(provider.settings['replacePlaylist'], isTrue);
+  });
+
   test(
     'MusicApi preserves route-provided playlist track id for owned playlists',
     () async {
@@ -396,5 +525,605 @@ void main() {
     expect(find.text('0%'), findsOneWidget);
     expect(find.byIcon(CupertinoIcons.speaker_slash_fill), findsWidgets);
     expect(find.text('50%'), findsNothing);
+  });
+
+  testWidgets('SongList locate button does not scroll when current song is already visible', (
+    tester,
+  ) async {
+    final songs = List.generate(
+      12,
+      (index) => buildSong(name: 'Song $index', hash: 'song-hash-$index'),
+    );
+    final audio = _FakeAudioProvider(
+      currentSong: songs[4],
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(
+            value: _FakePersistenceProvider(),
+          ),
+          ChangeNotifierProvider<NavigationProvider>.value(
+            value: _FakeNavigationProvider(),
+          ),
+          ChangeNotifierProvider<SelectionProvider>.value(
+            value: _FakeSelectionProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              height: 360,
+              child: SongList(songs: songs),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -120));
+    await tester.pumpAndSettle();
+
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    final beforeOffset = scrollable.position.pixels;
+    expect(beforeOffset, greaterThan(0));
+
+    await tester.tap(find.byIcon(CupertinoIcons.scope));
+    await tester.pumpAndSettle();
+
+    expect(scrollable.position.pixels, closeTo(beforeOffset, 0.1));
+  });
+
+  testWidgets('QueueDrawer does not auto-scroll when current song is already visible', (
+    tester,
+  ) async {
+    final songs = List.generate(
+      8,
+      (index) => buildSong(name: 'Queue Song $index', hash: 'queue-song-hash-$index'),
+    );
+    final audio = _FakeAudioProvider(
+      currentSong: songs[1],
+      initialVolume: 40,
+      playlist: songs,
+      currentIndex: 1,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 420,
+              height: 520,
+              child: QueueDrawer(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollable = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    expect(scrollable.position.pixels, 0);
+  });
+
+  testWidgets('SongCard row tap does not start playback but play button does', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Row Tap Song', hash: 'row-tap-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final rowInkWell = tester
+        .widgetList<InkWell>(
+          find.descendant(
+            of: find.byType(SongCard),
+            matching: find.byType(InkWell),
+          ),
+        )
+        .singleWhere((inkWell) => inkWell.onTap == null && inkWell.onDoubleTap == null);
+
+    expect(rowInkWell.onTap, isNull);
+    expect(audio.playSongCallCount, 0);
+    expect(audio.queueAndPlaySongCallCount, 0);
+
+    final mouseGesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouseGesture.removePointer);
+    await mouseGesture.addPointer();
+    await mouseGesture.moveTo(tester.getCenter(find.byType(CoverImage)));
+    await tester.pump();
+
+    expect(find.byTooltip('播放当前歌曲'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('播放当前歌曲'));
+    await tester.pump();
+
+    expect(audio.playSongCallCount, 0);
+    expect(audio.queueAndPlaySongCallCount, 1);
+    expect(audio.queuedSong?.isSameSong(song), isTrue);
+  });
+
+  testWidgets('SongCard current song cover button toggles play state', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Current Song', hash: 'current-song-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: song,
+      initialVolume: 40,
+      isPlaying: true,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byTooltip('暂停当前歌曲'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('暂停当前歌曲'));
+    await tester.pump();
+
+    expect(audio.togglePlayCallCount, 1);
+    expect(audio.queueAndPlaySongCallCount, 0);
+    expect(audio.playSongCallCount, 0);
+  });
+
+  testWidgets('SongCard shows hover frame when pointer enters card', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Hover Song', hash: 'hover-song-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'hover-other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final cardContainerFinder = find.descendant(
+      of: find.byType(InkWell),
+      matching: find.byType(AnimatedContainer),
+    );
+
+    expect(
+      (tester.widget<AnimatedContainer>(cardContainerFinder).decoration as BoxDecoration?),
+      isNull,
+    );
+
+    final mouseGesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouseGesture.removePointer);
+    await mouseGesture.addPointer();
+    await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
+    await tester.pumpAndSettle();
+
+    final hoveredDecoration =
+        tester.widget<AnimatedContainer>(cardContainerFinder).decoration
+            as BoxDecoration?;
+    expect(hoveredDecoration, isNotNull);
+    expect(hoveredDecoration?.border, isNotNull);
+  });
+
+  testWidgets('SongCard clears hover frame when suppressHover becomes true', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Suppressed Hover Song', hash: 'suppressed-hover-song-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'suppressed-hover-other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    var suppressHover = false;
+    late StateSetter hostSetState;
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              hostSetState = setState;
+              return Scaffold(
+                body: SongCard(
+                  song: song,
+                  playlist: [song],
+                  showCover: true,
+                  showMore: false,
+                  suppressHover: suppressHover,
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final cardContainerFinder = find.descendant(
+      of: find.byType(InkWell),
+      matching: find.byType(AnimatedContainer),
+    );
+
+    final mouseGesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouseGesture.removePointer);
+    await mouseGesture.addPointer();
+    await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<AnimatedContainer>(cardContainerFinder).decoration,
+      isA<BoxDecoration>(),
+    );
+
+    hostSetState(() => suppressHover = true);
+    await tester.pump();
+
+    expect(
+      tester.widget<AnimatedContainer>(cardContainerFinder).decoration,
+      isNull,
+    );
+  });
+
+  testWidgets('SongCard favorite heart keeps placeholder and toggles icon state', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Favorite Song', hash: 'favorite-song-hash');
+    final persistence = _FakePersistenceProvider(favoriteHashes: {song.hash});
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'favorite-other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byTooltip('取消收藏'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.heart_fill), findsOneWidget);
+
+    final favoriteMouseRegion = tester.widget<MouseRegion>(
+      find.descendant(
+        of: find.byTooltip('取消收藏'),
+        matching: find.byType(MouseRegion),
+      ),
+    );
+    expect(favoriteMouseRegion.cursor, SystemMouseCursors.click);
+
+    await tester.tap(find.byTooltip('取消收藏'));
+    await tester.pump();
+
+    expect(persistence.toggleFavoriteCallCount, 1);
+    expect(find.byTooltip('取消收藏'), findsNothing);
+    expect(find.byTooltip('收藏'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.heart_fill), findsNothing);
+    expect(find.byIcon(CupertinoIcons.heart), findsOneWidget);
+  });
+
+  testWidgets('SongCard double tap on cover triggers playlist replacement callback', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Cover Double Tap Song', hash: 'cover-double-tap-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'cover-double-tap-other-hash'),
+      initialVolume: 40,
+    );
+    Song? tappedSong;
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+              onDoubleTapPlay: (selectedSong) async {
+                tappedSong = selectedSong;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final mouseGesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouseGesture.removePointer);
+    await mouseGesture.addPointer();
+    await mouseGesture.moveTo(tester.getCenter(find.byType(CoverImage)));
+    await tester.pump();
+
+    final coverCenter = tester.getCenter(find.byType(CoverImage));
+    await tester.tapAt(coverCenter);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(coverCenter);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(tappedSong?.isSameSong(song), isTrue);
+    expect(audio.playSongCallCount, 0);
+    expect(audio.queueAndPlaySongCallCount, 0);
+  });
+
+  testWidgets('SongCard double tap queues current song when default double tap play is enabled', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Double Tap Queue Song', hash: 'double-tap-queue-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'double-tap-other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: false,
+              showMore: false,
+              enableDefaultDoubleTapPlay: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final rowInkWell = tester
+        .widgetList<InkWell>(
+          find.descendant(
+            of: find.byType(SongCard),
+            matching: find.byType(InkWell),
+          ),
+        )
+        .singleWhere((inkWell) => inkWell.onTap == null && inkWell.onDoubleTap != null);
+
+    rowInkWell.onDoubleTap!();
+    await tester.pump();
+
+    expect(audio.queueAndPlaySongCallCount, 1);
+    expect(audio.queuedSong?.isSameSong(song), isTrue);
+    expect(audio.playSongCallCount, 0);
+  });
+
+  testWidgets('SongCard cover double tap queues current song when default double tap play is enabled', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Cover Double Tap Queue Song', hash: 'cover-double-tap-queue-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'cover-double-tap-queue-other-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: true,
+              showMore: false,
+              enableDefaultDoubleTapPlay: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final mouseGesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouseGesture.removePointer);
+    await mouseGesture.addPointer();
+    await mouseGesture.moveTo(tester.getCenter(find.byType(CoverImage)));
+    await tester.pump();
+
+    final coverCenter = tester.getCenter(find.byType(CoverImage));
+    await tester.tapAt(coverCenter);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(coverCenter);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(audio.queueAndPlaySongCallCount, 1);
+    expect(audio.queuedSong?.isSameSong(song), isTrue);
+    expect(audio.playSongCallCount, 0);
+  });
+
+  testWidgets('SongCard double tap triggers playlist replacement callback', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Double Tap Song', hash: 'double-tap-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'other-song-hash-2'),
+      initialVolume: 40,
+    );
+    Song? tappedSong;
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SongCard(
+              song: song,
+              playlist: [song],
+              showCover: false,
+              showMore: false,
+              onDoubleTapPlay: (selectedSong) async {
+                tappedSong = selectedSong;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final rowInkWell = tester
+        .widgetList<InkWell>(
+          find.descendant(
+            of: find.byType(SongCard),
+            matching: find.byType(InkWell),
+          ),
+        )
+        .singleWhere((inkWell) => inkWell.onDoubleTap != null);
+
+    expect(rowInkWell.onDoubleTap, isNotNull);
+    rowInkWell.onDoubleTap!.call();
+    await tester.pump();
+
+    expect(tappedSong?.isSameSong(song), isTrue);
+    expect(audio.playSongCallCount, 0);
   });
 }

@@ -14,6 +14,8 @@ class SongListScaffold extends StatelessWidget {
   final VoidCallback? onLoadMore;
   final bool hasMore;
   final bool isLoadingMore;
+  final Future<void> Function(Song song)? onSongDoubleTapPlay;
+  final bool enableDefaultDoubleTapPlay;
 
   const SongListScaffold({
     super.key,
@@ -26,6 +28,8 @@ class SongListScaffold extends StatelessWidget {
     this.onLoadMore,
     this.hasMore = false,
     this.isLoadingMore = false,
+    this.onSongDoubleTapPlay,
+    this.enableDefaultDoubleTapPlay = false,
   });
 
   @override
@@ -45,6 +49,8 @@ class SongListScaffold extends StatelessWidget {
             onLoadMore: onLoadMore,
             hasMore: hasMore,
             isLoadingMore: isLoadingMore,
+            onSongDoubleTapPlay: onSongDoubleTapPlay,
+            enableDefaultDoubleTapPlay: enableDefaultDoubleTapPlay,
           ),
           const BatchActionBar(),
         ],

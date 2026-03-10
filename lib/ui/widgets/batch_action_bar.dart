@@ -722,7 +722,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                                                 ),
                                                 const SizedBox(height: 1),
                                                 Text(
-                                                  '${p['song_count'] ?? 0} 首歌曲',
+                                                  '${p['count'] ?? p['song_count'] ?? 0} 首歌曲',
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     color: theme.colorScheme.onSurfaceVariant,
