@@ -561,6 +561,59 @@ void main() {
   });
 
   testWidgets(
+    'PlayerBar favorite actions stay left of centered playback controls on wide windows',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({});
+
+      final song = buildSong(
+        name: 'Wide Window Song',
+        hash: 'wide-window-hash',
+      );
+      final persistence = PersistenceProvider();
+      await persistence.setUserInfo({'userid': 1, 'token': 'test-token'});
+
+      final audio = _FakeAudioProvider(currentSong: song, initialVolume: 40);
+      final user = UserProvider()..setPersistenceProvider(persistence);
+      addTearDown(audio.dispose);
+      addTearDown(user.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AudioProvider>.value(value: audio),
+            ChangeNotifierProvider<PersistenceProvider>.value(
+              value: persistence,
+            ),
+            ChangeNotifierProvider<NavigationProvider>(
+              create: (_) => NavigationProvider(),
+            ),
+            ChangeNotifierProvider<UserProvider>.value(value: user),
+          ],
+          child: const MaterialApp(home: Scaffold(body: PlayerBar())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final favoriteTooltip =
+          '收藏 · ${AppShortcuts.labelFor(AppShortcutCommand.toggleFavorite)}';
+      final playTooltip =
+          '播放 · ${AppShortcuts.labelFor(AppShortcutCommand.togglePlayback)}';
+
+      final favoriteRect = tester.getRect(find.byTooltip(favoriteTooltip));
+      final playRect = tester.getRect(find.byTooltip(playTooltip));
+
+      expect(favoriteRect.right, lessThan(playRect.left));
+    },
+  );
+
+  testWidgets(
     'SongList locate button does not scroll when current song is already visible',
     (tester) async {
       final songs = List.generate(

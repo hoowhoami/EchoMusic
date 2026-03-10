@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -243,6 +245,10 @@ class _ClimaxBoundaryMarkers extends StatelessWidget {
 class _PlayerMainContent extends StatelessWidget {
   const _PlayerMainContent();
 
+  static const double _rightActionsWidth = 380;
+  static const double _centerControlsReservedWidth = 240;
+  static const double _centerControlsGap = 24;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -348,56 +354,66 @@ class _PlayerMainContent extends StatelessWidget {
     ThemeData theme,
     Color accentColor,
   ) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _PlayerIconButton(
-                icon: CupertinoIcons.backward_fill,
-                onPressed: context.read<AudioProvider>().previous,
-                size: 26,
-                tooltip:
-                    '上一首 · ${AppShortcuts.labelFor(AppShortcutCommand.previousTrack)}',
-              ),
-              const SizedBox(width: 24),
-              const _PlayPauseButtonIsolated(),
-              const SizedBox(width: 24),
-              _PlayerIconButton(
-                icon: CupertinoIcons.forward_fill,
-                onPressed: context.read<AudioProvider>().next,
-                size: 26,
-                tooltip:
-                    '下一首 · ${AppShortcuts.labelFor(AppShortcutCommand.nextTrack)}',
-              ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final safeLeftWidth = math.max(
+          0.0,
+          math.min(
+            constraints.maxWidth / 2 -
+                (_centerControlsReservedWidth / 2) -
+                _centerControlsGap,
+            constraints.maxWidth - _rightActionsWidth - _centerControlsGap,
           ),
-        ),
-        Positioned.fill(
-          child: Row(
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 280),
-                  child: const Align(
-                    alignment: Alignment.centerLeft,
-                    child: _PlayerSongInfo(),
+        );
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _PlayerIconButton(
+                    icon: CupertinoIcons.backward_fill,
+                    onPressed: context.read<AudioProvider>().previous,
+                    size: 26,
+                    tooltip:
+                        '上一首 · ${AppShortcuts.labelFor(AppShortcutCommand.previousTrack)}',
                   ),
+                  const SizedBox(width: 24),
+                  const _PlayPauseButtonIsolated(),
+                  const SizedBox(width: 24),
+                  _PlayerIconButton(
+                    icon: CupertinoIcons.forward_fill,
+                    onPressed: context.read<AudioProvider>().next,
+                    size: 26,
+                    tooltip:
+                        '下一首 · ${AppShortcuts.labelFor(AppShortcutCommand.nextTrack)}',
+                  ),
+                ],
+              ),
+            ),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: safeLeftWidth),
+                  child: const _PlayerSongInfo(),
                 ),
               ),
-              const SizedBox(
-                width: 380,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _PlayerRightActions(),
+            ),
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: _rightActionsWidth,
+                  child: const _PlayerRightActions(),
                 ),
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
