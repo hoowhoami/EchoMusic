@@ -58,7 +58,7 @@ class AppShortcuts extends StatelessWidget {
     AppShortcutInfo(
       command: AppShortcutCommand.togglePlayback,
       title: '播放 / 暂停',
-      description: '切换当前歌曲的播放状态（应用内额外支持 Space）',
+      description: '切换当前歌曲的播放状态',
     ),
     AppShortcutInfo(
       command: AppShortcutCommand.previousTrack,
@@ -176,8 +176,6 @@ class AppShortcuts extends StatelessWidget {
     DesktopShortcutPlatform platform,
   ) {
     final shortcuts = <ShortcutActivator, Intent>{
-      const SingleActivator(LogicalKeyboardKey.space):
-          const _TogglePlaybackIntent(),
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
           const _TogglePlaybackIntent(),
       const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious):
