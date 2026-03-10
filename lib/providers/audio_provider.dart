@@ -541,8 +541,26 @@ class AudioProvider with ChangeNotifier {
   }
 
   void _stopPlayer() {
-    _player.stop();
-    _forceDisableWakelock();
+    final stopwatch = Stopwatch()..start();
+    LoggerService.i('[AudioProvider] _stopPlayer start');
+    try {
+      _player.stop();
+      LoggerService.i(
+        '[AudioProvider] _player.stop completed in ${stopwatch.elapsedMilliseconds}ms',
+      );
+    } catch (e, stackTrace) {
+      LoggerService.e(
+        '[AudioProvider] _player.stop failed after ${stopwatch.elapsedMilliseconds}ms',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    } finally {
+      _forceDisableWakelock();
+      LoggerService.i(
+        '[AudioProvider] _stopPlayer end (${stopwatch.elapsedMilliseconds}ms)',
+      );
+    }
   }
 
   void _handlePersistenceChanged() {
@@ -924,6 +942,78 @@ class AudioProvider with ChangeNotifier {
 
     appendSongsToActivePlaylist([song], sessionId: _playlistSessionId);
     await playSong(song);
+  }
+
+  bool addSongToPlayNext(Song song) {
+    if (_isDisposed) return false;
+
+    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: [song]);
+    if (resolvedSong == null) {
+      LoggerService.w(
+        '[AudioProvider] No playable song found for play-next request: ${song.name}',
+      );
+      return false;
+    }
+
+    song = resolvedSong;
+
+    final currentSong = _currentSong;
+    if (currentSong != null &&
+        (identical(currentSong, song) || currentSong.isSameSong(song))) {
+      LoggerService.d(
+        '[AudioProvider] Ignoring play-next request for current song: ${song.name}',
+      );
+      return true;
+    }
+
+    final hasCurrent = _currentIndex >= 0 && _currentIndex < _playlist.length;
+    var insertIndex = hasCurrent ? _currentIndex + 1 : 0;
+
+    final existingIndex = _indexOfSongInList(_playlist, song);
+    if (existingIndex != -1) {
+      _playlist.removeAt(existingIndex);
+      if (_currentIndex > existingIndex) {
+        _currentIndex--;
+      }
+      if (existingIndex < insertIndex) {
+        insertIndex--;
+      }
+    }
+
+    if (insertIndex < 0) insertIndex = 0;
+    if (insertIndex > _playlist.length) insertIndex = _playlist.length;
+    _playlist.insert(insertIndex, song);
+
+    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
+      var originalInsertIndex = _originalPlaylist.length;
+      if (currentSong != null) {
+        final currentOriginalIndex = _indexOfSongInList(
+          _originalPlaylist,
+          currentSong,
+        );
+        if (currentOriginalIndex != -1) {
+          originalInsertIndex = currentOriginalIndex + 1;
+        }
+      }
+
+      final existingOriginalIndex = _indexOfSongInList(_originalPlaylist, song);
+      if (existingOriginalIndex != -1) {
+        _originalPlaylist.removeAt(existingOriginalIndex);
+        if (existingOriginalIndex < originalInsertIndex) {
+          originalInsertIndex--;
+        }
+      }
+
+      if (originalInsertIndex < 0) originalInsertIndex = 0;
+      if (originalInsertIndex > _originalPlaylist.length) {
+        originalInsertIndex = _originalPlaylist.length;
+      }
+      _originalPlaylist.insert(originalInsertIndex, song);
+    }
+
+    _savePlaybackState();
+    _safeNotify();
+    return true;
   }
 
   void addFilteredInvalidSongsToActivePlaylist(
@@ -1544,12 +1634,39 @@ class AudioProvider with ChangeNotifier {
   }
 
   void prepareForExit() {
-    _fadeTimer?.cancel();
-    _fadeTimer = null;
-    _climaxMarks = {};
-    _clearDeviceRecoveryState();
-    _stopPlayer();
-    _savePlaybackState();
+    final stopwatch = Stopwatch()..start();
+    LoggerService.i('[AudioProvider] prepareForExit start');
+    try {
+      _fadeTimer?.cancel();
+      _fadeTimer = null;
+      _climaxMarks = {};
+      _clearDeviceRecoveryState();
+
+      final stopPlayerStopwatch = Stopwatch()..start();
+      _stopPlayer();
+      LoggerService.i(
+        '[AudioProvider] prepareForExit _stopPlayer done '
+        '(${stopPlayerStopwatch.elapsedMilliseconds}ms)',
+      );
+
+      final saveStateStopwatch = Stopwatch()..start();
+      _savePlaybackState();
+      LoggerService.i(
+        '[AudioProvider] prepareForExit _savePlaybackState done '
+        '(${saveStateStopwatch.elapsedMilliseconds}ms)',
+      );
+    } catch (e, stackTrace) {
+      LoggerService.e(
+        '[AudioProvider] prepareForExit failed after ${stopwatch.elapsedMilliseconds}ms',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
+
+    LoggerService.i(
+      '[AudioProvider] prepareForExit end (${stopwatch.elapsedMilliseconds}ms)',
+    );
   }
 
   void reset() {

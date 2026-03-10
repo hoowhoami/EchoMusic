@@ -30,15 +30,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
           // 增加一点点延迟，让动画展示完整
           await Future.delayed(const Duration(milliseconds: 800));
           if (mounted) {
-            Navigator.of(context).pushReplacement(
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) => const HomeScreen(),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
-                transitionDuration: const Duration(milliseconds: 600),
-              ),
-            );
+            await _navigateToHome();
           }
         }
       } else {
@@ -59,11 +51,32 @@ class _LoadingScreenState extends State<LoadingScreen> {
     }
   }
 
+  Future<void> _navigateToHome() async {
+    // 避免主页在 LoadingScreen 的过渡帧里首构建，
+    // 减少首帧约束尚未稳定导致的布局异常。
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(_buildHomeRoute());
+  }
+
+  Route<void> _buildHomeRoute() {
+    return PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          const HomeScreen(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      transitionDuration: const Duration(milliseconds: 600),
+      reverseTransitionDuration: const Duration(milliseconds: 600),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor, // 基础背景色
       body: Stack(
@@ -81,7 +94,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ),
             ),
           ),
-          
+
           // 装饰性的圆：颜色随主色调和亮度变化
           Positioned(
             top: -100,
@@ -95,7 +108,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ),
             ),
           ),
-          
+
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -105,10 +118,14 @@ class _LoadingScreenState extends State<LoadingScreen> {
                   width: 120,
                   height: 120,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurface.withAlpha(isDark ? 10 : 5),
+                    color: theme.colorScheme.onSurface.withAlpha(
+                      isDark ? 10 : 5,
+                    ),
                     borderRadius: BorderRadius.circular(32),
                     border: Border.all(
-                      color: theme.colorScheme.onSurface.withAlpha(isDark ? 15 : 10),
+                      color: theme.colorScheme.onSurface.withAlpha(
+                        isDark ? 15 : 10,
+                      ),
                       width: 1,
                     ),
                   ),
@@ -138,9 +155,9 @@ class _LoadingScreenState extends State<LoadingScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 60),
-                
+
                 // 状态显示
                 if (!_hasError) ...[
                   SizedBox(
@@ -167,14 +184,20 @@ class _LoadingScreenState extends State<LoadingScreen> {
                   ),
                 ] else ...[
                   // 错误显示
-                  Icon(CupertinoIcons.exclamationmark_triangle_fill, 
-                    color: theme.colorScheme.error.withAlpha(200), size: 48),
+                  Icon(
+                    CupertinoIcons.exclamationmark_triangle_fill,
+                    color: theme.colorScheme.error.withAlpha(200),
+                    size: 48,
+                  ),
                   const SizedBox(height: 24),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: Text(
                       _statusMessage,
-                      style: TextStyle(color: theme.colorScheme.error.withAlpha(180), fontSize: 14),
+                      style: TextStyle(
+                        color: theme.colorScheme.error.withAlpha(180),
+                        fontSize: 14,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -211,7 +234,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               ],
             ),
           ),
-          
+
           // 底部版权或版本信息
           Positioned(
             bottom: 40,
@@ -246,13 +269,17 @@ class _LoadingScreenState extends State<LoadingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          color: isPrimary ? theme.colorScheme.primary : theme.colorScheme.onSurface.withAlpha(10),
+          color: isPrimary
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurface.withAlpha(10),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isPrimary ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface.withAlpha(200),
+            color: isPrimary
+                ? theme.colorScheme.onPrimary
+                : theme.colorScheme.onSurface.withAlpha(200),
             fontWeight: FontWeight.w700,
             fontSize: 14,
           ),

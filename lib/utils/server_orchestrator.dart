@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -9,16 +10,28 @@ class ServerOrchestrator {
   static bool _isStarting = false;
   static bool _serverReady = false;
 
-  static final Dio _pingDio = Dio(BaseOptions(
-    connectTimeout: const Duration(milliseconds: 2000),
-    receiveTimeout: const Duration(milliseconds: 2000),
-  ));
+  static final Dio _pingDio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(milliseconds: 2000),
+      receiveTimeout: const Duration(milliseconds: 2000),
+    ),
+  );
+
+  static String _summarizeProcessOutput(Object? output, {int maxLength = 160}) {
+    final text =
+        output?.toString().trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
+    if (text.isEmpty) return '<empty>';
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
+  }
 
   static bool get isReady => _serverReady;
 
   /// Waits until the server is ready, or until [timeout] elapses.
   /// Returns true if the server became ready, false if timed out.
-  static Future<bool> waitUntilReady({Duration timeout = const Duration(seconds: 60)}) async {
+  static Future<bool> waitUntilReady({
+    Duration timeout = const Duration(seconds: 60),
+  }) async {
     if (_serverReady) return true;
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
@@ -77,7 +90,9 @@ class ServerOrchestrator {
       await _forceKillPort();
 
       // 2. Wait for port to be released (Windows needs more time)
-      await Future.delayed(Duration(milliseconds: Platform.isWindows ? 1500 : 500));
+      await Future.delayed(
+        Duration(milliseconds: Platform.isWindows ? 1500 : 500),
+      );
 
       final args = ['--port=10086', '--platform=lite', '--host=0.0.0.0'];
 
@@ -89,13 +104,13 @@ class ServerOrchestrator {
 
           // Run npm install to ensure dependencies are up to date
           LoggerService.i('[Server] Running npm install...');
-          final installResult = await Process.run(
-            npmCmd,
-            ['install'],
-            workingDirectory: serverDir,
-          );
+          final installResult = await Process.run(npmCmd, [
+            'install',
+          ], workingDirectory: serverDir);
           if (installResult.exitCode != 0) {
-            LoggerService.e('[Server] npm install failed: ${installResult.stderr}');
+            LoggerService.e(
+              '[Server] npm install failed: ${installResult.stderr}',
+            );
             _isStarting = false;
             return false;
           }
@@ -122,7 +137,9 @@ class ServerOrchestrator {
           return false;
         }
 
-        LoggerService.i('[Server] Launching production server from: ${p.dirname(serverPath)}');
+        LoggerService.i(
+          '[Server] Launching production server from: ${p.dirname(serverPath)}',
+        );
 
         // Release mode: use detached (no stdio pipes) on all platforms.
         // The server process gets no stdout/stderr handles, so the Node.js/libuv
@@ -146,7 +163,8 @@ class ServerOrchestrator {
 
       // Poll via HTTP until the server responds or we time out (30 s).
       final startTime = DateTime.now();
-      while (!completed && DateTime.now().difference(startTime).inSeconds < 30) {
+      while (!completed &&
+          DateTime.now().difference(startTime).inSeconds < 30) {
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (await isServerRunning()) {
@@ -166,7 +184,6 @@ class ServerOrchestrator {
       LoggerService.e('[Server] Timeout waiting for server to start');
       _isStarting = false;
       return false;
-
     } catch (e, stack) {
       LoggerService.e('[Server] Unexpected crash during start phase', e, stack);
       _isStarting = false;
@@ -210,13 +227,22 @@ class ServerOrchestrator {
   }
 
   static Future<void> _forceKillPort() async {
-    LoggerService.i('[Server] Forcing cleanup of any existing server process...');
+    LoggerService.i(
+      '[Server] Forcing cleanup of any existing server process...',
+    );
     try {
       if (Platform.isWindows) {
         // Kill by process name — sufficient since port 10086 is exclusively
         // used by app_win.exe. No need for a secondary port-based lookup.
-        await Process.run('taskkill', ['/F', '/IM', 'app_win.exe', '/T'])
-            .timeout(const Duration(seconds: 3), onTimeout: () => ProcessResult(0, 1, '', ''));
+        await Process.run('taskkill', [
+          '/F',
+          '/IM',
+          'app_win.exe',
+          '/T',
+        ]).timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => ProcessResult(0, 1, '', ''),
+        );
       } else {
         // macOS/Linux: kill by port
         final pids = await _findPidsListeningOnPort(10086);
@@ -234,8 +260,10 @@ class ServerOrchestrator {
 
   static Future<List<String>> _findPidsListeningOnPort(int port) async {
     Future<List<String>> runPidLookup(String command, List<String> args) async {
-      final result = await Process.run(command, args)
-          .timeout(const Duration(seconds: 2), onTimeout: () => ProcessResult(0, 1, '', ''));
+      final result = await Process.run(command, args).timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => ProcessResult(0, 1, '', ''),
+      );
       return result.stdout
           .toString()
           .split(RegExp(r'[\s\n]+'))
@@ -246,8 +274,14 @@ class ServerOrchestrator {
 
     Future<bool> commandExists(String command) async {
       try {
-        final result = await Process.run('/bin/sh', ['-c', 'command -v $command >/dev/null 2>&1'])
-            .timeout(const Duration(seconds: 2), onTimeout: () => ProcessResult(0, 1, '', ''));
+        final result =
+            await Process.run('/bin/sh', [
+              '-c',
+              'command -v $command >/dev/null 2>&1',
+            ]).timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => ProcessResult(0, 1, '', ''),
+            );
         return result.exitCode == 0;
       } catch (_) {
         return false;
@@ -262,25 +296,70 @@ class ServerOrchestrator {
       return runPidLookup('fuser', ['$port/tcp']);
     }
 
-    LoggerService.d('[Server] Port cleanup skipped: no supported port lookup tool found');
+    LoggerService.d(
+      '[Server] Port cleanup skipped: no supported port lookup tool found',
+    );
     return const [];
   }
 
-  static void stop() {
-    if (_serverProcess != null) {
-      LoggerService.i('[Server] Stopping server process...');
+  static void stop({String reason = 'unspecified'}) {
+    final stopwatch = Stopwatch()..start();
+    final process = _serverProcess;
+    final pid = process?.pid;
+
+    LoggerService.i(
+      '[Server] stop() start (reason=$reason, hasProcess=${process != null}, '
+      'pid=${pid ?? 'n/a'}, ready=$_serverReady)',
+    );
+
+    if (process != null) {
       try {
         if (Platform.isWindows) {
           // taskkill /F /T kills the entire process tree, no need for _forceKillPort
-          Process.run('taskkill', ['/F', '/T', '/PID', '${_serverProcess!.pid}']);
+          final taskkillStopwatch = Stopwatch()..start();
+          LoggerService.i('[Server] stop() issuing taskkill for pid=$pid');
+          unawaited(
+            Process.run('taskkill', ['/F', '/T', '/PID', '$pid'])
+                .then((result) {
+                  LoggerService.i(
+                    '[Server] taskkill completed for pid=$pid '
+                    'in ${taskkillStopwatch.elapsedMilliseconds}ms '
+                    '(exitCode=${result.exitCode}, '
+                    'stdout=${_summarizeProcessOutput(result.stdout)}, '
+                    'stderr=${_summarizeProcessOutput(result.stderr)})',
+                  );
+                })
+                .catchError((error, stackTrace) {
+                  LoggerService.e(
+                    '[Server] taskkill failed for pid=$pid '
+                    'after ${taskkillStopwatch.elapsedMilliseconds}ms',
+                    error,
+                    stackTrace,
+                  );
+                }),
+          );
         } else {
-          _serverProcess!.kill(ProcessSignal.sigkill);
+          final killed = process.kill(ProcessSignal.sigkill);
+          LoggerService.i(
+            '[Server] stop() kill(ProcessSignal.sigkill) returned $killed '
+            'for pid=$pid',
+          );
         }
-      } catch (e) {
-        LoggerService.e('[Server] Error stopping process: $e');
+      } catch (e, stackTrace) {
+        LoggerService.e(
+          '[Server] Error stopping process for pid=$pid',
+          e,
+          stackTrace,
+        );
       }
       _serverProcess = null;
+    } else {
+      LoggerService.i(
+        '[Server] stop() skipped because no tracked process exists',
+      );
     }
+
     _serverReady = false;
+    LoggerService.i('[Server] stop() end (${stopwatch.elapsedMilliseconds}ms)');
   }
 }

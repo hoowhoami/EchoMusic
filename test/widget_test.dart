@@ -55,10 +55,12 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   double _lastAudibleVolume;
   int playSongCallCount = 0;
   int queueAndPlaySongCallCount = 0;
+  int addSongToPlayNextCallCount = 0;
   int togglePlayCallCount = 0;
   Song? lastPlayedSong;
   List<Song>? lastPlayedPlaylist;
   Song? queuedSong;
+  Song? nextQueuedSong;
 
   @override
   Song? get currentSong => _currentSong;
@@ -115,6 +117,13 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   Future<void> queueAndPlaySong(Song song) async {
     queueAndPlaySongCallCount++;
     queuedSong = song;
+  }
+
+  @override
+  bool addSongToPlayNext(Song song) {
+    addSongToPlayNextCallCount++;
+    nextQueuedSong = song;
+    return true;
   }
 
   @override
@@ -722,6 +731,59 @@ void main() {
     await tester.pump();
 
     expect(audio.togglePlayCallCount, 1);
+    expect(audio.queueAndPlaySongCallCount, 0);
+    expect(audio.playSongCallCount, 0);
+  });
+
+  testWidgets('SongCard context menu can add song to play next', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Play Next Song', hash: 'play-next-song-hash');
+    final persistence = _FakePersistenceProvider();
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'play-next-other-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+          ChangeNotifierProvider<UserProvider>(create: (_) => UserProvider()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 900,
+              child: SongCard(
+                song: song,
+                playlist: [song],
+                showCover: true,
+                showMore: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
+    await tester.pumpAndSettle();
+
+    expect(find.text('添加下一首播放'), findsOneWidget);
+
+    await tester.tap(find.text('添加下一首播放'));
+    await tester.pumpAndSettle();
+
+    expect(audio.addSongToPlayNextCallCount, 1);
+    expect(audio.nextQueuedSong?.isSameSong(song), isTrue);
     expect(audio.queueAndPlaySongCallCount, 0);
     expect(audio.playSongCallCount, 0);
   });

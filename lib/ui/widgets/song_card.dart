@@ -75,6 +75,14 @@ class _SongCardState extends State<SongCard> {
     unawaited(context.read<AudioProvider>().queueAndPlaySong(widget.song));
   }
 
+  void _addCurrentSongToPlayNext() {
+    if (!widget.song.isPlayable) {
+      _showUnavailableToast(context);
+      return;
+    }
+    context.read<AudioProvider>().addSongToPlayNext(widget.song);
+  }
+
   void _handleCoverPlayTap({
     required bool isCurrent,
     required bool isPlaying,
@@ -224,6 +232,16 @@ class _SongCardState extends State<SongCard> {
         ),
       ),
       const PopupMenuItem(
+        value: 'playNext',
+        child: Row(
+          children: [
+            Icon(CupertinoIcons.add, size: 18),
+            SizedBox(width: 12),
+            Text('添加下一首播放', style: TextStyle(fontSize: 14)),
+          ],
+        ),
+      ),
+      const PopupMenuItem(
         value: 'songDetails',
         child: Row(
           children: [
@@ -341,6 +359,8 @@ class _SongCardState extends State<SongCard> {
 
     if (value == 'play') {
       _queueAndPlayCurrentSong();
+    } else if (value == 'playNext') {
+      _addCurrentSongToPlayNext();
     } else if (value == 'songDetails') {
       context.read<NavigationProvider>().openSongDetail(widget.song);
     } else if (value == 'songComments') {

@@ -148,6 +148,7 @@ class _WindowHandlerState extends State<WindowHandler>
   static final _lifecycleChannel = MethodChannel(
     'com.hoowhoami.echomusic/app_lifecycle',
   );
+  int _exitTraceSerial = 0;
 
   void _logHotKeyError(String message, Object error, StackTrace stackTrace) {
     LoggerService.e('[hotkey] $message', error, stackTrace);
@@ -155,6 +156,33 @@ class _WindowHandlerState extends State<WindowHandler>
 
   void _logTrayError(String message, Object error, StackTrace stackTrace) {
     LoggerService.e('[tray] $message', error, stackTrace);
+  }
+
+  String _nextExitTraceId(String source) => '$source#${++_exitTraceSerial}';
+
+  void _logExit(String traceId, String message) {
+    LoggerService.i('[Exit][$traceId] $message');
+  }
+
+  Future<T> _traceExitStep<T>(
+    String traceId,
+    String stepName,
+    FutureOr<T> Function() action,
+  ) async {
+    final stopwatch = Stopwatch()..start();
+    _logExit(traceId, '$stepName.start');
+    try {
+      final result = await Future.sync(action);
+      _logExit(traceId, '$stepName.done (${stopwatch.elapsedMilliseconds}ms)');
+      return result;
+    } catch (e, stackTrace) {
+      LoggerService.e(
+        '[Exit][$traceId] $stepName.failed after ${stopwatch.elapsedMilliseconds}ms',
+        e,
+        stackTrace,
+      );
+      rethrow;
+    }
   }
 
   Future<void> _showWindowFromTray() async {
@@ -173,13 +201,37 @@ class _WindowHandlerState extends State<WindowHandler>
     }
   }
 
-  Future<void> _prepareForAppExit() async {
+  Future<void> _prepareForAppExit({
+    required String traceId,
+    required String trigger,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    _logExit(
+      traceId,
+      'prepareForAppExit.begin (trigger=$trigger, platform=${Platform.operatingSystem})',
+    );
     final audioProvider = context.read<AudioProvider>();
-    await _unregisterGlobalHotKeys();
+
+    await _traceExitStep(
+      traceId,
+      '_unregisterGlobalHotKeys',
+      _unregisterGlobalHotKeys,
+    );
+
     try {
-      audioProvider.prepareForExit();
+      await _traceExitStep(traceId, 'audioProvider.prepareForExit', () {
+        audioProvider.prepareForExit();
+      });
     } catch (_) {}
-    ServerOrchestrator.stop();
+
+    await _traceExitStep(traceId, 'ServerOrchestrator.stop', () {
+      ServerOrchestrator.stop(reason: 'trigger=$trigger traceId=$traceId');
+    });
+
+    _logExit(
+      traceId,
+      'prepareForAppExit.done (${stopwatch.elapsedMilliseconds}ms)',
+    );
   }
 
   Future<void> _registerGlobalHotKeys() async {
@@ -233,8 +285,13 @@ class _WindowHandlerState extends State<WindowHandler>
   // Called by Swift's applicationShouldTerminate (Dock right-click → Quit,
   // Cmd+Q) to let Flutter stop mpv before the process exits.
   Future<void> _onLifecycleCall(MethodCall call) async {
+    final traceId = _nextExitTraceId('lifecycle:${call.method}');
+    _logExit(traceId, 'lifecycleCall.received');
     if (call.method == 'prepareToTerminate') {
-      await _prepareForAppExit();
+      await _prepareForAppExit(
+        traceId: traceId,
+        trigger: 'lifecycle.prepareToTerminate',
+      );
     }
   }
 
@@ -282,7 +339,14 @@ class _WindowHandlerState extends State<WindowHandler>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      unawaited(_prepareForAppExit());
+      final traceId = _nextExitTraceId('lifecycleState:$state');
+      _logExit(traceId, 'didChangeAppLifecycleState.detached');
+      unawaited(
+        _prepareForAppExit(
+          traceId: traceId,
+          trigger: 'didChangeAppLifecycleState.$state',
+        ),
+      );
     }
   }
 
@@ -290,14 +354,22 @@ class _WindowHandlerState extends State<WindowHandler>
   void onWindowClose() async {
     final persistence = context.read<PersistenceProvider>();
     final closeBehavior = persistence.settings['closeBehavior'] ?? 'tray';
+    final traceId = _nextExitTraceId('onWindowClose');
+
+    _logExit(traceId, 'onWindowClose.received (closeBehavior=$closeBehavior)');
 
     if (closeBehavior == 'exit') {
-      await _prepareForAppExit();
-      await trayManager.destroy();
-      await windowManager.destroy();
+      await _prepareForAppExit(traceId: traceId, trigger: 'onWindowClose');
+      await _traceExitStep(traceId, 'trayManager.destroy', trayManager.destroy);
+      await _traceExitStep(
+        traceId,
+        'windowManager.destroy',
+        windowManager.destroy,
+      );
+      _logExit(traceId, 'exit(0).start');
       exit(0);
     } else {
-      await windowManager.hide();
+      await _traceExitStep(traceId, 'windowManager.hide', windowManager.hide);
     }
   }
 
@@ -338,12 +410,18 @@ class _WindowHandlerState extends State<WindowHandler>
     if (menuItem.key == 'show_window') {
       await _showWindowFromTray();
     } else if (menuItem.key == 'exit_app') {
+      final traceId = _nextExitTraceId('trayMenu:${menuItem.key}');
+      _logExit(traceId, 'trayMenu.exit_app.clicked');
       // Stop mpv player before destroying the window.
       // mpv runs on a native thread; if Flutter tears down while mpv is
       // playing, the native thread accesses freed memory → EXC_BAD_ACCESS.
-      await _prepareForAppExit();
-      await trayManager.destroy();
-      await windowManager.destroy();
+      await _prepareForAppExit(traceId: traceId, trigger: 'trayMenu.exit_app');
+      await _traceExitStep(traceId, 'trayManager.destroy', trayManager.destroy);
+      await _traceExitStep(
+        traceId,
+        'windowManager.destroy',
+        windowManager.destroy,
+      );
     }
   }
 

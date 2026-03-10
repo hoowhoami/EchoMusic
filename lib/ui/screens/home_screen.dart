@@ -34,12 +34,25 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _startupLayoutEpoch = 0;
+
   @override
   void initState() {
     super.initState();
     _initDevice();
+    _scheduleStartupRelayout();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInitialState();
+    });
+  }
+
+  void _scheduleStartupRelayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+      setState(() {
+        _startupLayoutEpoch++;
+      });
     });
   }
 
@@ -192,66 +205,69 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Expanded(
-                    child: Column(
-                      children: [
-                        Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: theme.scaffoldBackgroundColor,
-                            border: Border(
-                              bottom: BorderSide(
-                                color: theme.dividerColor.withAlpha(30),
-                                width: 0.5,
+                    child: KeyedSubtree(
+                      key: ValueKey(_startupLayoutEpoch),
+                      child: Column(
+                        children: [
+                          Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: theme.scaffoldBackgroundColor,
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: theme.dividerColor.withAlpha(30),
+                                  width: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 12),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.chevron_left,
+                                  onPressed: navProvider.canGoBack
+                                      ? _goBack
+                                      : null,
+                                  tooltip: '后退',
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.chevron_right,
+                                  onPressed: navProvider.canGoForward
+                                      ? _goForward
+                                      : null,
+                                  tooltip: '前进',
+                                ),
+                                const SizedBox(width: 8),
+                                _buildNavButton(
+                                  icon: CupertinoIcons.refresh,
+                                  onPressed: _refreshCurrentView,
+                                  tooltip: '刷新',
+                                ),
+                                Expanded(child: MoveWindow()),
+                                if (!Platform.isMacOS) const WindowButtons(),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Navigator(
+                              key: navProvider.navigatorKey,
+                              observers: [navProvider.observer],
+                              onGenerateRoute: (settings) => PageRouteBuilder(
+                                settings: const RouteSettings(name: 'root'),
+                                pageBuilder: (context, _, _) =>
+                                    Consumer<NavigationProvider>(
+                                      builder: (context, provider, _) =>
+                                          _LazyIndexedStack(
+                                            index: provider.currentRootIndex,
+                                            children: _views,
+                                          ),
+                                    ),
                               ),
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              const SizedBox(width: 12),
-                              _buildNavButton(
-                                icon: CupertinoIcons.chevron_left,
-                                onPressed: navProvider.canGoBack
-                                    ? _goBack
-                                    : null,
-                                tooltip: '后退',
-                              ),
-                              const SizedBox(width: 8),
-                              _buildNavButton(
-                                icon: CupertinoIcons.chevron_right,
-                                onPressed: navProvider.canGoForward
-                                    ? _goForward
-                                    : null,
-                                tooltip: '前进',
-                              ),
-                              const SizedBox(width: 8),
-                              _buildNavButton(
-                                icon: CupertinoIcons.refresh,
-                                onPressed: _refreshCurrentView,
-                                tooltip: '刷新',
-                              ),
-                              Expanded(child: MoveWindow()),
-                              if (!Platform.isMacOS) const WindowButtons(),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: Navigator(
-                            key: navProvider.navigatorKey,
-                            observers: [navProvider.observer],
-                            onGenerateRoute: (settings) => PageRouteBuilder(
-                              settings: const RouteSettings(name: 'root'),
-                              pageBuilder: (context, _, _) =>
-                                  Consumer<NavigationProvider>(
-                                    builder: (context, provider, _) =>
-                                        _LazyIndexedStack(
-                                          index: provider.currentRootIndex,
-                                          children: _views,
-                                        ),
-                                  ),
-                            ),
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
