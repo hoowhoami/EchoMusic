@@ -446,60 +446,66 @@ class _SongListState extends State<SongList> {
     final badgeLabel = _searchQuery.isNotEmpty && filteredCount != totalCount
         ? '$filteredCount / $totalCount'
         : '$totalCount';
+    final titleStyle = TextStyle(
+      color: theme.colorScheme.onSurface,
+      fontSize: 14,
+      fontWeight: FontWeight.w800,
+    );
+    final badgeTextStyle = TextStyle(
+      color: theme.colorScheme.primary,
+      fontSize: 10,
+      fontWeight: FontWeight.w800,
+      height: 1.1,
+    );
+    final textDirection = Directionality.of(context);
+    final titlePainter = TextPainter(
+      text: TextSpan(text: '歌曲', style: titleStyle),
+      textDirection: textDirection,
+      maxLines: 1,
+    )..layout();
+    final badgePainter = TextPainter(
+      text: TextSpan(text: badgeLabel, style: badgeTextStyle),
+      textDirection: textDirection,
+      maxLines: 1,
+    )..layout();
+    final titleWidth = titlePainter.width;
+    final badgeWidth = badgePainter.width + 14;
+    final badgeLeft = math.max(titleWidth - 2, 0.0);
+    final tabWidth = math.max(titleWidth, badgeLeft + badgeWidth);
 
-    return IntrinsicWidth(
-      child: SizedBox(
-        height: 36,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              left: 0,
-              bottom: 7,
-              child: Text(
-                '歌曲',
-                style: TextStyle(
-                  color: theme.colorScheme.onSurface,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
+    return SizedBox(
+      width: tabWidth,
+      height: 36,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(left: 0, bottom: 7, child: Text('歌曲', style: titleStyle)),
+          Positioned(
+            left: badgeLeft,
+            top: 0,
+            child: Container(
+              key: const ValueKey('song-list-tab-count-badge'),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withAlpha(18),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(badgeLabel, style: badgeTextStyle),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: Container(
+              width: titleWidth,
+              height: 2,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withAlpha(150),
+                borderRadius: BorderRadius.circular(999),
               ),
             ),
-            Positioned(
-              left: 24,
-              top: 0,
-              child: Container(
-                key: const ValueKey('song-list-tab-count-badge'),
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withAlpha(18),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: TextStyle(
-                    color: theme.colorScheme.primary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              left: 0,
-              bottom: 0,
-              child: Container(
-                width: 22,
-                height: 2,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withAlpha(150),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
