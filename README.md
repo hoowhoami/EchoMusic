@@ -27,6 +27,7 @@
 - **歌曲详情**：支持查看歌曲档案及歌曲成绩单。
 - **歌曲评论**：支持查看歌曲评论。
 - **歌词显示**：支持歌词逐字显示、歌词翻译、歌词音译。
+- **全局快捷键**：支持全局快捷键控制播放器。
 - **跨平台支持**：原生适配 macOS、Windows 与 Linux 系统。
 - **持续集成**：完善的 GitHub Actions 配置，支持全平台自动编译与 Release 发布。
 
@@ -59,6 +60,10 @@
   ![歌曲评论](screenshots/song_comment.png)    
 - 播放列表
   ![播放列表](screenshots/playlist.png)
+- 专辑
+  ![专辑](screenshots/album.png)
+- 歌手
+  ![歌手](screenshots/artist.png)    
 - 搜索
   ![搜索](screenshots/search.png)
   ![搜索](screenshots/search_hot.png)

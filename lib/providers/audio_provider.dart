@@ -1741,23 +1741,46 @@ class AudioProvider with ChangeNotifier {
 
   Future<void> fetchLyrics() async {
     final song = _currentSong;
-    if (song == null) return;
-    final searchResult = await MusicApi.searchLyric(song.hash);
+    if (song == null) {
+      _lyricProvider?.clear();
+      return;
+    }
+
+    final requestHash = song.hash;
+    if (requestHash.isEmpty) {
+      _lyricProvider?.clear();
+      return;
+    }
+
+    _lyricProvider?.beginLoading(hash: requestHash);
+
+    final searchResult = await MusicApi.searchLyric(requestHash);
+    if (_currentSong?.hash != requestHash) return;
+
     final target = (searchResult?['candidates']?.isNotEmpty ?? false)
         ? searchResult!['candidates'][0]
         : (searchResult?['info']?.isNotEmpty ?? false
               ? searchResult!['info'][0]
               : null);
-    if (target != null) {
-      final lyricData = await MusicApi.getLyric(
-        target['id']?.toString() ?? '',
-        target['accesskey']?.toString() ?? '',
-      );
-      if (lyricData != null) {
-        _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
-        _lyricProvider?.updateHighlight(_player.state.position);
-      }
+
+    if (target == null) {
+      _lyricProvider?.clear(hash: requestHash);
+      return;
     }
+
+    final lyricData = await MusicApi.getLyric(
+      target['id']?.toString() ?? '',
+      target['accesskey']?.toString() ?? '',
+    );
+    if (_currentSong?.hash != requestHash) return;
+
+    if (lyricData == null) {
+      _lyricProvider?.clear(hash: requestHash);
+      return;
+    }
+
+    _lyricProvider?.parseLyrics(lyricData, hash: requestHash);
+    _lyricProvider?.updateHighlight(_player.state.position);
   }
 
   Future<void> _fetchClimax(Song song) async {

@@ -5,7 +5,7 @@ class SongTableLayout {
   static const double listLeadingWidth = 58;
   static const double listCoverSectionWidth = 58;
   static const double listActionGap = 12;
-  static const double listRowActionWidth = 76;
+  static const double listRowActionWidth = 40;
   static const double listFavoriteGap = 10;
   static const double listFavoriteWidth = 36;
   static const double listAlbumGap = 18;

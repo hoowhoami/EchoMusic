@@ -27,6 +27,12 @@ Future<void> _sendCurrentPlatformShortcut(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  final customBinding = AppShortcutBinding.withPlatformModifiers(
+    physicalKey: PhysicalKeyboardKey.keyK,
+    logicalKey: LogicalKeyboardKey.keyK,
+    platform: AppShortcuts.currentPlatform,
+  );
+
   group('AppShortcuts', () {
     test('provides expected platform-specific labels', () {
       expect(
@@ -93,81 +99,107 @@ void main() {
       );
     });
 
-    test('builds expected shortcut activators for each desktop platform', () {
-      final macos = AppShortcuts.shortcutsFor(DesktopShortcutPlatform.macOS);
-      final windows = AppShortcuts.shortcutsFor(
-        DesktopShortcutPlatform.windows,
-      );
-      final linux = AppShortcuts.shortcutsFor(DesktopShortcutPlatform.linux);
+    test('supports custom bindings from settings', () {
+      final settings = {
+        AppShortcuts.bindingsSettingKey: {
+          AppShortcutCommand.togglePlayback.name: customBinding.toJson(),
+        },
+      };
+
+      final bindings = AppShortcuts.bindingsFromSettings(settings);
 
       expect(
-        macos.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.space,
-            meta: true,
-            shift: true,
-          ),
+        AppShortcuts.labelFor(
+          AppShortcutCommand.togglePlayback,
+          AppShortcuts.currentPlatform,
+          bindings,
         ),
-        isTrue,
+        AppShortcuts.currentPlatform == DesktopShortcutPlatform.macOS
+            ? '⌘⇧K'
+            : 'Ctrl+Shift+K',
       );
       expect(
-        windows.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.space,
-            control: true,
-            shift: true,
-          ),
-        ),
-        isTrue,
+        AppShortcuts.hotKeyFor(
+          AppShortcutCommand.togglePlayback,
+          AppShortcuts.currentPlatform,
+          bindings,
+        ).physicalKey,
+        PhysicalKeyboardKey.keyK,
+      );
+
+      final activator = AppShortcuts.bindingFor(
+        AppShortcutCommand.togglePlayback,
+        AppShortcuts.currentPlatform,
+        bindings,
+      ).toActivator();
+
+      expect(activator.trigger, LogicalKeyboardKey.keyK);
+      expect(activator.shift, isTrue);
+      expect(
+        activator.meta,
+        AppShortcuts.currentPlatform == DesktopShortcutPlatform.macOS,
       );
       expect(
-        macos.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.arrowUp,
-            meta: true,
-            shift: true,
-          ),
-        ),
-        isTrue,
+        activator.control,
+        AppShortcuts.currentPlatform != DesktopShortcutPlatform.macOS,
       );
-      expect(
-        macos.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.keyL,
-            meta: true,
-            shift: true,
-          ),
-        ),
-        isTrue,
+    });
+
+    test('builds expected shortcut activators for each desktop platform', () {
+      final macosPlayback = AppShortcuts.bindingFor(
+        AppShortcutCommand.togglePlayback,
+        DesktopShortcutPlatform.macOS,
+      ).toActivator();
+      final macosFavorite = AppShortcuts.bindingFor(
+        AppShortcutCommand.toggleFavorite,
+        DesktopShortcutPlatform.macOS,
+      ).toActivator();
+      final windowsPlayback = AppShortcuts.bindingFor(
+        AppShortcutCommand.togglePlayback,
+        DesktopShortcutPlatform.windows,
+      ).toActivator();
+      final windowsVolumeDown = AppShortcuts.bindingFor(
+        AppShortcutCommand.volumeDown,
+        DesktopShortcutPlatform.windows,
+      ).toActivator();
+      final linuxPlayMode = AppShortcuts.bindingFor(
+        AppShortcutCommand.togglePlayMode,
+        DesktopShortcutPlatform.linux,
+      ).toActivator();
+      final mediaShortcuts = AppShortcuts.shortcutsFor(
+        DesktopShortcutPlatform.macOS,
       );
+
+      expect(macosPlayback.trigger, LogicalKeyboardKey.space);
+      expect(macosPlayback.meta, isTrue);
+      expect(macosPlayback.shift, isTrue);
+      expect(macosPlayback.control, isFalse);
+
+      expect(macosFavorite.trigger, LogicalKeyboardKey.keyL);
+      expect(macosFavorite.meta, isTrue);
+      expect(macosFavorite.shift, isTrue);
+
+      expect(windowsPlayback.trigger, LogicalKeyboardKey.space);
+      expect(windowsPlayback.control, isTrue);
+      expect(windowsPlayback.shift, isTrue);
+      expect(windowsPlayback.meta, isFalse);
+
+      expect(windowsVolumeDown.trigger, LogicalKeyboardKey.arrowDown);
+      expect(windowsVolumeDown.control, isTrue);
+      expect(windowsVolumeDown.shift, isTrue);
+
+      expect(linuxPlayMode.trigger, LogicalKeyboardKey.keyP);
+      expect(linuxPlayMode.control, isTrue);
+      expect(linuxPlayMode.shift, isTrue);
+
       expect(
-        windows.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.arrowDown,
-            control: true,
-            shift: true,
-          ),
-        ),
-        isTrue,
-      );
-      expect(
-        linux.containsKey(
-          const SingleActivator(
-            LogicalKeyboardKey.keyP,
-            control: true,
-            shift: true,
-          ),
-        ),
-        isTrue,
-      );
-      expect(
-        macos.containsKey(
+        mediaShortcuts.containsKey(
           const SingleActivator(LogicalKeyboardKey.audioVolumeUp),
         ),
         isTrue,
       );
       expect(
-        windows.containsKey(
+        mediaShortcuts.containsKey(
           const SingleActivator(LogicalKeyboardKey.audioVolumeMute),
         ),
         isTrue,
@@ -220,6 +252,48 @@ void main() {
       await tester.pump();
 
       expect(toggled, 1);
+    });
+
+    testWidgets('triggers custom shortcut binding on current platform', (
+      tester,
+    ) async {
+      var toggled = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppShortcuts(
+            bindings: {AppShortcutCommand.togglePlayback: customBinding},
+            onTogglePlayback: () => toggled++,
+            child: const Scaffold(body: SizedBox.expand()),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _sendCurrentPlatformShortcut(tester, LogicalKeyboardKey.keyK);
+      await tester.pump();
+
+      expect(toggled, 1);
+    });
+
+    testWidgets('does not trigger shortcuts when disabled', (tester) async {
+      var toggled = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppShortcuts(
+            enabled: false,
+            onTogglePlayback: () => toggled++,
+            child: const Scaffold(body: SizedBox.expand()),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _sendCurrentPlatformShortcut(tester, LogicalKeyboardKey.space);
+      await tester.pump();
+
+      expect(toggled, 0);
     });
 
     testWidgets(

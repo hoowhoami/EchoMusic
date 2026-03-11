@@ -13,6 +13,8 @@ import 'song_table_layout.dart';
 
 enum _SongSortField { order, title, album, duration }
 
+enum _SongListPrimaryTab { songs }
+
 class _SongListEntry {
   final Song song;
   final int originalIndex;
@@ -70,6 +72,7 @@ class _SongListState extends State<SongList> {
   bool _suppressSongCardHover = false;
   _SongSortField _sortField = _SongSortField.order;
   bool _sortAscending = true;
+  _SongListPrimaryTab _activePrimaryTab = _SongListPrimaryTab.songs;
 
   String _songSelectionKey(Song song, int index) {
     if (song.hash.isNotEmpty) return song.hash;
@@ -419,7 +422,7 @@ class _SongListState extends State<SongList> {
         ),
         child: Row(
           children: [
-            _buildSongsTab(context, filteredSongs.length),
+            _buildPrimaryTabs(context, filteredSongs.length),
             const Spacer(),
             Flexible(
               child: Align(
@@ -440,19 +443,43 @@ class _SongListState extends State<SongList> {
     );
   }
 
-  Widget _buildSongsTab(BuildContext context, int filteredCount) {
+  Widget _buildPrimaryTabs(BuildContext context, int filteredCount) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildSongsTab(
+          context,
+          filteredCount,
+          isSelected: _activePrimaryTab == _SongListPrimaryTab.songs,
+          onTap: () {
+            if (_activePrimaryTab == _SongListPrimaryTab.songs) return;
+            setState(() => _activePrimaryTab = _SongListPrimaryTab.songs);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongsTab(
+    BuildContext context,
+    int filteredCount, {
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     final theme = Theme.of(context);
     final totalCount = widget.songs.length;
     final badgeLabel = _searchQuery.isNotEmpty && filteredCount != totalCount
         ? '$filteredCount / $totalCount'
         : '$totalCount';
     final titleStyle = TextStyle(
-      color: theme.colorScheme.onSurface,
+      color: isSelected
+          ? theme.colorScheme.onSurface
+          : theme.colorScheme.onSurface.withAlpha(160),
       fontSize: 14,
       fontWeight: FontWeight.w800,
     );
     final badgeTextStyle = TextStyle(
-      color: theme.colorScheme.primary,
+      color: Colors.white,
       fontSize: 10,
       fontWeight: FontWeight.w800,
       height: 1.1,
@@ -473,39 +500,75 @@ class _SongListState extends State<SongList> {
     final badgeLeft = math.max(titleWidth - 2, 0.0);
     final tabWidth = math.max(titleWidth, badgeLeft + badgeWidth);
 
-    return SizedBox(
-      width: tabWidth,
-      height: 36,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(left: 0, bottom: 7, child: Text('歌曲', style: titleStyle)),
-          Positioned(
-            left: badgeLeft,
-            top: 0,
-            child: Container(
-              key: const ValueKey('song-list-tab-count-badge'),
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withAlpha(18),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(badgeLabel, style: badgeTextStyle),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey('song-list-primary-tab-songs'),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          splashFactory: NoSplash.splashFactory,
+          overlayColor: WidgetStateProperty.all(Colors.transparent),
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          focusColor: Colors.transparent,
+          hoverColor: Colors.transparent,
+          child: SizedBox(
+            width: tabWidth,
+            height: 36,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 0,
+                  bottom: 7,
+                  child: Text('歌曲', style: titleStyle),
+                ),
+                Positioned(
+                  left: badgeLeft,
+                  top: 0,
+                  child: Container(
+                    key: const ValueKey('song-list-tab-count-badge'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: theme.colorScheme.surface,
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(40),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Text(badgeLabel, style: badgeTextStyle),
+                  ),
+                ),
+                if (isSelected)
+                  Positioned(
+                    left: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: titleWidth,
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withAlpha(150),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          Positioned(
-            left: 0,
-            bottom: 0,
-            child: Container(
-              width: titleWidth,
-              height: 2,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withAlpha(150),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

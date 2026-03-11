@@ -10,10 +10,10 @@ import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/custom_dialog.dart';
+import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 
@@ -325,168 +325,93 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
           ? _replacePlaybackWithArtistSongs
           : null,
       headers: [
-        SliverAppBar(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          surfaceTintColor: Colors.transparent,
-          expandedHeight: 168,
-          pinned: true,
-          automaticallyImplyLeading: false,
-          elevation: 0,
-          flexibleSpace: FlexibleSpaceBar(
-            titlePadding: EdgeInsets.zero,
-            centerTitle: false,
-            expandedTitleScale: 1.0,
-            title: LayoutBuilder(
-              builder: (context, constraints) {
-                final bool isCollapsed =
-                    constraints.maxHeight <= kToolbarHeight + 20;
-                return AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: isCollapsed ? 1.0 : 0.0,
-                  child: Container(
-                    height: kToolbarHeight,
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                    child: Row(
-                      children: [
-                        if (_artist != null)
-                          CoverImage(
-                            url: _artist!.pic,
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            showShadow: false,
-                          ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            widget.artistName,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        DetailPageActionRow(
-                          playLabel: '播放',
-                          onPlay: _playArtistSongs,
-                          songs: songs,
-                          sourceId: widget.artistId,
-                          onResolveSongs: _loadAllSongsForBatch,
-                          isBatchPreparing: batchPreparing,
-                          secondaryAction: secondaryAction,
-                        ),
-                      ],
+        DetailPageSliverHeader(
+          typeLabel: 'ARTIST',
+          title: widget.artistName,
+          expandedHeight: 157,
+          expandedCover: _artist != null
+              ? Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: theme.colorScheme.shadow.withAlpha(50),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: CoverImage(
+                      url: _artist!.pic,
+                      width: 136,
+                      height: 136,
+                      borderRadius: 0,
+                      showShadow: false,
                     ),
                   ),
-                );
-              },
-            ),
-            background: Container(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (_artist != null)
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: theme.colorScheme.shadow.withAlpha(50),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: CachedNetworkImage(
-                          imageUrl: _artist!.pic,
-                          width: 130,
-                          height: 130,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      width: 130,
-                      height: 130,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        CupertinoIcons.person_fill,
-                        size: 52,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  const SizedBox(width: 32),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'ARTIST',
-                          style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          widget.artistName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        if (_artist != null)
-                          Row(
-                            children: [
-                              Text(
-                                '${_artist!.songCount} 首歌曲 • ${_artist!.albumCount} 张专辑 • ${_artist!.fansCount} 粉丝',
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const Spacer(),
-                              DetailPageActionRow(
-                                playLabel: '播放',
-                                onPlay: _playArtistSongs,
-                                songs: songs,
-                                sourceId: widget.artistId,
-                                onResolveSongs: _loadAllSongsForBatch,
-                                isBatchPreparing: batchPreparing,
-                                secondaryAction: secondaryAction,
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
+                )
+              : Container(
+                  width: 136,
+                  height: 136,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
                   ),
-                ],
+                  child: Icon(
+                    CupertinoIcons.person_fill,
+                    size: 54,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+          collapsedCover: _artist != null
+              ? CoverImage(
+                  url: _artist!.pic,
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  showShadow: false,
+                )
+              : Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    CupertinoIcons.person_fill,
+                    size: 16,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+          detailChildren: [
+            if (_artist != null)
+              Text(
+                '${_artist!.songCount} 首歌曲 • ${_artist!.albumCount} 张专辑 • ${_formatCount(_artist!.fansCount)} 粉丝',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
+          ],
+          actions: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: _playArtistSongs,
+            songs: songs,
+            sourceId: widget.artistId,
+            onResolveSongs: _loadAllSongsForBatch,
+            isBatchPreparing: batchPreparing,
+            secondaryAction: secondaryAction,
           ),
         ),
         if (_artist != null && _artist!.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 6, 24, 10),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -554,5 +479,10 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         ),
       ],
     );
+  }
+
+  String _formatCount(int number) {
+    if (number < 10000) return number.toString();
+    return '${(number / 10000).toStringAsFixed(1)}w';
   }
 }

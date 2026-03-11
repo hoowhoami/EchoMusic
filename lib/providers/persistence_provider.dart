@@ -13,17 +13,19 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlayerSettings = 'player_settings';
   static const String _keyPlaylist = 'current_playlist';
   static const String _keyCurrentIndex = 'current_index';
-  static const String _keyPlaylistFilteredInvalidSongCount = 'current_playlist_filtered_invalid_song_count';
+  static const String _keyPlaylistFilteredInvalidSongCount =
+      'current_playlist_filtered_invalid_song_count';
 
   List<Song> _favorites = [];
   Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
-  Set<int> _favoriteMixIds = {};    // non-zero mixSongId → O(1) isFavorite lookup
+  Set<int> _favoriteMixIds = {}; // non-zero mixSongId → O(1) isFavorite lookup
   List<Song> _history = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
   int _playlistFilteredInvalidSongCount = 0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
+  bool _isLoaded = false;
   Map<String, dynamic> _settings = {
     'theme': 'auto',
     'volumeFade': true,
@@ -42,6 +44,7 @@ class PersistenceProvider with ChangeNotifier {
     'lyricOffset': 0,
     'closeBehavior': 'tray',
     'pauseOnDeviceChange': false,
+    'globalShortcutsEnabled': false,
   };
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,
@@ -58,6 +61,7 @@ class PersistenceProvider with ChangeNotifier {
   double get volume => _playerSettings['volume'] ?? 50.0;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
+  bool get isLoaded => _isLoaded;
   Map<String, dynamic> get settings => _settings;
   Map<String, dynamic> get playerSettings => _playerSettings;
 
@@ -67,7 +71,7 @@ class PersistenceProvider with ChangeNotifier {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Load settings
     final settingsJson = prefs.getString(_keySettings);
     if (settingsJson != null) {
@@ -76,12 +80,12 @@ class PersistenceProvider with ChangeNotifier {
         await prefs.setString(_keySettings, jsonEncode(_settings));
       }
     }
-    
+
     // Load favorites
     final favsJson = prefs.getStringList(_keyFavorites) ?? [];
     _favorites = favsJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
     _rebuildFavoriteIndex();
-    
+
     // Load history
     final historyJson = prefs.getStringList(_keyHistory) ?? [];
     _history = historyJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
@@ -96,7 +100,7 @@ class PersistenceProvider with ChangeNotifier {
     // Load current playlist filtered invalid-song count
     _playlistFilteredInvalidSongCount =
         prefs.getInt(_keyPlaylistFilteredInvalidSongCount) ?? 0;
-    
+
     // Load player settings
     final playerSettingsJson = prefs.getString(_keyPlayerSettings);
     if (playerSettingsJson != null) {
@@ -114,7 +118,8 @@ class PersistenceProvider with ChangeNotifier {
     if (userJson != null) {
       _userInfo = jsonDecode(userJson);
     }
-    
+
+    _isLoaded = true;
     notifyListeners();
   }
 
@@ -127,9 +132,15 @@ class PersistenceProvider with ChangeNotifier {
     _currentIndex = index;
     _playlistFilteredInvalidSongCount = filteredInvalidSongCount;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_keyPlaylist, playlist.map((s) => jsonEncode(_songToMap(s))).toList());
+    await prefs.setStringList(
+      _keyPlaylist,
+      playlist.map((s) => jsonEncode(_songToMap(s))).toList(),
+    );
     await prefs.setInt(_keyCurrentIndex, index);
-    await prefs.setInt(_keyPlaylistFilteredInvalidSongCount, filteredInvalidSongCount);
+    await prefs.setInt(
+      _keyPlaylistFilteredInvalidSongCount,
+      filteredInvalidSongCount,
+    );
   }
 
   Future<void> setDevice(Map<String, dynamic> device) async {
@@ -162,7 +173,7 @@ class PersistenceProvider with ChangeNotifier {
     _playlist = [];
     _currentIndex = -1;
     _playlistFilteredInvalidSongCount = 0;
-    
+
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
       prefs.remove(_keyUserInfo),
@@ -172,7 +183,7 @@ class PersistenceProvider with ChangeNotifier {
       prefs.remove(_keyCurrentIndex),
       prefs.remove(_keyPlaylistFilteredInvalidSongCount),
     ]);
-    
+
     notifyListeners();
   }
 
@@ -203,8 +214,10 @@ class PersistenceProvider with ChangeNotifier {
       'autoSign': false,
       'autoReceiveVip': false,
       'userAgreementAccepted': false,
+      'lyricOffset': 0,
       'closeBehavior': 'tray',
       'pauseOnDeviceChange': false,
+      'globalShortcutsEnabled': false,
     };
     _playerSettings = {
       'volume': 50.0,
@@ -224,7 +237,7 @@ class PersistenceProvider with ChangeNotifier {
     } else {
       _favorites.removeAt(index);
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _keyFavorites,
@@ -232,11 +245,19 @@ class PersistenceProvider with ChangeNotifier {
     );
     _rebuildFavoriteIndex();
     notifyListeners();
-    if (userProvider != null && userProvider.isAuthenticated && userProvider.likedPlaylistId != null) {
+    if (userProvider != null &&
+        userProvider.isAuthenticated &&
+        userProvider.likedPlaylistId != null) {
       if (isAdding) {
-        await userProvider.addSongToPlaylist(userProvider.likedPlaylistId!, song);
+        await userProvider.addSongToPlaylist(
+          userProvider.likedPlaylistId!,
+          song,
+        );
       } else {
-        await userProvider.removeSongFromPlaylist(userProvider.likedPlaylistId!, song);
+        await userProvider.removeSongFromPlaylist(
+          userProvider.likedPlaylistId!,
+          song,
+        );
       }
     }
   }
@@ -253,8 +274,13 @@ class PersistenceProvider with ChangeNotifier {
   }
 
   bool isFavorite(Song song) {
-    if (song.mixSongId != 0 && _favoriteMixIds.contains(song.mixSongId)) return true;
-    if (song.hash.isNotEmpty && _favoriteHashes.contains(song.hash.toLowerCase())) return true;
+    if (song.mixSongId != 0 && _favoriteMixIds.contains(song.mixSongId)) {
+      return true;
+    }
+    if (song.hash.isNotEmpty &&
+        _favoriteHashes.contains(song.hash.toLowerCase())) {
+      return true;
+    }
     return false;
   }
 
@@ -266,7 +292,7 @@ class PersistenceProvider with ChangeNotifier {
         changed = true;
       }
     }
-    
+
     if (changed) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(
@@ -295,11 +321,11 @@ class PersistenceProvider with ChangeNotifier {
   Future<void> addToHistory(Song song) async {
     _history.removeWhere((s) => s.isSameSong(song));
     _history.insert(0, song);
-    
+
     if (_history.length > 100) {
       _history = _history.sublist(0, 100);
     }
-    
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _keyHistory,

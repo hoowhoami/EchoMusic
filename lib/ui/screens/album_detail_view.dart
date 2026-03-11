@@ -13,6 +13,7 @@ import '../../providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../../models/playlist.dart' as model;
@@ -341,164 +342,66 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
             )
           : null,
       headers: [
-        SliverAppBar(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          surfaceTintColor: Colors.transparent,
-          expandedHeight: 168,
-          pinned: true,
-          automaticallyImplyLeading: false,
-          elevation: 0,
-          flexibleSpace: FlexibleSpaceBar(
-            titlePadding: EdgeInsets.zero,
-            centerTitle: false,
-            expandedTitleScale: 1.0,
-            title: LayoutBuilder(
-              builder: (context, constraints) {
-                final bool isCollapsed =
-                    constraints.maxHeight <= kToolbarHeight + 20;
-                return AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: isCollapsed ? 1.0 : 0.0,
-                  child: Container(
-                    height: kToolbarHeight,
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                    child: Row(
-                      children: [
-                        if (_album != null)
-                          CoverImage(
-                            url: _album!.pic,
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            showShadow: false,
-                          ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            widget.albumName,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        DetailPageActionRow(
-                          playLabel: '播放',
-                          onPlay: _playAlbumSongs,
-                          songs: songs,
-                          sourceId: widget.albumId,
-                          onResolveSongs: _loadAllSongsForBatch,
-                          isBatchPreparing: batchPreparing,
-                          secondaryAction: secondaryAction,
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-            background: Container(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+        DetailPageSliverHeader(
+          typeLabel: 'ALBUM',
+          title: widget.albumName,
+          expandedHeight: 161,
+          expandedCover: CoverImage(
+            url: _album?.pic ?? '',
+            width: 136,
+            height: 136,
+            borderRadius: 18,
+          ),
+          collapsedCover: CoverImage(
+            url: _album?.pic ?? '',
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            showShadow: false,
+          ),
+          detailChildren: [
+            if (_album != null)
+              Text(
+                '${_album!.singerName} • ${_album!.publishTime}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            if (_album != null)
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  CoverImage(
-                    url: _album?.pic ?? '',
-                    width: 130,
-                    height: 130,
-                    borderRadius: 16,
+                  _buildInfoSmall(
+                    context,
+                    Icons.favorite_rounded,
+                    _formatNumber(_album!.heat),
                   ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'ALBUM',
-                          style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.albumName,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        if (_album != null)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${_album!.singerName} • ${_album!.publishTime}',
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  _buildInfoSmall(
-                                    context,
-                                    Icons.favorite_rounded,
-                                    _formatNumber(_album!.heat),
-                                  ),
-                                  if (_album!.language.isNotEmpty ||
-                                      _album!.type.isNotEmpty) ...[
-                                    const SizedBox(width: 12),
-                                    if (_album!.language.isNotEmpty) ...[
-                                      _buildTag(context, _album!.language),
-                                      const SizedBox(width: 8),
-                                    ],
-                                    if (_album!.type.isNotEmpty) ...[
-                                      _buildTag(context, _album!.type),
-                                      const SizedBox(width: 8),
-                                    ],
-                                  ],
-                                  const Spacer(),
-                                  DetailPageActionRow(
-                                    playLabel: '播放',
-                                    onPlay: _playAlbumSongs,
-                                    songs: songs,
-                                    sourceId: widget.albumId,
-                                    onResolveSongs: _loadAllSongsForBatch,
-                                    isBatchPreparing: batchPreparing,
-                                    secondaryAction: secondaryAction,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
+                  if (_album!.language.isNotEmpty)
+                    _buildTag(context, _album!.language),
+                  if (_album!.type.isNotEmpty) _buildTag(context, _album!.type),
                 ],
               ),
-            ),
+          ],
+          actions: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: _playAlbumSongs,
+            songs: songs,
+            sourceId: widget.albumId,
+            onResolveSongs: _loadAllSongsForBatch,
+            isBatchPreparing: batchPreparing,
+            secondaryAction: secondaryAction,
           ),
         ),
         SliverToBoxAdapter(
           child: _album?.intro != null && _album!.intro.isNotEmpty
               ? Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 6, 24, 10),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -582,7 +485,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
 
   String _formatNumber(int number) {
     if (number < 10000) return number.toString();
-    return '${(number / 10000).toStringAsFixed(1)}万';
+    return '${(number / 10000).toStringAsFixed(1)}w';
   }
 
   Widget _buildInfoSmall(BuildContext context, IconData icon, String label) {

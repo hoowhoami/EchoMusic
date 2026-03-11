@@ -42,19 +42,18 @@ class DetailPageActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
         if (secondaryAction != null) ...[
           _SecondaryActionButton(action: secondaryAction!),
-          const SizedBox(width: 8),
         ],
         _PrimaryActionButton(
           icon: CupertinoIcons.play_fill,
           label: playLabel,
           onPressed: songs.isEmpty ? null : onPlay,
         ),
-        const SizedBox(width: 8),
         SongBatchActionButton(
           songs: songs,
           sourceId: sourceId,

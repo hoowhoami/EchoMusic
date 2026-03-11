@@ -13,10 +13,12 @@ import 'package:echomusic/ui/screens/playlist_detail_view.dart';
 import 'package:echomusic/ui/widgets/app_shortcuts.dart';
 import 'package:echomusic/ui/widgets/cover_image.dart';
 import 'package:echomusic/ui/widgets/detail_page_action_row.dart';
+import 'package:echomusic/ui/widgets/detail_page_sliver_header.dart';
 import 'package:echomusic/ui/widgets/player_bar.dart';
 import 'package:echomusic/ui/widgets/queue_drawer.dart';
 import 'package:echomusic/ui/widgets/song_card.dart';
 import 'package:echomusic/ui/widgets/song_list.dart';
+import 'package:echomusic/theme/app_theme.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -489,6 +491,28 @@ void main() {
   );
 
   test(
+    'PersistenceProvider backfills and persists global shortcut toggle setting',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'app_settings': '{"replacePlaylist":true}',
+      });
+
+      final provider = PersistenceProvider();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(provider.settings['globalShortcutsEnabled'], isFalse);
+
+      await provider.updateSetting('globalShortcutsEnabled', true);
+
+      final restored = PersistenceProvider();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(restored.settings['globalShortcutsEnabled'], isTrue);
+      expect(restored.settings['replacePlaylist'], isTrue);
+    },
+  );
+
+  test(
     'MusicApi preserves route-provided playlist track id for owned playlists',
     () async {
       SharedPreferences.setMockInitialValues({'user_info': '{"userid":1}'});
@@ -540,6 +564,7 @@ void main() {
     });
 
     SharedPreferences.setMockInitialValues({
+      'app_settings': '{"globalShortcutsEnabled":true}',
       'player_settings':
           '{"volume":50.0,"playMode":"repeat","audioQuality":"sq","audioEffect":"none"}',
     });
@@ -599,7 +624,9 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      SharedPreferences.setMockInitialValues({});
+      SharedPreferences.setMockInitialValues({
+        'app_settings': '{"globalShortcutsEnabled":true}',
+      });
 
       final song = buildSong(
         name: 'Wide Window Song',
@@ -641,6 +668,55 @@ void main() {
       expect(favoriteRect.right, lessThan(playRect.left));
     },
   );
+
+  testWidgets('PlayerBar hides shortcut hint text when global shortcuts off', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues({
+      'app_settings': '{"globalShortcutsEnabled":false}',
+    });
+
+    final song = buildSong(name: 'Tooltip Song', hash: 'tooltip-hash');
+    final persistence = PersistenceProvider();
+    await persistence.setUserInfo({'userid': 1, 'token': 'test-token'});
+
+    final audio = _FakeAudioProvider(currentSong: song, initialVolume: 40);
+    final user = UserProvider()..setPersistenceProvider(persistence);
+    addTearDown(audio.dispose);
+    addTearDown(user.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>(
+            create: (_) => NavigationProvider(),
+          ),
+          ChangeNotifierProvider<UserProvider>.value(value: user),
+        ],
+        child: const MaterialApp(home: Scaffold(body: PlayerBar())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('播放'), findsOneWidget);
+    expect(find.byTooltip('收藏'), findsOneWidget);
+    expect(find.byTooltip('音量'), findsOneWidget);
+    expect(
+      find.byTooltip(
+        '播放 · ${AppShortcuts.labelFor(AppShortcutCommand.togglePlayback)}',
+      ),
+      findsNothing,
+    );
+  });
 
   testWidgets(
     'SongList locate button does not scroll when current song is already visible',
@@ -733,7 +809,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final countBadge = find.byKey(const ValueKey('song-list-tab-count-badge'));
+    final songsTab = find.byKey(const ValueKey('song-list-primary-tab-songs'));
 
+    expect(songsTab, findsOneWidget);
     expect(countBadge, findsOneWidget);
     expect(
       find.descendant(of: countBadge, matching: find.text('3')),
@@ -745,6 +823,14 @@ void main() {
     expect(find.byTooltip('定位当前播放'), findsOneWidget);
     expect(find.text('搜索列表内歌曲'), findsOneWidget);
     expect(find.textContaining('匹配 '), findsNothing);
+
+    await tester.tap(songsTab);
+    await tester.pump();
+
+    expect(
+      find.descendant(of: countBadge, matching: find.text('3')),
+      findsOneWidget,
+    );
 
     await tester.enterText(find.byType(TextField), 'Header Song 1');
     await tester.pumpAndSettle();
@@ -761,6 +847,136 @@ void main() {
     final durationHeader = find.widgetWithText(InkWell, '时长');
     expect(durationHeader, findsOneWidget);
     expect(tester.getTopLeft(durationHeader).dy, lessThan(120));
+  });
+
+  testWidgets('SongList count badge switches colors with theme', (
+    tester,
+  ) async {
+    final songs = [buildSong(name: 'Theme Song', hash: 'theme-song')];
+    final audio = _FakeAudioProvider(currentSong: songs[0], initialVolume: 40);
+    addTearDown(audio.dispose);
+
+    Widget buildApp(ThemeMode themeMode) {
+      return MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(
+            value: _FakePersistenceProvider(),
+          ),
+          ChangeNotifierProvider<NavigationProvider>.value(
+            value: _FakeNavigationProvider(),
+          ),
+          ChangeNotifierProvider<SelectionProvider>.value(
+            value: _FakeSelectionProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: themeMode,
+          home: Scaffold(
+            body: SizedBox(
+              width: 960,
+              height: 360,
+              child: SongList(songs: songs),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final countBadge = find.byKey(const ValueKey('song-list-tab-count-badge'));
+    final badgeText = find.descendant(
+      of: countBadge,
+      matching: find.byType(Text),
+    );
+
+    await tester.pumpWidget(buildApp(ThemeMode.light));
+    await tester.pumpAndSettle();
+
+    BoxDecoration lightDecoration =
+        tester.widget<Container>(countBadge).decoration! as BoxDecoration;
+    Text lightText = tester.widget<Text>(badgeText);
+    expect(lightDecoration.color, AppTheme.primaryAccent);
+    expect(lightDecoration.border, isNotNull);
+    expect(
+      (lightDecoration.border! as Border).top.color,
+      AppTheme.light().colorScheme.surface,
+    );
+    expect(lightText.style?.color, Colors.white);
+
+    await tester.pumpWidget(buildApp(ThemeMode.dark));
+    await tester.pumpAndSettle();
+
+    BoxDecoration darkDecoration =
+        tester.widget<Container>(countBadge).decoration! as BoxDecoration;
+    Text darkText = tester.widget<Text>(badgeText);
+    expect(darkDecoration.color, AppTheme.primaryAccent);
+    expect(darkDecoration.border, isNotNull);
+    expect(
+      (darkDecoration.border! as Border).top.color,
+      AppTheme.dark().colorScheme.surface,
+    );
+    expect(darkText.style?.color, Colors.white);
+  });
+
+  testWidgets('PlayerBar queue badge uses visible themed border in dark mode', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues({});
+
+    final songs = List.generate(
+      8,
+      (index) =>
+          buildSong(name: 'Queue Song $index', hash: 'queue-badge-$index'),
+    );
+    final persistence = PersistenceProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: songs.first,
+      initialVolume: 40,
+      playlist: songs,
+      currentIndex: 0,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>(
+            create: (_) => NavigationProvider(),
+          ),
+          ChangeNotifierProvider<UserProvider>(create: (_) => UserProvider()),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          themeMode: ThemeMode.dark,
+          home: const Scaffold(body: PlayerBar()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final queueBadge = find.byKey(const ValueKey('player-queue-count-badge'));
+    expect(queueBadge, findsOneWidget);
+
+    final decoration =
+        tester.widget<Container>(queueBadge).decoration! as BoxDecoration;
+    expect(decoration.color, AppTheme.primaryAccent);
+    expect(decoration.border, isNotNull);
+    expect(
+      (decoration.border! as Border).top.color,
+      AppTheme.dark().colorScheme.surface,
+    );
   });
 
   testWidgets('SongList sorts songs by duration and resets on third tap', (
@@ -874,6 +1090,159 @@ void main() {
 
     expect(tester.getSize(playButton.first).height, 36);
     expect(tester.getSize(batchButton.first).height, 36);
+  });
+
+  testWidgets('DetailPageActionRow wraps buttons on narrow widths', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Wrapped Action Song', hash: 'wrapped-action');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 120,
+            child: DetailPageActionRow(
+              playLabel: '播放',
+              onPlay: () {},
+              songs: [song],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final playButton = find.ancestor(
+      of: find.text('播放'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is FilledButton,
+        description: 'FilledButton',
+      ),
+    );
+    final batchButton = find.ancestor(
+      of: find.text('批量'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is FilledButton,
+        description: 'FilledButton',
+      ),
+    );
+
+    final playRect = tester.getRect(playButton.first);
+    final batchRect = tester.getRect(batchButton.first);
+    expect(batchRect.top, greaterThan(playRect.top));
+  });
+
+  testWidgets(
+    'DetailPageSliverHeader lays out expanded content without overflow',
+    (tester) async {
+      final song = buildSong(name: 'Header Song', hash: 'header-song');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                DetailPageSliverHeader(
+                  typeLabel: 'PLAYLIST',
+                  title: 'A Very Good Playlist Title',
+                  expandedHeight: 228,
+                  expandedCover: Container(
+                    width: 136,
+                    height: 136,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  collapsedCover: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  detailChildren: const [
+                    Text('作者 • 2024-01-01 创建'),
+                    Text('12 首歌曲'),
+                  ],
+                  actions: DetailPageActionRow(
+                    playLabel: '播放',
+                    onPlay: null,
+                    songs: [song],
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 300)),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('A Very Good Playlist Title'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('DetailPageSliverHeader keeps actions visible when collapsed', (
+    tester,
+  ) async {
+    final song = buildSong(
+      name: 'Collapsed Header Song',
+      hash: 'collapsed-header',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 320,
+            child: CustomScrollView(
+              slivers: [
+                DetailPageSliverHeader(
+                  typeLabel: 'ALBUM',
+                  title: 'Collapsed Actions Title',
+                  expandedHeight: 208,
+                  expandedCover: Container(
+                    width: 136,
+                    height: 136,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                  ),
+                  collapsedCover: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  detailChildren: const [Text('Artist • 2024-01-01')],
+                  actions: DetailPageActionRow(
+                    playLabel: '播放',
+                    onPlay: () {},
+                    songs: [song],
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 600)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -260));
+    await tester.pumpAndSettle();
+
+    expect(find.text('播放'), findsOneWidget);
+    expect(find.text('批量'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -1088,7 +1457,7 @@ void main() {
   });
 
   testWidgets(
-    'SongList keeps album visible and shows detail/comment icons for the clicked row',
+    'SongList keeps album visible and shows the detail and comment entry for the clicked row',
     (tester) async {
       final selectedSong = buildSong(
         name: 'Selected Song',
@@ -1135,17 +1504,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
       expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
 
       await tester.tap(find.text('Selected Song'));
       await tester.pumpAndSettle();
 
       final selectedCard = find.byType(SongCard).at(0);
-      final detailButton = find.descendant(
-        of: selectedCard,
-        matching: find.byIcon(CupertinoIcons.info_circle),
-      );
       final commentButton = find.descendant(
         of: selectedCard,
         matching: find.byIcon(CupertinoIcons.chat_bubble_text),
@@ -1159,40 +1523,29 @@ void main() {
         matching: find.byIcon(CupertinoIcons.heart),
       );
 
-      expect(detailButton, findsOneWidget);
       expect(commentButton, findsOneWidget);
       expect(albumText, findsOneWidget);
 
       expect(
-        tester.getCenter(detailButton).dx,
+        tester.getCenter(commentButton).dx,
         lessThan(tester.getCenter(favoriteButton).dx),
       );
       expect(
         tester.getCenter(commentButton).dx,
         lessThan(tester.getCenter(albumText).dx),
       );
-      expect(
-        tester.getCenter(detailButton).dx,
-        lessThan(tester.getCenter(albumText).dx),
-      );
-
-      await tester.tap(detailButton);
-      await tester.pump();
-
-      expect(navigation.openSongDetailCallCount, 1);
-      expect(navigation.lastDetailSong?.isSameSong(selectedSong), isTrue);
-      expect(commentButton, findsOneWidget);
 
       await tester.tap(commentButton);
       await tester.pump();
 
+      expect(navigation.openSongDetailCallCount, 0);
       expect(navigation.openSongCommentCallCount, 1);
       expect(navigation.lastCommentSong?.isSameSong(selectedSong), isTrue);
     },
   );
 
   testWidgets(
-    'SongCard shows detail/comment icons on hover without hiding album',
+    'SongCard shows the detail and comment entry on hover without hiding album',
     (tester) async {
       final song = buildSong(
         name: 'Hover Action Song',
@@ -1235,7 +1588,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
       expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
       expect(find.text('Hover Album'), findsOneWidget);
 
@@ -1247,14 +1599,13 @@ void main() {
       await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(CupertinoIcons.info_circle), findsOneWidget);
       expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsOneWidget);
       expect(find.text('Hover Album'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'SongCard does not show detail/comment icons in batch selection mode',
+    'SongCard does not show the detail and comment entry in batch selection mode',
     (tester) async {
       final song = buildSong(name: 'Batch Song', hash: 'batch-song');
       final persistence = _FakePersistenceProvider();
@@ -1304,7 +1655,6 @@ void main() {
       await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
       expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
     },
   );

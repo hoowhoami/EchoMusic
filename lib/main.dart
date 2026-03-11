@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -149,6 +150,10 @@ class _WindowHandlerState extends State<WindowHandler>
     'com.hoowhoami.echomusic/app_lifecycle',
   );
   bool _isExiting = false;
+  int _hotKeySyncVersion = 0;
+  bool? _globalHotKeysEnabled;
+  String? _globalHotKeysSignature;
+  PersistenceProvider? _persistenceProvider;
 
   void _logHotKeyError(String message, Object error, StackTrace stackTrace) {
     LoggerService.e('[hotkey] $message', error, stackTrace);
@@ -158,6 +163,40 @@ class _WindowHandlerState extends State<WindowHandler>
     LoggerService.e('[tray] $message', error, stackTrace);
   }
 
+  bool _resolveGlobalHotKeysEnabled(PersistenceProvider persistence) {
+    return persistence.settings['globalShortcutsEnabled'] ?? false;
+  }
+
+  String _resolveGlobalHotKeysSignature(PersistenceProvider persistence) {
+    final bindings = persistence.settings[AppShortcuts.bindingsSettingKey];
+    if (bindings is! Map) return '{}';
+    return jsonEncode(bindings);
+  }
+
+  void _handlePersistenceChanged() {
+    final persistence = _persistenceProvider;
+    if (persistence == null || !persistence.isLoaded) return;
+
+    final enabled = _resolveGlobalHotKeysEnabled(persistence);
+    final signature = _resolveGlobalHotKeysSignature(persistence);
+    if (_globalHotKeysEnabled == enabled &&
+        _globalHotKeysSignature == signature) {
+      return;
+    }
+
+    unawaited(_syncGlobalHotKeys(enabled: enabled, signature: signature));
+  }
+
+  void _bindPersistenceProvider() {
+    final persistence = context.read<PersistenceProvider>();
+    if (identical(_persistenceProvider, persistence)) return;
+
+    _persistenceProvider?.removeListener(_handlePersistenceChanged);
+    _persistenceProvider = persistence;
+    persistence.addListener(_handlePersistenceChanged);
+    _handlePersistenceChanged();
+  }
+
   Future<void> _runBestEffortExitStep(
     String stepName,
     Future<void> Function() action,
@@ -165,11 +204,7 @@ class _WindowHandlerState extends State<WindowHandler>
     try {
       await action();
     } catch (e, stackTrace) {
-      LoggerService.e(
-        '[Exit] $stepName failed during exit',
-        e,
-        stackTrace,
-      );
+      LoggerService.e('[Exit] $stepName failed during exit', e, stackTrace);
     }
   }
 
@@ -217,10 +252,7 @@ class _WindowHandlerState extends State<WindowHandler>
 
     try {
       await _prepareForAppExit();
-      await _runBestEffortExitStep(
-        'trayManager.destroy',
-        trayManager.destroy,
-      );
+      await _runBestEffortExitStep('trayManager.destroy', trayManager.destroy);
       await _runBestEffortExitStep(
         'windowManager.destroy',
         windowManager.destroy,
@@ -234,8 +266,12 @@ class _WindowHandlerState extends State<WindowHandler>
   Future<void> _registerGlobalHotKeys() async {
     if (!_supportsSystemWideHotKeys) return;
 
+    final bindings = _persistenceProvider == null
+        ? AppShortcuts.defaultBindings()
+        : AppShortcuts.bindingsFromSettings(_persistenceProvider!.settings);
+
     for (final command in AppShortcutCommand.values) {
-      final hotKey = AppShortcuts.hotKeyFor(command);
+      final hotKey = AppShortcuts.hotKeyFor(command, null, bindings);
 
       try {
         await hotKeyManager.register(
@@ -247,12 +283,30 @@ class _WindowHandlerState extends State<WindowHandler>
         );
       } catch (e, stackTrace) {
         _logHotKeyError(
-          'Failed to register ${AppShortcuts.labelFor(command)}',
+          'Failed to register ${AppShortcuts.labelFor(command, null, bindings)}',
           e,
           stackTrace,
         );
       }
     }
+  }
+
+  Future<void> _syncGlobalHotKeys({
+    required bool enabled,
+    required String signature,
+  }) async {
+    if (!_supportsSystemWideHotKeys) return;
+
+    final syncVersion = ++_hotKeySyncVersion;
+    _globalHotKeysEnabled = enabled;
+    _globalHotKeysSignature = signature;
+
+    await _unregisterGlobalHotKeys();
+    if (!enabled || syncVersion != _hotKeySyncVersion) {
+      return;
+    }
+
+    await _registerGlobalHotKeys();
   }
 
   Future<void> _unregisterGlobalHotKeys() async {
@@ -273,10 +327,15 @@ class _WindowHandlerState extends State<WindowHandler>
     trayManager.addListener(this);
     windowManager.setPreventClose(true);
     _initTray();
-    unawaited(_registerGlobalHotKeys());
     if (Platform.isMacOS) {
       _lifecycleChannel.setMethodCallHandler(_onLifecycleCall);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindPersistenceProvider();
   }
 
   // Called by Swift's applicationShouldTerminate (Dock right-click → Quit,
@@ -321,6 +380,7 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void dispose() {
+    _persistenceProvider?.removeListener(_handlePersistenceChanged);
     unawaited(_unregisterGlobalHotKeys());
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);

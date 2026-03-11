@@ -7,6 +7,138 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 
 enum DesktopShortcutPlatform { macOS, windows, linux }
 
+class AppShortcutBinding {
+  const AppShortcutBinding({
+    required this.physicalKey,
+    required this.logicalKey,
+    this.control = false,
+    this.shift = false,
+    this.alt = false,
+    this.meta = false,
+  });
+
+  factory AppShortcutBinding.withPlatformModifiers({
+    required PhysicalKeyboardKey physicalKey,
+    required LogicalKeyboardKey logicalKey,
+    DesktopShortcutPlatform? platform,
+  }) {
+    final targetPlatform = platform ?? AppShortcuts.currentPlatform;
+    return AppShortcutBinding(
+      physicalKey: physicalKey,
+      logicalKey: logicalKey,
+      control: targetPlatform != DesktopShortcutPlatform.macOS,
+      shift: true,
+      meta: targetPlatform == DesktopShortcutPlatform.macOS,
+    );
+  }
+
+  final PhysicalKeyboardKey physicalKey;
+  final LogicalKeyboardKey logicalKey;
+  final bool control;
+  final bool shift;
+  final bool alt;
+  final bool meta;
+
+  HotKey toHotKey() {
+    return HotKey(
+      key: physicalKey,
+      modifiers: [
+        if (meta) HotKeyModifier.meta,
+        if (control) HotKeyModifier.control,
+        if (alt) HotKeyModifier.alt,
+        if (shift) HotKeyModifier.shift,
+      ],
+    );
+  }
+
+  SingleActivator toActivator() {
+    return SingleActivator(
+      logicalKey,
+      control: control,
+      shift: shift,
+      alt: alt,
+      meta: meta,
+    );
+  }
+
+  String label([DesktopShortcutPlatform? platform]) {
+    final targetPlatform = platform ?? AppShortcuts.currentPlatform;
+    final keyLabel = AppShortcuts.keyLabel(logicalKey);
+
+    if (targetPlatform == DesktopShortcutPlatform.macOS) {
+      return [
+        if (meta) '⌘',
+        if (control) '⌃',
+        if (alt) '⌥',
+        if (shift) '⇧',
+        keyLabel,
+      ].join();
+    }
+
+    return [
+      if (control) 'Ctrl',
+      if (alt) 'Alt',
+      if (shift) 'Shift',
+      if (meta) 'Meta',
+      keyLabel,
+    ].join('+');
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'physicalKey': physicalKey.usbHidUsage,
+      'logicalKey': logicalKey.keyId,
+      'control': control,
+      'shift': shift,
+      'alt': alt,
+      'meta': meta,
+    };
+  }
+
+  static AppShortcutBinding? fromJson(dynamic json) {
+    if (json is! Map) return null;
+
+    final physicalCode = _toInt(json['physicalKey']);
+    final logicalId = _toInt(json['logicalKey']);
+    if (physicalCode == null || logicalId == null) return null;
+
+    return AppShortcutBinding(
+      physicalKey:
+          PhysicalKeyboardKey.findKeyByCode(physicalCode) ??
+          PhysicalKeyboardKey(physicalCode),
+      logicalKey:
+          LogicalKeyboardKey.findKeyByKeyId(logicalId) ??
+          LogicalKeyboardKey(logicalId),
+      control: json['control'] == true,
+      shift: json['shift'] == true,
+      alt: json['alt'] == true,
+      meta: json['meta'] == true,
+    );
+  }
+
+  static int? _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is AppShortcutBinding &&
+        other.physicalKey == physicalKey &&
+        other.logicalKey == logicalKey &&
+        other.control == control &&
+        other.shift == shift &&
+        other.alt == alt &&
+        other.meta == meta;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(physicalKey, logicalKey, control, shift, alt, meta);
+}
+
 enum AppShortcutCommand {
   togglePlayback,
   previousTrack,
@@ -34,6 +166,8 @@ class AppShortcuts extends StatelessWidget {
   const AppShortcuts({
     super.key,
     required this.child,
+    this.enabled = true,
+    this.bindings,
     this.onTogglePlayback,
     this.onPreviousTrack,
     this.onNextTrack,
@@ -45,6 +179,8 @@ class AppShortcuts extends StatelessWidget {
   });
 
   final Widget child;
+  final bool enabled;
+  final Map<AppShortcutCommand, AppShortcutBinding>? bindings;
   final FutureOr<void> Function()? onTogglePlayback;
   final FutureOr<void> Function()? onPreviousTrack;
   final FutureOr<void> Function()? onNextTrack;
@@ -53,6 +189,8 @@ class AppShortcuts extends StatelessWidget {
   final FutureOr<void> Function()? onToggleMute;
   final FutureOr<void> Function()? onToggleFavorite;
   final FutureOr<void> Function()? onTogglePlayMode;
+
+  static const String bindingsSettingKey = 'globalShortcutBindings';
 
   static const List<AppShortcutInfo> shortcutInfos = [
     AppShortcutInfo(
@@ -103,78 +241,232 @@ class AppShortcuts extends StatelessWidget {
     return DesktopShortcutPlatform.windows;
   }
 
-  static String labelFor(
+  static AppShortcutBinding defaultBindingFor(
     AppShortcutCommand command, [
     DesktopShortcutPlatform? platform,
   ]) {
     final targetPlatform = platform ?? currentPlatform;
-    final modifierPrefix = targetPlatform == DesktopShortcutPlatform.macOS
-        ? '⌘⇧'
-        : 'Ctrl+Shift+';
 
     switch (command) {
       case AppShortcutCommand.togglePlayback:
-        return '${modifierPrefix}Space';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.space,
+          logicalKey: LogicalKeyboardKey.space,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.previousTrack:
-        return '$modifierPrefix←';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.arrowLeft,
+          logicalKey: LogicalKeyboardKey.arrowLeft,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.nextTrack:
-        return '$modifierPrefix→';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.arrowRight,
+          logicalKey: LogicalKeyboardKey.arrowRight,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.volumeUp:
-        return '$modifierPrefix↑';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.arrowUp,
+          logicalKey: LogicalKeyboardKey.arrowUp,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.volumeDown:
-        return '$modifierPrefix↓';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.arrowDown,
+          logicalKey: LogicalKeyboardKey.arrowDown,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.toggleMute:
-        return '${modifierPrefix}M';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.keyM,
+          logicalKey: LogicalKeyboardKey.keyM,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.toggleFavorite:
-        return '${modifierPrefix}L';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.keyL,
+          logicalKey: LogicalKeyboardKey.keyL,
+          platform: targetPlatform,
+        );
       case AppShortcutCommand.togglePlayMode:
-        return '${modifierPrefix}P';
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.keyP,
+          logicalKey: LogicalKeyboardKey.keyP,
+          platform: targetPlatform,
+        );
     }
+  }
+
+  static Map<AppShortcutCommand, AppShortcutBinding> defaultBindings([
+    DesktopShortcutPlatform? platform,
+  ]) {
+    final targetPlatform = platform ?? currentPlatform;
+    return {
+      for (final command in AppShortcutCommand.values)
+        command: defaultBindingFor(command, targetPlatform),
+    };
+  }
+
+  static Map<AppShortcutCommand, AppShortcutBinding> bindingsFromSettings(
+    Map<String, dynamic> settings, [
+    DesktopShortcutPlatform? platform,
+  ]) {
+    final targetPlatform = platform ?? currentPlatform;
+    final resolved = defaultBindings(targetPlatform);
+    final rawBindings = settings[bindingsSettingKey];
+    if (rawBindings is! Map) return resolved;
+
+    for (final entry in rawBindings.entries) {
+      final command = _commandFromName(entry.key.toString());
+      final binding = AppShortcutBinding.fromJson(entry.value);
+      if (command != null && binding != null) {
+        resolved[command] = binding;
+      }
+    }
+
+    return resolved;
+  }
+
+  static Map<String, dynamic> serializeBindings(
+    Map<AppShortcutCommand, AppShortcutBinding> bindings,
+  ) {
+    return {
+      for (final entry in bindings.entries)
+        entry.key.name: entry.value.toJson(),
+    };
+  }
+
+  static AppShortcutBinding bindingFor(
+    AppShortcutCommand command, [
+    DesktopShortcutPlatform? platform,
+    Map<AppShortcutCommand, AppShortcutBinding>? bindings,
+  ]) {
+    final targetPlatform = platform ?? currentPlatform;
+    return bindings?[command] ?? defaultBindingFor(command, targetPlatform);
+  }
+
+  static String labelFor(
+    AppShortcutCommand command, [
+    DesktopShortcutPlatform? platform,
+    Map<AppShortcutCommand, AppShortcutBinding>? bindings,
+  ]) {
+    final targetPlatform = platform ?? currentPlatform;
+    return bindingFor(command, targetPlatform, bindings).label(targetPlatform);
+  }
+
+  static String labelForSettings(
+    AppShortcutCommand command,
+    Map<String, dynamic> settings, [
+    DesktopShortcutPlatform? platform,
+  ]) {
+    final targetPlatform = platform ?? currentPlatform;
+    final resolvedBindings = bindingsFromSettings(settings, targetPlatform);
+    return labelFor(command, targetPlatform, resolvedBindings);
   }
 
   static HotKey hotKeyFor(
     AppShortcutCommand command, [
     DesktopShortcutPlatform? platform,
+    Map<AppShortcutCommand, AppShortcutBinding>? bindings,
   ]) {
     final targetPlatform = platform ?? currentPlatform;
-    final modifiers = _systemModifiersFor(targetPlatform);
-
-    switch (command) {
-      case AppShortcutCommand.togglePlayback:
-        return HotKey(key: PhysicalKeyboardKey.space, modifiers: modifiers);
-      case AppShortcutCommand.previousTrack:
-        return HotKey(key: PhysicalKeyboardKey.arrowLeft, modifiers: modifiers);
-      case AppShortcutCommand.nextTrack:
-        return HotKey(
-          key: PhysicalKeyboardKey.arrowRight,
-          modifiers: modifiers,
-        );
-      case AppShortcutCommand.volumeUp:
-        return HotKey(key: PhysicalKeyboardKey.arrowUp, modifiers: modifiers);
-      case AppShortcutCommand.volumeDown:
-        return HotKey(key: PhysicalKeyboardKey.arrowDown, modifiers: modifiers);
-      case AppShortcutCommand.toggleMute:
-        return HotKey(key: PhysicalKeyboardKey.keyM, modifiers: modifiers);
-      case AppShortcutCommand.toggleFavorite:
-        return HotKey(key: PhysicalKeyboardKey.keyL, modifiers: modifiers);
-      case AppShortcutCommand.togglePlayMode:
-        return HotKey(key: PhysicalKeyboardKey.keyP, modifiers: modifiers);
-    }
+    return bindingFor(command, targetPlatform, bindings).toHotKey();
   }
 
-  static List<HotKeyModifier> _systemModifiersFor(
-    DesktopShortcutPlatform platform,
-  ) {
-    if (platform == DesktopShortcutPlatform.macOS) {
-      return [HotKeyModifier.meta, HotKeyModifier.shift];
+  static AppShortcutBinding? bindingFromKeyEvent(
+    KeyEvent event, [
+    DesktopShortcutPlatform? platform,
+  ]) {
+    if (_isModifierKey(event.logicalKey)) return null;
+    return AppShortcutBinding.withPlatformModifiers(
+      physicalKey: event.physicalKey,
+      logicalKey: event.logicalKey,
+      platform: platform,
+    );
+  }
+
+  static String platformModifierLabel([DesktopShortcutPlatform? platform]) {
+    final targetPlatform = platform ?? currentPlatform;
+    return targetPlatform == DesktopShortcutPlatform.macOS
+        ? '⌘⇧'
+        : 'Ctrl+Shift+';
+  }
+
+  static String keyLabel(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.arrowLeft) return '←';
+    if (key == LogicalKeyboardKey.arrowRight) return '→';
+    if (key == LogicalKeyboardKey.arrowUp) return '↑';
+    if (key == LogicalKeyboardKey.arrowDown) return '↓';
+    if (key == LogicalKeyboardKey.space) return 'Space';
+    if (key == LogicalKeyboardKey.escape) return 'Esc';
+
+    final keyLabel = key.keyLabel;
+    if (keyLabel.isNotEmpty) {
+      return keyLabel.length == 1 ? keyLabel.toUpperCase() : keyLabel;
     }
 
-    return [HotKeyModifier.control, HotKeyModifier.shift];
+    final debugName = key.debugName;
+    if (debugName == null || debugName.isEmpty) return 'Unknown';
+    return debugName.replaceFirst('Key ', '');
+  }
+
+  static bool isDefaultBinding(
+    AppShortcutCommand command,
+    AppShortcutBinding binding, [
+    DesktopShortcutPlatform? platform,
+  ]) {
+    return binding == defaultBindingFor(command, platform);
+  }
+
+  static AppShortcutCommand? _commandFromName(String name) {
+    for (final command in AppShortcutCommand.values) {
+      if (command.name == name) return command;
+    }
+    return null;
+  }
+
+  static bool _isModifierKey(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.shift ||
+        key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.control ||
+        key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight ||
+        key == LogicalKeyboardKey.alt ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight ||
+        key == LogicalKeyboardKey.meta ||
+        key == LogicalKeyboardKey.metaLeft ||
+        key == LogicalKeyboardKey.metaRight;
+  }
+
+  static Intent _intentForCommand(AppShortcutCommand command) {
+    switch (command) {
+      case AppShortcutCommand.togglePlayback:
+        return const _TogglePlaybackIntent();
+      case AppShortcutCommand.previousTrack:
+        return const _PreviousTrackIntent();
+      case AppShortcutCommand.nextTrack:
+        return const _NextTrackIntent();
+      case AppShortcutCommand.volumeUp:
+        return const _VolumeUpIntent();
+      case AppShortcutCommand.volumeDown:
+        return const _VolumeDownIntent();
+      case AppShortcutCommand.toggleMute:
+        return const _ToggleMuteIntent();
+      case AppShortcutCommand.toggleFavorite:
+        return const _ToggleFavoriteIntent();
+      case AppShortcutCommand.togglePlayMode:
+        return const _TogglePlayModeIntent();
+    }
   }
 
   static Map<ShortcutActivator, Intent> shortcutsFor(
-    DesktopShortcutPlatform platform,
-  ) {
+    DesktopShortcutPlatform platform, [
+    Map<AppShortcutCommand, AppShortcutBinding>? bindings,
+  ]) {
     final shortcuts = <ShortcutActivator, Intent>{
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause):
           const _TogglePlaybackIntent(),
@@ -190,53 +482,9 @@ class AppShortcuts extends StatelessWidget {
           const _ToggleMuteIntent(),
     };
 
-    if (platform == DesktopShortcutPlatform.macOS) {
-      shortcuts.addAll(const {
-        SingleActivator(LogicalKeyboardKey.space, meta: true, shift: true):
-            _TogglePlaybackIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true, shift: true):
-            _PreviousTrackIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowRight, meta: true, shift: true):
-            _NextTrackIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowUp, meta: true, shift: true):
-            _VolumeUpIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowDown, meta: true, shift: true):
-            _VolumeDownIntent(),
-        SingleActivator(LogicalKeyboardKey.keyM, meta: true, shift: true):
-            _ToggleMuteIntent(),
-        SingleActivator(LogicalKeyboardKey.keyL, meta: true, shift: true):
-            _ToggleFavoriteIntent(),
-        SingleActivator(LogicalKeyboardKey.keyP, meta: true, shift: true):
-            _TogglePlayModeIntent(),
-      });
-    } else {
-      shortcuts.addAll(const {
-        SingleActivator(LogicalKeyboardKey.space, control: true, shift: true):
-            _TogglePlaybackIntent(),
-        SingleActivator(
-          LogicalKeyboardKey.arrowLeft,
-          control: true,
-          shift: true,
-        ): _PreviousTrackIntent(),
-        SingleActivator(
-          LogicalKeyboardKey.arrowRight,
-          control: true,
-          shift: true,
-        ): _NextTrackIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowUp, control: true, shift: true):
-            _VolumeUpIntent(),
-        SingleActivator(
-          LogicalKeyboardKey.arrowDown,
-          control: true,
-          shift: true,
-        ): _VolumeDownIntent(),
-        SingleActivator(LogicalKeyboardKey.keyM, control: true, shift: true):
-            _ToggleMuteIntent(),
-        SingleActivator(LogicalKeyboardKey.keyL, control: true, shift: true):
-            _ToggleFavoriteIntent(),
-        SingleActivator(LogicalKeyboardKey.keyP, control: true, shift: true):
-            _TogglePlayModeIntent(),
-      });
+    for (final command in AppShortcutCommand.values) {
+      shortcuts[bindingFor(command, platform, bindings).toActivator()] =
+          _intentForCommand(command);
     }
 
     return shortcuts;
@@ -244,8 +492,12 @@ class AppShortcuts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!enabled) {
+      return child;
+    }
+
     return Shortcuts(
-      shortcuts: shortcutsFor(currentPlatform),
+      shortcuts: shortcutsFor(currentPlatform, bindings),
       child: Actions(
         actions: <Type, Action<Intent>>{
           _TogglePlaybackIntent: _buildAction<_TogglePlaybackIntent>(

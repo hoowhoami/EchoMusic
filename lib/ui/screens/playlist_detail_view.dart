@@ -12,7 +12,9 @@ import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 
@@ -435,227 +437,201 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
           ? _replacePlaybackWithPlaylistSongs
           : null,
       headers: [
-        SliverAppBar(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          surfaceTintColor: Colors.transparent,
-          expandedHeight: 168,
-          pinned: true,
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          flexibleSpace: FlexibleSpaceBar(
-            titlePadding: EdgeInsets.zero,
-            centerTitle: false,
-            expandedTitleScale: 1.0,
-            title: LayoutBuilder(
-              builder: (context, constraints) {
-                final double settings = constraints.maxHeight;
-                final bool isCollapsed = settings <= kToolbarHeight + 20;
-
-                return AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: isCollapsed ? 1.0 : 0.0,
-                  child: Container(
-                    height: kToolbarHeight,
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                    child: Row(
-                      children: [
-                        CoverImage(
-                          url: playlist.pic,
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          showShadow: false,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            playlist.name,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        DetailPageActionRow(
-                          playLabel: '播放',
-                          onPlay: _playPlaylist,
-                          songs: songs,
-                          sourceId: playlist.id,
-                          onResolveSongs: _loadAllSongsForBatch,
-                          isBatchPreparing: batchPreparing,
-                          secondaryAction: secondaryAction,
-                        ),
-                      ],
+        DetailPageSliverHeader(
+          typeLabel: 'PLAYLIST',
+          title: playlist.name,
+          expandedHeight: 169,
+          expandedCover: CoverImage(
+            url: playlist.pic,
+            width: 136,
+            height: 136,
+            borderRadius: 18,
+          ),
+          collapsedCover: CoverImage(
+            url: playlist.pic,
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            showShadow: false,
+          ),
+          detailChildren: [
+            if (playlist.nickname.isNotEmpty)
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (playlist.userPic.isNotEmpty)
+                    ClipOval(
+                      child: CoverImage(
+                        url: playlist.userPic,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 0,
+                        showShadow: false,
+                      ),
+                    )
+                  else
+                    Icon(
+                      CupertinoIcons.person_circle_fill,
+                      size: 20,
+                      color: theme.colorScheme.primary.withAlpha(180),
+                    ),
+                  Text(
+                    playlist.nickname,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
                     ),
                   ),
-                );
-              },
-            ),
-            background: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  CoverImage(
-                    url: playlist.pic,
-                    width: 130,
-                    height: 130,
-                    borderRadius: 16,
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'PLAYLIST',
-                          style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          playlist.name,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        if (playlist.nickname.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
-                              children: [
-                                if (playlist.userPic.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: ClipOval(
-                                      child: CoverImage(
-                                        url: playlist.userPic,
-                                        width: 20,
-                                        height: 20,
-                                        borderRadius: 0,
-                                        showShadow: false,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: Icon(
-                                      CupertinoIcons.person_circle_fill,
-                                      size: 20,
-                                      color: theme.colorScheme.primary
-                                          .withAlpha(180),
-                                    ),
-                                  ),
-                                Text(
-                                  playlist.nickname,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  '${_formatTimestamp(playlist.createTime)} 创建',
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface
-                                        .withAlpha(100),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (playlist.intro.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  playlist.intro,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Row(
-                          children: [
-                            _buildInfoChip(
-                              context,
-                              CupertinoIcons.music_note_2,
-                              '${playlist.count} 首歌曲',
-                            ),
-                            const Spacer(),
-                            DetailPageActionRow(
-                              playLabel: '播放',
-                              onPlay: _playPlaylist,
-                              songs: songs,
-                              sourceId: playlist.id,
-                              onResolveSongs: _loadAllSongsForBatch,
-                              isBatchPreparing: batchPreparing,
-                              secondaryAction: secondaryAction,
-                            ),
-                          ],
-                        ),
-                      ],
+                  Text(
+                    '${_formatTimestamp(playlist.createTime)} 创建',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(100),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _buildInfoSmall(
+                  context,
+                  CupertinoIcons.music_note_2,
+                  '${playlist.count}',
+                ),
+                for (final tag in _parseTags(playlist.tags))
+                  _buildTag(context, tag),
+              ],
             ),
+          ],
+          actions: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: _playPlaylist,
+            songs: songs,
+            sourceId: playlist.id,
+            onResolveSongs: _loadAllSongsForBatch,
+            isBatchPreparing: batchPreparing,
+            secondaryAction: secondaryAction,
           ),
         ),
+        if (playlist.intro.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '歌单介绍',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    playlist.intro,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (playlist.intro.length > 80)
+                    InkWell(
+                      onTap: () {
+                        CustomDialog.show(
+                          context,
+                          title: '歌单介绍',
+                          content: playlist.intro,
+                          confirmText: '确定',
+                          showCancel: false,
+                          width: 600,
+                        );
+                      },
+                      hoverColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          '查看详情',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildInfoChip(BuildContext context, IconData icon, String label) {
+  List<String> _parseTags(String rawTags) {
+    return rawTags
+        .split(',')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Widget _buildTag(BuildContext context, String label) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withAlpha(15),
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.primary.withAlpha(20),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: theme.colorScheme.primary.withAlpha(50),
+          width: 0.5,
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoSmall(BuildContext context, IconData icon, String label) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 12,
+          color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

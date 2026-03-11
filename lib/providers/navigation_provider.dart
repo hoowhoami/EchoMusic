@@ -7,13 +7,13 @@ import '../ui/screens/artist_detail_view.dart';
 import '../ui/screens/playlist_detail_view.dart';
 import '../ui/screens/rank_view.dart';
 import '../ui/screens/recommend_song_view.dart';
-import '../ui/screens/song_comment_view.dart';
-import '../ui/screens/song_detail_view.dart';
+import '../ui/screens/song_detail_comment_view.dart';
 
 class NavigationProvider extends ChangeNotifier {
   NavigationProvider();
 
-  final GlobalKey<NavigatorState> _contentNavigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<NavigatorState> _contentNavigatorKey =
+      GlobalKey<NavigatorState>();
   late final NavigatorObserver _observer = _NavigationStateObserver(this);
 
   final List<_ContentHistorySnapshot> _history = [
@@ -23,6 +23,7 @@ class NavigationProvider extends ChangeNotifier {
 
   int _historyIndex = 0;
   int _currentRootIndex = 0;
+  int _rootActivationVersion = 0;
   bool _suppressHistory = false;
   String? _currentRouteName;
   dynamic _currentRouteArguments;
@@ -32,6 +33,7 @@ class NavigationProvider extends ChangeNotifier {
   String? get currentRouteName => _currentRouteName;
   dynamic get currentRouteArguments => _currentRouteArguments;
   int get currentRootIndex => _currentRootIndex;
+  int get rootActivationVersion => _rootActivationVersion;
   bool get canGoBack => _historyIndex > 0;
   bool get canGoForward => _historyIndex < _history.length - 1;
   String get currentRefreshKey => _detailStack.isNotEmpty
@@ -57,10 +59,15 @@ class NavigationProvider extends ChangeNotifier {
 
   void navigateToRoot(int index) {
     if (_currentRootIndex == index && _detailStack.isEmpty) return;
+    final previousRootIndex = _currentRootIndex;
+    final hadDetails = _detailStack.isNotEmpty;
     _suppressHistory = true;
     popUntilFirst();
     _detailStack.clear();
     _currentRootIndex = index;
+    if (previousRootIndex != index || hadDetails) {
+      _rootActivationVersion++;
+    }
     _updateCurrentRouteFromStack(notify: false);
     _suppressHistory = false;
     _recordPushSnapshot();
@@ -96,13 +103,14 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   void openRecommendSong() {
-    push(
-      const RecommendSongView(),
-      name: 'recommend_song',
-    );
+    push(const RecommendSongView(), name: 'recommend_song');
   }
 
-  void openRank({bool isRecommend = false, bool showTitle = true, int? initialRankId}) {
+  void openRank({
+    bool isRecommend = false,
+    bool showTitle = true,
+    int? initialRankId,
+  }) {
     final arguments = {
       'isRecommend': isRecommend,
       'showTitle': showTitle,
@@ -121,7 +129,7 @@ class NavigationProvider extends ChangeNotifier {
 
   void openSongDetail(Song song) {
     push(
-      SongDetailView(song: song),
+      SongDetailCommentView(song: song),
       name: 'song_detail',
       arguments: song,
     );
@@ -129,7 +137,7 @@ class NavigationProvider extends ChangeNotifier {
 
   void openSongComment(Song song) {
     push(
-      SongCommentView(song: song),
+      SongDetailCommentView(song: song),
       name: 'song_comment',
       arguments: song,
     );
@@ -177,16 +185,26 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   Future<void> _restoreSnapshot(_ContentHistorySnapshot snapshot) async {
+    final previousRootIndex = _currentRootIndex;
+    final hadDetails = _detailStack.isNotEmpty;
     _suppressHistory = true;
     popUntilFirst();
     _detailStack.clear();
     _currentRootIndex = snapshot.rootIndex;
+    if (snapshot.details.isEmpty &&
+        (previousRootIndex != snapshot.rootIndex || hadDetails)) {
+      _rootActivationVersion++;
+    }
     _updateCurrentRouteFromStack(notify: true);
 
     await Future<void>.delayed(Duration.zero);
 
     for (final entry in snapshot.details) {
-      push(_buildPage(entry.name, entry.arguments), name: entry.name, arguments: entry.arguments);
+      push(
+        _buildPage(entry.name, entry.arguments),
+        name: entry.name,
+        arguments: entry.arguments,
+      );
     }
 
     await Future<void>.delayed(Duration.zero);
@@ -201,7 +219,11 @@ class NavigationProvider extends ChangeNotifier {
         if (arguments is PlaylistDetailRouteArgs) {
           return PlaylistDetailView(routeArgs: arguments);
         }
-        return PlaylistDetailView(routeArgs: PlaylistDetailRouteArgs.fromPlaylist(arguments as Playlist));
+        return PlaylistDetailView(
+          routeArgs: PlaylistDetailRouteArgs.fromPlaylist(
+            arguments as Playlist,
+          ),
+        );
       case 'album_detail':
         final args = arguments as Map;
         return AlbumDetailView(
@@ -218,9 +240,9 @@ class NavigationProvider extends ChangeNotifier {
           initialRankId: args?['initialRankId'],
         );
       case 'song_detail':
-        return SongDetailView(song: arguments as Song);
+        return SongDetailCommentView(song: arguments as Song);
       case 'song_comment':
-        return SongCommentView(song: arguments as Song);
+        return SongDetailCommentView(song: arguments as Song);
       case 'artist_detail':
         final args = arguments as Map;
         return ArtistDetailView(
@@ -339,13 +361,17 @@ class NavigationProvider extends ChangeNotifier {
   _ContentHistorySnapshot _currentSnapshot() {
     return _ContentHistorySnapshot(
       rootIndex: _currentRootIndex,
-      details: _detailStack.map((entry) => entry.copy()).toList(growable: false),
+      details: _detailStack
+          .map((entry) => entry.copy())
+          .toList(growable: false),
     );
   }
 
   void _updateCurrentRouteFromStack({required bool notify}) {
     final entry = _detailStack.isNotEmpty ? _detailStack.last : null;
-    final changed = _currentRouteName != entry?.name || !identical(_currentRouteArguments, entry?.arguments);
+    final changed =
+        _currentRouteName != entry?.name ||
+        !identical(_currentRouteArguments, entry?.arguments);
     _currentRouteName = entry?.name;
     _currentRouteArguments = entry?.arguments;
 
@@ -359,7 +385,8 @@ class NavigationProvider extends ChangeNotifier {
       case 'playlist_detail':
         final id = arguments is PlaylistDetailRouteArgs
             ? arguments.lookupId
-            : ((arguments as Playlist).globalCollectionId ?? arguments.id.toString());
+            : ((arguments as Playlist).globalCollectionId ??
+                  arguments.id.toString());
         return 'playlist:$id';
       case 'album_detail':
       case 'artist_detail':
@@ -370,7 +397,9 @@ class NavigationProvider extends ChangeNotifier {
       case 'song_detail':
       case 'song_comment':
         final song = arguments as Song;
-        final songKey = song.mixSongId != 0 ? song.mixSongId.toString() : song.hash;
+        final songKey = song.mixSongId != 0
+            ? song.mixSongId.toString()
+            : song.hash;
         return '$name:$songKey';
       case 'rank_view':
         if (arguments is Map) {
@@ -421,9 +450,13 @@ class _ContentRouteEntry {
   final String name;
   final dynamic arguments;
 
-  _ContentRouteEntry copy() => _ContentRouteEntry(name: name, arguments: arguments);
+  _ContentRouteEntry copy() =>
+      _ContentRouteEntry(name: name, arguments: arguments);
 
-  bool isSameRoute(_ContentRouteEntry other) => name == other.name && _identityKey(name, arguments) == _identityKey(other.name, other.arguments);
+  bool isSameRoute(_ContentRouteEntry other) =>
+      name == other.name &&
+      _identityKey(name, arguments) ==
+          _identityKey(other.name, other.arguments);
 
   static String _identityKey(String name, dynamic arguments) {
     switch (name) {
@@ -443,7 +476,9 @@ class _ContentRouteEntry {
       case 'song_detail':
       case 'song_comment':
         final song = arguments as Song;
-        return song.mixSongId != 0 ? 'mix:${song.mixSongId}' : 'hash:${song.hash}';
+        return song.mixSongId != 0
+            ? 'mix:${song.mixSongId}'
+            : 'hash:${song.hash}';
       case 'rank_view':
         if (arguments is Map) {
           return '${arguments['initialRankId'] ?? ''}:${arguments['isRecommend'] == true}:${arguments['showTitle'] != false}';
@@ -456,13 +491,17 @@ class _ContentRouteEntry {
 }
 
 class _ContentHistorySnapshot {
-  const _ContentHistorySnapshot({required this.rootIndex, required this.details});
+  const _ContentHistorySnapshot({
+    required this.rootIndex,
+    required this.details,
+  });
 
   final int rootIndex;
   final List<_ContentRouteEntry> details;
 
   bool equals(_ContentHistorySnapshot other) {
-    if (rootIndex != other.rootIndex || details.length != other.details.length) {
+    if (rootIndex != other.rootIndex ||
+        details.length != other.details.length) {
       return false;
     }
     for (int index = 0; index < details.length; index++) {

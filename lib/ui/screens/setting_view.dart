@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:media_kit/media_kit.dart';
@@ -130,6 +131,95 @@ class _SettingViewState extends State<SettingView> {
     throw Exception(lastError ?? '未找到可用的目录打开方式');
   }
 
+  Map<AppShortcutCommand, AppShortcutBinding> _shortcutBindings(
+    Map<String, dynamic> settings,
+  ) {
+    return AppShortcuts.bindingsFromSettings(settings);
+  }
+
+  Future<void> _updateShortcutBindings(
+    PersistenceProvider persistence,
+    Map<AppShortcutCommand, AppShortcutBinding> bindings,
+  ) async {
+    await persistence.updateSetting(
+      AppShortcuts.bindingsSettingKey,
+      AppShortcuts.serializeBindings(bindings),
+    );
+  }
+
+  Future<void> _restoreDefaultShortcut(
+    BuildContext context,
+    PersistenceProvider persistence,
+    AppShortcutInfo info,
+  ) async {
+    final bindings = _shortcutBindings(persistence.settings);
+    final defaultBinding = AppShortcuts.defaultBindingFor(info.command);
+    if (bindings[info.command] == defaultBinding) return;
+
+    bindings[info.command] = defaultBinding;
+    await _updateShortcutBindings(persistence, bindings);
+
+    if (!context.mounted) return;
+    CustomToast.success(
+      context,
+      '已恢复“${info.title}”默认快捷键：${defaultBinding.label()}',
+    );
+  }
+
+  Future<void> _editShortcut(
+    BuildContext context,
+    PersistenceProvider persistence,
+    AppShortcutInfo info,
+  ) async {
+    final bindings = _shortcutBindings(persistence.settings);
+    final currentBinding =
+        bindings[info.command] ?? AppShortcuts.defaultBindingFor(info.command);
+
+    final result = await showDialog<_ShortcutEditResult>(
+      context: context,
+      builder: (dialogContext) => _ShortcutCaptureDialog(
+        info: info,
+        currentBinding: currentBinding,
+        isDefaultBinding: AppShortcuts.isDefaultBinding(
+          info.command,
+          currentBinding,
+        ),
+      ),
+    );
+
+    if (!mounted || result == null || !context.mounted) return;
+
+    if (result.restoreDefault) {
+      await _restoreDefaultShortcut(context, persistence, info);
+      return;
+    }
+
+    final nextBinding = result.binding;
+    if (nextBinding == null || nextBinding == currentBinding) return;
+
+    for (final entry in bindings.entries) {
+      if (entry.key != info.command && entry.value == nextBinding) {
+        final conflictInfo = AppShortcuts.shortcutInfos.firstWhere(
+          (item) => item.command == entry.key,
+        );
+        CustomToast.error(
+          context,
+          '快捷键 ${nextBinding.label()} 已被“${conflictInfo.title}”占用',
+        );
+        return;
+      }
+    }
+
+    bindings[info.command] = nextBinding;
+    await _updateShortcutBindings(persistence, bindings);
+
+    if (!context.mounted) return;
+    CustomToast.success(
+      context,
+      '已将“${info.title}”快捷键修改为 ${nextBinding.label()}',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final persistence = context.watch<PersistenceProvider>();
@@ -137,7 +227,6 @@ class _SettingViewState extends State<SettingView> {
     final audio = context.watch<AudioProvider>();
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
-
     return ScrollableContent(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
       child: Column(
@@ -275,14 +364,22 @@ class _SettingViewState extends State<SettingView> {
           ]),
 
           const SizedBox(height: 32),
-          _buildGroup(
-            context,
-            '全局快捷键',
-            CupertinoIcons.command,
-            AppShortcuts.shortcutInfos
-                .map((info) => _buildShortcutItem(context, info))
-                .toList(),
-          ),
+          _buildGroup(context, '全局快捷键', CupertinoIcons.command, [
+            _buildItem(
+              context,
+              '启用全局快捷键',
+              '允许应用在后台响应系统级快捷键控制播放',
+              trailing: _buildSwitch(
+                context,
+                settings['globalShortcutsEnabled'] ?? false,
+                (v) => persistence.updateSetting('globalShortcutsEnabled', v),
+              ),
+            ),
+            ...AppShortcuts.shortcutInfos.map(
+              (info) =>
+                  _buildShortcutItem(context, persistence, settings, info),
+            ),
+          ]),
 
           const SizedBox(height: 32),
           _buildGroup(context, '音频设备', CupertinoIcons.speaker_2, [
@@ -573,21 +670,59 @@ class _SettingViewState extends State<SettingView> {
     );
   }
 
-  Widget _buildShortcutItem(BuildContext context, AppShortcutInfo info) {
+  Widget _buildShortcutItem(
+    BuildContext context,
+    PersistenceProvider persistence,
+    Map<String, dynamic> settings,
+    AppShortcutInfo info,
+  ) {
+    final bindings = _shortcutBindings(settings);
+    final binding =
+        bindings[info.command] ?? AppShortcuts.defaultBindingFor(info.command);
+    final isDefault = AppShortcuts.isDefaultBinding(info.command, binding);
+
     return _buildItem(
       context,
       info.title,
       info.description,
-      trailing: _buildShortcutBadge(
-        context,
-        AppShortcuts.labelFor(info.command),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildShortcutBadge(
+            context,
+            binding.label(),
+            onTap: () => _editShortcut(context, persistence, info),
+          ),
+          if (!isDefault) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: '恢复默认',
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () =>
+                      _restoreDefaultShortcut(context, persistence, info),
+                  child: Icon(
+                    CupertinoIcons.arrow_counterclockwise,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildShortcutBadge(BuildContext context, String label) {
+  Widget _buildShortcutBadge(
+    BuildContext context,
+    String label, {
+    VoidCallback? onTap,
+  }) {
     final theme = Theme.of(context);
-    return Container(
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: theme.colorScheme.onSurface.withAlpha(12),
@@ -602,6 +737,13 @@ class _SettingViewState extends State<SettingView> {
           fontFamily: 'monospace',
         ),
       ),
+    );
+
+    if (onTap == null) return badge;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: badge),
     );
   }
 
@@ -867,10 +1009,8 @@ class _SettingViewState extends State<SettingView> {
   }) {
     final theme = Theme.of(context);
     final minHeight = fieldConstraints?.minHeight ?? 0;
-    final resolvedConstraints =
-        (fieldConstraints ?? const BoxConstraints()).copyWith(
-          minHeight: minHeight < 40 ? 40 : minHeight,
-        );
+    final resolvedConstraints = (fieldConstraints ?? const BoxConstraints())
+        .copyWith(minHeight: minHeight < 40 ? 40 : minHeight);
     final fieldWidth = resolvedConstraints.maxWidth.isFinite
         ? resolvedConstraints.maxWidth
         : (resolvedConstraints.minWidth > 0
@@ -964,10 +1104,7 @@ class _SettingViewState extends State<SettingView> {
             ),
           ),
         ),
-        if (suffix != null) ...[
-          const SizedBox(width: 6),
-          suffix,
-        ],
+        if (suffix != null) ...[const SizedBox(width: 6), suffix],
       ],
     );
   }
@@ -1051,4 +1188,208 @@ class _SettingsDropdownOption<T> {
     required this.title,
     this.subtitle,
   });
+}
+
+class _ShortcutEditResult {
+  const _ShortcutEditResult.save(this.binding) : restoreDefault = false;
+
+  const _ShortcutEditResult.restore() : binding = null, restoreDefault = true;
+
+  final AppShortcutBinding? binding;
+  final bool restoreDefault;
+}
+
+class _ShortcutCaptureDialog extends StatefulWidget {
+  const _ShortcutCaptureDialog({
+    required this.info,
+    required this.currentBinding,
+    required this.isDefaultBinding,
+  });
+
+  final AppShortcutInfo info;
+  final AppShortcutBinding currentBinding;
+  final bool isDefaultBinding;
+
+  @override
+  State<_ShortcutCaptureDialog> createState() => _ShortcutCaptureDialogState();
+}
+
+class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'shortcut-capture');
+  AppShortcutBinding? _capturedBinding;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_focusNode.canRequestFocus) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  KeyEventResult _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop();
+      return KeyEventResult.handled;
+    }
+
+    final binding = AppShortcuts.bindingFromKeyEvent(event);
+    if (binding == null) return KeyEventResult.handled;
+
+    setState(() {
+      _capturedBinding = binding;
+    });
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final previewBinding = _capturedBinding ?? widget.currentBinding;
+
+    return Dialog(
+      backgroundColor: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '修改快捷键',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                widget.info.title,
+                style: TextStyle(
+                  color: theme.colorScheme.primary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '直接按下新的主键即可，修饰键会自动使用 ${AppShortcuts.platformModifierLabel()}。按 Esc 可取消。',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                  height: 1.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Focus(
+                focusNode: _focusNode,
+                autofocus: true,
+                onKeyEvent: (_, event) => _handleKeyEvent(event),
+                child: GestureDetector(
+                  onTap: _focusNode.requestFocus,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withAlpha(10),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: _focusNode.hasFocus
+                            ? theme.colorScheme.primary.withAlpha(160)
+                            : theme.colorScheme.outlineVariant.withAlpha(120),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '当前快捷键',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          widget.currentBinding.label(),
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '新的快捷键',
+                          style: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          previewBinding.label(),
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (!widget.isDefaultBinding)
+                    TextButton(
+                      onPressed: () => Navigator.of(
+                        context,
+                      ).pop(const _ShortcutEditResult.restore()),
+                      child: const Text('恢复默认'),
+                    ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed:
+                        _capturedBinding == null ||
+                            _capturedBinding == widget.currentBinding
+                        ? null
+                        : () => Navigator.of(
+                            context,
+                          ).pop(_ShortcutEditResult.save(_capturedBinding!)),
+                    child: const Text('保存'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

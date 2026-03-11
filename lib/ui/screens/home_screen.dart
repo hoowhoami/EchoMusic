@@ -6,6 +6,7 @@ import 'dart:io';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/app_shortcuts.dart';
+import '../widgets/lazy_indexed_stack.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
@@ -34,7 +35,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-
   @override
   void initState() {
     super.initState();
@@ -135,22 +135,38 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  final List<Widget> _views = [
-    const RecommendView(),
-    const DiscoverView(),
-    const SearchView(),
-    const HistoryView(),
-    const CloudView(),
-    const SettingView(),
-    const ProfileView(),
-  ];
+  Widget _buildRootView(int index) {
+    switch (index) {
+      case 0:
+        return const RecommendView();
+      case 1:
+        return const DiscoverView();
+      case 2:
+        return const SearchView();
+      case 3:
+        return const HistoryView();
+      case 4:
+        return const CloudView();
+      case 5:
+        return const SettingView();
+      case 6:
+        return const ProfileView();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final navProvider = context.watch<NavigationProvider>();
+    final settings = context.watch<PersistenceProvider>().settings;
+    final shortcutBindings = AppShortcuts.bindingsFromSettings(settings);
+    final shortcutsEnabled = settings['globalShortcutsEnabled'] ?? false;
 
     return AppShortcuts(
+      enabled: shortcutsEnabled,
+      bindings: shortcutBindings,
       onTogglePlayback: () => PlayerShortcutActions.togglePlayback(context),
       onPreviousTrack: () => PlayerShortcutActions.previousTrack(context),
       onNextTrack: () => PlayerShortcutActions.nextTrack(context),
@@ -235,9 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 tooltip: '刷新',
                               ),
                               const Expanded(
-                                child: DragToMoveArea(
-                                  child: SizedBox.expand(),
-                                ),
+                                child: DragToMoveArea(child: SizedBox.expand()),
                               ),
                               if (!Platform.isMacOS)
                                 const Padding(
@@ -256,9 +270,14 @@ class _HomeScreenState extends State<HomeScreen> {
                               pageBuilder: (context, _, _) =>
                                   Consumer<NavigationProvider>(
                                     builder: (context, provider, _) =>
-                                        _LazyIndexedStack(
+                                        LazyIndexedStack(
                                           index: provider.currentRootIndex,
-                                          children: _views,
+                                          itemCount: 7,
+                                          itemBuilder: _buildRootView,
+                                          activationVersion:
+                                              provider.rootActivationVersion,
+                                          recreateOnActivateIndices:
+                                              const <int>{3, 4},
                                         ),
                                   ),
                             ),
@@ -365,48 +384,6 @@ class _WindowControlButtonsState extends State<_WindowControlButtons>
           brightness: brightness,
           onPressed: () => windowManager.close(),
         ),
-      ],
-    );
-  }
-}
-
-/// IndexedStack that defers building children until their tab is first visited.
-class _LazyIndexedStack extends StatefulWidget {
-  final int index;
-  final List<Widget> children;
-  const _LazyIndexedStack({required this.index, required this.children});
-
-  @override
-  State<_LazyIndexedStack> createState() => _LazyIndexedStackState();
-}
-
-class _LazyIndexedStackState extends State<_LazyIndexedStack> {
-  late final List<bool> _activated;
-
-  @override
-  void initState() {
-    super.initState();
-    _activated = List.generate(
-      widget.children.length,
-      (i) => i == widget.index,
-    );
-  }
-
-  @override
-  void didUpdateWidget(_LazyIndexedStack old) {
-    super.didUpdateWidget(old);
-    if (!_activated[widget.index]) {
-      setState(() => _activated[widget.index] = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IndexedStack(
-      index: widget.index,
-      children: [
-        for (int i = 0; i < widget.children.length; i++)
-          _activated[i] ? widget.children[i] : const SizedBox.shrink(),
       ],
     );
   }

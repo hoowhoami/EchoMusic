@@ -19,6 +19,32 @@ import 'queue_drawer.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
 
+String _shortcutLabel(BuildContext context, AppShortcutCommand command) {
+  final settings = context.watch<PersistenceProvider>().settings;
+  return AppShortcuts.labelForSettings(command, settings);
+}
+
+bool _showShortcutHint(BuildContext context) {
+  final settings = context.watch<PersistenceProvider>().settings;
+  return settings['globalShortcutsEnabled'] ?? false;
+}
+
+String _tooltipWithShortcut(
+  BuildContext context,
+  String label,
+  AppShortcutCommand command,
+) {
+  if (!_showShortcutHint(context)) return label;
+  return '$label · ${_shortcutLabel(context, command)}';
+}
+
+String _volumeTooltip(BuildContext context) {
+  if (!_showShortcutHint(context)) return '音量';
+  return '音量：${_shortcutLabel(context, AppShortcutCommand.volumeUp)} / '
+      '${_shortcutLabel(context, AppShortcutCommand.volumeDown)} / '
+      '${_shortcutLabel(context, AppShortcutCommand.toggleMute)}';
+}
+
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
 
@@ -378,8 +404,11 @@ class _PlayerMainContent extends StatelessWidget {
                     icon: CupertinoIcons.backward_fill,
                     onPressed: context.read<AudioProvider>().previous,
                     size: 26,
-                    tooltip:
-                        '上一首 · ${AppShortcuts.labelFor(AppShortcutCommand.previousTrack)}',
+                    tooltip: _tooltipWithShortcut(
+                      context,
+                      '上一首',
+                      AppShortcutCommand.previousTrack,
+                    ),
                   ),
                   const SizedBox(width: 24),
                   const _PlayPauseButtonIsolated(),
@@ -388,8 +417,11 @@ class _PlayerMainContent extends StatelessWidget {
                     icon: CupertinoIcons.forward_fill,
                     onPressed: context.read<AudioProvider>().next,
                     size: 26,
-                    tooltip:
-                        '下一首 · ${AppShortcuts.labelFor(AppShortcutCommand.nextTrack)}',
+                    tooltip: _tooltipWithShortcut(
+                      context,
+                      '下一首',
+                      AppShortcutCommand.nextTrack,
+                    ),
                   ),
                 ],
               ),
@@ -564,16 +596,9 @@ class _PlayerSongInfo extends StatelessWidget {
         _PlayerIconButton(
           icon: CupertinoIcons.chat_bubble_text,
           size: 20,
-          tooltip: '歌曲评论',
+          tooltip: '详情及评论',
           onPressed: () =>
               context.read<NavigationProvider>().openSongComment(song),
-        ),
-        _PlayerIconButton(
-          icon: CupertinoIcons.info_circle,
-          size: 20,
-          tooltip: '歌曲详情',
-          onPressed: () =>
-              context.read<NavigationProvider>().openSongDetail(song),
         ),
       ],
     );
@@ -707,8 +732,11 @@ class _FavoriteButton extends StatelessWidget {
             userProvider: userProvider,
           ),
           size: 20,
-          tooltip:
-              '${data.isFav ? '取消收藏' : '收藏'} · ${AppShortcuts.labelFor(AppShortcutCommand.toggleFavorite)}',
+          tooltip: _tooltipWithShortcut(
+            context,
+            data.isFav ? '取消收藏' : '收藏',
+            AppShortcutCommand.toggleFavorite,
+          ),
         );
       },
     );
@@ -834,8 +862,11 @@ class _PlayModeButton extends StatelessWidget {
             isSelected: isOpen,
             onPressed: toggle,
             size: 20,
-            tooltip:
-                '$tip · ${AppShortcuts.labelFor(AppShortcutCommand.togglePlayMode)}',
+            tooltip: _tooltipWithShortcut(
+              context,
+              tip,
+              AppShortcutCommand.togglePlayMode,
+            ),
           ),
           menuBuilder: (context, close) => _PlayModePopup(close: () => close()),
         );
@@ -940,10 +971,7 @@ class _VolumeButton extends StatelessWidget {
               audioProvider.setVolume(newVol);
             },
             size: 20,
-            tooltip:
-                '音量：${AppShortcuts.labelFor(AppShortcutCommand.volumeUp)} / '
-                '${AppShortcuts.labelFor(AppShortcutCommand.volumeDown)} / '
-                '${AppShortcuts.labelFor(AppShortcutCommand.toggleMute)}',
+            tooltip: _volumeTooltip(context),
           ),
           menuBuilder: (context, close) => const _VolumePopup(),
         );
@@ -981,6 +1009,7 @@ class _QueueButton extends StatelessWidget {
               right: -10,
               child: IgnorePointer(
                 child: Container(
+                  key: const ValueKey('player-queue-count-badge'),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,
                     vertical: 0.5,
@@ -1442,8 +1471,11 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
     final theme = Theme.of(context);
 
     return Tooltip(
-      message:
-          '${widget.isPlaying ? '暂停' : '播放'} · ${AppShortcuts.labelFor(AppShortcutCommand.togglePlayback)}',
+      message: _tooltipWithShortcut(
+        context,
+        widget.isPlaying ? '暂停' : '播放',
+        AppShortcutCommand.togglePlayback,
+      ),
       child: MouseRegion(
         cursor: widget.isLoading
             ? SystemMouseCursors.basic
