@@ -590,11 +590,28 @@ class _SongListState extends State<SongList> {
     required EdgeInsets listPadding,
   }) {
     final theme = Theme.of(context);
+    final textDirection = Directionality.of(context);
     final actionSectionWidth =
         SongTableLayout.listActionGap +
         SongTableLayout.listRowActionWidth +
         SongTableLayout.listFavoriteGap +
         SongTableLayout.listFavoriteWidth;
+    final durationValuePainter = TextPainter(
+      text: const TextSpan(
+        text: '00:00',
+        style: TextStyle(
+          fontSize: 12,
+          fontFamily: 'monospace',
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      textDirection: textDirection,
+      maxLines: 1,
+    )..layout();
+    final durationHeaderInset = math.max(
+      SongTableLayout.listDurationWidth - durationValuePainter.width,
+      0.0,
+    );
 
     return Container(
       color: theme.scaffoldBackgroundColor,
@@ -637,15 +654,17 @@ class _SongListState extends State<SongList> {
               ),
               const SizedBox(width: SongTableLayout.listDurationGap),
               SizedBox(
-                width: SongTableLayout.listDurationWidth,
+                width:
+                    SongTableLayout.listDurationWidth +
+                    SongTableLayout.listTrailingActionWidth,
                 child: _buildSortHeaderCell(
                   context,
                   label: '时长',
                   field: _SongSortField.duration,
-                  alignment: Alignment.centerRight,
+                  alignment: Alignment.centerLeft,
+                  contentPadding: EdgeInsets.only(left: durationHeaderInset),
                 ),
               ),
-              const SizedBox(width: SongTableLayout.listTrailingActionWidth),
             ],
           ),
         ),
@@ -658,6 +677,7 @@ class _SongListState extends State<SongList> {
     required String label,
     required _SongSortField field,
     Alignment alignment = Alignment.centerLeft,
+    EdgeInsetsGeometry contentPadding = EdgeInsets.zero,
   }) {
     final theme = Theme.of(context);
     final isActive = _isSortActive(field);
@@ -683,22 +703,25 @@ class _SongListState extends State<SongList> {
         hoverColor: Colors.transparent,
         child: SizedBox(
           height: _tableHeaderHeight,
-          child: Align(
-            alignment: alignment,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: foregroundColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+          child: Padding(
+            padding: contentPadding,
+            child: Align(
+              alignment: alignment,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 5),
-                Icon(icon, size: iconSize, color: iconColor),
-              ],
+                  const SizedBox(width: 5),
+                  Icon(icon, size: iconSize, color: iconColor),
+                ],
+              ),
             ),
           ),
         ),
