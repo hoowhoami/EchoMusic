@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
 import 'song_list.dart';
-import 'batch_action_bar.dart';
 
 class SongListScaffold extends StatelessWidget {
   final List<Song> songs;
   final Playlist? parentPlaylist;
   final bool isLoading;
   final List<Widget>? headers;
-  final dynamic sourceId;
   final Color? backgroundColor;
   final VoidCallback? onLoadMore;
   final bool hasMore;
   final bool isLoadingMore;
+  final Future<void> Function(Song song)? onSongDoubleTapPlay;
+  final bool enableDefaultDoubleTapPlay;
 
   const SongListScaffold({
     super.key,
@@ -21,11 +21,12 @@ class SongListScaffold extends StatelessWidget {
     this.parentPlaylist,
     this.isLoading = false,
     this.headers,
-    this.sourceId,
     this.backgroundColor,
     this.onLoadMore,
     this.hasMore = false,
     this.isLoadingMore = false,
+    this.onSongDoubleTapPlay,
+    this.enableDefaultDoubleTapPlay = false,
   });
 
   @override
@@ -34,20 +35,16 @@ class SongListScaffold extends StatelessWidget {
     
     return Scaffold(
       backgroundColor: backgroundColor ?? theme.scaffoldBackgroundColor,
-      body: Stack(
-        children: [
-          SongList(
-            songs: songs,
-            parentPlaylist: parentPlaylist,
-            isLoading: isLoading,
-            headers: headers,
-            sourceId: sourceId,
-            onLoadMore: onLoadMore,
-            hasMore: hasMore,
-            isLoadingMore: isLoadingMore,
-          ),
-          const BatchActionBar(),
-        ],
+      body: SongList(
+        songs: songs,
+        parentPlaylist: parentPlaylist,
+        isLoading: isLoading,
+        headers: headers,
+        onLoadMore: onLoadMore,
+        hasMore: hasMore,
+        isLoadingMore: isLoadingMore,
+        onSongDoubleTapPlay: onSongDoubleTapPlay,
+        enableDefaultDoubleTapPlay: enableDefaultDoubleTapPlay,
       ),
     );
   }

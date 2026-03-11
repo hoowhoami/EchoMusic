@@ -20,11 +20,7 @@ class LyricLine {
   final String? translated;
   final String? romanized;
 
-  LyricLine({
-    required this.characters,
-    this.translated,
-    this.romanized,
-  });
+  LyricLine({required this.characters, this.translated, this.romanized});
 
   String get text => characters.map((c) => c.text).join('');
   int get startTime => characters.first.startTime;
@@ -66,8 +62,25 @@ class LyricProvider with ChangeNotifier {
     }
   }
 
-  bool get showTranslation => _lyricsMode == LyricsMode.translation && _hasTranslation;
-  bool get showRomanization => _lyricsMode == LyricsMode.romanization && _hasRomanization;
+  bool get showTranslation =>
+      _lyricsMode == LyricsMode.translation && _hasTranslation;
+  bool get showRomanization =>
+      _lyricsMode == LyricsMode.romanization && _hasRomanization;
+
+  void _resetLyricsState({String? hash, String tips = '暂无歌词'}) {
+    _lyrics = [];
+    _hasTranslation = false;
+    _hasRomanization = false;
+    _currentLineIndex = -1;
+    _lyricsMode = LyricsMode.none;
+    _loadedHash = hash;
+    _tips = tips;
+  }
+
+  void beginLoading({String? hash}) {
+    _resetLyricsState(hash: hash, tips: '歌词加载中...');
+    notifyListeners();
+  }
 
   void toggleLyricsMode() {
     if (_lyricsMode == LyricsMode.none) {
@@ -87,20 +100,16 @@ class LyricProvider with ChangeNotifier {
     } else {
       _lyricsMode = LyricsMode.none;
     }
-    
+
     notifyListeners();
   }
 
   void parseLyrics(Map<String, dynamic> lyricData, {String? hash}) {
-    _lyrics = [];
-    _hasTranslation = false;
-    _hasRomanization = false;
-    _currentLineIndex = -1;
-    _loadedHash = hash;
+    _resetLyricsState(hash: hash);
 
-    final String content = (lyricData['decodeContent'] ?? lyricData['lyric'] ?? '').toString();
+    final String content =
+        (lyricData['decodeContent'] ?? lyricData['lyric'] ?? '').toString();
     if (content.isEmpty) {
-      _tips = '暂无歌词';
       notifyListeners();
       return;
     }
@@ -119,9 +128,15 @@ class LyricProvider with ChangeNotifier {
       }
 
       if (languageLine.isNotEmpty) {
-        final languageCode = languageLine.substring(10, languageLine.length - 1);
+        final languageCode = languageLine.substring(
+          10,
+          languageLine.length - 1,
+        );
         if (languageCode.isNotEmpty) {
-          final cleanedCode = languageCode.replaceAll(RegExp(r'[^A-Za-z0-9+/=]'), '');
+          final cleanedCode = languageCode.replaceAll(
+            RegExp(r'[^A-Za-z0-9+/=]'),
+            '',
+          );
           final paddedCode = cleanedCode.padRight(
             cleanedCode.length + (4 - cleanedCode.length % 4) % 4,
             '=',
@@ -161,22 +176,26 @@ class LyricProvider with ChangeNotifier {
             final charDuration = int.parse(match.group(2)!);
             final charStart = lineStart + int.parse(match.group(1)!);
 
-            characters.add(LyricCharacter(
-              text: charText,
-              startTime: charStart,
-              endTime: charStart + charDuration,
-            ));
+            characters.add(
+              LyricCharacter(
+                text: charText,
+                startTime: charStart,
+                endTime: charStart + charDuration,
+              ),
+            );
           }
         } else {
           final duration = int.parse(lineMatch.group(2)!);
           final text = lineContent.replaceAll(RegExp(r'<.*?>'), '').trim();
           if (text.isNotEmpty) {
             for (int i = 0; i < text.length; i++) {
-              characters.add(LyricCharacter(
-                text: text[i],
-                startTime: lineStart + (i * duration ~/ text.length),
-                endTime: lineStart + ((i + 1) * duration ~/ text.length),
-              ));
+              characters.add(
+                LyricCharacter(
+                  text: text[i],
+                  startTime: lineStart + (i * duration ~/ text.length),
+                  endTime: lineStart + ((i + 1) * duration ~/ text.length),
+                ),
+              );
             }
           }
         }
@@ -195,9 +214,17 @@ class LyricProvider with ChangeNotifier {
         final startTime = (minutes * 60 * 1000 + seconds * 1000).toInt();
 
         if (text.isNotEmpty) {
-          parsedLines.add(LyricLine(characters: [
-            LyricCharacter(text: text, startTime: startTime, endTime: startTime + 3000)
-          ]));
+          parsedLines.add(
+            LyricLine(
+              characters: [
+                LyricCharacter(
+                  text: text,
+                  startTime: startTime,
+                  endTime: startTime + 3000,
+                ),
+              ],
+            ),
+          );
         }
       }
     }
@@ -222,15 +249,16 @@ class LyricProvider with ChangeNotifier {
         }
       }
 
-      _lyrics.add(LyricLine(
-        characters: parsedLines[i].characters,
-        translated: trans,
-        romanized: roman,
-      ));
+      _lyrics.add(
+        LyricLine(
+          characters: parsedLines[i].characters,
+          translated: trans,
+          romanized: roman,
+        ),
+      );
     }
 
     _tips = _lyrics.isEmpty ? '暂无歌词' : '歌词已加载';
-    _lyricsMode = LyricsMode.none;
     notifyListeners();
   }
 
@@ -252,14 +280,16 @@ class LyricProvider with ChangeNotifier {
     }
 
     for (int i = startSearchIdx; i < _lyrics.length; i++) {
-      if (posMs >= _lyrics[i].startTime && (i == _lyrics.length - 1 || posMs < _lyrics[i + 1].startTime)) {
+      if (posMs >= _lyrics[i].startTime &&
+          (i == _lyrics.length - 1 || posMs < _lyrics[i + 1].startTime)) {
         newIndex = i;
         break;
       }
     }
 
     if (newIndex != _currentLineIndex) {
-      needsNotify = _setLineHighlightState(_currentLineIndex, false) || needsNotify;
+      needsNotify =
+          _setLineHighlightState(_currentLineIndex, false) || needsNotify;
     }
 
     // 2. Character Highlight Update
@@ -298,10 +328,8 @@ class LyricProvider with ChangeNotifier {
     return changed;
   }
 
-  void clear() {
-    _lyrics = [];
-    _currentLineIndex = -1;
-    _tips = '暂无歌词';
+  void clear({String? hash, String tips = '暂无歌词'}) {
+    _resetLyricsState(hash: hash, tips: tips);
     notifyListeners();
   }
 }

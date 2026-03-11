@@ -8,22 +8,53 @@ import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import '../../models/song.dart';
 import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/cover_image.dart';
+import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_action_row.dart';
+
+class PlaylistDetailRouteArgs {
+  const PlaylistDetailRouteArgs({required this.playlist});
+
+  final Playlist playlist;
+
+  int get playlistId => playlist.id;
+
+  String get lookupId => playlist.globalCollectionId ?? playlist.id.toString();
+
+  int? get trackListId => playlist.listid;
+
+  String? get trackListCreateGid => playlist.listCreateGid;
+
+  int? get trackListCreateUserid => playlist.listCreateUserid;
+
+  factory PlaylistDetailRouteArgs.fromPlaylist(Playlist playlist) {
+    return PlaylistDetailRouteArgs(playlist: playlist);
+  }
+}
 
 class PlaylistDetailView extends StatefulWidget {
-  final Playlist playlist;
-  const PlaylistDetailView({super.key, required this.playlist});
+  final PlaylistDetailRouteArgs routeArgs;
+
+  const PlaylistDetailView({super.key, required this.routeArgs});
 
   @override
   State<PlaylistDetailView> createState() => _PlaylistDetailViewState();
 }
 
-class _PlaylistDetailViewState extends State<PlaylistDetailView> with RefreshableState {
+class _PlaylistDetailViewState extends State<PlaylistDetailView>
+    with RefreshableState {
   static const int _pageSize = 200;
+
+  late final PlaylistDetailRouteArgs _routeArgs;
+
+  @override
+  String get refreshKey => 'playlist:${_routeArgs.lookupId}';
 
   List<Song>? _songs;
   Playlist? _detailedPlaylist;
@@ -34,14 +65,22 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   int _filteredInvalidSongCount = 0;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  bool _isResolvingAllSongs = false;
+  bool _hasScheduledWarmUp = false;
+  List<Song>? _allSongsCache;
+  Future<List<Song>>? _resolveAllSongsFuture;
+  AudioProvider? _playbackAppendProvider;
+  int? _playbackAppendSessionId;
 
   int get _totalSongCount {
     final detailedCount = _detailedPlaylist?.count ?? 0;
     if (detailedCount > 0) return detailedCount;
-    final playlistCount = widget.playlist.count;
+    final playlistCount = _routeArgs.playlist.count;
     if (playlistCount > 0) return playlistCount;
     return 0;
   }
+
+  String get _lookupId => _routeArgs.lookupId;
 
   bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
     final totalSongCount = _totalSongCount;
@@ -52,8 +91,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   @override
   void initState() {
     super.initState();
+    _routeArgs = widget.routeArgs;
     _userProvider = context.read<UserProvider>();
-    _userProvider.playlistSongsChangeNotifier.addListener(_onPlaylistSongsChanged);
+    _userProvider.playlistSongsChangeNotifier.addListener(
+      _onPlaylistSongsChanged,
+    );
     _loadData();
   }
 
@@ -64,7 +106,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
 
   @override
   void dispose() {
-    _userProvider.playlistSongsChangeNotifier.removeListener(_onPlaylistSongsChanged);
+    _userProvider.playlistSongsChangeNotifier.removeListener(
+      _onPlaylistSongsChanged,
+    );
     super.dispose();
   }
 
@@ -76,11 +120,18 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       _loadedSongEntryCount = 0;
       _filteredInvalidSongCount = 0;
       _hasMore = true;
+      _isLoadingMore = false;
+      _isResolvingAllSongs = false;
+      _hasScheduledWarmUp = false;
+      _allSongsCache = null;
+      _resolveAllSongsFuture = null;
+      _playbackAppendProvider = null;
+      _playbackAppendSessionId = null;
     });
 
     // Fetch detailed info to get creator and timestamps
     final detailJson = await MusicApi.getPlaylistDetail(
-      widget.playlist.globalCollectionId ?? widget.playlist.id.toString()
+      _routeArgs.trackListCreateGid ?? _lookupId,
     );
 
     if (detailJson != null && mounted) {
@@ -102,16 +153,30 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
           loadedCount: _loadedSongEntryCount,
           lastPageCount: result.sourceCount,
         );
+        if (!_hasMore) {
+          _allSongsCache = List.unmodifiable(songs);
+        }
       });
+
+      _scheduleBackgroundResolve();
     }
+  }
+
+  void _scheduleBackgroundResolve() {
+    if (_hasScheduledWarmUp || !_hasMore || !mounted) return;
+    _hasScheduledWarmUp = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_hasMore) return;
+      unawaited(_ensureAllSongsLoaded());
+    });
   }
 
   Future<PlaylistSongsParseResult> _fetchSongsPage(int page) {
     return MusicApi.getPlaylistSongsWithMetadata(
-      widget.playlist.globalCollectionId ?? widget.playlist.id.toString(),
-      listid: widget.playlist.listid,
-      listCreateGid: widget.playlist.listCreateGid,
-      listCreateUserid: widget.playlist.listCreateUserid,
+      _lookupId,
+      listid: _routeArgs.trackListId,
+      listCreateGid: _routeArgs.trackListCreateGid,
+      listCreateUserid: _routeArgs.trackListCreateUserid,
       page: page,
       pagesize: _pageSize,
     );
@@ -121,64 +186,179 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     if (_isLoadingMore || !_hasMore || !mounted) return;
 
     setState(() => _isLoadingMore = true);
-
-    final nextPage = _currentPage + 1;
-    final result = await _fetchSongsPage(nextPage);
-    final moreSongs = result.songs;
-    final pageEntryCount = result.sourceCount;
-
-    if (mounted) {
-      setState(() {
-        if (pageEntryCount > 0) {
-          _songs = [...?_songs, ...moreSongs];
-          _currentPage = nextPage;
-          _loadedSongEntryCount += pageEntryCount;
-          _filteredInvalidSongCount += result.filteredCount;
-          _hasMore = _computeHasMore(
-            loadedCount: _loadedSongEntryCount,
-            lastPageCount: pageEntryCount,
-          );
-        } else {
-          _hasMore = false;
-        }
-        _isLoadingMore = false;
-      });
+    try {
+      await _ensureAllSongsLoaded();
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 
-  Future<void> _preloadRemainingSongsForPlayback(
-    AudioProvider audioProvider, {
-    required int sessionId,
-    required int startPage,
-  }) async {
-    if (!_hasMore) return;
+  Future<List<Song>> _loadAllSongsForBatch() => _ensureAllSongsLoaded();
 
-    var page = startPage;
-    var loadedCount = _loadedSongEntryCount;
-    while (audioProvider.playlistSessionId == sessionId) {
-      final result = await _fetchSongsPage(page);
-      final moreSongs = result.songs;
-      final pageEntryCount = result.sourceCount;
-      if (pageEntryCount == 0) return;
-      if (result.filteredCount > 0) {
-        audioProvider.addFilteredInvalidSongsToActivePlaylist(result.filteredCount, sessionId: sessionId);
-      }
-      if (moreSongs.isNotEmpty &&
-          !audioProvider.appendSongsToActivePlaylist(moreSongs, sessionId: sessionId)) {
-        return;
-      }
-      loadedCount += pageEntryCount;
-      if (!_computeHasMore(loadedCount: loadedCount, lastPageCount: pageEntryCount)) {
-        return;
-      }
-      page++;
+  Future<List<Song>> _ensureAllSongsLoaded() async {
+    if (_allSongsCache != null) {
+      return _allSongsCache!;
     }
+
+    final existingFuture = _resolveAllSongsFuture;
+    if (existingFuture != null) {
+      return existingFuture;
+    }
+
+    if (_isLoading) return List<Song>.from(_songs ?? const <Song>[]);
+
+    if (!_hasMore) {
+      final songs = List<Song>.unmodifiable(_songs ?? const <Song>[]);
+      _allSongsCache = songs;
+      return songs;
+    }
+
+    if (mounted) {
+      setState(() => _isResolvingAllSongs = true);
+    } else {
+      _isResolvingAllSongs = true;
+    }
+
+    final future = _resolveAllSongsInternal();
+    _resolveAllSongsFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (mounted) {
+        setState(() => _isResolvingAllSongs = false);
+      } else {
+        _isResolvingAllSongs = false;
+      }
+    }
+  }
+
+  Future<List<Song>> _resolveAllSongsInternal() async {
+    final songs = [...?_songs];
+    var nextPage = _currentPage + 1;
+    var lastLoadedPage = _currentPage;
+    var loadedCount = _loadedSongEntryCount;
+    var filteredCount = _filteredInvalidSongCount;
+    var hasMore = _hasMore;
+
+    try {
+      while (hasMore) {
+        final result = await _fetchSongsPage(nextPage);
+        final pageEntryCount = result.sourceCount;
+        if (pageEntryCount == 0) {
+          hasMore = false;
+          break;
+        }
+
+        songs.addAll(result.songs);
+        lastLoadedPage = nextPage;
+        loadedCount += pageEntryCount;
+        filteredCount += result.filteredCount;
+        hasMore = _computeHasMore(
+          loadedCount: loadedCount,
+          lastPageCount: pageEntryCount,
+        );
+
+        final playbackProvider = _playbackAppendProvider;
+        final playbackSessionId = _playbackAppendSessionId;
+        if (playbackProvider != null && playbackSessionId != null) {
+          if (playbackProvider.playlistSessionId == playbackSessionId) {
+            if (result.filteredCount > 0) {
+              playbackProvider.addFilteredInvalidSongsToActivePlaylist(
+                result.filteredCount,
+                sessionId: playbackSessionId,
+              );
+            }
+            if (result.songs.isNotEmpty &&
+                !playbackProvider.appendSongsToActivePlaylist(
+                  result.songs,
+                  sessionId: playbackSessionId,
+                )) {
+              _playbackAppendProvider = null;
+              _playbackAppendSessionId = null;
+            }
+          } else {
+            _playbackAppendProvider = null;
+            _playbackAppendSessionId = null;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _songs = List<Song>.from(songs);
+            _currentPage = lastLoadedPage;
+            _loadedSongEntryCount = loadedCount;
+            _filteredInvalidSongCount = filteredCount;
+            _hasMore = hasMore;
+          });
+        }
+        nextPage++;
+      }
+
+      final resolvedSongs = List<Song>.unmodifiable(songs);
+      _allSongsCache = resolvedSongs;
+      _resolveAllSongsFuture = Future.value(resolvedSongs);
+
+      if (mounted) {
+        setState(() {
+          _songs = List<Song>.from(songs);
+          _currentPage = lastLoadedPage;
+          _loadedSongEntryCount = loadedCount;
+          _filteredInvalidSongCount = filteredCount;
+          _hasMore = hasMore;
+        });
+      }
+
+      return resolvedSongs;
+    } catch (_) {
+      _resolveAllSongsFuture = null;
+      rethrow;
+    }
+  }
+
+  void _attachPlaybackPrefetch(AudioProvider audioProvider, int sessionId) {
+    _playbackAppendProvider = audioProvider;
+    _playbackAppendSessionId = sessionId;
+  }
+
+  void _playPlaylist() {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前列表暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithPlaylistSongs(songs[firstPlayableIndex]));
+  }
+
+  Future<void> _replacePlaybackWithPlaylistSongs(Song song) async {
+    final songs = _songs ?? [];
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前列表暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
+    final sessionId = audioProvider.playlistSessionId;
+    if (_filteredInvalidSongCount > 0) {
+      audioProvider.addFilteredInvalidSongsToActivePlaylist(
+        _filteredInvalidSongCount,
+        sessionId: sessionId,
+      );
+    }
+    _attachPlaybackPrefetch(audioProvider, sessionId);
+    unawaited(_ensureAllSongsLoaded());
   }
 
   void _onPlaylistSongsChanged() {
     if (!mounted) return;
     final changedListId = _userProvider.playlistSongsChangeNotifier.value;
-    if (changedListId == widget.playlist.id || changedListId == widget.playlist.listid) {
+    if (changedListId == _routeArgs.playlistId ||
+        changedListId == _routeArgs.trackListId) {
       _loadData();
     }
   }
@@ -193,301 +373,265 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final userProvider = context.watch<UserProvider>();
-    final playlist = _detailedPlaylist ?? widget.playlist;
-    final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
+    final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
+      (provider) => provider.settings['replacePlaylist'] ?? false,
+    );
+    final playlist = _detailedPlaylist ?? _routeArgs.playlist;
+    final isFavorited = userProvider.isPlaylistFavorited(
+      playlist.id,
+      globalId: playlist.listCreateGid,
+    );
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
+    final songs = _songs ?? const <Song>[];
+    final batchPreparing = _isResolvingAllSongs && _hasMore;
+    final secondaryAction = userProvider.isAuthenticated && !isCreated
+        ? DetailPageSecondaryAction(
+            icon: isFavorited
+                ? CupertinoIcons.heart_fill
+                : CupertinoIcons.heart,
+            label: '收藏',
+            emphasized: isFavorited,
+            onTap: () async {
+              bool success;
+              if (isFavorited) {
+                success = await userProvider.unfavoritePlaylist(
+                  playlist.id,
+                  globalId: playlist.listCreateGid,
+                );
+                if (context.mounted) {
+                  if (success) {
+                    CustomToast.success(context, '已取消收藏');
+                  } else {
+                    CustomToast.error(context, '操作失败');
+                  }
+                }
+              } else {
+                success = await userProvider.favoritePlaylist(
+                  playlist.originalId,
+                  playlist.name,
+                  listCreateUserid: playlist.listCreateUserid,
+                  listCreateGid: playlist.listCreateGid,
+                  listCreateListid: playlist.listCreateListid,
+                );
+                if (context.mounted) {
+                  if (success) {
+                    CustomToast.success(context, '已收藏歌单');
+                  } else {
+                    CustomToast.error(context, '收藏失败');
+                  }
+                }
+              }
+            },
+          )
+        : null;
 
     return SongListScaffold(
-      songs: _songs ?? [],
+      songs: songs,
       isLoading: _isLoading,
       parentPlaylist: playlist,
-      sourceId: playlist.id,
       onLoadMore: _loadMore,
       hasMore: _hasMore,
-      isLoadingMore: _isLoadingMore,
+      isLoadingMore: _isLoadingMore || batchPreparing,
+      enableDefaultDoubleTapPlay: true,
+      onSongDoubleTapPlay: replacePlaylistEnabled
+          ? _replacePlaybackWithPlaylistSongs
+          : null,
       headers: [
-        SliverAppBar(
-          backgroundColor: theme.scaffoldBackgroundColor,
-          surfaceTintColor: Colors.transparent,
-          expandedHeight: 180, 
-          pinned: true,
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          flexibleSpace: FlexibleSpaceBar(
-            titlePadding: EdgeInsets.zero,
-            centerTitle: false,
-            expandedTitleScale: 1.0,
-            title: LayoutBuilder(
-              builder: (context, constraints) {
-                final double settings = constraints.maxHeight;
-                final bool isCollapsed = settings <= kToolbarHeight + 20;
-                
-                return AnimatedOpacity(
-                  duration: const Duration(milliseconds: 200),
-                  opacity: isCollapsed ? 1.0 : 0.0,
-                  child: Container(
-                    height: kToolbarHeight,
-                    padding: const EdgeInsets.only(left: 20),
-                    child: Row(
-                      children: [
-                        CoverImage(
-                          url: playlist.pic,
-                          width: 32,
-                          height: 32,
-                          borderRadius: 6,
-                          showShadow: false,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            playlist.name,
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+        DetailPageSliverHeader(
+          typeLabel: 'PLAYLIST',
+          title: playlist.name,
+          expandedHeight: 169,
+          expandedCover: CoverImage(
+            url: playlist.pic,
+            width: 136,
+            height: 136,
+            borderRadius: 18,
+          ),
+          collapsedCover: CoverImage(
+            url: playlist.pic,
+            width: 32,
+            height: 32,
+            borderRadius: 6,
+            showShadow: false,
+          ),
+          detailChildren: [
+            if (playlist.nickname.isNotEmpty)
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (playlist.userPic.isNotEmpty)
+                    ClipOval(
+                      child: CoverImage(
+                        url: playlist.userPic,
+                        width: 20,
+                        height: 20,
+                        borderRadius: 0,
+                        showShadow: false,
+                      ),
+                    )
+                  else
+                    Icon(
+                      CupertinoIcons.person_circle_fill,
+                      size: 20,
+                      color: theme.colorScheme.primary.withAlpha(180),
+                    ),
+                  Text(
+                    playlist.nickname,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
                     ),
                   ),
-                );
-              },
-            ),
-            background: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  CoverImage(
-                    url: playlist.pic,
-                    width: 130,
-                    height: 130,
-                    borderRadius: 16,
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'PLAYLIST',
-                          style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2.0,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          playlist.name,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        if (playlist.nickname.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
-                              children: [
-                                if (playlist.userPic.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: ClipOval(
-                                      child: CoverImage(
-                                        url: playlist.userPic,
-                                        width: 20,
-                                        height: 20,
-                                        borderRadius: 0,
-                                        showShadow: false,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 8.0),
-                                    child: Icon(CupertinoIcons.person_circle_fill, size: 20, color: theme.colorScheme.primary.withAlpha(180)),
-                                  ),
-                                Text(
-                                  playlist.nickname,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  '${_formatTimestamp(playlist.createTime)} 创建',
-                                  style: TextStyle(
-                                    color: theme.colorScheme.onSurface.withAlpha(100),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        if (playlist.intro.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  playlist.intro,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 12,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Row(
-                          children: [
-                            _buildInfoChip(context, CupertinoIcons.music_note_2, '${playlist.count} 首歌曲'),
-                            const Spacer(),
-                            if (userProvider.isAuthenticated && !isCreated) ...[
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  bool success;
-                                  if (isFavorited) {
-                                    success = await userProvider.unfavoritePlaylist(playlist.id, globalId: playlist.listCreateGid);
-                                    if (context.mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '已取消收藏');
-                                      } else {
-                                        CustomToast.error(context, '操作失败');
-                                      }
-                                    }
-                                  } else {
-                                    success = await userProvider.favoritePlaylist(
-                                      playlist.originalId, 
-                                      playlist.name,
-                                      listCreateUserid: playlist.listCreateUserid,
-                                      listCreateGid: playlist.listCreateGid,
-                                      listCreateListid: playlist.listCreateListid,
-                                    );
-                                    if (context.mounted) {
-                                      if (success) {
-                                        CustomToast.success(context, '已收藏歌单');
-                                      } else {
-                                        CustomToast.error(context, '收藏失败');
-                                      }
-                                    }
-                                  }
-                                },
-                                icon: Icon(
-                                  isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart, 
-                                  size: 16,
-                                  color: isFavorited ? Colors.red : null,
-                                ),
-                                label: Text(
-                                  '收藏', 
-                                  style: TextStyle(
-                                    fontSize: 13, 
-                                    fontWeight: FontWeight.w700,
-                                    color: isFavorited ? Colors.red : null,
-                                  )
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  side: BorderSide(
-                                    color: isFavorited ? Colors.red.withAlpha(100) : theme.colorScheme.outlineVariant,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  minimumSize: const Size(0, 36),
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                            ],
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                final songs = _songs ?? [];
-                                if (songs.isNotEmpty) {
-                                  final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-                                  if (firstPlayableIndex == -1) {
-                                    CustomToast.error(context, '当前列表暂无可播放歌曲');
-                                    return;
-                                  }
-                                  final audioProvider = context.read<AudioProvider>();
-                                  unawaited(audioProvider.playSong(songs[firstPlayableIndex], playlist: songs));
-                                  final sessionId = audioProvider.playlistSessionId;
-                                  if (_filteredInvalidSongCount > 0) {
-                                    audioProvider.addFilteredInvalidSongsToActivePlaylist(
-                                      _filteredInvalidSongCount,
-                                      sessionId: sessionId,
-                                    );
-                                  }
-                                  unawaited(_preloadRemainingSongsForPlayback(
-                                    audioProvider,
-                                    sessionId: sessionId,
-                                    startPage: _currentPage + 1,
-                                  ));
-                                }
-                              },
-                              icon: Icon(CupertinoIcons.play_fill, size: 16, color: theme.colorScheme.primary),
-                              label: Text('播放', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: theme.colorScheme.primary)),
-                              style: OutlinedButton.styleFrom(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                side: BorderSide(color: theme.colorScheme.primary.withAlpha(100)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                minimumSize: const Size(0, 36),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  Text(
+                    '${_formatTimestamp(playlist.createTime)} 创建',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(100),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _buildInfoSmall(
+                  context,
+                  CupertinoIcons.music_note_2,
+                  '${playlist.count}',
+                ),
+                for (final tag in _parseTags(playlist.tags))
+                  _buildTag(context, tag),
+              ],
             ),
+          ],
+          actions: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: _playPlaylist,
+            songs: songs,
+            sourceId: playlist.id,
+            onResolveSongs: _loadAllSongsForBatch,
+            isBatchPreparing: batchPreparing,
+            secondaryAction: secondaryAction,
           ),
         ),
+        if (playlist.intro.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '歌单介绍',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    playlist.intro,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 12,
+                    ),
+                  ),
+                  if (playlist.intro.length > 80)
+                    InkWell(
+                      onTap: () {
+                        CustomDialog.show(
+                          context,
+                          title: '歌单介绍',
+                          content: playlist.intro,
+                          confirmText: '确定',
+                          showCancel: false,
+                          width: 600,
+                        );
+                      },
+                      hoverColor: Colors.transparent,
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          '查看详情',
+                          style: TextStyle(
+                            color: theme.colorScheme.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildInfoChip(BuildContext context, IconData icon, String label) {
+  List<String> _parseTags(String rawTags) {
+    return rawTags
+        .split(',')
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Widget _buildTag(BuildContext context, String label) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withAlpha(15),
-        borderRadius: BorderRadius.circular(8),
+        color: theme.colorScheme.primary.withAlpha(20),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: theme.colorScheme.primary.withAlpha(50),
+          width: 0.5,
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoSmall(BuildContext context, IconData icon, String label) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          icon,
+          size: 12,
+          color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

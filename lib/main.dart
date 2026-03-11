@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -18,11 +20,15 @@ import 'package:echomusic/providers/selection_provider.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
 import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
+import 'ui/widgets/app_shortcuts.dart';
 import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
+import 'utils/player_shortcut_actions.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+bool get _supportsSystemWideHotKeys =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 void main() async {
   HttpOverrides.global = MyHttpOverrides();
@@ -55,7 +61,9 @@ void main() async {
 
   final instance = FlutterSingleInstance();
   if (!(await instance.isFirstInstance())) {
-    LoggerService.i('Another instance is running. Requesting focus and exiting.');
+    LoggerService.i(
+      'Another instance is running. Requesting focus and exiting.',
+    );
     await instance.focus();
     exit(0);
   }
@@ -64,10 +72,14 @@ void main() async {
 
   MediaKit.ensureInitialized();
 
+  if (_supportsSystemWideHotKeys) {
+    await hotKeyManager.unregisterAll();
+  }
+
   if (!Platform.isWindows) {
     ProcessSignal.sigint.watch().listen((_) {
       unawaited(WakelockPlus.disable());
-      ServerOrchestrator.stop();
+      unawaited(ServerOrchestrator.stop(reason: 'ProcessSignal.sigint'));
       exit(0);
     });
   }
@@ -96,11 +108,22 @@ void main() async {
           create: (_) => LyricProvider(),
           update: (_, p, l) => l!..setPersistenceProvider(p),
         ),
-        ChangeNotifierProxyProvider2<PersistenceProvider, LyricProvider, AudioProvider>(
+        ChangeNotifierProxyProvider2<
+          PersistenceProvider,
+          LyricProvider,
+          AudioProvider
+        >(
           create: (_) => AudioProvider(),
-          update: (_, p, l, a) => a!..setPersistenceProvider(p)..setLyricProvider(l),
+          update: (_, p, l, a) => a!
+            ..setPersistenceProvider(p)
+            ..setLyricProvider(l),
         ),
-        ChangeNotifierProxyProvider3<PersistenceProvider, RefreshProvider, AudioProvider, UserProvider>(
+        ChangeNotifierProxyProvider3<
+          PersistenceProvider,
+          RefreshProvider,
+          AudioProvider,
+          UserProvider
+        >(
           create: (_) => UserProvider(),
           update: (_, p, r, a, u) => u!
             ..setPersistenceProvider(p)
@@ -123,11 +146,66 @@ class WindowHandler extends StatefulWidget {
 
 class _WindowHandlerState extends State<WindowHandler>
     with WindowListener, TrayListener, WidgetsBindingObserver {
-  static final _lifecycleChannel =
-      MethodChannel('com.hoowhoami.echomusic/app_lifecycle');
+  static final _lifecycleChannel = MethodChannel(
+    'com.hoowhoami.echomusic/app_lifecycle',
+  );
+  bool _isExiting = false;
+  int _hotKeySyncVersion = 0;
+  bool? _globalHotKeysEnabled;
+  String? _globalHotKeysSignature;
+  PersistenceProvider? _persistenceProvider;
+
+  void _logHotKeyError(String message, Object error, StackTrace stackTrace) {
+    LoggerService.e('[hotkey] $message', error, stackTrace);
+  }
 
   void _logTrayError(String message, Object error, StackTrace stackTrace) {
     LoggerService.e('[tray] $message', error, stackTrace);
+  }
+
+  bool _resolveGlobalHotKeysEnabled(PersistenceProvider persistence) {
+    return persistence.settings['globalShortcutsEnabled'] ?? false;
+  }
+
+  String _resolveGlobalHotKeysSignature(PersistenceProvider persistence) {
+    final bindings = persistence.settings[AppShortcuts.bindingsSettingKey];
+    if (bindings is! Map) return '{}';
+    return jsonEncode(bindings);
+  }
+
+  void _handlePersistenceChanged() {
+    final persistence = _persistenceProvider;
+    if (persistence == null || !persistence.isLoaded) return;
+
+    final enabled = _resolveGlobalHotKeysEnabled(persistence);
+    final signature = _resolveGlobalHotKeysSignature(persistence);
+    if (_globalHotKeysEnabled == enabled &&
+        _globalHotKeysSignature == signature) {
+      return;
+    }
+
+    unawaited(_syncGlobalHotKeys(enabled: enabled, signature: signature));
+  }
+
+  void _bindPersistenceProvider() {
+    final persistence = context.read<PersistenceProvider>();
+    if (identical(_persistenceProvider, persistence)) return;
+
+    _persistenceProvider?.removeListener(_handlePersistenceChanged);
+    _persistenceProvider = persistence;
+    persistence.addListener(_handlePersistenceChanged);
+    _handlePersistenceChanged();
+  }
+
+  Future<void> _runBestEffortExitStep(
+    String stepName,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+    } catch (e, stackTrace) {
+      LoggerService.e('[Exit] $stepName failed during exit', e, stackTrace);
+    }
   }
 
   Future<void> _showWindowFromTray() async {
@@ -146,11 +224,99 @@ class _WindowHandlerState extends State<WindowHandler>
     }
   }
 
-  void _prepareForAppExit() {
+  Future<void> _prepareForAppExit() async {
+    final audioProvider = context.read<AudioProvider>();
+
+    await _runBestEffortExitStep(
+      '_unregisterGlobalHotKeys',
+      _unregisterGlobalHotKeys,
+    );
+
+    await _runBestEffortExitStep(
+      'audioProvider.prepareForExit',
+      audioProvider.prepareForExit,
+    );
+
+    await _runBestEffortExitStep(
+      'ServerOrchestrator.stop',
+      () => ServerOrchestrator.stop(reason: 'app exit'),
+    );
+  }
+
+  Future<void> _performFullAppExit() async {
+    if (_isExiting) {
+      return;
+    }
+
+    _isExiting = true;
+
     try {
-      context.read<AudioProvider>().prepareForExit();
-    } catch (_) {}
-    ServerOrchestrator.stop();
+      await _prepareForAppExit();
+      await _runBestEffortExitStep('trayManager.destroy', trayManager.destroy);
+      await _runBestEffortExitStep(
+        'windowManager.destroy',
+        windowManager.destroy,
+      );
+      exit(0);
+    } finally {
+      _isExiting = false;
+    }
+  }
+
+  Future<void> _registerGlobalHotKeys() async {
+    if (!_supportsSystemWideHotKeys) return;
+
+    final bindings = _persistenceProvider == null
+        ? AppShortcuts.defaultBindings()
+        : AppShortcuts.bindingsFromSettings(_persistenceProvider!.settings);
+
+    for (final command in AppShortcutCommand.values) {
+      final hotKey = AppShortcuts.hotKeyFor(command, null, bindings);
+
+      try {
+        await hotKeyManager.register(
+          hotKey,
+          keyDownHandler: (_) {
+            if (!mounted) return;
+            unawaited(PlayerShortcutActions.invoke(context, command));
+          },
+        );
+      } catch (e, stackTrace) {
+        _logHotKeyError(
+          'Failed to register ${AppShortcuts.labelFor(command, null, bindings)}',
+          e,
+          stackTrace,
+        );
+      }
+    }
+  }
+
+  Future<void> _syncGlobalHotKeys({
+    required bool enabled,
+    required String signature,
+  }) async {
+    if (!_supportsSystemWideHotKeys) return;
+
+    final syncVersion = ++_hotKeySyncVersion;
+    _globalHotKeysEnabled = enabled;
+    _globalHotKeysSignature = signature;
+
+    await _unregisterGlobalHotKeys();
+    if (!enabled || syncVersion != _hotKeySyncVersion) {
+      return;
+    }
+
+    await _registerGlobalHotKeys();
+  }
+
+  Future<void> _unregisterGlobalHotKeys() async {
+    if (!_supportsSystemWideHotKeys) return;
+
+    try {
+      await hotKeyManager.unregisterAll();
+    } catch (e, stackTrace) {
+      _logHotKeyError('Failed to unregister global hotkeys', e, stackTrace);
+    }
   }
 
   @override
@@ -166,11 +332,17 @@ class _WindowHandlerState extends State<WindowHandler>
     }
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindPersistenceProvider();
+  }
+
   // Called by Swift's applicationShouldTerminate (Dock right-click → Quit,
   // Cmd+Q) to let Flutter stop mpv before the process exits.
   Future<void> _onLifecycleCall(MethodCall call) async {
     if (call.method == 'prepareToTerminate') {
-      _prepareForAppExit();
+      await _prepareForAppExit();
     }
   }
 
@@ -208,6 +380,8 @@ class _WindowHandlerState extends State<WindowHandler>
 
   @override
   void dispose() {
+    _persistenceProvider?.removeListener(_handlePersistenceChanged);
+    unawaited(_unregisterGlobalHotKeys());
     WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     trayManager.removeListener(this);
@@ -217,7 +391,7 @@ class _WindowHandlerState extends State<WindowHandler>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      _prepareForAppExit();
+      unawaited(_prepareForAppExit());
     }
   }
 
@@ -227,10 +401,7 @@ class _WindowHandlerState extends State<WindowHandler>
     final closeBehavior = persistence.settings['closeBehavior'] ?? 'tray';
 
     if (closeBehavior == 'exit') {
-      _prepareForAppExit();
-      await trayManager.destroy();
-      await windowManager.destroy();
-      exit(0);
+      await _performFullAppExit();
     } else {
       await windowManager.hide();
     }
@@ -273,12 +444,7 @@ class _WindowHandlerState extends State<WindowHandler>
     if (menuItem.key == 'show_window') {
       await _showWindowFromTray();
     } else if (menuItem.key == 'exit_app') {
-      // Stop mpv player before destroying the window.
-      // mpv runs on a native thread; if Flutter tears down while mpv is
-      // playing, the native thread accesses freed memory → EXC_BAD_ACCESS.
-      _prepareForAppExit();
-      await trayManager.destroy();
-      await windowManager.destroy();
+      await _performFullAppExit();
     }
   }
 
@@ -299,7 +465,8 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Selector<PersistenceProvider, String>(
-      selector: (_, provider) => provider.settings['theme'] as String? ?? 'auto',
+      selector: (_, provider) =>
+          provider.settings['theme'] as String? ?? 'auto',
       builder: (context, theme, child) {
         return MaterialApp(
           title: 'EchoMusic',

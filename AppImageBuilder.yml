@@ -43,6 +43,7 @@ AppDir:
       - libjsoncpp25
       - libayatana-appindicator3-1
       - libmpv1
+      - libkeybinder-3.0-0
       - libgdk-pixbuf-2.0-0
       - libgdk-pixbuf2.0-bin
       - librsvg2-common

@@ -7,7 +7,17 @@ import '../../providers/user_provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../theme/app_theme.dart';
+import 'app_menu.dart';
 import 'custom_toast.dart';
+import 'playlist_picker_dialog.dart';
+
+enum _BatchActionMenuResult {
+  addToPlaylist,
+  removeFromPlaylist,
+  playNow,
+  addToFavorite,
+  cancelSelection,
+}
 
 class BatchActionBar extends StatefulWidget {
   const BatchActionBar({super.key});
@@ -156,11 +166,19 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                 onPressed: selectionProvider.hasSelection ? () => _playSelected(context, selectionProvider) : null,
                 id: 'play',
               ),
-              _buildIconButton(
-                icon: CupertinoIcons.add,
-                label: '添加',
-                onPressed: selectionProvider.hasSelection ? () => _showBatchActions(context, selectionProvider) : null,
-                id: 'add',
+              Builder(
+                builder: (buttonContext) => _buildIconButton(
+                  icon: CupertinoIcons.add,
+                  label: '添加',
+                  onPressed: selectionProvider.hasSelection
+                      ? () => _showBatchActions(
+                          context,
+                          selectionProvider,
+                          buttonContext,
+                        )
+                      : null,
+                  id: 'add',
+                ),
               ),
               _buildIconButton(
                 icon: CupertinoIcons.clear,
@@ -246,229 +264,118 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
     context.read<AudioProvider>().playSong(songs[firstPlayableIndex], playlist: songs);
   }
 
-  void _showBatchActions(BuildContext context, SelectionProvider selectionProvider) {
-    final theme = Theme.of(context);
-    final modernTheme = theme.extension<AppModernTheme>()!;
+  Future<void> _showBatchActions(
+    BuildContext context,
+    SelectionProvider selectionProvider,
+    BuildContext anchorContext,
+  ) async {
     final userProvider = context.read<UserProvider>();
     final isAuthenticated = userProvider.isAuthenticated;
+    final canRemoveFromPlaylist = isAuthenticated &&
+        selectionProvider.sourcePlaylistId != null &&
+        userProvider.isCreatedPlaylist(selectionProvider.sourcePlaylistId);
 
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'BatchActions',
-      barrierColor: Colors.black.withAlpha(40),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, animation, secondaryAnimation) => Center(
-        child: ScaleTransition(
-          scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-          child: FadeTransition(
-            opacity: animation,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 400),
-              margin: const EdgeInsets.all(24),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Container(
-                  decoration: BoxDecoration(
-                    // FORCE OPAQUE
-                    color: Color.fromARGB(255, 
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).r * 255).round(),
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).g * 255).round(),
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).b * 255).round(),
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: theme.colorScheme.primary.withAlpha(30),
-                      width: 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(30),
-                        blurRadius: 30,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: SafeArea(
-                      top: false,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 4,
-                            margin: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onSurface.withAlpha(40),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.primary.withAlpha(30),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Icon(
-                                    CupertinoIcons.layers_alt_fill,
-                                    size: 16,
-                                    color: theme.colorScheme.primary,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '批量操作',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w900,
-                                          color: theme.colorScheme.onSurface,
-                                          letterSpacing: -0.5,
-                                        ),
-                                      ),
-                                      Text(
-                                        '已选择 ${selectionProvider.selectedCount} 首歌曲',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                CupertinoButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => Navigator.pop(context),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.onSurface.withAlpha(20),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      CupertinoIcons.xmark,
-                                      size: 14,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: ListView(
-                              shrinkWrap: true,
-                              padding: const EdgeInsets.only(bottom: 12),
-                              physics: const NeverScrollableScrollPhysics(),
-                              children: [
-                                if (isAuthenticated)
-                                  _buildImprovedActionItem(
-                                    context,
-                                    icon: CupertinoIcons.add_circled,
-                                    title: '添加到歌单',
-                                    subtitle: '将选中的歌曲添加到您的收藏歌单',
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                      _showAddToPlaylistDialog(context, selectionProvider);
-                                    },
-                                  ),
-                                if (isAuthenticated && selectionProvider.sourcePlaylistId != null && userProvider.isCreatedPlaylist(selectionProvider.sourcePlaylistId))
-                                  _buildImprovedActionItem(
-                                    context,
-                                    icon: CupertinoIcons.trash,
-                                    title: '从本歌单删除',
-                                    subtitle: '将选中的歌曲从当前歌单中移除',
-                                    onTap: () async {
-                                      Navigator.pop(context);
-                                      final songs = selectionProvider.selectedSongs;
-                                      final count = await userProvider.removeSongsFromPlaylist(selectionProvider.sourcePlaylistId, songs);
-                                      selectionProvider.exitSelectionMode();
-                                      if (context.mounted) {
-                                        if (count > 0) {
-                                          CustomToast.success(context, '已从歌单中删除 $count 首歌曲');
-                                        } else {
-                                          CustomToast.error(context, '删除失败');
-                                        }
-                                      }
-                                    },
-                                    isDestructive: true,
-                                  ),
-                                _buildImprovedActionItem(
-                                  context,
-                                  icon: CupertinoIcons.play_circle,
-                                  title: '立即播放',
-                                  subtitle: '替换当前播放列表并开始播放',
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    selectionProvider.exitSelectionMode();
-                                    _playSongs(context, selectionProvider.selectedSongs);
-                                  },
-                                ),
-                                if (isAuthenticated)
-                                  _buildImprovedActionItem(
-                                    context,
-                                    icon: CupertinoIcons.heart_fill,
-                                    title: '添加到喜欢',
-                                    subtitle: '收藏到“我喜欢的音乐”',
-                                    onTap: () async {
-                                      Navigator.pop(context);
-                                      final persistenceProvider = context.read<PersistenceProvider>();
-                                      final userProvider = context.read<UserProvider>();
-                                      final songs = selectionProvider.selectedSongs;
-                                      for (final song in songs) {
-                                        if (!persistenceProvider.isFavorite(song)) {
-                                          await persistenceProvider.toggleFavorite(song, userProvider: userProvider);
-                                        }
-                                      }
-                                      selectionProvider.exitSelectionMode();
-                                      if (context.mounted) {
-                                        CustomToast.success(context, '已添加 ${songs.length} 首歌曲到我喜欢的');
-                                      }
-                                    },
-                                  ),
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  child: Divider(height: 1),
-                                ),
-                                _buildImprovedActionItem(
-                                  context,
-                                  icon: CupertinoIcons.multiply_circle,
-                                  title: '取消选择',
-                                  subtitle: '退出批量操作模式',
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    selectionProvider.exitSelectionMode();
-                                  },
-                                  isDestructive: true,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+    final result = await showAppContextMenu<_BatchActionMenuResult>(
+      context,
+      anchorContext: anchorContext,
+      alignRightToAnchor: true,
+      width: 320,
+      estimatedHeight: canRemoveFromPlaylist
+          ? 360
+          : (isAuthenticated ? 320 : 220),
+      menuBuilder: (menuContext, close) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AppMenuSectionLabel('批量操作 · 已选 ${selectionProvider.selectedCount} 首'),
+          if (isAuthenticated)
+            _buildBatchMenuItem(
+              menuContext,
+              icon: CupertinoIcons.add_circled,
+              title: '添加到歌单',
+              subtitle: '将选中的歌曲添加到您的收藏歌单',
+              onTap: () => close(_BatchActionMenuResult.addToPlaylist),
+            ),
+          if (canRemoveFromPlaylist)
+            _buildBatchMenuItem(
+              menuContext,
+              icon: CupertinoIcons.trash,
+              title: '从本歌单删除',
+              subtitle: '将选中的歌曲从当前歌单中移除',
+              onTap: () => close(_BatchActionMenuResult.removeFromPlaylist),
+              isDestructive: true,
+            ),
+          _buildBatchMenuItem(
+            menuContext,
+            icon: CupertinoIcons.play_circle,
+            title: '立即播放',
+            subtitle: '替换当前播放列表并开始播放',
+            onTap: () => close(_BatchActionMenuResult.playNow),
+          ),
+          if (isAuthenticated)
+            _buildBatchMenuItem(
+              menuContext,
+              icon: CupertinoIcons.heart_fill,
+              title: '添加到喜欢',
+              subtitle: '收藏到“我喜欢的音乐”',
+              onTap: () => close(_BatchActionMenuResult.addToFavorite),
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Divider(
+              height: 1,
+              color: Theme.of(menuContext)
+                  .colorScheme
+                  .outlineVariant
+                  .withAlpha(120),
             ),
           ),
-        ),
+          _buildBatchMenuItem(
+            menuContext,
+            icon: CupertinoIcons.multiply_circle,
+            title: '取消选择',
+            subtitle: '退出批量操作模式',
+            onTap: () => close(_BatchActionMenuResult.cancelSelection),
+            isDestructive: true,
+          ),
+        ],
       ),
     );
+
+    if (!context.mounted || result == null) return;
+
+    switch (result) {
+      case _BatchActionMenuResult.addToPlaylist:
+        await _addSelectedToPlaylist(context, selectionProvider);
+        break;
+      case _BatchActionMenuResult.removeFromPlaylist:
+        final songs = selectionProvider.selectedSongs;
+        final count = await userProvider.removeSongsFromPlaylist(
+          selectionProvider.sourcePlaylistId,
+          songs,
+        );
+        if (!context.mounted) return;
+        selectionProvider.exitSelectionMode();
+        if (count > 0) {
+          CustomToast.success(context, '已从歌单中删除 $count 首歌曲');
+        } else {
+          CustomToast.error(context, '删除失败');
+        }
+        break;
+      case _BatchActionMenuResult.playNow:
+        selectionProvider.exitSelectionMode();
+        _playSongs(context, selectionProvider.selectedSongs);
+        break;
+      case _BatchActionMenuResult.addToFavorite:
+        await _addSelectedToFavorite(context, selectionProvider);
+        break;
+      case _BatchActionMenuResult.cancelSelection:
+        selectionProvider.exitSelectionMode();
+        break;
+    }
   }
 
-  Widget _buildImprovedActionItem(
+  Widget _buildBatchMenuItem(
     BuildContext context, {
     required IconData icon,
     required String title,
@@ -478,80 +385,58 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
   }) {
     final theme = Theme.of(context);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(16),
-            hoverColor: isDestructive 
-              ? theme.colorScheme.error.withAlpha(20) 
-              : theme.colorScheme.primary.withAlpha(20),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isDestructive
-                          ? theme.colorScheme.error.withAlpha(30)
-                          : theme.colorScheme.primary.withAlpha(20),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 22,
-                      color: isDestructive
-                          ? theme.colorScheme.error
-                          : theme.colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: isDestructive ? theme.colorScheme.error : theme.colorScheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 14,
-                    color: theme.colorScheme.onSurface.withAlpha(40),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    return AppMenuItemButton(
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: (isDestructive
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.primary)
+              .withAlpha(16),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: isDestructive
+              ? theme.colorScheme.error
+              : theme.colorScheme.primary,
         ),
       ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: isDestructive
+              ? theme.colorScheme.error
+              : theme.colorScheme.onSurface,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Icon(
+        CupertinoIcons.chevron_right,
+        size: 13,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      isDestructive: isDestructive,
+      showCheckmark: false,
+      onPressed: onTap,
     );
   }
 
-  void _showAddToPlaylistDialog(BuildContext context, SelectionProvider selectionProvider) {
-    final theme = Theme.of(context);
-    final modernTheme = theme.extension<AppModernTheme>()!;
+  Future<void> _addSelectedToPlaylist(
+    BuildContext context,
+    SelectionProvider selectionProvider,
+  ) async {
     final userProvider = context.read<UserProvider>();
     final myPlaylists = userProvider.createdPlaylists;
 
@@ -560,202 +445,42 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
       return;
     }
 
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'AddToPlaylist',
-      barrierColor: Colors.black.withAlpha(40),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, animation, secondaryAnimation) => Center(
-        child: ScaleTransition(
-          scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-          child: FadeTransition(
-            opacity: animation,
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 550),
-              margin: const EdgeInsets.all(24),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Container(
-                  decoration: BoxDecoration(
-                    // FORCE OPAQUE
-                    color: Color.fromARGB(255, 
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).r * 255).round(),
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).g * 255).round(),
-                      ((modernTheme.modalColor ?? theme.colorScheme.surface).b * 255).round(),
-                    ),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: theme.colorScheme.primary.withAlpha(30),
-                      width: 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(30),
-                        blurRadius: 30,
-                        offset: const Offset(0, 10),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 4,
-                          margin: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.onSurface.withAlpha(40),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primary.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  CupertinoIcons.music_note_list,
-                                  size: 16,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  '添加到歌单',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: theme.colorScheme.onSurface,
-                                    letterSpacing: -0.5,
-                                  ),
-                                ),
-                              ),
-                              MouseRegion(
-                                cursor: SystemMouseCursors.click,
-                                child: CupertinoButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => Navigator.pop(context),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.onSurface.withAlpha(20),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      CupertinoIcons.xmark,
-                                      size: 14,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Flexible(
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            itemCount: myPlaylists.length,
-                            itemBuilder: (context, index) {
-                              final p = myPlaylists[index];
-                              return Container(
-                                margin: const EdgeInsets.symmetric(vertical: 2),
-                                child: MouseRegion(
-                                  cursor: SystemMouseCursors.click,
-                                  child: InkWell(
-                                    onTap: () async {
-                                      Navigator.pop(context);
-                                      final songs = selectionProvider.selectedSongs;
-                                      final count = await userProvider.addSongsToPlaylist(p['listid'] ?? p['specialid'], songs);
-                                      selectionProvider.exitSelectionMode();
-                                      if (context.mounted) {
-                                        if (count > 0) {
-                                          CustomToast.success(context, '成功添加 $count 首歌曲到歌单');
-                                        } else {
-                                          CustomToast.error(context, '添加失败');
-                                        }
-                                      }
-                                    },
-                                    borderRadius: BorderRadius.circular(16),
-                                    hoverColor: theme.colorScheme.primary.withAlpha(20),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 44,
-                                            height: 44,
-                                            decoration: BoxDecoration(
-                                              color: theme.colorScheme.primary.withAlpha(20),
-                                              borderRadius: BorderRadius.circular(12),
-                                            ),
-                                            child: Icon(
-                                              CupertinoIcons.music_note_list,
-                                              color: theme.colorScheme.primary,
-                                              size: 18,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  p['name'] ?? p['specialname'] ?? '',
-                                                  style: TextStyle(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: theme.colorScheme.onSurface,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                const SizedBox(height: 1),
-                                                Text(
-                                                  '${p['song_count'] ?? 0} 首歌曲',
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    color: theme.colorScheme.onSurfaceVariant,
-                                                    fontWeight: FontWeight.w500,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Icon(
-                                            CupertinoIcons.chevron_right,
-                                            size: 12,
-                                            color: theme.colorScheme.onSurface.withAlpha(40),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    final playlist = await showPlaylistPickerDialog(
+      context,
+      playlists: myPlaylists,
     );
+    if (playlist == null || !context.mounted) return;
+
+    final count = await userProvider.addSongsToPlaylist(
+      playlist['listid'] ?? playlist['specialid'],
+      selectionProvider.selectedSongs,
+    );
+    if (!context.mounted) return;
+
+    selectionProvider.exitSelectionMode();
+    if (count > 0) {
+      CustomToast.success(context, '成功添加 $count 首歌曲到歌单');
+    } else {
+      CustomToast.error(context, '添加失败');
+    }
+  }
+
+  Future<void> _addSelectedToFavorite(
+    BuildContext context,
+    SelectionProvider selectionProvider,
+  ) async {
+    final persistenceProvider = context.read<PersistenceProvider>();
+    final userProvider = context.read<UserProvider>();
+    final songs = selectionProvider.selectedSongs;
+
+    for (final song in songs) {
+      if (!persistenceProvider.isFavorite(song)) {
+        await persistenceProvider.toggleFavorite(song, userProvider: userProvider);
+      }
+    }
+
+    if (!context.mounted) return;
+    selectionProvider.exitSelectionMode();
+    CustomToast.success(context, '已添加 ${songs.length} 首歌曲到我喜欢的');
   }
 }

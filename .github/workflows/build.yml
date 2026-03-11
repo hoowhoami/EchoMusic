@@ -55,7 +55,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libmpv-dev mpv
+          sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libmpv-dev libkeybinder-3.0-dev mpv
 
       - name: Build Flutter Desktop
         run: flutter build ${{ matrix.platform }} --release
@@ -155,7 +155,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: EchoMusic Team
-          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25, libayatana-appindicator3-1, libmpv1
+          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25, libayatana-appindicator3-1, libmpv1, libkeybinder-3.0-0
           Description: A minimalist music player.
           EOF
 

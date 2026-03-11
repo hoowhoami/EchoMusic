@@ -54,7 +54,7 @@ class Song {
       albumName: (json['album_name'] ?? json['albumname'] ?? '').toString(),
       albumId: (json['album_id'] ?? json['albumid'])?.toString(),
       singers: singers,
-      duration: parseInt(json['timelength'] ?? json['duration'] ?? 0) ~/ 1000,
+      duration: parseInt(json['time_length'] ?? 0) != 0 ? parseInt(json['time_length']) : parseInt(json['timelength'] ?? json['duration'] ?? 0) ~/ 1000,
       cover: cover,
       mvHash: (json['video_hash'] ?? json['mvhash'])?.toString(),
       mixSongId: parseInt(json['audio_id'] ?? json['album_audio_id'] ?? json['mixsongid'] ?? 0),
@@ -141,6 +141,7 @@ class Song {
       fileId: json['fileid'] != null ? parseInt(json['fileid']) : null,
       privilege: parseInt(json['privilege'] ?? 0),
       relateGoods: (json['relate_goods'] as List?)?.cast<Map<String, dynamic>>(),
+      source: json['source']?.toString(),
     );
   }
 
@@ -336,7 +337,16 @@ class Song {
     return rawName;
   }
 
+  static String normalizeDisplayText(String rawText) {
+    final normalized = rawText.replaceAll('_', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return normalized;
+  }
+
   String get singerName => singers.isEmpty ? '未知歌手' : singers.map((s) => s.name).join(', ');
+
+  String get displaySingerName => normalizeDisplayText(singerName);
+
+  String get displayAlbumName => normalizeDisplayText(albumName);
 
   String get title => name; // name is already processed title
 
@@ -373,6 +383,33 @@ class Song {
     }
     return false;
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'hash': hash,
+      'name': name,
+      'songname': name,
+      'album_name': albumName,
+      'album_id': albumId,
+      'albumid': albumId,
+      'albuminfo': {
+        'id': albumId,
+        'album_id': albumId,
+        'name': albumName,
+        'album_name': albumName,
+      },
+      'singerinfo': singers.map((s) => s.toJson()).toList(growable: false),
+      'timelen': duration * 1000,
+      'cover': cover,
+      'mixsongid': mixSongId,
+      'audio_id': mixSongId,
+      'mvhash': mvHash,
+      'fileid': fileId,
+      'privilege': privilege,
+      'relate_goods': relateGoods,
+      'source': source,
+    };
+  }
 }
 
 class SingerInfo {
@@ -399,5 +436,13 @@ class SingerInfo {
       name: (json['name'] ?? json['AuthorName'] ?? json['author_name'] ?? json['singername'] ?? '').toString(),
       avatar: (json['avatar'] ?? json['Avatar'])?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'avatar': avatar,
+    };
   }
 }

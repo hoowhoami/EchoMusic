@@ -88,7 +88,7 @@ class AudioProvider with ChangeNotifier {
 
   // Position and URL to restore after device reconnection
   Duration? _positionBeforeDeviceError;
-  String? _currentUrl;  // 当前播放的 URL
+  String? _currentUrl; // 当前播放的 URL
   bool _shouldResumeAfterDeviceRecovery = false;
   bool _isRecoveringFromDeviceChange = false;
 
@@ -107,10 +107,12 @@ class AudioProvider with ChangeNotifier {
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
+  double get displayVolume => _player.state.volume;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   int get playlistSessionId => _playlistSessionId;
-  int get activePlaylistFilteredInvalidSongCount => _activePlaylistFilteredInvalidSongCount;
+  int get activePlaylistFilteredInvalidSongCount =>
+      _activePlaylistFilteredInvalidSongCount;
   // The device the user explicitly chose; null means 'auto'.
   AudioDevice? get userSelectedDevice => _userSelectedDevice;
   // Display label of the persisted preferred device (for UI when device is unavailable).
@@ -151,11 +153,17 @@ class AudioProvider with ChangeNotifier {
   }
 
   // Internal volume helpers: AudioProvider public API uses 0-100 scale (matching media_kit).
-  void _fadeVolume(double target, {double? from, int? durationMs, VoidCallback? onComplete}) {
+  void _fadeVolume(
+    double target, {
+    double? from,
+    int? durationMs,
+    VoidCallback? onComplete,
+  }) {
     _fadeTimer?.cancel();
     _fadeTimer = null;
 
-    final bool isFadeEnabled = _persistenceProvider?.settings['volumeFade'] ?? true;
+    final bool isFadeEnabled =
+        _persistenceProvider?.settings['volumeFade'] ?? true;
 
     if (!isFadeEnabled) {
       _player.setVolume(target);
@@ -165,7 +173,8 @@ class AudioProvider with ChangeNotifier {
     }
 
     final double startVolume = from ?? _player.state.volume;
-    final int duration = durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
+    final int duration =
+        durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
     if (duration <= 0 || (target - startVolume).abs() < 1.0) {
       _player.setVolume(target);
@@ -187,7 +196,10 @@ class AudioProvider with ChangeNotifier {
         return;
       }
       currentStep++;
-      final nextVol = (startVolume + volumeStep * currentStep).clamp(0.0, 100.0);
+      final nextVol = (startVolume + volumeStep * currentStep).clamp(
+        0.0,
+        100.0,
+      );
       _player.setVolume(nextVol);
       if (currentStep >= totalSteps) {
         timer.cancel();
@@ -204,204 +216,259 @@ class AudioProvider with ChangeNotifier {
 
   void _initListeners() {
     // Error handling
-    _subscriptions.add(_player.stream.error.listen((error) {
-      _handlePlayError(error);
-    }));
+    _subscriptions.add(
+      _player.stream.error.listen((error) {
+        _handlePlayError(error);
+      }),
+    );
 
     // Playing state changes → notify UI + MediaSession
-    _subscriptions.add(_player.stream.playing.listen((playing) {
-      if (_isDisposed) return;
-      LoggerService.d('[AudioProvider] playing=$playing');
-      _updateWakelock(isPlaying: playing);
-      notifyListeners();
-      MediaSessionHandler.updatePlaybackState(playing, _player.state.position);
-    }));
+    _subscriptions.add(
+      _player.stream.playing.listen((playing) {
+        if (_isDisposed) return;
+        LoggerService.d('[AudioProvider] playing=$playing');
+        _updateWakelock(isPlaying: playing);
+        notifyListeners();
+        MediaSessionHandler.updatePlaybackState(
+          playing,
+          _player.state.position,
+        );
+      }),
+    );
 
     // Buffering state changes → notify UI
-    _subscriptions.add(_player.stream.buffering.listen((_) {
-      if (_isDisposed) return;
-      _safeNotify();
-    }));
+    _subscriptions.add(
+      _player.stream.buffering.listen((_) {
+        if (_isDisposed) return;
+        _safeNotify();
+      }),
+    );
 
     // Track completed
-    _subscriptions.add(_player.stream.completed.listen((completed) {
-      if (_isDisposed || !completed) return;
+    _subscriptions.add(
+      _player.stream.completed.listen((completed) {
+        if (_isDisposed || !completed) return;
 
-      if (_lastSeekTime != null) {
-        final sinceSeek = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
-        if (sinceSeek < 1000) {
-          LoggerService.i('[AudioProvider] Ignoring completed event ${sinceSeek}ms after seek');
-          return;
-        }
-      }
-
-      final pos = _player.state.position;
-      final dur = _player.state.duration;
-      LoggerService.i('[AudioProvider] Playback completed normally. pos=$pos, dur=$dur');
-      _handlePlaybackEnded();
-      _safeNotify();
-    }));
-
-    _subscriptions.add(_player.stream.position.listen((pos) {
-      if (_isDisposed) return;
-      final sec = pos.inSeconds;
-
-      try {
-        // During seek or drag, suppress position events to the UI
-        if (_isSeeking || _isDragging) return;
-
-        final total = effectiveDuration;
-
-        // Throttle: only emit to UI if position changed ≥200ms
-        final diff = (pos.inMilliseconds - _lastEmittedPosition.inMilliseconds).abs();
-        if (diff >= 200) {
-          _lastEmittedPosition = pos;
-          if (!_positionController.isClosed) {
-            _positionController.add(PositionSnapshot(pos, total));
+        if (_lastSeekTime != null) {
+          final sinceSeek = DateTime.now()
+              .difference(_lastSeekTime!)
+              .inMilliseconds;
+          if (sinceSeek < 1000) {
+            LoggerService.i(
+              '[AudioProvider] Ignoring completed event ${sinceSeek}ms after seek',
+            );
+            return;
           }
         }
 
-        // Fallback end detection: if position is very close to duration and player is playing,
-        // treat as end of track.
-        if (_player.state.playing && total.inMilliseconds > 0) {
-          final remaining = total.inMilliseconds - pos.inMilliseconds;
-          if (remaining >= 0 && remaining < 600 && !_isHandlingEnd) {
-            LoggerService.i('[AudioProvider] Position near end (remaining=${remaining}ms), triggering completion: pos=$pos, dur=$total');
-            _handlePlaybackEnded();
+        final pos = _player.state.position;
+        final dur = _player.state.duration;
+        LoggerService.i(
+          '[AudioProvider] Playback completed normally. pos=$pos, dur=$dur',
+        );
+        _handlePlaybackEnded();
+        _safeNotify();
+      }),
+    );
+
+    _subscriptions.add(
+      _player.stream.position.listen((pos) {
+        if (_isDisposed) return;
+        final sec = pos.inSeconds;
+
+        try {
+          // During seek or drag, suppress position events to the UI
+          if (_isSeeking || _isDragging) return;
+
+          final total = effectiveDuration;
+
+          // Throttle: only emit to UI if position changed ≥200ms
+          final diff =
+              (pos.inMilliseconds - _lastEmittedPosition.inMilliseconds).abs();
+          if (diff >= 200) {
+            _lastEmittedPosition = pos;
+            if (!_positionController.isClosed) {
+              _positionController.add(PositionSnapshot(pos, total));
+            }
           }
-        }
 
-        if (_lyricProvider?.isPageOpen == true) {
-          _lyricProvider?.updateHighlight(pos);
-        }
+          // Fallback end detection: if position is very close to duration and player is playing,
+          // treat as end of track.
+          if (_player.state.playing && total.inMilliseconds > 0) {
+            final remaining = total.inMilliseconds - pos.inMilliseconds;
+            if (remaining >= 0 && remaining < 600 && !_isHandlingEnd) {
+              LoggerService.i(
+                '[AudioProvider] Position near end (remaining=${remaining}ms), triggering completion: pos=$pos, dur=$total',
+              );
+              _handlePlaybackEnded();
+            }
+          }
 
-        if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
-          _lastSavedSecond = sec;
-          _savePlaybackState();
-        }
+          if (_lyricProvider?.isPageOpen == true) {
+            _lyricProvider?.updateHighlight(pos);
+          }
 
-        if (sec != _lastMediaSessionSecond) {
-          _lastMediaSessionSecond = sec;
-          MediaSessionHandler.updatePlaybackState(_player.state.playing, pos);
-        }
-      } catch (_) {}
-    }));
+          if (sec > 0 && sec % 5 == 0 && sec != _lastSavedSecond) {
+            _lastSavedSecond = sec;
+            _savePlaybackState();
+          }
+
+          if (sec != _lastMediaSessionSecond) {
+            _lastMediaSessionSecond = sec;
+            MediaSessionHandler.updatePlaybackState(_player.state.playing, pos);
+          }
+        } catch (_) {}
+      }),
+    );
 
     // Audio device changes
-    _subscriptions.add(_player.stream.audioDevice.listen((device) {
-      if (_isDisposed) return;
-      LoggerService.i('[AudioProvider] Active audio device changed → "${device.description}" (${device.name})');
-      _safeNotify();
-    }));
-
-    _subscriptions.add(_player.stream.audioDevices.listen((devices) {
-      if (_isDisposed) return;
-
-      final currentNames = devices.where((d) => d.name != 'auto').map((d) => d.name).toSet();
-      final connected = currentNames.difference(_lastDeviceNames);
-      final disconnected = _lastDeviceNames.difference(currentNames);
-      _lastDeviceNames = currentNames;
-
-      // Only rebuild the UI when the device list actually changed.
-      if (connected.isNotEmpty || disconnected.isNotEmpty) {
+    _subscriptions.add(
+      _player.stream.audioDevice.listen((device) {
+        if (_isDisposed) return;
+        LoggerService.i(
+          '[AudioProvider] Active audio device changed → "${device.description}" (${device.name})',
+        );
         _safeNotify();
+      }),
+    );
 
-        for (final name in connected) {
-          final d = devices.firstWhere((d) => d.name == name);
-          LoggerService.i('[AudioProvider] Device connected: "${d.description}" ($name)');
-        }
+    _subscriptions.add(
+      _player.stream.audioDevices.listen((devices) {
+        if (_isDisposed) return;
 
-        // 检测到设备断开，如果启用了暂停功能，则暂停播放
-        for (final name in disconnected) {
-          LoggerService.i('[AudioProvider] Device disconnected: "$name"');
+        final currentNames = devices
+            .where((d) => d.name != 'auto')
+            .map((d) => d.name)
+            .toSet();
+        final connected = currentNames.difference(_lastDeviceNames);
+        final disconnected = _lastDeviceNames.difference(currentNames);
+        _lastDeviceNames = currentNames;
 
-          final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-          final wasPlaying = _player.state.playing;
-          LoggerService.d('[AudioProvider] Device disconnect check: playing=$wasPlaying, currentSong=${_currentSong?.name}');
+        // Only rebuild the UI when the device list actually changed.
+        if (connected.isNotEmpty || disconnected.isNotEmpty) {
+          _safeNotify();
 
-          // 非 macOS 平台，检查断开的是否是当前正在使用的设备
-          if (!Platform.isMacOS) {
-            // 检查断开的是否是当前正在使用的设备
-            final currentDevice = _player.state.audioDevice;
-            LoggerService.d('[AudioProvider] Current device: ${currentDevice.name}, disconnected: $name');
+          for (final name in connected) {
+            final d = devices.firstWhere((d) => d.name == name);
+            LoggerService.i(
+              '[AudioProvider] Device connected: "${d.description}" ($name)',
+            );
+          }
 
-            if (currentDevice.name == name || currentDevice.name == 'auto') {
-              // auto 模式下，任何设备断开都可能影响播放
-              // 标记为设备错误，避免触发自动下一首
-              LoggerService.i('[AudioProvider] Setting _isDeviceError = true');
-              _isDeviceError = true;
-              _rememberDeviceRecoveryPosition();
+          // 检测到设备断开，如果启用了暂停功能，则暂停播放
+          for (final name in disconnected) {
+            LoggerService.i('[AudioProvider] Device disconnected: "$name"');
 
-              if (pauseOnChange) {
-                _shouldResumeAfterDeviceRecovery = false;
-                LoggerService.i('[AudioProvider] Active device disconnected, pausing playback');
-                _pausePlayer();
-              } else {
-                _shouldResumeAfterDeviceRecovery = wasPlaying;
-                LoggerService.i('[AudioProvider] Active device disconnected, keeping playback intent for auto recovery');
-                unawaited(_switchToAutoDeviceIfNeeded('after disconnect'));
-                if (wasPlaying) {
-                  _scheduleDeviceRecovery();
+            final pauseOnChange =
+                _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+            final wasPlaying = _player.state.playing;
+            LoggerService.d(
+              '[AudioProvider] Device disconnect check: playing=$wasPlaying, currentSong=${_currentSong?.name}',
+            );
+
+            // 非 macOS 平台，检查断开的是否是当前正在使用的设备
+            if (!Platform.isMacOS) {
+              // 检查断开的是否是当前正在使用的设备
+              final currentDevice = _player.state.audioDevice;
+              LoggerService.d(
+                '[AudioProvider] Current device: ${currentDevice.name}, disconnected: $name',
+              );
+
+              if (currentDevice.name == name || currentDevice.name == 'auto') {
+                // auto 模式下，任何设备断开都可能影响播放
+                // 标记为设备错误，避免触发自动下一首
+                LoggerService.i(
+                  '[AudioProvider] Setting _isDeviceError = true',
+                );
+                _isDeviceError = true;
+                _rememberDeviceRecoveryPosition();
+
+                if (pauseOnChange) {
+                  _shouldResumeAfterDeviceRecovery = false;
+                  LoggerService.i(
+                    '[AudioProvider] Active device disconnected, pausing playback',
+                  );
+                  _pausePlayer();
+                } else {
+                  _shouldResumeAfterDeviceRecovery = wasPlaying;
+                  LoggerService.i(
+                    '[AudioProvider] Active device disconnected, keeping playback intent for auto recovery',
+                  );
+                  unawaited(_switchToAutoDeviceIfNeeded('after disconnect'));
+                  if (wasPlaying) {
+                    _scheduleDeviceRecovery();
+                  }
                 }
+
+                // 延迟重置标志，确保错误处理器能看到这个标志
+                Future.delayed(const Duration(milliseconds: 1000), () {
+                  if (!_isDisposed) {
+                    LoggerService.d(
+                      '[AudioProvider] Resetting _isDeviceError flag',
+                    );
+                    _isDeviceError = false;
+                  }
+                });
+                break; // 只需要处理一次
               }
-
-              // 延迟重置标志，确保错误处理器能看到这个标志
-              Future.delayed(const Duration(milliseconds: 1000), () {
-                if (!_isDisposed) {
-                  LoggerService.d('[AudioProvider] Resetting _isDeviceError flag');
-                  _isDeviceError = false;
-                }
-              });
-              break; // 只需要处理一次
             }
           }
         }
-      }
 
-      // Dynamic preferred device tracking: switch to preferred when available,
-      // fall back to auto when it disappears.
-      if (_preferredDeviceName != null) {
-        final isPreferredAvailable = currentNames.contains(_preferredDeviceName);
-        final isPreferredActive = _userSelectedDevice?.name == _preferredDeviceName;
+        // Dynamic preferred device tracking: switch to preferred when available,
+        // fall back to auto when it disappears.
+        if (_preferredDeviceName != null) {
+          final isPreferredAvailable = currentNames.contains(
+            _preferredDeviceName,
+          );
+          final isPreferredActive =
+              _userSelectedDevice?.name == _preferredDeviceName;
 
-        if (isPreferredAvailable && !isPreferredActive) {
-          if (_positionBeforeDeviceError != null || _isRecoveringFromDeviceChange) {
+          if (isPreferredAvailable && !isPreferredActive) {
+            if (_positionBeforeDeviceError != null ||
+                _isRecoveringFromDeviceChange) {
+              LoggerService.i(
+                '[AudioProvider] Preferred device available, deferring switch until device recovery completes',
+              );
+            } else {
+              // Preferred device appeared (initial load or reconnect) → switch to it.
+              unawaited(_restorePreferredDeviceIfAvailable('after reconnect'));
+            }
+          } else if (!isPreferredAvailable && isPreferredActive) {
+            // Preferred device disconnected → fall back to auto.
+            _userSelectedDevice = null;
+            unawaited(_player.setAudioDevice(AudioDevice.auto()));
+            // 注意：不清除 _positionBeforeDeviceError，因为用户可能需要恢复播放
             LoggerService.i(
-              '[AudioProvider] Preferred device available, deferring switch until device recovery completes',
+              '[AudioProvider] Preferred device disconnected, using auto',
             );
-          } else {
-            // Preferred device appeared (initial load or reconnect) → switch to it.
-            unawaited(_restorePreferredDeviceIfAvailable('after reconnect'));
+            _safeNotify();
           }
-        } else if (!isPreferredAvailable && isPreferredActive) {
-          // Preferred device disconnected → fall back to auto.
-          _userSelectedDevice = null;
-          unawaited(_player.setAudioDevice(AudioDevice.auto()));
-          // 注意：不清除 _positionBeforeDeviceError，因为用户可能需要恢复播放
-          LoggerService.i('[AudioProvider] Preferred device disconnected, using auto');
-          _safeNotify();
         }
-      }
-    }));
+      }),
+    );
 
-    _subscriptions.add(_player.stream.volume.listen((v) {
-      if (_isDisposed || _isInternalChanging) return;
-      try {
-        if (_fadeTimer == null || !_fadeTimer!.isActive) {
-          // Do NOT emit to _userVolumeController here. The displayed volume must
-          // reflect only the user's intent, not the player's physical volume which
-          // fluctuates during fades. All UI-visible volume updates go through
-          // setVolume() and toggleMute() explicitly.
-          if (v > 0.1) {
-            _lastVolume = v;
-            _volumeSaveTimer?.cancel();
-            _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-              if (!_isDisposed) _persistenceProvider?.updatePlayerSetting('volume', v);
-            });
+    _subscriptions.add(
+      _player.stream.volume.listen((v) {
+        if (_isDisposed || _isInternalChanging) return;
+        try {
+          if (_fadeTimer == null || !_fadeTimer!.isActive) {
+            // Do NOT emit to _userVolumeController here. The displayed volume must
+            // reflect only the user's intent, not the player's physical volume which
+            // fluctuates during fades. All UI-visible volume updates go through
+            // setVolume() and toggleMute() explicitly.
+            if (v > 0.1) {
+              _lastVolume = v;
+              _volumeSaveTimer?.cancel();
+              _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
+                if (!_isDisposed)
+                  _persistenceProvider?.updatePlayerSetting('volume', v);
+              });
+            }
           }
-        }
-      } catch (_) {}
-    }));
+        } catch (_) {}
+      }),
+    );
   }
 
   bool _isHandlingEnd = false;
@@ -410,12 +477,16 @@ class AudioProvider with ChangeNotifier {
 
     // 如果是设备错误引起的，不触发自动下一首
     if (_isDeviceError) {
-      LoggerService.i('[AudioProvider] Playback ended due to device error (_isDeviceError=$_isDeviceError), skipping auto-next');
-      _pausePlayer();  // 确保播放器停止
+      LoggerService.i(
+        '[AudioProvider] Playback ended due to device error (_isDeviceError=$_isDeviceError), skipping auto-next',
+      );
+      _pausePlayer(); // 确保播放器停止
       return;
     }
 
-    LoggerService.d('[AudioProvider] Playback ended normally (_isDeviceError=$_isDeviceError), proceeding with auto-next logic');
+    LoggerService.d(
+      '[AudioProvider] Playback ended normally (_isDeviceError=$_isDeviceError), proceeding with auto-next logic',
+    );
     _isHandlingEnd = true;
 
     _pausePlayer();
@@ -469,9 +540,12 @@ class AudioProvider with ChangeNotifier {
     _forceDisableWakelock();
   }
 
-  void _stopPlayer() {
-    _player.stop();
-    _forceDisableWakelock();
+  Future<void> _stopPlayer() async {
+    try {
+      await _player.stop();
+    } finally {
+      _forceDisableWakelock();
+    }
   }
 
   void _handlePersistenceChanged() {
@@ -498,14 +572,16 @@ class AudioProvider with ChangeNotifier {
     final savedDeviceName = p.playerSettings['preferredAudioDevice'] as String?;
     if (savedDeviceName != null && savedDeviceName != 'auto') {
       _preferredDeviceName = savedDeviceName;
-      _preferredDeviceDescription = p.playerSettings['preferredAudioDeviceDescription'] as String?;
+      _preferredDeviceDescription =
+          p.playerSettings['preferredAudioDeviceDescription'] as String?;
     }
 
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
       _originalPlaylist = [];
       _currentIndex = p.currentIndex;
-      _activePlaylistFilteredInvalidSongCount = p.playlistFilteredInvalidSongCount;
+      _activePlaylistFilteredInvalidSongCount =
+          p.playlistFilteredInvalidSongCount;
       if (_currentIndex >= 0 && _currentIndex < _playlist.length) {
         _currentSong = _playlist[_currentIndex];
         _safeNotify();
@@ -526,10 +602,13 @@ class AudioProvider with ChangeNotifier {
       LoggerService.i('[AudioProvider] _initRestore: ${_currentSong!.name}');
       final result = await _getAudioUrlWithQuality(_currentSong!);
       if (result != null && result['url'] != null) {
-        _currentUrl = result['url'];  // 保存 URL
+        _currentUrl = result['url']; // 保存 URL
         await _player.open(Media(result['url']), play: false);
         _player.setRate(_playbackRate);
-        MediaSessionHandler.updateMetadata(_currentSong, Duration(seconds: _currentSong!.duration.toInt()));
+        MediaSessionHandler.updateMetadata(
+          _currentSong,
+          Duration(seconds: _currentSong!.duration.toInt()),
+        );
         _fetchClimax(_currentSong!);
       }
     } catch (e) {
@@ -557,7 +636,8 @@ class AudioProvider with ChangeNotifier {
         ? playerPosition
         : fallbackPosition;
     final previousSavedPosition = _positionBeforeDeviceError;
-    final shouldUpdate = previousSavedPosition == null ||
+    final shouldUpdate =
+        previousSavedPosition == null ||
         candidatePosition.compareTo(previousSavedPosition) > 0;
 
     if (shouldUpdate) {
@@ -584,7 +664,9 @@ class AudioProvider with ChangeNotifier {
     final availableDevices = _player.state.audioDevices;
     if (!availableDevices.any((d) => d.name == preferredDeviceName)) return;
 
-    final match = availableDevices.firstWhere((d) => d.name == preferredDeviceName);
+    final match = availableDevices.firstWhere(
+      (d) => d.name == preferredDeviceName,
+    );
     LoggerService.i(
       '[AudioProvider] Preferred device available $reason, switching: "${match.description}" (${match.name})',
     );
@@ -674,9 +756,7 @@ class AudioProvider with ChangeNotifier {
     _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
   }
 
-  Future<void> _attemptDeviceRecovery({
-    Duration delay = Duration.zero,
-  }) async {
+  Future<void> _attemptDeviceRecovery({Duration delay = Duration.zero}) async {
     if (_isDisposed || _isRecoveringFromDeviceChange) return;
     if (!_shouldResumeAfterDeviceRecovery) return;
 
@@ -691,7 +771,9 @@ class AudioProvider with ChangeNotifier {
 
       if (_isDisposed || !_shouldResumeAfterDeviceRecovery) return;
       if (_player.state.playing) {
-        LoggerService.d('[AudioProvider] Skip device recovery because playback is already active');
+        LoggerService.d(
+          '[AudioProvider] Skip device recovery because playback is already active',
+        );
         return;
       }
 
@@ -701,7 +783,9 @@ class AudioProvider with ChangeNotifier {
         trigger: 'auto recovery',
       );
     } catch (e) {
-      LoggerService.e('[AudioProvider] Device auto-recovery attempt failed: $e');
+      LoggerService.e(
+        '[AudioProvider] Device auto-recovery attempt failed: $e',
+      );
     }
   }
 
@@ -714,10 +798,7 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> _seekAndVerify(
-    Duration pos, {
-    required String reason,
-  }) async {
+  Future<bool> _seekAndVerify(Duration pos, {required String reason}) async {
     if (_isDisposed) return false;
 
     _lastSeekTime = DateTime.now();
@@ -781,7 +862,10 @@ class AudioProvider with ChangeNotifier {
     }
 
     for (var attempt = 1; attempt <= attempts; attempt++) {
-      final ok = await _seekAndVerify(pos, reason: '$reason (attempt $attempt/$attempts)');
+      final ok = await _seekAndVerify(
+        pos,
+        reason: '$reason (attempt $attempt/$attempts)',
+      );
       if (ok) return true;
       if (attempt < attempts) {
         await Future.delayed(retryDelay);
@@ -794,13 +878,18 @@ class AudioProvider with ChangeNotifier {
   bool appendSongsToActivePlaylist(List<Song> songs, {required int sessionId}) {
     if (_isDisposed || songs.isEmpty) return false;
     if (sessionId != _playlistSessionId) {
-      LoggerService.d('[AudioProvider] Ignoring stale playlist append for session=$sessionId, active=$_playlistSessionId');
+      LoggerService.d(
+        '[AudioProvider] Ignoring stale playlist append for session=$sessionId, active=$_playlistSessionId',
+      );
       return false;
     }
 
     if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
       final newSongs = songs
-          .where((song) => !_originalPlaylist.any((existing) => existing.isSameSong(song)))
+          .where(
+            (song) =>
+                !_originalPlaylist.any((existing) => existing.isSameSong(song)),
+          )
           .toList();
       if (newSongs.isEmpty) return true;
 
@@ -809,7 +898,9 @@ class AudioProvider with ChangeNotifier {
       _playlist.addAll(shuffledNewSongs);
     } else {
       final newSongs = songs
-          .where((song) => !_playlist.any((existing) => existing.isSameSong(song)))
+          .where(
+            (song) => !_playlist.any((existing) => existing.isSameSong(song)),
+          )
           .toList();
       if (newSongs.isEmpty) return true;
 
@@ -821,10 +912,104 @@ class AudioProvider with ChangeNotifier {
     return true;
   }
 
-  void addFilteredInvalidSongsToActivePlaylist(int count, {required int sessionId}) {
+  Future<void> queueAndPlaySong(Song song) async {
+    if (_isDisposed) return;
+
+    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: [song]);
+    if (resolvedSong == null) {
+      LoggerService.w(
+        '[AudioProvider] No playable song found for queue request: ${song.name}',
+      );
+      return;
+    }
+
+    song = resolvedSong;
+
+    appendSongsToActivePlaylist([song], sessionId: _playlistSessionId);
+    await playSong(song);
+  }
+
+  bool addSongToPlayNext(Song song) {
+    if (_isDisposed) return false;
+
+    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: [song]);
+    if (resolvedSong == null) {
+      LoggerService.w(
+        '[AudioProvider] No playable song found for play-next request: ${song.name}',
+      );
+      return false;
+    }
+
+    song = resolvedSong;
+
+    final currentSong = _currentSong;
+    if (currentSong != null &&
+        (identical(currentSong, song) || currentSong.isSameSong(song))) {
+      LoggerService.d(
+        '[AudioProvider] Ignoring play-next request for current song: ${song.name}',
+      );
+      return true;
+    }
+
+    final hasCurrent = _currentIndex >= 0 && _currentIndex < _playlist.length;
+    var insertIndex = hasCurrent ? _currentIndex + 1 : 0;
+
+    final existingIndex = _indexOfSongInList(_playlist, song);
+    if (existingIndex != -1) {
+      _playlist.removeAt(existingIndex);
+      if (_currentIndex > existingIndex) {
+        _currentIndex--;
+      }
+      if (existingIndex < insertIndex) {
+        insertIndex--;
+      }
+    }
+
+    if (insertIndex < 0) insertIndex = 0;
+    if (insertIndex > _playlist.length) insertIndex = _playlist.length;
+    _playlist.insert(insertIndex, song);
+
+    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
+      var originalInsertIndex = _originalPlaylist.length;
+      if (currentSong != null) {
+        final currentOriginalIndex = _indexOfSongInList(
+          _originalPlaylist,
+          currentSong,
+        );
+        if (currentOriginalIndex != -1) {
+          originalInsertIndex = currentOriginalIndex + 1;
+        }
+      }
+
+      final existingOriginalIndex = _indexOfSongInList(_originalPlaylist, song);
+      if (existingOriginalIndex != -1) {
+        _originalPlaylist.removeAt(existingOriginalIndex);
+        if (existingOriginalIndex < originalInsertIndex) {
+          originalInsertIndex--;
+        }
+      }
+
+      if (originalInsertIndex < 0) originalInsertIndex = 0;
+      if (originalInsertIndex > _originalPlaylist.length) {
+        originalInsertIndex = _originalPlaylist.length;
+      }
+      _originalPlaylist.insert(originalInsertIndex, song);
+    }
+
+    _savePlaybackState();
+    _safeNotify();
+    return true;
+  }
+
+  void addFilteredInvalidSongsToActivePlaylist(
+    int count, {
+    required int sessionId,
+  }) {
     if (_isDisposed || count <= 0) return;
     if (sessionId != _playlistSessionId) {
-      LoggerService.d('[AudioProvider] Ignoring stale filtered-count update for session=$sessionId, active=$_playlistSessionId');
+      LoggerService.d(
+        '[AudioProvider] Ignoring stale filtered-count update for session=$sessionId, active=$_playlistSessionId',
+      );
       return;
     }
 
@@ -874,7 +1059,9 @@ class AudioProvider with ChangeNotifier {
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
-      final target = _lastVolume > 0.1 ? _lastVolume : (_persistenceProvider?.volume ?? 50.0);
+      final target = _lastVolume > 0.1
+          ? _lastVolume
+          : (_persistenceProvider?.volume ?? 50.0);
       setVolume(target);
     }
   }
@@ -883,10 +1070,18 @@ class AudioProvider with ChangeNotifier {
     final isAuto = device.name == 'auto';
     _userSelectedDevice = isAuto ? null : device;
     _preferredDeviceName = isAuto ? null : device.name;
-    _preferredDeviceDescription = isAuto ? null : (device.description.isNotEmpty ? device.description : device.name);
+    _preferredDeviceDescription = isAuto
+        ? null
+        : (device.description.isNotEmpty ? device.description : device.name);
     await _player.setAudioDevice(device);
-    _persistenceProvider?.updatePlayerSetting('preferredAudioDevice', isAuto ? null : device.name);
-    _persistenceProvider?.updatePlayerSetting('preferredAudioDeviceDescription', _preferredDeviceDescription);
+    _persistenceProvider?.updatePlayerSetting(
+      'preferredAudioDevice',
+      isAuto ? null : device.name,
+    );
+    _persistenceProvider?.updatePlayerSetting(
+      'preferredAudioDeviceDescription',
+      _preferredDeviceDescription,
+    );
     notifyListeners();
   }
 
@@ -965,7 +1160,10 @@ class AudioProvider with ChangeNotifier {
     return -1;
   }
 
-  Song? _resolvePlayableSongForRequest(Song requestedSong, {List<Song>? playlist}) {
+  Song? _resolvePlayableSongForRequest(
+    Song requestedSong, {
+    List<Song>? playlist,
+  }) {
     if (requestedSong.isPlayable) return requestedSong;
 
     final sourcePlaylist = playlist ?? _playlist;
@@ -1004,19 +1202,28 @@ class AudioProvider with ChangeNotifier {
   Future<void> playSong(Song song, {List<Song>? playlist}) async {
     if (_isDisposed) return;
 
-    final resolvedSong = _resolvePlayableSongForRequest(song, playlist: playlist);
+    final resolvedSong = _resolvePlayableSongForRequest(
+      song,
+      playlist: playlist,
+    );
     if (resolvedSong == null) {
-      LoggerService.w('[AudioProvider] No playable song found for request: ${song.name}');
+      LoggerService.w(
+        '[AudioProvider] No playable song found for request: ${song.name}',
+      );
       return;
     }
 
     if (!identical(resolvedSong, song) && !resolvedSong.isSameSong(song)) {
-      LoggerService.i('[AudioProvider] Requested song is not playable, skipping to: ${resolvedSong.name}');
+      LoggerService.i(
+        '[AudioProvider] Requested song is not playable, skipping to: ${resolvedSong.name}',
+      );
     }
 
     song = resolvedSong;
 
-    LoggerService.i('[AudioProvider] Playing: ${song.name} - ${song.singerName} (${song.hash})');
+    LoggerService.i(
+      '[AudioProvider] Playing: ${song.name} - ${song.singerName} (${song.hash})',
+    );
 
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -1028,7 +1235,9 @@ class AudioProvider with ChangeNotifier {
     if (playlist != null) {
       _playlistSessionId++;
       _activePlaylistFilteredInvalidSongCount = 0;
-      LoggerService.d('[AudioProvider] Updating playlist, size: ${playlist.length}');
+      LoggerService.d(
+        '[AudioProvider] Updating playlist, size: ${playlist.length}',
+      );
       _playlist = List.from(playlist);
       _originalPlaylist = [];
       if (_playMode == 'shuffle') {
@@ -1062,7 +1271,9 @@ class AudioProvider with ChangeNotifier {
         final autoNext = settings['autoNext'] ?? false;
 
         if (autoNext) {
-          LoggerService.i('[AudioProvider] Auto-next enabled, skipping to next song in 1s');
+          LoggerService.i(
+            '[AudioProvider] Auto-next enabled, skipping to next song in 1s',
+          );
           Future.delayed(const Duration(seconds: 1), () => next());
         }
         return;
@@ -1072,7 +1283,7 @@ class AudioProvider with ChangeNotifier {
 
       LoggerService.d('[AudioProvider] URL: $url');
 
-      _currentUrl = url;  // 保存当前 URL
+      _currentUrl = url; // 保存当前 URL
 
       _player.setVolume(0.0);
 
@@ -1080,7 +1291,10 @@ class AudioProvider with ChangeNotifier {
 
       LoggerService.i('[AudioProvider] Playback started');
 
-      MediaSessionHandler.updateMetadata(song, Duration(seconds: song.duration.toInt()));
+      MediaSessionHandler.updateMetadata(
+        song,
+        Duration(seconds: song.duration.toInt()),
+      );
 
       _player.setRate(_playbackRate);
       _player.play();
@@ -1111,21 +1325,31 @@ class AudioProvider with ChangeNotifier {
     final audioQuality = AudioQuality.normalize(
       (playerSettings['audioQuality'] ?? settings['audioQuality'])?.toString(),
     );
-    final audioEffect = playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
+    final audioEffect =
+        playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
-    LoggerService.d('[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, CompatibilityMode: $compatibilityMode');
+    LoggerService.d(
+      '[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, CompatibilityMode: $compatibilityMode',
+    );
 
     final privilege = await MusicApi.getSongPrivilege(song.hash);
-    final List<dynamic> relateGoods = (privilege.isNotEmpty) ? (privilege[0]['relate_goods'] ?? []) : [];
+    final List<dynamic> relateGoods = (privilege.isNotEmpty)
+        ? (privilege[0]['relate_goods'] ?? [])
+        : [];
 
     // 1. 如果有音效，先尝试用音效获取
     if (audioEffect != 'none') {
       try {
         LoggerService.d('[AudioProvider] Trying effect: $audioEffect');
-        final result = await MusicApi.getSongUrl(song.hash, quality: audioEffect);
+        final result = await MusicApi.getSongUrl(
+          song.hash,
+          quality: audioEffect,
+        );
         if (result != null && result['status'] == 1 && result['url'] != null) {
-          LoggerService.i('[AudioProvider] ✓ Got URL with effect: $audioEffect');
+          LoggerService.i(
+            '[AudioProvider] ✓ Got URL with effect: $audioEffect',
+          );
           return result;
         }
       } catch (e) {
@@ -1136,7 +1360,9 @@ class AudioProvider with ChangeNotifier {
     // 2. 尝试用用户选择的音质获取，兼容模式下按优先级降级
     {
       // 构建候选音质列表：先尝试用户选择的，若兼容模式则按优先级依次降级
-      final qualityPriority = AudioQuality.priorityOptions.map((q) => q.value).toList(growable: false);
+      final qualityPriority = AudioQuality.priorityOptions
+          .map((q) => q.value)
+          .toList(growable: false);
       final userQualityIndex = qualityPriority.indexOf(audioQuality);
       final candidates = <String>[audioQuality];
       if (compatibilityMode) {
@@ -1158,16 +1384,25 @@ class AudioProvider with ChangeNotifier {
 
         // 如果 relateGoods 里没有这个音质，跳过
         if (good == null || good['hash'] == null) {
-          LoggerService.d('[AudioProvider] Skip quality: $quality (not in relateGoods)');
+          LoggerService.d(
+            '[AudioProvider] Skip quality: $quality (not in relateGoods)',
+          );
           continue;
         }
 
         try {
           final targetHash = good['hash'] as String;
-          LoggerService.d('[AudioProvider] Trying quality: $quality (hash: ${targetHash.substring(0, 8)}...)');
+          LoggerService.d(
+            '[AudioProvider] Trying quality: $quality (hash: ${targetHash.substring(0, 8)}...)',
+          );
 
-          final result = await MusicApi.getSongUrl(targetHash, quality: quality);
-          if (result != null && result['status'] == 1 && result['url'] != null) {
+          final result = await MusicApi.getSongUrl(
+            targetHash,
+            quality: quality,
+          );
+          if (result != null &&
+              result['status'] == 1 &&
+              result['url'] != null) {
             LoggerService.i('[AudioProvider] ✓ Got URL with quality: $quality');
             return result;
           }
@@ -1202,16 +1437,21 @@ class AudioProvider with ChangeNotifier {
     final total = effectiveDuration;
     final remaining = total.inMilliseconds - pos.inMilliseconds;
 
-    LoggerService.e('[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err');
+    LoggerService.e(
+      '[AudioProvider] Playback error at pos=$pos/$total (remaining=${remaining}ms): $err',
+    );
 
     // 判断是否是设备相关的错误
-    final isDeviceError = _isDeviceError ||
-                          err.toString().toLowerCase().contains('audio device') ||
-                          err.toString().toLowerCase().contains('no sound');
+    final isDeviceError =
+        _isDeviceError ||
+        err.toString().toLowerCase().contains('audio device') ||
+        err.toString().toLowerCase().contains('no sound');
 
     if (isDeviceError) {
-      final pauseOnChange = _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
-      final shouldAutoResume = !pauseOnChange &&
+      final pauseOnChange =
+          _persistenceProvider?.settings['pauseOnDeviceChange'] ?? false;
+      final shouldAutoResume =
+          !pauseOnChange &&
           (_shouldResumeAfterDeviceRecovery || _player.state.playing);
 
       LoggerService.i(
@@ -1221,7 +1461,7 @@ class AudioProvider with ChangeNotifier {
       _isDeviceError = true;
       _rememberDeviceRecoveryPosition();
       // 设备错误：停止播放，不触发自动下一首
-      _pausePlayer();  // 确保播放器停止
+      _pausePlayer(); // 确保播放器停止
       _shouldResumeAfterDeviceRecovery = shouldAutoResume;
       if (shouldAutoResume) {
         _scheduleDeviceRecovery(delay: const Duration(milliseconds: 200));
@@ -1231,7 +1471,9 @@ class AudioProvider with ChangeNotifier {
 
     // 接近结尾的错误，当作播放完成处理
     if (total.inMilliseconds > 0 && remaining < 2000) {
-      LoggerService.i('[AudioProvider] Error occurred near end of song, treating as completed.');
+      LoggerService.i(
+        '[AudioProvider] Error occurred near end of song, treating as completed.',
+      );
       _handlePlaybackEnded();
       return;
     }
@@ -1242,11 +1484,15 @@ class AudioProvider with ChangeNotifier {
     final autoNextTime = settings['autoNextTime'] ?? 3000;
 
     if (autoNext) {
-      LoggerService.i('[AudioProvider] Playback error, auto-next enabled. Waiting ${autoNextTime}ms before skipping.');
+      LoggerService.i(
+        '[AudioProvider] Playback error, auto-next enabled. Waiting ${autoNextTime}ms before skipping.',
+      );
       await Future.delayed(Duration(milliseconds: autoNextTime));
       next();
     } else {
-      LoggerService.i('[AudioProvider] Playback error, auto-next disabled. Stopping playback.');
+      LoggerService.i(
+        '[AudioProvider] Playback error, auto-next disabled. Stopping playback.',
+      );
       // 不自动下一首，停止播放
     }
   }
@@ -1261,7 +1507,7 @@ class AudioProvider with ChangeNotifier {
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
-          _currentUrl = result['url'];  // 保存 URL
+          _currentUrl = result['url']; // 保存 URL
           await _player.open(Media(result['url']), play: false);
           await _player.seek(pos);
           if (playing) _player.play();
@@ -1279,10 +1525,13 @@ class AudioProvider with ChangeNotifier {
     if (_player.state.playing) {
       _shouldResumeAfterDeviceRecovery = false;
       // 暂停逻辑不变
-      _fadeVolume(0.0, onComplete: () {
-        _pausePlayer();
-        _savePlaybackState();
-      });
+      _fadeVolume(
+        0.0,
+        onComplete: () {
+          _pausePlayer();
+          _savePlaybackState();
+        },
+      );
     } else {
       // 播放前检查是否需要恢复设备错误后的状态
       if (_positionBeforeDeviceError != null && _currentUrl != null) {
@@ -1294,11 +1543,13 @@ class AudioProvider with ChangeNotifier {
         final savedUrl = _currentUrl!;
 
         // 重建音频管道：使用保存的 URL 重新加载
-        unawaited(_recoverFromSavedDeviceState(
-          savedUrl,
-          savedPosition,
-          trigger: 'manual toggle',
-        ));
+        unawaited(
+          _recoverFromSavedDeviceState(
+            savedUrl,
+            savedPosition,
+            trigger: 'manual toggle',
+          ),
+        );
         return;
       }
 
@@ -1306,10 +1557,7 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
-  Future<void> _rebuildAudioPipeline(
-    String url,
-    Duration position,
-  ) async {
+  Future<void> _rebuildAudioPipeline(String url, Duration position) async {
     if (_isDisposed) return;
 
     _isLoading = true;
@@ -1360,19 +1608,23 @@ class AudioProvider with ChangeNotifier {
   void stop() {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
-    _fadeVolume(0.0, onComplete: () {
-      _stopPlayer();
-      _savePlaybackState();
-      _safeNotify();
-    });
+    _fadeVolume(
+      0.0,
+      onComplete: () async {
+        await _stopPlayer();
+        _savePlaybackState();
+        _safeNotify();
+      },
+    );
   }
 
-  void prepareForExit() {
+  Future<void> prepareForExit() async {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _climaxMarks = {};
     _clearDeviceRecoveryState();
-    _stopPlayer();
+
+    await _stopPlayer();
     _savePlaybackState();
   }
 
@@ -1382,7 +1634,7 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _clearDeviceRecoveryState();
-    _stopPlayer();
+    unawaited(_stopPlayer());
     _currentSong = null;
     _playlist = [];
     _originalPlaylist = [];
@@ -1407,15 +1659,20 @@ class AudioProvider with ChangeNotifier {
 
     final nextIndex = _findAdjacentPlayableIndex(forward: true);
     if (nextIndex == -1) {
-      LoggerService.w('[AudioProvider] No playable song available when skipping to next');
+      LoggerService.w(
+        '[AudioProvider] No playable song available when skipping to next',
+      );
       return;
     }
 
     if (_player.state.playing) {
-      _fadeVolume(0.0, onComplete: () {
-        _pausePlayer();
-        _playPlaylistIndex(nextIndex);
-      });
+      _fadeVolume(
+        0.0,
+        onComplete: () {
+          _pausePlayer();
+          _playPlaylistIndex(nextIndex);
+        },
+      );
     } else {
       _playPlaylistIndex(nextIndex);
     }
@@ -1429,15 +1686,20 @@ class AudioProvider with ChangeNotifier {
 
     final previousIndex = _findAdjacentPlayableIndex(forward: false);
     if (previousIndex == -1) {
-      LoggerService.w('[AudioProvider] No playable song available when skipping to previous');
+      LoggerService.w(
+        '[AudioProvider] No playable song available when skipping to previous',
+      );
       return;
     }
 
     if (_player.state.playing) {
-      _fadeVolume(0.0, onComplete: () {
-        _pausePlayer();
-        _playPlaylistIndex(previousIndex);
-      });
+      _fadeVolume(
+        0.0,
+        onComplete: () {
+          _pausePlayer();
+          _playPlaylistIndex(previousIndex);
+        },
+      );
     } else {
       _playPlaylistIndex(previousIndex);
     }
@@ -1463,7 +1725,7 @@ class AudioProvider with ChangeNotifier {
       if (_playlist.isEmpty) {
         _currentSong = null;
         _climaxMarks = {};
-        _stopPlayer();
+        unawaited(_stopPlayer());
       } else {
         _currentIndex = _currentIndex % _playlist.length;
         playSong(_playlist[_currentIndex]);
@@ -1471,23 +1733,54 @@ class AudioProvider with ChangeNotifier {
     } else if (_currentIndex > index) {
       _currentIndex--;
     }
-    if (_playMode == 'shuffle') _originalPlaylist.removeWhere((s) => s.isSameSong(removed));
+    if (_playMode == 'shuffle')
+      _originalPlaylist.removeWhere((s) => s.isSameSong(removed));
     _savePlaybackState();
     _safeNotify();
   }
 
   Future<void> fetchLyrics() async {
     final song = _currentSong;
-    if (song == null) return;
-    final searchResult = await MusicApi.searchLyric(song.hash);
-    final target = (searchResult?['candidates']?.isNotEmpty ?? false) ? searchResult!['candidates'][0] : (searchResult?['info']?.isNotEmpty ?? false ? searchResult!['info'][0] : null);
-    if (target != null) {
-      final lyricData = await MusicApi.getLyric(target['id']?.toString() ?? '', target['accesskey']?.toString() ?? '');
-      if (lyricData != null) {
-        _lyricProvider?.parseLyrics(lyricData, hash: song.hash);
-        _lyricProvider?.updateHighlight(_player.state.position);
-      }
+    if (song == null) {
+      _lyricProvider?.clear();
+      return;
     }
+
+    final requestHash = song.hash;
+    if (requestHash.isEmpty) {
+      _lyricProvider?.clear();
+      return;
+    }
+
+    _lyricProvider?.beginLoading(hash: requestHash);
+
+    final searchResult = await MusicApi.searchLyric(requestHash);
+    if (_currentSong?.hash != requestHash) return;
+
+    final target = (searchResult?['candidates']?.isNotEmpty ?? false)
+        ? searchResult!['candidates'][0]
+        : (searchResult?['info']?.isNotEmpty ?? false
+              ? searchResult!['info'][0]
+              : null);
+
+    if (target == null) {
+      _lyricProvider?.clear(hash: requestHash);
+      return;
+    }
+
+    final lyricData = await MusicApi.getLyric(
+      target['id']?.toString() ?? '',
+      target['accesskey']?.toString() ?? '',
+    );
+    if (_currentSong?.hash != requestHash) return;
+
+    if (lyricData == null) {
+      _lyricProvider?.clear(hash: requestHash);
+      return;
+    }
+
+    _lyricProvider?.parseLyrics(lyricData, hash: requestHash);
+    _lyricProvider?.updateHighlight(_player.state.position);
   }
 
   Future<void> _fetchClimax(Song song) async {
@@ -1499,7 +1792,9 @@ class AudioProvider with ChangeNotifier {
         final start = item['start_time'] ?? item['starttime'];
         final end = item['end_time'] ?? item['endtime'];
         if (start != null) {
-          final startTime = start is String ? int.parse(start) : (start as num).toInt();
+          final startTime = start is String
+              ? int.parse(start)
+              : (start as num).toInt();
           final endTime = end != null
               ? (end is String ? int.parse(end) : (end as num).toInt())
               : startTime + 15000;
@@ -1510,7 +1805,6 @@ class AudioProvider with ChangeNotifier {
       _safeNotify();
     } catch (_) {}
   }
-
 
   @override
   void dispose() {

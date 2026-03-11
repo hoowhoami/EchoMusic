@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
 import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/back_to_top.dart';
-import 'playlist_detail_view.dart';
-import 'rank_view.dart';
-import 'recommend_song_view.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 
 class RecommendView extends StatefulWidget {
@@ -22,6 +19,9 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   final ScrollController _scrollController = ScrollController();
   late Future<List<Playlist>> _recommendedPlaylistsFuture;
   late Future<List<Map<String, dynamic>>> _topIpFuture;
+
+  @override
+  String get refreshKey => 'root:0';
 
   @override
   void initState() {
@@ -109,13 +109,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                             title: '每日推荐',
                             subtitle: '为你量身定制',
                             iconContent: DateTime.now().day.toString(),
-                            onTap: () => Navigator.push(
-                              context, 
-                              CupertinoPageRoute(
-                                settings: const RouteSettings(name: 'recommend_song'),
-                                builder: (_) => const RecommendSongView()
-                              )
-                            ),
+                            onTap: () => context.read<NavigationProvider>().openRecommendSong(),
                             color: theme.colorScheme.primary,
                           ),
                           const SizedBox(width: 16),
@@ -124,13 +118,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                             title: '排行榜',
                             subtitle: '实时热门趋势',
                             iconContent: 'TOP',
-                            onTap: () => Navigator.push(
-                              context, 
-                              CupertinoPageRoute(
-                                settings: const RouteSettings(name: 'rank_view', arguments: {'isRecommend': true}),
-                                builder: (_) => const RankView(isRecommend: true)
-                              )
-                            ),
+                            onTap: () => context.read<NavigationProvider>().openRank(isRecommend: true),
                             color: theme.colorScheme.secondary,
                           ),
                         ],
@@ -340,15 +328,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   Widget _buildPlaylistCard(Playlist playlist, {String subtitle = '为您推荐'}) {
     final theme = Theme.of(context);
     return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            settings: RouteSettings(name: 'playlist_detail', arguments: playlist),
-            builder: (_) => PlaylistDetailView(playlist: playlist),
-          ),
-        );
-      },
+      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
       borderRadius: BorderRadius.circular(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

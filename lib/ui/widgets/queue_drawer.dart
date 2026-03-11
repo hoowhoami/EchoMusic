@@ -15,6 +15,8 @@ class QueueDrawer extends StatefulWidget {
 }
 
 class _QueueDrawerState extends State<QueueDrawer> {
+  static const double _queueItemExtent = 60.0;
+
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -22,7 +24,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final audioProvider = context.read<AudioProvider>();
-      _scrollToCurrent(audioProvider);
+      _scrollToCurrent(audioProvider, animated: false);
     });
   }
 
@@ -32,14 +34,35 @@ class _QueueDrawerState extends State<QueueDrawer> {
     super.dispose();
   }
 
-  void _scrollToCurrent(AudioProvider audioProvider) {
-    if (audioProvider.currentIndex >= 0 && _scrollController.hasClients) {
+  void _scrollToCurrent(AudioProvider audioProvider, {bool animated = true}) {
+    if (audioProvider.currentIndex < 0 || !_scrollController.hasClients) return;
+
+    final position = _scrollController.position;
+    final itemTop = audioProvider.currentIndex * _queueItemExtent;
+    final itemBottom = itemTop + _queueItemExtent;
+    final visibleTop = position.pixels;
+    final visibleBottom = visibleTop + position.viewportDimension;
+
+    if (itemTop >= visibleTop && itemBottom <= visibleBottom) return;
+
+    final targetOffset = itemTop < visibleTop
+        ? itemTop
+        : (itemBottom - position.viewportDimension)
+            .clamp(0.0, position.maxScrollExtent)
+            .toDouble();
+
+    if ((targetOffset - position.pixels).abs() < 1.0) return;
+
+    if (animated) {
       _scrollController.animateTo(
-        audioProvider.currentIndex * 60.0,
+        targetOffset,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
+      return;
     }
+
+    _scrollController.jumpTo(targetOffset);
   }
 
   void _scrollToTop() {
@@ -248,7 +271,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                   controller: _scrollController,
                   padding: const EdgeInsets.fromLTRB(14, 8, 18, 8),
                   itemCount: playlist.length,
-                  itemExtent: 60,
+                  itemExtent: _queueItemExtent,
                   itemBuilder: (context, index) {
                     final song = playlist[index];
                     final isCurrent = index == currentIndex;

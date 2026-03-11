@@ -5,16 +5,14 @@ import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
-import 'package:echomusic/providers/selection_provider.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
 import '../widgets/song_card.dart';
-import '../widgets/batch_action_bar.dart';
 import '../widgets/back_to_top.dart';
-import 'playlist_detail_view.dart';
-import 'album_detail_view.dart';
+import '../widgets/song_batch_selection_dialog.dart';
 import '../../models/album.dart';
 import 'rank_view.dart';
 
@@ -27,6 +25,9 @@ class DiscoverView extends StatefulWidget {
 
 class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderStateMixin, RefreshableState {
   late TabController _tabController;
+
+  @override
+  String get refreshKey => 'root:1';
 
   @override
   void initState() {
@@ -104,6 +105,9 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   bool _isLoading = true;
+
+  @override
+  String get refreshKey => 'root:1';
 
   @override
   void initState() {
@@ -241,15 +245,7 @@ class _PlaylistCard extends StatelessWidget {
     final theme = Theme.of(context);
 
     return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            settings: RouteSettings(name: 'playlist_detail', arguments: playlist),
-            builder: (_) => PlaylistDetailView(playlist: playlist),
-          ),
-        );
-      },
+      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
       borderRadius: BorderRadius.circular(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,6 +304,9 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
   String _selectedTypeName = '全部';
   Map<String, dynamic> _allAlbums = {};
   bool _isLoading = true;
+
+  @override
+  String get refreshKey => 'root:1';
 
   final List<Map<String, String>> _types = [
     {'id': 'all', 'name': '全部'},
@@ -415,24 +414,7 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                     itemBuilder: (context, index) {
                       final album = albums[index];
                       return InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            CupertinoPageRoute(
-                              settings: RouteSettings(
-                                name: 'album_detail', 
-                                arguments: {
-                                  'id': album.id,
-                                  'name': album.name,
-                                }
-                              ),
-                              builder: (_) => AlbumDetailView(
-                                albumId: album.id,
-                                albumName: album.name,
-                              ),
-                            ),
-                          );
-                        },
+                        onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
                         borderRadius: BorderRadius.circular(10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -504,6 +486,9 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
   late Future<List<Song>> _songsFuture;
 
   @override
+  String get refreshKey => 'root:1';
+
+  @override
   void initState() {
     super.initState();
     _songsFuture = MusicApi.getNewSongs();
@@ -524,8 +509,6 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
 
   @override
   Widget build(BuildContext context) {
-    final selectionProvider = context.watch<SelectionProvider>();
-
     return FutureBuilder<List<Song>>(
       future: _songsFuture,
       builder: (context, snapshot) {
@@ -536,13 +519,13 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
           children: [
             Column(
               children: [
-                if (songs.isNotEmpty && !selectionProvider.isSelectionMode)
+                if (songs.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
                     child: Row(
                       children: [
                         const Spacer(),
-                        _buildBatchButton(context, selectionProvider, songs),
+                        SongBatchActionButton(songs: songs),
                       ],
                     ),
                   ),
@@ -554,11 +537,7 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
                     itemBuilder: (context, index) {
                       final song = songs[index];
                       return Padding(
-                        padding: EdgeInsets.only(
-                          bottom: index == songs.length - 1 
-                            ? (selectionProvider.isSelectionMode ? 80 : 20) 
-                            : 0
-                        ),
+                        padding: EdgeInsets.only(bottom: index == songs.length - 1 ? 20 : 0),
                         child: SongCard(
                           song: song,
                           playlist: songs,
@@ -570,50 +549,10 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
                 ),
               ],
             ),
-            const BatchActionBar(),
             BackToTop(controller: _scrollController),
           ],
         );
       },
-    );
-  }
-
-  Widget _buildBatchButton(BuildContext context, SelectionProvider selectionProvider, List<Song> songs) {
-    final theme = Theme.of(context);
-    
-    return InkWell(
-      onTap: () {
-        selectionProvider.setSongList(songs);
-        selectionProvider.enterSelectionMode();
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.onSurface.withAlpha(15),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              CupertinoIcons.checkmark_circle,
-              size: 16,
-              color: theme.colorScheme.onSurface.withAlpha(200),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '批量操作',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface.withAlpha(200),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
