@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/rendering.dart';
@@ -7,6 +9,16 @@ import '../../models/playlist.dart';
 import '../../providers/audio_provider.dart';
 import 'song_card.dart';
 import 'back_to_top.dart';
+import 'song_table_layout.dart';
+
+enum _SongSortField { order, title, album, duration }
+
+class _SongListEntry {
+  final Song song;
+  final int originalIndex;
+
+  const _SongListEntry({required this.song, required this.originalIndex});
+}
 
 class SongList extends StatefulWidget {
   final List<Song> songs;
@@ -43,16 +55,26 @@ class SongList extends StatefulWidget {
 }
 
 class _SongListState extends State<SongList> {
-  static const double _songItemExtent = 64.0;
-  static const double _stickyToolbarHeight = 56.0;
+  static const double _songItemExtent = 60.0;
+  static const double _stickyToolbarHeight = 60.0;
+  static const double _tableHeaderHeight = 44.0;
+  static const double _searchBoxMaxWidth = 240.0;
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String? _selectedSongKey;
   List<Song>? _cachedFilteredSongs;
   List<Song>? _lastSourceSongs;
   String? _lastSearchQuery;
   bool _suppressSongCardHover = false;
+  _SongSortField _sortField = _SongSortField.order;
+  bool _sortAscending = true;
+
+  String _songSelectionKey(Song song, int index) {
+    if (song.hash.isNotEmpty) return song.hash;
+    return '${song.title}|${song.displayAlbumName}|$index';
+  }
 
   bool get _hasPinnedPrimaryHeader {
     final headers = widget.headers;
@@ -60,18 +82,43 @@ class _SongListState extends State<SongList> {
     return headers.any((header) => header is SliverAppBar && header.pinned);
   }
 
-  double get _locatePinnedHeight =>
-      _stickyToolbarHeight + (_hasPinnedPrimaryHeader ? kToolbarHeight : 0.0);
+  double get _estimatedHeaderScrollExtent {
+    final headers = widget.headers;
+    if (headers == null) return 0.0;
+
+    return headers.fold<double>(0.0, (sum, header) {
+      if (header is SliverAppBar) {
+        final expandedHeight =
+            header.expandedHeight ??
+            header.collapsedHeight ??
+            header.toolbarHeight;
+        final collapsedHeight = header.pinned
+            ? (header.collapsedHeight ?? header.toolbarHeight)
+            : 0.0;
+        final scrollExtent = expandedHeight - collapsedHeight;
+        return sum + math.max(scrollExtent, 0.0);
+      }
+
+      if (header is SliverToBoxAdapter) {
+        return sum + 48.0;
+      }
+
+      return sum + 44.0;
+    });
+  }
+
+  double _locatePinnedHeight(bool hasTableHeader) {
+    return _stickyToolbarHeight +
+        (hasTableHeader ? _tableHeaderHeight : 0.0) +
+        (_hasPinnedPrimaryHeader ? kToolbarHeight : 0.0);
+  }
 
   double _calculateLocateTargetOffset(int index) {
-    final hasHeaders = widget.headers != null && widget.headers!.isNotEmpty;
-    final headerHeight = hasHeaders ? 200.0 : 0.0;
     final targetOffset =
-        (index * _songItemExtent) +
-        headerHeight +
-        _stickyToolbarHeight -
-        _locatePinnedHeight;
-    return targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent).toDouble();
+        _estimatedHeaderScrollExtent + (index * _songItemExtent);
+    return targetOffset
+        .clamp(0.0, _scrollController.position.maxScrollExtent)
+        .toDouble();
   }
 
   Future<void> _locateCurrentSong(List<Song> filteredSongs) async {
@@ -79,25 +126,30 @@ class _SongListState extends State<SongList> {
     final currentSong = audioProvider.currentSong;
     if (currentSong == null || !_scrollController.hasClients) return;
 
-    final index = filteredSongs.indexWhere((song) => song.isSameSong(currentSong));
+    final index = filteredSongs.indexWhere(
+      (song) => song.isSameSong(currentSong),
+    );
     if (index == -1) return;
 
     final position = _scrollController.position;
-    final visibleExtent = position.viewportDimension - _locatePinnedHeight;
-    if (visibleExtent <= 0) return;
+    final hasTableHeader = filteredSongs.isNotEmpty;
+    final pinnedHeight = _locatePinnedHeight(hasTableHeader);
+    final visibleExtent = position.viewportDimension - pinnedHeight;
+    if (visibleExtent <= _songItemExtent) return;
 
-    final itemTop = _calculateLocateTargetOffset(index);
+    final alignedOffset = _calculateLocateTargetOffset(index);
+    final itemTop = alignedOffset + pinnedHeight;
     final itemBottom = itemTop + _songItemExtent;
-    final visibleTop = position.pixels;
-    final visibleBottom = visibleTop + visibleExtent;
+    final visibleTop = position.pixels + pinnedHeight;
+    final visibleBottom = position.pixels + position.viewportDimension;
 
     if (itemTop >= visibleTop && itemBottom <= visibleBottom) return;
 
     final targetOffset = itemTop < visibleTop
-        ? itemTop
-        : (itemBottom - visibleExtent)
-            .clamp(0.0, position.maxScrollExtent)
-            .toDouble();
+        ? alignedOffset
+        : (itemBottom - position.viewportDimension)
+              .clamp(0.0, position.maxScrollExtent)
+              .toDouble();
 
     if ((targetOffset - position.pixels).abs() < 1.0) return;
 
@@ -106,6 +158,57 @@ class _SongListState extends State<SongList> {
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _toggleSort(_SongSortField field) {
+    setState(() {
+      if (_sortField != field) {
+        _sortField = field;
+        _sortAscending = true;
+        return;
+      }
+
+      if (_sortAscending) {
+        _sortAscending = !_sortAscending;
+        return;
+      }
+
+      _sortField = _SongSortField.order;
+      _sortAscending = true;
+    });
+  }
+
+  bool _isSortActive(_SongSortField field) {
+    if (_sortField != field) return false;
+    return field != _SongSortField.order || !_sortAscending;
+  }
+
+  int _compareEntries(_SongListEntry a, _SongListEntry b) {
+    int compare;
+    switch (_sortField) {
+      case _SongSortField.order:
+        compare = a.originalIndex.compareTo(b.originalIndex);
+        break;
+      case _SongSortField.title:
+        compare = a.song.title.toLowerCase().compareTo(
+          b.song.title.toLowerCase(),
+        );
+        break;
+      case _SongSortField.album:
+        compare = a.song.displayAlbumName.toLowerCase().compareTo(
+          b.song.displayAlbumName.toLowerCase(),
+        );
+        break;
+      case _SongSortField.duration:
+        compare = a.song.duration.compareTo(b.song.duration);
+        break;
+    }
+
+    if (compare == 0) {
+      compare = a.originalIndex.compareTo(b.originalIndex);
+    }
+
+    return _sortAscending ? compare : -compare;
   }
 
   @override
@@ -136,10 +239,12 @@ class _SongListState extends State<SongList> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    final shouldSuppress = notification is ScrollStartNotification ||
+    final shouldSuppress =
+        notification is ScrollStartNotification ||
         notification is ScrollUpdateNotification ||
         notification is OverscrollNotification;
-    final shouldRestore = notification is ScrollEndNotification ||
+    final shouldRestore =
+        notification is ScrollEndNotification ||
         (notification is UserScrollNotification &&
             notification.direction == ScrollDirection.idle);
 
@@ -153,7 +258,9 @@ class _SongListState extends State<SongList> {
   }
 
   List<Song> get _filteredSongs {
-    if (_lastSourceSongs == widget.songs && _lastSearchQuery == _searchQuery && _cachedFilteredSongs != null) {
+    if (_lastSourceSongs == widget.songs &&
+        _lastSearchQuery == _searchQuery &&
+        _cachedFilteredSongs != null) {
       return _cachedFilteredSongs!;
     }
 
@@ -173,10 +280,20 @@ class _SongListState extends State<SongList> {
     return _cachedFilteredSongs!;
   }
 
+  List<_SongListEntry> get _sortedEntries {
+    final entries = [
+      for (var index = 0; index < _filteredSongs.length; index++)
+        _SongListEntry(song: _filteredSongs[index], originalIndex: index),
+    ];
+    entries.sort(_compareEntries);
+    return entries;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final filteredSongs = _filteredSongs;
+    final sortedEntries = _sortedEntries;
+    final filteredSongs = [for (final entry in sortedEntries) entry.song];
     final listPadding = widget.padding.resolve(Directionality.of(context));
 
     if (widget.isLoading) {
@@ -197,119 +314,85 @@ class _SongListState extends State<SongList> {
             physics: const BouncingScrollPhysics(),
             slivers: [
               if (widget.headers != null) ...widget.headers!,
-            
-            // Sticky Toolbar (Search & Actions)
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _FixedHeightHeaderDelegate(
-                height: _stickyToolbarHeight,
-                child: Container(
-                  color: theme.scaffoldBackgroundColor,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                  child: Row(
-                    children: [
-                      const Spacer(),
 
-                      // Search Box
-                      Container(
-                        width: 240,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.onSurface.withAlpha(15),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (value) => setState(() => _searchQuery = value),
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                          textAlignVertical: TextAlignVertical.center,
-                          decoration: InputDecoration(
-                            isCollapsed: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            hintText: '搜索列表内歌曲',
-                            hintStyle: TextStyle(
-                              color: theme.colorScheme.onSurface.withAlpha(100),
-                              fontSize: 12,
-                            ),
-                            prefixIcon: Icon(
-                              CupertinoIcons.search,
-                              size: 14,
-                              color: theme.colorScheme.onSurface.withAlpha(120),
-                            ),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? GestureDetector(
-                                    onTap: () {
-                                      _searchController.clear();
-                                      setState(() => _searchQuery = '');
-                                    },
-                                    child: Icon(
-                                      CupertinoIcons.clear_fill,
-                                      size: 14,
-                                      color: theme.colorScheme.onSurface.withAlpha(120),
-                                    ),
-                                  )
-                                : null,
-                            border: InputBorder.none,
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      // Locate Button
-                      _buildLocatePlayingButton(context, filteredSongs),
-                    ],
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _FixedHeightHeaderDelegate(
+                  height: _stickyToolbarHeight,
+                  child: _buildStickyToolbar(
+                    context,
+                    filteredSongs: filteredSongs,
+                    listPadding: listPadding,
                   ),
                 ),
               ),
-            ),
 
-            if (filteredSongs.isEmpty)
-              SliverToBoxAdapter(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(40.0),
-                    child: Text(
-                      _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
-                      style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-                    ),
+              if (filteredSongs.isNotEmpty)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _FixedHeightHeaderDelegate(
+                    height: _tableHeaderHeight,
+                    child: _buildTableHeader(context, listPadding: listPadding),
                   ),
                 ),
-              )
-            else ...[
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(listPadding.left, 0, listPadding.right, listPadding.bottom),
-                sliver: SliverFixedExtentList(
-                  itemExtent: _songItemExtent,
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
+
+              if (filteredSongs.isEmpty)
+                SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+                      child: Text(
+                        _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
+                        style: TextStyle(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              else ...[
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    listPadding.left,
+                    0,
+                    listPadding.right,
+                    listPadding.bottom,
+                  ),
+                  sliver: SliverFixedExtentList(
+                    itemExtent: _songItemExtent,
+                    delegate: SliverChildBuilderDelegate((context, index) {
                       final song = filteredSongs[index];
+                      final songSelectionKey = _songSelectionKey(song, index);
                       return SongCard(
                         song: song,
                         playlist: filteredSongs,
                         parentPlaylist: widget.parentPlaylist,
+                        rowNumber: index + 1,
                         showMore: true,
+                        isRowSelected: _selectedSongKey == songSelectionKey,
+                        onSelect: () {
+                          if (_selectedSongKey == songSelectionKey) return;
+                          setState(() => _selectedSongKey = songSelectionKey);
+                        },
                         suppressHover: _suppressSongCardHover,
                         onDoubleTapPlay: widget.onSongDoubleTapPlay,
                         enableDefaultDoubleTapPlay:
                             widget.enableDefaultDoubleTapPlay,
                       );
-                    },
-                    childCount: filteredSongs.length,
+                    }, childCount: filteredSongs.length),
                   ),
                 ),
-              ),
-            ],
-            
-            if (widget.isLoadingMore)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CupertinoActivityIndicator()),
-                ),
-              ),
+              ],
 
-            const SliverToBoxAdapter(child: SizedBox(height: 20)),
+              if (widget.isLoadingMore)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Center(child: CupertinoActivityIndicator()),
+                  ),
+                ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 20)),
             ],
           ),
         ),
@@ -318,22 +401,327 @@ class _SongListState extends State<SongList> {
     );
   }
 
-  Widget _buildLocatePlayingButton(BuildContext context, List<Song> filteredSongs) {
+  Widget _buildStickyToolbar(
+    BuildContext context, {
+    required List<Song> filteredSongs,
+    required EdgeInsets listPadding,
+  }) {
     final theme = Theme.of(context);
-    return InkWell(
-      onTap: () => _locateCurrentSong(filteredSongs),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 36,
-        width: 36,
-        decoration: BoxDecoration(
-          color: theme.colorScheme.onSurface.withAlpha(15),
-          borderRadius: BorderRadius.circular(10),
+
+    return Container(
+      color: theme.scaffoldBackgroundColor,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          listPadding.left,
+          10,
+          listPadding.right,
+          10,
         ),
-        child: Icon(
-          CupertinoIcons.scope,
-          size: 18,
-          color: theme.colorScheme.onSurface.withAlpha(200),
+        child: Row(
+          children: [
+            _buildSongsTab(context, filteredSongs.length),
+            const Spacer(),
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _searchBoxMaxWidth,
+                  ),
+                  child: _buildSearchField(context),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            _buildLocatePlayingButton(context, filteredSongs),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSongsTab(BuildContext context, int filteredCount) {
+    final theme = Theme.of(context);
+    final totalCount = widget.songs.length;
+    final badgeLabel = _searchQuery.isNotEmpty && filteredCount != totalCount
+        ? '$filteredCount / $totalCount'
+        : '$totalCount';
+
+    return IntrinsicWidth(
+      child: SizedBox(
+        height: 36,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              left: 0,
+              bottom: 7,
+              child: Text(
+                '歌曲',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurface,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 24,
+              top: 0,
+              child: Container(
+                key: const ValueKey('song-list-tab-count-badge'),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(18),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  badgeLabel,
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: Container(
+                width: 22,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(150),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchField(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withAlpha(15),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) => setState(() => _searchQuery = value),
+        cursorColor: theme.colorScheme.primary,
+        style: TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+        ),
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.fromLTRB(0, 9, 12, 9),
+          hintText: '搜索列表内歌曲',
+          hintStyle: TextStyle(
+            color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            height: 1.2,
+          ),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 8),
+            child: Icon(
+              CupertinoIcons.search,
+              size: 14,
+              color: theme.colorScheme.onSurface.withAlpha(120),
+            ),
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 34,
+            minHeight: 36,
+          ),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: IconButton(
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 18,
+                      height: 18,
+                    ),
+                    splashRadius: 12,
+                    icon: Icon(
+                      CupertinoIcons.clear_fill,
+                      size: 14,
+                      color: theme.colorScheme.onSurface.withAlpha(120),
+                    ),
+                  ),
+                )
+              : null,
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 30,
+            minHeight: 36,
+          ),
+          border: InputBorder.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableHeader(
+    BuildContext context, {
+    required EdgeInsets listPadding,
+  }) {
+    final theme = Theme.of(context);
+    final actionSectionWidth =
+        SongTableLayout.listActionGap +
+        SongTableLayout.listRowActionWidth +
+        SongTableLayout.listFavoriteGap +
+        SongTableLayout.listFavoriteWidth;
+
+    return Container(
+      color: theme.scaffoldBackgroundColor,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: listPadding.left,
+          right: listPadding.right,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: SongTableLayout.listRowHorizontalPadding,
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: SongTableLayout.listLeadingWidth,
+                child: _buildSortHeaderCell(
+                  context,
+                  label: '#',
+                  field: _SongSortField.order,
+                ),
+              ),
+              const SizedBox(width: SongTableLayout.listCoverSectionWidth),
+              Expanded(
+                child: _buildSortHeaderCell(
+                  context,
+                  label: '歌曲',
+                  field: _SongSortField.title,
+                ),
+              ),
+              SizedBox(width: actionSectionWidth),
+              const SizedBox(width: SongTableLayout.listAlbumGap),
+              SizedBox(
+                width: SongTableLayout.listAlbumWidth,
+                child: _buildSortHeaderCell(
+                  context,
+                  label: '专辑',
+                  field: _SongSortField.album,
+                ),
+              ),
+              const SizedBox(width: SongTableLayout.listDurationGap),
+              SizedBox(
+                width: SongTableLayout.listDurationWidth,
+                child: _buildSortHeaderCell(
+                  context,
+                  label: '时长',
+                  field: _SongSortField.duration,
+                  alignment: Alignment.centerRight,
+                ),
+              ),
+              const SizedBox(width: SongTableLayout.listTrailingActionWidth),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortHeaderCell(
+    BuildContext context, {
+    required String label,
+    required _SongSortField field,
+    Alignment alignment = Alignment.centerLeft,
+  }) {
+    final theme = Theme.of(context);
+    final isActive = _isSortActive(field);
+    final foregroundColor = isActive
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
+    final inactiveArrowColor = theme.colorScheme.onSurfaceVariant.withAlpha(
+      150,
+    );
+    final icon = isActive
+        ? (_sortAscending
+              ? Icons.arrow_upward_rounded
+              : Icons.arrow_downward_rounded)
+        : Icons.swap_vert_rounded;
+    final iconSize = isActive ? 15.0 : 16.0;
+    final iconColor = isActive ? foregroundColor : inactiveArrowColor;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _toggleSort(field),
+        borderRadius: BorderRadius.circular(8),
+        hoverColor: Colors.transparent,
+        child: SizedBox(
+          height: _tableHeaderHeight,
+          child: Align(
+            alignment: alignment,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Icon(icon, size: iconSize, color: iconColor),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocatePlayingButton(
+    BuildContext context,
+    List<Song> filteredSongs,
+  ) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: '定位当前播放',
+      child: InkWell(
+        onTap: () => _locateCurrentSong(filteredSongs),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 36,
+          width: 36,
+          decoration: BoxDecoration(
+            color: theme.colorScheme.onSurface.withAlpha(15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            CupertinoIcons.scope,
+            size: 18,
+            color: theme.colorScheme.onSurface.withAlpha(200),
+          ),
         ),
       ),
     );
@@ -347,7 +735,11 @@ class _FixedHeightHeaderDelegate extends SliverPersistentHeaderDelegate {
   _FixedHeightHeaderDelegate({required this.child, required this.height});
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return child;
   }
 

@@ -20,13 +20,18 @@ import '../widgets/detail_page_action_row.dart';
 class ArtistDetailView extends StatefulWidget {
   final int artistId;
   final String artistName;
-  const ArtistDetailView({super.key, required this.artistId, required this.artistName});
+  const ArtistDetailView({
+    super.key,
+    required this.artistId,
+    required this.artistName,
+  });
 
   @override
   State<ArtistDetailView> createState() => _ArtistDetailViewState();
 }
 
-class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableState {
+class _ArtistDetailViewState extends State<ArtistDetailView>
+    with RefreshableState {
   static const int _pageSize = 200;
 
   @override
@@ -94,7 +99,10 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
         _songs = songs;
         _isLoading = false;
         final loadedCount = songs?.length ?? 0;
-        _hasMore = _computeHasMore(loadedCount: loadedCount, lastPageCount: loadedCount);
+        _hasMore = _computeHasMore(
+          loadedCount: loadedCount,
+          lastPageCount: loadedCount,
+        );
         if (!_hasMore) {
           _allSongsCache = List.unmodifiable(songs ?? const <Song>[]);
         }
@@ -114,7 +122,11 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
   }
 
   Future<List<Song>> _fetchSongsPage(int page) {
-    return MusicApi.getSingerSongs(widget.artistId, page: page, pagesize: _pageSize);
+    return MusicApi.getSingerSongs(
+      widget.artistId,
+      page: page,
+      pagesize: _pageSize,
+    );
   }
 
   Future<void> _loadMore() async {
@@ -184,13 +196,19 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
         }
         songs.addAll(moreSongs);
         lastLoadedPage = nextPage;
-        hasMore = _computeHasMore(loadedCount: songs.length, lastPageCount: moreSongs.length);
+        hasMore = _computeHasMore(
+          loadedCount: songs.length,
+          lastPageCount: moreSongs.length,
+        );
 
         final playbackProvider = _playbackAppendProvider;
         final playbackSessionId = _playbackAppendSessionId;
         if (playbackProvider != null && playbackSessionId != null) {
           if (playbackProvider.playlistSessionId == playbackSessionId) {
-            if (!playbackProvider.appendSongsToActivePlaylist(moreSongs, sessionId: playbackSessionId)) {
+            if (!playbackProvider.appendSongsToActivePlaylist(
+              moreSongs,
+              sessionId: playbackSessionId,
+            )) {
               _playbackAppendProvider = null;
               _playbackAppendSessionId = null;
             }
@@ -310,7 +328,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 180,
+          expandedHeight: 168,
           pinned: true,
           automaticallyImplyLeading: false,
           elevation: 0,
@@ -320,7 +338,8 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
             expandedTitleScale: 1.0,
             title: LayoutBuilder(
               builder: (context, constraints) {
-                final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                final bool isCollapsed =
+                    constraints.maxHeight <= kToolbarHeight + 20;
                 return AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isCollapsed ? 1.0 : 0.0,
@@ -400,7 +419,11 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
                         color: theme.colorScheme.surfaceContainerHighest,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(CupertinoIcons.person_fill, size: 52, color: theme.colorScheme.onSurfaceVariant),
+                      child: Icon(
+                        CupertinoIcons.person_fill,
+                        size: 52,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   const SizedBox(width: 32),
                   Expanded(
@@ -463,7 +486,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
         if (_artist != null && _artist!.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              padding: const EdgeInsets.fromLTRB(24, 6, 24, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -519,7 +542,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView> with RefreshableSta
           ),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
             child: Text(
               '热门歌曲',
               style: theme.textTheme.titleMedium?.copyWith(

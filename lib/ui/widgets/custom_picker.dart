@@ -1,7 +1,7 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import '../../theme/app_theme.dart';
+
+import 'app_menu.dart';
 import 'custom_tab_bar.dart';
 
 class PickerOption {
@@ -40,23 +40,30 @@ class CustomPicker extends StatefulWidget {
       context: context,
       barrierDismissible: true,
       barrierLabel: 'CustomPicker',
-      barrierColor: Colors.black.withAlpha(20),
+      barrierColor: Colors.black.withAlpha(36),
       transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (context, animation, secondaryAnimation) => Center(
-        child: ScaleTransition(
-          scale: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          child: FadeTransition(
-            opacity: animation,
-            child: CustomPicker(
-              title: title,
-              options: options,
-              selectedId: selectedId,
-              onSelected: onSelected,
-              maxWidth: maxWidth,
-            ),
-          ),
+        child: CustomPicker(
+          title: title,
+          options: options,
+          selectedId: selectedId,
+          onSelected: onSelected,
+          maxWidth: maxWidth,
         ),
       ),
+      transitionBuilder: (context, animation, _, child) {
+        final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.02),
+              end: Offset.zero,
+            ).animate(curved),
+            child: child,
+          ),
+        );
+      },
     );
   }
 
@@ -110,67 +117,51 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final modernTheme = theme.extension<AppModernTheme>()!;
     final bool useTabs = _tabController != null;
 
-    return Container(
-      constraints: BoxConstraints(
-        maxWidth: widget.maxWidth!, 
-        maxHeight: MediaQuery.of(context).size.height * 0.7,
-      ),
-      margin: const EdgeInsets.all(24),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: modernTheme.modalColor,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: theme.colorScheme.primary.withAlpha(40),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(20),
-                  blurRadius: 30,
-                  offset: const Offset(0, 10),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: widget.maxWidth!,
+          maxHeight: MediaQuery.of(context).size.height * 0.7,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: AppMenuPanel(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            borderRadius: const BorderRadius.all(Radius.circular(24)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
+                if (useTabs)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                    child: CustomTabBar(
+                      controller: _tabController!,
+                      tabs: _groupNames,
+                    ),
+                  ),
+                Flexible(
+                  child: useTabs
+                      ? SizedBox(
+                          height: 320,
+                          child: TabBarView(
+                            controller: _tabController,
+                            physics: const BouncingScrollPhysics(),
+                            children: _groupNames
+                                .map((name) => _buildOptionWrap(
+                                      context,
+                                      _groupedOptions[name]!,
+                                    ))
+                                .toList(),
+                          ),
+                        )
+                      : _buildOptionWrap(context, widget.options),
                 ),
               ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(context),
-                  if (useTabs)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                      child: CustomTabBar(
-                        controller: _tabController!,
-                        tabs: _groupNames,
-                      ),
-                    ),
-                  Flexible(
-                    child: useTabs
-                        ? SizedBox(
-                            height: 320, // Tab 模式下给一个固定参考高度
-                            child: TabBarView(
-                              controller: _tabController,
-                              physics: const BouncingScrollPhysics(),
-                              children: _groupNames.map((name) {
-                                return _buildScrollArea(context, _groupedOptions[name]!, modernTheme);
-                              }).toList(),
-                            ),
-                          )
-                        : _buildScrollArea(context, widget.options, modernTheme),
-                  ),
-                ],
-              ),
             ),
           ),
         ),
@@ -178,17 +169,63 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildScrollArea(BuildContext context, List<PickerOption> items, AppModernTheme modernTheme) {
+  Widget _buildOptionWrap(BuildContext context, List<PickerOption> items) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
       physics: const BouncingScrollPhysics(),
       child: Wrap(
         spacing: 10,
         runSpacing: 10,
-        children: items.map((item) {
-          final isSelected = item.id == widget.selectedId;
-          return _buildTag(context, item, isSelected, modernTheme);
-        }).toList(),
+        children: items
+            .map(
+              (item) => _buildTag(
+                context,
+                item,
+                item.id == widget.selectedId,
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildTag(BuildContext context, PickerOption item, bool isSelected) {
+    final theme = Theme.of(context);
+
+    return InkWell(
+      onTap: () {
+        widget.onSelected(item);
+        Navigator.of(context).pop();
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurface.withAlpha(15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? theme.colorScheme.primary
+                : theme.colorScheme.onSurface.withAlpha(30),
+            width: 1,
+          ),
+        ),
+        child: Text(
+          item.name,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            color: isSelected
+                ? (theme.brightness == Brightness.light
+                    ? Colors.white
+                    : Colors.black)
+                : theme.colorScheme.onSurface.withAlpha(200),
+          ),
+        ),
       ),
     );
   }
@@ -196,9 +233,23 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 12, 12),
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 12),
       child: Row(
         children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withAlpha(18),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              CupertinoIcons.square_grid_2x2,
+              size: 16,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
           Text(
             widget.title,
             style: TextStyle(
@@ -209,60 +260,18 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
             ),
           ),
           const Spacer(),
-          CupertinoButton(
+          IconButton(
             padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: '关闭',
             onPressed: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.onSurface.withAlpha(15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                CupertinoIcons.xmark,
-                size: 14,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            icon: Icon(
+              CupertinoIcons.xmark,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTag(BuildContext context, PickerOption item, bool isSelected, AppModernTheme modernTheme) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () {
-        widget.onSelected(item);
-        Navigator.pop(context);
-      },
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected 
-            ? theme.colorScheme.primary 
-            : theme.colorScheme.onSurface.withAlpha(15),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected 
-              ? theme.colorScheme.primary 
-              : theme.colorScheme.onSurface.withAlpha(30),
-            width: 1,
-          ),
-        ),
-        child: Text(
-          item.name,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected 
-              ? (theme.brightness == Brightness.light ? Colors.white : modernTheme.tabSelectedTextColor)
-              : theme.colorScheme.onSurface.withAlpha(200),
-          ),
-        ),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/song.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/navigation_provider.dart';
@@ -50,21 +51,35 @@ class LibraryView extends StatelessWidget {
   }
 }
 
-class _SongList extends StatelessWidget {
+class _SongList extends StatefulWidget {
   final String type;
   const _SongList({required this.type});
+
+  @override
+  State<_SongList> createState() => _SongListState();
+}
+
+class _SongListState extends State<_SongList> {
+  String? _selectedSongKey;
+
+  String _songSelectionKey(Song song, int index) {
+    if (song.hash.isNotEmpty) return song.hash;
+    return '${song.title}|${song.displayAlbumName}|$index';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Consumer<PersistenceProvider>(
       builder: (context, persistence, child) {
-        final songs = type == 'favorites' ? persistence.favorites : persistence.history;
+        final songs = widget.type == 'favorites'
+            ? persistence.favorites
+            : persistence.history;
         
         if (songs.isEmpty) {
           return Center(
             child: Text(
-              type == 'favorites' ? '暂无收藏歌曲' : '暂无播放历史',
+              widget.type == 'favorites' ? '暂无收藏歌曲' : '暂无播放历史',
               style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
             ),
           );
@@ -74,10 +89,16 @@ class _SongList extends StatelessWidget {
           itemCount: songs.length,
           itemBuilder: (context, index) {
             final song = songs[index];
+            final songSelectionKey = _songSelectionKey(song, index);
             return SongCard(
               song: song,
               playlist: songs,
               showMore: true,
+              isRowSelected: _selectedSongKey == songSelectionKey,
+              onSelect: () {
+                if (_selectedSongKey == songSelectionKey) return;
+                setState(() => _selectedSongKey = songSelectionKey);
+              },
             );
           },
         );

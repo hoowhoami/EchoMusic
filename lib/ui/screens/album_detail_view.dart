@@ -20,13 +20,18 @@ import '../../models/playlist.dart' as model;
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
   final String albumName;
-  const AlbumDetailView({super.key, required this.albumId, required this.albumName});
+  const AlbumDetailView({
+    super.key,
+    required this.albumId,
+    required this.albumName,
+  });
 
   @override
   State<AlbumDetailView> createState() => _AlbumDetailViewState();
 }
 
-class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState {
+class _AlbumDetailViewState extends State<AlbumDetailView>
+    with RefreshableState {
   static const int _pageSize = 50;
 
   @override
@@ -94,7 +99,10 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         _songs = songs;
         _isLoading = false;
         final loadedCount = songs?.length ?? 0;
-        _hasMore = _computeHasMore(loadedCount: loadedCount, lastPageCount: loadedCount);
+        _hasMore = _computeHasMore(
+          loadedCount: loadedCount,
+          lastPageCount: loadedCount,
+        );
         if (!_hasMore) {
           _allSongsCache = List.unmodifiable(songs ?? const <Song>[]);
         }
@@ -114,7 +122,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
   }
 
   Future<List<Song>> _fetchSongsPage(int page) {
-    return MusicApi.getAlbumSongs(widget.albumId, page: page, pagesize: _pageSize);
+    return MusicApi.getAlbumSongs(
+      widget.albumId,
+      page: page,
+      pagesize: _pageSize,
+    );
   }
 
   Future<void> _loadMore() async {
@@ -184,13 +196,19 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
         }
         songs.addAll(moreSongs);
         lastLoadedPage = nextPage;
-        hasMore = _computeHasMore(loadedCount: songs.length, lastPageCount: moreSongs.length);
+        hasMore = _computeHasMore(
+          loadedCount: songs.length,
+          lastPageCount: moreSongs.length,
+        );
 
         final playbackProvider = _playbackAppendProvider;
         final playbackSessionId = _playbackAppendSessionId;
         if (playbackProvider != null && playbackSessionId != null) {
           if (playbackProvider.playlistSessionId == playbackSessionId) {
-            if (!playbackProvider.appendSongsToActivePlaylist(moreSongs, sessionId: playbackSessionId)) {
+            if (!playbackProvider.appendSongsToActivePlaylist(
+              moreSongs,
+              sessionId: playbackSessionId,
+            )) {
               _playbackAppendProvider = null;
               _playbackAppendSessionId = null;
             }
@@ -311,20 +329,22 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithAlbumSongs
           : null,
-      parentPlaylist: _album != null ? model.Playlist(
-        id: _album!.id,
-        listCreateListid: _album!.id,
-        name: _album!.name,
-        pic: _album!.pic,
-        intro: _album!.intro,
-        playCount: _album!.playCount,
-        source: 2,
-      ) : null,
+      parentPlaylist: _album != null
+          ? model.Playlist(
+              id: _album!.id,
+              listCreateListid: _album!.id,
+              name: _album!.name,
+              pic: _album!.pic,
+              intro: _album!.intro,
+              playCount: _album!.playCount,
+              source: 2,
+            )
+          : null,
       headers: [
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 180,
+          expandedHeight: 168,
           pinned: true,
           automaticallyImplyLeading: false,
           elevation: 0,
@@ -334,7 +354,8 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
             expandedTitleScale: 1.0,
             title: LayoutBuilder(
               builder: (context, constraints) {
-                final bool isCollapsed = constraints.maxHeight <= kToolbarHeight + 20;
+                final bool isCollapsed =
+                    constraints.maxHeight <= kToolbarHeight + 20;
                 return AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isCollapsed ? 1.0 : 0.0,
@@ -425,7 +446,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                               Text(
                                 '${_album!.singerName} • ${_album!.publishTime}',
                                 style: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant, 
+                                  color: theme.colorScheme.onSurfaceVariant,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -435,8 +456,13 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
                               const SizedBox(height: 12),
                               Row(
                                 children: [
-                                  _buildInfoSmall(context, Icons.favorite_rounded, _formatNumber(_album!.heat)),
-                                  if (_album!.language.isNotEmpty || _album!.type.isNotEmpty) ...[
+                                  _buildInfoSmall(
+                                    context,
+                                    Icons.favorite_rounded,
+                                    _formatNumber(_album!.heat),
+                                  ),
+                                  if (_album!.language.isNotEmpty ||
+                                      _album!.type.isNotEmpty) ...[
                                     const SizedBox(width: 12),
                                     if (_album!.language.isNotEmpty) ...[
                                       _buildTag(context, _album!.language),
@@ -470,60 +496,62 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
           ),
         ),
         SliverToBoxAdapter(
-          child: _album?.intro != null && _album!.intro.isNotEmpty ? Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '专辑介绍',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _album!.intro,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12,
-                  ),
-                ),
-                if (_album!.intro.length > 80)
-                  InkWell(
-                    onTap: () {
-                      CustomDialog.show(
-                        context,
-                        title: '专辑介绍',
-                        content: _album!.intro,
-                        confirmText: '确定',
-                        showCancel: false,
-                        width: 600,
-                      );
-                    },
-                    hoverColor: Colors.transparent,
-                    splashColor: Colors.transparent,
-                    highlightColor: Colors.transparent,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        '查看详情',
-                        style: TextStyle(
-                          color: theme.colorScheme.primary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+          child: _album?.intro != null && _album!.intro.isNotEmpty
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 6, 24, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '专辑介绍',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _album!.intro,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          height: 1.5,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (_album!.intro.length > 80)
+                        InkWell(
+                          onTap: () {
+                            CustomDialog.show(
+                              context,
+                              title: '专辑介绍',
+                              content: _album!.intro,
+                              confirmText: '确定',
+                              showCancel: false,
+                              width: 600,
+                            );
+                          },
+                          hoverColor: Colors.transparent,
+                          splashColor: Colors.transparent,
+                          highlightColor: Colors.transparent,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              '查看详情',
+                              style: TextStyle(
+                                color: theme.colorScheme.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-              ],
-            ),
-          ) : const SizedBox.shrink(),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -536,7 +564,10 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
       decoration: BoxDecoration(
         color: theme.colorScheme.primary.withAlpha(20),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.colorScheme.primary.withAlpha(50), width: 0.5),
+        border: Border.all(
+          color: theme.colorScheme.primary.withAlpha(50),
+          width: 0.5,
+        ),
       ),
       child: Text(
         label,
@@ -559,7 +590,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView> with RefreshableState
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 12, color: theme.colorScheme.onSurfaceVariant.withAlpha(180)),
+        Icon(
+          icon,
+          size: 12,
+          color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+        ),
         const SizedBox(width: 4),
         Text(
           label,

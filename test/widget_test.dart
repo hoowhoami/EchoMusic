@@ -12,6 +12,7 @@ import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/ui/screens/playlist_detail_view.dart';
 import 'package:echomusic/ui/widgets/app_shortcuts.dart';
 import 'package:echomusic/ui/widgets/cover_image.dart';
+import 'package:echomusic/ui/widgets/detail_page_action_row.dart';
 import 'package:echomusic/ui/widgets/player_bar.dart';
 import 'package:echomusic/ui/widgets/queue_drawer.dart';
 import 'package:echomusic/ui/widgets/song_card.dart';
@@ -219,6 +220,26 @@ class _FakePersistenceProvider extends ChangeNotifier
 
 class _FakeNavigationProvider extends ChangeNotifier
     implements NavigationProvider {
+  int openSongDetailCallCount = 0;
+  int openSongCommentCallCount = 0;
+  Song? lastDetailSong;
+  Song? lastCommentSong;
+
+  @override
+  String get currentRefreshKey => 'fake-root';
+
+  @override
+  void openSongDetail(Song song) {
+    openSongDetailCallCount++;
+    lastDetailSong = song;
+  }
+
+  @override
+  void openSongComment(Song song) {
+    openSongCommentCallCount++;
+    lastCommentSong = song;
+  }
+
   @override
   bool isCurrentRoute(String routeName, {int? id}) => false;
 
@@ -228,10 +249,16 @@ class _FakeNavigationProvider extends ChangeNotifier
 
 class _FakeSelectionProvider extends ChangeNotifier
     implements SelectionProvider {
-  final Set<String> _selectedHashes = <String>{};
+  _FakeSelectionProvider({
+    this.selectionMode = false,
+    Set<String> selectedHashes = const <String>{},
+  }) : _selectedHashes = Set<String>.from(selectedHashes);
+
+  final bool selectionMode;
+  final Set<String> _selectedHashes;
 
   @override
-  bool get isSelectionMode => false;
+  bool get isSelectionMode => selectionMode;
 
   @override
   bool isSelected(String hash) {
@@ -262,6 +289,8 @@ void main() {
     int mixSongId = 0,
     int? fileId,
     String albumName = 'Album',
+    String singerName = 'Singer',
+    int duration = 180,
     String? albumId,
     String? source,
   }) {
@@ -270,8 +299,8 @@ void main() {
       name: name,
       albumName: albumName,
       albumId: albumId,
-      singers: [SingerInfo(id: 1, name: 'Singer')],
-      duration: 180,
+      singers: [SingerInfo(id: 1, name: singerName)],
+      duration: duration,
       cover: '',
       mixSongId: mixSongId,
       fileId: fileId,
@@ -665,6 +694,188 @@ void main() {
     },
   );
 
+  testWidgets('SongList shows songs tab, search and sticky sortable header', (
+    tester,
+  ) async {
+    final songs = List.generate(
+      3,
+      (index) =>
+          buildSong(name: 'Header Song $index', hash: 'header-song-$index'),
+    );
+    final audio = _FakeAudioProvider(currentSong: songs[0], initialVolume: 40);
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(
+            value: _FakePersistenceProvider(),
+          ),
+          ChangeNotifierProvider<NavigationProvider>.value(
+            value: _FakeNavigationProvider(),
+          ),
+          ChangeNotifierProvider<SelectionProvider>.value(
+            value: _FakeSelectionProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 960,
+              height: 360,
+              child: SongList(songs: songs),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final countBadge = find.byKey(const ValueKey('song-list-tab-count-badge'));
+
+    expect(countBadge, findsOneWidget);
+    expect(
+      find.descendant(of: countBadge, matching: find.text('3')),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(InkWell, '#'), findsOneWidget);
+    expect(find.widgetWithText(InkWell, '专辑'), findsOneWidget);
+    expect(find.widgetWithText(InkWell, '时长'), findsOneWidget);
+    expect(find.byTooltip('定位当前播放'), findsOneWidget);
+    expect(find.text('搜索列表内歌曲'), findsOneWidget);
+    expect(find.textContaining('匹配 '), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'Header Song 1');
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(of: countBadge, matching: find.text('1 / 3')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('匹配 '), findsNothing);
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -240));
+    await tester.pumpAndSettle();
+
+    final durationHeader = find.widgetWithText(InkWell, '时长');
+    expect(durationHeader, findsOneWidget);
+    expect(tester.getTopLeft(durationHeader).dy, lessThan(120));
+  });
+
+  testWidgets('SongList sorts songs by duration and resets on third tap', (
+    tester,
+  ) async {
+    final songs = [
+      buildSong(name: 'Long Song', hash: 'long-song', duration: 240),
+      buildSong(name: 'Short Song', hash: 'short-song', duration: 120),
+      buildSong(name: 'Mid Song', hash: 'mid-song', duration: 180),
+    ];
+    final audio = _FakeAudioProvider(currentSong: songs[0], initialVolume: 40);
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(
+            value: _FakePersistenceProvider(),
+          ),
+          ChangeNotifierProvider<NavigationProvider>.value(
+            value: _FakeNavigationProvider(),
+          ),
+          ChangeNotifierProvider<SelectionProvider>.value(
+            value: _FakeSelectionProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 960,
+              height: 360,
+              child: SongList(songs: songs),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final durationHeader = find.widgetWithText(InkWell, '时长');
+    await tester.tap(durationHeader);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Short Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Mid Song')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Mid Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Long Song')).dy),
+    );
+
+    await tester.tap(durationHeader);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Long Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Mid Song')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Mid Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Short Song')).dy),
+    );
+
+    await tester.tap(durationHeader);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Long Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Short Song')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Short Song')).dy,
+      lessThan(tester.getTopLeft(find.text('Mid Song')).dy),
+    );
+  });
+
+  testWidgets('DetailPageActionRow keeps action buttons at 36 height', (
+    tester,
+  ) async {
+    final song = buildSong(name: 'Action Song', hash: 'action-song');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: () {},
+            songs: [song],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final playButton = find.ancestor(
+      of: find.text('播放'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is FilledButton,
+        description: 'FilledButton',
+      ),
+    );
+    final batchButton = find.ancestor(
+      of: find.text('批量'),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is FilledButton,
+        description: 'FilledButton',
+      ),
+    );
+
+    expect(tester.getSize(playButton.first).height, 36);
+    expect(tester.getSize(batchButton.first).height, 36);
+  });
+
   testWidgets(
     'QueueDrawer does not auto-scroll when current song is already visible',
     (tester) async {
@@ -864,6 +1075,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('添加下一首播放'), findsOneWidget);
+    expect(find.text('歌曲详情'), findsNothing);
+    expect(find.text('查看评论'), findsNothing);
 
     await tester.tap(find.text('添加下一首播放'));
     await tester.pumpAndSettle();
@@ -873,6 +1086,299 @@ void main() {
     expect(audio.queueAndPlaySongCallCount, 0);
     expect(audio.playSongCallCount, 0);
   });
+
+  testWidgets(
+    'SongList keeps album visible and shows detail/comment icons for the clicked row',
+    (tester) async {
+      final selectedSong = buildSong(
+        name: 'Selected Song',
+        hash: 'selected-song',
+        albumName: 'Selected Album',
+      );
+      final unselectedSong = buildSong(
+        name: 'Unselected Song',
+        hash: 'unselected-song',
+        albumName: 'Unselected Album',
+      );
+      final persistence = _FakePersistenceProvider();
+      final navigation = _FakeNavigationProvider();
+      final selection = _FakeSelectionProvider();
+      final audio = _FakeAudioProvider(
+        currentSong: buildSong(
+          name: 'Other Song',
+          hash: 'selected-actions-other',
+        ),
+        initialVolume: 40,
+      );
+      addTearDown(audio.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AudioProvider>.value(value: audio),
+            ChangeNotifierProvider<PersistenceProvider>.value(
+              value: persistence,
+            ),
+            ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+            ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 900,
+                height: 320,
+                child: SongList(songs: [selectedSong, unselectedSong]),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
+      expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
+
+      await tester.tap(find.text('Selected Song'));
+      await tester.pumpAndSettle();
+
+      final selectedCard = find.byType(SongCard).at(0);
+      final detailButton = find.descendant(
+        of: selectedCard,
+        matching: find.byIcon(CupertinoIcons.info_circle),
+      );
+      final commentButton = find.descendant(
+        of: selectedCard,
+        matching: find.byIcon(CupertinoIcons.chat_bubble_text),
+      );
+      final albumText = find.descendant(
+        of: selectedCard,
+        matching: find.text('Selected Album'),
+      );
+      final favoriteButton = find.descendant(
+        of: selectedCard,
+        matching: find.byIcon(CupertinoIcons.heart),
+      );
+
+      expect(detailButton, findsOneWidget);
+      expect(commentButton, findsOneWidget);
+      expect(albumText, findsOneWidget);
+
+      expect(
+        tester.getCenter(detailButton).dx,
+        lessThan(tester.getCenter(favoriteButton).dx),
+      );
+      expect(
+        tester.getCenter(commentButton).dx,
+        lessThan(tester.getCenter(albumText).dx),
+      );
+      expect(
+        tester.getCenter(detailButton).dx,
+        lessThan(tester.getCenter(albumText).dx),
+      );
+
+      await tester.tap(detailButton);
+      await tester.pump();
+
+      expect(navigation.openSongDetailCallCount, 1);
+      expect(navigation.lastDetailSong?.isSameSong(selectedSong), isTrue);
+      expect(commentButton, findsOneWidget);
+
+      await tester.tap(commentButton);
+      await tester.pump();
+
+      expect(navigation.openSongCommentCallCount, 1);
+      expect(navigation.lastCommentSong?.isSameSong(selectedSong), isTrue);
+    },
+  );
+
+  testWidgets(
+    'SongCard shows detail/comment icons on hover without hiding album',
+    (tester) async {
+      final song = buildSong(
+        name: 'Hover Action Song',
+        hash: 'hover-action-song',
+        albumName: 'Hover Album',
+      );
+      final persistence = _FakePersistenceProvider();
+      final navigation = _FakeNavigationProvider();
+      final selection = _FakeSelectionProvider();
+      final audio = _FakeAudioProvider(
+        currentSong: buildSong(name: 'Other Song', hash: 'hover-action-other'),
+        initialVolume: 40,
+      );
+      addTearDown(audio.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AudioProvider>.value(value: audio),
+            ChangeNotifierProvider<PersistenceProvider>.value(
+              value: persistence,
+            ),
+            ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+            ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 720,
+                child: SongCard(
+                  song: song,
+                  playlist: [song],
+                  showCover: true,
+                  showMore: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
+      expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
+      expect(find.text('Hover Album'), findsOneWidget);
+
+      final mouseGesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouseGesture.removePointer);
+      await mouseGesture.addPointer();
+      await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(CupertinoIcons.info_circle), findsOneWidget);
+      expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsOneWidget);
+      expect(find.text('Hover Album'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'SongCard does not show detail/comment icons in batch selection mode',
+    (tester) async {
+      final song = buildSong(name: 'Batch Song', hash: 'batch-song');
+      final persistence = _FakePersistenceProvider();
+      final navigation = _FakeNavigationProvider();
+      final selection = _FakeSelectionProvider(
+        selectionMode: true,
+        selectedHashes: {song.hash},
+      );
+      final audio = _FakeAudioProvider(
+        currentSong: buildSong(name: 'Other Song', hash: 'batch-song-other'),
+        initialVolume: 40,
+      );
+      addTearDown(audio.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AudioProvider>.value(value: audio),
+            ChangeNotifierProvider<PersistenceProvider>.value(
+              value: persistence,
+            ),
+            ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+            ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 720,
+                child: SongCard(
+                  song: song,
+                  playlist: [song],
+                  showCover: true,
+                  showMore: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final mouseGesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouseGesture.removePointer);
+      await mouseGesture.addPointer();
+      await mouseGesture.moveTo(tester.getCenter(find.byType(SongCard)));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(CupertinoIcons.info_circle), findsNothing);
+      expect(find.byIcon(CupertinoIcons.chat_bubble_text), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'SongCard more button keeps click affordance and opens on tap down',
+    (tester) async {
+      final song = buildSong(
+        name: 'Fast Menu Song',
+        hash: 'fast-menu-song-hash',
+      );
+      final persistence = _FakePersistenceProvider();
+      final navigation = _FakeNavigationProvider();
+      final selection = _FakeSelectionProvider();
+      final audio = _FakeAudioProvider(
+        currentSong: buildSong(
+          name: 'Other Song',
+          hash: 'fast-menu-other-song-hash',
+        ),
+        initialVolume: 40,
+      );
+      addTearDown(audio.dispose);
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<AudioProvider>.value(value: audio),
+            ChangeNotifierProvider<PersistenceProvider>.value(
+              value: persistence,
+            ),
+            ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+            ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+            ChangeNotifierProvider<UserProvider>(create: (_) => UserProvider()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 900,
+                child: SongCard(
+                  song: song,
+                  playlist: [song],
+                  showCover: true,
+                  showMore: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final ellipsisFinder = find.byIcon(CupertinoIcons.ellipsis);
+      final mouseRegions = tester.widgetList<MouseRegion>(
+        find.ancestor(of: ellipsisFinder, matching: find.byType(MouseRegion)),
+      );
+      expect(
+        mouseRegions.any((region) => region.cursor == SystemMouseCursors.click),
+        isTrue,
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer();
+      await gesture.moveTo(tester.getCenter(ellipsisFinder));
+      await tester.pump();
+
+      await gesture.down(tester.getCenter(ellipsisFinder));
+      await tester.pump();
+
+      expect(find.text('添加下一首播放'), findsOneWidget);
+
+      await gesture.up();
+    },
+  );
 
   testWidgets('SongCard shows hover frame when pointer enters card', (
     tester,
@@ -1056,12 +1562,38 @@ void main() {
       expect(find.byIcon(CupertinoIcons.heart_fill), findsOneWidget);
 
       final favoriteMouseRegion = tester.widget<MouseRegion>(
-        find.descendant(
-          of: find.byTooltip('取消收藏'),
-          matching: find.byType(MouseRegion),
-        ),
+        find
+            .ancestor(
+              of: find.byIcon(CupertinoIcons.heart_fill),
+              matching: find.byType(MouseRegion),
+            )
+            .first,
       );
       expect(favoriteMouseRegion.cursor, SystemMouseCursors.click);
+
+      final favoriteScaleFinder = find.ancestor(
+        of: find.byIcon(CupertinoIcons.heart_fill),
+        matching: find.byType(AnimatedScale),
+      );
+      expect(
+        tester.widget<AnimatedScale>(favoriteScaleFinder).scale,
+        equals(1.0),
+      );
+
+      final mouseGesture = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      addTearDown(mouseGesture.removePointer);
+      await mouseGesture.addPointer();
+      await mouseGesture.moveTo(
+        tester.getCenter(find.byIcon(CupertinoIcons.heart_fill)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<AnimatedScale>(favoriteScaleFinder).scale,
+        closeTo(1.15, 0.001),
+      );
 
       await tester.tap(find.byTooltip('取消收藏'));
       await tester.pump();
@@ -1073,6 +1605,79 @@ void main() {
       expect(find.byIcon(CupertinoIcons.heart), findsOneWidget);
     },
   );
+
+  testWidgets('SongCard favorite heart stays in a fixed slot for long titles', (
+    tester,
+  ) async {
+    final shortSong = buildSong(name: '短歌名', hash: 'fixed-favorite-short');
+    final longSong = buildSong(
+      name: '这是一个很长很长很长很长的歌曲标题用于验证收藏按钮位置',
+      hash: 'fixed-favorite-long',
+    );
+    final persistence = _FakePersistenceProvider(
+      favoriteHashes: {shortSong.hash, longSong.hash},
+    );
+    final navigation = _FakeNavigationProvider();
+    final selection = _FakeSelectionProvider();
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Other Song', hash: 'fixed-favorite-other'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(value: persistence),
+          ChangeNotifierProvider<NavigationProvider>.value(value: navigation),
+          ChangeNotifierProvider<SelectionProvider>.value(value: selection),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                SizedBox(
+                  width: 900,
+                  child: SongCard(
+                    song: shortSong,
+                    playlist: [shortSong],
+                    showCover: true,
+                    showMore: true,
+                  ),
+                ),
+                SizedBox(
+                  width: 900,
+                  child: SongCard(
+                    song: longSong,
+                    playlist: [longSong],
+                    showCover: true,
+                    showMore: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cards = find.byType(SongCard);
+    final shortFavorite = find.descendant(
+      of: cards.at(0),
+      matching: find.byIcon(CupertinoIcons.heart_fill),
+    );
+    final longFavorite = find.descendant(
+      of: cards.at(1),
+      matching: find.byIcon(CupertinoIcons.heart_fill),
+    );
+
+    expect(
+      tester.getCenter(shortFavorite).dx,
+      closeTo(tester.getCenter(longFavorite).dx, 0.1),
+    );
+  });
 
   testWidgets(
     'SongCard double tap on cover triggers playlist replacement callback',

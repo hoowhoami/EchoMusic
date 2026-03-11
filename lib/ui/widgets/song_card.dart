@@ -10,19 +10,31 @@ import '../../providers/persistence_provider.dart';
 import '../../providers/selection_provider.dart';
 import '../../providers/navigation_provider.dart';
 import 'cover_image.dart';
+import 'app_menu.dart';
 import 'custom_toast.dart';
+import 'playlist_picker_dialog.dart';
 import 'song_table_layout.dart';
 
 import '../../models/playlist.dart' as model;
+
+enum _SongCardMenuAction {
+  play,
+  playNext,
+  addToPlaylist,
+  removeFromPlaylist,
+}
 
 class SongCard extends StatefulWidget {
   final Song song;
   final List<Song> playlist;
   final model.Playlist? parentPlaylist;
+  final int? rowNumber;
   final bool showCover;
   final double coverSize;
   final bool showMore;
   final bool suppressHover;
+  final bool isRowSelected;
+  final VoidCallback? onSelect;
   final Future<void> Function(Song song)? onDoubleTapPlay;
   final bool enableDefaultDoubleTapPlay;
 
@@ -31,10 +43,13 @@ class SongCard extends StatefulWidget {
     required this.song,
     required this.playlist,
     this.parentPlaylist,
+    this.rowNumber,
     this.showCover = true,
     this.coverSize = 46,
     this.showMore = false,
     this.suppressHover = false,
+    this.isRowSelected = false,
+    this.onSelect,
     this.onDoubleTapPlay,
     this.enableDefaultDoubleTapPlay = false,
   });
@@ -130,6 +145,57 @@ class _SongCardState extends State<SongCard> {
     );
   }
 
+  Widget _buildFavoriteButton({
+    required bool isFavorite,
+    required bool isPlayable,
+    required ThemeData theme,
+  }) {
+    return SizedBox(
+      width: SongTableLayout.listFavoriteWidth,
+      child: _SongCardActionIconButton(
+        icon: isFavorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+        tooltip: isFavorite ? '取消收藏' : '收藏',
+        onPressed: _toggleFavorite,
+        size: 20,
+        hoverEnabled: !widget.suppressHover,
+        color: isFavorite
+            ? Colors.redAccent.withAlpha(isPlayable ? 200 : 120)
+            : theme.colorScheme.onSurfaceVariant.withAlpha(
+                isPlayable ? 170 : 100,
+              ),
+        hoverColor: isFavorite
+            ? Colors.redAccent.withAlpha(isPlayable ? 255 : 170)
+            : theme.colorScheme.primary.withAlpha(isPlayable ? 255 : 150),
+      ),
+    );
+  }
+
+  Widget _buildRowActions({required bool visible}) {
+    return SizedBox(
+      width: SongTableLayout.listRowActionWidth,
+      child: visible
+          ? Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _SongCardActionIconButton(
+                  icon: CupertinoIcons.chat_bubble_text,
+                  tooltip: '歌曲评论',
+                  onPressed: () =>
+                      context.read<NavigationProvider>().openSongComment(widget.song),
+                ),
+                const SizedBox(width: 2),
+                _SongCardActionIconButton(
+                  icon: CupertinoIcons.info_circle,
+                  tooltip: '歌曲详情',
+                  onPressed: () =>
+                      context.read<NavigationProvider>().openSongDetail(widget.song),
+                ),
+              ],
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+
   void _openArtistDetail(SingerInfo singer) {
     if (singer.id <= 0) {
       CustomToast.error(context, '暂无歌手信息');
@@ -217,156 +283,121 @@ class _SongCardState extends State<SongCard> {
 
   Future<void> _showContextMenu({Offset? tapPosition, BuildContext? anchorContext}) async {
     final userProvider = context.read<UserProvider>();
-    final theme = Theme.of(context);
 
     setState(() => _isMenuOpen = true);
+    final hasPlaylistTarget = userProvider.isAuthenticated &&
+        userProvider.createdPlaylists.isNotEmpty;
+    final canRemoveFromPlaylist = widget.parentPlaylist != null &&
+        userProvider.isCreatedPlaylist(widget.parentPlaylist!.id);
 
-    final List<PopupMenuItem<String>> menuItems = [
-      const PopupMenuItem(
-        value: 'play',
-        child: Row(
-          children: [
-            Icon(CupertinoIcons.play_circle, size: 18),
-            SizedBox(width: 12),
-            Text('立即播放', style: TextStyle(fontSize: 14)),
-          ],
-        ),
-      ),
-      const PopupMenuItem(
-        value: 'playNext',
-        child: Row(
-          children: [
-            Icon(CupertinoIcons.add, size: 18),
-            SizedBox(width: 12),
-            Text('添加下一首播放', style: TextStyle(fontSize: 14)),
-          ],
-        ),
-      ),
-      const PopupMenuItem(
-        value: 'songDetails',
-        child: Row(
-          children: [
-            Icon(CupertinoIcons.info_circle, size: 18),
-            SizedBox(width: 12),
-            Text('歌曲详情', style: TextStyle(fontSize: 14)),
-          ],
-        ),
-      ),
-      const PopupMenuItem(
-        value: 'songComments',
-        child: Row(
-          children: [
-            Icon(CupertinoIcons.chat_bubble_text, size: 18),
-            SizedBox(width: 12),
-            Text('查看评论', style: TextStyle(fontSize: 14)),
-          ],
-        ),
-      ),
-    ];
+    final value = await showAppContextMenu<_SongCardMenuAction>(
+      context,
+      width: 228,
+      estimatedHeight: canRemoveFromPlaylist
+          ? 232
+          : (hasPlaylistTarget ? 184 : 136),
+      tapPosition: tapPosition,
+      anchorContext: tapPosition == null ? anchorContext : null,
+      alignRightToAnchor: tapPosition == null,
+      menuBuilder: (menuContext, close) {
+        Widget buildItem({
+          required _SongCardMenuAction action,
+          required String label,
+          required IconData icon,
+          bool isDestructive = false,
+        }) {
+          final theme = Theme.of(menuContext);
+          return AppMenuItemButton(
+            leading: Icon(
+              icon,
+              size: 17,
+              color: isDestructive
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            title: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: isDestructive
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurface,
+              ),
+            ),
+            isDestructive: isDestructive,
+            showCheckmark: false,
+            onPressed: () => close(action),
+          );
+        }
 
-    if (userProvider.isAuthenticated) {
-      final myPlaylists = userProvider.createdPlaylists;
-
-      if (myPlaylists.isNotEmpty) {
-        menuItems.add(
-          PopupMenuItem(
-            value: 'addToPlaylist',
-            padding: EdgeInsets.zero,
-            enabled: false,
-            child: PopupMenuButton<int>(
-              tooltip: '',
-              offset: const Offset(120, 0),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(CupertinoIcons.add_circled, size: 18, color: theme.colorScheme.onSurface),
-                    const SizedBox(width: 12),
-                    Text('添加到歌单', style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface)),
-                    const Spacer(),
-                    Icon(CupertinoIcons.chevron_right, size: 12, color: theme.colorScheme.onSurface.withAlpha(120)),
-                  ],
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            buildItem(
+              action: _SongCardMenuAction.play,
+              label: '立即播放',
+              icon: CupertinoIcons.play_circle,
+            ),
+            buildItem(
+              action: _SongCardMenuAction.playNext,
+              label: '添加下一首播放',
+              icon: CupertinoIcons.add,
+            ),
+            if (hasPlaylistTarget)
+              buildItem(
+                action: _SongCardMenuAction.addToPlaylist,
+                label: '添加到歌单',
+                icon: CupertinoIcons.add_circled,
+              ),
+            if (canRemoveFromPlaylist) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Divider(
+                  height: 1,
+                  color: Theme.of(menuContext)
+                      .colorScheme
+                      .outlineVariant
+                      .withAlpha(120),
                 ),
               ),
-              onSelected: (listId) async {
-                Navigator.of(context).pop();
-                
-                final success = await userProvider.addSongToPlaylist(listId, widget.song);
-                if (!mounted) return;
-                _showActionToast(success: success, successMessage: '已添加到歌单', failureMessage: '添加失败');
-              },
-              onCanceled: () {
-                Navigator.of(context).pop();
-              },
-              itemBuilder: (context) => myPlaylists.map((p) {
-                return PopupMenuItem<int>(
-                  value: p['listid'] ?? p['specialid'],
-                  child: Text(p['name'] ?? p['specialname'] ?? ''),
-                );
-              }).toList(),
-            ),
-          ),
+              buildItem(
+                action: _SongCardMenuAction.removeFromPlaylist,
+                label: '从歌单中删除',
+                icon: CupertinoIcons.trash,
+                isDestructive: true,
+              ),
+            ],
+          ],
         );
-      }
-
-      if (widget.parentPlaylist != null && userProvider.isCreatedPlaylist(widget.parentPlaylist!.id)) {
-        menuItems.add(
-          const PopupMenuItem(
-            value: 'removeFromPlaylist',
-            child: Row(
-              children: [
-                Icon(CupertinoIcons.trash, size: 18, color: Colors.red),
-                SizedBox(width: 12),
-                Text('从歌单中删除', style: TextStyle(fontSize: 14, color: Colors.red)),
-              ],
-            ),
-          ),
-        );
-      }
-    }
-
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final RelativeRect position;
-
-    if (tapPosition != null) {
-      final Offset localPosition = overlay.globalToLocal(tapPosition);
-      position = RelativeRect.fromRect(
-        localPosition & Size.zero,
-        Offset.zero & overlay.size,
-      );
-    } else {
-      final RenderBox box =
-          (anchorContext ?? context).findRenderObject() as RenderBox;
-      final Offset offset = box.localToGlobal(Offset.zero, ancestor: overlay);
-      position = RelativeRect.fromRect(
-        Rect.fromLTWH(
-          offset.dx,
-          offset.dy,
-          box.size.width,
-          box.size.height,
-        ),
-        Offset.zero & overlay.size,
-      );
-    }
-
-    final value = await showMenu(
-      context: context,
-      position: position,
-      items: menuItems,
+      },
     );
 
     if (mounted) setState(() => _isMenuOpen = false);
     if (value == null || !mounted) return;
 
-    if (value == 'play') {
+    if (value == _SongCardMenuAction.play) {
       _queueAndPlayCurrentSong();
-    } else if (value == 'playNext') {
+    } else if (value == _SongCardMenuAction.playNext) {
       _addCurrentSongToPlayNext();
-    } else if (value == 'songDetails') {
-      context.read<NavigationProvider>().openSongDetail(widget.song);
-    } else if (value == 'songComments') {
-      context.read<NavigationProvider>().openSongComment(widget.song);
-    } else if (value == 'removeFromPlaylist') {
+    } else if (value == _SongCardMenuAction.addToPlaylist) {
+      final playlist = await showPlaylistPickerDialog(
+        context,
+        playlists: userProvider.createdPlaylists,
+      );
+      if (playlist == null || !mounted) return;
+      final success = await userProvider.addSongToPlaylist(
+        playlist['listid'] ?? playlist['specialid'],
+        widget.song,
+      );
+      if (!mounted) return;
+      _showActionToast(
+        success: success,
+        successMessage: '已添加到歌单',
+        failureMessage: '添加失败',
+      );
+    } else if (value == _SongCardMenuAction.removeFromPlaylist) {
       if (widget.parentPlaylist != null) {
         final success = await userProvider.removeSongFromPlaylist(widget.parentPlaylist!.id, widget.song);
         if (!mounted) return;
@@ -410,11 +441,17 @@ class _SongCardState extends State<SongCard> {
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
                 builder: (context, isFavorite, child) {
+                  final isSingleRowSelected =
+                      widget.isRowSelected && !isSelectionMode;
                   final isHoveringCard =
                       _isCardHovered &&
                       !widget.suppressHover &&
                       !isSelectionMode &&
                       !_isMenuOpen;
+                  final showRowActions =
+                      widget.showMore &&
+                      !isSelectionMode &&
+                      (isSingleRowSelected || isHoveringCard);
 
                   return GestureDetector(
                     onSecondaryTapDown: (details) =>
@@ -435,7 +472,7 @@ class _SongCardState extends State<SongCard> {
                         splashFactory: NoSplash.splashFactory,
                         onTap: isSelectionMode
                             ? () => context.read<SelectionProvider>().toggleSelection(widget.song.hash)
-                            : null,
+                            : widget.onSelect,
                         onDoubleTap: !isSelectionMode &&
                                 (widget.onDoubleTapPlay != null ||
                                     widget.enableDefaultDoubleTapPlay)
@@ -449,7 +486,8 @@ class _SongCardState extends State<SongCard> {
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 120),
                           curve: Curves.easeOut,
-                          decoration: (isSelectionMode && isSelected) ||
+                          decoration: isSingleRowSelected ||
+                                  (isSelectionMode && isSelected) ||
                                   _isMenuOpen ||
                                   isHoveringCard
                               ? BoxDecoration(
@@ -472,152 +510,150 @@ class _SongCardState extends State<SongCard> {
                             ),
                             child: Row(
                               children: [
-                              if (isSelectionMode)
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 10),
-                                  child: Checkbox(
-                                    value: isSelected,
-                                    onChanged: (value) => context.read<SelectionProvider>().toggleSelection(widget.song.hash),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                    side: BorderSide(
-                                      color: theme.colorScheme.outline,
-                                      width: 1.5,
+                                if (isSelectionMode)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 10),
+                                    child: Checkbox(
+                                      value: isSelected,
+                                      onChanged: (value) => context.read<SelectionProvider>().toggleSelection(widget.song.hash),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                      side: BorderSide(
+                                        color: theme.colorScheme.outline,
+                                        width: 1.5,
+                                      ),
+                                      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     ),
-                                    visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   ),
-                                ),
-                              if (widget.showCover)
-                                Opacity(
-                                  opacity: contentOpacity,
-                                  child: _buildCover(
-                                    context,
-                                    isCurrent,
-                                    isPlaying,
-                                    isLoading,
-                                    primaryColor,
-                                  ),
-                                ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            widget.song.title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: isCurrent
-                                                  ? primaryColor.withAlpha(isPlayable ? 255 : 170)
-                                                  : theme.colorScheme.onSurface.withAlpha(isPlayable ? 255 : 140),
-                                              fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
-                                              fontSize: 14,
-                                              height: 1,
-                                              letterSpacing: -0.3,
-                                            ),
-                                          ),
+                                if (widget.rowNumber != null)
+                                  SizedBox(
+                                    width: SongTableLayout.listLeadingWidth,
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        widget.rowNumber.toString(),
+                                        style: TextStyle(
+                                          color: isCurrent
+                                              ? primaryColor.withAlpha(isPlayable ? 220 : 170)
+                                              : theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 170 : 110),
+                                          fontSize: 12,
+                                          fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
                                         ),
-                                        Tooltip(
-                                          message: isFavorite ? '取消收藏' : '收藏',
-                                          child: MouseRegion(
-                                            cursor: widget.suppressHover
-                                                ? SystemMouseCursors.basic
-                                                : SystemMouseCursors.click,
-                                            child: GestureDetector(
-                                              behavior: HitTestBehavior.opaque,
-                                              onTap: _toggleFavorite,
-                                              child: Padding(
-                                                padding: const EdgeInsets.only(left: 4),
-                                                child: Icon(
-                                                  isFavorite
-                                                      ? CupertinoIcons.heart_fill
-                                                      : CupertinoIcons.heart,
-                                                  size: 15,
-                                                  color: isFavorite
-                                                      ? Colors.redAccent.withAlpha(
-                                                          isPlayable ? 200 : 120,
-                                                        )
-                                                      : theme.colorScheme.onSurfaceVariant
-                                                          .withAlpha(isPlayable ? 170 : 100),
-                                                ),
+                                      ),
+                                    ),
+                                  ),
+                                if (widget.showCover) ...[
+                                  Opacity(
+                                    opacity: contentOpacity,
+                                    child: _buildCover(
+                                      context,
+                                      isCurrent,
+                                      isPlaying,
+                                      isLoading,
+                                      primaryColor,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                ],
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              widget.song.title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: isCurrent
+                                                    ? primaryColor.withAlpha(isPlayable ? 255 : 170)
+                                                    : theme.colorScheme.onSurface.withAlpha(isPlayable ? 255 : 140),
+                                                fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w700,
+                                                fontSize: 14,
+                                                height: 1,
+                                                letterSpacing: -0.3,
                                               ),
                                             ),
                                           ),
+                                          if (!isPlayable)
+                                            _buildTag(context, '无音源', theme.colorScheme.outline),
+                                          if (widget.song.isPaid)
+                                            _buildTag(context, '付费', const Color(0xFF8B5CF6))
+                                          else if (widget.song.isVip)
+                                            _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
+                                          if (widget.song.qualityTag.isNotEmpty)
+                                            _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      _buildSingerLinks(
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
+                                          fontSize: 12,
+                                          height: 1.1,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                        if (!isPlayable)
-                                          _buildTag(context, '无音源', theme.colorScheme.outline),
-                                        if (widget.song.isPaid)
-                                          _buildTag(context, '付费', const Color(0xFF8B5CF6))
-                                        else if (widget.song.isVip)
-                                          _buildTag(context, 'VIP', const Color(0xFFF59E0B)),
-                                        if (widget.song.qualityTag.isNotEmpty)
-                                          _buildTag(context, widget.song.qualityTag, const Color(0xFF06B6D4)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    _buildSingerLinks(
+                                        enabled: !isSelectionMode,
+                                        isPlayable: isPlayable,
+                                        navigationProvider: navigationProvider,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (widget.showMore && !isSelectionMode) ...[
+                                  const SizedBox(width: SongTableLayout.listActionGap),
+                                  _buildRowActions(visible: showRowActions),
+                                ],
+                                const SizedBox(width: SongTableLayout.listFavoriteGap),
+                                _buildFavoriteButton(
+                                  isFavorite: isFavorite,
+                                  isPlayable: isPlayable,
+                                  theme: theme,
+                                ),
+                                if (widget.showMore) ...[
+                                  const SizedBox(width: SongTableLayout.listAlbumGap),
+                                  SizedBox(
+                                    width: SongTableLayout.listAlbumWidth,
+                                    child: _buildLinkText(
+                                      text: widget.song.displayAlbumName,
+                                      onTap: !isSelectionMode && _hasAlbumDetail && !isCurrentAlbumDetail ? _openAlbumDetail : null,
                                       style: TextStyle(
                                         color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                                         fontSize: 12,
-                                        height: 1.1,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      enabled: !isSelectionMode,
-                                      isPlayable: isPlayable,
-                                      navigationProvider: navigationProvider,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (widget.showMore) ...[
-                                const SizedBox(width: SongTableLayout.listAlbumGap),
-                                SizedBox(
-                                  width: SongTableLayout.listAlbumWidth,
-                                  child: _buildLinkText(
-                                    text: widget.song.displayAlbumName,
-                                    onTap: !isSelectionMode && _hasAlbumDetail && !isCurrentAlbumDetail ? _openAlbumDetail : null,
-                                    style: TextStyle(
-                                      color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: SongTableLayout.listDurationGap),
-                                SizedBox(
-                                  width: SongTableLayout.listDurationWidth,
-                                  child: Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Text(
-                                      _formatDuration(widget.song.duration),
-                                      style: TextStyle(
-                                        color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 150 : 100),
-                                        fontSize: 12,
-                                        fontFamily: 'monospace',
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
                                   ),
+                                  const SizedBox(width: SongTableLayout.listDurationGap),
+                                  SizedBox(
+                                    width: SongTableLayout.listDurationWidth,
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Text(
+                                        _formatDuration(widget.song.duration),
+                                        style: TextStyle(
+                                          color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 150 : 100),
+                                          fontSize: 12,
+                                          fontFamily: 'monospace',
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(width: 8),
+                                Builder(
+                                  builder: (_) => _SongCardContextMenuButton(
+                                    iconColor: theme.colorScheme.onSurfaceVariant.withAlpha(
+                                      isPlayable ? 180 : 120,
+                                    ),
+                                    onOpen: (anchorContext) =>
+                                        _showContextMenu(anchorContext: anchorContext),
+                                  ),
                                 ),
-                              ],
-                              const SizedBox(width: 8),
-                              Builder(
-                                builder: (buttonContext) => IconButton(
-                                  icon: const Icon(CupertinoIcons.ellipsis, size: 17),
-                                  onPressed: () =>
-                                      _showContextMenu(anchorContext: buttonContext),
-                                  color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 180 : 120),
-                                  splashRadius: 22,
-                                  padding: const EdgeInsets.all(2),
-                                  constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                                  visualDensity: const VisualDensity(horizontal: -1.5, vertical: -1.5),
-                                ),
-                              ),
                               ],
                             ),
                           ),
@@ -724,6 +760,131 @@ class _SongCardState extends State<SongCard> {
     final m = (seconds / 60).floor();
     final s = seconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+class _SongCardContextMenuButton extends StatefulWidget {
+  final Color iconColor;
+  final ValueChanged<BuildContext> onOpen;
+
+  const _SongCardContextMenuButton({
+    required this.iconColor,
+    required this.onOpen,
+  });
+
+  @override
+  State<_SongCardContextMenuButton> createState() =>
+      _SongCardContextMenuButtonState();
+}
+
+class _SongCardContextMenuButtonState extends State<_SongCardContextMenuButton> {
+  final GlobalKey _anchorKey = GlobalKey();
+
+  void _openMenu() {
+    final anchorContext = _anchorKey.currentContext;
+    if (anchorContext == null) return;
+    widget.onOpen(anchorContext);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          hoverColor: theme.colorScheme.onSurface.withAlpha(20),
+          splashColor: theme.colorScheme.primary.withAlpha(32),
+          highlightColor: theme.colorScheme.primary.withAlpha(18),
+          onTapDown: (_) => _openMenu(),
+          onTap: () {},
+          child: SizedBox(
+            key: _anchorKey,
+            width: 38,
+            height: 38,
+            child: Center(
+              child: Icon(
+                CupertinoIcons.ellipsis,
+                size: 17,
+                color: widget.iconColor,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SongCardActionIconButton extends StatefulWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final double size;
+  final String tooltip;
+  final Color? color;
+  final Color? hoverColor;
+  final bool hoverEnabled;
+
+  const _SongCardActionIconButton({
+    required this.icon,
+    required this.tooltip,
+    this.onPressed,
+    this.size = 20,
+    this.color,
+    this.hoverColor,
+    this.hoverEnabled = true,
+  });
+
+  @override
+  State<_SongCardActionIconButton> createState() =>
+      _SongCardActionIconButtonState();
+}
+
+class _SongCardActionIconButtonState extends State<_SongCardActionIconButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final disabled = widget.onPressed == null;
+    final hoverEnabled = widget.hoverEnabled && !disabled;
+    final color = disabled
+        ? theme.disabledColor
+        : (_isHovered && hoverEnabled
+              ? (widget.hoverColor ?? theme.colorScheme.primary)
+              : (widget.color ?? theme.colorScheme.onSurfaceVariant.withAlpha(180)));
+
+    return MouseRegion(
+      cursor: disabled ? SystemMouseCursors.basic : SystemMouseCursors.click,
+      onEnter: (_) {
+        if (hoverEnabled) setState(() => _isHovered = true);
+      },
+      onExit: (_) {
+        if (_isHovered) setState(() => _isHovered = false);
+      },
+      child: Tooltip(
+        message: widget.tooltip,
+        waitDuration: const Duration(milliseconds: 500),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onPressed,
+          child: AnimatedScale(
+            scale: _isHovered && hoverEnabled ? 1.15 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutBack,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              color: Colors.transparent,
+              child: Icon(widget.icon, size: widget.size, color: color),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

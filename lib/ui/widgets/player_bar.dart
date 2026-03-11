@@ -16,6 +16,7 @@ import '../screens/lyric_page.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
 import 'cover_image.dart';
 import 'queue_drawer.dart';
+import 'app_menu.dart';
 import 'custom_toast.dart';
 
 class PlayerBar extends StatelessWidget {
@@ -803,135 +804,137 @@ class _PlaybackTimeInfo extends StatelessWidget {
 
 class _PlayModeButton extends StatelessWidget {
   const _PlayModeButton();
-  static final LayerLink _playModeLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _playModeLink,
-      child: Selector<AudioProvider, String>(
-        selector: (_, p) => p.playMode,
-        builder: (context, mode, child) {
-          IconData icon = CupertinoIcons.repeat;
-          String tip = '列表循环';
-          if (mode == 'repeat-once') {
-            icon = CupertinoIcons.repeat_1;
-            tip = '单曲循环';
-          } else if (mode == 'shuffle') {
-            icon = CupertinoIcons.shuffle;
-            tip = '随机播放';
-          }
+    return Selector<AudioProvider, String>(
+      selector: (_, p) => p.playMode,
+      builder: (context, mode, child) {
+        IconData icon = CupertinoIcons.repeat;
+        String tip = '列表循环';
+        if (mode == 'repeat-once') {
+          icon = CupertinoIcons.repeat_1;
+          tip = '单曲循环';
+        } else if (mode == 'shuffle') {
+          icon = CupertinoIcons.shuffle;
+          tip = '随机播放';
+        }
 
-          return _PlayerIconButton(
+        return PlayerMenuAnchor<void>(
+          width: 156,
+          height: 176,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          targetAnchor: Alignment.topCenter,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, -10),
+          showArrow: true,
+          arrowEdge: AppMenuArrowEdge.bottom,
+          builder: (context, toggle, isOpen) => _PlayerIconButton(
             icon: icon,
-            isSelected: true,
-            onPressed: () => _showCustomPopup(
-              context,
-              _playModeLink,
-              const _PlayModePopup(),
-              width: 140,
-              height: 180,
-            ),
+            isSelected: isOpen,
+            onPressed: toggle,
             size: 20,
             tooltip:
                 '$tip · ${AppShortcuts.labelFor(AppShortcutCommand.togglePlayMode)}',
-          );
-        },
-      ),
+          ),
+          menuBuilder: (context, close) => _PlayModePopup(close: () => close()),
+        );
+      },
     );
   }
 }
 
 class _PlaybackRateButton extends StatelessWidget {
   const _PlaybackRateButton();
-  static final LayerLink _speedLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _speedLink,
-      child: Selector<AudioProvider, double>(
-        selector: (_, p) => p.playbackRate,
-        builder: (context, rate, child) {
-          return _PlayerIconButton(
+    return Selector<AudioProvider, double>(
+      selector: (_, p) => p.playbackRate,
+      builder: (context, rate, child) {
+        return PlayerMenuAnchor<void>(
+          width: 128,
+          height: 368,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          targetAnchor: Alignment.topCenter,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, -10),
+          showArrow: true,
+          arrowEdge: AppMenuArrowEdge.bottom,
+          builder: (context, toggle, isOpen) => _PlayerIconButton(
             icon: CupertinoIcons.speedometer,
-            isSelected: rate != 1.0,
-            onPressed: () => _showCustomPopup(
-              context,
-              _speedLink,
-              const _SpeedPopup(),
-              width: 120,
-              height: 340,
-            ),
+            isSelected: rate != 1.0 || isOpen,
+            onPressed: toggle,
             size: 20,
             tooltip: '播放倍速',
-          );
-        },
-      ),
+          ),
+          menuBuilder: (context, close) => _SpeedPopup(close: () => close()),
+        );
+      },
     );
   }
 }
 
 class _QualityButton extends StatelessWidget {
   const _QualityButton();
-  static final LayerLink _qualityLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _qualityLink,
-      child: Selector<AudioProvider, dynamic>(
-        selector: (_, p) => p.currentSong,
-        builder: (context, song, child) {
-          return _PlayerIconButton(
+    return Selector<AudioProvider, dynamic>(
+      selector: (_, p) => p.currentSong,
+      builder: (context, song, child) {
+        return PlayerMenuAnchor<void>(
+          width: 196,
+          height: 380,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          targetAnchor: Alignment.topCenter,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, -10),
+          showArrow: true,
+          arrowEdge: AppMenuArrowEdge.bottom,
+          builder: (context, toggle, isOpen) => _PlayerIconButton(
             icon: CupertinoIcons.waveform,
-            onPressed: song?.source == 'cloud'
-                ? null
-                : () => _showCustomPopup(
-                    context,
-                    _qualityLink,
-                    const _QualityEffectPopup(),
-                    width: 180,
-                    height: 380,
-                  ),
+            onPressed: song?.source == 'cloud' ? null : toggle,
             size: 20,
             tooltip: '音质选择',
-            isSelected: true,
-          );
-        },
-      ),
+            isSelected: isOpen,
+          ),
+          menuBuilder: (context, close) =>
+              _QualityEffectPopup(close: () => close()),
+        );
+      },
     );
   }
 }
 
 class _VolumeButton extends StatelessWidget {
   const _VolumeButton();
-  static final LayerLink _volumeLink = LayerLink();
 
   @override
   Widget build(BuildContext context) {
     final audioProvider = context.read<AudioProvider>();
-    return CompositedTransformTarget(
-      link: _volumeLink,
-      child: StreamBuilder<double>(
-        stream: audioProvider.userVolumeStream,
-        initialData: audioProvider.displayVolume,
-        builder: (context, snapshot) {
-          final vol = snapshot.data ?? audioProvider.displayVolume;
-          return _PlayerIconButton(
+    return StreamBuilder<double>(
+      stream: audioProvider.userVolumeStream,
+      initialData: audioProvider.displayVolume,
+      builder: (context, snapshot) {
+        final vol = snapshot.data ?? audioProvider.displayVolume;
+        return PlayerMenuAnchor<void>(
+          width: 72,
+          height: 216,
+          padding: const EdgeInsets.fromLTRB(6, 10, 6, 10),
+          targetAnchor: Alignment.topCenter,
+          followerAnchor: Alignment.bottomCenter,
+          offset: const Offset(0, -10),
+          showArrow: true,
+          arrowEdge: AppMenuArrowEdge.bottom,
+          builder: (context, toggle, isOpen) => _PlayerIconButton(
             icon: vol == 0
                 ? CupertinoIcons.speaker_slash_fill
                 : (vol < 50
                       ? CupertinoIcons.speaker_1_fill
                       : CupertinoIcons.speaker_2_fill),
-            isSelected: vol > 0,
-            onPressed: () => _showCustomPopup(
-              context,
-              _volumeLink,
-              const _VolumePopup(),
-              width: 50,
-              height: 200,
-            ),
+            isSelected: vol > 0 || isOpen,
+            onPressed: toggle,
             onScroll: (delta) {
               final newVol = (vol + (delta > 0 ? -5.0 : 5.0)).clamp(0.0, 100.0);
               audioProvider.setVolume(newVol);
@@ -941,9 +944,10 @@ class _VolumeButton extends StatelessWidget {
                 '音量：${AppShortcuts.labelFor(AppShortcutCommand.volumeUp)} / '
                 '${AppShortcuts.labelFor(AppShortcutCommand.volumeDown)} / '
                 '${AppShortcuts.labelFor(AppShortcutCommand.toggleMute)}',
-          );
-        },
-      ),
+          ),
+          menuBuilder: (context, close) => const _VolumePopup(),
+        );
+      },
     );
   }
 }
@@ -1021,41 +1025,6 @@ class _QueueButton extends StatelessWidget {
   }
 }
 
-void _showCustomPopup(
-  BuildContext context,
-  LayerLink link,
-  Widget content, {
-  required double width,
-  required double height,
-}) {
-  late OverlayEntry entry;
-  entry = OverlayEntry(
-    builder: (_) => Stack(
-      children: [
-        GestureDetector(
-          onTap: () => entry.remove(),
-          behavior: HitTestBehavior.translucent,
-          child: Container(color: Colors.transparent),
-        ),
-        CompositedTransformFollower(
-          link: link,
-          showWhenUnlinked: false,
-          offset: Offset(-(width / 2) + 16, -(height + 16)),
-          child: Material(
-            color: Colors.transparent,
-            child: _PlayerPopupContainer(
-              width: width,
-              height: height,
-              child: content,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-  Overlay.of(context).insert(entry);
-}
-
 void _showQueueDrawer(BuildContext context) {
   final theme = Theme.of(context);
   showGeneralDialog(
@@ -1088,11 +1057,15 @@ void _showQueueDrawer(BuildContext context) {
 }
 
 class _PlayModePopup extends StatelessWidget {
-  const _PlayModePopup();
+  final VoidCallback close;
+
+  const _PlayModePopup({required this.close});
+
   @override
   Widget build(BuildContext context) {
     final audio = context.watch<AudioProvider>();
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         _buildPopupHeader(context, '播放模式'),
         _buildPopupItem(
@@ -1101,6 +1074,7 @@ class _PlayModePopup extends StatelessWidget {
           isSelected: audio.playMode == 'repeat',
           icon: CupertinoIcons.repeat,
           onTap: () => audio.setPlayMode('repeat'),
+          onAfterTap: close,
         ),
         _buildPopupItem(
           context,
@@ -1108,6 +1082,7 @@ class _PlayModePopup extends StatelessWidget {
           isSelected: audio.playMode == 'repeat-once',
           icon: CupertinoIcons.repeat_1,
           onTap: () => audio.setPlayMode('repeat-once'),
+          onAfterTap: close,
         ),
         _buildPopupItem(
           context,
@@ -1115,6 +1090,7 @@ class _PlayModePopup extends StatelessWidget {
           isSelected: audio.playMode == 'shuffle',
           icon: CupertinoIcons.shuffle,
           onTap: () => audio.setPlayMode('shuffle'),
+          onAfterTap: close,
         ),
       ],
     );
@@ -1122,7 +1098,10 @@ class _PlayModePopup extends StatelessWidget {
 }
 
 class _SpeedPopup extends StatelessWidget {
-  const _SpeedPopup();
+  final VoidCallback close;
+
+  const _SpeedPopup({required this.close});
+
   @override
   Widget build(BuildContext context) {
     final audio = context.watch<AudioProvider>();
@@ -1139,6 +1118,7 @@ class _SpeedPopup extends StatelessWidget {
                     label: '${s}x',
                     isSelected: audio.playbackRate == s,
                     onTap: () => audio.setPlaybackRate(s),
+                    onAfterTap: close,
                   ),
                 )
                 .toList(),
@@ -1150,7 +1130,10 @@ class _SpeedPopup extends StatelessWidget {
 }
 
 class _QualityEffectPopup extends StatelessWidget {
-  const _QualityEffectPopup();
+  final VoidCallback close;
+
+  const _QualityEffectPopup({required this.close});
+
   @override
   Widget build(BuildContext context) {
     final audio = context.watch<AudioProvider>();
@@ -1174,9 +1157,16 @@ class _QualityEffectPopup extends StatelessWidget {
             label: q.label,
             isSelected: currentQuality == q.value,
             onTap: () => audio.updateAudioSetting('audioQuality', q.value),
+            onAfterTap: close,
           ),
         ),
-        const Divider(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Divider(
+            height: 1,
+            color: Theme.of(context).colorScheme.outlineVariant.withAlpha(120),
+          ),
+        ),
         _buildPopupHeader(context, '音效设置'),
         Expanded(
           child: ListView(
@@ -1189,6 +1179,7 @@ class _QualityEffectPopup extends StatelessWidget {
                     isSelected: currentEffect == e.value,
                     onTap: () =>
                         audio.updateAudioSetting('audioEffect', e.value),
+                    onAfterTap: close,
                   ),
                 )
                 .toList(),
@@ -1260,146 +1251,108 @@ class _VolumePopup extends StatelessWidget {
   }
 }
 
-Widget _buildPopupHeader(BuildContext context, String title) => Padding(
-  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-  child: Text(
-    title,
-    style: TextStyle(
-      fontSize: 10,
-      fontWeight: FontWeight.w900,
-      color: Theme.of(context).colorScheme.onSurface.withAlpha(100),
-      letterSpacing: 1.2,
-    ),
-  ),
-);
+Widget _buildPopupHeader(BuildContext context, String title) =>
+    AppMenuSectionLabel(title);
+
 Widget _buildPopupItem(
   BuildContext context, {
   required String label,
   required bool isSelected,
   required VoidCallback onTap,
   IconData? icon,
+  VoidCallback? onAfterTap,
 }) {
-  final theme = Theme.of(context);
-  return InkWell(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          if (icon != null) ...[
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurface.withAlpha(150),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? theme.colorScheme.primary : null,
-              ),
-            ),
-          ),
-          if (isSelected)
-            Icon(
-              CupertinoIcons.checkmark_alt,
-              size: 16,
-              color: theme.colorScheme.primary,
-            ),
-        ],
+  return Align(
+    alignment: Alignment.center,
+    child: FractionallySizedBox(
+      widthFactor: 0.82,
+      child: _PlayerPopupMenuItem(
+        label: label,
+        isSelected: isSelected,
+        icon: icon,
+        onPressed: () {
+          onTap();
+          onAfterTap?.call();
+        },
       ),
     ),
   );
 }
 
-class _PlayerPopupContainer extends StatelessWidget {
-  final double width;
-  final double height;
-  final Widget child;
-  const _PlayerPopupContainer({
-    required this.width,
-    required this.height,
-    required this.child,
+class _PlayerPopupMenuItem extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final IconData? icon;
+  final VoidCallback onPressed;
+
+  const _PlayerPopupMenuItem({
+    required this.label,
+    required this.isSelected,
+    required this.onPressed,
+    this.icon,
   });
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final backgroundColor = theme.colorScheme.surface;
-    final borderColor =
-        theme.dividerTheme.color ?? theme.dividerColor.withAlpha(20);
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor, width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(30),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: child,
-          ),
-        ),
-        Positioned(
-          bottom: -8,
-          left: (width / 2) - 8,
-          child: CustomPaint(
-            painter: _PopupArrowPainter(
-              color: backgroundColor,
-              borderColor: borderColor,
+    final accentColor = theme.colorScheme.primary;
+    final selectedColor = accentColor.withAlpha(18);
+    final hoverColor = accentColor.withAlpha(isSelected ? 18 : 12);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isSelected ? selectedColor : null,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(14),
+          hoverColor: hoverColor,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: isSelected
+                        ? theme.colorScheme.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected
+                          ? FontWeight.w800
+                          : FontWeight.w600,
+                      color: isSelected
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Icon(
+                    CupertinoIcons.checkmark_alt,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+              ],
             ),
-            size: const Size(16, 8),
           ),
         ),
-      ],
+      ),
     );
   }
-}
-
-class _PopupArrowPainter extends CustomPainter {
-  final Color color;
-  final Color borderColor;
-  _PopupArrowPainter({required this.color, required this.borderColor});
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..lineTo(size.width, 0)
-      ..close();
-    canvas.drawPath(path, paint);
-    final borderPath = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..lineTo(size.width, 0);
-    canvas.drawPath(borderPath, borderPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _PlayerIconButton extends StatefulWidget {

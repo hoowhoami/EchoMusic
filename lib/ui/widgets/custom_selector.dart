@@ -16,13 +16,15 @@ class CustomSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: onTap,
+        behavior: HitTestBehavior.opaque,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
@@ -30,7 +32,7 @@ class CustomSelector extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: theme.colorScheme.onSurface.withAlpha(20),
-              width: 1.0,
+              width: 1,
             ),
           ),
           child: Row(
@@ -38,6 +40,8 @@ class CustomSelector extends StatelessWidget {
             children: [
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -49,7 +53,7 @@ class CustomSelector extends StatelessWidget {
                 Icon(
                   icon,
                   size: 14,
-                  color: theme.colorScheme.onSurface.withAlpha(120),
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ],
             ],

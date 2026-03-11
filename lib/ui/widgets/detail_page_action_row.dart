@@ -46,9 +46,7 @@ class DetailPageActionRow extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (secondaryAction != null) ...[
-          _SecondaryActionButton(
-            action: secondaryAction!,
-          ),
+          _SecondaryActionButton(action: secondaryAction!),
           const SizedBox(width: 8),
         ],
         _PrimaryActionButton(
@@ -114,6 +112,7 @@ ButtonStyle _buildFilledActionStyle(BuildContext context) {
     disabledBackgroundColor: theme.colorScheme.onSurface.withAlpha(20),
     disabledForegroundColor: theme.disabledColor,
     minimumSize: const Size(0, 36),
+    fixedSize: const Size.fromHeight(36),
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,

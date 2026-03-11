@@ -308,7 +308,10 @@ class NavigationProvider extends ChangeNotifier {
       _history.removeRange(_historyIndex + 1, _history.length);
     }
     if (_history[_historyIndex].equals(snapshot)) {
-      notifyListeners();
+      // The nested Navigator pushes its initial root route while the widget
+      // tree is still building. That push does not change our navigation
+      // snapshot, so notifying listeners here is both unnecessary and can
+      // trigger "setState() or markNeedsBuild() called during build".
       return;
     }
     _history.add(snapshot);

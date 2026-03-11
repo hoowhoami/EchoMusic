@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:io';
 import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
@@ -179,7 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Column(
                       children: [
-                        SizedBox(height: 48, child: MoveWindow()),
+                        const SizedBox(
+                          height: 48,
+                          width: double.infinity,
+                          child: DragToMoveArea(child: SizedBox.expand()),
+                        ),
                         Expanded(
                           child: Sidebar(
                             selectedIndex: navProvider.currentRootIndex,
@@ -230,8 +234,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onPressed: _refreshCurrentView,
                                 tooltip: '刷新',
                               ),
-                              Expanded(child: MoveWindow()),
-                              if (!Platform.isMacOS) const WindowButtons(),
+                              const Expanded(
+                                child: DragToMoveArea(
+                                  child: SizedBox.expand(),
+                                ),
+                              ),
+                              if (!Platform.isMacOS)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: _WindowControlButtons(),
+                                ),
                             ],
                           ),
                         ),
@@ -289,6 +301,75 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+class _WindowControlButtons extends StatefulWidget {
+  const _WindowControlButtons();
+
+  @override
+  State<_WindowControlButtons> createState() => _WindowControlButtonsState();
+}
+
+class _WindowControlButtonsState extends State<_WindowControlButtons>
+    with WindowListener {
+  bool _isMaximized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+    _syncWindowState();
+  }
+
+  Future<void> _syncWindowState() async {
+    final isMaximized = await windowManager.isMaximized();
+    if (!mounted) return;
+    setState(() => _isMaximized = isMaximized);
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowMaximize() {
+    setState(() => _isMaximized = true);
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    setState(() => _isMaximized = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        WindowCaptionButton.minimize(
+          brightness: brightness,
+          onPressed: () => windowManager.minimize(),
+        ),
+        _isMaximized
+            ? WindowCaptionButton.unmaximize(
+                brightness: brightness,
+                onPressed: () => windowManager.unmaximize(),
+              )
+            : WindowCaptionButton.maximize(
+                brightness: brightness,
+                onPressed: () => windowManager.maximize(),
+              ),
+        WindowCaptionButton.close(
+          brightness: brightness,
+          onPressed: () => windowManager.close(),
+        ),
+      ],
+    );
+  }
+}
+
 /// IndexedStack that defers building children until their tab is first visited.
 class _LazyIndexedStack extends StatefulWidget {
   final int index;
@@ -326,35 +407,6 @@ class _LazyIndexedStackState extends State<_LazyIndexedStack> {
       children: [
         for (int i = 0; i < widget.children.length; i++)
           _activated[i] ? widget.children[i] : const SizedBox.shrink(),
-      ],
-    );
-  }
-}
-
-class WindowButtons extends StatelessWidget {
-  const WindowButtons({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final buttonColors = WindowButtonColors(
-      iconNormal: theme.colorScheme.onSurfaceVariant,
-      mouseOver: theme.colorScheme.onSurface.withAlpha(25),
-      mouseDown: theme.colorScheme.onSurface.withAlpha(50),
-      iconMouseOver: theme.colorScheme.onSurface,
-      iconMouseDown: theme.colorScheme.onSurface,
-    );
-    return Row(
-      children: [
-        MinimizeWindowButton(colors: buttonColors),
-        MaximizeWindowButton(colors: buttonColors),
-        CloseWindowButton(
-          colors: WindowButtonColors(
-            mouseOver: const Color(0xFFD32F2F),
-            mouseDown: const Color(0xFFB71C1C),
-            iconNormal: theme.colorScheme.onSurfaceVariant,
-            iconMouseOver: Colors.white,
-          ),
-        ),
       ],
     );
   }

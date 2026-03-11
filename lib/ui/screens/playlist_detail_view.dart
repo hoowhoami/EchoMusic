@@ -17,9 +17,7 @@ import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 
 class PlaylistDetailRouteArgs {
-  const PlaylistDetailRouteArgs({
-    required this.playlist,
-  });
+  const PlaylistDetailRouteArgs({required this.playlist});
 
   final Playlist playlist;
 
@@ -41,16 +39,14 @@ class PlaylistDetailRouteArgs {
 class PlaylistDetailView extends StatefulWidget {
   final PlaylistDetailRouteArgs routeArgs;
 
-  const PlaylistDetailView({
-    super.key,
-    required this.routeArgs,
-  });
+  const PlaylistDetailView({super.key, required this.routeArgs});
 
   @override
   State<PlaylistDetailView> createState() => _PlaylistDetailViewState();
 }
 
-class _PlaylistDetailViewState extends State<PlaylistDetailView> with RefreshableState {
+class _PlaylistDetailViewState extends State<PlaylistDetailView>
+    with RefreshableState {
   static const int _pageSize = 200;
 
   late final PlaylistDetailRouteArgs _routeArgs;
@@ -95,7 +91,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     super.initState();
     _routeArgs = widget.routeArgs;
     _userProvider = context.read<UserProvider>();
-    _userProvider.playlistSongsChangeNotifier.addListener(_onPlaylistSongsChanged);
+    _userProvider.playlistSongsChangeNotifier.addListener(
+      _onPlaylistSongsChanged,
+    );
     _loadData();
   }
 
@@ -106,7 +104,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
 
   @override
   void dispose() {
-    _userProvider.playlistSongsChangeNotifier.removeListener(_onPlaylistSongsChanged);
+    _userProvider.playlistSongsChangeNotifier.removeListener(
+      _onPlaylistSongsChanged,
+    );
     super.dispose();
   }
 
@@ -128,7 +128,9 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
     });
 
     // Fetch detailed info to get creator and timestamps
-    final detailJson = await MusicApi.getPlaylistDetail(_routeArgs.trackListCreateGid ?? _lookupId);
+    final detailJson = await MusicApi.getPlaylistDetail(
+      _routeArgs.trackListCreateGid ?? _lookupId,
+    );
 
     if (detailJson != null && mounted) {
       setState(() {
@@ -251,7 +253,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
         lastLoadedPage = nextPage;
         loadedCount += pageEntryCount;
         filteredCount += result.filteredCount;
-        hasMore = _computeHasMore(loadedCount: loadedCount, lastPageCount: pageEntryCount);
+        hasMore = _computeHasMore(
+          loadedCount: loadedCount,
+          lastPageCount: pageEntryCount,
+        );
 
         final playbackProvider = _playbackAppendProvider;
         final playbackSessionId = _playbackAppendSessionId;
@@ -264,7 +269,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
               );
             }
             if (result.songs.isNotEmpty &&
-                !playbackProvider.appendSongsToActivePlaylist(result.songs, sessionId: playbackSessionId)) {
+                !playbackProvider.appendSongsToActivePlaylist(
+                  result.songs,
+                  sessionId: playbackSessionId,
+                )) {
               _playbackAppendProvider = null;
               _playbackAppendSessionId = null;
             }
@@ -347,7 +355,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
   void _onPlaylistSongsChanged() {
     if (!mounted) return;
     final changedListId = _userProvider.playlistSongsChangeNotifier.value;
-    if (changedListId == _routeArgs.playlistId || changedListId == _routeArgs.trackListId) {
+    if (changedListId == _routeArgs.playlistId ||
+        changedListId == _routeArgs.trackListId) {
       _loadData();
     }
   }
@@ -366,19 +375,27 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
       (provider) => provider.settings['replacePlaylist'] ?? false,
     );
     final playlist = _detailedPlaylist ?? _routeArgs.playlist;
-    final isFavorited = userProvider.isPlaylistFavorited(playlist.id, globalId: playlist.listCreateGid);
+    final isFavorited = userProvider.isPlaylistFavorited(
+      playlist.id,
+      globalId: playlist.listCreateGid,
+    );
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
     final songs = _songs ?? const <Song>[];
     final batchPreparing = _isResolvingAllSongs && _hasMore;
     final secondaryAction = userProvider.isAuthenticated && !isCreated
         ? DetailPageSecondaryAction(
-            icon: isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+            icon: isFavorited
+                ? CupertinoIcons.heart_fill
+                : CupertinoIcons.heart,
             label: '收藏',
             emphasized: isFavorited,
             onTap: () async {
               bool success;
               if (isFavorited) {
-                success = await userProvider.unfavoritePlaylist(playlist.id, globalId: playlist.listCreateGid);
+                success = await userProvider.unfavoritePlaylist(
+                  playlist.id,
+                  globalId: playlist.listCreateGid,
+                );
                 if (context.mounted) {
                   if (success) {
                     CustomToast.success(context, '已取消收藏');
@@ -421,7 +438,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
         SliverAppBar(
           backgroundColor: theme.scaffoldBackgroundColor,
           surfaceTintColor: Colors.transparent,
-          expandedHeight: 180, 
+          expandedHeight: 168,
           pinned: true,
           elevation: 0,
           automaticallyImplyLeading: false,
@@ -433,7 +450,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
               builder: (context, constraints) {
                 final double settings = constraints.maxHeight;
                 final bool isCollapsed = settings <= kToolbarHeight + 20;
-                
+
                 return AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: isCollapsed ? 1.0 : 0.0,
@@ -537,7 +554,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                 else
                                   Padding(
                                     padding: const EdgeInsets.only(right: 8.0),
-                                    child: Icon(CupertinoIcons.person_circle_fill, size: 20, color: theme.colorScheme.primary.withAlpha(180)),
+                                    child: Icon(
+                                      CupertinoIcons.person_circle_fill,
+                                      size: 20,
+                                      color: theme.colorScheme.primary
+                                          .withAlpha(180),
+                                    ),
                                   ),
                                 Text(
                                   playlist.nickname,
@@ -551,7 +573,8 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                                 Text(
                                   '${_formatTimestamp(playlist.createTime)} 创建',
                                   style: TextStyle(
-                                    color: theme.colorScheme.onSurface.withAlpha(100),
+                                    color: theme.colorScheme.onSurface
+                                        .withAlpha(100),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -581,7 +604,11 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView> with Refreshabl
                           ),
                         Row(
                           children: [
-                            _buildInfoChip(context, CupertinoIcons.music_note_2, '${playlist.count} 首歌曲'),
+                            _buildInfoChip(
+                              context,
+                              CupertinoIcons.music_note_2,
+                              '${playlist.count} 首歌曲',
+                            ),
                             const Spacer(),
                             DetailPageActionRow(
                               playLabel: '播放',

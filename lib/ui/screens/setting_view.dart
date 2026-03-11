@@ -14,6 +14,7 @@ import '../widgets/disclaimer_dialog.dart';
 import '../widgets/update_dialog.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/app_shortcuts.dart';
+import '../widgets/app_menu.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 
@@ -732,64 +733,35 @@ class _SettingViewState extends State<SettingView> {
     ValueChanged<String> onChanged,
   ) {
     final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.primary;
+    final selectedValue = options.contains(value) ? value : options.first;
 
-    return MenuAnchor(
-      builder: (context, controller, child) {
-        return MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            color: theme.colorScheme.onSurface.withAlpha(15),
-            borderRadius: BorderRadius.circular(12),
-            onPressed: () =>
-                controller.isOpen ? controller.close() : controller.open(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  options.contains(value) ? value : options.first,
-                  style: TextStyle(
-                    color: theme.colorScheme.onSurface,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  CupertinoIcons.chevron_down,
-                  size: 12,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-      menuChildren: options.map((option) {
-        final isSelected = option == value;
-        return MenuItemButton(
-          style: ButtonStyle(
-            backgroundColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.hovered)
-                  ? accentColor.withAlpha(isSelected ? 40 : 20)
-                  : Colors.transparent,
-            ),
-            padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            ),
-            mouseCursor: const WidgetStatePropertyAll(SystemMouseCursors.click),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-          ),
-          child: Text(
+    return _buildSettingsDropdownField<String>(
+      context,
+      value: selectedValue,
+      menuWidth: 220,
+      menuMaxHeight: 280,
+      fieldConstraints: const BoxConstraints.tightFor(width: 180),
+      onChanged: onChanged,
+      selectedChildBuilder: () => _buildSettingsDropdownValue(
+        context,
+        label: selectedValue,
+        maxLabelWidth: 128,
+      ),
+      options: options.map((option) {
+        final isSelected = option == selectedValue;
+        return _SettingsDropdownOption<String>(
+          value: option,
+          title: Text(
             option,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-              color: isSelected ? accentColor : theme.colorScheme.onSurface,
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface,
             ),
           ),
-          onPressed: () => onChanged(option),
         );
       }).toList(),
     );
@@ -797,7 +769,6 @@ class _SettingViewState extends State<SettingView> {
 
   Widget _buildAudioDeviceDropdown(BuildContext context, AudioProvider audio) {
     final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.primary;
     final realDevices = audio.audioDevices
         .where((d) => d.name != 'auto')
         .toList();
@@ -825,114 +796,179 @@ class _SettingViewState extends State<SettingView> {
       buttonTextColor = theme.colorScheme.onSurfaceVariant;
     }
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 200),
-      child: MenuAnchor(
-        builder: (context, controller, child) {
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: CupertinoButton(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              color: theme.colorScheme.onSurface.withAlpha(15),
-              borderRadius: BorderRadius.circular(12),
-              onPressed: () =>
-                  controller.isOpen ? controller.close() : controller.open(),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      buttonText,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: buttonTextColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if (isPreferredUnavailable) ...[
-                    const SizedBox(width: 4),
-                    Icon(
-                      CupertinoIcons.bolt_slash,
-                      size: 11,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ],
-                  const SizedBox(width: 8),
-                  Icon(
-                    CupertinoIcons.chevron_down,
-                    size: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-        menuChildren: devices.map((device) {
-          final isSelected = isAuto && !isPreferredUnavailable
-              ? device.name == 'auto'
-              : device.name == audio.userSelectedDevice?.name;
-          final typeLabel = _deviceTypeLabel(device.name);
-          final isWasapi = typeLabel == 'WASAPI';
-          final typeBadgeColor = isWasapi
-              ? const Color(0xFFF59E0B)
-              : theme.colorScheme.onSurfaceVariant;
-          return MenuItemButton(
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.hovered)
-                    ? accentColor.withAlpha(isSelected ? 40 : 20)
-                    : Colors.transparent,
-              ),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              ),
-              mouseCursor: const WidgetStatePropertyAll(
-                SystemMouseCursors.click,
-              ),
-              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 300),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    device.name == 'auto' ? '自动' : deviceLabel(device),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isSelected
-                          ? FontWeight.w800
-                          : FontWeight.w600,
-                      color: isSelected
-                          ? accentColor
-                          : theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  if (typeLabel.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      typeLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: typeBadgeColor,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            onPressed: () => audio.setAudioDevice(device),
-          );
-        }).toList(),
+    return _buildSettingsDropdownField<AudioDevice>(
+      context,
+      value: selectedDevice,
+      menuWidth: 320,
+      menuMaxHeight: 320,
+      fieldConstraints: const BoxConstraints.tightFor(width: 200),
+      onChanged: audio.setAudioDevice,
+      selectedChildBuilder: () => _buildSettingsDropdownValue(
+        context,
+        label: buttonText,
+        textColor: buttonTextColor,
+        maxLabelWidth: 144,
+        suffix: isPreferredUnavailable
+            ? Icon(
+                CupertinoIcons.bolt_slash,
+                size: 11,
+                color: theme.colorScheme.onSurfaceVariant,
+              )
+            : null,
       ),
+      options: devices.map((device) {
+        final isSelected = isAuto && !isPreferredUnavailable
+            ? device.name == 'auto'
+            : device.name == audio.userSelectedDevice?.name;
+        final typeLabel = _deviceTypeLabel(device.name);
+        final isWasapi = typeLabel == 'WASAPI';
+        final typeBadgeColor = isWasapi
+            ? const Color(0xFFF59E0B)
+            : theme.colorScheme.onSurfaceVariant;
+
+        return _SettingsDropdownOption<AudioDevice>(
+          value: device,
+          title: Text(
+            device.name == 'auto' ? '自动' : deviceLabel(device),
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: isSelected
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurface,
+            ),
+          ),
+          subtitle: typeLabel.isNotEmpty
+              ? Text(
+                  typeLabel,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: typeBadgeColor,
+                  ),
+                )
+              : null,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSettingsDropdownField<T>(
+    BuildContext context, {
+    required T value,
+    required List<_SettingsDropdownOption<T>> options,
+    required ValueChanged<T> onChanged,
+    required Widget Function() selectedChildBuilder,
+    required double menuWidth,
+    required double menuMaxHeight,
+    BoxConstraints? fieldConstraints,
+  }) {
+    final theme = Theme.of(context);
+    final minHeight = fieldConstraints?.minHeight ?? 0;
+    final resolvedConstraints =
+        (fieldConstraints ?? const BoxConstraints()).copyWith(
+          minHeight: minHeight < 40 ? 40 : minHeight,
+        );
+    final fieldWidth = resolvedConstraints.maxWidth.isFinite
+        ? resolvedConstraints.maxWidth
+        : (resolvedConstraints.minWidth > 0
+              ? resolvedConstraints.minWidth
+              : menuWidth);
+
+    return AppDropdownAnchor<void>(
+      width: menuWidth,
+      constraints: BoxConstraints(maxHeight: menuMaxHeight),
+      targetAnchor: Alignment.bottomLeft,
+      followerAnchor: Alignment.topLeft,
+      offset: Offset(fieldWidth - menuWidth, 6),
+      builder: (context, toggle, isOpen) => MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: toggle,
+          child: Container(
+            alignment: Alignment.centerLeft,
+            constraints: resolvedConstraints,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.onSurface.withAlpha(14),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: theme.colorScheme.onSurface.withAlpha(18),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: selectedChildBuilder(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  CupertinoIcons.chevron_down,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      menuBuilder: (menuContext, close) => SingleChildScrollView(
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: options.map((option) {
+            final isSelected = option.value == value;
+            return AppMenuItemButton(
+              title: option.title,
+              subtitle: option.subtitle,
+              isSelected: isSelected,
+              onPressed: () {
+                close();
+                if (!isSelected) onChanged(option.value);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsDropdownValue(
+    BuildContext context, {
+    required String label,
+    required double maxLabelWidth,
+    Color? textColor,
+    Widget? suffix,
+  }) {
+    final theme = Theme.of(context);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxLabelWidth),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: textColor ?? theme.colorScheme.onSurface,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (suffix != null) ...[
+          const SizedBox(width: 6),
+          suffix,
+        ],
+      ],
     );
   }
 
@@ -1003,4 +1039,16 @@ class _SettingViewState extends State<SettingView> {
       }
     });
   }
+}
+
+class _SettingsDropdownOption<T> {
+  final T value;
+  final Widget title;
+  final Widget? subtitle;
+
+  const _SettingsDropdownOption({
+    required this.value,
+    required this.title,
+    this.subtitle,
+  });
 }
