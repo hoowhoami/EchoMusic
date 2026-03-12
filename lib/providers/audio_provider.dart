@@ -44,6 +44,7 @@ class AudioProvider with ChangeNotifier {
   bool _isDisposed = false;
   double _playbackRate = 1.0;
   double _lastVolume = 50.0;
+  double _userVolume = 50.0;
   Map<double, double> _climaxMarks = {};
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
@@ -107,7 +108,7 @@ class AudioProvider with ChangeNotifier {
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
-  double get displayVolume => _player.state.volume;
+  double get displayVolume => _userVolume;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   int get playlistSessionId => _playlistSessionId;
@@ -158,6 +159,8 @@ class AudioProvider with ChangeNotifier {
     double? from,
     int? durationMs,
     VoidCallback? onComplete,
+    bool respectUserVolume = false,
+    Curve curve = Curves.linear,
   }) {
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -172,22 +175,23 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    final double resolvedTarget = respectUserVolume
+        ? (target.clamp(0.0, _userVolume))
+        : target;
     final double startVolume = from ?? _player.state.volume;
     final int duration =
         durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
-    if (duration <= 0 || (target - startVolume).abs() < 1.0) {
-      _player.setVolume(target);
+    if (duration <= 0 || (resolvedTarget - startVolume).abs() < 1.0) {
+      _player.setVolume(resolvedTarget);
       _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
     _isInternalChanging = true;
-    const int stepMs = 20;
-    final int totalSteps = (duration / stepMs).round().clamp(1, 9999);
-    final double volumeStep = (target - startVolume) / totalSteps;
-    int currentStep = 0;
+    const int stepMs = 16;
+    final stopwatch = Stopwatch()..start();
 
     _fadeTimer = Timer.periodic(const Duration(milliseconds: stepMs), (timer) {
       if (_isDisposed) {
@@ -195,16 +199,21 @@ class AudioProvider with ChangeNotifier {
         _fadeTimer = null;
         return;
       }
-      currentStep++;
-      final nextVol = (startVolume + volumeStep * currentStep).clamp(
+
+      final double progress =
+          (stopwatch.elapsedMilliseconds / duration).clamp(0.0, 1.0);
+      final double eased = curve.transform(progress);
+      final nextVol =
+          (startVolume + (resolvedTarget - startVolume) * eased).clamp(
         0.0,
         100.0,
       );
       _player.setVolume(nextVol);
-      if (currentStep >= totalSteps) {
+
+      if (progress >= 1.0) {
         timer.cancel();
         _fadeTimer = null;
-        _player.setVolume(target);
+        _player.setVolume(resolvedTarget);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -453,17 +462,10 @@ class AudioProvider with ChangeNotifier {
         if (_isDisposed || _isInternalChanging) return;
         try {
           if (_fadeTimer == null || !_fadeTimer!.isActive) {
-            // Do NOT emit to _userVolumeController here. The displayed volume must
-            // reflect only the user's intent, not the player's physical volume which
-            // fluctuates during fades. All UI-visible volume updates go through
-            // setVolume() and toggleMute() explicitly.
-            if (v > 0.1) {
-              _lastVolume = v;
-              _volumeSaveTimer?.cancel();
-              _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-                if (!_isDisposed)
-                  _persistenceProvider?.updatePlayerSetting('volume', v);
-              });
+            // Only persist when the user explicitly changes volume.
+            // This listener just keeps the snapshot in sync for external changes.
+            if ((v - _userVolume).abs() > 0.1) {
+              _userVolume = v;
             }
           }
         } catch (_) {}
@@ -562,6 +564,7 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
+    _userVolume = savedVol;
     _player.setVolume(savedVol);
     _userVolumeController.add(savedVol);
     _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
@@ -751,9 +754,14 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
-    _player.setVolume(0.0);
     _player.play();
-    _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+    _player.setVolume(0.0);
+    _fadeVolume(
+      _userVolume,
+      from: 0.0,
+      respectUserVolume: true,
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _attemptDeviceRecovery({Duration delay = Duration.zero}) async {
@@ -809,7 +817,7 @@ class AudioProvider with ChangeNotifier {
       _isInternalChanging = false;
     }
     if (!_isInternalChanging) {
-      _player.setVolume(_persistenceProvider?.volume ?? 50.0);
+      _player.setVolume(_userVolume);
     }
 
     _isSeeking = true;
@@ -1038,9 +1046,11 @@ class AudioProvider with ChangeNotifier {
     if (_isDisposed) return;
     _fadeTimer?.cancel();
     _fadeTimer = null;
+    _isInternalChanging = false;
 
     _player.setVolume(v);
 
+    _userVolume = v;
     _userVolumeController.add(v);
     if (v > 0.1) _lastVolume = v;
     _volumeSaveTimer?.cancel();
@@ -1052,10 +1062,14 @@ class AudioProvider with ChangeNotifier {
   }
 
   void toggleMute() {
-    if (_player.state.volume > 1.0) {
-      _lastVolume = _player.state.volume;
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isInternalChanging = false;
+    if (_userVolume > 1.0) {
+      _lastVolume = _userVolume;
       _isInternalChanging = true;
       _player.setVolume(0.0);
+      _userVolume = 0.0;
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
@@ -1299,7 +1313,11 @@ class AudioProvider with ChangeNotifier {
       _player.setRate(_playbackRate);
       _player.play();
 
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      _fadeVolume(
+        _persistenceProvider?.volume ?? 50.0,
+        from: 0.0,
+        respectUserVolume: true,
+      );
 
       _applyPlayMode();
       _savePlaybackState();
@@ -1524,14 +1542,11 @@ class AudioProvider with ChangeNotifier {
   void togglePlay() {
     if (_player.state.playing) {
       _shouldResumeAfterDeviceRecovery = false;
-      // 暂停逻辑不变
-      _fadeVolume(
-        0.0,
-        onComplete: () {
-          _pausePlayer();
-          _savePlaybackState();
-        },
-      );
+      _fadeTimer?.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = false;
+      _pausePlayer();
+      _savePlaybackState();
     } else {
       // 播放前检查是否需要恢复设备错误后的状态
       if (_positionBeforeDeviceError != null && _currentUrl != null) {
@@ -1595,7 +1610,11 @@ class AudioProvider with ChangeNotifier {
         );
       }
 
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      _fadeVolume(
+        _persistenceProvider?.volume ?? 50.0,
+        from: 0.0,
+        respectUserVolume: true,
+      );
       _clearDeviceRecoveryState();
     } catch (e) {
       LoggerService.e('[AudioProvider] Failed to rebuild audio pipeline: $e');
@@ -1608,13 +1627,19 @@ class AudioProvider with ChangeNotifier {
   void stop() {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
+    final baseFadeMs =
+        _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
+    final int pauseFadeMs = baseFadeMs.clamp(120, 300).toInt();
     _fadeVolume(
       0.0,
+      durationMs: pauseFadeMs,
       onComplete: () async {
         await _stopPlayer();
         _savePlaybackState();
         _safeNotify();
       },
+      respectUserVolume: true,
+      curve: Curves.easeInQuad,
     );
   }
 
@@ -1672,6 +1697,8 @@ class AudioProvider with ChangeNotifier {
           _pausePlayer();
           _playPlaylistIndex(nextIndex);
         },
+        respectUserVolume: true,
+        curve: Curves.easeOutCubic,
       );
     } else {
       _playPlaylistIndex(nextIndex);
@@ -1699,6 +1726,8 @@ class AudioProvider with ChangeNotifier {
           _pausePlayer();
           _playPlaylistIndex(previousIndex);
         },
+        respectUserVolume: true,
+        curve: Curves.easeOutCubic,
       );
     } else {
       _playPlaylistIndex(previousIndex);

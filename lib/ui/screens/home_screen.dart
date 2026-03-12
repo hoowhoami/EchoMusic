@@ -7,6 +7,7 @@ import '../widgets/sidebar.dart';
 import '../widgets/player_bar.dart';
 import '../widgets/app_shortcuts.dart';
 import '../widgets/lazy_indexed_stack.dart';
+import '../widgets/windows_caption_controls.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
@@ -195,10 +196,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Column(
                       children: [
-                        const SizedBox(
+                        SizedBox(
                           height: 48,
                           width: double.infinity,
-                          child: DragToMoveArea(child: SizedBox.expand()),
+                          child: DragToMoveArea(
+                            child: const SizedBox.expand(),
+                          ),
                         ),
                         Expanded(
                           child: Sidebar(
@@ -226,37 +229,51 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                          child: Row(
+                          child: Stack(
                             children: [
-                              const SizedBox(width: 12),
-                              _buildNavButton(
-                                icon: CupertinoIcons.chevron_left,
-                                onPressed: navProvider.canGoBack
-                                    ? _goBack
-                                    : null,
-                                tooltip: '后退',
-                              ),
-                              const SizedBox(width: 8),
-                              _buildNavButton(
-                                icon: CupertinoIcons.chevron_right,
-                                onPressed: navProvider.canGoForward
-                                    ? _goForward
-                                    : null,
-                                tooltip: '前进',
-                              ),
-                              const SizedBox(width: 8),
-                              _buildNavButton(
-                                icon: CupertinoIcons.refresh,
-                                onPressed: _refreshCurrentView,
-                                tooltip: '刷新',
-                              ),
-                              const Expanded(
-                                child: DragToMoveArea(child: SizedBox.expand()),
+                              Row(
+                                children: [
+                                  const SizedBox(width: 12),
+                                  _buildNavButton(
+                                    icon: CupertinoIcons.chevron_left,
+                                    onPressed: navProvider.canGoBack
+                                        ? _goBack
+                                        : null,
+                                    tooltip: '后退',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildNavButton(
+                                    icon: CupertinoIcons.chevron_right,
+                                    onPressed: navProvider.canGoForward
+                                        ? _goForward
+                                        : null,
+                                    tooltip: '前进',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildNavButton(
+                                    icon: CupertinoIcons.refresh,
+                                    onPressed: _refreshCurrentView,
+                                    tooltip: '刷新',
+                                  ),
+                                  Expanded(
+                                    child: DragToMoveArea(
+                                      child: const SizedBox.expand(),
+                                    ),
+                                  ),
+                                  if (!Platform.isMacOS)
+                                    const SizedBox(
+                                      width: WindowsCaptionControls.width,
+                                    ),
+                                ],
                               ),
                               if (!Platform.isMacOS)
-                                const Padding(
-                                  padding: EdgeInsets.only(right: 8),
-                                  child: _WindowControlButtons(),
+                                const Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: SizedBox(
+                                    height: WindowsCaptionControls.height,
+                                    child: WindowsCaptionControls(),
+                                  ),
                                 ),
                             ],
                           ),
@@ -316,75 +333,6 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
       ),
-    );
-  }
-}
-
-class _WindowControlButtons extends StatefulWidget {
-  const _WindowControlButtons();
-
-  @override
-  State<_WindowControlButtons> createState() => _WindowControlButtonsState();
-}
-
-class _WindowControlButtonsState extends State<_WindowControlButtons>
-    with WindowListener {
-  bool _isMaximized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    windowManager.addListener(this);
-    _syncWindowState();
-  }
-
-  Future<void> _syncWindowState() async {
-    final isMaximized = await windowManager.isMaximized();
-    if (!mounted) return;
-    setState(() => _isMaximized = isMaximized);
-  }
-
-  @override
-  void dispose() {
-    windowManager.removeListener(this);
-    super.dispose();
-  }
-
-  @override
-  void onWindowMaximize() {
-    setState(() => _isMaximized = true);
-  }
-
-  @override
-  void onWindowUnmaximize() {
-    setState(() => _isMaximized = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        WindowCaptionButton.minimize(
-          brightness: brightness,
-          onPressed: () => windowManager.minimize(),
-        ),
-        _isMaximized
-            ? WindowCaptionButton.unmaximize(
-                brightness: brightness,
-                onPressed: () => windowManager.unmaximize(),
-              )
-            : WindowCaptionButton.maximize(
-                brightness: brightness,
-                onPressed: () => windowManager.maximize(),
-              ),
-        WindowCaptionButton.close(
-          brightness: brightness,
-          onPressed: () => windowManager.close(),
-        ),
-      ],
     );
   }
 }

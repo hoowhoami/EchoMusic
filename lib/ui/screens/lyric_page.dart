@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/windows_caption_controls.dart';
 
 class LyricPage extends StatefulWidget {
   const LyricPage({super.key});
@@ -151,22 +153,60 @@ class _LyricPageState extends State<LyricPage> {
   }
 
   Widget _buildTopBar(BuildContext context, dynamic song) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+    final bool isMacOS = Platform.isMacOS;
+    final Widget positionedRightControls = Transform.translate(
+      offset: const Offset(0, 10),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          _LyricsModeSwitcherWidget(),
+          SizedBox(width: 8),
+          _CopyLyricsButton(),
+        ],
+      ),
+    );
+
+    return SizedBox(
+      height: 86,
+      child: Stack(
         children: [
-          _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: SizedBox(
-              height: 44,
-              child: DragToMoveArea(child: SizedBox.expand()),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+            child: Row(
+              children: [
+                Transform.translate(
+                  offset: const Offset(0, 10),
+                  child: _buildIconBtn(
+                    Icons.keyboard_arrow_down_rounded,
+                    36,
+                    () => Navigator.pop(context),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 44,
+                    child: DragToMoveArea(
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                positionedRightControls,
+                if (!isMacOS)
+                  const SizedBox(width: WindowsCaptionControls.width),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          const _LyricsModeSwitcherWidget(),
-          const SizedBox(width: 8),
-          const _CopyLyricsButton(),
+          if (!isMacOS)
+            const Positioned(
+              top: 0,
+              right: 0,
+              child: SizedBox(
+                height: WindowsCaptionControls.height,
+                child: WindowsCaptionControls(),
+              ),
+            ),
         ],
       ),
     );
@@ -228,22 +268,27 @@ class _LyricPageState extends State<LyricPage> {
               child: ShaderMask(
                 shaderCallback: (rect) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent], stops: [0.0, 0.15, 0.85, 1.0]).createShader(rect),
                 blendMode: BlendMode.dstIn,
-                child: ListView.builder(
-                  controller: _scrollController,
-                  itemCount: lyricProvider.lyrics.length,
-                  itemExtent: lineHeight, 
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.symmetric(vertical: verticalPadding),
-                  itemBuilder: (context, index) {
-                    final line = lyricProvider.lyrics[index];
-                    String? secondary;
-                    if (lyricProvider.showTranslation) {
-                      secondary = line.translated;
-                    } else if (lyricProvider.showRomanization) {
-                      secondary = line.romanized;
-                    }
-                    return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
-                  },
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    scrollbars: false,
+                  ),
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    itemCount: lyricProvider.lyrics.length,
+                    itemExtent: lineHeight, 
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.symmetric(vertical: verticalPadding),
+                    itemBuilder: (context, index) {
+                      final line = lyricProvider.lyrics[index];
+                      String? secondary;
+                      if (lyricProvider.showTranslation) {
+                        secondary = line.translated;
+                      } else if (lyricProvider.showRomanization) {
+                        secondary = line.romanized;
+                      }
+                      return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
+                    },
+                  ),
                 ),
               ),
             );

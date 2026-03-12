@@ -291,8 +291,8 @@ class _SettingViewState extends State<SettingView> {
             ),
             _buildItem(
               context,
-              '音量淡入淡出',
-              '启用播放状态切换时的过渡效果',
+              '淡入淡出播放',
+              '启用歌曲切换时的过渡效果',
               trailing: _buildSwitch(
                 context,
                 settings['volumeFade'] ?? true,
