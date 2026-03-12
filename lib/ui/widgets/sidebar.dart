@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../screens/login_screen.dart';
 import '../../models/playlist.dart';
 import 'cover_image.dart';
@@ -254,12 +255,19 @@ class Sidebar extends StatelessWidget {
 
     if (confirmed == true && context.mounted) {
       final userProvider = context.read<UserProvider>();
+      final navigationProvider = context.read<NavigationProvider>();
       final listid = playlistData['listid'] ?? playlistData['specialid'];
 
       if (listid != null) {
         final success = await userProvider.deletePlaylist(listid);
         if (context.mounted) {
           if (success) {
+            if (isCreatedByUser) {
+              // 删除自建歌单后，直接回到当前根节点，
+              // 并清空前进/后退历史，避免回到已失效的详情页。
+              navigationProvider.resetToRootAfterPlaylistDeletion();
+            }
+
             CustomToast.success(context, '${isCreatedByUser ? '删除' : '取消收藏'}成功');
           } else {
             CustomToast.error(context, '${isCreatedByUser ? '删除' : '取消收藏'}失败，请重试');

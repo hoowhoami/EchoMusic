@@ -28,6 +28,7 @@ class DetailPageActionRow extends StatelessWidget {
   final Future<List<Song>> Function()? onResolveSongs;
   final bool isBatchPreparing;
   final DetailPageSecondaryAction? secondaryAction;
+  final List<DetailPageSecondaryAction>? secondaryActions;
 
   const DetailPageActionRow({
     super.key,
@@ -38,17 +39,20 @@ class DetailPageActionRow extends StatelessWidget {
     this.onResolveSongs,
     this.isBatchPreparing = false,
     this.secondaryAction,
+    this.secondaryActions,
   });
 
   @override
   Widget build(BuildContext context) {
+    final actions = <DetailPageSecondaryAction>[];
+    if (secondaryAction != null) actions.add(secondaryAction!);
+    if (secondaryActions != null) actions.addAll(secondaryActions!);
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        if (secondaryAction != null) ...[
-          _SecondaryActionButton(action: secondaryAction!),
-        ],
+        ...actions.map((action) => _SecondaryActionButton(action: action)),
         _PrimaryActionButton(
           icon: CupertinoIcons.play_fill,
           label: playLabel,

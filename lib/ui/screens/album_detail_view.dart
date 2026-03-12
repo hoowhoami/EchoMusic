@@ -17,6 +17,13 @@ import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../../models/playlist.dart' as model;
+import '../widgets/comment_floor_sheet.dart';
+import '../widgets/resource_comment_slivers.dart';
+
+@visibleForTesting
+String resolveAlbumCommentId(Album? album, int fallbackAlbumId) {
+  return '${album?.id ?? fallbackAlbumId}';
+}
 
 class AlbumDetailView extends StatefulWidget {
   final int albumId;
@@ -51,7 +58,20 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
   AudioProvider? _playbackAppendProvider;
   int? _playbackAppendSessionId;
 
+  bool _isCommentsLoading = false;
+  bool _isFetchingMoreComments = false;
+  bool _hasMoreComments = true;
+  int _currentCommentPage = 1;
+  static const int _commentPageSize = 30;
+  final List<dynamic> _allComments = [];
+  List<dynamic> _hotComments = [];
+  int _totalCommentCount = 0;
+
   int get _totalSongCount => _album?.songCount ?? 0;
+
+  String get _albumCommentId {
+    return resolveAlbumCommentId(_album, widget.albumId);
+  }
 
   bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
     final totalSongCount = _totalSongCount;
@@ -83,6 +103,13 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       _resolveAllSongsFuture = null;
       _playbackAppendProvider = null;
       _playbackAppendSessionId = null;
+      _isCommentsLoading = true;
+      _isFetchingMoreComments = false;
+      _hasMoreComments = true;
+      _currentCommentPage = 1;
+      _allComments.clear();
+      _hotComments = [];
+      _totalCommentCount = 0;
     });
 
     final results = await Future.wait([
@@ -110,6 +137,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       });
 
       _scheduleBackgroundResolve();
+      unawaited(_fetchComments(isRefresh: true));
     }
   }
 
@@ -127,6 +155,108 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       widget.albumId,
       page: page,
       pagesize: _pageSize,
+    );
+  }
+
+  Future<void> _fetchComments({bool isRefresh = false}) async {
+    if ((_isCommentsLoading || _isFetchingMoreComments) && !isRefresh) return;
+
+    if (mounted) {
+      setState(() {
+        if (isRefresh) {
+          _isCommentsLoading = true;
+          _currentCommentPage = 1;
+          _hasMoreComments = true;
+          _allComments.clear();
+          _hotComments = [];
+          _totalCommentCount = 0;
+        } else {
+          _isFetchingMoreComments = true;
+        }
+      });
+    }
+
+    try {
+      final data = await MusicApi.getAlbumComments(
+        _albumCommentId,
+        page: _currentCommentPage,
+        pagesize: _commentPageSize,
+        showClassify: isRefresh,
+        showHotwordList: isRefresh,
+      );
+      final payload = data['data'] is Map<String, dynamic>
+          ? data['data'] as Map<String, dynamic>
+          : data;
+      final newComments = payload['list'] is List
+          ? List<dynamic>.from(payload['list'] as List)
+          : const <dynamic>[];
+      final totalCount = _asInt(
+        payload['count'] ?? payload['total'] ?? data['count'] ?? data['total'],
+      );
+      final hotComments = payload['hot_list'] is List
+          ? List<dynamic>.from(payload['hot_list'] as List)
+          : payload['weight_list'] is List
+              ? List<dynamic>.from(payload['weight_list'] as List)
+              : const <dynamic>[];
+
+      if (!mounted) return;
+      setState(() {
+        if (isRefresh) {
+          _hotComments = hotComments;
+          _totalCommentCount = totalCount;
+        }
+        _allComments.addAll(newComments);
+        _hasMoreComments = totalCount > 0
+            ? _allComments.length < totalCount
+            : newComments.length >= _commentPageSize;
+        if (_hasMoreComments) {
+          _currentCommentPage++;
+        }
+        _isCommentsLoading = false;
+        _isFetchingMoreComments = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isCommentsLoading = false;
+        _isFetchingMoreComments = false;
+        _hasMoreComments = false;
+      });
+    }
+  }
+
+  void _loadMoreComments() {
+    if (_isCommentsLoading || _isFetchingMoreComments || !_hasMoreComments) {
+      return;
+    }
+    unawaited(_fetchComments());
+  }
+
+  Future<void> _openAlbumFloorComments(Map<String, dynamic> rawComment) async {
+    final comment = Map<String, dynamic>.from(rawComment);
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final code = _firstNonEmptyString([comment['code']]);
+
+    if (specialId == null || tid == null || code == null) {
+      CustomToast.error(context, '专辑楼层评论暂不可用');
+      return;
+    }
+
+    await showCommentFloorSheet(
+      context,
+      comment: comment,
+      unavailableMessage: '专辑楼层评论暂不可用',
+      onFetch: ({required page, required pagesize}) {
+        return MusicApi.getFloorComments(
+          specialId,
+          tid,
+          code: code,
+          resourceType: 'album',
+          page: page,
+          pagesize: pagesize,
+        );
+      },
     );
   }
 
@@ -289,36 +419,35 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
     final isFavorited = userProvider.isPlaylistFavorited(widget.albumId);
     final songs = _songs ?? const <Song>[];
     final batchPreparing = _isResolvingAllSongs && _hasMore;
-    final secondaryAction = DetailPageSecondaryAction(
-      icon: isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-      label: '收藏',
-      emphasized: isFavorited,
-      onTap: () async {
-        if (!userProvider.isAuthenticated) {
-          CustomToast.error(context, '请先登录');
-          return;
-        }
 
-        if (_album == null) return;
+    final secondaryActions = <DetailPageSecondaryAction>[
+      if (userProvider.isAuthenticated)
+        DetailPageSecondaryAction(
+          icon: isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+          label: '收藏',
+          emphasized: isFavorited,
+          onTap: () async {
+            if (_album == null) return;
 
-        bool success;
-        if (isFavorited) {
-          success = await userProvider.unfavoriteAlbum(widget.albumId);
-          if (context.mounted && success) {
-            CustomToast.success(context, '已取消收藏');
-          }
-        } else {
-          success = await userProvider.favoriteAlbum(
-            widget.albumId,
-            widget.albumName,
-            singerId: _album!.singerId,
-          );
-          if (context.mounted && success) {
-            CustomToast.success(context, '已收藏专辑');
-          }
-        }
-      },
-    );
+            bool success;
+            if (isFavorited) {
+              success = await userProvider.unfavoriteAlbum(widget.albumId);
+              if (context.mounted && success) {
+                CustomToast.success(context, '已取消收藏');
+              }
+            } else {
+              success = await userProvider.favoriteAlbum(
+                widget.albumId,
+                widget.albumName,
+                singerId: _album!.singerId,
+              );
+              if (context.mounted && success) {
+                CustomToast.success(context, '已收藏专辑');
+              }
+            }
+          },
+        ),
+    ];
 
     return SongListScaffold(
       songs: songs,
@@ -326,6 +455,20 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
+      commentSlivers: buildResourceCommentSlivers(
+        context: context,
+        isLoading: _isCommentsLoading,
+        hotComments: _hotComments,
+        comments: _allComments,
+        totalCount: _totalCommentCount,
+        onTapReplies: _openAlbumFloorComments,
+      ),
+      onCommentsLoadMore: _loadMoreComments,
+      hasMoreComments: _hasMoreComments,
+      isLoadingMoreComments: _isFetchingMoreComments,
+      commentsTabBadgeLabel: _totalCommentCount > 0
+          ? '$_totalCommentCount'
+          : null,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithAlbumSongs
@@ -395,7 +538,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
             sourceId: widget.albumId,
             onResolveSongs: _loadAllSongsForBatch,
             isBatchPreparing: batchPreparing,
-            secondaryAction: secondaryAction,
+            secondaryActions: secondaryActions,
           ),
         ),
         SliverToBoxAdapter(
@@ -508,5 +651,20 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         ),
       ],
     );
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString();
+      if (text != null && text.isNotEmpty && text != '0' && text != 'null') {
+        return text;
+      }
+    }
+    return null;
   }
 }

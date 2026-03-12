@@ -5,6 +5,8 @@ import '../../api/music_api.dart';
 import '../../utils/constants.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/back_to_top.dart';
+import '../widgets/custom_tab_bar.dart';
+import '../widgets/comment_item.dart';
 
 class SongDetailView extends StatefulWidget {
   final Song song;
@@ -15,23 +17,57 @@ class SongDetailView extends StatefulWidget {
   State<SongDetailView> createState() => _SongDetailViewState();
 }
 
-class _SongDetailViewState extends State<SongDetailView> {
-  bool _isLoading = true;
+class _SongDetailViewState extends State<SongDetailView> with TickerProviderStateMixin {
+  late final TabController _tabController;
+  bool _isDetailLoading = true;
+  bool _isCommentsLoading = false;
+  bool _didLoadComments = false;
   Map<String, dynamic>? _privilegeData;
   Map<String, dynamic>? _rankingData;
   Map<String, dynamic>? _favoriteData;
   final ScrollController _scrollController = ScrollController();
 
+  // 评论相关
+  bool _isFetchingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  static const int _pageSize = 30;
+  final List<dynamic> _allComments = [];
+  List<dynamic> _hotComments = [];
+  int _totalCount = 0;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this)
+      ..addListener(_handleTabChange);
+    _scrollController.addListener(_handleScroll);
     _fetchData();
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChange);
+    _tabController.dispose();
+    _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleTabChange() {
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == 1 && !_didLoadComments && !_isCommentsLoading) {
+      _fetchComments(isRefresh: true);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients || _tabController.index != 1) return;
+    if (_scrollController.position.extentAfter > 400) return;
+    if (!_isCommentsLoading && !_isFetchingMore && _hasMore) {
+      _fetchComments();
+    }
   }
 
   Future<void> _fetchData() async {
@@ -48,20 +84,71 @@ class _SongDetailViewState extends State<SongDetailView> {
           _privilegeData = privilegeList.isNotEmpty ? privilegeList[0] as Map<String, dynamic> : null;
           _rankingData = results[1] as Map<String, dynamic>;
           _favoriteData = results[2] as Map<String, dynamic>;
-          _isLoading = false;
+          _isDetailLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() => _isDetailLoading = false);
       }
+    }
+  }
+
+  Future<void> _fetchComments({bool isRefresh = false}) async {
+    if (_isFetchingMore && !isRefresh) return;
+
+    setState(() {
+      if (isRefresh) {
+        _isCommentsLoading = true;
+        _currentPage = 1;
+        _allComments.clear();
+        _hotComments.clear();
+      } else {
+        _isFetchingMore = true;
+      }
+    });
+
+    try {
+      final data = await MusicApi.getMusicComments(
+        widget.song.mixSongId,
+        page: _currentPage,
+        pagesize: _pageSize,
+        showClassify: isRefresh,
+        showHotwordList: isRefresh,
+      );
+
+      if (!mounted) return;
+
+      final List comments = data['list'] ?? [];
+      final int count = data['count'] ?? 0;
+
+      setState(() {
+        if (isRefresh) {
+          _hotComments = (data['hot_list'] ?? []) as List<dynamic>;
+          _totalCount = count;
+          _didLoadComments = true;
+        }
+
+        _allComments.addAll(comments);
+        _hasMore = comments.length >= _pageSize;
+        _currentPage++;
+        _isCommentsLoading = false;
+        _isFetchingMore = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCommentsLoading = false;
+        _isFetchingMore = false;
+        _didLoadComments = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
@@ -176,16 +263,104 @@ class _SongDetailViewState extends State<SongDetailView> {
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: _isLoading
-                    ? const Center(child: Padding(padding: EdgeInsets.only(top: 100), child: CupertinoActivityIndicator()))
-                    : _buildContent(context),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _StickyTabBarDelegate(
+                  child: Container(
+                    color: theme.scaffoldBackgroundColor,
+                    child: CustomTabBar(
+                      controller: _tabController,
+                      tabs: const ['详情', '评论'],
+                    ),
+                  ),
+                ),
+              ),
+              SliverFillRemaining(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildDetailTab(context),
+                    _buildCommentTab(context),
+                  ],
+                ),
               ),
             ],
           ),
           BackToTop(controller: _scrollController),
         ],
       ),
+    );
+  }
+
+  Widget _buildDetailTab(BuildContext context) {
+    if (_isDetailLoading) {
+      return const Center(child: Padding(padding: EdgeInsets.only(top: 100), child: CupertinoActivityIndicator()));
+    }
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      child: _buildContent(context),
+    );
+  }
+
+  Widget _buildCommentTab(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (_isCommentsLoading && _allComments.isEmpty) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: _hotComments.length + _allComments.length + (_isFetchingMore ? 1 : 0) + 3,
+      itemBuilder: (context, index) {
+        if (index == 0 && _hotComments.isNotEmpty) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              '热门评论',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface.withAlpha(150),
+              ),
+            ),
+          );
+        }
+
+        if (index > 0 && index <= _hotComments.length) {
+          return CommentItem(comment: _hotComments[index - 1]);
+        }
+
+        final allCommentsStartIndex = _hotComments.isEmpty ? 1 : _hotComments.length + 1;
+        if (index == allCommentsStartIndex) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              '最新评论 ${_totalCount > 0 ? '($_totalCount)' : ''}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.onSurface.withAlpha(150),
+              ),
+            ),
+          );
+        }
+
+        final commentIndex = index - allCommentsStartIndex - 1;
+        if (commentIndex >= 0 && commentIndex < _allComments.length) {
+          return CommentItem(comment: _allComments[commentIndex]);
+        }
+
+        if (_isFetchingMore && index == _hotComments.length + _allComments.length + 2) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CupertinoActivityIndicator()),
+          );
+        }
+
+        return const SizedBox(height: 40);
+      },
     );
   }
 
@@ -479,5 +654,27 @@ class _SongDetailViewState extends State<SongDetailView> {
         ),
       ),
     );
+  }
+}
+
+class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+
+  _StickyTabBarDelegate({required this.child});
+
+  @override
+  double get minExtent => 48;
+
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return child;
+  }
+
+  @override
+  bool shouldRebuild(_StickyTabBarDelegate oldDelegate) {
+    return false;
   }
 }

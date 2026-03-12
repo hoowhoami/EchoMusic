@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../api/music_api.dart';
 import '../../providers/user_provider.dart';
 import '../../theme/app_theme.dart';
@@ -11,7 +12,9 @@ import '../widgets/custom_toast.dart';
 import '../../utils/logger.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.autoLoadQrOnInit = true});
+
+  final bool autoLoadQrOnInit;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -51,7 +54,9 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadQrCode();
+    if (widget.autoLoadQrOnInit) {
+      _loadQrCode();
+    }
   }
 
   @override
@@ -435,6 +440,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       tooltip: '返回',
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: DragToMoveArea(child: SizedBox.expand()),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -465,7 +477,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: ListView.separated(
             shrinkWrap: true,
             itemCount: _accountList.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               final account = _accountList[index];
               return Material(

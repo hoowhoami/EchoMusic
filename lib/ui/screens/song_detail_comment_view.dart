@@ -5,6 +5,7 @@ import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../utils/constants.dart';
 import '../widgets/back_to_top.dart';
+import '../widgets/comment_floor_sheet.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/detail_page_sliver_header.dart';
@@ -1144,8 +1145,13 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
     Map comment, {
     bool isStar = false,
   }) {
+    final normalizedComment = Map<String, dynamic>.from(comment);
     final theme = Theme.of(context);
-    final likeCount = comment['like']?['count'] ?? 0;
+    final likeCount = _asInt(normalizedComment['like']?['count']);
+    final replyNum = _asInt(normalizedComment['reply_num']);
+    final canOpenReplies =
+        replyNum > 0 && _canOpenSongFloorComments(normalizedComment);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -1166,7 +1172,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
               ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: Image.network(
-                  comment['user_pic'] ?? '',
+                  normalizedComment['user_pic'] ?? '',
                   width: 36,
                   height: 36,
                   errorBuilder: (context, error, stackTrace) =>
@@ -1181,7 +1187,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     Row(
                       children: [
                         Text(
-                          comment['user_name'] ?? '匿名用户',
+                          normalizedComment['user_name'] ?? '匿名用户',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w800,
@@ -1211,7 +1217,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      comment['addtime']?.toString() ?? '',
+                      normalizedComment['addtime']?.toString() ?? '',
                       style: TextStyle(
                         fontSize: 10,
                         color: theme.colorScheme.onSurface.withAlpha(100),
@@ -1220,21 +1226,115 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   ],
                 ),
               ),
-              _buildLikeBadge(context, likeCount as int),
+              _buildLikeBadge(context, likeCount),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            comment['content'] ?? '',
+            normalizedComment['content'] ?? '',
             style: const TextStyle(
               fontSize: 14,
               height: 1.5,
               fontWeight: FontWeight.w500,
             ),
           ),
+          if (replyNum > 0) ...[
+            const SizedBox(height: 12),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: canOpenReplies
+                    ? () => _openSongFloorComments(normalizedComment)
+                    : null,
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        CupertinoIcons.chat_bubble_2,
+                        size: 14,
+                        color: canOpenReplies
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface.withAlpha(120),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        canOpenReplies
+                            ? '查看$replyNum条回复'
+                            : '$replyNum 条回复',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: canOpenReplies
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurface.withAlpha(120),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  bool _canOpenSongFloorComments(Map<String, dynamic> comment) {
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final mixsongid = _resolveSongFloorMixsongid(comment);
+    return specialId != null && tid != null && mixsongid != null;
+  }
+
+  Future<void> _openSongFloorComments(Map<String, dynamic> rawComment) async {
+    final comment = Map<String, dynamic>.from(rawComment);
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final mixsongid = _resolveSongFloorMixsongid(comment);
+    if (specialId == null || tid == null || mixsongid == null) return;
+
+    await showCommentFloorSheet(
+      context,
+      comment: comment,
+      unavailableMessage: '歌曲楼层评论暂不可用',
+      onFetch: ({required page, required pagesize}) {
+        return MusicApi.getFloorComments(
+          specialId,
+          tid,
+          mixsongid: mixsongid,
+          page: page,
+          pagesize: pagesize,
+        );
+      },
+    );
+  }
+
+  String? _resolveSongFloorMixsongid(Map<String, dynamic> comment) {
+    return _firstNonEmptyString([
+      comment['album_audio_id'],
+      comment['mixsongid'],
+      comment['audio_id'],
+      widget.song.mixSongId != 0 ? widget.song.mixSongId : null,
+    ]);
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString();
+      if (text != null && text.isNotEmpty && text != '0' && text != 'null') {
+        return text;
+      }
+    }
+    return null;
   }
 
   Widget _buildSectionHeader(String title) {

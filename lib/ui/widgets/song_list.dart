@@ -13,7 +13,7 @@ import 'song_table_layout.dart';
 
 enum _SongSortField { order, title, album, duration }
 
-enum _SongListPrimaryTab { songs }
+enum _SongListPrimaryTab { songs, comments }
 
 class _SongListEntry {
   final Song song;
@@ -27,14 +27,20 @@ class SongList extends StatefulWidget {
   final Playlist? parentPlaylist;
   final bool isLoading;
   final List<Widget>? headers;
+  final List<Widget>? commentSlivers;
   final EdgeInsetsGeometry padding;
   final dynamic sourceId;
   final VoidCallback? onLoadMore;
+  final VoidCallback? onCommentsLoadMore;
   final bool hasMore;
+  final bool hasMoreComments;
   final bool isLoadingMore;
+  final bool isLoadingMoreComments;
   final Future<void> Function(Song song)? onSongDoubleTapPlay;
   final bool enableDefaultDoubleTapPlay;
   final Future<List<Song>> Function()? onResolveBatchSongs;
+  final String commentsTabTitle;
+  final String? commentsTabBadgeLabel;
 
   const SongList({
     super.key,
@@ -42,14 +48,20 @@ class SongList extends StatefulWidget {
     this.parentPlaylist,
     this.isLoading = false,
     this.headers,
+    this.commentSlivers,
     this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
     this.sourceId,
     this.onLoadMore,
+    this.onCommentsLoadMore,
     this.hasMore = false,
+    this.hasMoreComments = false,
     this.isLoadingMore = false,
+    this.isLoadingMoreComments = false,
     this.onSongDoubleTapPlay,
     this.enableDefaultDoubleTapPlay = false,
     this.onResolveBatchSongs,
+    this.commentsTabTitle = '评论',
+    this.commentsTabBadgeLabel,
   });
 
   @override
@@ -73,6 +85,8 @@ class _SongListState extends State<SongList> {
   _SongSortField _sortField = _SongSortField.order;
   bool _sortAscending = true;
   _SongListPrimaryTab _activePrimaryTab = _SongListPrimaryTab.songs;
+
+  bool get _hasCommentTab => widget.commentSlivers != null;
 
   String _songSelectionKey(Song song, int index) {
     if (song.hash.isNotEmpty) return song.hash;
@@ -228,16 +242,33 @@ class _SongListState extends State<SongList> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant SongList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_hasCommentTab && _activePrimaryTab == _SongListPrimaryTab.comments) {
+      _activePrimaryTab = _SongListPrimaryTab.songs;
+    }
+  }
+
   void _onScroll() {
     if (!_scrollController.hasClients) return;
-    if (widget.isLoadingMore || !widget.hasMore) return;
+
+    if (_activePrimaryTab == _SongListPrimaryTab.comments) {
+      if (widget.isLoadingMoreComments || !widget.hasMoreComments) return;
+    } else {
+      if (widget.isLoadingMore || !widget.hasMore) return;
+    }
 
     final maxScroll = _scrollController.position.maxScrollExtent;
     final currentScroll = _scrollController.position.pixels;
     final threshold = 200.0;
 
     if (maxScroll - currentScroll <= threshold) {
-      widget.onLoadMore?.call();
+      if (_activePrimaryTab == _SongListPrimaryTab.comments) {
+        widget.onCommentsLoadMore?.call();
+      } else {
+        widget.onLoadMore?.call();
+      }
     }
   }
 
@@ -298,6 +329,8 @@ class _SongListState extends State<SongList> {
     final sortedEntries = _sortedEntries;
     final filteredSongs = [for (final entry in sortedEntries) entry.song];
     final listPadding = widget.padding.resolve(Directionality.of(context));
+    final isCommentsTabActive =
+        _hasCommentTab && _activePrimaryTab == _SongListPrimaryTab.comments;
 
     if (widget.isLoading) {
       return const Center(
@@ -324,13 +357,14 @@ class _SongListState extends State<SongList> {
                   height: _stickyToolbarHeight,
                   child: _buildStickyToolbar(
                     context,
+                    isCommentsTabActive: isCommentsTabActive,
                     filteredSongs: filteredSongs,
                     listPadding: listPadding,
                   ),
                 ),
               ),
 
-              if (filteredSongs.isNotEmpty)
+              if (!isCommentsTabActive && filteredSongs.isNotEmpty)
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _FixedHeightHeaderDelegate(
@@ -339,7 +373,9 @@ class _SongListState extends State<SongList> {
                   ),
                 ),
 
-              if (filteredSongs.isEmpty)
+              if (isCommentsTabActive)
+                ...?widget.commentSlivers
+              else if (filteredSongs.isEmpty)
                 SliverToBoxAdapter(
                   child: Center(
                     child: Padding(
@@ -387,7 +423,9 @@ class _SongListState extends State<SongList> {
                 ),
               ],
 
-              if (widget.isLoadingMore)
+              if (isCommentsTabActive
+                  ? widget.isLoadingMoreComments
+                  : widget.isLoadingMore)
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.all(16.0),
@@ -406,6 +444,7 @@ class _SongListState extends State<SongList> {
 
   Widget _buildStickyToolbar(
     BuildContext context, {
+    required bool isCommentsTabActive,
     required List<Song> filteredSongs,
     required EdgeInsets listPadding,
   }) {
@@ -423,20 +462,22 @@ class _SongListState extends State<SongList> {
         child: Row(
           children: [
             _buildPrimaryTabs(context, filteredSongs.length),
-            const Spacer(),
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: _searchBoxMaxWidth,
+            if (!isCommentsTabActive) ...[
+              const Spacer(),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: _searchBoxMaxWidth,
+                    ),
+                    child: _buildSearchField(context),
                   ),
-                  child: _buildSearchField(context),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            _buildLocatePlayingButton(context, filteredSongs),
+              const SizedBox(width: 12),
+              _buildLocatePlayingButton(context, filteredSongs),
+            ],
           ],
         ),
       ),
@@ -456,6 +497,17 @@ class _SongListState extends State<SongList> {
             setState(() => _activePrimaryTab = _SongListPrimaryTab.songs);
           },
         ),
+        if (_hasCommentTab) ...[
+          const SizedBox(width: 18),
+          _buildCommentsTab(
+            context,
+            isSelected: _activePrimaryTab == _SongListPrimaryTab.comments,
+            onTap: () {
+              if (_activePrimaryTab == _SongListPrimaryTab.comments) return;
+              setState(() => _activePrimaryTab = _SongListPrimaryTab.comments);
+            },
+          ),
+        ],
       ],
     );
   }
@@ -466,11 +518,45 @@ class _SongListState extends State<SongList> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final theme = Theme.of(context);
     final totalCount = widget.songs.length;
     final badgeLabel = _searchQuery.isNotEmpty && filteredCount != totalCount
         ? '$filteredCount / $totalCount'
         : '$totalCount';
+    return _buildPrimaryTab(
+      context,
+      title: '歌曲',
+      badgeLabel: badgeLabel,
+      isSelected: isSelected,
+      onTap: onTap,
+      keySuffix: 'songs',
+    );
+  }
+
+  Widget _buildCommentsTab(
+    BuildContext context, {
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return _buildPrimaryTab(
+      context,
+      title: widget.commentsTabTitle,
+      badgeLabel: widget.commentsTabBadgeLabel,
+      isSelected: isSelected,
+      onTap: onTap,
+      keySuffix: 'comments',
+    );
+  }
+
+  Widget _buildPrimaryTab(
+    BuildContext context, {
+    required String title,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required String keySuffix,
+    String? badgeLabel,
+  }) {
+    final theme = Theme.of(context);
+    final hasBadge = badgeLabel != null && badgeLabel.isNotEmpty;
     final titleStyle = TextStyle(
       color: isSelected
           ? theme.colorScheme.onSurface
@@ -478,7 +564,7 @@ class _SongListState extends State<SongList> {
       fontSize: 14,
       fontWeight: FontWeight.w800,
     );
-    final badgeTextStyle = TextStyle(
+    final badgeTextStyle = const TextStyle(
       color: Colors.white,
       fontSize: 10,
       fontWeight: FontWeight.w800,
@@ -486,26 +572,26 @@ class _SongListState extends State<SongList> {
     );
     final textDirection = Directionality.of(context);
     final titlePainter = TextPainter(
-      text: TextSpan(text: '歌曲', style: titleStyle),
-      textDirection: textDirection,
-      maxLines: 1,
-    )..layout();
-    final badgePainter = TextPainter(
-      text: TextSpan(text: badgeLabel, style: badgeTextStyle),
+      text: TextSpan(text: title, style: titleStyle),
       textDirection: textDirection,
       maxLines: 1,
     )..layout();
     final titleWidth = titlePainter.width;
-    final badgeWidth = badgePainter.width + 14;
-    final badgeLeft = math.max(titleWidth - 2, 0.0);
-    final tabWidth = math.max(titleWidth, badgeLeft + badgeWidth);
+    final badgePainter = TextPainter(
+      text: TextSpan(text: badgeLabel ?? '', style: badgeTextStyle),
+      textDirection: textDirection,
+      maxLines: 1,
+    )..layout();
+    final badgeWidth = hasBadge ? badgePainter.width + 14 : 0.0;
+    final badgeLeft = hasBadge ? math.max(titleWidth - 2, 0.0) : 0.0;
+    final tabWidth = hasBadge ? math.max(titleWidth, badgeLeft + badgeWidth) : titleWidth;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          key: const ValueKey('song-list-primary-tab-songs'),
+          key: ValueKey('song-list-primary-tab-$keySuffix'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
           splashFactory: NoSplash.splashFactory,
@@ -523,35 +609,36 @@ class _SongListState extends State<SongList> {
                 Positioned(
                   left: 0,
                   bottom: 7,
-                  child: Text('歌曲', style: titleStyle),
+                  child: Text(title, style: titleStyle),
                 ),
-                Positioned(
-                  left: badgeLeft,
-                  top: 0,
-                  child: Container(
-                    key: const ValueKey('song-list-tab-count-badge'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: theme.colorScheme.surface,
-                        width: 1.5,
+                if (hasBadge)
+                  Positioned(
+                    left: badgeLeft,
+                    top: 0,
+                    child: Container(
+                      key: ValueKey('song-list-tab-count-badge-$keySuffix'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withAlpha(40),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: theme.colorScheme.surface,
+                          width: 1.5,
                         ),
-                      ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withAlpha(40),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Text(badgeLabel, style: badgeTextStyle),
                     ),
-                    child: Text(badgeLabel, style: badgeTextStyle),
                   ),
-                ),
                 if (isSelected)
                   Positioned(
                     left: 0,
@@ -832,7 +919,7 @@ class _FixedHeightHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return child;
+    return SizedBox.expand(child: child);
   }
 
   @override

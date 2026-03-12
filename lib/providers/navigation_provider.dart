@@ -184,6 +184,26 @@ class NavigationProvider extends ChangeNotifier {
     return int.tryParse('$rawId') == id;
   }
 
+  void resetToRootAfterPlaylistDeletion() {
+    final hadDetails = _detailStack.isNotEmpty;
+
+    _suppressHistory = true;
+    popUntilFirst();
+    _detailStack.clear();
+    if (hadDetails) {
+      _rootActivationVersion++;
+    }
+    _updateCurrentRouteFromStack(notify: false);
+    _suppressHistory = false;
+
+    _history
+      ..clear()
+      ..add(_currentSnapshot());
+    _historyIndex = 0;
+
+    notifyListeners();
+  }
+
   Future<void> _restoreSnapshot(_ContentHistorySnapshot snapshot) async {
     final previousRootIndex = _currentRootIndex;
     final hadDetails = _detailStack.isNotEmpty;

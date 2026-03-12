@@ -2,15 +2,23 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 
 import 'package:echomusic/api/music_api.dart';
+import 'package:echomusic/models/album.dart';
 import 'package:echomusic/models/playlist.dart';
 import 'package:echomusic/providers/audio_provider.dart';
+import 'package:echomusic/providers/lyric_provider.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echomusic/models/song.dart';
 import 'package:echomusic/providers/persistence_provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
+import 'package:echomusic/ui/screens/album_detail_view.dart';
+import 'package:echomusic/ui/screens/login_screen.dart';
+import 'package:echomusic/ui/screens/loading_screen.dart';
+import 'package:echomusic/ui/screens/lyric_page.dart';
 import 'package:echomusic/ui/screens/playlist_detail_view.dart';
 import 'package:echomusic/ui/widgets/app_shortcuts.dart';
+import 'package:echomusic/ui/widgets/comment_floor_sheet.dart';
+import 'package:echomusic/ui/widgets/comment_item.dart';
 import 'package:echomusic/ui/widgets/cover_image.dart';
 import 'package:echomusic/ui/widgets/detail_page_action_row.dart';
 import 'package:echomusic/ui/widgets/detail_page_sliver_header.dart';
@@ -25,6 +33,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/selection_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 
 class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
   _FakeAudioProvider({
@@ -155,6 +164,9 @@ class _FakeAudioProvider extends ChangeNotifier implements AudioProvider {
 
   @override
   Future<void> seek(Duration duration) async {}
+
+  @override
+  Future<void> fetchLyrics() async {}
 
   @override
   void setVolume(double volume) {
@@ -443,6 +455,21 @@ void main() {
       expect(result.songs.first.name, '正常歌曲');
     },
   );
+
+  test('resolveAlbumCommentId uses the numeric album id for album comments', () {
+    final album = Album(
+      id: 179005522,
+      name: 'Album',
+      pic: '',
+      intro: '',
+      singerName: 'Singer',
+      singerId: 2361,
+      publishTime: '2024-01-01',
+    );
+
+    expect(resolveAlbumCommentId(album, 999999), '179005522');
+    expect(resolveAlbumCommentId(null, 179051183), '179051183');
+  });
 
   test(
     'PersistenceProvider persists playlist filtered invalid-song count',
@@ -808,7 +835,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final countBadge = find.byKey(const ValueKey('song-list-tab-count-badge'));
+    final countBadge = find.byKey(
+      const ValueKey('song-list-tab-count-badge-songs'),
+    );
     final songsTab = find.byKey(const ValueKey('song-list-primary-tab-songs'));
 
     expect(songsTab, findsOneWidget);
@@ -849,6 +878,284 @@ void main() {
     expect(tester.getTopLeft(durationHeader).dy, lessThan(120));
   });
 
+  testWidgets('SongList switches to comments tab and hides song-only controls', (
+    tester,
+  ) async {
+    final songs = List.generate(
+      2,
+      (index) => buildSong(name: 'Comment Song $index', hash: 'comment-$index'),
+    );
+    final audio = _FakeAudioProvider(currentSong: songs[0], initialVolume: 40);
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<PersistenceProvider>.value(
+            value: _FakePersistenceProvider(),
+          ),
+          ChangeNotifierProvider<NavigationProvider>.value(
+            value: _FakeNavigationProvider(),
+          ),
+          ChangeNotifierProvider<SelectionProvider>.value(
+            value: _FakeSelectionProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 960,
+              height: 360,
+              child: SongList(
+                songs: songs,
+                commentsTabBadgeLabel: '12',
+                commentSlivers: const [
+                  SliverToBoxAdapter(child: Text('评论内容')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final commentsTab = find.byKey(
+      const ValueKey('song-list-primary-tab-comments'),
+    );
+    final commentsBadge = find.byKey(
+      const ValueKey('song-list-tab-count-badge-comments'),
+    );
+
+    expect(commentsTab, findsOneWidget);
+    expect(commentsBadge, findsOneWidget);
+    expect(find.descendant(of: commentsBadge, matching: find.text('12')), findsOneWidget);
+    expect(find.text('搜索列表内歌曲'), findsOneWidget);
+    expect(find.widgetWithText(InkWell, '#'), findsOneWidget);
+
+    await tester.tap(commentsTab);
+    await tester.pumpAndSettle();
+
+    expect(find.text('评论内容'), findsOneWidget);
+    expect(find.text('搜索列表内歌曲'), findsNothing);
+    expect(find.widgetWithText(InkWell, '#'), findsNothing);
+    expect(find.widgetWithText(InkWell, '专辑'), findsNothing);
+    expect(find.widgetWithText(InkWell, '时长'), findsNothing);
+  });
+
+  testWidgets('CommentItem uses song-style card layout and reply action', (
+    tester,
+  ) async {
+    var tappedReplies = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CommentItem(
+            comment: {
+              'user_name': '测试用户',
+              'user_pic': '',
+              'addtime': '2026-03-12 12:00',
+              'content': '这是一条评论内容',
+              'reply_num': 3,
+              'like': {'count': 12000},
+            },
+            onTapReplies: () => tappedReplies = true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('测试用户'), findsOneWidget);
+    expect(find.text('2026-03-12 12:00'), findsOneWidget);
+    expect(find.text('这是一条评论内容'), findsOneWidget);
+    expect(find.text('1.2w'), findsOneWidget);
+    expect(find.text('查看3条回复'), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.hand_thumbsup_fill), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.chat_bubble_2), findsOneWidget);
+
+    await tester.tap(find.text('查看3条回复'));
+    await tester.pump();
+
+    expect(tappedReplies, isTrue);
+  });
+
+  testWidgets('Comment floor sheet loads more replies on demand', (
+    tester,
+  ) async {
+    final fetchedPages = <int>[];
+
+    Map<String, dynamic> buildReply(String content) => {
+      'user_name': '回复用户',
+      'content': content,
+      'addtime': '2026-03-12 12:00',
+    };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: ElevatedButton(
+                onPressed: () {
+                  showCommentFloorSheet(
+                    context,
+                    comment: {
+                      'user_name': '原评论用户',
+                      'content': '原评论内容',
+                      'addtime': '2026-03-12 11:00',
+                    },
+                    onFetch: ({required page, required pagesize}) async {
+                      fetchedPages.add(page);
+                      if (page == 1) {
+                        return {
+                          'err_code': 0,
+                          'comments_num': 35,
+                          'list': List.generate(
+                            30,
+                            (index) => buildReply('第1页回复${index + 1}'),
+                          ),
+                        };
+                      }
+                      if (page == 2) {
+                        return {
+                          'err_code': 0,
+                          'comments_num': 35,
+                          'list': List.generate(
+                            5,
+                            (index) => buildReply('第2页回复${index + 1}'),
+                          ),
+                        };
+                      }
+                      return {
+                        'err_code': 0,
+                        'comments_num': 35,
+                        'list': const <Map<String, dynamic>>[],
+                      };
+                    },
+                  );
+                },
+                child: const Text('打开楼层评论'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开楼层评论'));
+    await tester.pumpAndSettle();
+
+    expect(fetchedPages, contains(1));
+    expect(find.text('第1页回复1'), findsOneWidget);
+    expect(find.text('第2页回复1'), findsNothing);
+
+    final loadMoreFinder = find.text('加载更多回复');
+    final listFinder = find.byType(ListView);
+    expect(listFinder, findsOneWidget);
+
+    for (var i = 0;
+        i < 10 &&
+            !fetchedPages.contains(2) &&
+            loadMoreFinder.evaluate().isEmpty;
+        i++) {
+      await tester.drag(listFinder, const Offset(0, -600));
+      await tester.pumpAndSettle();
+    }
+
+    if (!fetchedPages.contains(2)) {
+      expect(loadMoreFinder, findsOneWidget);
+      await tester.tap(loadMoreFinder);
+      await tester.pumpAndSettle();
+    }
+
+    final secondPageLastReplyFinder = find.text('第2页回复5');
+    for (var i = 0; i < 6 && secondPageLastReplyFinder.evaluate().isEmpty; i++) {
+      await tester.drag(listFinder, const Offset(0, -400));
+      await tester.pumpAndSettle();
+    }
+
+    expect(fetchedPages, contains(2));
+    expect(find.text('第2页回复1', skipOffstage: false), findsOneWidget);
+    expect(secondPageLastReplyFinder, findsOneWidget);
+    expect(find.text('加载更多回复'), findsNothing);
+  });
+
+  testWidgets('LyricPage exposes a drag-to-move area in the top bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final audio = _FakeAudioProvider(
+      currentSong: buildSong(name: 'Lyric Song', hash: 'lyric-song-hash'),
+      initialVolume: 40,
+    );
+    addTearDown(audio.dispose);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AudioProvider>.value(value: audio),
+          ChangeNotifierProvider<LyricProvider>(create: (_) => LyricProvider()),
+        ],
+        child: const MaterialApp(home: LyricPage()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(DragToMoveArea), findsOneWidget);
+  });
+
+  testWidgets('LoginScreen exposes a drag-to-move area in the top bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<UserProvider>(
+        create: (_) => UserProvider(),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          darkTheme: AppTheme.dark(),
+          home: const LoginScreen(autoLoadQrOnInit: false),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(DragToMoveArea), findsOneWidget);
+  });
+
+  testWidgets('LoadingScreen exposes a drag-to-move area in the top bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(home: LoadingScreen(autoStartServer: false)),
+    );
+    await tester.pump();
+
+    expect(find.byType(DragToMoveArea), findsOneWidget);
+  });
+
   testWidgets('SongList count badge switches colors with theme', (
     tester,
   ) async {
@@ -885,7 +1192,9 @@ void main() {
       );
     }
 
-    final countBadge = find.byKey(const ValueKey('song-list-tab-count-badge'));
+    final countBadge = find.byKey(
+      const ValueKey('song-list-tab-count-badge-songs'),
+    );
     final badgeText = find.descendant(
       of: countBadge,
       matching: find.byType(Text),

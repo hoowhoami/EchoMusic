@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
@@ -155,7 +156,14 @@ class _LyricPageState extends State<LyricPage> {
       child: Row(
         children: [
           _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
-          const Spacer(),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: SizedBox(
+              height: 44,
+              child: DragToMoveArea(child: SizedBox.expand()),
+            ),
+          ),
+          const SizedBox(width: 12),
           const _LyricsModeSwitcherWidget(),
           const SizedBox(width: 8),
           const _CopyLyricsButton(),

@@ -2,11 +2,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:window_manager/window_manager.dart';
 import '../../utils/server_orchestrator.dart';
 import 'home_screen.dart';
 
 class LoadingScreen extends StatefulWidget {
-  const LoadingScreen({super.key});
+  const LoadingScreen({super.key, this.autoStartServer = true});
+
+  final bool autoStartServer;
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
@@ -19,7 +22,9 @@ class _LoadingScreenState extends State<LoadingScreen> {
   @override
   void initState() {
     super.initState();
-    _startServer();
+    if (widget.autoStartServer) {
+      _startServer();
+    }
   }
 
   Future<void> _startServer() async {
@@ -236,6 +241,19 @@ class _LoadingScreenState extends State<LoadingScreen> {
           ),
 
           // 底部版权或版本信息
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: const SizedBox(
+                height: 44,
+                child: DragToMoveArea(child: SizedBox.expand()),
+              ),
+            ),
+          ),
+
           Positioned(
             bottom: 40,
             left: 0,

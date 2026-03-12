@@ -364,6 +364,62 @@ class MusicApi {
     }
   }
 
+  static Future<Map<String, dynamic>> getPlaylistComments(String id, {int page = 1, int pagesize = 30, bool showClassify = false, bool showHotwordList = false}) async {
+    try {
+      final response = await _dio.get('/comment/playlist', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'show_classify': showClassify ? 1 : 0,
+        'show_hotword_list': showHotwordList ? 1 : 0,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getAlbumComments(String id, {int page = 1, int pagesize = 30, bool showClassify = false, bool showHotwordList = false}) async {
+    try {
+      final response = await _dio.get('/comment/album', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'show_classify': showClassify ? 1 : 0,
+        'show_hotword_list': showHotwordList ? 1 : 0,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getFloorComments(
+    String specialId,
+    String tid, {
+    String? mixsongid,
+    String? code,
+    String? resourceType,
+    int page = 1,
+    int pagesize = 30,
+  }) async {
+    try {
+      final response = await _dio.get('/comment/floor', queryParameters: {
+        'special_id': specialId,
+        'tid': tid,
+        if (mixsongid != null && mixsongid.isNotEmpty) 'mixsongid': mixsongid,
+        if (code != null && code.isNotEmpty) 'code': code,
+        if (resourceType != null && resourceType.isNotEmpty)
+          'resource_type': resourceType,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
   static Future<List<Song>> getNewSongs() async {
     try {
       final response = await _dio.get('/top/song');
