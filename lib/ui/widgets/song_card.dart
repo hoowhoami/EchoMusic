@@ -118,12 +118,17 @@ class _SongCardState extends State<SongCard> {
       unawaited(widget.onDoubleTapPlay!(widget.song));
       return;
     }
-    if (!widget.enableDefaultDoubleTapPlay) return;
-    _handleCoverPlayTap(
-      isCurrent: isCurrent,
-      isPlaying: isPlaying,
-      isLoading: isLoading,
-    );
+    // 默认双击播放：添加到队列播放（不替换播放列表）
+    if (widget.enableDefaultDoubleTapPlay) {
+      _handleCoverPlayTap(
+        isCurrent: isCurrent,
+        isPlaying: isPlaying,
+        isLoading: isLoading,
+      );
+      return;
+    }
+    // 如果没有启用默认双击播放，也执行队列播放
+    _queueAndPlayCurrentSong();
   }
 
   void _showActionToast({

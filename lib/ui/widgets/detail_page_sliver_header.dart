@@ -70,20 +70,24 @@ class DetailPageSliverHeader extends StatelessWidget {
   }
 
   Widget _buildExpandedBody(BuildContext context, ThemeData theme) {
-    return Align(
+    return Column(
       key: const ValueKey('expanded'),
-      alignment: const Alignment(-1, -0.30),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            expandedCover,
-            const SizedBox(width: 20),
-            Expanded(child: _buildExpandedText(theme)),
-          ],
+      children: [
+        const SizedBox(height: 20),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                expandedCover,
+                const SizedBox(width: 20),
+                Expanded(child: _buildExpandedText(theme)),
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -152,10 +156,12 @@ class DetailPageSliverHeader extends StatelessWidget {
       if (actions != null) ...[const SizedBox(height: 12), actions!],
     ];
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
     );
   }
 

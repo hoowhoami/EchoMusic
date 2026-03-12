@@ -370,7 +370,7 @@ class _HistoryViewState extends State<HistoryView>
         DetailPageSliverHeader(
           typeLabel: 'HISTORY',
           title: '最近播放',
-          expandedHeight: 176,
+          expandedHeight: 200,
           expandedCover: _buildExpandedHistoryCover(theme),
           collapsedCover: _buildCollapsedHistoryCover(theme),
           detailChildren: [

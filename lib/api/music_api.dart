@@ -1267,17 +1267,17 @@ class MusicApi {
 
   
 
-    static Future<bool> upgradeDayVip() async {
+    static Future<Map<String, dynamic>> upgradeDayVip() async {
 
       try {
 
         final response = await _dio.get('/youth/day/vip/upgrade');
 
-        return response.data['status'] == 1;
+        return response.data;
 
       } catch (e) {
 
-        return false;
+        return {'status': 0, 'error_code': 0};
 
       }
 

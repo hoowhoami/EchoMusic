@@ -542,6 +542,7 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
                           song: song,
                           playlist: songs,
                           showMore: true,
+                          enableDefaultDoubleTapPlay: true,
                         ),
                       );
                     },

@@ -553,6 +553,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           song: song,
           playlist: _songResults,
           showMore: true,
+          enableDefaultDoubleTapPlay: true,
         );
       },
     );

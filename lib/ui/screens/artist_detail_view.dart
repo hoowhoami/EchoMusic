@@ -328,7 +328,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         DetailPageSliverHeader(
           typeLabel: 'ARTIST',
           title: widget.artistName,
-          expandedHeight: 157,
+          expandedHeight: 200,
           expandedCover: _artist != null
               ? Container(
                   decoration: BoxDecoration(
@@ -411,7 +411,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         if (_artist != null && _artist!.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -425,7 +425,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                   const SizedBox(height: 6),
                   Text(
                     _artist!.intro,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
@@ -434,8 +434,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                       fontSize: 12,
                     ),
                   ),
-                  if (_artist!.intro.length > 80)
-                    InkWell(
+                  InkWell(
                       onTap: () {
                         CustomDialog.show(
                           context,
@@ -465,18 +464,6 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
               ),
             ),
           ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
-            child: Text(
-              '热门歌曲',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 15,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }

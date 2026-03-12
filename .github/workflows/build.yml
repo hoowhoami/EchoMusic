@@ -18,12 +18,19 @@ jobs:
         include:
           - os: macos-latest
             platform: macos
+            arch: x64
             server_bin: app_macos
           - os: windows-latest
             platform: windows
-            server_bin: app_win.exe
+            arch: x64
+            server_bin: app_win_x64.exe
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            server_bin: app_win_arm64.exe
           - os: ubuntu-22.04
             platform: linux
+            arch: x64
             server_bin: app_linux
 
     steps:
@@ -41,7 +48,7 @@ jobs:
         run: |
           cd server
           npm install
-          npx pkg . -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-x64 -o bin/${{ matrix.server_bin }}
+          npx pkg . -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-${{ matrix.arch }} -o bin/${{ matrix.server_bin }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -58,7 +65,13 @@ jobs:
           sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libmpv-dev libkeybinder-3.0-dev mpv
 
       - name: Build Flutter Desktop
-        run: flutter build ${{ matrix.platform }} --release
+        run: |
+          if [ "${{ matrix.platform }}" == "windows" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            flutter build windows --release --target-platform windows-arm64
+          else
+            flutter build ${{ matrix.platform }} --release
+          fi
+        shell: bash
 
       - name: Bundle Server (macOS)
         if: matrix.platform == 'macos'
@@ -71,8 +84,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: bash
         run: |
-          mkdir -p build/windows/x64/runner/Release/server
-          cp server/bin/app_win.exe build/windows/x64/runner/Release/server/
+          mkdir -p build/windows/${{ matrix.arch }}/runner/Release/server
+          cp server/bin/${{ matrix.server_bin }} build/windows/${{ matrix.arch }}/runner/Release/server/
 
       - name: Bundle Server (Linux)
         if: matrix.platform == 'linux'
@@ -94,7 +107,7 @@ jobs:
           if [ "${{ matrix.platform }}" == "macos" ]; then
             ls -lhR build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
           elif [ "${{ matrix.platform }}" == "windows" ]; then
-            ls -lhR build/windows/x64/runner/Release/server/
+            ls -lhR build/windows/${{ matrix.arch }}/runner/Release/server/
           elif [ "${{ matrix.platform }}" == "linux" ]; then
             ls -lhR build/linux/x64/release/bundle/server/
           fi
@@ -130,8 +143,9 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          iscc //DAppVersion=${CLEAN_VERSION} installer.iss
-          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup.exe"
+          ARCH_SUFFIX=${{ matrix.arch == 'arm64' && '-ARM64' || '' }}
+          iscc //DAppVersion=${CLEAN_VERSION} //DArchitecture=${{ matrix.arch }} installer.iss
+          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows${ARCH_SUFFIX}-Setup.exe"
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'

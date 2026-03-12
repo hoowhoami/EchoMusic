@@ -67,6 +67,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
               song: song,
               playlist: songs,
               showMore: true,
+              enableDefaultDoubleTapPlay: true,
             );
           },
         ),

@@ -345,7 +345,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         DetailPageSliverHeader(
           typeLabel: 'ALBUM',
           title: widget.albumName,
-          expandedHeight: 161,
+          expandedHeight: 200,
           expandedCover: CoverImage(
             url: _album?.pic ?? '',
             width: 136,
@@ -401,7 +401,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         SliverToBoxAdapter(
           child: _album?.intro != null && _album!.intro.isNotEmpty
               ? Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+                  padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -415,7 +415,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                       const SizedBox(height: 6),
                       Text(
                         _album!.intro,
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
@@ -424,8 +424,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                           fontSize: 12,
                         ),
                       ),
-                      if (_album!.intro.length > 80)
-                        InkWell(
+                      InkWell(
                           onTap: () {
                             CustomDialog.show(
                               context,

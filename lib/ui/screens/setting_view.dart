@@ -282,7 +282,7 @@ class _SettingViewState extends State<SettingView> {
             _buildItem(
               context,
               '播放替换队列',
-              '在歌单/专辑/歌手列表中，双击播放单曲时，用当前单曲所在的歌曲列表替换播放列表',
+              '双击播放单曲时，用当前单曲所在的歌曲列表替换播放列表',
               trailing: _buildSwitch(
                 context,
                 settings['replacePlaylist'] ?? false,

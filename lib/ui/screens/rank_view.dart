@@ -154,6 +154,7 @@ class _RankViewState extends State<RankView> {
               showCover: true,
               coverSize: 44,
               showMore: true,
+              enableDefaultDoubleTapPlay: true,
             );
           },
         ),

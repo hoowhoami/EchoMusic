@@ -440,7 +440,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         DetailPageSliverHeader(
           typeLabel: 'PLAYLIST',
           title: playlist.name,
-          expandedHeight: 169,
+          expandedHeight: 200,
           expandedCover: CoverImage(
             url: playlist.pic,
             width: 136,
@@ -523,7 +523,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         if (playlist.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -537,7 +537,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                   const SizedBox(height: 6),
                   Text(
                     playlist.intro,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
@@ -546,8 +546,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                       fontSize: 12,
                     ),
                   ),
-                  if (playlist.intro.length > 80)
-                    InkWell(
+                  InkWell(
                       onTap: () {
                         CustomDialog.show(
                           context,

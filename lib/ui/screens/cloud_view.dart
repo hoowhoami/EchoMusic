@@ -441,7 +441,7 @@ class _CloudViewState extends State<CloudView>
         DetailPageSliverHeader(
           typeLabel: 'CLOUD',
           title: '音乐云盘',
-          expandedHeight: 181,
+          expandedHeight: 200,
           expandedCover: _buildExpandedCloudCover(theme),
           collapsedCover: _buildCollapsedCloudCover(theme),
           detailChildren: [
@@ -481,7 +481,7 @@ class _CloudViewState extends State<CloudView>
         ),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
             child: _buildCloudInfoCard(theme, used, percentage),
           ),
         ),

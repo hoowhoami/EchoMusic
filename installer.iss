@@ -1,7 +1,27 @@
+#ifndef Architecture
+  #define Architecture "x64"
+#endif
+
+#if Architecture == "arm64"
+  #define ArchAllowed "arm64"
+  #define ArchInstallMode "arm64"
+  #define BuildPath "build\windows\arm64\runner\Release"
+  #define ServerBinary "app_win_arm64.exe"
+  #define VCRedistKey "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\arm64"
+  #define VCRedistURL "https://aka.ms/vs/17/release/vc_redist.arm64.exe"
+#else
+  #define ArchAllowed "x64"
+  #define ArchInstallMode "x64"
+  #define BuildPath "build\windows\x64\runner\Release"
+  #define ServerBinary "app_win_x64.exe"
+  #define VCRedistKey "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+  #define VCRedistURL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+#endif
+
 [Setup]
 AppId={{ECHO-MUSIC-DESKTOP-APP}}
 AppName=EchoMusic
-AppVersion=1.1.3
+AppVersion=1.1.4
 AppPublisher=EchoMusic Team
 DefaultDirName={autopf}\EchoMusic
 DefaultGroupName=EchoMusic
@@ -11,8 +31,8 @@ SetupIconFile=windows\runner\resources\app_icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed={#ArchAllowed}
+ArchitecturesInstallIn64BitMode={#ArchInstallMode}
 CloseApplications=yes
 RestartApplications=no
 
@@ -23,7 +43,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BuildPath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\EchoMusic"; Filename: "{app}\echomusic.exe"
@@ -38,7 +58,7 @@ var
   Installed: Cardinal;
 begin
   Result := False;
-  if RegQueryDWordValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) then
+  if RegQueryDWordValue(HKEY_LOCAL_MACHINE, '{#VCRedistKey}', 'Installed', Installed) then
   begin
     Result := (Installed = 1);
   end;
@@ -83,7 +103,7 @@ end;
 
 procedure RegisterExtraCloseApplicationsResources;
 begin
-  RegisterExtraCloseApplicationsResource(False, ExpandConstant('{app}\server\app_win.exe'));
+  RegisterExtraCloseApplicationsResource(False, ExpandConstant('{app}\server\{#ServerBinary}'));
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -93,7 +113,7 @@ begin
   Result := '';
 
   if (not IsProcessRunning('echomusic.exe')) and
-     (not IsProcessRunning('app_win.exe')) then
+     (not IsProcessRunning('{#ServerBinary}')) then
   begin
     Exit;
   end;
@@ -104,8 +124,8 @@ begin
       '检测到 EchoMusic 或其后台服务仍在运行。' #13#10 #13#10 +
       '安装程序需要先关闭以下进程后才能继续：' #13#10 +
       '- echomusic.exe' #13#10 +
-      '- app_win.exe' #13#10 #13#10 +
-      '点击“是”后将自动关闭它们并继续安装。' #13#10 +
+      '- {#ServerBinary}' #13#10 #13#10 +
+      '点击”是”后将自动关闭它们并继续安装。' #13#10 +
       '如果你正在播放音乐，请先保存好当前操作。',
       mbConfirmation,
       MB_YESNO
@@ -117,12 +137,12 @@ begin
   end;
 
   ForceKillProcess('echomusic.exe');
-  ForceKillProcess('app_win.exe');
+  ForceKillProcess('{#ServerBinary}');
 
   for Retry := 0 to 9 do
   begin
     if (not IsProcessRunning('echomusic.exe')) and
-       (not IsProcessRunning('app_win.exe')) then
+       (not IsProcessRunning('{#ServerBinary}')) then
     begin
       Log('All EchoMusic processes have been closed.');
       Exit;
@@ -130,7 +150,7 @@ begin
     Sleep(500);
   end;
 
-  Result := '无法关闭正在运行的 EchoMusic 或后台服务。请在任务管理器中结束 echomusic.exe 和 app_win.exe 后重试安装。';
+  Result := '无法关闭正在运行的 EchoMusic 或后台服务。请在任务管理器中结束 echomusic.exe 和 {#ServerBinary} 后重试安装。';
 end;
 
 function InitializeSetup: Boolean;
@@ -142,7 +162,7 @@ begin
   begin
     if MsgBox('EchoMusic 需要 Microsoft Visual C++ Redistributable 运行环境才能正常播放音频。' #13#10 #13#10 '检测到您的系统尚未安装该组件，是否立即打开浏览器下载？', mbConfirmation, MB_YESNO) = idYes then
     begin
-      ShellExec('open', 'https://aka.ms/vs/17/release/vc_redist.x64.exe', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+      ShellExec('open', '{#VCRedistURL}', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
     end;
   end;
 end;
