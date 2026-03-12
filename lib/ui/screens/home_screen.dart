@@ -178,135 +178,132 @@ class _HomeScreenState extends State<HomeScreen> {
       onTogglePlayMode: () => PlayerShortcutActions.togglePlayMode(context),
       child: Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
-        body: Column(
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            SizedBox(
+              width: 230,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    right: BorderSide(
+                      color: theme.dividerColor.withAlpha(40),
+                      width: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 48,
+                      width: double.infinity,
+                      child: DragToMoveArea(
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                    Expanded(
+                      child: Sidebar(
+                        selectedIndex: navProvider.currentRootIndex,
+                        selectedPlaylistId:
+                            navProvider.selectedSidebarPlaylistId,
+                        onDestinationSelected: _navigateTo,
+                        onPushPlaylist: _pushPlaylist,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             Expanded(
-              child: Row(
+              child: Column(
                 children: [
                   Container(
-                    width: 260,
+                    height: 48,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
+                      color: theme.scaffoldBackgroundColor,
                       border: Border(
-                        right: BorderSide(
-                          color: theme.dividerColor.withAlpha(40),
+                        bottom: BorderSide(
+                          color: theme.dividerColor.withAlpha(30),
                           width: 0.5,
                         ),
                       ),
                     ),
-                    child: Column(
+                    child: Stack(
                       children: [
-                        SizedBox(
-                          height: 48,
-                          width: double.infinity,
-                          child: DragToMoveArea(
-                            child: const SizedBox.expand(),
-                          ),
+                        Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_left,
+                              onPressed: navProvider.canGoBack
+                                  ? _goBack
+                                  : null,
+                              tooltip: '后退',
+                            ),
+                            const SizedBox(width: 8),
+                            _buildNavButton(
+                              icon: CupertinoIcons.chevron_right,
+                              onPressed: navProvider.canGoForward
+                                  ? _goForward
+                                  : null,
+                              tooltip: '前进',
+                            ),
+                            const SizedBox(width: 8),
+                            _buildNavButton(
+                              icon: CupertinoIcons.refresh,
+                              onPressed: _refreshCurrentView,
+                              tooltip: '刷新',
+                            ),
+                            Expanded(
+                              child: DragToMoveArea(
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                            if (!Platform.isMacOS)
+                              const SizedBox(
+                                width: WindowsCaptionControls.width,
+                              ),
+                          ],
                         ),
-                        Expanded(
-                          child: Sidebar(
-                            selectedIndex: navProvider.currentRootIndex,
-                            selectedPlaylistId:
-                                navProvider.selectedSidebarPlaylistId,
-                            onDestinationSelected: _navigateTo,
-                            onPushPlaylist: _pushPlaylist,
+                        if (!Platform.isMacOS)
+                          const Positioned(
+                            top: 0,
+                            right: 0,
+                            child: SizedBox(
+                              height: WindowsCaptionControls.height,
+                              child: WindowsCaptionControls(),
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
                   Expanded(
-                    child: Column(
-                      children: [
-                        Container(
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: theme.scaffoldBackgroundColor,
-                            border: Border(
-                              bottom: BorderSide(
-                                color: theme.dividerColor.withAlpha(30),
-                                width: 0.5,
-                              ),
-                            ),
-                          ),
-                          child: Stack(
-                            children: [
-                              Row(
-                                children: [
-                                  const SizedBox(width: 12),
-                                  _buildNavButton(
-                                    icon: CupertinoIcons.chevron_left,
-                                    onPressed: navProvider.canGoBack
-                                        ? _goBack
-                                        : null,
-                                    tooltip: '后退',
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildNavButton(
-                                    icon: CupertinoIcons.chevron_right,
-                                    onPressed: navProvider.canGoForward
-                                        ? _goForward
-                                        : null,
-                                    tooltip: '前进',
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildNavButton(
-                                    icon: CupertinoIcons.refresh,
-                                    onPressed: _refreshCurrentView,
-                                    tooltip: '刷新',
-                                  ),
-                                  Expanded(
-                                    child: DragToMoveArea(
-                                      child: const SizedBox.expand(),
-                                    ),
-                                  ),
-                                  if (!Platform.isMacOS)
-                                    const SizedBox(
-                                      width: WindowsCaptionControls.width,
-                                    ),
-                                ],
-                              ),
-                              if (!Platform.isMacOS)
-                                const Positioned(
-                                  top: 0,
-                                  right: 0,
-                                  child: SizedBox(
-                                    height: WindowsCaptionControls.height,
-                                    child: WindowsCaptionControls(),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: Navigator(
-                            key: navProvider.navigatorKey,
-                            observers: [navProvider.observer],
-                            onGenerateRoute: (settings) => PageRouteBuilder(
-                              settings: const RouteSettings(name: 'root'),
-                              pageBuilder: (context, _, _) =>
-                                  Consumer<NavigationProvider>(
-                                    builder: (context, provider, _) =>
-                                        LazyIndexedStack(
-                                          index: provider.currentRootIndex,
-                                          itemCount: 7,
-                                          itemBuilder: _buildRootView,
-                                          activationVersion:
-                                              provider.rootActivationVersion,
-                                          recreateOnActivateIndices:
-                                              const <int>{3, 4},
-                                        ),
+                    child: Navigator(
+                      key: navProvider.navigatorKey,
+                      observers: [navProvider.observer],
+                      onGenerateRoute: (settings) => PageRouteBuilder(
+                        settings: const RouteSettings(name: 'root'),
+                        pageBuilder: (context, _, _) =>
+                            Consumer<NavigationProvider>(
+                              builder: (context, provider, _) =>
+                                  LazyIndexedStack(
+                                    index: provider.currentRootIndex,
+                                    itemCount: 7,
+                                    itemBuilder: _buildRootView,
+                                    activationVersion:
+                                        provider.rootActivationVersion,
+                                    recreateOnActivateIndices:
+                                        const <int>{3, 4},
                                   ),
                             ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
+                  const PlayerBar(),
                 ],
               ),
             ),
-            const PlayerBar(),
           ],
         ),
       ),

@@ -33,7 +33,7 @@ class Sidebar extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
