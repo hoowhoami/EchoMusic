@@ -22,6 +22,7 @@ import 'theme/app_theme.dart';
 import 'ui/screens/loading_screen.dart';
 import 'ui/widgets/app_shortcuts.dart';
 import 'ui/widgets/auth_listener.dart';
+import 'ui/widgets/app_scroll_behavior.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
 import 'utils/player_shortcut_actions.dart';
@@ -473,6 +474,7 @@ class MyApp extends StatelessWidget {
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           locale: const Locale('zh', 'CN'),
+          scrollBehavior: const AppScrollBehavior(),
           themeMode: theme == 'dark'
               ? ThemeMode.dark
               : (theme == 'light' ? ThemeMode.light : ThemeMode.system),
