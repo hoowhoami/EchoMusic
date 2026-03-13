@@ -124,21 +124,21 @@ class _LyricPageState extends State<LyricPage> {
           SafeArea(
             child: Column(
               children: [
-                _buildTopBar(context, song),
+                _buildTopBar(song),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 60),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(flex: 5, child: _buildInfoSection(context, song)),
+                        Expanded(flex: 5, child: _buildInfoSection(song)),
                         const SizedBox(width: 40),
                         Expanded(flex: 7, child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme))),
                       ],
                     ),
                   ),
                 ),
-                RepaintBoundary(child: _buildBottomSection(context, audioProvider, theme)),
+                RepaintBoundary(child: _buildBottomSection(audioProvider, theme)),
                 const SizedBox(height: 32),
               ],
             ),
@@ -149,7 +149,7 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildTopBar(BuildContext context, dynamic song) {
+  Widget _buildTopBar(dynamic song) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
       child: Row(
@@ -164,7 +164,7 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildInfoSection(BuildContext context, dynamic song) {
+  Widget _buildInfoSection(dynamic song) {
     final screenHeight = MediaQuery.of(context).size.height;
     final coverSize = (screenHeight * 0.38).clamp(240.0, 400.0);
     return Column(
@@ -245,7 +245,7 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildBottomSection(BuildContext context, AudioProvider audioProvider, ThemeData theme) {
+  Widget _buildBottomSection(AudioProvider audioProvider, ThemeData theme) {
     return Container(
       width: 600, // Slightly wider for better desktop layout
       padding: const EdgeInsets.symmetric(horizontal: 40),

@@ -371,7 +371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                           onGenerateRoute: (settings) => PageRouteBuilder(
                             settings: const RouteSettings(name: 'root'),
-                            pageBuilder: (context, _, __) => ValueListenableBuilder<int>(
+                            pageBuilder: (context, _, _) => ValueListenableBuilder<int>(
                               valueListenable: _indexNotifier,
                               builder: (context, index, _) => _LazyIndexedStack(
                                 index: index,
