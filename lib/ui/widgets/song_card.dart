@@ -272,34 +272,43 @@ class _SongCardState extends State<SongCard> {
       );
     }
 
-    return Wrap(
-      spacing: 0,
-      runSpacing: 0,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (int index = 0; index < singers.length; index++) ...[
-          _buildLinkText(
-            text: singers[index].name,
-            style: style,
-            onTap:
-                enabled &&
-                    singers[index].id > 0 &&
-                    !navigationProvider.isCurrentRoute(
-                      'artist_detail',
-                      id: singers[index].id,
-                    )
-                ? () => _openArtistDetail(singers[index])
-                : null,
-          ),
-          if (index < singers.length - 1)
-            Text(
-              ' / ',
-              style: style.copyWith(
-                color: style.color?.withAlpha(isPlayable ? 180 : 120),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int index = 0; index < singers.length; index++) ...[
+                  _buildLinkText(
+                    text: singers[index].name,
+                    style: style,
+                    onTap:
+                        enabled &&
+                            singers[index].id > 0 &&
+                            !navigationProvider.isCurrentRoute(
+                              'artist_detail',
+                              id: singers[index].id,
+                            )
+                        ? () => _openArtistDetail(singers[index])
+                        : null,
+                  ),
+                  if (index < singers.length - 1)
+                    Text(
+                      ' / ',
+                      style: style.copyWith(
+                        color: style.color?.withAlpha(isPlayable ? 180 : 120),
+                      ),
+                    ),
+                ],
+              ],
             ),
-        ],
-      ],
+          ),
+        );
+      },
     );
   }
 

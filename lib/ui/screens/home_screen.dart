@@ -8,6 +8,7 @@ import '../widgets/player_bar.dart';
 import '../widgets/app_shortcuts.dart';
 import '../widgets/lazy_indexed_stack.dart';
 import '../widgets/windows_caption_controls.dart';
+import '../../theme/app_theme.dart';
 import 'recommend_view.dart';
 import 'discover_view.dart';
 import 'search_view.dart';
@@ -161,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final navProvider = context.watch<NavigationProvider>();
+    final modernTheme = theme.extension<AppModernTheme>();
     final settings = context.watch<PersistenceProvider>().settings;
     final shortcutBindings = AppShortcuts.bindingsFromSettings(settings);
     final shortcutsEnabled = settings['globalShortcutsEnabled'] ?? false;
@@ -185,10 +187,13 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 230,
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
+                  color: modernTheme?.sidebarColor ??
+                      theme.colorScheme.surface,
                   border: Border(
                     right: BorderSide(
-                      color: theme.dividerColor.withAlpha(40),
+                      color: (modernTheme?.sidebarBorder ??
+                              theme.dividerColor)
+                          .withAlpha(40),
                       width: 0.5,
                     ),
                   ),
@@ -196,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     SizedBox(
-                      height: 48,
+                      height: 32,
                       width: double.infinity,
                       child: DragToMoveArea(
                         child: const SizedBox.expand(),
@@ -300,7 +305,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                  const PlayerBar(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 5),
+                    child: PlayerBar(),
+                  ),
                 ],
               ),
             ),

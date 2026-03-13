@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
@@ -57,7 +59,7 @@ class PlayerBar extends StatelessWidget {
       height: height,
       child: Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
@@ -70,9 +72,14 @@ class PlayerBar extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withAlpha(40),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
+                color: Colors.black.withAlpha(26),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+              BoxShadow(
+                color: Colors.black.withAlpha(12),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
@@ -86,8 +93,8 @@ class PlayerBar extends StatelessWidget {
 class _PlayerMainContent extends StatelessWidget {
   const _PlayerMainContent();
 
-  static const double _centerBlockWidth = 280;
-  static const double _progressWidth = _centerBlockWidth;
+  static const double _centerMinWidth = 280;
+  static const double _centerMaxWidth = 420;
 
   @override
   Widget build(BuildContext context) {
@@ -155,7 +162,7 @@ class _PlayerMainContent extends StatelessWidget {
         ),
         Center(
           child: SizedBox(
-            width: _centerBlockWidth,
+            width: _centerMinWidth,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -205,7 +212,7 @@ class _PlayerMainContent extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 SizedBox(
-                  width: _progressWidth,
+                  width: _centerMinWidth,
                   height: 18,
                   child: Row(
                     children: [
@@ -264,34 +271,47 @@ class _PlayerMainContent extends StatelessWidget {
   }
 
   Widget _buildPlayerContent(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        const Align(
-          alignment: Alignment.centerLeft,
-          child: _PlayerSongInfo(),
-        ),
-        Center(
-          child: SizedBox(
-            width: _centerBlockWidth,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _PlayerCenterControls(),
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: _progressWidth,
-                  child: const _InlineProgressRow(),
-                ),
-              ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth -
+            _PlayerSongInfo.width -
+            _PlayerRightActions.width -
+            24;
+        final targetWidth = math.min(
+          _centerMaxWidth,
+          math.max(_centerMinWidth, availableWidth),
+        );
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: _PlayerSongInfo(),
             ),
-          ),
-        ),
-        const Align(
-          alignment: Alignment.centerRight,
-          child: _PlayerRightActions(),
-        ),
-      ],
+            Center(
+              child: SizedBox(
+                width: targetWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _PlayerCenterControls(),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: targetWidth,
+                      child: const _InlineProgressRow(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Align(
+              alignment: Alignment.centerRight,
+              child: _PlayerRightActions(),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -378,14 +398,48 @@ class _PlayerSongInfo extends StatelessWidget {
     required TextStyle style,
     required NavigationProvider navigationProvider,
   }) {
+    return _buildSingerOnlyText(
+      context: context,
+      song: song,
+      style: style,
+      navigationProvider: navigationProvider,
+    );
+  }
+
+  Widget _buildSingerOnlyText({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+    required NavigationProvider navigationProvider,
+  }) {
+    final spans = _buildSingerSpans(
+      context: context,
+      song: song,
+      style: style,
+      navigationProvider: navigationProvider,
+    );
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+    );
+  }
+
+  List<InlineSpan> _buildSingerSpans({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+    required NavigationProvider navigationProvider,
+  }) {
     final singers = _displaySingers(song);
     if (singers.isEmpty) {
-      return Text(
-        song.displaySingerName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: style,
-      );
+      return [
+        TextSpan(
+          text: song.displaySingerName,
+          style: style,
+        ),
+      ];
     }
 
     final spans = <InlineSpan>[];
@@ -413,12 +467,58 @@ class _PlayerSongInfo extends StatelessWidget {
         );
       }
     }
+    return spans;
+  }
 
-    return Text.rich(
-      TextSpan(children: spans),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      softWrap: false,
+  List<InlineSpan> _buildTitleLineSpans({
+    required BuildContext context,
+    required Song song,
+    required TextStyle titleStyle,
+    required TextStyle singerStyle,
+    required NavigationProvider navigationProvider,
+  }) {
+    return <InlineSpan>[
+      TextSpan(
+        text: song.name,
+        style: titleStyle,
+        recognizer: TapGestureRecognizer()
+          ..onTap = () => Navigator.push(
+                context,
+                CupertinoPageRoute(builder: (_) => const LyricPage()),
+              ),
+      ),
+      TextSpan(
+        text: ' - ',
+        style: singerStyle,
+      ),
+      ..._buildSingerSpans(
+        context: context,
+        song: song,
+        style: singerStyle,
+        navigationProvider: navigationProvider,
+      ),
+    ];
+  }
+
+  Widget _buildTitleLine({
+    required BuildContext context,
+    required Song song,
+    required TextStyle titleStyle,
+    required TextStyle singerStyle,
+    required NavigationProvider navigationProvider,
+  }) {
+    final spans = _buildTitleLineSpans(
+      context: context,
+      song: song,
+      titleStyle: titleStyle,
+      singerStyle: singerStyle,
+      navigationProvider: navigationProvider,
+    );
+    final textKey = '${song.name}-${song.displaySingerName}';
+
+    return _HoverMarqueeText(
+      spans: spans,
+      textKey: textKey,
     );
   }
 
@@ -468,71 +568,59 @@ class _PlayerSongInfo extends StatelessWidget {
         );
         final canOpenAlbum = albumId > 0 && song.albumName.trim().isNotEmpty;
 
-        final metaStyle = TextStyle(
-          color: theme.colorScheme.onSurface.withAlpha(140),
+        final titleStyle = TextStyle(
+          color: theme.colorScheme.onSurface,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+        );
+        final singerStyle = TextStyle(
+          color: theme.colorScheme.onSurface.withAlpha(160),
           fontSize: 12,
           fontWeight: FontWeight.w600,
-        );
-        final albumStyle = TextStyle(
-          color: theme.colorScheme.onSurface.withAlpha(120),
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
         );
         return SizedBox(
           width: width,
           child: Row(
             children: [
-                InkWell(
-                  onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(builder: (_) => const LyricPage()),
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Hero(
-                    tag: 'player_cover',
-                    child: CoverImage(
-                      url: song.cover,
-                      width: 50,
-                      height: 50,
-                      borderRadius: 8,
-                      size: 100,
-                      showShadow: true,
-                    ),
-                  ),
+              InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(builder: (_) => const LyricPage()),
                 ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        CupertinoPageRoute(builder: (_) => const LyricPage()),
-                      ),
-                      child: Text(
-                        song.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    _buildSingerLinks(
-                      context: context,
-                      song: song,
-                      style: metaStyle,
-                      navigationProvider: navigationProvider,
-                    ),
-                  ],
+                borderRadius: BorderRadius.circular(12),
+                child: Hero(
+                  tag: 'player_cover',
+                  child: CoverImage(
+                    url: song.cover,
+                    width: 56,
+                    height: 56,
+                    borderRadius: 10,
+                    size: 120,
+                    showShadow: true,
+                  ),
                 ),
               ),
-              const SizedBox(width: 6),
-              _buildTitleActions(context, song, accentColor),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTitleLine(
+                        context: context,
+                        song: song,
+                        titleStyle: titleStyle,
+                        singerStyle: singerStyle,
+                        navigationProvider: navigationProvider,
+                      ),
+                      const SizedBox(height: 4),
+                      _buildTitleActions(context, song, accentColor),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -582,6 +670,149 @@ class _FavoriteButton extends StatelessWidget {
   }
 }
 
+class _HoverMarqueeText extends StatefulWidget {
+  final List<InlineSpan> spans;
+  final String textKey;
+  final double gap;
+  final double speed;
+
+  const _HoverMarqueeText({
+    required this.spans,
+    required this.textKey,
+    this.gap = 28,
+    this.speed = 28,
+  });
+
+  @override
+  State<_HoverMarqueeText> createState() => _HoverMarqueeTextState();
+}
+
+class _HoverMarqueeTextState extends State<_HoverMarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _isHovering = false;
+  bool _shouldScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this)
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed && !_isHovering) {
+          _controller.forward(from: 0);
+        }
+      });
+  }
+
+  @override
+  void didUpdateWidget(covariant _HoverMarqueeText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.textKey != oldWidget.textKey) {
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _updateAnimation({required double distance, required bool shouldScroll}) {
+    _shouldScroll = shouldScroll;
+    if (!shouldScroll) {
+      if (_controller.isAnimating) _controller.stop();
+      _controller.value = 0;
+      return;
+    }
+
+    final durationMs =
+        math.max(1, (distance / widget.speed * 1000).round());
+    final duration = Duration(milliseconds: durationMs);
+    if (_controller.duration != duration) {
+      _controller.duration = duration;
+    }
+    if (!_isHovering && !_controller.isAnimating) {
+      _controller.forward(from: _controller.value == 1 ? 0 : _controller.value);
+    }
+  }
+
+  void _setHovering(bool hovering) {
+    if (_isHovering == hovering) return;
+    setState(() => _isHovering = hovering);
+    if (hovering) {
+      _controller.stop();
+    } else {
+      if (_shouldScroll && !_controller.isAnimating) {
+        _controller.forward(from: _controller.value == 1 ? 0 : _controller.value);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final span = TextSpan(children: widget.spans);
+        final textPainter = TextPainter(
+          text: span,
+          maxLines: 1,
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+
+        final textWidth = textPainter.width;
+        final availableWidth = constraints.maxWidth;
+        final overflow = textWidth - availableWidth;
+        final shouldScroll = overflow > 0;
+        final distance = overflow > 0 ? overflow : 0.0;
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _updateAnimation(distance: distance, shouldScroll: shouldScroll);
+        });
+
+        if (!shouldScroll) {
+          return RichText(
+            text: span,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          );
+        }
+
+        final content = RichText(text: span);
+
+        return MouseRegion(
+          onEnter: (_) => _setHovering(true),
+          onExit: (_) => _setHovering(false),
+          child: ClipRect(
+            child: SizedBox(
+              height: textPainter.height,
+              child: AnimatedBuilder(
+                animation: _controller,
+                child: content,
+                builder: (context, child) {
+                  final offset = -_controller.value * distance;
+                  return Transform.translate(
+                    offset: Offset(offset, 0),
+                    child: OverflowBox(
+                      minWidth: 0,
+                      maxWidth: double.infinity,
+                      alignment: Alignment.centerLeft,
+                      child: child,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _PlayPauseButtonIsolated extends StatelessWidget {
   const _PlayPauseButtonIsolated();
 
@@ -605,40 +836,34 @@ class _PlayerCenterControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const _PlayModeButton(),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _PlayerIconButton(
-                icon: CupertinoIcons.backward_fill,
-                onPressed: context.read<AudioProvider>().previous,
-                size: 22,
-                tooltip: _tooltipWithShortcut(
-                  context,
-                  '上一首',
-                  AppShortcutCommand.previousTrack,
-                ),
-              ),
-              const SizedBox(width: 16),
-              const _PlayPauseButtonIsolated(),
-              const SizedBox(width: 16),
-              _PlayerIconButton(
-                icon: CupertinoIcons.forward_fill,
-                onPressed: context.read<AudioProvider>().next,
-                size: 22,
-                tooltip: _tooltipWithShortcut(
-                  context,
-                  '下一首',
-                  AppShortcutCommand.nextTrack,
-                ),
-              ),
-            ],
+        const SizedBox(width: 10),
+        _PlayerIconButton(
+          icon: CupertinoIcons.backward_fill,
+          onPressed: context.read<AudioProvider>().previous,
+          size: 22,
+          tooltip: _tooltipWithShortcut(
+            context,
+            '上一首',
+            AppShortcutCommand.previousTrack,
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 16),
+        const _PlayPauseButtonIsolated(),
+        const SizedBox(width: 16),
+        _PlayerIconButton(
+          icon: CupertinoIcons.forward_fill,
+          onPressed: context.read<AudioProvider>().next,
+          size: 22,
+          tooltip: _tooltipWithShortcut(
+            context,
+            '下一首',
+            AppShortcutCommand.nextTrack,
+          ),
+        ),
+        const SizedBox(width: 10),
         const _VolumeButton(),
       ],
     );
@@ -668,10 +893,18 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
     final climaxMarks = context.select<AudioProvider, Map<double, double>>(
       (p) => p.climaxMarks,
     );
+    final timeStyle = TextStyle(
+      fontSize: 11,
+      fontFamily: 'monospace',
+      color: theme.colorScheme.onSurface.withAlpha(120),
+      fontWeight: FontWeight.w600,
+      height: 1.0,
+    );
 
     return SizedBox(
       height: 14,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           RepaintBoundary(
             child: SizedBox(
@@ -693,12 +926,7 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
                         );
                     return Text(
                       _formatDuration(snap.position),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: theme.colorScheme.onSurface.withAlpha(120),
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: timeStyle,
                     );
                   },
                 ),
@@ -725,33 +953,46 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
                       );
                   return LayoutBuilder(
                     builder: (context, constraints) {
-                      final dotSize = 4.0;
-                      final barHeight = 3.4;
-                      final dotTop =
-                          (constraints.maxHeight - dotSize) / 2;
+                      const barHeight = 3.4;
+                      const thumbRadius = 4.0;
+                      const progressHeight = thumbRadius * 2;
+                      const markerWidth = 2.0;
+                      const markerHeight = 6.0;
+                      final markerTop =
+                          (constraints.maxHeight - markerHeight) / 2;
+                      final markerDecoration = BoxDecoration(
+                        color: accentColor.withAlpha(200),
+                        borderRadius: BorderRadius.circular(1),
+                      );
                       return Stack(
                         alignment: Alignment.center,
                         children: [
                           RepaintBoundary(
-                            child: SizedBox(
-                              height: constraints.maxHeight,
-                              child: ProgressBar(
-                                progress: snap.position,
-                                total: snap.duration,
-                                barHeight: barHeight,
-                                baseBarColor:
-                                    theme.colorScheme.onSurface.withAlpha(18),
-                                progressBarColor: accentColor,
-                                thumbColor:
-                                    _isHovering ? accentColor : Colors.transparent,
-                                thumbRadius: 4.0,
-                                thumbGlowRadius: 0.0,
-                                onSeek: (duration) =>
-                                    audioProvider.seek(duration),
-                                onDragStart: (_) =>
-                                    audioProvider.notifyDragStart(),
-                                onDragEnd: () => audioProvider.notifyDragEnd(),
-                                timeLabelLocation: TimeLabelLocation.none,
+                            child: Center(
+                              child: SizedBox(
+                                height: progressHeight,
+                                child: ProgressBar(
+                                  progress: snap.position,
+                                  total: snap.duration,
+                                  barHeight: barHeight,
+                                  baseBarColor: theme
+                                      .colorScheme
+                                      .onSurface
+                                      .withAlpha(18),
+                                  progressBarColor: accentColor,
+                                  thumbColor: _isHovering
+                                      ? accentColor
+                                      : Colors.transparent,
+                                  thumbRadius: thumbRadius,
+                                  thumbGlowRadius: 0.0,
+                                  onSeek: (duration) =>
+                                      audioProvider.seek(duration),
+                                  onDragStart: (_) =>
+                                      audioProvider.notifyDragStart(),
+                                  onDragEnd: () =>
+                                      audioProvider.notifyDragEnd(),
+                                  timeLabelLocation: TimeLabelLocation.none,
+                                ),
                               ),
                             ),
                           ),
@@ -762,33 +1003,28 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
                                   children: [
                                     for (final entry in climaxMarks.entries) ...[
                                       Positioned(
-                                        left:
-                                            (constraints.maxWidth - dotSize) *
-                                                entry.key,
-                                        top: dotTop,
+                                        left: (constraints.maxWidth -
+                                                markerWidth) *
+                                            entry.key,
+                                        top: markerTop,
                                         child: Container(
-                                          width: dotSize,
-                                          height: dotSize,
-                                          decoration: BoxDecoration(
-                                            color: accentColor.withAlpha(180),
-                                            shape: BoxShape.circle,
-                                          ),
+                                          width: markerWidth,
+                                          height: markerHeight,
+                                          decoration: markerDecoration,
                                         ),
                                       ),
-                                      Positioned(
-                                        left:
-                                            (constraints.maxWidth - dotSize) *
-                                                entry.value,
-                                        top: dotTop,
-                                        child: Container(
-                                          width: dotSize,
-                                          height: dotSize,
-                                          decoration: BoxDecoration(
-                                            color: accentColor.withAlpha(180),
-                                            shape: BoxShape.circle,
+                                      if (entry.value > entry.key)
+                                        Positioned(
+                                          left: (constraints.maxWidth -
+                                                  markerWidth) *
+                                              entry.value,
+                                          top: markerTop,
+                                          child: Container(
+                                            width: markerWidth,
+                                            height: markerHeight,
+                                            decoration: markerDecoration,
                                           ),
                                         ),
-                                      ),
                                     ],
                                   ],
                                 ),
@@ -823,12 +1059,7 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
                         );
                     return Text(
                       _formatDuration(snap.duration),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: theme.colorScheme.onSurface.withAlpha(120),
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: timeStyle,
                     );
                   },
                 ),
@@ -1509,7 +1740,6 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accentColor = theme.colorScheme.primary;
 
     return Tooltip(
       message: _tooltipWithShortcut(
@@ -1532,18 +1762,11 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOutBack,
             child: Container(
-              width: 34,
-              height: 34,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: accentColor,
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withAlpha(90),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                color: theme.colorScheme.onSurface.withAlpha(15),
               ),
               child: Center(
                 child: widget.isLoading
@@ -1560,8 +1783,8 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
                           widget.isPlaying
                               ? CupertinoIcons.pause_fill
                               : CupertinoIcons.play_fill,
-                        size: 20,
-                        color: Colors.black,
+                          size: 26,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
               ),

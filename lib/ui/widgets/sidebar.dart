@@ -33,7 +33,7 @@ class Sidebar extends StatelessWidget {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
           child: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -54,23 +54,26 @@ class Sidebar extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildGroupTitle(context, '发现音乐'),
-                _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
-                _buildNavItem(context, 1, CupertinoIcons.compass_fill, '探索发现'),
-                _buildNavItem(context, 2, CupertinoIcons.search, '全网搜索'),
-                const SizedBox(height: 18),
-                _buildGroupTitle(context, '我的乐库'),
-                _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
-                _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
-                const SizedBox(height: 18),
-                _buildPlaylistSection(context),
-              ],
+          child: Transform.translate(
+            offset: const Offset(0, -12),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildGroupTitle(context, '发现音乐'),
+                  _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
+                  _buildNavItem(context, 1, CupertinoIcons.compass_fill, '探索发现'),
+                  _buildNavItem(context, 2, CupertinoIcons.search, '全网搜索'),
+                  const SizedBox(height: 18),
+                  _buildGroupTitle(context, '我的乐库'),
+                  _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
+                  _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
+                  const SizedBox(height: 18),
+                  _buildPlaylistSection(context),
+                ],
+              ),
             ),
           ),
         ),
