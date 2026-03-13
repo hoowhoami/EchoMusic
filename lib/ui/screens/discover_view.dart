@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
@@ -13,6 +12,8 @@ import '../widgets/custom_selector.dart';
 import '../widgets/song_card.dart';
 import '../widgets/back_to_top.dart';
 import '../widgets/song_batch_selection_dialog.dart';
+import '../widgets/playlist_card.dart';
+import '../widgets/album_card.dart';
 import '../../models/album.dart';
 import 'rank_view.dart';
 
@@ -224,7 +225,11 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
                     itemCount: _playlists.length,
                     itemBuilder: (context, index) {
                       final playlist = _playlists[index];
-                      return _PlaylistCard(playlist: playlist);
+                      return PlaylistCard.grid(
+                        playlist: playlist,
+                        onTap: () =>
+                            context.read<NavigationProvider>().openPlaylist(playlist),
+                      );
                     },
                   ),
                   BackToTop(controller: _scrollController),
@@ -236,60 +241,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
   }
 }
 
-class _PlaylistCard extends StatelessWidget {
-  final Playlist playlist;
-  const _PlaylistCard({required this.playlist});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
-      borderRadius: BorderRadius.circular(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.shadow.withAlpha(30),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: playlist.pic,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (context, url) => Container(color: theme.colorScheme.onSurface.withAlpha(10)),
-                  errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_note_list),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            playlist.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: theme.colorScheme.onSurface, 
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// Playlist card now lives in playlist_card.dart
 
 class _DiscoverAlbumTab extends StatefulWidget {
   const _DiscoverAlbumTab();
@@ -413,55 +365,12 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                     itemCount: albums.length,
                     itemBuilder: (context, index) {
                       final album = albums[index];
-                      return InkWell(
-                        onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withAlpha(30),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: album.pic,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
-                                    errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              album.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface, 
-                                fontSize: 13, 
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              album.singerName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
+                      return AlbumCard.grid(
+                        album: album,
+                        subtitle: album.singerName,
+                        onTap: () => context
+                            .read<NavigationProvider>()
+                            .openAlbum(album.id, album.name),
                       );
                     },
                   ),

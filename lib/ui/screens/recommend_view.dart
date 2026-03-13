@@ -4,9 +4,9 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/providers/navigation_provider.dart';
-import '../widgets/cover_image.dart';
 import '../widgets/back_to_top.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
+import '../widgets/playlist_card.dart';
 
 class RecommendView extends StatefulWidget {
   const RecommendView({super.key});
@@ -148,7 +148,12 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                         mainAxisExtent: 210,
                       ),
                       delegate: SliverChildBuilderDelegate(
-                        (context, index) => _buildPlaylistCard(playlists[index]),
+                        (context, index) => PlaylistCard.grid(
+                          playlist: playlists[index],
+                          subtitle: '为您推荐',
+                          onTap: () =>
+                              context.read<NavigationProvider>().openPlaylist(playlists[index]),
+                        ),
                         childCount: playlists.length,
                       ),
                     ),
@@ -186,7 +191,12 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                         (context, index) {
                           final ip = ipList[index];
                           final playlist = Playlist.fromIP(ip);
-                          return _buildPlaylistCard(playlist, subtitle: '编辑精选');
+                          return PlaylistCard.grid(
+                            playlist: playlist,
+                            subtitle: '编辑精选',
+                            onTap: () =>
+                                context.read<NavigationProvider>().openPlaylist(playlist),
+                          );
                         },
                         childCount: ipList.length,
                       ),
@@ -325,43 +335,5 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
     );
   }
 
-  Widget _buildPlaylistCard(Playlist playlist, {String subtitle = '为您推荐'}) {
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: CoverImage(
-              url: playlist.pic,
-              width: double.infinity,
-              borderRadius: 12,
-              showShadow: false,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            playlist.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: theme.colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface.withAlpha(120),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Playlist card now lives in playlist_card.dart
 }

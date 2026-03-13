@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -45,6 +46,12 @@ String _volumeTooltip(BuildContext context) {
       '${_shortcutLabel(context, AppShortcutCommand.toggleMute)}';
 }
 
+const EdgeInsets _playerTitleActionPadding =
+    EdgeInsets.fromLTRB(6, 8, 6, 0);
+const double _playerTitleMarqueeMaxDistance = 220;
+const Duration _playerTitleMarqueePause = Duration(seconds: 1);
+const Duration _playerTitleMarqueeHoverDelay = Duration(milliseconds: 500);
+
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
 
@@ -59,11 +66,11 @@ class PlayerBar extends StatelessWidget {
       height: height,
       child: Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: (modernTheme?.dividerColor ?? theme.dividerColor).withAlpha(
                 40,
@@ -445,9 +452,10 @@ class _PlayerSongInfo extends StatelessWidget {
     final spans = <InlineSpan>[];
     for (int index = 0; index < singers.length; index++) {
       final singer = singers[index];
-      final canOpenSinger =
-          singer.id > 0 &&
-          !navigationProvider.isCurrentRoute('artist_detail', id: singer.id);
+      final canOpenSinger = !navigationProvider.isCurrentRoute(
+        'artist_detail',
+        id: singer.id,
+      );
       spans.add(
         TextSpan(
           text: Song.normalizeDisplayText(singer.name),
@@ -519,6 +527,10 @@ class _PlayerSongInfo extends StatelessWidget {
     return _HoverMarqueeText(
       spans: spans,
       textKey: textKey,
+      maxScrollDistance: _playerTitleMarqueeMaxDistance,
+      pauseDuration: _playerTitleMarqueePause,
+      scrollOnHover: true,
+      hoverStartDelay: _playerTitleMarqueeHoverDelay,
     );
   }
 
@@ -534,15 +546,17 @@ class _PlayerSongInfo extends StatelessWidget {
           _PlayerIconButton(
             icon: CupertinoIcons.cloud_fill,
             size: 16,
+            padding: _playerTitleActionPadding,
             activeColor: accentColor,
             isSelected: true,
             onPressed: () {},
             tooltip: '云盘歌曲',
           ),
-        const _FavoriteButton(),
+        const _FavoriteButton(padding: _playerTitleActionPadding),
         _PlayerIconButton(
           icon: CupertinoIcons.chat_bubble_text,
-          size: 20,
+          size: 18,
+          padding: _playerTitleActionPadding,
           tooltip: '详情及评论',
           onPressed: () =>
               context.read<NavigationProvider>().openSongComment(song),
@@ -572,11 +586,13 @@ class _PlayerSongInfo extends StatelessWidget {
           color: theme.colorScheme.onSurface,
           fontSize: 14,
           fontWeight: FontWeight.w800,
+          height: 1.15,
         );
         final singerStyle = TextStyle(
           color: theme.colorScheme.onSurface.withAlpha(160),
           fontSize: 12,
           fontWeight: FontWeight.w600,
+          height: 1.15,
         );
         return SizedBox(
           width: width,
@@ -608,14 +624,17 @@ class _PlayerSongInfo extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildTitleLine(
-                        context: context,
-                        song: song,
-                        titleStyle: titleStyle,
-                        singerStyle: singerStyle,
-                        navigationProvider: navigationProvider,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: _buildTitleLine(
+                          context: context,
+                          song: song,
+                          titleStyle: titleStyle,
+                          singerStyle: singerStyle,
+                          navigationProvider: navigationProvider,
+                        ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       _buildTitleActions(context, song, accentColor),
                     ],
                   ),
@@ -630,7 +649,9 @@ class _PlayerSongInfo extends StatelessWidget {
 }
 
 class _FavoriteButton extends StatelessWidget {
-  const _FavoriteButton();
+  final EdgeInsetsGeometry padding;
+
+  const _FavoriteButton({this.padding = const EdgeInsets.all(8)});
 
   @override
   Widget build(BuildContext context) {
@@ -654,6 +675,7 @@ class _FavoriteButton extends StatelessWidget {
           icon: data.isFav ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
           isSelected: data.isFav,
           activeColor: Colors.redAccent,
+          padding: padding,
           onPressed: () => context.read<PersistenceProvider>().toggleFavorite(
             data.song,
             userProvider: userProvider,
@@ -675,77 +697,212 @@ class _HoverMarqueeText extends StatefulWidget {
   final String textKey;
   final double gap;
   final double speed;
+  final double maxScrollDistance;
+  final Duration pauseDuration;
+  final bool scrollOnHover;
+  final Duration hoverStartDelay;
 
   const _HoverMarqueeText({
     required this.spans,
     required this.textKey,
     this.gap = 28,
     this.speed = 28,
+    this.maxScrollDistance = double.infinity,
+    this.pauseDuration = Duration.zero,
+    this.scrollOnHover = false,
+    this.hoverStartDelay = Duration.zero,
   });
 
   @override
   State<_HoverMarqueeText> createState() => _HoverMarqueeTextState();
 }
 
-class _HoverMarqueeTextState extends State<_HoverMarqueeText>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+class _HoverMarqueeTextState extends State<_HoverMarqueeText> {
+  static const double _scrollStep = 2.5;
+  Duration _scrollTick = const Duration(milliseconds: 80);
+  final ValueNotifier<double> _offsetNotifier = ValueNotifier(0);
   bool _isHovering = false;
   bool _shouldScroll = false;
+  Timer? _restartTimer;
+  Timer? _scrollTimer;
+  Timer? _hoverStartTimer;
+  DateTime? _scrollStart;
+  double _distance = 0;
+  Duration _scrollDuration = Duration.zero;
+  bool _restartFromBeginning = false;
+
+  bool get _allowAutoScroll =>
+      widget.scrollOnHover ? _isHovering : !_isHovering;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this)
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed && !_isHovering) {
-          _controller.forward(from: 0);
-        }
-      });
   }
 
   @override
   void didUpdateWidget(covariant _HoverMarqueeText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.textKey != oldWidget.textKey) {
-      _controller.value = 0;
+      _resetScrolling(resetOffset: true);
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _restartTimer?.cancel();
+    _scrollTimer?.cancel();
+    _hoverStartTimer?.cancel();
+    _offsetNotifier.dispose();
     super.dispose();
   }
 
+  void _resetScrolling({required bool resetOffset}) {
+    _restartTimer?.cancel();
+    _scrollTimer?.cancel();
+    _hoverStartTimer?.cancel();
+    _scrollTimer = null;
+    _scrollStart = null;
+    _restartFromBeginning = false;
+    if (resetOffset) _offsetNotifier.value = 0;
+  }
+
+  void _setOffset(double offset) {
+    if ((_offsetNotifier.value - offset).abs() < 0.5) return;
+    _offsetNotifier.value = offset;
+  }
+
+  void _scheduleRestart() {
+    _restartTimer?.cancel();
+    if (!_shouldScroll || !_allowAutoScroll) return;
+    final shouldReset = _restartFromBeginning;
+    _restartFromBeginning = false;
+    if (widget.pauseDuration == Duration.zero) {
+      _startScroll(resetToStart: shouldReset);
+      return;
+    }
+    _restartTimer = Timer(widget.pauseDuration, () {
+      if (!mounted || !_shouldScroll || !_allowAutoScroll) return;
+      _startScroll(resetToStart: shouldReset);
+    });
+  }
+
+  void _startScroll({bool resetToStart = false}) {
+    _restartTimer?.cancel();
+    if (!_shouldScroll || !_allowAutoScroll || _distance <= 0) return;
+    if (_scrollDuration == Duration.zero) return;
+
+    if (resetToStart || _restartFromBeginning) {
+      _restartFromBeginning = false;
+      _setOffset(0);
+      _scrollStart = DateTime.now();
+    } else {
+      final currentOffset = _offsetNotifier.value;
+      final progress = _distance == 0
+          ? 0.0
+          : (-currentOffset / _distance).clamp(0.0, 1.0);
+      final elapsedMs = (progress * _scrollDuration.inMilliseconds).round();
+      _scrollStart = DateTime.now().subtract(Duration(milliseconds: elapsedMs));
+    }
+
+    _scrollTimer?.cancel();
+    _scrollTimer = Timer.periodic(_scrollTick, (_) => _tickScroll());
+    _tickScroll();
+  }
+
+  void _tickScroll() {
+    if (!mounted) {
+      _resetScrolling(resetOffset: false);
+      return;
+    }
+    if (!_shouldScroll || !_allowAutoScroll || _distance <= 0) {
+      _resetScrolling(resetOffset: false);
+      return;
+    }
+    final start = _scrollStart;
+    if (start == null) return;
+
+    final totalMs = _scrollDuration.inMilliseconds;
+    if (totalMs <= 0) return;
+
+    final elapsedMs = DateTime.now().difference(start).inMilliseconds;
+    final progress = elapsedMs / totalMs;
+    if (progress >= 1) {
+      _setOffset(-_distance);
+      _scrollTimer?.cancel();
+      _scrollTimer = null;
+      _restartFromBeginning = true;
+      _scheduleRestart();
+      return;
+    }
+    _setOffset(-_distance * progress);
+  }
+
   void _updateAnimation({required double distance, required bool shouldScroll}) {
+    final distanceChanged = _distance != distance;
     _shouldScroll = shouldScroll;
     if (!shouldScroll) {
-      if (_controller.isAnimating) _controller.stop();
-      _controller.value = 0;
+      _resetScrolling(resetOffset: true);
+      _distance = distance;
       return;
     }
 
-    final durationMs =
-        math.max(1, (distance / widget.speed * 1000).round());
-    final duration = Duration(milliseconds: durationMs);
-    if (_controller.duration != duration) {
-      _controller.duration = duration;
+    _distance = distance;
+    _scrollDuration = Duration(
+      milliseconds: math.max(1, (distance / widget.speed * 1000).round()),
+    );
+    final tickMs =
+        math.max(40, math.min(160, (1000 * _scrollStep / widget.speed).round()));
+    _scrollTick = Duration(milliseconds: tickMs);
+
+    if (widget.scrollOnHover && !_isHovering) {
+      _resetScrolling(resetOffset: true);
+      return;
     }
-    if (!_isHovering && !_controller.isAnimating) {
-      _controller.forward(from: _controller.value == 1 ? 0 : _controller.value);
+
+    if (distanceChanged) {
+      _resetScrolling(resetOffset: true);
     }
+
+    if (_allowAutoScroll && _scrollTimer == null) {
+      if (widget.scrollOnHover) {
+        _scheduleHoverStart();
+      } else {
+        _startScroll();
+      }
+    }
+  }
+
+  void _scheduleHoverStart() {
+    if (!widget.scrollOnHover) return;
+    _hoverStartTimer?.cancel();
+    if (!_shouldScroll || !_isHovering) return;
+    if (widget.hoverStartDelay == Duration.zero) {
+      _startScroll();
+      return;
+    }
+    _hoverStartTimer = Timer(widget.hoverStartDelay, () {
+      if (!mounted || !_shouldScroll || !_isHovering) return;
+      _startScroll();
+    });
   }
 
   void _setHovering(bool hovering) {
     if (_isHovering == hovering) return;
     setState(() => _isHovering = hovering);
-    if (hovering) {
-      _controller.stop();
-    } else {
-      if (_shouldScroll && !_controller.isAnimating) {
-        _controller.forward(from: _controller.value == 1 ? 0 : _controller.value);
+    if (widget.scrollOnHover) {
+      if (hovering) {
+        _resetScrolling(resetOffset: false);
+        _scheduleHoverStart();
+      } else {
+        _resetScrolling(resetOffset: true);
       }
+      return;
+    }
+
+    if (hovering) {
+      _resetScrolling(resetOffset: false);
+    } else {
+      if (_shouldScroll && _scrollTimer == null) _startScroll();
     }
   }
 
@@ -764,8 +921,11 @@ class _HoverMarqueeTextState extends State<_HoverMarqueeText>
         final textWidth = textPainter.width;
         final availableWidth = constraints.maxWidth;
         final overflow = textWidth - availableWidth;
-        final shouldScroll = overflow > 0;
-        final distance = overflow > 0 ? overflow : 0.0;
+        final cappedDistance = overflow > 0
+            ? math.min(overflow, widget.maxScrollDistance)
+            : 0.0;
+        final shouldScroll = cappedDistance > 0;
+        final distance = cappedDistance;
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -790,16 +950,16 @@ class _HoverMarqueeTextState extends State<_HoverMarqueeText>
             child: SizedBox(
               height: textPainter.height,
               child: AnimatedBuilder(
-                animation: _controller,
+                animation: _offsetNotifier,
                 child: content,
                 builder: (context, child) {
-                  final offset = -_controller.value * distance;
-                  return Transform.translate(
-                    offset: Offset(offset, 0),
-                    child: OverflowBox(
-                      minWidth: 0,
-                      maxWidth: double.infinity,
-                      alignment: Alignment.centerLeft,
+                  final offset = _offsetNotifier.value;
+                  return OverflowBox(
+                    minWidth: 0,
+                    maxWidth: double.infinity,
+                    alignment: Alignment.centerLeft,
+                    child: Transform.translate(
+                      offset: Offset(offset, 0),
                       child: child,
                     ),
                   );
@@ -900,6 +1060,12 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
       fontWeight: FontWeight.w600,
       height: 1.0,
     );
+    final positionTextStream = audioProvider.positionSnapshotStream
+        .map((snap) => _formatDuration(snap.position))
+        .distinct();
+    final durationTextStream = audioProvider.positionSnapshotStream
+        .map((snap) => _formatDuration(snap.duration))
+        .distinct();
 
     return SizedBox(
       height: 14,
@@ -911,21 +1077,12 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
               width: 34,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: StreamBuilder<PositionSnapshot>(
-                  stream: audioProvider.positionSnapshotStream,
-                  initialData: PositionSnapshot(
-                    audioProvider.effectivePosition,
-                    audioProvider.effectiveDuration,
-                  ),
+                child: StreamBuilder<String>(
+                  stream: positionTextStream,
+                  initialData: _formatDuration(audioProvider.effectivePosition),
                   builder: (context, snapshot) {
-                    final snap =
-                        snapshot.data ??
-                        PositionSnapshot(
-                          audioProvider.effectivePosition,
-                          audioProvider.effectiveDuration,
-                        );
                     return Text(
-                      _formatDuration(snap.position),
+                      snapshot.data ?? '00:00',
                       style: timeStyle,
                     );
                   },
@@ -938,32 +1095,67 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
             child: MouseRegion(
               onEnter: (_) => _setHover(true),
               onExit: (_) => _setHover(false),
-              child: StreamBuilder<PositionSnapshot>(
-                stream: audioProvider.positionSnapshotStream,
-                initialData: PositionSnapshot(
-                  audioProvider.effectivePosition,
-                  audioProvider.effectiveDuration,
-                ),
-                builder: (context, snapshot) {
-                  final snap =
-                      snapshot.data ??
-                      PositionSnapshot(
-                        audioProvider.effectivePosition,
-                        audioProvider.effectiveDuration,
-                      );
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      const barHeight = 3.4;
-                      const thumbRadius = 4.0;
-                      const progressHeight = thumbRadius * 2;
-                      const markerWidth = 2.0;
-                      const markerHeight = 6.0;
-                      final markerTop =
-                          (constraints.maxHeight - markerHeight) / 2;
-                      final markerDecoration = BoxDecoration(
-                        color: accentColor.withAlpha(200),
-                        borderRadius: BorderRadius.circular(1),
-                      );
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const barHeight = 3.4;
+                  const thumbRadius = 4.0;
+                  const progressHeight = thumbRadius * 2;
+                  const markerWidth = 2.0;
+                  const markerHeight = 6.0;
+                  final markerTop =
+                      (constraints.maxHeight - markerHeight) / 2;
+                  final markerDecoration = BoxDecoration(
+                    color: accentColor.withAlpha(200),
+                    borderRadius: BorderRadius.circular(1),
+                  );
+                  final markerLayer = climaxMarks.isNotEmpty
+                      ? IgnorePointer(
+                          child: RepaintBoundary(
+                            child: Stack(
+                              children: [
+                                for (final entry in climaxMarks.entries) ...[
+                                  Positioned(
+                                    left: (constraints.maxWidth - markerWidth) *
+                                        entry.key,
+                                    top: markerTop,
+                                    child: Container(
+                                      width: markerWidth,
+                                      height: markerHeight,
+                                      decoration: markerDecoration,
+                                    ),
+                                  ),
+                                  if (entry.value > entry.key)
+                                    Positioned(
+                                      left: (constraints.maxWidth -
+                                              markerWidth) *
+                                          entry.value,
+                                      top: markerTop,
+                                      child: Container(
+                                        width: markerWidth,
+                                        height: markerHeight,
+                                        decoration: markerDecoration,
+                                      ),
+                                    ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        )
+                      : null;
+
+                  return StreamBuilder<PositionSnapshot>(
+                    stream: audioProvider.positionSnapshotStream,
+                    initialData: PositionSnapshot(
+                      audioProvider.effectivePosition,
+                      audioProvider.effectiveDuration,
+                    ),
+                    builder: (context, snapshot) {
+                      final snap =
+                          snapshot.data ??
+                          PositionSnapshot(
+                            audioProvider.effectivePosition,
+                            audioProvider.effectiveDuration,
+                          );
                       return Stack(
                         alignment: Alignment.center,
                         children: [
@@ -996,40 +1188,7 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
                               ),
                             ),
                           ),
-                          if (climaxMarks.isNotEmpty)
-                            IgnorePointer(
-                              child: RepaintBoundary(
-                                child: Stack(
-                                  children: [
-                                    for (final entry in climaxMarks.entries) ...[
-                                      Positioned(
-                                        left: (constraints.maxWidth -
-                                                markerWidth) *
-                                            entry.key,
-                                        top: markerTop,
-                                        child: Container(
-                                          width: markerWidth,
-                                          height: markerHeight,
-                                          decoration: markerDecoration,
-                                        ),
-                                      ),
-                                      if (entry.value > entry.key)
-                                        Positioned(
-                                          left: (constraints.maxWidth -
-                                                  markerWidth) *
-                                              entry.value,
-                                          top: markerTop,
-                                          child: Container(
-                                            width: markerWidth,
-                                            height: markerHeight,
-                                            decoration: markerDecoration,
-                                          ),
-                                        ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
+                          if (markerLayer != null) markerLayer,
                         ],
                       );
                     },
@@ -1044,21 +1203,12 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
               width: 34,
               child: Align(
                 alignment: Alignment.centerRight,
-                child: StreamBuilder<PositionSnapshot>(
-                  stream: audioProvider.positionSnapshotStream,
-                  initialData: PositionSnapshot(
-                    audioProvider.effectivePosition,
-                    audioProvider.effectiveDuration,
-                  ),
+                child: StreamBuilder<String>(
+                  stream: durationTextStream,
+                  initialData: _formatDuration(audioProvider.effectiveDuration),
                   builder: (context, snapshot) {
-                    final snap =
-                        snapshot.data ??
-                        PositionSnapshot(
-                          audioProvider.effectivePosition,
-                          audioProvider.effectiveDuration,
-                        );
                     return Text(
-                      _formatDuration(snap.duration),
+                      snapshot.data ?? '00:00',
                       style: timeStyle,
                     );
                   },
@@ -1663,6 +1813,7 @@ class _PlayerIconButton extends StatefulWidget {
   final bool isSelected;
   final Color? activeColor;
   final String? tooltip;
+  final EdgeInsetsGeometry padding;
   const _PlayerIconButton({
     required this.icon,
     this.onPressed,
@@ -1671,6 +1822,7 @@ class _PlayerIconButton extends StatefulWidget {
     this.isSelected = false,
     this.activeColor,
     this.tooltip,
+    this.padding = const EdgeInsets.all(8),
   });
   @override
   State<_PlayerIconButton> createState() => _PlayerIconButtonState();
@@ -1713,7 +1865,7 @@ class _PlayerIconButtonState extends State<_PlayerIconButton> {
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeOutBack,
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: widget.padding,
                 color: Colors.transparent,
                 child: Icon(widget.icon, size: widget.size, color: color),
               ),

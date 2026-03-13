@@ -1,14 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:provider/provider.dart';
 
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../../utils/constants.dart';
 import '../widgets/back_to_top.dart';
 import '../widgets/comment_floor_sheet.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/custom_toast.dart';
 
 class SongDetailCommentView extends StatefulWidget {
   const SongDetailCommentView({super.key, required this.song});
@@ -38,6 +42,107 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
   bool _isFetchingMore = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  List<SingerInfo> _displaySingers(Song song) => song.singers
+      .where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty)
+      .toList(growable: false);
+
+  void _openArtistDetail(BuildContext context, SingerInfo singer) {
+    if (singer.id <= 0) {
+      CustomToast.error(context, '暂无歌手信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute(
+      'artist_detail',
+      id: singer.id,
+    )) {
+      return;
+    }
+    context.read<NavigationProvider>().openArtist(
+      singer.id,
+      Song.normalizeDisplayText(singer.name),
+    );
+  }
+
+  void _openAlbumDetail(BuildContext context, Song song) {
+    final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+    if (albumId <= 0 || song.albumName.trim().isEmpty) {
+      CustomToast.error(context, '暂无专辑信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute(
+      'album_detail',
+      id: albumId,
+    )) {
+      return;
+    }
+    context.read<NavigationProvider>().openAlbum(
+      albumId,
+      song.displayAlbumName,
+    );
+  }
+
+  List<InlineSpan> _buildSingerSpans({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+    required NavigationProvider navigationProvider,
+  }) {
+    final singers = _displaySingers(song);
+    if (singers.isEmpty) {
+      return [
+        TextSpan(
+          text: song.displaySingerName,
+          style: style,
+        ),
+      ];
+    }
+
+    final spans = <InlineSpan>[];
+    for (int index = 0; index < singers.length; index++) {
+      final singer = singers[index];
+      final canOpenSinger =
+          !navigationProvider.isCurrentRoute('artist_detail', id: singer.id);
+      spans.add(
+        TextSpan(
+          text: Song.normalizeDisplayText(singer.name),
+          style: style,
+          recognizer: canOpenSinger
+              ? (TapGestureRecognizer()
+                  ..onTap = () => _openArtistDetail(context, singer))
+              : null,
+        ),
+      );
+      if (index < singers.length - 1) {
+        spans.add(
+          TextSpan(
+            text: ' / ',
+            style: style.copyWith(color: style.color?.withAlpha(180)),
+          ),
+        );
+      }
+    }
+    return spans;
+  }
+
+  Widget _buildSingerLine({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+  }) {
+    final navigationProvider = context.read<NavigationProvider>();
+    final spans = _buildSingerSpans(
+      context: context,
+      song: song,
+      style: style,
+      navigationProvider: navigationProvider,
+    );
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+    );
+  }
   static const int _pageSize = 30;
 
   Map<String, dynamic>? _commentsData;
@@ -435,10 +540,9 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
         showShadow: false,
       ),
       detailChildren: [
-        Text(
-          widget.song.singerName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        _buildSingerLine(
+          context: context,
+          song: widget.song,
           style: TextStyle(
             color: theme.colorScheme.primary,
             fontSize: 14,
@@ -452,6 +556,10 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             _buildMetaItem(
               '专辑',
               widget.song.albumName.isEmpty ? '单曲' : widget.song.albumName,
+              valueColor: theme.colorScheme.primary,
+              onTap: _canOpenAlbum(widget.song)
+                  ? () => _openAlbumDetail(context, widget.song)
+                  : null,
             ),
             _buildMetaItem(
               '语言',
@@ -1446,8 +1554,36 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
     );
   }
 
-  Widget _buildMetaItem(String label, String value) {
+  bool _canOpenAlbum(Song song) {
+    final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+    return albumId > 0 && song.albumName.trim().isNotEmpty;
+  }
+
+  Widget _buildMetaItem(
+    String label,
+    String value, {
+    VoidCallback? onTap,
+    Color? valueColor,
+  }) {
     final theme = Theme.of(context);
+    final valueText = Text(
+      value,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+        color: valueColor,
+      ),
+    );
+    final valueWidget = onTap == null
+        ? valueText
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: valueText,
+            ),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1460,10 +1596,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-        ),
+        valueWidget,
       ],
     );
   }

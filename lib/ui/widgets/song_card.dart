@@ -56,7 +56,6 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
   bool _isCardHovered = false;
-  bool _isCoverHovered = false;
 
   List<SingerInfo> get _displaySingers => widget.song.singers
       .where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty)
@@ -72,7 +71,6 @@ class _SongCardState extends State<SongCard> {
     super.didUpdateWidget(oldWidget);
     if (widget.suppressHover && !oldWidget.suppressHover) {
       _isCardHovered = false;
-      _isCoverHovered = false;
     }
   }
 
@@ -107,6 +105,58 @@ class _SongCardState extends State<SongCard> {
       return;
     }
     _queueAndPlayCurrentSong();
+  }
+
+  Widget _buildInlinePlayButton({
+    required BuildContext context,
+    required bool isCurrent,
+    required bool isPlaying,
+    required bool isLoading,
+    required Color primaryColor,
+    required bool isPlayable,
+    required bool isHoveringCard,
+  }) {
+    if (widget.suppressHover || !isPlayable || !isHoveringCard) {
+      return const SizedBox(width: SongTableLayout.listPlayButtonWidth);
+    }
+
+    final icon = isCurrent && isPlaying
+        ? CupertinoIcons.pause_fill
+        : CupertinoIcons.play_fill;
+    final tooltip = isCurrent && isPlaying ? '暂停当前歌曲' : '播放当前歌曲';
+
+    final iconColor =
+        Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(200);
+
+    return SizedBox(
+      width: SongTableLayout.listPlayButtonWidth,
+      child: Center(
+        child: Tooltip(
+          message: tooltip,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _handleCoverPlayTap(
+              isCurrent: isCurrent,
+              isPlaying: isPlaying,
+              isLoading: isLoading,
+            ),
+            onDoubleTap:
+                widget.onDoubleTapPlay != null || widget.enableDefaultDoubleTapPlay
+                    ? () => _handleSongDoubleTap(
+                        isCurrent: isCurrent,
+                        isPlaying: isPlaying,
+                        isLoading: isLoading,
+                      )
+                    : null,
+            child: Icon(
+              icon,
+              size: 16,
+              color: iconColor,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _handleSongDoubleTap({
@@ -185,6 +235,7 @@ class _SongCardState extends State<SongCard> {
               children: [
                 _SongCardActionIconButton(
                   icon: CupertinoIcons.chat_bubble_text,
+                  size: 18,
                   tooltip: '详情及评论',
                   onPressed: () => context
                       .read<NavigationProvider>()
@@ -542,20 +593,12 @@ class _SongCardState extends State<SongCard> {
                                   _isMenuOpen ||
                                   isHoveringCard
                               ? BoxDecoration(
-                                  color: primaryColor.withAlpha(
-                                    _isMenuOpen
-                                        ? 30
-                                        : (isHoveringCard ? 12 : 20),
-                                  ),
+                                  color: theme.brightness == Brightness.dark
+                                      ? theme.colorScheme.onSurface
+                                          .withAlpha(isHoveringCard ? 10 : 16)
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: primaryColor.withAlpha(
-                                      _isMenuOpen
-                                          ? 80
-                                          : (isHoveringCard ? 40 : 0),
-                                    ),
-                                    width: _isMenuOpen ? 1.5 : 1,
-                                  ),
+                                  boxShadow: const [],
                                 )
                               : null,
                           child: Padding(
@@ -615,6 +658,16 @@ class _SongCardState extends State<SongCard> {
                                       ),
                                     ),
                                   ),
+                                _buildInlinePlayButton(
+                                  context: context,
+                                  isCurrent: isCurrent,
+                                  isPlaying: isPlaying,
+                                  isLoading: isLoading,
+                                  primaryColor: primaryColor,
+                                  isPlayable: isPlayable,
+                                  isHoveringCard: isHoveringCard,
+                                ),
+                                const SizedBox(width: 4),
                                 if (widget.showCover) ...[
                                   Opacity(
                                     opacity: contentOpacity,
@@ -700,7 +753,7 @@ class _SongCardState extends State<SongCard> {
                                               ),
                                           fontSize: 12,
                                           height: 1.1,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                         enabled: !isSelectionMode,
                                         isPlayable: isPlayable,
@@ -806,65 +859,13 @@ class _SongCardState extends State<SongCard> {
     bool isLoading,
     Color primaryColor,
   ) {
-    final showOverlay = (!widget.suppressHover && _isCoverHovered) || isCurrent;
-    final tooltip = isCurrent && isPlaying ? '暂停当前歌曲' : '播放当前歌曲';
-
-    return MouseRegion(
-      onEnter: (_) {
-        if (widget.suppressHover) return;
-        setState(() => _isCoverHovered = true);
-      },
-      onExit: (_) => setState(() => _isCoverHovered = false),
-      child: Stack(
-        children: [
-          CoverImage(
-            url: widget.song.cover,
-            width: widget.coverSize,
-            height: widget.coverSize,
-            borderRadius: 12,
-            size: 100,
-            showShadow: false,
-          ),
-          if (showOverlay)
-            Positioned.fill(
-              child: Tooltip(
-                message: tooltip,
-                child: MouseRegion(
-                  cursor:
-                      widget.suppressHover ||
-                          isLoading ||
-                          !widget.song.isPlayable
-                      ? SystemMouseCursors.basic
-                      : SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _handleCoverPlayTap(
-                      isCurrent: isCurrent,
-                      isPlaying: isPlaying,
-                      isLoading: isLoading,
-                    ),
-                    onDoubleTap:
-                        widget.onDoubleTapPlay != null ||
-                            widget.enableDefaultDoubleTapPlay
-                        ? () => _handleSongDoubleTap(
-                            isCurrent: isCurrent,
-                            isPlaying: isPlaying,
-                            isLoading: isLoading,
-                          )
-                        : null,
-                    child: _PlayingCoverOverlay(
-                      size: widget.coverSize,
-                      isPlaying: isPlaying,
-                      isLoading: isLoading,
-                      shadowColor: Theme.of(context).colorScheme.shadow,
-                      iconColor: primaryColor,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return CoverImage(
+      url: widget.song.cover,
+      width: widget.coverSize,
+      height: widget.coverSize,
+      borderRadius: 12,
+      size: 100,
+      showShadow: false,
     );
   }
 
@@ -1018,49 +1019,6 @@ class _SongCardActionIconButtonState extends State<_SongCardActionIconButton> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PlayingCoverOverlay extends StatelessWidget {
-  final double size;
-  final bool isPlaying;
-  final bool isLoading;
-  final Color shadowColor;
-  final Color iconColor;
-
-  const _PlayingCoverOverlay({
-    required this.size,
-    required this.isPlaying,
-    required this.isLoading,
-    required this.shadowColor,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: shadowColor.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: isLoading
-            ? SizedBox(
-                width: size * 0.32,
-                height: size * 0.32,
-                child: const CupertinoActivityIndicator(color: Colors.white),
-              )
-            : Icon(
-                isPlaying
-                    ? CupertinoIcons.pause_fill
-                    : CupertinoIcons.play_fill,
-                color: iconColor.withValues(alpha: 0.98),
-                size: size * 0.4,
-              ),
       ),
     );
   }

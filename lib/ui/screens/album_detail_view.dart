@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/album.dart';
@@ -10,6 +11,7 @@ import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
@@ -57,6 +59,23 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
   Future<List<Song>>? _resolveAllSongsFuture;
   AudioProvider? _playbackAppendProvider;
   int? _playbackAppendSessionId;
+
+  void _openArtistDetail(BuildContext context, Album album) {
+    if (album.singerId <= 0) {
+      CustomToast.error(context, '暂无歌手信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute(
+      'artist_detail',
+      id: album.singerId,
+    )) {
+      return;
+    }
+    context.read<NavigationProvider>().openArtist(
+      album.singerId,
+      album.singerName,
+    );
+  }
 
   bool _isCommentsLoading = false;
   bool _isFetchingMoreComments = false;
@@ -504,15 +523,45 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
           ),
           detailChildren: [
             if (_album != null)
-              Text(
-                '${_album!.singerName} • ${_album!.publishTime}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
+              Builder(
+                builder: (context) {
+                  final canOpenSinger =
+                      _album!.singerId > 0 &&
+                      !context.read<NavigationProvider>().isCurrentRoute(
+                        'artist_detail',
+                        id: _album!.singerId,
+                      );
+                  final singerStyle = TextStyle(
+                    color: theme.colorScheme.onSurface,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  );
+
+                  return Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Flexible(
+                        child: MouseRegion(
+                          cursor: canOpenSinger
+                              ? SystemMouseCursors.click
+                              : MouseCursor.defer,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: canOpenSinger
+                                ? () => _openArtistDetail(context, _album!)
+                                : null,
+                            child: Text(
+                              _album!.singerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: singerStyle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             if (_album != null)
               Wrap(
@@ -520,6 +569,12 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (_album!.publishTime.isNotEmpty)
+                    _buildInfoSmall(
+                      context,
+                      CupertinoIcons.time,
+                      _album!.publishTime,
+                    ),
                   _buildInfoSmall(
                     context,
                     Icons.favorite_rounded,

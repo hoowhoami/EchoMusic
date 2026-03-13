@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
 import '../../providers/navigation_provider.dart';
-import '../widgets/cover_image.dart';
 import '../../models/playlist.dart';
 import '../../models/album.dart';
 import '../../models/artist.dart';
@@ -13,6 +12,9 @@ import '../widgets/song_card.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/back_to_top.dart';
 import '../widgets/song_batch_selection_dialog.dart';
+import '../widgets/playlist_card.dart';
+import '../widgets/album_card.dart';
+import '../widgets/artist_card.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -561,35 +563,26 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildPlaylistList() {
     if (_playlistResults.isEmpty) return _buildEmptyState();
-    return ListView.builder(
+    return GridView.builder(
       controller: _playlistScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _playlistResults.length,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 24),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        mainAxisExtent: 230,
+        mainAxisSpacing: 20,
+        crossAxisSpacing: 20,
+      ),
       itemBuilder: (context, index) {
         final playlist = _playlistResults[index];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          leading: CoverImage(
-            url: playlist.pic,
-            width: 52,
-            height: 52,
-            borderRadius: 8,
-            showShadow: false,
-            size: 200,
-          ),
-          title: Text(
-            playlist.name, 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${playlist.count} 首歌曲 • ${playlist.nickname.isNotEmpty ? playlist.nickname : "未知作者"} • ${_formatPlayCount(playlist.playCount)} 次播放', 
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
+        return PlaylistCard.grid(
+          playlist: playlist,
+          titleMaxLines: 2,
+          subtitle:
+              '${playlist.count} 首歌曲 • ${playlist.nickname.isNotEmpty ? "${playlist.nickname}" : "未知作者"}',
+          onTap: () =>
+              context.read<NavigationProvider>().openPlaylist(playlist),
         );
       },
     );
@@ -602,35 +595,25 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildAlbumList() {
     if (_albumResults.isEmpty) return _buildEmptyState();
-    return ListView.builder(
+    return GridView.builder(
       controller: _albumScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _albumResults.length,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 24),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        mainAxisExtent: 230,
+        mainAxisSpacing: 20,
+        crossAxisSpacing: 20,
+      ),
       itemBuilder: (context, index) {
         final album = _albumResults[index];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          leading: CoverImage(
-            url: album.pic,
-            width: 52,
-            height: 52,
-            borderRadius: 8,
-            showShadow: false,
-            size: 200,
-          ),
-          title: Text(
-            album.name, 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            '${album.singerName} • ${album.publishTime} • ${album.songCount} 首歌曲', 
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
+        return AlbumCard.grid(
+          album: album,
+          subtitle: '${album.singerName} • ${album.songCount} 首歌曲',
+          onTap: () => context
+              .read<NavigationProvider>()
+              .openAlbum(album.id, album.name),
         );
       },
     );
@@ -638,44 +621,26 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildArtistList() {
     if (_artistResults.isEmpty) return _buildEmptyState();
-    final theme = Theme.of(context);
-    return ListView.builder(
+    return GridView.builder(
       controller: _artistScrollController,
       physics: const BouncingScrollPhysics(),
       itemCount: _artistResults.length,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(bottom: 24),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        mainAxisExtent: 220,
+        mainAxisSpacing: 20,
+        crossAxisSpacing: 20,
+      ),
       itemBuilder: (context, index) {
         final artist = _artistResults[index];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          leading: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: theme.dividerColor, width: 0.5),
-            ),
-            child: ClipOval(
-              child: CoverImage(
-                url: artist.pic,
-                width: 52,
-                height: 52,
-                borderRadius: 0,
-                showShadow: false,
-                size: 200,
-              ),
-            ),
-          ),
-          title: Text(
-            artist.name, 
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          subtitle: Text(
-            '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑 • ${_formatPlayCount(artist.fansCount)} 粉丝',
-            style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          onTap: () => context.read<NavigationProvider>().openArtist(artist.id, artist.name),
+        return ArtistCard.grid(
+          artist: artist,
+          subtitle:
+              '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑',
+          onTap: () => context
+              .read<NavigationProvider>()
+              .openArtist(artist.id, artist.name),
         );
       },
     );

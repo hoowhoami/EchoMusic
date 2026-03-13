@@ -291,10 +291,10 @@ class AudioProvider with ChangeNotifier {
 
           final total = effectiveDuration;
 
-          // Throttle: only emit to UI if position changed ≥200ms
+          // Throttle: only emit to UI if position changed ≥300ms
           final diff =
               (pos.inMilliseconds - _lastEmittedPosition.inMilliseconds).abs();
-          if (diff >= 200) {
+          if (diff >= 300) {
             _lastEmittedPosition = pos;
             if (!_positionController.isClosed) {
               _positionController.add(PositionSnapshot(pos, total));

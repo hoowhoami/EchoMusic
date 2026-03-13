@@ -5,7 +5,8 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/navigation_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/playlist_card.dart';
+import '../widgets/cover_image.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
@@ -72,36 +73,15 @@ class _ExploreViewState extends State<ExploreView> {
               final playlist = playlists[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 20),
-                child: InkWell(
-                  onTap: () {
-                    context.read<NavigationProvider>().openPlaylist(playlist);
-                  },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: playlist.pic,
-                          width: 180,
-                          height: 180,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: 180,
-                        child: Text(
-                          playlist.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
+                child: SizedBox(
+                  width: 180,
+                  child: PlaylistCard.grid(
+                    playlist: playlist,
+                    onTap: () =>
+                        context.read<NavigationProvider>().openPlaylist(playlist),
+                    titleMaxLines: 2,
+                    coverRadius: 12,
+                    showShadow: false,
                   ),
                 ),
               );
@@ -141,11 +121,13 @@ class _ExploreViewState extends State<ExploreView> {
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: song.cover,
+                      child: CoverImage(
+                        url: song.cover,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorWidget: (context, url, error) => Icon(Icons.music_note, size: 50, color: theme.colorScheme.onSurfaceVariant),
+                        height: double.infinity,
+                        showShadow: false,
+                        size: 200,
                       ),
                     ),
                   ),

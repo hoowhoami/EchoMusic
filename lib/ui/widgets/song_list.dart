@@ -562,12 +562,12 @@ class _SongListState extends State<SongList> {
           ? theme.colorScheme.onSurface
           : theme.colorScheme.onSurface.withAlpha(160),
       fontSize: 14,
-      fontWeight: FontWeight.w800,
+      fontWeight: FontWeight.w700,
     );
     final badgeTextStyle = const TextStyle(
       color: Colors.white,
       fontSize: 10,
-      fontWeight: FontWeight.w800,
+      fontWeight: FontWeight.w700,
       height: 1.1,
     );
     final textDirection = Directionality.of(context);
@@ -740,31 +740,21 @@ class _SongListState extends State<SongList> {
     required EdgeInsets listPadding,
   }) {
     final theme = Theme.of(context);
-    final textDirection = Directionality.of(context);
     final actionSectionWidth =
         SongTableLayout.listActionGap +
         SongTableLayout.listRowActionWidth +
         SongTableLayout.listFavoriteGap +
         SongTableLayout.listFavoriteWidth;
-    final durationValuePainter = TextPainter(
-      text: const TextSpan(
-        text: '00:00',
-        style: TextStyle(
-          fontSize: 12,
-          fontFamily: 'monospace',
-          fontWeight: FontWeight.w500,
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: theme.dividerColor.withAlpha(35),
+            width: 0.5,
+          ),
         ),
       ),
-      textDirection: textDirection,
-      maxLines: 1,
-    )..layout();
-    final durationHeaderInset = math.max(
-      SongTableLayout.listDurationWidth - durationValuePainter.width,
-      0.0,
-    );
-
-    return Container(
-      color: theme.scaffoldBackgroundColor,
       child: Padding(
         padding: EdgeInsets.only(
           left: listPadding.left,
@@ -784,12 +774,14 @@ class _SongListState extends State<SongList> {
                   field: _SongSortField.order,
                 ),
               ),
+              const SizedBox(width: SongTableLayout.listPlayButtonWidth),
               const SizedBox(width: SongTableLayout.listCoverSectionWidth),
               Expanded(
                 child: _buildSortHeaderCell(
                   context,
                   label: '歌曲',
                   field: _SongSortField.title,
+                  alignment: Alignment.centerLeft,
                 ),
               ),
               SizedBox(width: actionSectionWidth),
@@ -800,6 +792,7 @@ class _SongListState extends State<SongList> {
                   context,
                   label: '专辑',
                   field: _SongSortField.album,
+                  alignment: Alignment.centerLeft,
                 ),
               ),
               const SizedBox(width: SongTableLayout.listDurationGap),
@@ -811,8 +804,7 @@ class _SongListState extends State<SongList> {
                   context,
                   label: '时长',
                   field: _SongSortField.duration,
-                  alignment: Alignment.centerLeft,
-                  contentPadding: EdgeInsets.only(left: durationHeaderInset),
+                  alignment: Alignment.centerRight,
                 ),
               ),
             ],
@@ -856,18 +848,18 @@ class _SongListState extends State<SongList> {
           child: Padding(
             padding: contentPadding,
             child: Align(
-              alignment: alignment,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: foregroundColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  alignment: alignment,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: foregroundColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                   const SizedBox(width: 5),
                   Icon(icon, size: iconSize, color: iconColor),
                 ],

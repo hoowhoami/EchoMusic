@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../models/album.dart';
 import '../models/playlist.dart';
 import '../utils/logger.dart';
 import '../utils/server_orchestrator.dart';
@@ -727,6 +728,32 @@ class MusicApi {
         final rawData = response.data['data'];
         final List data = rawData is List ? rawData : (rawData['info'] ?? rawData['list'] ?? []);
         return data.map((json) => Song.fromArtistSongJson(json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Album>> getSingerAlbums(
+    int id, {
+    int page = 1,
+    int pagesize = 30,
+    String sort = 'hot',
+  }) async {
+    try {
+      final response = await _dio.get('/artist/albums', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'sort': sort,
+      });
+      if (response.data['status'] == 1) {
+        final rawData = response.data['data'];
+        final List data = rawData is List
+            ? rawData
+            : (rawData['info'] ?? rawData['list'] ?? rawData['albums'] ?? []);
+        return data.map((json) => Album.fromJson(json)).toList();
       }
       return [];
     } catch (e) {
