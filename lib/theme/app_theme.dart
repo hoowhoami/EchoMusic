@@ -225,7 +225,7 @@ class AppTheme {
       ),
       extensions: [
         AppModernTheme(
-          sidebarColor: const Color(0xFF0C0C0E).withAlpha(180),
+          sidebarColor: darkSurface,
           playerBarColor: const Color(0xFF1C1C1E).withAlpha(160),
           titleBarColor: const Color(0xFF000000).withAlpha(120),
           batchBarColor: const Color(0xFF1C1C1E).withAlpha(60),
@@ -323,4 +323,3 @@ class AppModernTheme extends ThemeExtension<AppModernTheme> {
     return a + (b - a) * t;
   }
 }
-
