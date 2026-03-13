@@ -55,7 +55,7 @@ const Duration _playerTitleMarqueeHoverDelay = Duration(milliseconds: 500);
 class PlayerBar extends StatelessWidget {
   const PlayerBar({super.key});
 
-  static const double height = 96;
+  static const double height = 84;
 
   @override
   Widget build(BuildContext context) {
@@ -66,8 +66,8 @@ class PlayerBar extends StatelessWidget {
       height: height,
       child: Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
             color: modernTheme?.playerBarColor ?? theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
@@ -303,7 +303,7 @@ class _PlayerMainContent extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const _PlayerCenterControls(),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5),
                     SizedBox(
                       width: targetWidth,
                       child: const _InlineProgressRow(),
@@ -1914,8 +1914,8 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOutBack,
             child: Container(
-              width: 48,
-              height: 48,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: theme.colorScheme.onSurface.withAlpha(15),
@@ -1923,9 +1923,9 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
               child: Center(
                 child: widget.isLoading
                     ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2.0),
                       )
                     : Padding(
                         padding: EdgeInsets.only(
@@ -1935,7 +1935,7 @@ class _PlayPauseButtonState extends State<_PlayPauseButton> {
                           widget.isPlaying
                               ? CupertinoIcons.pause_fill
                               : CupertinoIcons.play_fill,
-                          size: 26,
+                          size: 20,
                           color: theme.colorScheme.onSurface,
                         ),
                       ),
