@@ -16,6 +16,7 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/album_card.dart';
@@ -52,6 +53,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
   bool _isAlbumLoadingMore = false;
   bool _hasMoreAlbums = true;
   int _albumPage = 1;
+  bool _hasLoadedAlbums = false;
   bool _isResolvingAllSongs = false;
   bool _hasScheduledWarmUp = false;
   List<Song>? _allSongsCache;
@@ -97,12 +99,12 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       _isAlbumLoadingMore = false;
       _hasMoreAlbums = true;
       _albumPage = 1;
+      _hasLoadedAlbums = false;
     });
 
     final results = await Future.wait([
       MusicApi.getSingerDetail(widget.artistId),
       _fetchSongsPage(1),
-      _fetchAlbumsPage(1),
     ]);
 
     if (mounted) {
@@ -122,18 +124,34 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         if (!_hasMore) {
           _allSongsCache = List.unmodifiable(songs ?? const <Song>[]);
         }
-        final albums = results[2] as List<Album>?;
+        _albums = const <Album>[];
+        _isAlbumLoading = false;
+        _hasMoreAlbums = false;
+      });
+
+      _scheduleBackgroundResolve();
+    }
+  }
+
+  void _onPrimaryTabChanged(SongListPrimaryTab tab) {
+    if (tab != SongListPrimaryTab.comments || _hasLoadedAlbums) return;
+    _hasLoadedAlbums = true;
+    if (mounted) {
+      setState(() => _isAlbumLoading = true);
+    }
+    unawaited(_fetchAlbumsPage(1).then((albums) {
+      if (!mounted) return;
+      final albumLoadedCount = albums.length;
+      setState(() {
         _albums = albums;
         _isAlbumLoading = false;
-        final albumLoadedCount = albums?.length ?? 0;
+        _albumPage = 1;
         _hasMoreAlbums = _computeHasMoreAlbums(
           loadedCount: albumLoadedCount,
           lastPageCount: albumLoadedCount,
         );
       });
-
-      _scheduleBackgroundResolve();
-    }
+    }));
   }
 
   void _scheduleBackgroundResolve() {
@@ -389,7 +407,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithArtistSongs
           : null,
-      commentSlivers: _buildAlbumSlivers(context),
+      commentSlivers: _hasLoadedAlbums ? _buildAlbumSlivers(context) : null,
       commentsTabTitle: '专辑',
       hasMoreComments: _hasMoreAlbums,
       isLoadingMoreComments: _isAlbumLoadingMore,
@@ -398,6 +416,9 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
           _artist?.albumCount != null && _artist!.albumCount > 0
               ? '${_artist!.albumCount}'
               : null,
+      onPrimaryTabChanged: _onPrimaryTabChanged,
+      initialPrimaryTab: SongListPrimaryTab.songs,
+      hasCommentsTab: true,
       headers: [
         DetailPageSliverHeader(
           typeLabel: 'ARTIST',
@@ -577,18 +598,27 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(24, 6, 24, 24),
         sliver: SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 24,
-            mainAxisSpacing: 24,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 220,
+            mainAxisExtent: 230,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
           ),
           delegate: SliverChildBuilderDelegate(
             (context, index) {
               final album = albums[index];
+              final subtitleParts = <String>[];
+              if (album.publishTime.isNotEmpty) {
+                subtitleParts.add(album.publishTime);
+              }
+              if (album.songCount > 0) {
+                subtitleParts.add('${album.songCount} 首歌曲');
+              }
+              final subtitle =
+                  subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
               return AlbumCard.grid(
                 album: album,
-                subtitle: '${album.publishTime} • ${album.songCount} 首歌曲',
+                subtitle: subtitle,
                 onTap: () => context
                     .read<NavigationProvider>()
                     .openAlbum(album.id, album.name),

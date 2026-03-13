@@ -362,6 +362,7 @@ class _HistoryViewState extends State<HistoryView>
       isLoadingMore: isAuthenticated
           ? (_isLoadingMore || batchPreparing)
           : false,
+      hasCommentsTab: false,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? (song) => _replacePlaybackWithHistorySongs(song, songs)

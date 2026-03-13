@@ -16,6 +16,7 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../../models/playlist.dart' as model;
@@ -59,21 +60,26 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
   Future<List<Song>>? _resolveAllSongsFuture;
   AudioProvider? _playbackAppendProvider;
   int? _playbackAppendSessionId;
+  List<_AlbumAuthor> _authors = const <_AlbumAuthor>[];
 
-  void _openArtistDetail(BuildContext context, Album album) {
-    if (album.singerId <= 0) {
+  void _openArtistDetail(
+    BuildContext context,
+    int artistId,
+    String artistName,
+  ) {
+    if (artistId <= 0) {
       CustomToast.error(context, '暂无歌手信息');
       return;
     }
     if (context.read<NavigationProvider>().isCurrentRoute(
       'artist_detail',
-      id: album.singerId,
+      id: artistId,
     )) {
       return;
     }
     context.read<NavigationProvider>().openArtist(
-      album.singerId,
-      album.singerName,
+      artistId,
+      artistName,
     );
   }
 
@@ -85,6 +91,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
   final List<dynamic> _allComments = [];
   List<dynamic> _hotComments = [];
   int _totalCommentCount = 0;
+  bool _hasLoadedComments = false;
 
   int get _totalSongCount => _album?.songCount ?? 0;
 
@@ -129,6 +136,8 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       _allComments.clear();
       _hotComments = [];
       _totalCommentCount = 0;
+      _hasLoadedComments = false;
+      _authors = const <_AlbumAuthor>[];
     });
 
     final results = await Future.wait([
@@ -141,6 +150,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         final albumJson = results[0] as Map<String, dynamic>?;
         if (albumJson != null) {
           _album = Album.fromDetailJson(albumJson);
+          _authors = _parseAuthors(albumJson);
         }
         final songs = results[1] as List<Song>?;
         _songs = songs;
@@ -156,8 +166,73 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       });
 
       _scheduleBackgroundResolve();
-      unawaited(_fetchComments(isRefresh: true));
     }
+  }
+
+  Widget _buildAuthorLine(BuildContext context, ThemeData theme) {
+    if (_album == null) return const SizedBox.shrink();
+    final authors = _authors;
+    if (authors.isEmpty) return const SizedBox.shrink();
+
+    final canOpenAny = authors.any((author) {
+      return author.id > 0 &&
+          !context.read<NavigationProvider>().isCurrentRoute(
+                'artist_detail',
+                id: author.id,
+              );
+    });
+    final baseStyle = TextStyle(
+      color: theme.colorScheme.onSurface,
+      fontSize: 14,
+      fontWeight: FontWeight.w700,
+    );
+    final spans = <InlineSpan>[];
+    for (var index = 0; index < authors.length; index++) {
+      final author = authors[index];
+      final canOpen = author.id > 0 &&
+          !context.read<NavigationProvider>().isCurrentRoute(
+                'artist_detail',
+                id: author.id,
+              );
+      final style = baseStyle.copyWith(
+        color: canOpen ? theme.colorScheme.primary : baseStyle.color,
+      );
+      spans.add(
+        TextSpan(
+          text: author.name,
+          style: style,
+          recognizer: canOpen
+              ? (TapGestureRecognizer()
+                ..onTap =
+                    () => _openArtistDetail(context, author.id, author.name))
+              : null,
+        ),
+      );
+      if (index < authors.length - 1) {
+        spans.add(
+          TextSpan(
+            text: ' / ',
+            style: style.copyWith(color: style.color?.withAlpha(180)),
+          ),
+        );
+      }
+    }
+
+    return MouseRegion(
+      cursor: canOpenAny ? SystemMouseCursors.click : MouseCursor.defer,
+      child: Text.rich(
+        TextSpan(children: spans),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      ),
+    );
+  }
+
+  void _onPrimaryTabChanged(SongListPrimaryTab tab) {
+    if (tab != SongListPrimaryTab.comments || _hasLoadedComments) return;
+    _hasLoadedComments = true;
+    unawaited(_fetchComments(isRefresh: true));
   }
 
   void _scheduleBackgroundResolve() {
@@ -179,6 +254,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
 
   Future<void> _fetchComments({bool isRefresh = false}) async {
     if ((_isCommentsLoading || _isFetchingMoreComments) && !isRefresh) return;
+    _hasLoadedComments = true;
 
     if (mounted) {
       setState(() {
@@ -474,20 +550,25 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
-      commentSlivers: buildResourceCommentSlivers(
-        context: context,
-        isLoading: _isCommentsLoading,
-        hotComments: _hotComments,
-        comments: _allComments,
-        totalCount: _totalCommentCount,
-        onTapReplies: _openAlbumFloorComments,
-      ),
+      commentSlivers: _hasLoadedComments
+          ? buildResourceCommentSlivers(
+              context: context,
+              isLoading: _isCommentsLoading,
+              hotComments: _hotComments,
+              comments: _allComments,
+              totalCount: _totalCommentCount,
+              onTapReplies: _openAlbumFloorComments,
+            )
+          : null,
       onCommentsLoadMore: _loadMoreComments,
       hasMoreComments: _hasMoreComments,
       isLoadingMoreComments: _isFetchingMoreComments,
       commentsTabBadgeLabel: _totalCommentCount > 0
           ? '$_totalCommentCount'
           : null,
+      onPrimaryTabChanged: _onPrimaryTabChanged,
+      initialPrimaryTab: SongListPrimaryTab.songs,
+      hasCommentsTab: true,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithAlbumSongs
@@ -522,47 +603,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
             showShadow: false,
           ),
           detailChildren: [
-            if (_album != null)
-              Builder(
-                builder: (context) {
-                  final canOpenSinger =
-                      _album!.singerId > 0 &&
-                      !context.read<NavigationProvider>().isCurrentRoute(
-                        'artist_detail',
-                        id: _album!.singerId,
-                      );
-                  final singerStyle = TextStyle(
-                    color: theme.colorScheme.onSurface,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  );
-
-                  return Row(
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      Flexible(
-                        child: MouseRegion(
-                          cursor: canOpenSinger
-                              ? SystemMouseCursors.click
-                              : MouseCursor.defer,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: canOpenSinger
-                                ? () => _openArtistDetail(context, _album!)
-                                : null,
-                            child: Text(
-                              _album!.singerName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: singerStyle,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+            _buildAuthorLine(context, theme),
             if (_album != null)
               Wrap(
                 spacing: 12,
@@ -713,6 +754,21 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  List<_AlbumAuthor> _parseAuthors(Map<String, dynamic> json) {
+    final rawAuthors = json['authors'];
+    if (rawAuthors is! List) return const <_AlbumAuthor>[];
+    final authors = <_AlbumAuthor>[];
+    for (final raw in rawAuthors) {
+      if (raw is! Map) continue;
+      final data = Map<String, dynamic>.from(raw);
+      final name = (data['author_name'] ?? '').toString();
+      if (name.isEmpty) continue;
+      final id = _asInt(data['author_id']);
+      authors.add(_AlbumAuthor(id: id, name: name));
+    }
+    return authors;
+  }
+
   String? _firstNonEmptyString(List<dynamic> values) {
     for (final value in values) {
       final text = value?.toString();
@@ -722,4 +778,11 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
     }
     return null;
   }
+}
+
+class _AlbumAuthor {
+  final int id;
+  final String name;
+
+  const _AlbumAuthor({required this.id, required this.name});
 }

@@ -216,11 +216,11 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
                   GridView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 5,
-                      childAspectRatio: 0.75,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 220,
+                      mainAxisExtent: 230,
+                      mainAxisSpacing: 20,
+                      crossAxisSpacing: 20,
                     ),
                     itemCount: _playlists.length,
                     itemBuilder: (context, index) {
@@ -356,11 +356,11 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
                   GridView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 5,
-                      childAspectRatio: 0.75,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 220,
+                      mainAxisExtent: 230,
+                      mainAxisSpacing: 20,
+                      crossAxisSpacing: 20,
                     ),
                     itemCount: albums.length,
                     itemBuilder: (context, index) {

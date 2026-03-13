@@ -53,7 +53,12 @@ class Album {
       pic: _formatPic(json['img'] ?? json['Image'] ?? json['imgurl'] ?? json['sizable_cover'] ?? json['pic'] ?? json['cover']),
       intro: (json['intro'] ?? json['album_intro'] ?? '').toString(),
       singerName: (json['SingerName'] ?? json['singername'] ?? json['singer_name'] ?? json['author_name'] ?? json['singer'] ?? '').toString(),
-      singerId: _parseInt(json['SingerId'] ?? json['singerid'] ?? json['author_id'] ?? json['singer_id']),
+      singerId: _parseInt(
+        json['SingerId'] ??
+            json['singerid'] ??
+            json['author_id'] ??
+            json['singer_id'],
+      ),
       publishTime: (json['PublishTime'] ?? json['publishtime'] ?? json['publish_time'] ?? json['publish_date'] ?? '').toString().split(' ')[0],
       songCount: _parseInt(json['SongCount'] ?? json['song_count'] ?? json['count'] ?? json['songcount'] ?? json['total_count']),
       playCount: _parseInt(json['play_count'] ?? json['play_times'] ?? json['play_count'] ?? json['playcount']),
@@ -71,7 +76,9 @@ class Album {
       pic: _formatPic(json['img'] ?? json['Image'] ?? json['imgurl'] ?? json['ImgURL'] ?? json['pic']),
       intro: (json['intro'] ?? '').toString(),
       singerName: (json['singername'] ?? json['SingerName'] ?? json['singer'] ?? '').toString(),
-      singerId: _parseInt(json['singerid'] ?? json['SingerId'] ?? json['singer_id']),
+      singerId: _parseInt(
+        json['singerid'] ?? json['SingerId'] ?? json['singer_id'],
+      ),
       publishTime: (json['publishtime'] ?? json['PublishTime'] ?? json['publish_time'] ?? '').toString().split(' ')[0],
       songCount: _parseInt(json['songcount'] ?? json['SongCount'] ?? json['song_count']),
       playCount: _parseInt(json['play_count'] ?? json['play_times'] ?? json['play_count'] ?? json['playcount']),

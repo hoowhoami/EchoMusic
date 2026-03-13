@@ -608,9 +608,18 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       ),
       itemBuilder: (context, index) {
         final album = _albumResults[index];
+        final subtitleParts = <String>[];
+        if (album.singerName.isNotEmpty) {
+          subtitleParts.add(album.singerName);
+        }
+        if (album.songCount > 0) {
+          subtitleParts.add('${album.songCount} 首歌曲');
+        }
+        final subtitle =
+            subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
         return AlbumCard.grid(
           album: album,
-          subtitle: '${album.singerName} • ${album.songCount} 首歌曲',
+          subtitle: subtitle,
           onTap: () => context
               .read<NavigationProvider>()
               .openAlbum(album.id, album.name),
@@ -628,7 +637,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       padding: const EdgeInsets.only(bottom: 24),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 220,
-        mainAxisExtent: 220,
+        mainAxisExtent: 230,
         mainAxisSpacing: 20,
         crossAxisSpacing: 20,
       ),

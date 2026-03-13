@@ -433,6 +433,7 @@ class _CloudViewState extends State<CloudView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
+      hasCommentsTab: false,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithCloudSongs

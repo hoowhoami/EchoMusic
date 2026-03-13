@@ -102,11 +102,11 @@ class _ExploreViewState extends State<ExploreView> {
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            childAspectRatio: 0.8,
-            crossAxisSpacing: 15,
-            mainAxisSpacing: 15,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 220,
+            mainAxisExtent: 230,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
           ),
           itemCount: songs.length.clamp(0, 10), // Show top 10
           itemBuilder: (context, index) {

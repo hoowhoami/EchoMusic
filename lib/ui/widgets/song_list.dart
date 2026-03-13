@@ -13,7 +13,7 @@ import 'song_table_layout.dart';
 
 enum _SongSortField { order, title, album, duration }
 
-enum _SongListPrimaryTab { songs, comments }
+enum SongListPrimaryTab { songs, comments }
 
 class _SongListEntry {
   final Song song;
@@ -28,6 +28,7 @@ class SongList extends StatefulWidget {
   final bool isLoading;
   final List<Widget>? headers;
   final List<Widget>? commentSlivers;
+  final bool hasCommentsTab;
   final EdgeInsetsGeometry padding;
   final dynamic sourceId;
   final VoidCallback? onLoadMore;
@@ -41,6 +42,8 @@ class SongList extends StatefulWidget {
   final Future<List<Song>> Function()? onResolveBatchSongs;
   final String commentsTabTitle;
   final String? commentsTabBadgeLabel;
+  final ValueChanged<SongListPrimaryTab>? onPrimaryTabChanged;
+  final SongListPrimaryTab initialPrimaryTab;
 
   const SongList({
     super.key,
@@ -49,6 +52,7 @@ class SongList extends StatefulWidget {
     this.isLoading = false,
     this.headers,
     this.commentSlivers,
+    this.hasCommentsTab = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
     this.sourceId,
     this.onLoadMore,
@@ -62,6 +66,8 @@ class SongList extends StatefulWidget {
     this.onResolveBatchSongs,
     this.commentsTabTitle = '评论',
     this.commentsTabBadgeLabel,
+    this.onPrimaryTabChanged,
+    this.initialPrimaryTab = SongListPrimaryTab.songs,
   });
 
   @override
@@ -84,9 +90,9 @@ class _SongListState extends State<SongList> {
   bool _suppressSongCardHover = false;
   _SongSortField _sortField = _SongSortField.order;
   bool _sortAscending = true;
-  _SongListPrimaryTab _activePrimaryTab = _SongListPrimaryTab.songs;
+  late SongListPrimaryTab _activePrimaryTab;
 
-  bool get _hasCommentTab => widget.commentSlivers != null;
+  bool get _hasCommentTab => widget.hasCommentsTab;
 
   String _songSelectionKey(Song song, int index) {
     if (song.hash.isNotEmpty) return song.hash;
@@ -231,7 +237,15 @@ class _SongListState extends State<SongList> {
   @override
   void initState() {
     super.initState();
+    _activePrimaryTab = widget.hasCommentsTab
+        ? widget.initialPrimaryTab
+        : SongListPrimaryTab.songs;
     _scrollController.addListener(_onScroll);
+    if (_activePrimaryTab == SongListPrimaryTab.comments) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onPrimaryTabChanged?.call(_activePrimaryTab);
+      });
+    }
   }
 
   @override
@@ -245,15 +259,30 @@ class _SongListState extends State<SongList> {
   @override
   void didUpdateWidget(covariant SongList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_hasCommentTab && _activePrimaryTab == _SongListPrimaryTab.comments) {
-      _activePrimaryTab = _SongListPrimaryTab.songs;
+    if (!_hasCommentTab && _activePrimaryTab == SongListPrimaryTab.comments) {
+      _activePrimaryTab = SongListPrimaryTab.songs;
     }
+
+    if (_activePrimaryTab == SongListPrimaryTab.comments &&
+        widget.hasCommentsTab &&
+        widget.commentSlivers == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onPrimaryTabChanged?.call(_activePrimaryTab);
+      });
+    }
+  }
+
+  void _setPrimaryTab(SongListPrimaryTab tab) {
+    if (_activePrimaryTab == tab) return;
+    setState(() => _activePrimaryTab = tab);
+    widget.onPrimaryTabChanged?.call(tab);
   }
 
   void _onScroll() {
     if (!_scrollController.hasClients) return;
 
-    if (_activePrimaryTab == _SongListPrimaryTab.comments) {
+    if (_activePrimaryTab == SongListPrimaryTab.comments) {
       if (widget.isLoadingMoreComments || !widget.hasMoreComments) return;
     } else {
       if (widget.isLoadingMore || !widget.hasMore) return;
@@ -264,7 +293,7 @@ class _SongListState extends State<SongList> {
     final threshold = 200.0;
 
     if (maxScroll - currentScroll <= threshold) {
-      if (_activePrimaryTab == _SongListPrimaryTab.comments) {
+      if (_activePrimaryTab == SongListPrimaryTab.comments) {
         widget.onCommentsLoadMore?.call();
       } else {
         widget.onLoadMore?.call();
@@ -330,7 +359,7 @@ class _SongListState extends State<SongList> {
     final filteredSongs = [for (final entry in sortedEntries) entry.song];
     final listPadding = widget.padding.resolve(Directionality.of(context));
     final isCommentsTabActive =
-        _hasCommentTab && _activePrimaryTab == _SongListPrimaryTab.comments;
+        _hasCommentTab && _activePrimaryTab == SongListPrimaryTab.comments;
 
     if (widget.isLoading) {
       return const Center(
@@ -491,20 +520,18 @@ class _SongListState extends State<SongList> {
         _buildSongsTab(
           context,
           filteredCount,
-          isSelected: _activePrimaryTab == _SongListPrimaryTab.songs,
+          isSelected: _activePrimaryTab == SongListPrimaryTab.songs,
           onTap: () {
-            if (_activePrimaryTab == _SongListPrimaryTab.songs) return;
-            setState(() => _activePrimaryTab = _SongListPrimaryTab.songs);
+            _setPrimaryTab(SongListPrimaryTab.songs);
           },
         ),
         if (_hasCommentTab) ...[
           const SizedBox(width: 18),
           _buildCommentsTab(
             context,
-            isSelected: _activePrimaryTab == _SongListPrimaryTab.comments,
+            isSelected: _activePrimaryTab == SongListPrimaryTab.comments,
             onTap: () {
-              if (_activePrimaryTab == _SongListPrimaryTab.comments) return;
-              setState(() => _activePrimaryTab = _SongListPrimaryTab.comments);
+              _setPrimaryTab(SongListPrimaryTab.comments);
             },
           ),
         ],
@@ -772,9 +799,9 @@ class _SongListState extends State<SongList> {
                   context,
                   label: '#',
                   field: _SongSortField.order,
+                  alignment: Alignment.center,
                 ),
               ),
-              const SizedBox(width: SongTableLayout.listPlayButtonWidth),
               const SizedBox(width: SongTableLayout.listCoverSectionWidth),
               Expanded(
                 child: _buildSortHeaderCell(
@@ -797,15 +824,16 @@ class _SongListState extends State<SongList> {
               ),
               const SizedBox(width: SongTableLayout.listDurationGap),
               SizedBox(
-                width:
-                    SongTableLayout.listDurationWidth +
-                    SongTableLayout.listTrailingActionWidth,
+                width: SongTableLayout.listDurationWidth,
                 child: _buildSortHeaderCell(
                   context,
                   label: '时长',
                   field: _SongSortField.duration,
                   alignment: Alignment.centerRight,
                 ),
+              ),
+              const SizedBox(
+                width: SongTableLayout.listTrailingActionWidth,
               ),
             ],
           ),
@@ -831,35 +859,36 @@ class _SongListState extends State<SongList> {
     );
     final icon = isActive
         ? (_sortAscending
-              ? Icons.arrow_upward_rounded
-              : Icons.arrow_downward_rounded)
-        : Icons.swap_vert_rounded;
-    final iconSize = isActive ? 15.0 : 16.0;
+              ? Icons.keyboard_arrow_up_rounded
+              : Icons.keyboard_arrow_down_rounded)
+        : Icons.unfold_more_rounded;
+    final iconSize = isActive ? 16.0 : 18.0;
     final iconColor = isActive ? foregroundColor : inactiveArrowColor;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _toggleSort(field),
-        borderRadius: BorderRadius.circular(8),
-        hoverColor: Colors.transparent,
-        child: SizedBox(
-          height: _tableHeaderHeight,
+    return SizedBox(
+      height: _tableHeaderHeight,
+      width: double.infinity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _toggleSort(field),
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: Colors.transparent,
           child: Padding(
             padding: contentPadding,
             child: Align(
-                  alignment: alignment,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: foregroundColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+              alignment: alignment,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   const SizedBox(width: 5),
                   Icon(icon, size: iconSize, color: iconColor),
                 ],

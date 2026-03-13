@@ -15,6 +15,7 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/comment_floor_sheet.dart';
@@ -83,6 +84,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
   final List<dynamic> _allComments = [];
   List<dynamic> _hotComments = [];
   int _totalCommentCount = 0;
+  bool _hasLoadedComments = false;
 
   int get _totalSongCount {
     final detailedCount = _detailedPlaylist?.count ?? 0;
@@ -167,6 +169,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       _allComments.clear();
       _hotComments = [];
       _totalCommentCount = 0;
+      _hasLoadedComments = false;
     });
 
     // Fetch detailed info to get creator and timestamps
@@ -199,8 +202,13 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       });
 
       _scheduleBackgroundResolve();
-      unawaited(_fetchComments(isRefresh: true));
     }
+  }
+
+  void _onPrimaryTabChanged(SongListPrimaryTab tab) {
+    if (tab != SongListPrimaryTab.comments || _hasLoadedComments) return;
+    _hasLoadedComments = true;
+    unawaited(_fetchComments(isRefresh: true));
   }
 
   void _scheduleBackgroundResolve() {
@@ -225,6 +233,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
 
   Future<void> _fetchComments({bool isRefresh = false}) async {
     if ((_isCommentsLoading || _isFetchingMoreComments) && !isRefresh) return;
+    _hasLoadedComments = true;
 
     if (mounted) {
       setState(() {
@@ -575,20 +584,25 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
-      commentSlivers: buildResourceCommentSlivers(
-        context: context,
-        isLoading: _isCommentsLoading,
-        hotComments: _hotComments,
-        comments: _allComments,
-        totalCount: _totalCommentCount,
-        onTapReplies: _openPlaylistFloorComments,
-      ),
+      commentSlivers: _hasLoadedComments
+          ? buildResourceCommentSlivers(
+              context: context,
+              isLoading: _isCommentsLoading,
+              hotComments: _hotComments,
+              comments: _allComments,
+              totalCount: _totalCommentCount,
+              onTapReplies: _openPlaylistFloorComments,
+            )
+          : null,
       onCommentsLoadMore: _loadMoreComments,
       hasMoreComments: _hasMoreComments,
       isLoadingMoreComments: _isFetchingMoreComments,
       commentsTabBadgeLabel: _totalCommentCount > 0
           ? '$_totalCommentCount'
           : null,
+      onPrimaryTabChanged: _onPrimaryTabChanged,
+      initialPrimaryTab: SongListPrimaryTab.songs,
+      hasCommentsTab: true,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithPlaylistSongs

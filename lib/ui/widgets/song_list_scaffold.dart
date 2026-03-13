@@ -9,6 +9,7 @@ class SongListScaffold extends StatelessWidget {
   final bool isLoading;
   final List<Widget>? headers;
   final List<Widget>? commentSlivers;
+  final bool hasCommentsTab;
   final Color? backgroundColor;
   final VoidCallback? onLoadMore;
   final VoidCallback? onCommentsLoadMore;
@@ -20,6 +21,8 @@ class SongListScaffold extends StatelessWidget {
   final bool enableDefaultDoubleTapPlay;
   final String commentsTabTitle;
   final String? commentsTabBadgeLabel;
+  final ValueChanged<SongListPrimaryTab>? onPrimaryTabChanged;
+  final SongListPrimaryTab initialPrimaryTab;
 
   const SongListScaffold({
     super.key,
@@ -28,6 +31,7 @@ class SongListScaffold extends StatelessWidget {
     this.isLoading = false,
     this.headers,
     this.commentSlivers,
+    this.hasCommentsTab = true,
     this.backgroundColor,
     this.onLoadMore,
     this.onCommentsLoadMore,
@@ -39,6 +43,8 @@ class SongListScaffold extends StatelessWidget {
     this.enableDefaultDoubleTapPlay = false,
     this.commentsTabTitle = '评论',
     this.commentsTabBadgeLabel,
+    this.onPrimaryTabChanged,
+    this.initialPrimaryTab = SongListPrimaryTab.songs,
   });
 
   @override
@@ -53,6 +59,7 @@ class SongListScaffold extends StatelessWidget {
         isLoading: isLoading,
         headers: headers,
         commentSlivers: commentSlivers,
+        hasCommentsTab: hasCommentsTab,
         onLoadMore: onLoadMore,
         onCommentsLoadMore: onCommentsLoadMore,
         hasMore: hasMore,
@@ -63,6 +70,8 @@ class SongListScaffold extends StatelessWidget {
         enableDefaultDoubleTapPlay: enableDefaultDoubleTapPlay,
         commentsTabTitle: commentsTabTitle,
         commentsTabBadgeLabel: commentsTabBadgeLabel,
+        onPrimaryTabChanged: onPrimaryTabChanged,
+        initialPrimaryTab: initialPrimaryTab,
       ),
     );
   }

@@ -142,10 +142,10 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     sliver: SliverGrid(
                       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 200,
-                        mainAxisSpacing: 24,
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
                         crossAxisSpacing: 20,
-                        mainAxisExtent: 210,
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => PlaylistCard.grid(
@@ -182,10 +182,10 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     sliver: SliverGrid(
                       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 200,
-                        mainAxisSpacing: 24,
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
                         crossAxisSpacing: 20,
-                        mainAxisExtent: 210,
                       ),
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
