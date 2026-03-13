@@ -10,6 +10,7 @@ import '../../providers/audio_provider.dart';
 import 'song_card.dart';
 import 'back_to_top.dart';
 import 'song_table_layout.dart';
+import 'detail_page_sliver_header.dart';
 
 enum _SongSortField { order, title, album, duration }
 
@@ -91,6 +92,7 @@ class _SongListState extends State<SongList> {
   _SongSortField _sortField = _SongSortField.order;
   bool _sortAscending = true;
   late SongListPrimaryTab _activePrimaryTab;
+  double? _listLeadingScrollExtent;
 
   bool get _hasCommentTab => widget.hasCommentsTab;
 
@@ -102,7 +104,29 @@ class _SongListState extends State<SongList> {
   bool get _hasPinnedPrimaryHeader {
     final headers = widget.headers;
     if (headers == null) return false;
-    return headers.any((header) => header is SliverAppBar && header.pinned);
+    return headers.any((header) {
+      if (header is SliverAppBar) return header.pinned;
+      if (header is SliverPersistentHeader) return header.pinned;
+      return header is DetailPageSliverHeader;
+    });
+  }
+
+  double get _pinnedPrimaryHeaderHeight {
+    final headers = widget.headers;
+    if (headers == null) return 0.0;
+
+    double height = 0.0;
+    for (final header in headers) {
+      if (header is SliverAppBar && header.pinned) {
+        height +=
+            header.collapsedHeight ?? header.toolbarHeight ?? kToolbarHeight;
+      } else if (header is SliverPersistentHeader && header.pinned) {
+        height += header.delegate.minExtent;
+      } else if (header is DetailPageSliverHeader) {
+        height += kToolbarHeight;
+      }
+    }
+    return height;
   }
 
   double get _estimatedHeaderScrollExtent {
@@ -133,12 +157,13 @@ class _SongListState extends State<SongList> {
   double _locatePinnedHeight(bool hasTableHeader) {
     return _stickyToolbarHeight +
         (hasTableHeader ? _tableHeaderHeight : 0.0) +
-        (_hasPinnedPrimaryHeader ? kToolbarHeight : 0.0);
+        (_hasPinnedPrimaryHeader ? _pinnedPrimaryHeaderHeight : 0.0);
   }
 
   double _calculateLocateTargetOffset(int index) {
-    final targetOffset =
-        _estimatedHeaderScrollExtent + (index * _songItemExtent);
+    final headerOffset =
+        _listLeadingScrollExtent ?? _estimatedHeaderScrollExtent;
+    final targetOffset = headerOffset + (index * _songItemExtent);
     return targetOffset
         .clamp(0.0, _scrollController.position.maxScrollExtent)
         .toDouble();
@@ -161,15 +186,17 @@ class _SongListState extends State<SongList> {
     if (visibleExtent <= _songItemExtent) return;
 
     final alignedOffset = _calculateLocateTargetOffset(index);
-    final itemTop = alignedOffset + pinnedHeight;
-    final itemBottom = itemTop + _songItemExtent;
+    final itemTop = alignedOffset;
+    final itemBottom = alignedOffset + _songItemExtent;
     final visibleTop = position.pixels + pinnedHeight;
     final visibleBottom = position.pixels + position.viewportDimension;
 
     if (itemTop >= visibleTop && itemBottom <= visibleBottom) return;
 
     final targetOffset = itemTop < visibleTop
-        ? alignedOffset
+        ? (alignedOffset - pinnedHeight)
+              .clamp(0.0, position.maxScrollExtent)
+              .toDouble()
         : (itemBottom - position.viewportDimension)
               .clamp(0.0, position.maxScrollExtent)
               .toDouble();
@@ -419,36 +446,45 @@ class _SongListState extends State<SongList> {
                   ),
                 )
               else ...[
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    listPadding.left,
-                    0,
-                    listPadding.right,
-                    listPadding.bottom,
-                  ),
-                  sliver: SliverFixedExtentList(
-                    itemExtent: _songItemExtent,
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final song = filteredSongs[index];
-                      final songSelectionKey = _songSelectionKey(song, index);
-                      return SongCard(
-                        song: song,
-                        playlist: filteredSongs,
-                        parentPlaylist: widget.parentPlaylist,
-                        rowNumber: index + 1,
-                        showMore: true,
-                        isRowSelected: _selectedSongKey == songSelectionKey,
-                        onSelect: () {
-                          if (_selectedSongKey == songSelectionKey) return;
-                          setState(() => _selectedSongKey = songSelectionKey);
-                        },
-                        suppressHover: _suppressSongCardHover,
-                        onDoubleTapPlay: widget.onSongDoubleTapPlay,
-                        enableDefaultDoubleTapPlay:
-                            widget.enableDefaultDoubleTapPlay,
-                      );
-                    }, childCount: filteredSongs.length),
-                  ),
+                SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    _listLeadingScrollExtent =
+                        constraints.precedingScrollExtent;
+                    return SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        listPadding.left,
+                        0,
+                        listPadding.right,
+                        listPadding.bottom,
+                      ),
+                      sliver: SliverFixedExtentList(
+                        itemExtent: _songItemExtent,
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final song = filteredSongs[index];
+                          final songSelectionKey =
+                              _songSelectionKey(song, index);
+                          return SongCard(
+                            song: song,
+                            playlist: filteredSongs,
+                            parentPlaylist: widget.parentPlaylist,
+                            rowNumber: index + 1,
+                            showMore: true,
+                            isRowSelected: _selectedSongKey == songSelectionKey,
+                            onSelect: () {
+                              if (_selectedSongKey == songSelectionKey) return;
+                              setState(
+                                () => _selectedSongKey = songSelectionKey,
+                              );
+                            },
+                            suppressHover: _suppressSongCardHover,
+                            onDoubleTapPlay: widget.onSongDoubleTapPlay,
+                            enableDefaultDoubleTapPlay:
+                                widget.enableDefaultDoubleTapPlay,
+                          );
+                        }, childCount: filteredSongs.length),
+                      ),
+                    );
+                  },
                 ),
               ],
 
