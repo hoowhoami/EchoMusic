@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
@@ -9,9 +10,13 @@ import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
-import '../widgets/song_card.dart';
 import '../widgets/back_to_top.dart';
-import '../widgets/song_batch_selection_dialog.dart';
+import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/detail_page_action_row.dart';
+import '../../providers/audio_provider.dart';
+import '../widgets/custom_toast.dart';
+import '../../providers/persistence_provider.dart';
 import '../widgets/playlist_card.dart';
 import '../widgets/album_card.dart';
 import '../../models/album.dart';
@@ -390,8 +395,8 @@ class _DiscoverSongTab extends StatefulWidget {
   State<_DiscoverSongTab> createState() => _DiscoverSongTabState();
 }
 
-class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableState {
-  final ScrollController _scrollController = ScrollController();
+class _DiscoverSongTabState extends State<_DiscoverSongTab>
+    with RefreshableState {
   late Future<List<Song>> _songsFuture;
 
   @override
@@ -405,8 +410,31 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
 
   @override
   void dispose() {
-    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _playNewSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithNewSongs(songs[firstPlayableIndex], songs));
+  }
+
+  Future<void> _replacePlaybackWithNewSongs(
+    Song song,
+    List<Song> songs,
+  ) async {
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
   }
 
   @override
@@ -421,48 +449,92 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
     return FutureBuilder<List<Song>>(
       future: _songsFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CupertinoActivityIndicator());
+        if (!snapshot.hasData) {
+          return const Center(child: CupertinoActivityIndicator());
+        }
         final songs = snapshot.data!;
+        final replacePlaylistEnabled =
+            context.select<PersistenceProvider, bool>(
+          (provider) => provider.settings['replacePlaylist'] ?? false,
+        );
+        final theme = Theme.of(context);
 
-        return Stack(
-          children: [
-            Column(
-              children: [
-                if (songs.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
-                    child: Row(
-                      children: [
-                        const Spacer(),
-                        SongBatchActionButton(songs: songs),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                    itemCount: songs.length,
-                    itemBuilder: (context, index) {
-                      final song = songs[index];
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: index == songs.length - 1 ? 20 : 0),
-                        child: SongCard(
-                          song: song,
-                          playlist: songs,
-                          showMore: true,
-                          enableDefaultDoubleTapPlay: true,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+        return SongListScaffold(
+          songs: songs,
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+          rowHorizontalPadding: 6,
+          hasCommentsTab: false,
+          enableDefaultDoubleTapPlay: true,
+          onSongDoubleTapPlay: replacePlaylistEnabled
+              ? (song) async {
+                  await _replacePlaybackWithNewSongs(song, songs);
+                }
+              : null,
+          headers: [
+            DetailPageSliverHeader(
+              typeLabel: 'NEW SONGS',
+              title: '新歌速递',
+              expandedHeight: kToolbarHeight,
+              expandedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 10),
+              collapsedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 0),
+              expandedCover: _buildCollapsedCover(theme),
+              collapsedCover: _buildCollapsedCover(theme),
+              detailChildren: const <Widget>[],
+              actions: DetailPageActionRow(
+                playLabel: '播放',
+                onPlay: () => _playNewSongs(songs),
+                songs: songs,
+              ),
             ),
-            BackToTop(controller: _scrollController),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildExpandedCover(ThemeData theme) {
+    return Container(
+      width: 136,
+      height: 136,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(220),
+            theme.colorScheme.tertiary.withAlpha(180),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.sparkles,
+        size: 56,
+        color: theme.colorScheme.onPrimary,
+      ),
+    );
+  }
+
+  Widget _buildCollapsedCover(ThemeData theme) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(200),
+            theme.colorScheme.tertiary.withAlpha(160),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.sparkles,
+        size: 16,
+        color: theme.colorScheme.onPrimary,
+      ),
     );
   }
 }

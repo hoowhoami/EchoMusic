@@ -40,6 +40,11 @@ class SongList extends StatefulWidget {
   final bool isLoadingMoreComments;
   final Future<void> Function(Song song)? onSongDoubleTapPlay;
   final bool enableDefaultDoubleTapPlay;
+  final bool showStickyToolbar;
+  final bool showTableHeader;
+  final bool showSearchField;
+  final bool showLocateButton;
+  final double rowHorizontalPadding;
   final Future<List<Song>> Function()? onResolveBatchSongs;
   final String commentsTabTitle;
   final String? commentsTabBadgeLabel;
@@ -69,6 +74,11 @@ class SongList extends StatefulWidget {
     this.commentsTabBadgeLabel,
     this.onPrimaryTabChanged,
     this.initialPrimaryTab = SongListPrimaryTab.songs,
+    this.showStickyToolbar = true,
+    this.showTableHeader = true,
+    this.showSearchField = true,
+    this.showLocateButton = true,
+    this.rowHorizontalPadding = SongTableLayout.listRowHorizontalPadding,
   });
 
   @override
@@ -77,12 +87,16 @@ class SongList extends StatefulWidget {
 
 class _SongListState extends State<SongList> {
   static const double _songItemExtent = 60.0;
+  static const double _compactAlbumWidth = 140.0;
+  static const double _compactDurationWidth = 44.0;
   static const double _stickyToolbarHeight = 60.0;
   static const double _tableHeaderHeight = 44.0;
   static const double _searchBoxMaxWidth = 240.0;
+  static const double _toolbarHeightWithoutExtras = 44.0;
 
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  final GlobalKey _listAnchorKey = GlobalKey();
   String _searchQuery = '';
   String? _selectedSongKey;
   List<Song>? _cachedFilteredSongs;
@@ -155,18 +169,27 @@ class _SongListState extends State<SongList> {
   }
 
   double _locatePinnedHeight(bool hasTableHeader) {
-    return _stickyToolbarHeight +
+    final topInset = widget.showStickyToolbar
+        ? MediaQuery.of(context).padding.top
+        : 0.0;
+    final stickyHeight = widget.showStickyToolbar
+        ? (widget.showSearchField || widget.showLocateButton
+              ? _stickyToolbarHeight
+              : _toolbarHeightWithoutExtras)
+        : 0.0;
+    return stickyHeight +
         (hasTableHeader ? _tableHeaderHeight : 0.0) +
-        (_hasPinnedPrimaryHeader ? _pinnedPrimaryHeaderHeight : 0.0);
+        (_hasPinnedPrimaryHeader ? _pinnedPrimaryHeaderHeight : 0.0) +
+        topInset;
   }
 
-  double _calculateLocateTargetOffset(int index) {
-    final headerOffset =
-        _listLeadingScrollExtent ?? _estimatedHeaderScrollExtent;
-    final targetOffset = headerOffset + (index * _songItemExtent);
-    return targetOffset
-        .clamp(0.0, _scrollController.position.maxScrollExtent)
-        .toDouble();
+  double _resolvePinnedHeight(bool hasTableHeader) {
+    return _locatePinnedHeight(hasTableHeader);
+  }
+
+  double _calculateLocateTargetOffset(int index, double leadingExtent) {
+    final headerOffset = leadingExtent;
+    return headerOffset + (index * _songItemExtent);
   }
 
   Future<void> _locateCurrentSong(List<Song> filteredSongs) async {
@@ -180,12 +203,16 @@ class _SongListState extends State<SongList> {
     if (index == -1) return;
 
     final position = _scrollController.position;
-    final hasTableHeader = filteredSongs.isNotEmpty;
-    final pinnedHeight = _locatePinnedHeight(hasTableHeader);
+    final hasTableHeader =
+        widget.showTableHeader && filteredSongs.isNotEmpty;
+    final pinnedHeight = _resolvePinnedHeight(hasTableHeader);
+    final leadingExtent =
+        _listLeadingScrollExtent ?? _estimatedHeaderScrollExtent;
     final visibleExtent = position.viewportDimension - pinnedHeight;
     if (visibleExtent <= _songItemExtent) return;
 
-    final alignedOffset = _calculateLocateTargetOffset(index);
+    final alignedOffset =
+        _calculateLocateTargetOffset(index, leadingExtent);
     final itemTop = alignedOffset;
     final itemBottom = alignedOffset + _songItemExtent;
     final visibleTop = position.pixels + pinnedHeight;
@@ -381,129 +408,175 @@ class _SongListState extends State<SongList> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final sortedEntries = _sortedEntries;
-    final filteredSongs = [for (final entry in sortedEntries) entry.song];
-    final listPadding = widget.padding.resolve(Directionality.of(context));
-    final isCommentsTabActive =
-        _hasCommentTab && _activePrimaryTab == SongListPrimaryTab.comments;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final theme = Theme.of(context);
+        final sortedEntries = _sortedEntries;
+        final filteredSongs = [for (final entry in sortedEntries) entry.song];
+        final listPadding = widget.padding.resolve(Directionality.of(context));
+        final isCommentsTabActive =
+            _hasCommentTab && _activePrimaryTab == SongListPrimaryTab.comments;
+        final baseAvailableWidth =
+            (constraints.maxWidth - listPadding.horizontal)
+                .clamp(0.0, double.infinity);
+        final baseColumnConfig = _resolveColumnConfig(baseAvailableWidth);
+        final rowHorizontalPadding =
+            (baseColumnConfig.rowHorizontalPadding <
+                    widget.rowHorizontalPadding
+                ? baseColumnConfig.rowHorizontalPadding
+                : widget.rowHorizontalPadding)
+                .clamp(0.0, 24.0);
+        final availableWidth =
+            (baseAvailableWidth - (rowHorizontalPadding * 2))
+                .clamp(0.0, double.infinity);
+        final finalColumnConfig = _resolveColumnConfig(availableWidth);
 
-    if (widget.isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(80.0),
-          child: CupertinoActivityIndicator(),
-        ),
-      );
-    }
+        if (widget.isLoading) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(80.0),
+              child: CupertinoActivityIndicator(),
+            ),
+          );
+        }
 
-    return Stack(
-      children: [
-        NotificationListener<ScrollNotification>(
-          onNotification: _handleScrollNotification,
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              if (widget.headers != null) ...widget.headers!,
+        return Stack(
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  if (widget.headers != null) ...widget.headers!,
 
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _FixedHeightHeaderDelegate(
-                  height: _stickyToolbarHeight,
-                  child: _buildStickyToolbar(
-                    context,
-                    isCommentsTabActive: isCommentsTabActive,
-                    filteredSongs: filteredSongs,
-                    listPadding: listPadding,
-                  ),
-                ),
-              ),
-
-              if (!isCommentsTabActive && filteredSongs.isNotEmpty)
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _FixedHeightHeaderDelegate(
-                    height: _tableHeaderHeight,
-                    child: _buildTableHeader(context, listPadding: listPadding),
-                  ),
-                ),
-
-              if (isCommentsTabActive)
-                ...?widget.commentSlivers
-              else if (filteredSongs.isEmpty)
-                SliverToBoxAdapter(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
-                      child: Text(
-                        _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
-                        style: TextStyle(
-                          color: theme.colorScheme.onSurfaceVariant,
+                  if (widget.showStickyToolbar)
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _FixedHeightHeaderDelegate(
+                        height:
+                            (widget.showSearchField || widget.showLocateButton)
+                                ? _stickyToolbarHeight
+                                : _toolbarHeightWithoutExtras,
+                        child: _buildStickyToolbar(
+                          context,
+                          isCommentsTabActive: isCommentsTabActive,
+                          filteredSongs: filteredSongs,
+                          listPadding: listPadding,
                         ),
                       ),
                     ),
-                  ),
-                )
-              else ...[
-                SliverLayoutBuilder(
-                  builder: (context, constraints) {
-                    _listLeadingScrollExtent =
-                        constraints.precedingScrollExtent;
-                    return SliverPadding(
-                      padding: EdgeInsets.fromLTRB(
-                        listPadding.left,
-                        0,
-                        listPadding.right,
-                        listPadding.bottom,
-                      ),
-                      sliver: SliverFixedExtentList(
-                        itemExtent: _songItemExtent,
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final song = filteredSongs[index];
-                          final songSelectionKey =
-                              _songSelectionKey(song, index);
-                          return SongCard(
-                            song: song,
-                            playlist: filteredSongs,
-                            parentPlaylist: widget.parentPlaylist,
-                            rowNumber: index + 1,
-                            showMore: true,
-                            isRowSelected: _selectedSongKey == songSelectionKey,
-                            onSelect: () {
-                              if (_selectedSongKey == songSelectionKey) return;
-                              setState(
-                                () => _selectedSongKey = songSelectionKey,
-                              );
-                            },
-                            suppressHover: _suppressSongCardHover,
-                            onDoubleTapPlay: widget.onSongDoubleTapPlay,
-                            enableDefaultDoubleTapPlay:
-                                widget.enableDefaultDoubleTapPlay,
-                          );
-                        }, childCount: filteredSongs.length),
-                      ),
-                    );
-                  },
-                ),
-              ],
 
-              if (isCommentsTabActive
-                  ? widget.isLoadingMoreComments
-                  : widget.isLoadingMore)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Center(child: CupertinoActivityIndicator()),
-                  ),
-                ),
+                  if (widget.showTableHeader &&
+                      !isCommentsTabActive &&
+                      filteredSongs.isNotEmpty)
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _FixedHeightHeaderDelegate(
+                        height: _tableHeaderHeight,
+                        child: _buildTableHeader(
+                          context,
+                          listPadding: listPadding,
+                          columnConfig: finalColumnConfig,
+                          rowHorizontalPadding: rowHorizontalPadding,
+                        ),
+                      ),
+                    ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 20)),
-            ],
-          ),
-        ),
-        BackToTop(controller: _scrollController),
-      ],
+                  if (isCommentsTabActive)
+                    ...?widget.commentSlivers
+                  else if (filteredSongs.isEmpty)
+                    SliverToBoxAdapter(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+                          child: Text(
+                            _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
+                            style: TextStyle(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  else ...[
+                    SliverToBoxAdapter(
+                      key: _listAnchorKey,
+                      child: const SizedBox.shrink(),
+                    ),
+                    SliverLayoutBuilder(
+                      builder: (context, constraints) {
+                        _listLeadingScrollExtent =
+                            constraints.precedingScrollExtent;
+                        return SliverPadding(
+                          padding: EdgeInsets.fromLTRB(
+                            listPadding.left,
+                            0,
+                            listPadding.right,
+                            listPadding.bottom,
+                          ),
+                          sliver: SliverFixedExtentList(
+                            itemExtent: _songItemExtent,
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final song = filteredSongs[index];
+                                final songSelectionKey =
+                                    _songSelectionKey(song, index);
+                                return SongCard(
+                                  song: song,
+                                  playlist: filteredSongs,
+                                  parentPlaylist: widget.parentPlaylist,
+                                  rowNumber: index + 1,
+                                  showMore: true,
+                                  showAlbum: finalColumnConfig.showAlbum,
+                                  showDuration: finalColumnConfig.showDuration,
+                                  albumWidth: finalColumnConfig.albumWidth,
+                                  durationWidth:
+                                      finalColumnConfig.durationWidth,
+                                  rowHorizontalPadding: rowHorizontalPadding,
+                                  isRowSelected:
+                                      _selectedSongKey == songSelectionKey,
+                                  onSelect: () {
+                                    if (_selectedSongKey == songSelectionKey) {
+                                      return;
+                                    }
+                                    setState(
+                                      () =>
+                                          _selectedSongKey = songSelectionKey,
+                                    );
+                                  },
+                                  suppressHover: _suppressSongCardHover,
+                                  onDoubleTapPlay: widget.onSongDoubleTapPlay,
+                                  enableDefaultDoubleTapPlay:
+                                      widget.enableDefaultDoubleTapPlay,
+                                );
+                              },
+                              childCount: filteredSongs.length,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+
+                  if (isCommentsTabActive
+                      ? widget.isLoadingMoreComments
+                      : widget.isLoadingMore)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Center(child: CupertinoActivityIndicator()),
+                      ),
+                    ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                ],
+              ),
+            ),
+            BackToTop(controller: _scrollController),
+          ],
+        );
+      },
     );
   }
 
@@ -514,34 +587,40 @@ class _SongListState extends State<SongList> {
     required EdgeInsets listPadding,
   }) {
     final theme = Theme.of(context);
+    final hasExtras = widget.showSearchField || widget.showLocateButton;
 
     return Container(
       color: theme.scaffoldBackgroundColor,
+      height: hasExtras ? _stickyToolbarHeight : _toolbarHeightWithoutExtras,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           listPadding.left,
-          10,
+          hasExtras ? 10 : 6,
           listPadding.right,
-          10,
+          hasExtras ? 10 : 6,
         ),
         child: Row(
           children: [
             _buildPrimaryTabs(context, filteredSongs.length),
-            if (!isCommentsTabActive) ...[
+            if (!isCommentsTabActive &&
+                (widget.showSearchField || widget.showLocateButton)) ...[
               const Spacer(),
-              Flexible(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: _searchBoxMaxWidth,
+              if (widget.showSearchField)
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: _searchBoxMaxWidth,
+                      ),
+                      child: _buildSearchField(context),
                     ),
-                    child: _buildSearchField(context),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              _buildLocatePlayingButton(context, filteredSongs),
+              if (widget.showSearchField && widget.showLocateButton)
+                const SizedBox(width: 12),
+              if (widget.showLocateButton)
+                _buildLocatePlayingButton(context, filteredSongs),
             ],
           ],
         ),
@@ -801,6 +880,8 @@ class _SongListState extends State<SongList> {
   Widget _buildTableHeader(
     BuildContext context, {
     required EdgeInsets listPadding,
+    required _SongColumnConfig columnConfig,
+    required double rowHorizontalPadding,
   }) {
     final theme = Theme.of(context);
     final actionSectionWidth =
@@ -808,6 +889,8 @@ class _SongListState extends State<SongList> {
         SongTableLayout.listRowActionWidth +
         SongTableLayout.listFavoriteGap +
         SongTableLayout.listFavoriteWidth;
+    final albumWidth = columnConfig.albumWidth;
+    final durationWidth = columnConfig.durationWidth;
     return Container(
       decoration: BoxDecoration(
         color: theme.scaffoldBackgroundColor,
@@ -824,9 +907,9 @@ class _SongListState extends State<SongList> {
           right: listPadding.right,
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: SongTableLayout.listRowHorizontalPadding,
-          ),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: rowHorizontalPadding,
+                          ),
           child: Row(
             children: [
               SizedBox(
@@ -848,26 +931,31 @@ class _SongListState extends State<SongList> {
                 ),
               ),
               SizedBox(width: actionSectionWidth),
-              const SizedBox(width: SongTableLayout.listAlbumGap),
-              SizedBox(
-                width: SongTableLayout.listAlbumWidth,
-                child: _buildSortHeaderCell(
-                  context,
-                  label: '专辑',
-                  field: _SongSortField.album,
-                  alignment: Alignment.centerLeft,
-                ),
-              ),
-              const SizedBox(width: SongTableLayout.listDurationGap),
-              SizedBox(
-                width: SongTableLayout.listDurationWidth,
-                child: _buildSortHeaderCell(
-                  context,
-                  label: '时长',
-                  field: _SongSortField.duration,
-                  alignment: Alignment.centerRight,
-                ),
-              ),
+              if (columnConfig.showAlbum || columnConfig.showDuration) ...[
+                const SizedBox(width: SongTableLayout.listAlbumGap),
+                if (columnConfig.showAlbum)
+                  SizedBox(
+                    width: albumWidth,
+                    child: _buildSortHeaderCell(
+                      context,
+                      label: '专辑',
+                      field: _SongSortField.album,
+                      alignment: Alignment.centerLeft,
+                    ),
+                  ),
+                if (columnConfig.showDuration) ...[
+                  const SizedBox(width: SongTableLayout.listDurationGap),
+                  SizedBox(
+                    width: durationWidth,
+                    child: _buildSortHeaderCell(
+                      context,
+                      label: '时长',
+                      field: _SongSortField.duration,
+                      alignment: Alignment.centerRight,
+                    ),
+                  ),
+                ],
+              ],
               const SizedBox(
                 width: SongTableLayout.listTrailingActionWidth,
               ),
@@ -962,6 +1050,101 @@ class _SongListState extends State<SongList> {
       ),
     );
   }
+
+  _SongColumnConfig _resolveColumnConfig(double availableWidth) {
+    final baseWidth =
+        SongTableLayout.listLeadingWidth +
+        SongTableLayout.listCoverSectionWidth +
+        SongTableLayout.listActionGap +
+        SongTableLayout.listRowActionWidth +
+        SongTableLayout.listFavoriteGap +
+        SongTableLayout.listFavoriteWidth +
+        SongTableLayout.listTrailingActionWidth;
+    final fullWidth =
+        baseWidth +
+        SongTableLayout.listAlbumGap +
+        SongTableLayout.listAlbumWidth +
+        SongTableLayout.listDurationGap +
+        SongTableLayout.listDurationWidth;
+    final compactWidth =
+        baseWidth +
+        SongTableLayout.listAlbumGap +
+        _compactAlbumWidth +
+        SongTableLayout.listDurationGap +
+        _compactDurationWidth;
+    final durationOnlyWidth =
+        baseWidth +
+        SongTableLayout.listAlbumGap +
+        SongTableLayout.listDurationGap +
+        _compactDurationWidth;
+
+    final availableWithDefaultPadding =
+        availableWidth - (SongTableLayout.listRowHorizontalPadding * 2);
+    if (availableWithDefaultPadding >= fullWidth) {
+      return _SongColumnConfig(
+        showAlbum: true,
+        showDuration: true,
+        albumWidth: SongTableLayout.listAlbumWidth,
+        durationWidth: SongTableLayout.listDurationWidth,
+        rowHorizontalPadding: SongTableLayout.listRowHorizontalPadding,
+      );
+    }
+    if (availableWithDefaultPadding >= compactWidth) {
+      return _SongColumnConfig(
+        showAlbum: true,
+        showDuration: true,
+        albumWidth: _compactAlbumWidth,
+        durationWidth: _compactDurationWidth,
+        rowHorizontalPadding: SongTableLayout.listRowHorizontalPadding,
+      );
+    }
+    if (availableWithDefaultPadding >= durationOnlyWidth) {
+      return _SongColumnConfig(
+        showAlbum: false,
+        showDuration: true,
+        albumWidth: _compactAlbumWidth,
+        durationWidth: _compactDurationWidth,
+        rowHorizontalPadding: SongTableLayout.listRowHorizontalPadding,
+      );
+    }
+    const condensedPadding = 6.0;
+    final availableWithCondensedPadding =
+        availableWidth - (condensedPadding * 2);
+
+    if (availableWithCondensedPadding >= durationOnlyWidth) {
+      return const _SongColumnConfig(
+        showAlbum: false,
+        showDuration: true,
+        albumWidth: _compactAlbumWidth,
+        durationWidth: _compactDurationWidth,
+        rowHorizontalPadding: condensedPadding,
+      );
+    }
+
+    return const _SongColumnConfig(
+      showAlbum: false,
+      showDuration: false,
+      albumWidth: _compactAlbumWidth,
+      durationWidth: _compactDurationWidth,
+      rowHorizontalPadding: condensedPadding,
+    );
+  }
+}
+
+class _SongColumnConfig {
+  final bool showAlbum;
+  final bool showDuration;
+  final double albumWidth;
+  final double durationWidth;
+  final double rowHorizontalPadding;
+
+  const _SongColumnConfig({
+    required this.showAlbum,
+    required this.showDuration,
+    required this.albumWidth,
+    required this.durationWidth,
+    required this.rowHorizontalPadding,
+  });
 }
 
 class _FixedHeightHeaderDelegate extends SliverPersistentHeaderDelegate {

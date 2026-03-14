@@ -8,10 +8,14 @@ import '../../providers/navigation_provider.dart';
 import '../../models/playlist.dart';
 import '../../models/album.dart';
 import '../../models/artist.dart';
-import '../widgets/song_card.dart';
+import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/detail_page_action_row.dart';
+import '../widgets/custom_toast.dart';
+import '../../providers/audio_provider.dart';
+import '../../providers/persistence_provider.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/back_to_top.dart';
-import '../widgets/song_batch_selection_dialog.dart';
 import '../widgets/playlist_card.dart';
 import '../widgets/album_card.dart';
 import '../widgets/artist_card.dart';
@@ -24,11 +28,14 @@ class SearchView extends StatefulWidget {
 }
 
 class _SearchViewState extends State<SearchView> with SingleTickerProviderStateMixin {
+  static const double _pinnedSearchBarPadding = 4.0;
+  static const double _pinnedSearchBarHeight =
+      42.0 + _pinnedSearchBarPadding * 2;
+
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
 
-  final ScrollController _songScrollController = ScrollController();
   final ScrollController _playlistScrollController = ScrollController();
   final ScrollController _albumScrollController = ScrollController();
   final ScrollController _artistScrollController = ScrollController();
@@ -47,6 +54,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   bool _hasSearched = false;
   bool _showSuggestions = false;
   bool _isIgnoringChanges = false;
+  bool _showPinnedSearch = false;
   
   // 用于手动控制回到顶部按钮的显隐
   bool _showBackToTop = false;
@@ -66,21 +74,73 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   void _handleTabChange() {
     if (_tabController.indexIsChanging) return;
     _updateBackToTopVisibility();
+    if (!_showPinnedSearch) {
+      _updatePinnedSearchVisibility();
+    }
   }
 
   void _updateBackToTopVisibility() {
+    if (_tabController.index == 0) {
+      if (_showBackToTop) {
+        setState(() => _showBackToTop = false);
+      }
+      return;
+    }
+
     ScrollController currentController;
     switch (_tabController.index) {
-      case 0: currentController = _songScrollController; break;
       case 1: currentController = _playlistScrollController; break;
       case 2: currentController = _albumScrollController; break;
       case 3: currentController = _artistScrollController; break;
       default: return;
     }
 
-    final bool shouldShow = currentController.hasClients && currentController.offset > 300;
+    final bool shouldShow =
+        currentController.hasClients && currentController.offset > 300;
     if (_showBackToTop != shouldShow) {
       setState(() => _showBackToTop = shouldShow);
+    }
+  }
+
+  void _updatePinnedSearchVisibility({ScrollMetrics? metrics}) {
+    if (!_hasSearched) {
+      if (_showPinnedSearch) {
+        setState(() => _showPinnedSearch = false);
+      }
+      return;
+    }
+
+    double? currentOffset = metrics?.pixels;
+    if (currentOffset == null) {
+      if (_tabController.index == 0) {
+        if (_showPinnedSearch) {
+          setState(() => _showPinnedSearch = false);
+        }
+        return;
+      }
+
+      ScrollController currentController;
+      switch (_tabController.index) {
+        case 1:
+          currentController = _playlistScrollController;
+          break;
+        case 2:
+          currentController = _albumScrollController;
+          break;
+        case 3:
+          currentController = _artistScrollController;
+          break;
+        default:
+          return;
+      }
+
+      currentOffset =
+          currentController.hasClients ? currentController.offset : 0.0;
+    }
+
+    final shouldShow = currentOffset > 80;
+    if (_showPinnedSearch != shouldShow) {
+      setState(() => _showPinnedSearch = shouldShow);
     }
   }
 
@@ -92,7 +152,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _debounce?.cancel();
-    _songScrollController.dispose();
     _playlistScrollController.dispose();
     _albumScrollController.dispose();
     _artistScrollController.dispose();
@@ -144,7 +203,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     });
 
     if (_hasSearched && value.isNotEmpty) {
-      setState(() => _hasSearched = false);
+      setState(() {
+        _hasSearched = false;
+        _showPinnedSearch = false;
+      });
     }
     setState(() {
       _showSuggestions = _focusNode.hasFocus && value.isNotEmpty && _suggestions.isNotEmpty;
@@ -211,9 +273,10 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   }
 
   void _scrollToTop() {
+    if (_tabController.index == 0) return;
+
     ScrollController currentController;
     switch (_tabController.index) {
-      case 0: currentController = _songScrollController; break;
       case 1: currentController = _playlistScrollController; break;
       case 2: currentController = _albumScrollController; break;
       case 3: currentController = _artistScrollController; break;
@@ -227,6 +290,66 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildSearchHeader(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '搜索',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontSize: 22,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildSearchInput(theme),
+        const SizedBox(height: 24),
+        if (_hasSearched) ...[
+          CustomTabBar(
+            controller: _tabController,
+            tabs: const ['单曲', '歌单', '专辑', '歌手'],
+            onTap: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPinnedSearchBar(ThemeData theme) {
+    if (!_hasSearched) return const SizedBox.shrink();
+    return Container(
+      height: _pinnedSearchBarHeight,
+      padding: EdgeInsets.fromLTRB(
+        40,
+        _pinnedSearchBarPadding,
+        40,
+        _pinnedSearchBarPadding,
+      ),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: theme.dividerColor.withAlpha(30),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Center(
+        child: CustomTabBar(
+          controller: _tabController,
+          tabs: const ['单曲', '歌单', '专辑', '歌手'],
+          onTap: (_) => setState(() {}),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -237,73 +360,73 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           onNotification: (notification) {
             if (notification.metrics.axis == Axis.vertical) {
               _updateBackToTopVisibility();
+              _updatePinnedSearchVisibility(metrics: notification.metrics);
             }
             return false;
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+            padding: EdgeInsets.fromLTRB(
+              40,
+              _showPinnedSearch ? 0 : 32,
+              40,
+              0,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      '搜索',
-                      style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, letterSpacing: -0.5),
-                    ),
-                    const Spacer(),
-                    if (_songResults.isNotEmpty &&
-                        _searchController.text.isNotEmpty &&
-                        !_isLoading &&
-                        _tabController.index == 0 && 
-                        _hasSearched)
-                      SongBatchActionButton(songs: _songResults),
-                  ],
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  child: _showPinnedSearch
+                      ? const SizedBox.shrink()
+                      : _buildSearchHeader(theme),
                 ),
-                const SizedBox(height: 24),
-                _buildSearchInput(theme),
-                const SizedBox(height: 24),
-                if (_hasSearched) ...[
-                  CustomTabBar(
-                    controller: _tabController,
-                    tabs: const ['单曲', '歌单', '专辑', '歌手'],
-                    onTap: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 16),
-                ],
                 Expanded(
-                  child: Stack(
-                    children: [
-                      if (!_hasSearched) 
-                        _buildHotSearches()
-                      else if (_isLoading)
-                        const Center(child: CupertinoActivityIndicator())
-                      else
-                        // 统一隐藏滚动条
-                        ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-                          child: TabBarView(
-                            controller: _tabController,
-                            physics: const BouncingScrollPhysics(),
-                            children: [
-                              _buildSongList(),
-                              _buildPlaylistList(),
-                              _buildAlbumList(),
-                              _buildArtistList(),
-                            ],
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: _showPinnedSearch ? _pinnedSearchBarHeight : 0,
+                      bottom: 0,
+                    ),
+                    child: Stack(
+                      children: [
+                        if (!_hasSearched) 
+                          _buildHotSearches()
+                        else if (_isLoading)
+                          const Center(child: CupertinoActivityIndicator())
+                        else
+                          // 统一隐藏滚动条
+                          ScrollConfiguration(
+                            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                            child: TabBarView(
+                              controller: _tabController,
+                              physics: const BouncingScrollPhysics(),
+                              children: [
+                                _buildSongList(),
+                                _buildPlaylistList(),
+                                _buildAlbumList(),
+                                _buildArtistList(),
+                              ],
+                            ),
                           ),
-                        ),
-                      if (_showSuggestions) 
-                        Positioned.fill(
-                          child: _buildSuggestions(theme),
-                        ),
-                    ],
+                        if (_showSuggestions) 
+                          Positioned.fill(
+                            child: _buildSuggestions(theme),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
           ),
         ),
+        if (_showPinnedSearch)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _buildPinnedSearchBar(theme),
+          ),
         BackToTop(
           show: _showBackToTop,
           onPressed: _scrollToTop,
@@ -544,20 +667,110 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildSongList() {
     if (_songResults.isEmpty) return _buildEmptyState();
-    return ListView.builder(
-      controller: _songScrollController,
-      physics: const BouncingScrollPhysics(),
-      itemCount: _songResults.length,
-      padding: const EdgeInsets.only(bottom: 20),
-      itemBuilder: (context, index) {
-        final song = _songResults[index];
-        return SongCard(
-          song: song,
-          playlist: _songResults,
-          showMore: true,
-          enableDefaultDoubleTapPlay: true,
-        );
-      },
+    final replacePlaylistEnabled =
+        context.select<PersistenceProvider, bool>(
+      (provider) => provider.settings['replacePlaylist'] ?? false,
+    );
+    final theme = Theme.of(context);
+
+    return SongListScaffold(
+      songs: _songResults,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      rowHorizontalPadding: 14,
+      hasCommentsTab: false,
+      enableDefaultDoubleTapPlay: true,
+      onSongDoubleTapPlay: replacePlaylistEnabled
+          ? (song) async {
+              await _replacePlaybackWithSearchSongs(song, _songResults);
+            }
+          : null,
+      headers: [
+        DetailPageSliverHeader(
+          typeLabel: 'SONGS',
+          title: '热门单曲',
+          expandedHeight: kToolbarHeight,
+          expandedPadding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+          collapsedPadding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+          expandedCover: _buildSearchMiniCover(theme),
+          collapsedCover: _buildSearchMiniCover(theme),
+          detailChildren: const <Widget>[],
+          actions: DetailPageActionRow(
+            playLabel: '播放',
+            onPlay: () => _playSearchSongs(_songResults),
+            songs: _songResults,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _playSearchSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前搜索结果暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithSearchSongs(songs[firstPlayableIndex], songs));
+  }
+
+  Future<void> _replacePlaybackWithSearchSongs(
+    Song song,
+    List<Song> songs,
+  ) async {
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前搜索结果暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
+  }
+
+  Widget _buildSearchCover(ThemeData theme) {
+    return Container(
+      width: 136,
+      height: 136,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(220),
+            theme.colorScheme.secondary.withAlpha(180),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.search,
+        size: 56,
+        color: theme.colorScheme.onPrimary,
+      ),
+    );
+  }
+
+  Widget _buildSearchMiniCover(ThemeData theme) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(200),
+            theme.colorScheme.secondary.withAlpha(160),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.search,
+        size: 16,
+        color: theme.colorScheme.onPrimary,
+      ),
     );
   }
 

@@ -1,9 +1,14 @@
-import 'package:flutter/cupertino.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
-import '../widgets/song_card.dart';
-import '../widgets/batch_selection_scaffold.dart';
-import '../widgets/back_to_top.dart';
+import 'package:provider/provider.dart';
+import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/detail_page_action_row.dart';
+import '../../providers/audio_provider.dart';
+import '../widgets/custom_toast.dart';
+import '../../providers/persistence_provider.dart';
 
 class RecommendSongView extends StatefulWidget {
   const RecommendSongView({super.key});
@@ -13,7 +18,6 @@ class RecommendSongView extends StatefulWidget {
 }
 
 class _RecommendSongViewState extends State<RecommendSongView> {
-  final ScrollController _scrollController = ScrollController();
   late Future<List<Song>> _recommendSongsFuture;
 
   @override
@@ -24,8 +28,31 @@ class _RecommendSongViewState extends State<RecommendSongView> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _playRecommendSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前推荐暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithRecommendSongs(songs[firstPlayableIndex], songs));
+  }
+
+  Future<void> _replacePlaybackWithRecommendSongs(
+    Song song,
+    List<Song> songs,
+  ) async {
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前推荐暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
   }
 
   @override
@@ -34,46 +61,106 @@ class _RecommendSongViewState extends State<RecommendSongView> {
       future: _recommendSongsFuture,
       builder: (context, snapshot) {
         final songs = snapshot.data ?? [];
-        return BatchSelectionScaffold(
-          title: '每日推荐',
+        final replacePlaylistEnabled =
+            context.select<PersistenceProvider, bool>(
+          (provider) => provider.settings['replacePlaylist'] ?? false,
+        );
+        final theme = Theme.of(context);
+
+        return SongListScaffold(
           songs: songs,
-          body: _buildBody(snapshot),
+          isLoading: snapshot.connectionState == ConnectionState.waiting,
+          hasCommentsTab: false,
+          enableDefaultDoubleTapPlay: true,
+          onSongDoubleTapPlay: replacePlaylistEnabled
+              ? (song) async {
+                  await _replacePlaybackWithRecommendSongs(song, songs);
+                }
+              : null,
+          headers: [
+            DetailPageSliverHeader(
+              typeLabel: 'RECOMMEND',
+              title: '每日推荐',
+              expandedHeight: 200,
+              expandedCover: _buildExpandedCover(context),
+              collapsedCover: _buildCollapsedCover(context),
+              detailChildren: [
+                Text(
+                  '为你量身定制的每日歌单',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              actions: DetailPageActionRow(
+                playLabel: '播放',
+                onPlay: () => _playRecommendSongs(songs),
+                songs: songs,
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildBody(AsyncSnapshot<List<Song>> snapshot) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
-      return const Center(child: CupertinoActivityIndicator());
-    }
-    if (snapshot.hasError || !snapshot.hasData) {
-      return const Center(child: Text('加载失败'));
-    }
-    final songs = snapshot.data!;
-    if (songs.isEmpty) {
-      return const Center(child: Text('暂无推荐歌曲'));
-    }
-
-    return Stack(
-      children: [
-        ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(28, 0, 28, 20),
-          itemCount: songs.length,
-          itemBuilder: (context, index) {
-            final song = songs[index];
-            return SongCard(
-              song: song,
-              playlist: songs,
-              showMore: true,
-              enableDefaultDoubleTapPlay: true,
-            );
-          },
+  Widget _buildExpandedCover(BuildContext context) {
+    return Container(
+      width: 136,
+      height: 136,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Theme.of(context).colorScheme.primary.withAlpha(220),
+            Theme.of(context).colorScheme.secondary.withAlpha(180),
+          ],
         ),
-        BackToTop(controller: _scrollController),
-      ],
+      ),
+      child: Center(
+        child: Text(
+          '${DateTime.now().day}',
+          style: const TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCollapsedCover(BuildContext context) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Theme.of(context).colorScheme.primary.withAlpha(200),
+            Theme.of(context).colorScheme.secondary.withAlpha(160),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          '${DateTime.now().day}',
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+      ),
     );
   }
 }
-

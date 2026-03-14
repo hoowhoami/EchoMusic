@@ -2,6 +2,18 @@ import 'package:flutter/material.dart';
 
 class DetailPageSliverHeader extends StatelessWidget {
   static const double _collapseThreshold = 156;
+  static const EdgeInsets _defaultExpandedPadding = EdgeInsets.fromLTRB(
+    24,
+    0,
+    24,
+    10,
+  );
+  static const EdgeInsets _defaultCollapsedPadding = EdgeInsets.fromLTRB(
+    20,
+    0,
+    20,
+    0,
+  );
 
   final String typeLabel;
   final String title;
@@ -10,6 +22,8 @@ class DetailPageSliverHeader extends StatelessWidget {
   final List<Widget> detailChildren;
   final Widget? actions;
   final double expandedHeight;
+  final EdgeInsetsGeometry? expandedPadding;
+  final EdgeInsetsGeometry? collapsedPadding;
 
   const DetailPageSliverHeader({
     super.key,
@@ -20,6 +34,8 @@ class DetailPageSliverHeader extends StatelessWidget {
     this.detailChildren = const <Widget>[],
     this.actions,
     this.expandedHeight = 244,
+    this.expandedPadding,
+    this.collapsedPadding,
   });
 
   @override
@@ -70,13 +86,14 @@ class DetailPageSliverHeader extends StatelessWidget {
   }
 
   Widget _buildExpandedBody(BuildContext context, ThemeData theme) {
+    final contentPadding = expandedPadding ?? _defaultExpandedPadding;
     return Column(
       key: const ValueKey('expanded'),
       children: [
         const SizedBox(height: 20),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+            padding: contentPadding,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -92,11 +109,12 @@ class DetailPageSliverHeader extends StatelessWidget {
   }
 
   Widget _buildCollapsedBar(BuildContext context, ThemeData theme) {
+    final contentPadding = collapsedPadding ?? _defaultCollapsedPadding;
     return SizedBox(
       key: const ValueKey('collapsed'),
       height: kToolbarHeight,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+        padding: contentPadding,
         child: Row(
           children: [
             collapsedCover,

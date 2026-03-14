@@ -27,6 +27,11 @@ class SongCard extends StatefulWidget {
   final bool showCover;
   final double coverSize;
   final bool showMore;
+  final bool showAlbum;
+  final bool showDuration;
+  final double albumWidth;
+  final double durationWidth;
+  final double rowHorizontalPadding;
   final bool suppressHover;
   final bool isRowSelected;
   final VoidCallback? onSelect;
@@ -42,6 +47,11 @@ class SongCard extends StatefulWidget {
     this.showCover = true,
     this.coverSize = SongTableLayout.listCoverSize,
     this.showMore = false,
+    this.showAlbum = true,
+    this.showDuration = true,
+    this.albumWidth = SongTableLayout.listAlbumWidth,
+    this.durationWidth = SongTableLayout.listDurationWidth,
+    this.rowHorizontalPadding = SongTableLayout.listRowHorizontalPadding,
     this.suppressHover = false,
     this.isRowSelected = false,
     this.onSelect,
@@ -630,9 +640,8 @@ class _SongCardState extends State<SongCard> {
                                 )
                               : null,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal:
-                                  SongTableLayout.listRowHorizontalPadding,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: widget.rowHorizontalPadding,
                               vertical: 5,
                             ),
                             child: Row(
@@ -784,53 +793,62 @@ class _SongCardState extends State<SongCard> {
                                   isPlayable: isPlayable,
                                   theme: theme,
                                 ),
-                                if (widget.showMore) ...[
+                                if (widget.showMore &&
+                                    (widget.showAlbum ||
+                                        widget.showDuration)) ...[
                                   const SizedBox(
                                     width: SongTableLayout.listAlbumGap,
                                   ),
-                                  SizedBox(
-                                    width: SongTableLayout.listAlbumWidth,
-                                    child: _buildLinkText(
-                                      text: widget.song.displayAlbumName,
-                                      onTap:
-                                          !isSelectionMode &&
-                                              _hasAlbumDetail &&
-                                              !isCurrentAlbumDetail
-                                          ? _openAlbumDetail
-                                          : null,
-                                      style: TextStyle(
-                                        color: theme
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                            .withAlpha(isPlayable ? 255 : 140),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    width: SongTableLayout.listDurationGap,
-                                  ),
-                                  SizedBox(
-                                    width: SongTableLayout.listDurationWidth,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        _formatDuration(widget.song.duration),
+                                  if (widget.showAlbum)
+                                    SizedBox(
+                                      width: widget.albumWidth,
+                                      child: _buildLinkText(
+                                        text: widget.song.displayAlbumName,
+                                        onTap:
+                                            !isSelectionMode &&
+                                                _hasAlbumDetail &&
+                                                !isCurrentAlbumDetail
+                                            ? _openAlbumDetail
+                                            : null,
                                         style: TextStyle(
                                           color: theme
                                               .colorScheme
                                               .onSurfaceVariant
                                               .withAlpha(
-                                                isPlayable ? 150 : 100,
+                                                isPlayable ? 255 : 140,
                                               ),
                                           fontSize: 12,
-                                          fontFamily: 'monospace',
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ),
-                                  ),
+                                  if (widget.showDuration) ...[
+                                    const SizedBox(
+                                      width: SongTableLayout.listDurationGap,
+                                    ),
+                                    SizedBox(
+                                      width: widget.durationWidth,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          _formatDuration(
+                                            widget.song.duration,
+                                          ),
+                                          style: TextStyle(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withAlpha(
+                                                  isPlayable ? 150 : 100,
+                                                ),
+                                            fontSize: 12,
+                                            fontFamily: 'monospace',
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                                 const SizedBox(width: 8),
                                 Builder(

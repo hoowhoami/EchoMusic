@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/song.dart';
 import '../../models/playlist.dart';
 import 'song_list.dart';
+import 'song_table_layout.dart';
 
 class SongListScaffold extends StatelessWidget {
   final List<Song> songs;
@@ -11,6 +12,8 @@ class SongListScaffold extends StatelessWidget {
   final List<Widget>? commentSlivers;
   final bool hasCommentsTab;
   final Color? backgroundColor;
+  final EdgeInsetsGeometry padding;
+  final double rowHorizontalPadding;
   final VoidCallback? onLoadMore;
   final VoidCallback? onCommentsLoadMore;
   final bool hasMore;
@@ -23,6 +26,10 @@ class SongListScaffold extends StatelessWidget {
   final String? commentsTabBadgeLabel;
   final ValueChanged<SongListPrimaryTab>? onPrimaryTabChanged;
   final SongListPrimaryTab initialPrimaryTab;
+  final bool showStickyToolbar;
+  final bool showTableHeader;
+  final bool showSearchField;
+  final bool showLocateButton;
 
   const SongListScaffold({
     super.key,
@@ -33,6 +40,8 @@ class SongListScaffold extends StatelessWidget {
     this.commentSlivers,
     this.hasCommentsTab = true,
     this.backgroundColor,
+    this.padding = const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    this.rowHorizontalPadding = SongTableLayout.listRowHorizontalPadding,
     this.onLoadMore,
     this.onCommentsLoadMore,
     this.hasMore = false,
@@ -45,6 +54,10 @@ class SongListScaffold extends StatelessWidget {
     this.commentsTabBadgeLabel,
     this.onPrimaryTabChanged,
     this.initialPrimaryTab = SongListPrimaryTab.songs,
+    this.showStickyToolbar = true,
+    this.showTableHeader = true,
+    this.showSearchField = true,
+    this.showLocateButton = true,
   });
 
   @override
@@ -60,6 +73,8 @@ class SongListScaffold extends StatelessWidget {
         headers: headers,
         commentSlivers: commentSlivers,
         hasCommentsTab: hasCommentsTab,
+        padding: padding,
+        rowHorizontalPadding: rowHorizontalPadding,
         onLoadMore: onLoadMore,
         onCommentsLoadMore: onCommentsLoadMore,
         hasMore: hasMore,
@@ -72,6 +87,10 @@ class SongListScaffold extends StatelessWidget {
         commentsTabBadgeLabel: commentsTabBadgeLabel,
         onPrimaryTabChanged: onPrimaryTabChanged,
         initialPrimaryTab: initialPrimaryTab,
+        showStickyToolbar: showStickyToolbar,
+        showTableHeader: showTableHeader,
+        showSearchField: showSearchField,
+        showLocateButton: showLocateButton,
       ),
     );
   }
