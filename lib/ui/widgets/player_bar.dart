@@ -1486,9 +1486,9 @@ void _showQueueDrawer(BuildContext context) {
     pageBuilder: (context, _, _) => Align(
       alignment: Alignment.centerRight,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 96),
+        padding: const EdgeInsets.only(bottom: PlayerBar.height),
         child: Material(
-          elevation: 20,
+          elevation: 0,
           borderRadius: const BorderRadius.horizontal(
             left: Radius.circular(16),
           ),

@@ -97,13 +97,6 @@ class _QueueDrawerState extends State<QueueDrawer> {
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(40),
-            blurRadius: 20,
-            offset: const Offset(0, -5),
-          ),
-        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
