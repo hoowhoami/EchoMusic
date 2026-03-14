@@ -234,6 +234,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
                         playlist: playlist,
                         onTap: () =>
                             context.read<NavigationProvider>().openPlaylist(playlist),
+                        titleMaxLines: 1,
                       );
                     },
                   ),

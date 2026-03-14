@@ -150,7 +150,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => PlaylistCard.grid(
                           playlist: playlists[index],
-                          subtitle: '为您推荐',
+                          titleMaxLines: 1,
                           onTap: () =>
                               context.read<NavigationProvider>().openPlaylist(playlists[index]),
                         ),
@@ -193,7 +193,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                           final playlist = Playlist.fromIP(ip);
                           return PlaylistCard.grid(
                             playlist: playlist,
-                            subtitle: '编辑精选',
+                            titleMaxLines: 1,
                             onTap: () =>
                                 context.read<NavigationProvider>().openPlaylist(playlist),
                           );
@@ -306,29 +306,12 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
   Widget _buildHeader(BuildContext context, String title) {
     final theme = Theme.of(context);
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           title,
           style: theme.textTheme.titleMedium?.copyWith(
             fontSize: 15,
             color: theme.colorScheme.onSurface,
-          ),
-        ),
-        TextButton(
-          onPressed: () {},
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-          child: Text(
-            '更多',
-            style: TextStyle(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
           ),
         ),
       ],

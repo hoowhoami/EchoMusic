@@ -791,9 +791,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         final playlist = _playlistResults[index];
         return PlaylistCard.grid(
           playlist: playlist,
-          titleMaxLines: 2,
-          subtitle:
-              '${playlist.count} 首歌曲 • ${playlist.nickname.isNotEmpty ? "${playlist.nickname}" : "未知作者"}',
+          titleMaxLines: 1,
           onTap: () =>
               context.read<NavigationProvider>().openPlaylist(playlist),
         );

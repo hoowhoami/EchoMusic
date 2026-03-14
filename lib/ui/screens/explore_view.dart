@@ -79,7 +79,7 @@ class _ExploreViewState extends State<ExploreView> {
                     playlist: playlist,
                     onTap: () =>
                         context.read<NavigationProvider>().openPlaylist(playlist),
-                    titleMaxLines: 2,
+                    titleMaxLines: 1,
                     coverRadius: 12,
                     showShadow: false,
                   ),

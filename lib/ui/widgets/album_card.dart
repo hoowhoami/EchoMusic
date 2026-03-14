@@ -19,6 +19,7 @@ class AlbumCard extends StatefulWidget {
   final TextStyle? titleStyle;
   final TextStyle? subtitleStyle;
   final int coverImageSize;
+  static const double _gridFooterHeight = 44;
 
   const AlbumCard.grid({
     super.key,
@@ -102,45 +103,53 @@ class _AlbumCardState extends State<AlbumCard> {
             borderRadius: BorderRadius.circular(widget.coverRadius + 6),
             boxShadow: style.shadows,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(widget.coverRadius),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CoverImage(
-                        url: widget.album.pic,
-                        fit: BoxFit.cover,
-                        borderRadius: widget.coverRadius,
-                        showShadow: false,
-                        size: widget.coverImageSize,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final coverHeight =
+                  (constraints.maxHeight - AlbumCard._gridFooterHeight)
+                      .clamp(0.0, constraints.maxHeight);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: coverHeight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(widget.coverRadius),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CoverImage(
+                            url: widget.album.pic,
+                            fit: BoxFit.cover,
+                            borderRadius: widget.coverRadius,
+                            showShadow: false,
+                            size: widget.coverImageSize,
+                          ),
+                          if (_isHovering)
+                            Container(color: style.hoverOverlayStrong),
+                        ],
                       ),
-                      if (_isHovering)
-                        Container(color: style.hoverOverlayStrong),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                widget.album.name,
-                maxLines: widget.titleMaxLines,
-                overflow: TextOverflow.ellipsis,
-                style: resolvedTitleStyle,
-              ),
-              if (widget.subtitle != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  widget.subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: resolvedSubtitleStyle,
-                ),
-              ],
-            ],
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.album.name,
+                    maxLines: widget.titleMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: resolvedTitleStyle,
+                  ),
+                  if (widget.subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: resolvedSubtitleStyle,
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),

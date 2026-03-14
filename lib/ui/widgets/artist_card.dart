@@ -17,6 +17,7 @@ class ArtistCard extends StatefulWidget {
   final TextStyle? titleStyle;
   final TextStyle? subtitleStyle;
   final int coverImageSize;
+  static const double _gridFooterHeight = 48;
 
   const ArtistCard.list({
     super.key,
@@ -180,44 +181,56 @@ class _ArtistCardState extends State<ArtistCard> {
             borderRadius: BorderRadius.circular(20),
             boxShadow: style.shadows,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: ClipOval(
-                  child: Stack(
-                    children: [
-                      CoverImage(
-                        url: widget.artist.pic,
-                        width: widget.coverSize,
-                        height: widget.coverSize,
-                        borderRadius: 0,
-                        showShadow: false,
-                        size: widget.coverImageSize,
-                      ),
-                      if (_isHovering)
-                        Positioned.fill(
-                          child: Container(color: style.hoverOverlayStrong),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final coverHeight =
+                  (constraints.maxHeight - ArtistCard._gridFooterHeight)
+                      .clamp(0.0, constraints.maxHeight);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: coverHeight,
+                    child: Center(
+                      child: ClipOval(
+                        child: Stack(
+                          children: [
+                            CoverImage(
+                              url: widget.artist.pic,
+                              width: widget.coverSize,
+                              height: widget.coverSize,
+                              borderRadius: 0,
+                              showShadow: false,
+                              size: widget.coverImageSize,
+                            ),
+                            if (_isHovering)
+                              Positioned.fill(
+                                child: Container(
+                                  color: style.hoverOverlayStrong,
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                widget.artist.name,
-                maxLines: widget.titleMaxLines,
-                overflow: TextOverflow.ellipsis,
-                style: resolvedTitleStyle,
-              ),
-              if (subtitleText != null)
-                Text(
-                  subtitleText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: resolvedSubtitleStyle,
-                ),
-            ],
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.artist.name,
+                    maxLines: widget.titleMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: resolvedTitleStyle,
+                  ),
+                  if (subtitleText != null)
+                    Text(
+                      subtitleText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: resolvedSubtitleStyle,
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ),

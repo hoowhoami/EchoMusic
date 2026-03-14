@@ -19,13 +19,14 @@ class PlaylistCard extends StatefulWidget {
   final TextStyle? titleStyle;
   final TextStyle? subtitleStyle;
   final int coverImageSize;
+  static const double _gridFooterHeight = 44;
 
   const PlaylistCard.grid({
     super.key,
     required this.playlist,
     this.onTap,
     this.subtitle,
-    this.titleMaxLines = 2,
+    this.titleMaxLines = 1,
     this.coverRadius = 14,
     this.showShadow = true,
     this.titleStyle,
@@ -64,6 +65,23 @@ class _PlaylistCardState extends State<PlaylistCard> {
     setState(() => _isHovering = hovering);
   }
 
+  String? _resolveSubtitle() {
+    if (widget.subtitle != null) return widget.subtitle;
+
+    final playlist = widget.playlist;
+    final author = playlist.nickname.trim();
+    if (author.isEmpty) return null;
+
+    final count = playlist.count > 0
+        ? playlist.count
+        : (playlist.songs?.length ?? 0);
+    if (count > 0) {
+      return '$author · $count 首歌曲';
+    }
+
+    return author;
+  }
+
   @override
   Widget build(BuildContext context) {
     return widget.layout == PlaylistCardLayout.list
@@ -82,10 +100,12 @@ class _PlaylistCardState extends State<PlaylistCard> {
           height: 1.1,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
-        theme.textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
+        TextStyle(
           color: theme.colorScheme.onSurfaceVariant,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
         );
+    final subtitle = _resolveSubtitle();
 
     return MouseRegion(
       onEnter: (_) => _setHover(true),
@@ -101,45 +121,53 @@ class _PlaylistCardState extends State<PlaylistCard> {
             borderRadius: BorderRadius.circular(widget.coverRadius + 6),
             boxShadow: style.shadows,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(widget.coverRadius),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CoverImage(
-                        url: widget.playlist.pic,
-                        fit: BoxFit.cover,
-                        borderRadius: widget.coverRadius,
-                        showShadow: false,
-                        size: widget.coverImageSize,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final coverHeight =
+                  (constraints.maxHeight - PlaylistCard._gridFooterHeight)
+                      .clamp(0.0, constraints.maxHeight);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    height: coverHeight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(widget.coverRadius),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CoverImage(
+                            url: widget.playlist.pic,
+                            fit: BoxFit.cover,
+                            borderRadius: widget.coverRadius,
+                            showShadow: false,
+                            size: widget.coverImageSize,
+                          ),
+                          if (_isHovering)
+                            Container(color: style.hoverOverlayStrong),
+                        ],
                       ),
-                      if (_isHovering)
-                        Container(color: style.hoverOverlayStrong),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                widget.playlist.name,
-                maxLines: widget.titleMaxLines,
-                overflow: TextOverflow.ellipsis,
-                style: resolvedTitleStyle,
-              ),
-              if (widget.subtitle != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  widget.subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: resolvedSubtitleStyle,
-                ),
-              ],
-            ],
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.playlist.name,
+                    maxLines: widget.titleMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: resolvedTitleStyle,
+                  ),
+                  if (subtitle != null && subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: resolvedSubtitleStyle,
+                    ),
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -160,6 +188,7 @@ class _PlaylistCardState extends State<PlaylistCard> {
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurfaceVariant,
         );
+    final subtitle = _resolveSubtitle();
 
     return MouseRegion(
       onEnter: (_) => _setHover(true),
@@ -207,10 +236,10 @@ class _PlaylistCardState extends State<PlaylistCard> {
                       overflow: TextOverflow.ellipsis,
                       style: resolvedTitleStyle,
                     ),
-                    if (widget.subtitle != null) ...[
+                    if (subtitle != null && subtitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        widget.subtitle!,
+                        subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: resolvedSubtitleStyle,
