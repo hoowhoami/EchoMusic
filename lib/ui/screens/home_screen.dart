@@ -81,9 +81,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _navigateTo(int index) {
+  Future<void> _navigateTo(int index) async {
     context.read<SelectionProvider>().reset();
-    context.read<NavigationProvider>().navigateToRoot(index);
+    await context.read<NavigationProvider>().navigateToRootWithGuard(index);
   }
 
   void _pushPlaylist(Playlist playlist) {
@@ -297,9 +297,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     itemCount: 7,
                                     itemBuilder: _buildRootView,
                                     activationVersion:
-                                        provider.rootActivationVersion,
+                                        provider.rootEntryVersion,
                                     recreateOnActivateIndices:
-                                        const <int>{3, 4},
+                                        const <int>{0, 1, 2, 3, 4, 5, 6},
                                   ),
                             ),
                       ),

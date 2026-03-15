@@ -186,6 +186,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
     final result = await _fetchSongsPage(1);
     final songs = result.songs;
 
+    if (_isLikedPlaylist()) {
+      _syncLikedPlaylistFavorites(songs);
+    }
+
     if (mounted) {
       setState(() {
         _songs = songs;
@@ -448,6 +452,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         nextPage++;
       }
 
+      if (_isLikedPlaylist()) {
+        _syncLikedPlaylistFavorites(songs);
+      }
+
       final resolvedSongs = List<Song>.unmodifiable(songs);
       _allSongsCache = resolvedSongs;
       _resolveAllSongsFuture = Future.value(resolvedSongs);
@@ -472,6 +480,28 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
   void _attachPlaybackPrefetch(AudioProvider audioProvider, int sessionId) {
     _playbackAppendProvider = audioProvider;
     _playbackAppendSessionId = sessionId;
+  }
+
+  bool _isLikedPlaylist() {
+    final likedId = _userProvider.likedPlaylistId?.toString();
+    if (likedId == null || likedId.isEmpty) return false;
+    final playlist = _detailedPlaylist ?? _routeArgs.playlist;
+    final playlistId = playlist.id.toString();
+    final playlistGid = playlist.listCreateGid?.toString();
+    final playlistListId = playlist.listCreateListid?.toString();
+    return likedId == playlistId ||
+        (playlistGid != null && likedId == playlistGid) ||
+        (playlistListId != null && likedId == playlistListId);
+  }
+
+  void _syncLikedPlaylistFavorites(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final persistenceProvider = context.read<PersistenceProvider>();
+    final newFavorites = songs
+        .where((song) => !persistenceProvider.isFavorite(song))
+        .toList(growable: false);
+    if (newFavorites.isEmpty) return;
+    unawaited(persistenceProvider.syncCloudFavorites(newFavorites));
   }
 
   void _playPlaylist() {

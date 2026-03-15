@@ -197,6 +197,7 @@ class _SongListState extends State<SongList> {
     final currentSong = audioProvider.currentSong;
     if (currentSong == null || !_scrollController.hasClients) return;
 
+
     final index = filteredSongs.indexWhere(
       (song) => song.isSameSong(currentSong),
     );

@@ -392,10 +392,9 @@ class _CloudViewState extends State<CloudView>
     final isAuthenticated = context.select<UserProvider, bool>(
       (provider) => provider.isAuthenticated,
     );
-    final currentRootIndex = context.select<NavigationProvider, int>(
-      (provider) => provider.currentRootIndex,
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
     );
-    final isCurrentRoot = currentRootIndex == _rootIndex;
     final theme = Theme.of(context);
 
     if (!isAuthenticated) {

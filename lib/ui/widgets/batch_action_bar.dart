@@ -255,13 +255,19 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
   void _playSongs(BuildContext context, List<Song> songs) {
     if (songs.isEmpty) return;
 
-    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-    if (firstPlayableIndex == -1) {
-      CustomToast.error(context, '所选歌曲暂无可用音源');
+    final hasPlayable = songs.any((song) => song.isPlayable);
+    if (!hasPlayable) {
+      if (songs.any((song) => song.isNoCopyright)) {
+        CustomToast.error(context, '所选歌曲包含无版权内容');
+      } else if (songs.any((song) => song.isPayBlocked || song.isPaid)) {
+        CustomToast.error(context, '所选歌曲包含需要购买的内容');
+      } else {
+        CustomToast.error(context, '所选歌曲暂无可用音源');
+      }
       return;
     }
 
-    context.read<AudioProvider>().playSong(songs[firstPlayableIndex], playlist: songs);
+    context.read<AudioProvider>().playSong(songs.first, playlist: songs);
   }
 
   Future<void> _showBatchActions(

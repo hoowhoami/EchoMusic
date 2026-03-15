@@ -60,10 +60,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     final userProvider = context.watch<UserProvider>();
     final user = userProvider.user;
     final theme = Theme.of(context);
-    final currentRootIndex = context.select<NavigationProvider, int>(
-      (provider) => provider.currentRootIndex,
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
     );
-    final isCurrentRoot = currentRootIndex == _rootIndex;
 
     if (!userProvider.isAuthenticated) {
       _loaded = false;

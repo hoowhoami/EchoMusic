@@ -332,10 +332,9 @@ class _HistoryViewState extends State<HistoryView>
     final isAuthenticated = context.select<UserProvider, bool>(
       (provider) => provider.isAuthenticated,
     );
-    final currentRootIndex = context.select<NavigationProvider, int>(
-      (provider) => provider.currentRootIndex,
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
     );
-    final isCurrentRoot = currentRootIndex == _rootIndex;
     final persistenceProvider = context.watch<PersistenceProvider>();
     final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
       (provider) => provider.settings['replacePlaylist'] ?? false,

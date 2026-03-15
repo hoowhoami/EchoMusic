@@ -12,6 +12,7 @@ class Song {
   final int? privilege;
   final List<Map<String, dynamic>>? relateGoods;
   final String? source;
+  final int? payBlockTpl;
 
   Song({
     required this.hash,
@@ -27,6 +28,7 @@ class Song {
     this.privilege,
     this.relateGoods,
     this.source,
+    this.payBlockTpl,
   });
 
   // For /top/song and /everyday/recommend
@@ -35,6 +37,12 @@ class Song {
       if (value == null) return 0;
       if (value is int) return value;
       return int.tryParse(value.toString()) ?? 0;
+    }
+
+    int? parseOptionalInt(dynamic value) {
+      if (value == null) return null;
+      if (value is int) return value;
+      return int.tryParse(value.toString());
     }
 
     var singersList = json['authors'] as List? ?? json['singerinfo'] as List? ?? [];
@@ -48,6 +56,9 @@ class Song {
                    json['cover'] ?? '';
     cover = cover.replaceAll('{size}', '400');
 
+    final privilegeValue =
+        json.containsKey('privilege') ? parseOptionalInt(json['privilege']) : null;
+
     return Song(
       hash: (json['hash'] ?? json['hash_128'] ?? json['FileHash'] ?? '').toString(),
       name: _processName((json['songname'] ?? json['filename'] ?? json['name'] ?? '').toString()),
@@ -58,7 +69,8 @@ class Song {
       cover: cover,
       mvHash: (json['video_hash'] ?? json['mvhash'])?.toString(),
       mixSongId: parseInt(json['audio_id'] ?? json['album_audio_id'] ?? json['mixsongid'] ?? 0),
-      privilege: parseInt(json['privilege'] ?? 0),
+      privilege: privilegeValue,
+      payBlockTpl: parseInt(json['trans_param']?['pay_block_tpl'] ?? 0),
     );
   }
 
@@ -72,6 +84,12 @@ class Song {
       if (value == null) return 0;
       if (value is int) return value;
       return int.tryParse(value.toString()) ?? 0;
+    }
+
+    int? parseOptionalInt(dynamic value) {
+      if (value == null) return null;
+      if (value is int) return value;
+      return int.tryParse(value.toString());
     }
 
     String rawName = (json['songname'] ??
@@ -128,6 +146,12 @@ class Song {
 
     int duration = parseInt(json['timelen'] ?? audioInfo['duration_128'] ?? audioInfo['duration'] ?? 0);
 
+    final privilegeValue = json.containsKey('privilege')
+        ? parseOptionalInt(json['privilege'])
+        : (audioInfo.containsKey('privilege')
+            ? parseOptionalInt(audioInfo['privilege'])
+            : null);
+
     return Song(
       hash: hash,
       name: title,
@@ -139,9 +163,10 @@ class Song {
       mvHash: (json['mvhash'] ?? json['video_hash'])?.toString(),
       mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? audioInfo['audio_id'] ?? 0),
       fileId: json['fileid'] != null ? parseInt(json['fileid']) : null,
-      privilege: parseInt(json['privilege'] ?? 0),
+      privilege: privilegeValue,
       relateGoods: (json['relate_goods'] as List?)?.cast<Map<String, dynamic>>(),
       source: json['source']?.toString(),
+      payBlockTpl: parseInt(transParam['pay_block_tpl'] ?? 0),
     );
   }
 
@@ -191,6 +216,7 @@ class Song {
       cover: (json['cover'] ?? json['pic'] ?? albumInfo['sizable_cover'] ?? '').toString(),
       mixSongId: parseInt(json['mixsongid'] ?? json['audio_id'] ?? audioInfo['audio_id'] ?? 0),
       source: 'cloud',
+      payBlockTpl: parseInt(json['trans_param']?['pay_block_tpl'] ?? 0),
     );
   }
 
@@ -216,6 +242,12 @@ class Song {
       return int.tryParse(value.toString()) ?? 0;
     }
 
+    int? parseOptionalInt(dynamic value) {
+      if (value == null) return null;
+      if (value is int) return value;
+      return int.tryParse(value.toString());
+    }
+
     String cover = albumInfo['sizable_cover'] ?? transParam['union_cover'] ?? '';
     cover = cover.replaceAll('{size}', '400');
 
@@ -227,6 +259,9 @@ class Song {
       singers = [SingerInfo(id: 0, name: json['author_name'].toString())];
     }
 
+    final privilegeValue =
+        json.containsKey('privilege') ? parseOptionalInt(json['privilege']) : null;
+
     return Song(
       hash: (audioInfo['hash_128'] ?? audioInfo['hash'] ?? '').toString(),
       name: _processName((json['songname'] ?? '').toString()),
@@ -236,7 +271,8 @@ class Song {
       duration: duration,
       cover: cover,
       mixSongId: parseInt(json['audio_id'] ?? 0),
-      privilege: parseInt(json['privilege'] ?? 0),
+      privilege: privilegeValue,
+      payBlockTpl: parseInt(transParam['pay_block_tpl'] ?? 0),
     );
   }
 
@@ -277,6 +313,7 @@ class Song {
       duration: duration,
       cover: cover,
       mixSongId: parseInt(base['audio_id'] ?? 0),
+      payBlockTpl: parseInt(transParam['pay_block_tpl'] ?? 0),
     );
   }
 
@@ -291,6 +328,10 @@ class Song {
       'name': s['name'],
     })).toList() ?? [];
 
+    final privilegeValue = json.containsKey('AlbumPrivilege')
+        ? int.tryParse(json['AlbumPrivilege'].toString())
+        : null;
+
     return Song(
       hash: (json['FileHash'] ?? '').toString(),
       name: _processName((json['SongName'] ?? json['FileName'] ?? '').toString()),
@@ -302,13 +343,14 @@ class Song {
       mvHash: json['MVHash']?.toString(),
       mixSongId: int.tryParse((json['MixSongID'] ?? 0).toString()) ?? 0,
       fileId: int.tryParse((json['Audioid'] ?? 0).toString()),
-      privilege: int.tryParse((json['AlbumPrivilege'] ?? 0).toString()),
+      privilege: privilegeValue,
       relateGoods: relateGoods,
+      payBlockTpl: int.tryParse((json['pay_block_tpl'] ?? 0).toString()),
     );
   }
 
   // Specifically for Artist Audios API results
-  factory Song.fromArtistSongJson(Map<String, dynamic> json) {
+  factory Song.fromArtistSongJson(int id, Map<String, dynamic> json) {
     final relateGoods = <Map<String, dynamic>>[];
     if (json['hash_320'] != null) relateGoods.add({'hash': json['hash_320'], 'quality': '320'});
     if (json['hash_flac'] != null) relateGoods.add({'hash': json['hash_flac'], 'quality': 'flac'});
@@ -318,11 +360,12 @@ class Song {
       name: (json['audio_name'] ?? '').toString(),
       albumName: (json['album_name'] ?? '').toString(),
       albumId: json['album_id']?.toString(),
-      singers: [SingerInfo(id: 0, name: (json['author_name'] ?? '未知歌手').toString())],
+      singers: [SingerInfo(id: id, name: (json['author_name'] ?? '未知歌手').toString())],
       duration: (int.tryParse((json['timelength'] ?? 0).toString()) ?? 0) ~/ 1000,
       cover: (json['trans_param']?['union_cover'] ?? '').toString().replaceAll('{size}', '400'),
-      mixSongId: int.tryParse((json['mixsongid'] ?? 0).toString()) ?? 0,
+      mixSongId: int.tryParse((json['mixsongid'] ?? json['album_audio_id'] ?? 0).toString()) ?? 0,
       relateGoods: relateGoods,
+      payBlockTpl: int.tryParse((json['trans_param']?['pay_block_tpl'] ?? 0).toString()),
     );
   }
 
@@ -354,11 +397,15 @@ class Song {
 
   bool get isPaid => privilege == 30;
 
-  bool get isUnavailable => privilege == 0 || privilege == 40;
+  bool get isNoCopyright => privilege == 5;
 
-  bool get canPlay => !isUnavailable;
+  bool get isPayBlocked => payBlockTpl == 2;
 
-  bool get isPlayable => hash.isNotEmpty;
+  bool get isUnavailable => privilege == 40;
+
+  bool get canPlay => !isUnavailable && !isNoCopyright && !isPayBlocked;
+
+  bool get isPlayable => hash.isNotEmpty && canPlay;
 
   String get privilegeLabel {
     if (isUnavailable) return '不可用';
@@ -408,6 +455,7 @@ class Song {
       'privilege': privilege,
       'relate_goods': relateGoods,
       'source': source,
+      'trans_param': {'pay_block_tpl': payBlockTpl},
     };
   }
 }

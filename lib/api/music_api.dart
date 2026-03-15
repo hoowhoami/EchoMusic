@@ -727,7 +727,7 @@ class MusicApi {
       if (response.data['status'] == 1) {
         final rawData = response.data['data'];
         final List data = rawData is List ? rawData : (rawData['info'] ?? rawData['list'] ?? []);
-        return data.map((json) => Song.fromArtistSongJson(json)).toList();
+        return data.map((json) => Song.fromArtistSongJson(id, json)).toList();
       }
       return [];
     } catch (e) {

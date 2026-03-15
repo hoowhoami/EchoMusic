@@ -1,13 +1,16 @@
 import 'package:flutter/cupertino.dart';
+import 'package:provider/provider.dart';
 
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../ui/screens/album_detail_view.dart';
 import '../ui/screens/artist_detail_view.dart';
+import '../ui/screens/login_screen.dart';
 import '../ui/screens/playlist_detail_view.dart';
 import '../ui/screens/rank_view.dart';
 import '../ui/screens/recommend_song_view.dart';
 import '../ui/screens/song_detail_comment_view.dart';
+import 'user_provider.dart';
 
 class NavigationProvider extends ChangeNotifier {
   NavigationProvider();
@@ -17,14 +20,20 @@ class NavigationProvider extends ChangeNotifier {
   late final NavigatorObserver _observer = _NavigationStateObserver(this);
 
   final List<_ContentHistorySnapshot> _history = [
-    const _ContentHistorySnapshot(rootIndex: 0, details: []),
+    const _ContentHistorySnapshot(
+      rootIndex: 0,
+      rootEntryVersion: 0,
+      details: [],
+    ),
   ];
   final List<_ContentRouteEntry> _detailStack = [];
 
   int _historyIndex = 0;
   int _currentRootIndex = 0;
   int _rootActivationVersion = 0;
+  int _rootEntryVersion = 0;
   bool _suppressHistory = false;
+  bool _isAuthGuardActive = false;
   String? _currentRouteName;
   dynamic _currentRouteArguments;
 
@@ -34,6 +43,7 @@ class NavigationProvider extends ChangeNotifier {
   dynamic get currentRouteArguments => _currentRouteArguments;
   int get currentRootIndex => _currentRootIndex;
   int get rootActivationVersion => _rootActivationVersion;
+  int get rootEntryVersion => _rootEntryVersion;
   bool get canGoBack => _historyIndex > 0;
   bool get canGoForward => _historyIndex < _history.length - 1;
   String get currentRefreshKey => _detailStack.isNotEmpty
@@ -58,7 +68,11 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   void navigateToRoot(int index) {
-    if (_currentRootIndex == index && _detailStack.isEmpty) return;
+    if (_currentRootIndex == index && _detailStack.isEmpty) {
+      _rootEntryVersion++;
+      _recordPushSnapshot();
+      return;
+    }
     final previousRootIndex = _currentRootIndex;
     final hadDetails = _detailStack.isNotEmpty;
     _suppressHistory = true;
@@ -67,10 +81,17 @@ class NavigationProvider extends ChangeNotifier {
     _currentRootIndex = index;
     if (previousRootIndex != index || hadDetails) {
       _rootActivationVersion++;
+      _rootEntryVersion++;
     }
     _updateCurrentRouteFromStack(notify: false);
     _suppressHistory = false;
     _recordPushSnapshot();
+  }
+
+  Future<void> navigateToRootWithGuard(int index) async {
+    final canNavigate = await _canNavigateToRoot(index);
+    if (!canNavigate) return;
+    navigateToRoot(index);
   }
 
   void openPlaylist(Playlist playlist) {
@@ -184,6 +205,10 @@ class NavigationProvider extends ChangeNotifier {
     return int.tryParse('$rawId') == id;
   }
 
+  bool isCurrentRoot(int index) {
+    return _currentRootIndex == index && _detailStack.isEmpty;
+  }
+
   void resetToRootAfterPlaylistDeletion() {
     final hadDetails = _detailStack.isNotEmpty;
 
@@ -192,6 +217,7 @@ class NavigationProvider extends ChangeNotifier {
     _detailStack.clear();
     if (hadDetails) {
       _rootActivationVersion++;
+      _rootEntryVersion++;
     }
     _updateCurrentRouteFromStack(notify: false);
     _suppressHistory = false;
@@ -211,6 +237,7 @@ class NavigationProvider extends ChangeNotifier {
     popUntilFirst();
     _detailStack.clear();
     _currentRootIndex = snapshot.rootIndex;
+    _rootEntryVersion = snapshot.rootEntryVersion;
     if (snapshot.details.isEmpty &&
         (previousRootIndex != snapshot.rootIndex || hadDetails)) {
       _rootActivationVersion++;
@@ -381,6 +408,7 @@ class NavigationProvider extends ChangeNotifier {
   _ContentHistorySnapshot _currentSnapshot() {
     return _ContentHistorySnapshot(
       rootIndex: _currentRootIndex,
+      rootEntryVersion: _rootEntryVersion,
       details: _detailStack
           .map((entry) => entry.copy())
           .toList(growable: false),
@@ -432,6 +460,36 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   String _rootRefreshKey(int index) => 'root:$index';
+
+  Future<bool> _canNavigateToRoot(int index) async {
+    if (index == 4 || index == 6) {
+      return _ensureAuthenticated();
+    }
+    return true;
+  }
+
+  Future<bool> _ensureAuthenticated() async {
+    final currentContext = _contentNavigatorKey.currentContext;
+    if (currentContext == null) return false;
+    final isAuthenticated =
+        Provider.of<UserProvider>(currentContext, listen: false)
+            .isAuthenticated;
+    if (isAuthenticated) return true;
+    if (_isAuthGuardActive) return false;
+
+    _isAuthGuardActive = true;
+    Navigator.of(currentContext, rootNavigator: true)
+        .push(
+          CupertinoPageRoute(
+            builder: (_) => const LoginScreen(),
+            settings: const RouteSettings(name: 'login_guard'),
+          ),
+        )
+        .whenComplete(() {
+      _isAuthGuardActive = false;
+    });
+    return false;
+  }
 }
 
 class _NavigationStateObserver extends NavigatorObserver {
@@ -513,14 +571,17 @@ class _ContentRouteEntry {
 class _ContentHistorySnapshot {
   const _ContentHistorySnapshot({
     required this.rootIndex,
+    required this.rootEntryVersion,
     required this.details,
   });
 
   final int rootIndex;
+  final int rootEntryVersion;
   final List<_ContentRouteEntry> details;
 
   bool equals(_ContentHistorySnapshot other) {
     if (rootIndex != other.rootIndex ||
+        rootEntryVersion != other.rootEntryVersion ||
         details.length != other.details.length) {
       return false;
     }

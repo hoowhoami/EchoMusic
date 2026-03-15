@@ -85,6 +85,14 @@ class _SongCardState extends State<SongCard> {
   }
 
   void _showUnavailableToast(BuildContext context) {
+    if (widget.song.isNoCopyright) {
+      CustomToast.error(context, '该歌曲暂无版权');
+      return;
+    }
+    if (widget.song.isPayBlocked || widget.song.isPaid) {
+      CustomToast.error(context, '该歌曲需要购买');
+      return;
+    }
     CustomToast.error(context, '该歌曲暂无可用音源');
   }
 
@@ -198,6 +206,10 @@ class _SongCardState extends State<SongCard> {
     required bool isPlaying,
     required bool isLoading,
   }) {
+    if (!widget.song.isPlayable) {
+      _showUnavailableToast(context);
+      return;
+    }
     if (widget.onDoubleTapPlay != null) {
       unawaited(widget.onDoubleTapPlay!(widget.song));
       return;
@@ -567,6 +579,13 @@ class _SongCardState extends State<SongCard> {
               final isLoading = isCurrent && playbackState.isLoading;
               final isPlayable = widget.song.isPlayable;
               final contentOpacity = isPlayable ? 1.0 : 0.45;
+              final unavailableTag = !isPlayable
+                  ? (widget.song.isNoCopyright
+                      ? '暂无版权'
+                      : (widget.song.isPayBlocked || widget.song.isPaid)
+                          ? '需要购买'
+                          : '暂无音源')
+                  : null;
 
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
@@ -733,10 +752,10 @@ class _SongCardState extends State<SongCard> {
                                               ),
                                             ),
                                           ),
-                                          if (!isPlayable)
+                                          if (unavailableTag != null)
                                             _buildTag(
                                               context,
-                                              '无音源',
+                                              unavailableTag,
                                               theme.colorScheme.outline,
                                             ),
                                           if (widget.song.isPaid)

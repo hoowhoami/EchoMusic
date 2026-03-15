@@ -19,6 +19,7 @@ class SongTableLayout {
   static const double listTrailingActionWidth = 46;
 
   static const double batchLeadingWidth = 86;
+  static const double batchTitleMaxWidth = 220;
   static const double batchAlbumGap = 16;
   static const double batchAlbumWidth = 220;
   static const double batchDurationGap = 12;

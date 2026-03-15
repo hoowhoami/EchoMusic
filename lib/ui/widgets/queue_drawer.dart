@@ -315,6 +315,18 @@ class _QueueItemState extends State<_QueueItem> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isPlayable = widget.song.isPlayable;
+    final unavailableMessage = widget.song.isNoCopyright
+        ? '该歌曲暂无版权'
+        : (widget.song.isPayBlocked || widget.song.isPaid)
+            ? '该歌曲需要购买'
+            : '该歌曲暂无可用音源';
+    final unavailableTag = !isPlayable
+        ? (widget.song.isNoCopyright
+            ? '暂无版权'
+            : (widget.song.isPayBlocked || widget.song.isPaid)
+                ? '需要购买'
+                : '暂无音源')
+        : null;
 
     return MouseRegion(
       cursor: isPlayable ? SystemMouseCursors.click : SystemMouseCursors.forbidden,
@@ -325,7 +337,9 @@ class _QueueItemState extends State<_QueueItem> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: isPlayable ? widget.onTap : () => CustomToast.error(context, '该歌曲暂无可用音源'),
+            onTap: isPlayable
+                ? widget.onTap
+                : () => CustomToast.error(context, unavailableMessage),
             borderRadius: BorderRadius.circular(12),
             hoverColor: theme.colorScheme.primary.withAlpha(15),
             child: Padding(
@@ -375,20 +389,32 @@ class _QueueItemState extends State<_QueueItem> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          widget.song.name,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: widget.isCurrent ? FontWeight.w800 : FontWeight.w700,
-                            color: (widget.isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurface)
-                                .withAlpha(isPlayable ? 255 : 140),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.song.name,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: widget.isCurrent
+                                      ? FontWeight.w800
+                                      : FontWeight.w700,
+                                  color: (widget.isCurrent
+                                          ? theme.colorScheme.primary
+                                          : theme.colorScheme.onSurface)
+                                      .withAlpha(isPlayable ? 255 : 140),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (unavailableTag != null)
+                              _buildTag(context, unavailableTag, theme),
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          isPlayable ? widget.song.singerName : '${widget.song.singerName} · 无音源',
+                          widget.song.singerName,
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -418,4 +444,28 @@ class _QueueItemState extends State<_QueueItem> {
       ),
     );
   }
+}
+
+Widget _buildTag(BuildContext context, String text, ThemeData theme) {
+  return Container(
+    margin: const EdgeInsets.only(left: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.outline.withAlpha(20),
+      border: Border.all(
+        color: theme.colorScheme.outline.withAlpha(100),
+        width: 0.5,
+      ),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: theme.colorScheme.outline,
+        fontSize: 9,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
 }
