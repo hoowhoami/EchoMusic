@@ -300,34 +300,10 @@ class _LyricPageState extends State<LyricPage> {
 
   Widget _buildBottomSection(BuildContext context, AudioProvider audioProvider, ThemeData theme) {
     return Container(
-      width: 600, // Slightly wider for better desktop layout
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      width: 560,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
         children: [
-          StreamBuilder<PositionSnapshot>(
-            stream: audioProvider.positionSnapshotStream,
-            initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-            builder: (context, snapshot) {
-              final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-              return Column(
-                children: [
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: ProgressBar(
-                      progress: snap.position, total: snap.duration, barHeight: 4, baseBarColor: Colors.white.withAlpha(30), progressBarColor: theme.colorScheme.primary, thumbColor: Colors.white, thumbRadius: 6, thumbGlowRadius: 0, timeLabelLocation: TimeLabelLocation.none,
-                      onSeek: (duration) => audioProvider.seek(duration),
-                      onDragStart: (_) => audioProvider.notifyDragStart(),
-                      onDragEnd: () => audioProvider.notifyDragEnd(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_buildTimeText(snap.position), _buildTimeText(snap.duration)]),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          // Balanced Row for playback controls
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -338,14 +314,63 @@ class _LyricPageState extends State<LyricPage> {
               _buildIconBtn(CupertinoIcons.forward_fill, 24, audioProvider.next),
             ],
           ),
+          const SizedBox(height: 14),
+          StreamBuilder<PositionSnapshot>(
+            stream: audioProvider.positionSnapshotStream,
+            initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
+            builder: (context, snapshot) {
+              final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+              return SizedBox(
+                width: 420,
+                child: Row(
+                  children: [
+                    SizedBox(width: 42, child: _buildTimeText(snap.position, alignRight: true)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: ProgressBar(
+                          progress: snap.position,
+                          total: snap.duration,
+                          barHeight: 4,
+                          baseBarColor: Colors.white.withAlpha(30),
+                          progressBarColor: theme.colorScheme.primary,
+                          thumbColor: Colors.white,
+                          thumbRadius: 6,
+                          thumbGlowRadius: 0,
+                          timeLabelLocation: TimeLabelLocation.none,
+                          onSeek: (duration) => audioProvider.seek(duration),
+                          onDragStart: (_) => audioProvider.notifyDragStart(),
+                          onDragEnd: () => audioProvider.notifyDragEnd(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 42, child: _buildTimeText(snap.duration)),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeText(Duration d) {
+  Widget _buildTimeText(Duration d, {bool alignRight = false}) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
-    return Text("${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}", style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'));
+    return Align(
+      alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
+      child: Text(
+        "${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}",
+        style: const TextStyle(
+          color: Colors.white38,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
   }
 
   Widget _buildIconBtn(IconData icon, double size, VoidCallback onTap) => MouseRegion(cursor: SystemMouseCursors.click, child: IconButton(icon: Icon(icon, size: size, color: Colors.white.withAlpha(180)), onPressed: onTap, splashRadius: 28));
@@ -356,12 +381,17 @@ class _LyricPageState extends State<LyricPage> {
       child: GestureDetector(
         onTap: audioProvider.isLoading ? null : audioProvider.togglePlay,
         child: Container(
-          width: 64, height: 64,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withAlpha(20), border: Border.all(color: Colors.white.withAlpha(20), width: 1.5)),
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withAlpha(20),
+            border: Border.all(color: Colors.white.withAlpha(20), width: 1.4),
+          ),
           child: Center(
             child: audioProvider.isLoading
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white70))
-                : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 32, color: Colors.white),
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white70))
+                : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 26, color: Colors.white),
           ),
         ),
       ),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'persistence_provider.dart';
@@ -41,6 +42,7 @@ class LyricProvider with ChangeNotifier {
   String? _loadedHash;
 
   PersistenceProvider? _persistenceProvider;
+  LyricsMode _preferredMode = LyricsMode.none;
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
@@ -53,6 +55,9 @@ class LyricProvider with ChangeNotifier {
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
+    _preferredMode = _parsePreference(
+      p.settings['lyricsModePreference']?.toString(),
+    );
   }
 
   void setPageOpen(bool open) {
@@ -66,6 +71,39 @@ class LyricProvider with ChangeNotifier {
       _lyricsMode == LyricsMode.translation && _hasTranslation;
   bool get showRomanization =>
       _lyricsMode == LyricsMode.romanization && _hasRomanization;
+
+  LyricsMode _parsePreference(String? value) {
+    switch (value) {
+      case 'translation':
+        return LyricsMode.translation;
+      case 'romanization':
+        return LyricsMode.romanization;
+      default:
+        return LyricsMode.none;
+    }
+  }
+
+  Future<void> _persistPreference(LyricsMode mode) async {
+    _preferredMode = mode;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricsModePreference',
+        _preferredMode.name,
+      );
+    }
+  }
+
+  void _applyPreferredMode() {
+    if (_preferredMode == LyricsMode.translation && _hasTranslation) {
+      _lyricsMode = LyricsMode.translation;
+      return;
+    }
+    if (_preferredMode == LyricsMode.romanization && _hasRomanization) {
+      _lyricsMode = LyricsMode.romanization;
+      return;
+    }
+    _lyricsMode = LyricsMode.none;
+  }
 
   void _resetLyricsState({String? hash, String tips = '暂无歌词'}) {
     _lyrics = [];
@@ -101,6 +139,7 @@ class LyricProvider with ChangeNotifier {
       _lyricsMode = LyricsMode.none;
     }
 
+    unawaited(_persistPreference(_lyricsMode));
     notifyListeners();
   }
 
@@ -259,6 +298,7 @@ class LyricProvider with ChangeNotifier {
     }
 
     _tips = _lyrics.isEmpty ? '暂无歌词' : '歌词已加载';
+    _applyPreferredMode();
     notifyListeners();
   }
 
