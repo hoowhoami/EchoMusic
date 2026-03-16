@@ -81,6 +81,7 @@ class _LyricPageState extends State<LyricPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final audioProvider = context.watch<AudioProvider>();
+    final lyricProvider = context.read<LyricProvider>();
     final song = audioProvider.currentSong;
 
     if (song == null) return const Scaffold(backgroundColor: Colors.black);
@@ -134,7 +135,14 @@ class _LyricPageState extends State<LyricPage> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(flex: 5, child: _buildInfoSection(context, song)),
+                        Expanded(
+                          flex: 5,
+                          child: _buildInfoSection(
+                            context,
+                            song,
+                            lyricProvider: lyricProvider,
+                          ),
+                        ),
                         const SizedBox(width: 40),
                         Expanded(flex: 7, child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme))),
                       ],
@@ -154,76 +162,175 @@ class _LyricPageState extends State<LyricPage> {
 
   Widget _buildTopBar(BuildContext context, dynamic song) {
     final bool isMacOS = Platform.isMacOS;
-    final Widget positionedRightControls = Transform.translate(
-      offset: const Offset(0, 10),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: const [
-          _LyricsModeSwitcherWidget(),
-          SizedBox(width: 8),
-          _CopyLyricsButton(),
-        ],
-      ),
+    const double nonMacTopInset = 48 + 10;
+    final double topInset = isMacOS ? 32 : nonMacTopInset;
+    final Widget positionedRightControls = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: const [
+        _LyricsModeSwitcherWidget(),
+        SizedBox(width: 8),
+        _CopyLyricsButton(),
+      ],
     );
 
-    return SizedBox(
-      height: 86,
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
-            child: Row(
-              children: [
-                Transform.translate(
-                  offset: const Offset(0, 10),
-                  child: _buildIconBtn(
+    return Padding(
+      padding: EdgeInsets.only(top: topInset),
+      child: SizedBox(
+        height: 48,
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  _buildIconBtn(
                     Icons.keyboard_arrow_down_rounded,
                     36,
                     () => Navigator.pop(context),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: DragToMoveArea(
-                      child: const SizedBox.expand(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: DragToMoveArea(
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                positionedRightControls,
-                if (!isMacOS)
-                  const SizedBox(width: WindowsCaptionControls.width),
-              ],
-            ),
-          ),
-          if (!isMacOS)
-            const Positioned(
-              top: 0,
-              right: 0,
-              child: SizedBox(
-                height: WindowsCaptionControls.height,
-                child: WindowsCaptionControls(),
+                  const SizedBox(width: 12),
+                  if (isMacOS) positionedRightControls,
+                  if (!isMacOS)
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          positionedRightControls,
+                          const SizedBox(width: 12),
+                          const SizedBox(
+                            width: WindowsCaptionControls.width,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+            if (!isMacOS)
+              const Positioned(
+                top: 0,
+                right: 0,
+                child: SizedBox(
+                  height: WindowsCaptionControls.height,
+                  child: WindowsCaptionControls(),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildInfoSection(BuildContext context, dynamic song) {
+  Widget _buildInfoSection(
+    BuildContext context,
+    dynamic song, {
+    required LyricProvider lyricProvider,
+  }) {
     final screenHeight = MediaQuery.of(context).size.height;
     final coverSize = (screenHeight * 0.38).clamp(240.0, 400.0);
+    final fontScale = context.watch<LyricProvider>().fontScale;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Hero(tag: 'player_cover', child: Container(width: coverSize, height: coverSize, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withAlpha(150), blurRadius: 50, offset: const Offset(0, 20), spreadRadius: -10)]), child: CoverImage(url: song.cover, width: coverSize, height: coverSize, borderRadius: 24, size: 800, showShadow: false))),
         const SizedBox(height: 48),
-        Text(song.name, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1, height: 1.2), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+        Text(
+          song.name,
+          style: TextStyle(
+            fontSize: 32 * fontScale,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: -1,
+            height: 1.2,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: 12),
-        Text(song.singerName, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white.withAlpha(160), letterSpacing: 0.5), textAlign: TextAlign.center),
+        Text(
+          song.singerName,
+          style: TextStyle(
+            fontSize: 18 * fontScale,
+            fontWeight: FontWeight.w600,
+            color: Colors.white.withAlpha(160),
+            letterSpacing: 0.5,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 18),
+        _buildFontScaleControls(context, lyricProvider),
       ],
+    );
+  }
+
+  Widget _buildFontScaleControls(
+    BuildContext context,
+    LyricProvider lyricProvider,
+  ) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Selector<LyricProvider, double>(
+          selector: (_, provider) => provider.fontScale,
+          builder: (_, fontScale, __) => _buildScaleButton(
+            context,
+            icon: Icons.text_decrease_rounded,
+            tooltip: '字体减小',
+            onPressed: () {
+              lyricProvider.updateFontScale(fontScale - 0.1);
+            },
+          ),
+        ),
+        const SizedBox(width: 16),
+        Selector<LyricProvider, double>(
+          selector: (_, provider) => provider.fontScale,
+          builder: (_, fontScale, __) => _buildScaleButton(
+            context,
+            icon: Icons.text_increase_rounded,
+            tooltip: '字体增大',
+            onPressed: () {
+              lyricProvider.updateFontScale(fontScale + 0.1);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScaleButton(
+    BuildContext context, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(15),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withAlpha(20), width: 1),
+          ),
+          child: Icon(icon, size: 18, color: Colors.white70),
+        ),
+      ),
     );
   }
 
@@ -233,7 +340,8 @@ class _LyricPageState extends State<LyricPage> {
         if (lyricProvider.lyrics.isEmpty) return _buildEmptyState(lyricProvider.tips);
 
         final bool isDualLine = lyricProvider.showTranslation || lyricProvider.showRomanization;
-        final double lineHeight = isDualLine ? 100.0 : 70.0;
+        final double lineHeight =
+            (isDualLine ? 100.0 : 70.0) * lyricProvider.fontScale;
         
         bool forceSync = false;
         if (_lastMode != lyricProvider.lyricsMode || _lastLineHeight != lineHeight) {
@@ -286,7 +394,7 @@ class _LyricPageState extends State<LyricPage> {
                       } else if (lyricProvider.showRomanization) {
                         secondary = line.romanized;
                       }
-                      return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
+                      return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, fontScale: lyricProvider.fontScale, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
                     },
                   ),
                 ),
@@ -477,13 +585,14 @@ class _LyricLineWidget extends StatelessWidget {
   final bool isCurrent;
   final ThemeData theme;
   final double maxWidth;
+  final double fontScale;
   final VoidCallback onTap;
 
-  const _LyricLineWidget({required this.line, this.secondaryText, required this.isCurrent, required this.theme, required this.maxWidth, required this.onTap});
+  const _LyricLineWidget({required this.line, this.secondaryText, required this.isCurrent, required this.theme, required this.maxWidth, required this.fontScale, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    const primaryFontSize = 25.0;
+    final primaryFontSize = 25.0 * fontScale;
     final baseTextStyle = TextStyle(
       fontSize: primaryFontSize,
       fontWeight: FontWeight.w900,
@@ -563,7 +672,7 @@ class _LyricLineWidget extends StatelessWidget {
                           duration: _lineTransitionDuration,
                           curve: Curves.easeOutCubic,
                           style: TextStyle(
-                            fontSize: isCurrent ? 14 : 13,
+                            fontSize: (isCurrent ? 14 : 13) * fontScale,
                             fontWeight: FontWeight.w600,
                             color: Colors.white.withAlpha(isCurrent ? 160 : 120),
                             height: 1.2,

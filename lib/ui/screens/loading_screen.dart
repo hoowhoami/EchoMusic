@@ -5,6 +5,7 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../utils/server_orchestrator.dart';
 import 'home_screen.dart';
+import '../widgets/windows_caption_controls.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key, this.autoStartServer = true});
@@ -247,9 +248,33 @@ class _LoadingScreenState extends State<LoadingScreen> {
             right: 0,
             child: SafeArea(
               bottom: false,
-              child: const SizedBox(
-                height: 44,
-                child: DragToMoveArea(child: SizedBox.expand()),
+              child: SizedBox(
+                height: 48,
+                child: Stack(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DragToMoveArea(
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        if (!Platform.isMacOS)
+                          const SizedBox(width: WindowsCaptionControls.width),
+                      ],
+                    ),
+                    if (!Platform.isMacOS)
+                      const Positioned(
+                        top: 0,
+                        right: 0,
+                        child: SizedBox(
+                          height: WindowsCaptionControls.height,
+                          child: WindowsCaptionControls(),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

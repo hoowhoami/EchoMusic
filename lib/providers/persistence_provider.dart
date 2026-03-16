@@ -45,6 +45,7 @@ class PersistenceProvider with ChangeNotifier {
     'autoReceiveVip': false,
     'userAgreementAccepted': false,
     'lyricOffset': 0,
+    'lyricFontScale': 1.0,
     'lyricsModePreference': 'none',
     'closeBehavior': 'tray',
     'pauseOnDeviceChange': false,

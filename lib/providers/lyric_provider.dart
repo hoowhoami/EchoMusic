@@ -43,6 +43,7 @@ class LyricProvider with ChangeNotifier {
 
   PersistenceProvider? _persistenceProvider;
   LyricsMode _preferredMode = LyricsMode.none;
+  double _fontScale = 1.0;
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
@@ -52,12 +53,40 @@ class LyricProvider with ChangeNotifier {
   bool get hasRomanization => _hasRomanization;
   bool get isPageOpen => _isPageOpen;
   String? get loadedHash => _loadedHash;
+  double get fontScale => _fontScale;
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
     _preferredMode = _parsePreference(
       p.settings['lyricsModePreference']?.toString(),
     );
+    _fontScale = _parseFontScale(p.settings['lyricFontScale']);
+  }
+
+  double _parseFontScale(dynamic value) {
+    if (value is num) {
+      return value.toDouble().clamp(0.7, 1.4);
+    }
+    final parsed = double.tryParse(value?.toString() ?? '');
+    if (parsed == null) return 1.0;
+    return parsed.clamp(0.7, 1.4);
+  }
+
+  Future<void> _persistFontScale(double scale) async {
+    _fontScale = scale;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricFontScale',
+        _fontScale,
+      );
+    }
+  }
+
+  Future<void> updateFontScale(double scale) async {
+    final next = scale.clamp(0.7, 1.4);
+    if (next == _fontScale) return;
+    await _persistFontScale(next);
+    notifyListeners();
   }
 
   void setPageOpen(bool open) {

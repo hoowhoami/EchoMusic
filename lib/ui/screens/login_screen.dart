@@ -422,56 +422,62 @@ class _LoginScreenState extends State<LoginScreen> {
             top: 0,
             left: 0,
             right: 0,
-            height: 100,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 40, left: 20, right: 20),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Material(
-                        color: Colors.transparent,
-                        child: IconButton(
-                          icon: Icon(
-                            Icons.arrow_back_ios_new_rounded,
-                            size: 20,
-                            color: theme.colorScheme.onSurface,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(
+                height: 48,
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Material(
+                            color: Colors.transparent,
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.arrow_back_ios_new_rounded,
+                                size: 20,
+                                color: theme.colorScheme.onSurface,
+                              ),
+                              onPressed: () {
+                                if (_showAccountSelection) {
+                                  setState(
+                                    () => _showAccountSelection = false,
+                                  );
+                                } else {
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                              tooltip: '返回',
+                            ),
                           ),
-                          onPressed: () {
-                            if (_showAccountSelection) {
-                              setState(() => _showAccountSelection = false);
-                            } else {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                          tooltip: '返回',
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SizedBox(
-                          height: 44,
-                          child: DragToMoveArea(
-                            child: const SizedBox.expand(),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DragToMoveArea(
+                              child: const SizedBox.expand(),
+                            ),
                           ),
-                        ),
+                          if (!Platform.isMacOS)
+                            const SizedBox(
+                              width: WindowsCaptionControls.width,
+                            ),
+                        ],
                       ),
-                      if (!Platform.isMacOS)
-                        const SizedBox(width: WindowsCaptionControls.width),
-                    ],
-                  ),
-                ),
-                if (!Platform.isMacOS)
-                  const Positioned(
-                    top: 0,
-                    right: 0,
-                    child: SizedBox(
-                      height: WindowsCaptionControls.height,
-                      child: WindowsCaptionControls(),
                     ),
-                  ),
-              ],
+                    if (!Platform.isMacOS)
+                      const Positioned(
+                        top: 0,
+                        right: 0,
+                        child: SizedBox(
+                          height: WindowsCaptionControls.height,
+                          child: WindowsCaptionControls(),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
