@@ -45,6 +45,9 @@ class AudioProvider with ChangeNotifier {
   double _playbackRate = 1.0;
   double _lastVolume = 50.0;
   double _userVolume = 50.0;
+  bool _isMuted = false;
+  double? _lastPersistedVolume;
+  bool _hasLoadedVolume = false;
   Map<double, double> _climaxMarks = {};
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
@@ -113,6 +116,7 @@ class AudioProvider with ChangeNotifier {
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
   double get displayVolume => _userVolume;
+  bool get isMuted => _isMuted;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   int get playlistSessionId => _playlistSessionId;
@@ -184,12 +188,13 @@ class AudioProvider with ChangeNotifier {
     final double resolvedTarget = respectUserVolume
         ? (target.clamp(0.0, _userVolume))
         : target;
+    final double effectiveTarget = _isMuted ? 0.0 : resolvedTarget;
     final double startVolume = from ?? _player.state.volume;
     final int duration =
         durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
-    if (duration <= 0 || (resolvedTarget - startVolume).abs() < 1.0) {
-      _player.setVolume(resolvedTarget);
+    if (duration <= 0 || (effectiveTarget - startVolume).abs() < 1.0) {
+      _player.setVolume(effectiveTarget);
       _isInternalChanging = false;
       onComplete?.call();
       return;
@@ -210,7 +215,7 @@ class AudioProvider with ChangeNotifier {
           (stopwatch.elapsedMilliseconds / duration).clamp(0.0, 1.0);
       final double eased = curve.transform(progress);
       final nextVol =
-          (startVolume + (resolvedTarget - startVolume) * eased).clamp(
+          (startVolume + (effectiveTarget - startVolume) * eased).clamp(
         0.0,
         100.0,
       );
@@ -219,7 +224,7 @@ class AudioProvider with ChangeNotifier {
       if (progress >= 1.0) {
         timer.cancel();
         _fadeTimer = null;
-        _player.setVolume(resolvedTarget);
+        _player.setVolume(effectiveTarget);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -465,8 +470,17 @@ class AudioProvider with ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.volume.listen((v) {
-        if (_isDisposed || _isInternalChanging) return;
+        if (_isDisposed) return;
         try {
+          if (_isMuted) {
+            if (v > 0.1) {
+              _isInternalChanging = true;
+              _player.setVolume(0.0);
+              _isInternalChanging = false;
+            }
+            return;
+          }
+          if (_isInternalChanging) return;
           if (_fadeTimer == null || !_fadeTimer!.isActive) {
             // Only persist when the user explicitly changes volume.
             // This listener just keeps the snapshot in sync for external changes.
@@ -585,10 +599,30 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
-    _userVolume = savedVol;
-    _player.setVolume(savedVol);
-    _userVolumeController.add(savedVol);
-    _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
+    final hasVolumeChange =
+        _lastPersistedVolume == null ||
+        (savedVol - _lastPersistedVolume!).abs() > 0.1;
+    _lastPersistedVolume = savedVol;
+
+    if (!_hasLoadedVolume) {
+      _userVolume = savedVol;
+      _isMuted = savedVol <= 0.1;
+      _player.setVolume(_isMuted ? 0.0 : savedVol);
+      _userVolumeController.add(_isMuted ? 0.0 : savedVol);
+      _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
+      _hasLoadedVolume = true;
+    } else if (hasVolumeChange) {
+      if (_isMuted) {
+        if (savedVol > 0.1) {
+          _lastVolume = savedVol;
+        }
+      } else {
+        _userVolume = savedVol;
+        _player.setVolume(savedVol);
+        _userVolumeController.add(savedVol);
+        _lastVolume = savedVol > 0.1 ? savedVol : _lastVolume;
+      }
+    }
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
 
     // Load the persisted preferred audio device name (applied later when the
@@ -817,6 +851,10 @@ class AudioProvider with ChangeNotifier {
     _isInternalChanging = true;
     _player.play();
     _player.setVolume(0.0);
+    if (_isMuted) {
+      _player.setVolume(0.0);
+      return;
+    }
     _fadeVolume(
       _userVolume,
       from: 0.0,
@@ -878,7 +916,7 @@ class AudioProvider with ChangeNotifier {
       _isInternalChanging = false;
     }
     if (!_isInternalChanging) {
-      _player.setVolume(_userVolume);
+      _player.setVolume(_isMuted ? 0.0 : _userVolume);
     }
 
     _isSeeking = true;
@@ -1113,7 +1151,12 @@ class AudioProvider with ChangeNotifier {
 
     _userVolume = v;
     _userVolumeController.add(v);
-    if (v > 0.1) _lastVolume = v;
+    if (v > 0.1) {
+      _lastVolume = v;
+      _isMuted = false;
+    } else {
+      _isMuted = true;
+    }
     _volumeSaveTimer?.cancel();
     _volumeSaveTimer = Timer(const Duration(milliseconds: 500), () {
       if (!_isDisposed && v > 0.1) {
@@ -1128,12 +1171,14 @@ class AudioProvider with ChangeNotifier {
     _isInternalChanging = false;
     if (_userVolume > 1.0) {
       _lastVolume = _userVolume;
+      _isMuted = true;
       _isInternalChanging = true;
       _player.setVolume(0.0);
       _userVolume = 0.0;
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
+      _isMuted = false;
       final target = _lastVolume > 0.1
           ? _lastVolume
           : (_persistenceProvider?.volume ?? 50.0);
@@ -1355,6 +1400,10 @@ class AudioProvider with ChangeNotifier {
         _fetchClimax(song);
       }
 
+      if (_isMuted) {
+        _player.setVolume(0.0);
+      }
+
       final result = await _getAudioUrlWithQuality(song);
 
       if (_isDisposed) return;
@@ -1407,11 +1456,15 @@ class AudioProvider with ChangeNotifier {
       _player.setRate(_playbackRate);
       _player.play();
 
-      _fadeVolume(
-        _persistenceProvider?.volume ?? 50.0,
-        from: 0.0,
-        respectUserVolume: true,
-      );
+      if (_isMuted) {
+        _player.setVolume(0.0);
+      } else {
+        _fadeVolume(
+          _persistenceProvider?.volume ?? 50.0,
+          from: 0.0,
+          respectUserVolume: true,
+        );
+      }
 
       _applyPlayMode();
       _savePlaybackState();
