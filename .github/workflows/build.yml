@@ -55,7 +55,7 @@ jobs:
         working-directory: server
         run: |
           npm install
-          npm run ${{ matrix.pkg_script }} -- -t ${{ matrix.pkg_target }} -o bin/${{ matrix.server_bin }}
+          npx pkg . -t ${{ matrix.pkg_target }} -C GZip -o bin/${{ matrix.server_bin }} --no-bytecode
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
