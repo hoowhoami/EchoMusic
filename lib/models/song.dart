@@ -410,7 +410,7 @@ class Song {
   String get privilegeLabel {
     if (isUnavailable) return '不可用';
     if (isVip) return 'VIP';
-    if (isPaid) return '付费';
+    if (isPaid || isPayBlocked) return '付费';
     return '';
   }
 

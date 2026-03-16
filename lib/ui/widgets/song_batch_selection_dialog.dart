@@ -434,13 +434,18 @@ class _BatchSongTile extends StatelessWidget {
     final theme = Theme.of(context);
     final isPlayable = song.isPlayable;
     final contentOpacity = isPlayable ? 1.0 : 0.45;
+    final isNoCopyright = song.isNoCopyright;
+    final isPayBlocked = song.isPayBlocked || song.isPaid;
+    final isNoSource = !isNoCopyright && !isPayBlocked;
     final unavailableTag = !isPlayable
-        ? (song.isNoCopyright
-            ? '暂无版权'
-            : (song.isPayBlocked || song.isPaid)
-                ? '需要购买'
-                : '暂无音源')
+        ? (isNoCopyright
+            ? '版权'
+            : isPayBlocked
+                ? '付费'
+                : '音源')
         : null;
+    final unavailableStrikeThrough =
+        !isPlayable && (isNoCopyright || isNoSource);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -502,7 +507,12 @@ class _BatchSongTile extends StatelessWidget {
                           ),
                         ),
                         if (unavailableTag != null)
-                          _buildTag(context, unavailableTag, theme),
+                          _buildTag(
+                            context,
+                            unavailableTag,
+                            theme,
+                            strikeThrough: unavailableStrikeThrough,
+                          ),
                       ],
                     ),
                   ),
@@ -561,7 +571,12 @@ class _BatchSongTile extends StatelessWidget {
   }
 }
 
-Widget _buildTag(BuildContext context, String text, ThemeData theme) {
+Widget _buildTag(
+  BuildContext context,
+  String text,
+  ThemeData theme, {
+  bool strikeThrough = false,
+}) {
   return Container(
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -580,6 +595,9 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
         fontSize: 9,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
+        decoration:
+            strikeThrough ? TextDecoration.lineThrough : TextDecoration.none,
+        decorationColor: theme.colorScheme.outline,
       ),
     ),
   );

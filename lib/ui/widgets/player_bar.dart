@@ -217,7 +217,7 @@ class _PlayerMainContent extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 SizedBox(
                   width: _centerMinWidth,
                   height: 18,
