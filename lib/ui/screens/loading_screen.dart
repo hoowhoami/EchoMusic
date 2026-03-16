@@ -58,8 +58,6 @@ class _LoadingScreenState extends State<LoadingScreen> {
   }
 
   Future<void> _navigateToHome() async {
-    // 避免主页在 LoadingScreen 的过渡帧里首构建，
-    // 减少首帧约束尚未稳定导致的布局异常。
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
@@ -84,10 +82,10 @@ class _LoadingScreenState extends State<LoadingScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor, // 基础背景色
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         children: [
-          // 背景渐变：使用主题中的背景色和表面色，确保自适应
+          // Background Gradient
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -101,7 +99,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
             ),
           ),
 
-          // 装饰性的圆：颜色随主色调和亮度变化
+          // Decorative Circle
           Positioned(
             top: -100,
             right: -100,
@@ -115,11 +113,11 @@ class _LoadingScreenState extends State<LoadingScreen> {
             ),
           ),
 
+          // Main Content
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo 区域：容器背景和边框随亮度变化
                 Container(
                   width: 120,
                   height: 120,
@@ -161,10 +159,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 60),
-
-                // 状态显示
                 if (!_hasError) ...[
                   SizedBox(
                     width: 200,
@@ -189,7 +184,6 @@ class _LoadingScreenState extends State<LoadingScreen> {
                     ),
                   ),
                 ] else ...[
-                  // 错误显示
                   Icon(
                     CupertinoIcons.exclamationmark_triangle_fill,
                     color: theme.colorScheme.error.withAlpha(200),
@@ -241,40 +235,28 @@ class _LoadingScreenState extends State<LoadingScreen> {
             ),
           ),
 
-          // 底部版权或版本信息
+          // Window Controls and Draggable Area (Height 48)
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: SizedBox(
-                height: 48,
-                child: Stack(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DragToMoveArea(
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        if (!Platform.isMacOS)
-                          const SizedBox(width: WindowsCaptionControls.width),
-                      ],
-                    ),
-                    if (!Platform.isMacOS)
-                      const Positioned(
-                        top: 0,
-                        right: 0,
-                        child: SizedBox(
-                          height: WindowsCaptionControls.height,
-                          child: WindowsCaptionControls(),
-                        ),
+            child: SizedBox(
+              height: 48,
+              child: Stack(
+                children: [
+                  DragToMoveArea(
+                    child: const SizedBox.expand(),
+                  ),
+                  if (!Platform.isMacOS)
+                    const Positioned(
+                      top: 0,
+                      right: 0,
+                      child: SizedBox(
+                        height: WindowsCaptionControls.height,
+                        child: WindowsCaptionControls(),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
           ),

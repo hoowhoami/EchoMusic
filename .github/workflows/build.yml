@@ -19,22 +19,26 @@ jobs:
             platform: macos
             server_bin: app_macos
             pkg_target: node18-macos-x64
+            pkg_script: pkgmacos
           - os: ubuntu-22.04
             platform: linux
             server_bin: app_linux
             pkg_target: node18-linux-x64
+            pkg_script: pkglinux
           - os: windows-latest
             platform: windows
             arch: x64
             flutter_target: windows-x64
             server_bin: app_win.exe
             pkg_target: node18-win-x64
+            pkg_script: pkgwin
           - os: windows-latest
             platform: windows
             arch: arm64
             flutter_target: windows-arm64
             server_bin: app_win.exe
             pkg_target: node18-win-arm64
+            pkg_script: pkgwin
 
     steps:
       - name: Checkout code
@@ -45,13 +49,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node_version: '18'
+          node-version: '18'
 
       - name: Install Server Dependencies and Build Server Executable
+        working-directory: server
         run: |
-          cd server
           npm install
-          npx pkg . -t ${{ matrix.pkg_target }} -o bin/${{ matrix.server_bin }}
+          npm run ${{ matrix.pkg_script }} -- -t ${{ matrix.pkg_target }} -o bin/${{ matrix.server_bin }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

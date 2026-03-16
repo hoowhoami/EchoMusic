@@ -103,32 +103,57 @@ class _LyricPageState extends State<LyricPage> {
         return KeyEventResult.ignored;
       },
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.15,
-              child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 400),
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            // Background Image and Gradient
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.15,
+                child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 400),
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(200), Colors.black.withAlpha(100), Colors.black.withAlpha(220)],
-                  stops: const [0.0, 0.5, 1.0],
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black.withAlpha(200), Colors.black.withAlpha(100), Colors.black.withAlpha(220)],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          SafeArea(
-            child: Column(
+            // Main Content
+            Column(
               children: [
-                _buildTopBar(context, song),
+                // Top draggable area (Height 48)
+                DragToMoveArea(
+                  child: const SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                  ),
+                ),
+                // Header section (Interactive buttons row)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: SizedBox(
+                    height: 48,
+                    child: Row(
+                      children: [
+                        _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
+                        const Spacer(),
+                        const _LyricsModeSwitcherWidget(),
+                        const SizedBox(width: 8),
+                        const _CopyLyricsButton(),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Core content
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 60),
@@ -137,14 +162,13 @@ class _LyricPageState extends State<LyricPage> {
                       children: [
                         Expanded(
                           flex: 5,
-                          child: _buildInfoSection(
-                            context,
-                            song,
-                            lyricProvider: lyricProvider,
-                          ),
+                          child: _buildInfoSection(context, song, lyricProvider: lyricProvider),
                         ),
                         const SizedBox(width: 40),
-                        Expanded(flex: 7, child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme))),
+                        Expanded(
+                          flex: 7,
+                          child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme)),
+                        ),
                       ],
                     ),
                   ),
@@ -153,69 +177,9 @@ class _LyricPageState extends State<LyricPage> {
                 const SizedBox(height: 32),
               ],
             ),
-          ),
-        ],
-      ),
-      ),
-    );
-  }
 
-  Widget _buildTopBar(BuildContext context, dynamic song) {
-    final bool isMacOS = Platform.isMacOS;
-    const double nonMacTopInset = 48 + 10;
-    final double topInset = isMacOS ? 32 : nonMacTopInset;
-    final Widget positionedRightControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: const [
-        _LyricsModeSwitcherWidget(),
-        SizedBox(width: 8),
-        _CopyLyricsButton(),
-      ],
-    );
-
-    return Padding(
-      padding: EdgeInsets.only(top: topInset),
-      child: SizedBox(
-        height: 48,
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  _buildIconBtn(
-                    Icons.keyboard_arrow_down_rounded,
-                    36,
-                    () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: SizedBox(
-                      height: 44,
-                      child: DragToMoveArea(
-                        child: const SizedBox.expand(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (isMacOS) positionedRightControls,
-                  if (!isMacOS)
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          positionedRightControls,
-                          const SizedBox(width: 12),
-                          const SizedBox(
-                            width: WindowsCaptionControls.width,
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (!isMacOS)
+            // Windows Controls
+            if (!Platform.isMacOS)
               const Positioned(
                 top: 0,
                 right: 0,

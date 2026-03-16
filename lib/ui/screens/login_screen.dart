@@ -357,6 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
+          // Background
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -373,113 +374,102 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           
-          SafeArea(
-            child: Center(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                child: Container(
-                  width: 400,
-                  constraints: const BoxConstraints(maxHeight: 650),
-                  padding: const EdgeInsets.all(40),
-                  decoration: BoxDecoration(
-                    color: modernTheme.modalColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: theme.colorScheme.shadow.withAlpha(50),
-                        blurRadius: 40,
-                        offset: const Offset(0, 20),
+          // Main Content
+          Column(
+            children: [
+              // Top draggable area (Height 48)
+              DragToMoveArea(
+                child: const SizedBox(
+                  height: 48,
+                  width: double.infinity,
+                ),
+              ),
+              // Navigation Area (Back button row)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Material(
+                        color: Colors.transparent,
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 20,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          onPressed: () {
+                            if (_showAccountSelection) {
+                              setState(() => _showAccountSelection = false);
+                            } else {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          tooltip: '返回',
+                        ),
                       ),
                     ],
                   ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_showAccountSelection)
-                          _buildAccountSelection(context)
-                        else if (_loginMethod == 0)
-                          _buildQrLogin(context)
-                        else if (_loginMethod == 2)
-                          _buildWxLogin(context)
-                        else
-                          _buildMobileLogin(context),
-                        
-                        if (!_showAccountSelection) ...[
-                          const SizedBox(height: 32),
-                          _buildOtherMethods(context),
-                        ]
-                      ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Container(
+                      width: 400,
+                      constraints: const BoxConstraints(maxHeight: 650),
+                      padding: const EdgeInsets.all(40),
+                      decoration: BoxDecoration(
+                        color: modernTheme.modalColor,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: theme.colorScheme.outlineVariant),
+                        boxShadow: [
+                          BoxShadow(
+                            color: theme.colorScheme.shadow.withAlpha(50),
+                            blurRadius: 40,
+                            offset: const Offset(0, 20),
+                          ),
+                        ],
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_showAccountSelection)
+                              _buildAccountSelection(context)
+                            else if (_loginMethod == 0)
+                              _buildQrLogin(context)
+                            else if (_loginMethod == 2)
+                              _buildWxLogin(context)
+                            else
+                              _buildMobileLogin(context),
+                            
+                            if (!_showAccountSelection) ...[
+                              const SizedBox(height: 32),
+                              _buildOtherMethods(context),
+                            ]
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
 
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              bottom: false,
+          // Windows Controls
+          if (!Platform.isMacOS)
+            const Positioned(
+              top: 0,
+              right: 0,
               child: SizedBox(
-                height: 48,
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Material(
-                            color: Colors.transparent,
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.arrow_back_ios_new_rounded,
-                                size: 20,
-                                color: theme.colorScheme.onSurface,
-                              ),
-                              onPressed: () {
-                                if (_showAccountSelection) {
-                                  setState(
-                                    () => _showAccountSelection = false,
-                                  );
-                                } else {
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              tooltip: '返回',
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DragToMoveArea(
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-                          if (!Platform.isMacOS)
-                            const SizedBox(
-                              width: WindowsCaptionControls.width,
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (!Platform.isMacOS)
-                      const Positioned(
-                        top: 0,
-                        right: 0,
-                        child: SizedBox(
-                          height: WindowsCaptionControls.height,
-                          child: WindowsCaptionControls(),
-                        ),
-                      ),
-                  ],
-                ),
+                height: WindowsCaptionControls.height,
+                child: WindowsCaptionControls(),
               ),
             ),
-          ),
         ],
       ),
     );
