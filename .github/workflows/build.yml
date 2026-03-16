@@ -14,17 +14,27 @@ jobs:
       contents: write
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
         include:
           - os: macos-latest
             platform: macos
             server_bin: app_macos
-          - os: windows-latest
-            platform: windows
-            server_bin: app_win.exe
+            pkg_target: node18-macos-x64
           - os: ubuntu-22.04
             platform: linux
             server_bin: app_linux
+            pkg_target: node18-linux-x64
+          - os: windows-latest
+            platform: windows
+            arch: x64
+            flutter_target: windows-x64
+            server_bin: app_win.exe
+            pkg_target: node18-win-x64
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+            flutter_target: windows-arm64
+            server_bin: app_win.exe
+            pkg_target: node18-win-arm64
 
     steps:
       - name: Checkout code
@@ -41,7 +51,7 @@ jobs:
         run: |
           cd server
           npm install
-          npx pkg . -t node18-${{ matrix.platform == 'macos' && 'macos' || (matrix.platform == 'windows' && 'win' || 'linux') }}-x64 -o bin/${{ matrix.server_bin }}
+          npx pkg . -t ${{ matrix.pkg_target }} -o bin/${{ matrix.server_bin }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -57,7 +67,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libmpv-dev libkeybinder-3.0-dev mpv
 
-      - name: Build Flutter Desktop
+      - name: Build Flutter Desktop (Windows)
+        if: matrix.platform == 'windows'
+        run: flutter build windows --release --target-platform=${{ matrix.flutter_target }}
+
+      - name: Build Flutter Desktop (Non-Windows)
+        if: matrix.platform != 'windows'
         run: flutter build ${{ matrix.platform }} --release
 
       - name: Bundle Server (macOS)
@@ -71,8 +86,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: bash
         run: |
-          mkdir -p build/windows/x64/runner/Release/server
-          cp server/bin/app_win.exe build/windows/x64/runner/Release/server/
+          mkdir -p build/windows/${{ matrix.arch }}/runner/Release/server
+          cp server/bin/app_win.exe build/windows/${{ matrix.arch }}/runner/Release/server/
 
       - name: Bundle Server (Linux)
         if: matrix.platform == 'linux'
@@ -94,7 +109,7 @@ jobs:
           if [ "${{ matrix.platform }}" == "macos" ]; then
             ls -lhR build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
           elif [ "${{ matrix.platform }}" == "windows" ]; then
-            ls -lhR build/windows/x64/runner/Release/server/
+            ls -lhR build/windows/${{ matrix.arch }}/runner/Release/server/
           elif [ "${{ matrix.platform }}" == "linux" ]; then
             ls -lhR build/linux/x64/release/bundle/server/
           fi
@@ -130,8 +145,8 @@ jobs:
         run: |
           VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${VERSION#v}
-          iscc //DAppVersion=${CLEAN_VERSION} installer.iss
-          mv EchoMusic-Windows-Setup.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup.exe"
+          iscc //DAppVersion=${CLEAN_VERSION} //DAppArch=${{ matrix.arch }} //DBuildDir=build\\windows\\${{ matrix.arch }}\\runner\\Release installer.iss
+          mv EchoMusic-Windows-Setup-${{ matrix.arch }}.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-${{ matrix.arch }}.exe"
 
       - name: Prepare Release (Linux)
         if: matrix.platform == 'linux'
@@ -143,10 +158,12 @@ jobs:
           mkdir -p deb/usr/bin
           mkdir -p deb/usr/share/echomusic
           mkdir -p deb/usr/share/applications
+          mkdir -p deb/usr/share/icons/hicolor/512x512/apps
           mkdir -p deb/DEBIAN
 
           cp -r build/linux/x64/release/bundle/* deb/usr/share/echomusic/
-          ln -s /usr/share/echomusic/echomusic deb/usr/bin/echomusic
+          ln -s /usr/share/echomusic/EchoMusic deb/usr/bin/echomusic
+          cp assets/icons/icon.png deb/usr/share/icons/hicolor/512x512/apps/echomusic.png
 
           cat > deb/DEBIAN/control <<EOF
           Package: echomusic
@@ -163,7 +180,7 @@ jobs:
           [Desktop Entry]
           Name=EchoMusic
           Exec=echomusic
-          Icon=/usr/share/echomusic/assets/icons/icon.png
+          Icon=echomusic
           Type=Application
           Categories=AudioVideo;Audio;Player;
           EOF
@@ -190,7 +207,7 @@ jobs:
         with:
           files: |
             EchoMusic-*.dmg
-            EchoMusic-*-Setup.exe
+            EchoMusic-*-Windows-Setup-*.exe
             EchoMusic-*.deb
             EchoMusic-*.AppImage
           draft: false
