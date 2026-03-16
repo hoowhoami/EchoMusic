@@ -436,7 +436,6 @@ class _BatchSongTile extends StatelessWidget {
     final contentOpacity = isPlayable ? 1.0 : 0.45;
     final isNoCopyright = song.isNoCopyright;
     final isPayBlocked = song.isPayBlocked || song.isPaid;
-    final isNoSource = !isNoCopyright && !isPayBlocked;
     final unavailableTag = !isPlayable
         ? (isNoCopyright
             ? '版权'
@@ -444,8 +443,6 @@ class _BatchSongTile extends StatelessWidget {
                 ? '付费'
                 : '音源')
         : null;
-    final unavailableStrikeThrough =
-        !isPlayable && (isNoCopyright || isNoSource);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -466,7 +463,7 @@ class _BatchSongTile extends StatelessWidget {
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 16),
                   Opacity(
                     opacity: contentOpacity,
                     child: CoverImage(
@@ -507,12 +504,7 @@ class _BatchSongTile extends StatelessWidget {
                           ),
                         ),
                         if (unavailableTag != null)
-                          _buildTag(
-                            context,
-                            unavailableTag,
-                            theme,
-                            strikeThrough: unavailableStrikeThrough,
-                          ),
+                          _buildTag(context, unavailableTag, theme),
                       ],
                     ),
                   ),
@@ -571,12 +563,7 @@ class _BatchSongTile extends StatelessWidget {
   }
 }
 
-Widget _buildTag(
-  BuildContext context,
-  String text,
-  ThemeData theme, {
-  bool strikeThrough = false,
-}) {
+Widget _buildTag(BuildContext context, String text, ThemeData theme) {
   return Container(
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -595,9 +582,6 @@ Widget _buildTag(
         fontSize: 9,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
-        decoration:
-            strikeThrough ? TextDecoration.lineThrough : TextDecoration.none,
-        decorationColor: theme.colorScheme.outline,
       ),
     ),
   );

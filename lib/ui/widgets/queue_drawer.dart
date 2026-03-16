@@ -317,7 +317,6 @@ class _QueueItemState extends State<_QueueItem> {
     final isPlayable = widget.song.isPlayable;
     final isNoCopyright = widget.song.isNoCopyright;
     final isPayBlocked = widget.song.isPayBlocked || widget.song.isPaid;
-    final isNoSource = !isNoCopyright && !isPayBlocked;
     final unavailableMessage = isNoCopyright
         ? '该歌曲暂无版权'
         : isPayBlocked
@@ -330,8 +329,6 @@ class _QueueItemState extends State<_QueueItem> {
                 ? '付费'
                 : '音源')
         : null;
-    final unavailableStrikeThrough =
-        !isPlayable && (isNoCopyright || isNoSource);
 
     return MouseRegion(
       cursor: isPlayable ? SystemMouseCursors.click : SystemMouseCursors.forbidden,
@@ -414,12 +411,7 @@ class _QueueItemState extends State<_QueueItem> {
                               ),
                             ),
                             if (unavailableTag != null)
-                              _buildTag(
-                                context,
-                                unavailableTag,
-                                theme,
-                                strikeThrough: unavailableStrikeThrough,
-                              ),
+                              _buildTag(context, unavailableTag, theme),
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -456,12 +448,7 @@ class _QueueItemState extends State<_QueueItem> {
   }
 }
 
-Widget _buildTag(
-  BuildContext context,
-  String text,
-  ThemeData theme, {
-  bool strikeThrough = false,
-}) {
+Widget _buildTag(BuildContext context, String text, ThemeData theme) {
   return Container(
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -480,9 +467,6 @@ Widget _buildTag(
         fontSize: 9,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
-        decoration:
-            strikeThrough ? TextDecoration.lineThrough : TextDecoration.none,
-        decorationColor: theme.colorScheme.outline,
       ),
     ),
   );

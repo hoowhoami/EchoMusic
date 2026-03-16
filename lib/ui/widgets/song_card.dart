@@ -581,7 +581,6 @@ class _SongCardState extends State<SongCard> {
               final contentOpacity = isPlayable ? 1.0 : 0.45;
               final isNoCopyright = widget.song.isNoCopyright;
               final isPayBlocked = widget.song.isPayBlocked || widget.song.isPaid;
-              final isNoSource = !isNoCopyright && !isPayBlocked;
               final unavailableTag = !isPlayable
                   ? (isNoCopyright
                       ? '版权'
@@ -589,8 +588,6 @@ class _SongCardState extends State<SongCard> {
                           ? '付费'
                           : '音源')
                   : null;
-              final unavailableStrikeThrough =
-                  !isPlayable && (isNoCopyright || isNoSource);
 
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
@@ -762,8 +759,6 @@ class _SongCardState extends State<SongCard> {
                                               context,
                                               unavailableTag,
                                               theme.colorScheme.outline,
-                                              strikeThrough:
-                                                  unavailableStrikeThrough,
                                             ),
                                           if (widget.song.isPaid)
                                             _buildTag(
@@ -921,12 +916,7 @@ class _SongCardState extends State<SongCard> {
     );
   }
 
-  Widget _buildTag(
-    BuildContext context,
-    String text,
-    Color color, {
-    bool strikeThrough = false,
-  }) {
+  Widget _buildTag(BuildContext context, String text, Color color) {
     return Container(
       margin: const EdgeInsets.only(left: 8),
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -942,9 +932,6 @@ class _SongCardState extends State<SongCard> {
           fontSize: 9,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.5,
-          decoration:
-              strikeThrough ? TextDecoration.lineThrough : TextDecoration.none,
-          decorationColor: color,
         ),
       ),
     );
