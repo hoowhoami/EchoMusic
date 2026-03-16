@@ -28,16 +28,8 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: x64
-            flutter_target: windows-x64
             server_bin: app_win.exe
             pkg_target: node18-win-x64
-            pkg_script: pkgwin
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            flutter_target: windows-arm64
-            server_bin: app_win.exe
-            pkg_target: node18-win-arm64
             pkg_script: pkgwin
 
     steps:
@@ -73,7 +65,7 @@ jobs:
 
       - name: Build Flutter Desktop (Windows)
         if: matrix.platform == 'windows'
-        run: flutter build windows --release --target-platform=${{ matrix.flutter_target }}
+        run: flutter build windows --release
 
       - name: Build Flutter Desktop (Non-Windows)
         if: matrix.platform != 'windows'
