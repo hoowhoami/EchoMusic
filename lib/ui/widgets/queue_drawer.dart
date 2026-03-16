@@ -232,6 +232,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
               builder: (context, audioProvider, child) {
                 final playlist = audioProvider.playlist;
                 final currentIndex = audioProvider.currentIndex;
+                final canReorder = true;
 
                 if (playlist.isEmpty) {
                   return SizedBox(
@@ -260,22 +261,62 @@ class _QueueDrawerState extends State<QueueDrawer> {
                   );
                 }
 
-                return ListView.builder(
-                  controller: _scrollController,
+                return ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  scrollController: _scrollController,
                   padding: const EdgeInsets.fromLTRB(14, 8, 18, 8),
                   itemCount: playlist.length,
-                  itemExtent: _queueItemExtent,
+                  proxyDecorator: (child, index, animation) {
+                    final background = theme.colorScheme.surface;
+                    return Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: background,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withAlpha(28),
+                              blurRadius: 14,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: child,
+                      ),
+                    );
+                  },
+                  onReorder: (oldIndex, newIndex) {
+                    final targetIndex =
+                        newIndex > oldIndex ? newIndex - 1 : newIndex;
+                    audioProvider.reorderPlaylist(oldIndex, targetIndex);
+                  },
                   itemBuilder: (context, index) {
                     final song = playlist[index];
                     final isCurrent = index == currentIndex;
                     final isPlaying = isCurrent && audioProvider.isPlaying;
 
-                    return _QueueItem(
-                      song: song,
-                      isCurrent: isCurrent,
-                      isPlaying: isPlaying,
-                      onTap: () => audioProvider.playSong(song, playlist: playlist),
-                      onRemove: () => audioProvider.removeFromPlaylist(index),
+                    return ReorderableDelayedDragStartListener(
+                      key: ObjectKey(song),
+                      index: index,
+                      child: SizedBox(
+                        height: _queueItemExtent,
+                        child: _QueueItem(
+                          index: index,
+                          song: song,
+                          isCurrent: isCurrent,
+                          isPlaying: isPlaying,
+                          onPlay: () {
+                            if (isCurrent) {
+                              audioProvider.togglePlay();
+                            } else {
+                              audioProvider.playSong(song);
+                            }
+                          },
+                          onRemove: () =>
+                              audioProvider.removeFromPlaylist(index),
+                        ),
+                      ),
                     );
                   },
                 );
@@ -290,17 +331,19 @@ class _QueueDrawerState extends State<QueueDrawer> {
 }
 
 class _QueueItem extends StatefulWidget {
+  final int index;
   final Song song;
   final bool isCurrent;
   final bool isPlaying;
-  final VoidCallback onTap;
+  final VoidCallback onPlay;
   final VoidCallback onRemove;
 
   const _QueueItem({
+    required this.index,
     required this.song,
     required this.isCurrent,
     required this.isPlaying,
-    required this.onTap,
+    required this.onPlay,
     required this.onRemove,
   });
 
@@ -330,8 +373,11 @@ class _QueueItemState extends State<_QueueItem> {
                 : '音源')
         : null;
 
+    final showPlayButton = _isHovered || widget.isCurrent;
+    final displayIndex = (widget.index + 1).toString();
+
     return MouseRegion(
-      cursor: isPlayable ? SystemMouseCursors.click : SystemMouseCursors.forbidden,
+      cursor: SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: Container(
@@ -339,8 +385,9 @@ class _QueueItemState extends State<_QueueItem> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: isPlayable
-                ? widget.onTap
+            onTap: null,
+            onDoubleTap: isPlayable
+                ? widget.onPlay
                 : () => CustomToast.error(context, unavailableMessage),
             borderRadius: BorderRadius.circular(12),
             hoverColor: theme.colorScheme.primary.withAlpha(15),
@@ -348,6 +395,52 @@ class _QueueItemState extends State<_QueueItem> {
               padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
               child: Row(
                 children: [
+                  SizedBox(
+                    width: 32,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedOpacity(
+                          opacity: showPlayButton ? 0.0 : 1.0,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOut,
+                          child: Text(
+                            displayIndex,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: widget.isCurrent
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: (widget.isCurrent
+                                      ? theme.colorScheme.primary
+                                      : theme.colorScheme.onSurfaceVariant)
+                                  .withAlpha(isPlayable ? 200 : 120),
+                            ),
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          opacity: showPlayButton ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 160),
+                          curve: Curves.easeOut,
+                          child: IgnorePointer(
+                            ignoring: !showPlayButton,
+                            child: _PlayQueueButton(
+                              isPlayable: isPlayable,
+                              isCurrent: widget.isCurrent,
+                              isPlaying: widget.isPlaying,
+                              onPressed: isPlayable
+                                  ? widget.onPlay
+                                  : () => CustomToast.error(
+                                        context,
+                                        unavailableMessage,
+                                      ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Stack(
                     children: [
                       CoverImage(
@@ -364,22 +457,6 @@ class _QueueItemState extends State<_QueueItem> {
                             decoration: BoxDecoration(
                               color: theme.colorScheme.surface.withAlpha(120),
                               borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      if (widget.isCurrent)
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary.withAlpha(100),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              widget.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill,
-                              color: Colors.white,
-                              size: 16,
                             ),
                           ),
                         ),
@@ -448,6 +525,7 @@ class _QueueItemState extends State<_QueueItem> {
   }
 }
 
+
 Widget _buildTag(BuildContext context, String text, ThemeData theme) {
   return Container(
     margin: const EdgeInsets.only(left: 6),
@@ -470,4 +548,44 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
       ),
     ),
   );
+}
+
+class _PlayQueueButton extends StatelessWidget {
+  final bool isPlayable;
+  final bool isCurrent;
+  final bool isPlaying;
+  final VoidCallback onPressed;
+
+  const _PlayQueueButton({
+    required this.isPlayable,
+    required this.isCurrent,
+    required this.isPlaying,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = isPlayable
+        ? (isCurrent
+              ? theme.colorScheme.primary
+              : theme.colorScheme.onSurface.withAlpha(170))
+        : theme.disabledColor;
+    return IconButton(
+      onPressed: isPlayable ? onPressed : null,
+      icon: Icon(
+        isCurrent && isPlaying
+            ? CupertinoIcons.pause_fill
+            : CupertinoIcons.play_fill,
+        size: 16,
+        color: color,
+      ),
+      padding: const EdgeInsets.all(6),
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+      splashRadius: 18,
+      hoverColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
+    );
+  }
 }

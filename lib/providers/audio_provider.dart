@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -38,7 +39,6 @@ class AudioProvider with ChangeNotifier {
 
   Song? _currentSong;
   List<Song> _playlist = [];
-  List<Song> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
   bool _isDisposed = false;
@@ -48,6 +48,9 @@ class AudioProvider with ChangeNotifier {
   bool _isMuted = false;
   double? _lastPersistedVolume;
   bool _hasLoadedVolume = false;
+  final math.Random _shuffleRandom = math.Random();
+  List<int> _shuffleOrder = [];
+  int _shuffleOrderIndex = -1;
   Map<double, double> _climaxMarks = {};
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
@@ -639,7 +642,6 @@ class AudioProvider with ChangeNotifier {
 
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
-      _originalPlaylist = [];
       _currentIndex = p.currentIndex;
       _activePlaylistFilteredInvalidSongCount =
           p.playlistFilteredInvalidSongCount;
@@ -991,27 +993,16 @@ class AudioProvider with ChangeNotifier {
       return false;
     }
 
-    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
-      final newSongs = songs
-          .where(
-            (song) =>
-                !_originalPlaylist.any((existing) => existing.isSameSong(song)),
-          )
-          .toList();
-      if (newSongs.isEmpty) return true;
+    final newSongs = songs
+        .where(
+          (song) => !_playlist.any((existing) => existing.isSameSong(song)),
+        )
+        .toList();
+    if (newSongs.isEmpty) return true;
 
-      _originalPlaylist.addAll(newSongs);
-      final shuffledNewSongs = List<Song>.from(newSongs)..shuffle();
-      _playlist.addAll(shuffledNewSongs);
-    } else {
-      final newSongs = songs
-          .where(
-            (song) => !_playlist.any((existing) => existing.isSameSong(song)),
-          )
-          .toList();
-      if (newSongs.isEmpty) return true;
-
-      _playlist.addAll(newSongs);
+    _playlist.addAll(newSongs);
+    if (_playMode == 'shuffle') {
+      _syncShuffleOrderForCurrent();
     }
 
     _savePlaybackState();
@@ -1076,31 +1067,8 @@ class AudioProvider with ChangeNotifier {
     if (insertIndex > _playlist.length) insertIndex = _playlist.length;
     _playlist.insert(insertIndex, song);
 
-    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
-      var originalInsertIndex = _originalPlaylist.length;
-      if (currentSong != null) {
-        final currentOriginalIndex = _indexOfSongInList(
-          _originalPlaylist,
-          currentSong,
-        );
-        if (currentOriginalIndex != -1) {
-          originalInsertIndex = currentOriginalIndex + 1;
-        }
-      }
-
-      final existingOriginalIndex = _indexOfSongInList(_originalPlaylist, song);
-      if (existingOriginalIndex != -1) {
-        _originalPlaylist.removeAt(existingOriginalIndex);
-        if (existingOriginalIndex < originalInsertIndex) {
-          originalInsertIndex--;
-        }
-      }
-
-      if (originalInsertIndex < 0) originalInsertIndex = 0;
-      if (originalInsertIndex > _originalPlaylist.length) {
-        originalInsertIndex = _originalPlaylist.length;
-      }
-      _originalPlaylist.insert(originalInsertIndex, song);
+    if (_playMode == 'shuffle') {
+      _primeShuffleOrder();
     }
 
     _savePlaybackState();
@@ -1223,25 +1191,58 @@ class AudioProvider with ChangeNotifier {
     // via the completed stream and _handlePlaybackEnded().
     _player.setPlaylistMode(PlaylistMode.none);
 
-    if (_playMode == 'shuffle' && _playlist.isNotEmpty) {
-      if (_originalPlaylist.isEmpty) {
-        _originalPlaylist = List.from(_playlist);
-        final current = _currentSong;
-        _playlist.shuffle();
-        if (current != null) {
-          _playlist.removeWhere((s) => s.isSameSong(current));
-          _playlist.insert(0, current);
-          _currentIndex = 0;
-        }
+    // Don't reset shuffle order if it's already initialized
+    // This preserves shuffle history when provider is rebuilt
+    if (_playMode == 'shuffle') {
+      if (_shuffleOrder.isEmpty) {
+        _primeShuffleOrder();
       }
-    } else if (_originalPlaylist.isNotEmpty) {
-      final current = _currentSong;
-      _playlist = List.from(_originalPlaylist);
-      _originalPlaylist = [];
-      if (current != null) {
-        _currentIndex = _playlist.indexWhere((s) => s.isSameSong(current));
-      }
+    } else {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
     }
+  }
+
+  void _primeShuffleOrder() {
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
+
+    if (_playlist.isEmpty) return;
+
+    if (_currentIndex >= 0 &&
+        _currentIndex < _playlist.length &&
+        _playlist[_currentIndex].isPlayable) {
+      _shuffleOrder.add(_currentIndex);
+      _shuffleOrderIndex = 0;
+    }
+  }
+
+  void _syncShuffleOrderForCurrent() {
+    if (_playlist.isEmpty) return;
+    if (_currentIndex < 0 || _currentIndex >= _playlist.length) return;
+
+    if (_shuffleOrder.isEmpty ||
+        _shuffleOrderIndex < 0 ||
+        _shuffleOrderIndex >= _shuffleOrder.length) {
+      _primeShuffleOrder();
+      return;
+    }
+
+    if (_shuffleOrder[_shuffleOrderIndex] == _currentIndex) {
+      return;
+    }
+
+    if (_shuffleOrderIndex < _shuffleOrder.length - 1) {
+      _shuffleOrder = _shuffleOrder.sublist(0, _shuffleOrderIndex + 1);
+    }
+
+    if (_shuffleOrder.isNotEmpty && _shuffleOrder.last == _currentIndex) {
+      _shuffleOrderIndex = _shuffleOrder.length - 1;
+      return;
+    }
+
+    _shuffleOrder.add(_currentIndex);
+    _shuffleOrderIndex = _shuffleOrder.length - 1;
   }
 
   void togglePlayMode() {
@@ -1279,6 +1280,55 @@ class AudioProvider with ChangeNotifier {
 
     return -1;
   }
+
+  int _pickNextShuffleIndex() {
+    if (_playlist.isEmpty) return -1;
+
+    if (_shuffleOrder.isEmpty) {
+      _primeShuffleOrder();
+    }
+
+    if (_shuffleOrderIndex + 1 < _shuffleOrder.length) {
+      _shuffleOrderIndex += 1;
+      return _shuffleOrder[_shuffleOrderIndex];
+    }
+
+    final candidates = <int>[];
+    for (int i = 0; i < _playlist.length; i++) {
+      if (!_playlist[i].isPlayable) continue;
+      if (i == _currentIndex) continue;
+      if (_shuffleOrder.contains(i)) continue;
+      candidates.add(i);
+    }
+
+    if (candidates.isEmpty) {
+      _primeShuffleOrder();
+      for (int i = 0; i < _playlist.length; i++) {
+        if (!_playlist[i].isPlayable) continue;
+        if (i == _currentIndex) continue;
+        candidates.add(i);
+      }
+    }
+
+    if (candidates.isEmpty) return -1;
+
+    final pick = _shuffleRandom.nextInt(candidates.length);
+    final nextIndex = candidates[pick];
+    _shuffleOrder.add(nextIndex);
+    _shuffleOrderIndex = _shuffleOrder.length - 1;
+    return nextIndex;
+  }
+
+  int _pickPreviousShuffleIndex() {
+    if (_playlist.isEmpty) return -1;
+    // If we're at the beginning of shuffle history, stay at current song
+    if (_shuffleOrderIndex <= 0) {
+      return _currentIndex;
+    }
+    _shuffleOrderIndex -= 1;
+    return _shuffleOrder[_shuffleOrderIndex];
+  }
+
 
   Song? _resolvePlayableSongForRequest(
     Song requestedSong, {
@@ -1350,7 +1400,6 @@ class AudioProvider with ChangeNotifier {
     final previousVolume = _player.state.volume;
     final previousUrl = _currentUrl;
     List<Song>? previousPlaylist;
-    List<Song>? previousOriginalPlaylist;
     int previousSessionId = _playlistSessionId;
     int previousFilteredCount = _activePlaylistFilteredInvalidSongCount;
 
@@ -1369,7 +1418,6 @@ class AudioProvider with ChangeNotifier {
 
     if (playlist != null) {
       previousPlaylist = List<Song>.from(_playlist);
-      previousOriginalPlaylist = List<Song>.from(_originalPlaylist);
       previousSessionId = _playlistSessionId;
       previousFilteredCount = _activePlaylistFilteredInvalidSongCount;
       _playlistSessionId++;
@@ -1378,16 +1426,16 @@ class AudioProvider with ChangeNotifier {
         '[AudioProvider] Updating playlist, size: ${playlist.length}',
       );
       _playlist = List.from(playlist);
-      _originalPlaylist = [];
-      if (_playMode == 'shuffle') {
-        _originalPlaylist = List.from(playlist);
-        _playlist.shuffle();
-        _playlist.removeWhere((s) => identical(s, song) || s.isSameSong(song));
-        _playlist.insert(0, song);
-      }
     }
     _currentIndex = _indexOfSongInList(_playlist, song);
     _currentSong = song;
+    if (_playMode == 'shuffle') {
+      if (playlist != null) {
+        _primeShuffleOrder();
+      } else {
+        _syncShuffleOrderForCurrent();
+      }
+    }
     _safeNotify();
 
     _isLoading = true;
@@ -1412,9 +1460,8 @@ class AudioProvider with ChangeNotifier {
         LoggerService.e('[AudioProvider] Failed to get URL');
         _player.setVolume(previousVolume);
         _isInternalChanging = false;
-        if (previousPlaylist != null && previousOriginalPlaylist != null) {
+        if (previousPlaylist != null) {
           _playlist = previousPlaylist;
-          _originalPlaylist = previousOriginalPlaylist;
           _playlistSessionId = previousSessionId;
           _activePlaylistFilteredInvalidSongCount = previousFilteredCount;
         }
@@ -1466,7 +1513,6 @@ class AudioProvider with ChangeNotifier {
         );
       }
 
-      _applyPlayMode();
       _savePlaybackState();
     } catch (e) {
       LoggerService.e('[AudioProvider] Error during playSong: $e');
@@ -1924,7 +1970,8 @@ class AudioProvider with ChangeNotifier {
     _currentSong = null;
     _currentUrl = null;
     _playlist = [];
-    _originalPlaylist = [];
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
     _currentIndex = -1;
     _climaxMarks = {};
     _isLoading = false;
@@ -1947,7 +1994,18 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
-    final nextIndex = _findAdjacentPlayableIndex(forward: true);
+    int nextIndex = -1;
+    if (_playMode == 'shuffle') {
+      if (_shuffleOrder.isEmpty &&
+          _currentIndex >= 0 &&
+          _currentIndex < _playlist.length) {
+        _shuffleOrder.add(_currentIndex);
+        _shuffleOrderIndex = 0;
+      }
+      nextIndex = _pickNextShuffleIndex();
+    } else {
+      nextIndex = _findAdjacentPlayableIndex(forward: true);
+    }
     if (nextIndex == -1) {
       LoggerService.w(
         '[AudioProvider] No playable song available when skipping to next',
@@ -1955,6 +2013,10 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    if (_playMode != 'shuffle') {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
+    }
     if (_player.state.playing) {
       _fadeVolume(
         0.0,
@@ -1976,7 +2038,12 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
-    final previousIndex = _findAdjacentPlayableIndex(forward: false);
+    int previousIndex = -1;
+    if (_playMode == 'shuffle') {
+      previousIndex = _pickPreviousShuffleIndex();
+    } else {
+      previousIndex = _findAdjacentPlayableIndex(forward: false);
+    }
     if (previousIndex == -1) {
       LoggerService.w(
         '[AudioProvider] No playable song available when skipping to previous',
@@ -1984,6 +2051,10 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    if (_playMode != 'shuffle') {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
+    }
     if (_player.state.playing) {
       _fadeVolume(
         0.0,
@@ -2004,7 +2075,8 @@ class AudioProvider with ChangeNotifier {
     _activePlaylistFilteredInvalidSongCount = 0;
     _clearDeviceRecoveryState();
     _playlist = [];
-    _originalPlaylist = [];
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
     _currentIndex = -1;
     _climaxMarks = {};
     _savePlaybackState();
@@ -2028,8 +2100,33 @@ class AudioProvider with ChangeNotifier {
       _currentIndex--;
     }
     if (_playMode == 'shuffle') {
-      _originalPlaylist.removeWhere((s) => s.isSameSong(removed));
+      _primeShuffleOrder();
     }
+    _savePlaybackState();
+    _safeNotify();
+  }
+
+  void reorderPlaylist(int oldIndex, int newIndex) {
+    if (_playlist.isEmpty) return;
+    if (oldIndex < 0 || oldIndex >= _playlist.length) return;
+    if (newIndex < 0 || newIndex >= _playlist.length) return;
+    if (oldIndex == newIndex) return;
+
+    final movedSong = _playlist.removeAt(oldIndex);
+    _playlist.insert(newIndex, movedSong);
+
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex -= 1;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex += 1;
+    }
+
+    if (_playMode == 'shuffle') {
+      _primeShuffleOrder();
+    }
+
     _savePlaybackState();
     _safeNotify();
   }
