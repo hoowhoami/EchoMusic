@@ -39,6 +39,25 @@ class AppShortcutBinding {
   final bool alt;
   final bool meta;
 
+  bool get hasModifiers => control || shift || alt || meta;
+
+  bool get isSpecialKey {
+    // F1 - F12
+    if (logicalKey.keyId >= 0x11000000000 && logicalKey.keyId <= 0x1100000000b) {
+      return true;
+    }
+    // 媒体按键等
+    if (logicalKey == LogicalKeyboardKey.audioVolumeUp ||
+        logicalKey == LogicalKeyboardKey.audioVolumeDown ||
+        logicalKey == LogicalKeyboardKey.audioVolumeMute ||
+        logicalKey == LogicalKeyboardKey.mediaPlayPause ||
+        logicalKey == LogicalKeyboardKey.mediaTrackNext ||
+        logicalKey == LogicalKeyboardKey.mediaTrackPrevious) {
+      return true;
+    }
+    return false;
+  }
+
   HotKey toHotKey() {
     return HotKey(
       key: physicalKey,
@@ -394,18 +413,45 @@ class AppShortcuts extends StatelessWidget {
     DesktopShortcutPlatform? platform,
   ]) {
     if (_isModifierKey(event.logicalKey)) return null;
-    return AppShortcutBinding.withPlatformModifiers(
+
+    final keyboard = HardwareKeyboard.instance;
+    return AppShortcutBinding(
       physicalKey: event.physicalKey,
       logicalKey: event.logicalKey,
-      platform: platform,
+      control: keyboard.isControlPressed,
+      shift: keyboard.isShiftPressed,
+      alt: keyboard.isAltPressed,
+      meta: keyboard.isMetaPressed,
     );
+  }
+
+  static AppShortcutInfo? getConflict(
+    AppShortcutBinding binding,
+    Map<AppShortcutCommand, AppShortcutBinding> bindings, {
+    AppShortcutCommand? excludeCommand,
+  }) {
+    for (final entry in bindings.entries) {
+      if (entry.key != excludeCommand && entry.value == binding) {
+        return shortcutInfos.firstWhere(
+          (item) => item.command == entry.key,
+          orElse:
+              () => AppShortcutInfo(
+                command: entry.key,
+                title: entry.key.name,
+                description: '',
+              ),
+        );
+      }
+    }
+    return null;
   }
 
   static String platformModifierLabel([DesktopShortcutPlatform? platform]) {
     final targetPlatform = platform ?? currentPlatform;
-    return targetPlatform == DesktopShortcutPlatform.macOS
-        ? '⌘⇧'
-        : 'Ctrl+Shift+';
+    if (targetPlatform == DesktopShortcutPlatform.macOS) {
+      return '⌘, ⇧, ⌥, ⌃';
+    }
+    return 'Ctrl, Shift, Alt, Meta';
   }
 
   static String keyLabel(LogicalKeyboardKey key) {

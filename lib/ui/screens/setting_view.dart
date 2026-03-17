@@ -181,6 +181,7 @@ class _SettingViewState extends State<SettingView> {
       builder: (dialogContext) => _ShortcutCaptureDialog(
         info: info,
         currentBinding: currentBinding,
+        allBindings: bindings,
         isDefaultBinding: AppShortcuts.isDefaultBinding(
           info.command,
           currentBinding,
@@ -197,19 +198,6 @@ class _SettingViewState extends State<SettingView> {
 
     final nextBinding = result.binding;
     if (nextBinding == null || nextBinding == currentBinding) return;
-
-    for (final entry in bindings.entries) {
-      if (entry.key != info.command && entry.value == nextBinding) {
-        final conflictInfo = AppShortcuts.shortcutInfos.firstWhere(
-          (item) => item.command == entry.key,
-        );
-        CustomToast.error(
-          context,
-          '快捷键 ${nextBinding.label()} 已被“${conflictInfo.title}”占用',
-        );
-        return;
-      }
-    }
 
     bindings[info.command] = nextBinding;
     await _updateShortcutBindings(persistence, bindings);
@@ -1204,11 +1192,13 @@ class _ShortcutCaptureDialog extends StatefulWidget {
   const _ShortcutCaptureDialog({
     required this.info,
     required this.currentBinding,
+    required this.allBindings,
     required this.isDefaultBinding,
   });
 
   final AppShortcutInfo info;
   final AppShortcutBinding currentBinding;
+  final Map<AppShortcutCommand, AppShortcutBinding> allBindings;
   final bool isDefaultBinding;
 
   @override
@@ -1256,6 +1246,18 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final previewBinding = _capturedBinding ?? widget.currentBinding;
+    final conflict = _capturedBinding == null
+        ? null
+        : AppShortcuts.getConflict(
+            _capturedBinding!,
+            widget.allBindings,
+            excludeCommand: widget.info.command,
+          );
+
+    final isMissingModifiers =
+        _capturedBinding != null &&
+        !_capturedBinding!.hasModifiers &&
+        !_capturedBinding!.isSpecialKey;
 
     return Dialog(
       backgroundColor: theme.colorScheme.surface,
@@ -1287,7 +1289,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
               ),
               const SizedBox(height: 12),
               Text(
-                '直接按下新的主键即可，修饰键会自动使用 ${AppShortcuts.platformModifierLabel()}。按 Esc 可取消。',
+                '按下想要组合的按键（如 ${AppShortcuts.platformModifierLabel()} 等修饰键 + 字母/符号键）。按 Esc 可取消。',
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontSize: 13,
@@ -1309,9 +1311,11 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                       color: theme.colorScheme.onSurface.withAlpha(10),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: _focusNode.hasFocus
-                            ? theme.colorScheme.primary.withAlpha(160)
-                            : theme.colorScheme.outlineVariant.withAlpha(120),
+                        color: conflict != null || isMissingModifiers
+                            ? theme.colorScheme.error.withAlpha(160)
+                            : _focusNode.hasFocus
+                                ? theme.colorScheme.primary.withAlpha(160)
+                                : theme.colorScheme.outlineVariant.withAlpha(120),
                       ),
                     ),
                     child: Column(
@@ -1348,12 +1352,59 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                         Text(
                           previewBinding.label(),
                           style: TextStyle(
-                            color: theme.colorScheme.primary,
+                            color: conflict != null || isMissingModifiers
+                                ? theme.colorScheme.error
+                                : theme.colorScheme.primary,
                             fontSize: 18,
                             fontWeight: AppTheme.fontWeightBold,
                             fontFamily: 'monospace',
                           ),
                         ),
+                        if (conflict != null) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                size: 14,
+                                color: theme.colorScheme.error,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '该快捷键已被“${conflict.title}”占用',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.error,
+                                    fontSize: 12,
+                                    fontWeight: AppTheme.fontWeightMedium,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (isMissingModifiers) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 14,
+                                color: theme.colorScheme.error,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '为了避免冲突，请至少包含一个修饰键 (Ctrl, Alt, Shift, Meta)',
+                                  style: TextStyle(
+                                    color: theme.colorScheme.error,
+                                    fontSize: 12,
+                                    fontWeight: AppTheme.fontWeightMedium,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1376,9 +1427,10 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed:
-                        _capturedBinding == null ||
-                            _capturedBinding == widget.currentBinding
+                    onPressed: _capturedBinding == null ||
+                            _capturedBinding == widget.currentBinding ||
+                            conflict != null ||
+                            isMissingModifiers
                         ? null
                         : () => Navigator.of(
                             context,

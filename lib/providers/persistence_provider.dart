@@ -15,7 +15,6 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyCurrentIndex = 'current_index';
   static const String _keyPlaylistFilteredInvalidSongCount =
       'current_playlist_filtered_invalid_song_count';
-  static const String _keyAudioPlaybackCache = 'audio_playback_cache';
   static const String _keySearchHistory = 'search_history';
 
   List<Song> _favorites = [];
@@ -28,7 +27,6 @@ class PersistenceProvider with ChangeNotifier {
   int _playlistFilteredInvalidSongCount = 0;
   Map<String, dynamic>? _device;
   Map<String, dynamic>? _userInfo;
-  Map<String, dynamic> _audioPlaybackCache = {};
   bool _isLoaded = false;
   int _dataResetVersion = 0;
   Map<String, dynamic> _settings = {
@@ -52,8 +50,6 @@ class PersistenceProvider with ChangeNotifier {
     'closeBehavior': 'tray',
     'pauseOnDeviceChange': false,
     'globalShortcutsEnabled': false,
-    'audioPlaybackCacheTtlHours': 6,
-    'audioPlaybackCacheSize': 1000,
   };
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,
@@ -71,7 +67,6 @@ class PersistenceProvider with ChangeNotifier {
   double get volume => _playerSettings['volume'] ?? 50.0;
   Map<String, dynamic>? get device => _device;
   Map<String, dynamic>? get userInfo => _userInfo;
-  Map<String, dynamic> get audioPlaybackCache => _audioPlaybackCache;
   bool get isLoaded => _isLoaded;
   Map<String, dynamic> get settings => _settings;
   Map<String, dynamic> get playerSettings => _playerSettings;
@@ -120,15 +115,6 @@ class PersistenceProvider with ChangeNotifier {
     final playerSettingsJson = prefs.getString(_keyPlayerSettings);
     if (playerSettingsJson != null) {
       _playerSettings = {..._playerSettings, ...jsonDecode(playerSettingsJson)};
-    }
-
-    // Load playback cache
-    final playbackCacheJson = prefs.getString(_keyAudioPlaybackCache);
-    if (playbackCacheJson != null) {
-      final decoded = jsonDecode(playbackCacheJson);
-      if (decoded is Map<String, dynamic>) {
-        _audioPlaybackCache = Map<String, dynamic>.from(decoded);
-      }
     }
 
     // Load Device Info
@@ -198,7 +184,6 @@ class PersistenceProvider with ChangeNotifier {
     _playlist = [];
     _currentIndex = -1;
     _playlistFilteredInvalidSongCount = 0;
-    _audioPlaybackCache = {};
 
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
@@ -209,7 +194,6 @@ class PersistenceProvider with ChangeNotifier {
       prefs.remove(_keyPlaylist),
       prefs.remove(_keyCurrentIndex),
       prefs.remove(_keyPlaylistFilteredInvalidSongCount),
-      prefs.remove(_keyAudioPlaybackCache),
     ]);
 
     _dataResetVersion++;
@@ -230,7 +214,6 @@ class PersistenceProvider with ChangeNotifier {
     _playlistFilteredInvalidSongCount = 0;
     _device = null;
     _userInfo = null;
-    _audioPlaybackCache = {};
     _settings = {
       'theme': 'auto',
       'volumeFade': true,
@@ -251,8 +234,6 @@ class PersistenceProvider with ChangeNotifier {
       'closeBehavior': 'tray',
       'pauseOnDeviceChange': false,
       'globalShortcutsEnabled': false,
-      'audioPlaybackCacheTtlHours': 6,
-      'audioPlaybackCacheSize': 1000,
     };
     _playerSettings = {
       'volume': 50.0,
@@ -262,12 +243,6 @@ class PersistenceProvider with ChangeNotifier {
     };
     _dataResetVersion++;
     notifyListeners();
-  }
-
-  Future<void> setAudioPlaybackCache(Map<String, dynamic> cache) async {
-    _audioPlaybackCache = cache;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyAudioPlaybackCache, jsonEncode(cache));
   }
 
   Future<void> toggleFavorite(Song song, {dynamic userProvider}) async {

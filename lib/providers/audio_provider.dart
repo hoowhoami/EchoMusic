@@ -102,10 +102,6 @@ class AudioProvider with ChangeNotifier {
   // Monotonic token for the currently active playlist-loading session.
   int _playlistSessionId = 0;
   int _activePlaylistFilteredInvalidSongCount = 0;
-  late _AudioPlaybackCache _audioPlaybackCache;
-  int _cachedResetVersion = 0;
-  String? _cacheConfigSignature;
-  int _cachePersistCountdown = 0;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -149,8 +145,6 @@ class AudioProvider with ChangeNotifier {
   }
 
   AudioProvider() {
-    _audioPlaybackCache = _AudioPlaybackCache(maxEntries: 1000);
-    _cacheConfigSignature = '6:1000';
     _player = Player();
     _initListeners();
     _initMediaSession();
@@ -587,9 +581,6 @@ class AudioProvider with ChangeNotifier {
 
   void _handlePersistenceChanged() {
     _updateWakelock();
-    final persistence = _persistenceProvider;
-    if (persistence == null) return;
-    _configureAudioPlaybackCache(persistence);
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
@@ -637,9 +628,6 @@ class AudioProvider with ChangeNotifier {
           p.playerSettings['preferredAudioDeviceDescription'] as String?;
     }
 
-    _configureAudioPlaybackCache(p);
-    _hydratePlaybackCache(p.audioPlaybackCache);
-
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
       _currentIndex = p.currentIndex;
@@ -655,42 +643,6 @@ class AudioProvider with ChangeNotifier {
     }
 
     _applyPlayMode();
-  }
-
-  void _configureAudioPlaybackCache(PersistenceProvider persistence) {
-    final settings = persistence.settings;
-    final ttlHours = settings['audioPlaybackCacheTtlHours'] as int? ?? 6;
-    final maxEntries = settings['audioPlaybackCacheSize'] as int? ?? 1000;
-    final signature = '$ttlHours:$maxEntries';
-    if (_cachedResetVersion != persistence.dataResetVersion) {
-      _audioPlaybackCache.clear();
-      _cachedResetVersion = persistence.dataResetVersion;
-      _persistPlaybackCache(force: true);
-    }
-    if (_cacheConfigSignature != signature) {
-      _audioPlaybackCache.updateConfig(
-        maxEntries: maxEntries,
-        ttl: Duration(hours: ttlHours),
-      );
-      _cacheConfigSignature = signature;
-    }
-  }
-
-  void _hydratePlaybackCache(Map<String, dynamic> persisted) {
-    if (persisted.isEmpty) return;
-    _audioPlaybackCache.hydrate(persisted);
-  }
-
-  void _persistPlaybackCache({bool force = false}) {
-    final persistence = _persistenceProvider;
-    if (persistence == null) return;
-    if (!force) {
-      _cachePersistCountdown++;
-      if (_cachePersistCountdown < 3) return;
-    }
-    _cachePersistCountdown = 0;
-    final snapshot = _audioPlaybackCache.snapshot();
-    unawaited(persistence.setAudioPlaybackCache(snapshot));
   }
 
   Future<void> _initRestore() async {
@@ -924,9 +876,9 @@ class AudioProvider with ChangeNotifier {
     _isSeeking = true;
     _isHandlingEnd = false;
 
-    const maxWaitMs = 800;
-    const pollIntervalMs = 25;
-    const toleranceMs = 350;
+    const maxWaitMs = 400;
+    const pollIntervalMs = 20;
+    const toleranceMs = 400;
     int waited = 0;
     var finalPosition = _player.state.position;
 
@@ -1408,13 +1360,7 @@ class AudioProvider with ChangeNotifier {
     _isInternalChanging = true;
     _clearDeviceRecoveryState();
     _player.setVolume(0.0);
-    final cachedClimax = _audioPlaybackCache.getClimaxMarks(hash: song.hash);
-    _climaxMarks = cachedClimax != null
-        ? Map<double, double>.from(cachedClimax)
-        : <double, double>{};
-    if (cachedClimax != null) {
-      _safeNotify();
-    }
+    _climaxMarks = <double, double>{};
 
     if (playlist != null) {
       previousPlaylist = List<Song>.from(_playlist);
@@ -1444,9 +1390,7 @@ class AudioProvider with ChangeNotifier {
     try {
       _persistenceProvider?.addToHistory(song);
       // MusicApi.uploadPlayHistory(song.mixSongId);
-      if (cachedClimax == null) {
-        _fetchClimax(song);
-      }
+      _fetchClimax(song);
 
       if (_isMuted) {
         _player.setVolume(0.0);
@@ -1524,10 +1468,6 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
-    final persistence = _persistenceProvider;
-    if (persistence != null && _cachedResetVersion != persistence.dataResetVersion) {
-      _configureAudioPlaybackCache(persistence);
-    }
 
     if (!song.canPlay) {
       return null;
@@ -1547,25 +1487,10 @@ class AudioProvider with ChangeNotifier {
         playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
-    final cachedUrl = _audioPlaybackCache.getUrl(
-      hash: song.hash,
-      quality: audioQuality,
-    );
-    if (cachedUrl != null) {
-      LoggerService.d('[AudioProvider] URL cache hit');
-      return {'url': cachedUrl, 'status': 1};
-    }
-
     if (song.source == 'cloud') {
       LoggerService.d('[AudioProvider] Fetching cloud URL');
       final url = await MusicApi.getCloudSongUrl(song.hash);
       if (url != null) {
-        _audioPlaybackCache.putUrl(
-          hash: song.hash,
-          quality: audioQuality,
-          url: url,
-          sourceHash: song.hash,
-        );
         return {'url': url, 'status': 1};
       }
       return null;
@@ -1575,26 +1500,14 @@ class AudioProvider with ChangeNotifier {
       '[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, CompatibilityMode: $compatibilityMode',
     );
 
-    final cachedRelateGoods = _audioPlaybackCache.getRelateGoods(hash: song.hash);
-    List<Map<String, dynamic>> relateGoods =
-        cachedRelateGoods ?? const <Map<String, dynamic>>[];
-    if (cachedRelateGoods == null) {
-      final privilege = await MusicApi.getSongPrivilege(song.hash);
-      final List<dynamic> rawRelateGoods = (privilege.isNotEmpty)
-          ? (privilege[0]['relate_goods'] ?? [])
-          : [];
-      relateGoods = rawRelateGoods
-          .whereType<Map<String, dynamic>>()
-          .map((entry) => Map<String, dynamic>.from(entry))
-          .toList(growable: false);
-      _audioPlaybackCache.setRelateGoods(
-        hash: song.hash,
-        relateGoods: relateGoods,
-      );
-      _persistPlaybackCache();
-      relateGoods =
-          _audioPlaybackCache.getRelateGoods(hash: song.hash) ?? relateGoods;
-    }
+    final privilege = await MusicApi.getSongPrivilege(song.hash);
+    final List<dynamic> rawRelateGoods = (privilege.isNotEmpty)
+        ? (privilege[0]['relate_goods'] ?? [])
+        : [];
+    final List<Map<String, dynamic>> relateGoods = rawRelateGoods
+        .whereType<Map<String, dynamic>>()
+        .map((entry) => Map<String, dynamic>.from(entry))
+        .toList(growable: false);
 
     // 1. 如果有音效，先尝试用音效获取
     if (audioEffect != 'none') {
@@ -1608,13 +1521,6 @@ class AudioProvider with ChangeNotifier {
           LoggerService.i(
             '[AudioProvider] ✓ Got URL with effect: $audioEffect',
           );
-          _audioPlaybackCache.putUrl(
-            hash: song.hash,
-            quality: audioQuality,
-            url: result['url'],
-            sourceHash: song.hash,
-          );
-          _persistPlaybackCache();
           result['status'] ??= 1;
           return result;
         }
@@ -1659,42 +1565,11 @@ class AudioProvider with ChangeNotifier {
           continue;
         }
 
-        final cachedEntryUrl = good['url']?.toString();
-        if (cachedEntryUrl != null && cachedEntryUrl.isNotEmpty) {
-          LoggerService.d('[AudioProvider] URL cache hit (relateGoods)');
-          return {'url': cachedEntryUrl, 'status': 1};
-        }
-
-        final cachedSongUrl = _audioPlaybackCache.getUrl(
-          hash: song.hash,
-          quality: quality,
-        );
-        if (cachedSongUrl != null) {
-          LoggerService.d('[AudioProvider] URL cache hit (song hash)');
-          return {'url': cachedSongUrl, 'status': 1};
-        }
-
         try {
           final targetHash = good['hash'] as String;
           LoggerService.d(
             '[AudioProvider] Trying quality: $quality (hash: ${targetHash.substring(0, 8)}...)',
           );
-
-          final cachedQualityUrl = _audioPlaybackCache.getUrl(
-            hash: targetHash,
-            quality: quality,
-          );
-          if (cachedQualityUrl != null) {
-            LoggerService.d('[AudioProvider] URL cache hit (quality hash)');
-            _audioPlaybackCache.putUrl(
-              hash: song.hash,
-              quality: quality,
-              url: cachedQualityUrl,
-              sourceHash: targetHash,
-            );
-            _persistPlaybackCache();
-            return {'url': cachedQualityUrl, 'status': 1};
-          }
 
           final result = await MusicApi.getSongUrl(
             targetHash,
@@ -1704,18 +1579,6 @@ class AudioProvider with ChangeNotifier {
               result['status'] == 1 &&
               result['url'] != null) {
             LoggerService.i('[AudioProvider] ✓ Got URL with quality: $quality');
-            _audioPlaybackCache.putUrl(
-              hash: song.hash,
-              quality: quality,
-              url: result['url'],
-              sourceHash: targetHash,
-            );
-            _audioPlaybackCache.putUrl(
-              hash: targetHash,
-              quality: quality,
-              url: result['url'],
-            );
-            _persistPlaybackCache();
             result['status'] ??= 1;
             return result;
           }
@@ -1731,13 +1594,6 @@ class AudioProvider with ChangeNotifier {
           final result = await MusicApi.getSongUrl(song.hash);
           if (result != null && result['url'] != null) {
             LoggerService.i('[AudioProvider] ✓ Got URL with fallback');
-            _audioPlaybackCache.putUrl(
-              hash: song.hash,
-              quality: audioQuality,
-              url: result['url'],
-              sourceHash: song.hash,
-            );
-            _persistPlaybackCache();
             result['status'] ??= 1;
             return result;
           }
@@ -1822,22 +1678,27 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider?.updatePlayerSetting(key, value);
     if (_currentSong != null) {
       final previousUrl = _currentUrl;
-      final pos = _player.state.position;
       final playing = _player.state.playing;
+
       _isLoading = true;
       _safeNotify();
+
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
           _currentUrl = result['url']; // 保存 URL
-          await _player.open(Media(result['url']), play: false);
-          await _player.seek(pos);
-          if (playing) _player.play();
+
+          _isInternalChanging = true;
+          await _player.open(Media(result['url']), play: playing);
           _player.setRate(_playbackRate);
+
+          // 恢复用户设置的音量
+          _player.setVolume(_isMuted ? 0.0 : _userVolume);
         } else {
           _currentUrl = previousUrl;
         }
-      } catch (_) {
+      } catch (e) {
+        LoggerService.e('[AudioProvider] Error during quality switch: $e');
         _currentUrl = previousUrl;
       } finally {
         _isLoading = false;
@@ -1956,8 +1817,6 @@ class AudioProvider with ChangeNotifier {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
 
-    _persistPlaybackCache(force: true);
-
     await _stopPlayer();
     _savePlaybackState();
   }
@@ -1977,7 +1836,6 @@ class AudioProvider with ChangeNotifier {
     _isLoading = false;
     _playlistSessionId++;
     _activePlaylistFilteredInvalidSongCount = 0;
-    _persistPlaybackCache(force: true);
     _savePlaybackState();
     _safeNotify();
   }
@@ -2194,11 +2052,6 @@ class AudioProvider with ChangeNotifier {
         }
       }
       _climaxMarks = newMarks;
-      _audioPlaybackCache.setClimaxMarks(
-        hash: song.hash,
-        climaxMarks: newMarks,
-      );
-      _persistPlaybackCache();
       _safeNotify();
     } catch (_) {}
   }
@@ -2206,7 +2059,6 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _persistenceProvider?.removeListener(_handlePersistenceChanged);
-    _persistPlaybackCache(force: true);
     _isDisposed = true;
     _fadeTimer?.cancel();
     _volumeSaveTimer?.cancel();
@@ -2216,254 +2068,5 @@ class AudioProvider with ChangeNotifier {
     _forceDisableWakelock();
     _player.dispose();
     super.dispose();
-  }
-}
-
-class _AudioPlaybackCacheEntry {
-  _AudioPlaybackCacheEntry({required this.cachedAt});
-
-  final DateTime cachedAt;
-  List<Map<String, dynamic>> relateGoods = <Map<String, dynamic>>[];
-  Map<double, double>? climaxMarks;
-}
-
-class _AudioPlaybackCache {
-  _AudioPlaybackCache({required int maxEntries, Duration? ttl})
-      : maxEntries = maxEntries,
-        ttl = ttl ?? const Duration(hours: 6);
-
-  int maxEntries;
-  Duration ttl;
-  final Map<String, _AudioPlaybackCacheEntry> _entries = {};
-  final List<String> _order = [];
-
-  _AudioPlaybackCacheEntry? _getEntry(String hash) {
-    final entry = _entries[hash];
-    if (entry == null) return null;
-    if (DateTime.now().difference(entry.cachedAt) > ttl) {
-      _entries.remove(hash);
-      _order.remove(hash);
-      return null;
-    }
-    _order.remove(hash);
-    _order.add(hash);
-    return entry;
-  }
-
-  String? getUrl({required String hash, required String quality}) {
-    final entry = _getEntry(hash);
-    if (entry == null) return null;
-    for (final item in entry.relateGoods) {
-      if (item['quality']?.toString() == quality) {
-        final url = item['url']?.toString();
-        if (url != null && url.isNotEmpty) return url;
-      }
-    }
-    return null;
-  }
-
-  void putUrl({
-    required String hash,
-    required String quality,
-    required String url,
-    String? sourceHash,
-  }) {
-    if (quality.isEmpty) return;
-    final entry =
-        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
-    final resolvedHash = (sourceHash ?? hash).toString();
-    final goods = List<Map<String, dynamic>>.from(entry.relateGoods);
-    var updated = false;
-    for (final item in goods) {
-      if (item['quality']?.toString() == quality) {
-        item['hash'] = resolvedHash;
-        item['url'] = url;
-        updated = true;
-        break;
-      }
-    }
-    if (!updated) {
-      goods.add({'quality': quality, 'hash': resolvedHash, 'url': url});
-    }
-    entry.relateGoods = goods;
-    _entries[hash] = entry;
-    _order.remove(hash);
-    _order.add(hash);
-    _trimIfNeeded();
-  }
-
-  List<Map<String, dynamic>>? getRelateGoods({required String hash}) {
-    final entry = _getEntry(hash);
-    if (entry == null) return null;
-    return entry.relateGoods;
-  }
-
-  void setRelateGoods({
-    required String hash,
-    required List<Map<String, dynamic>> relateGoods,
-  }) {
-    final entry =
-        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
-    final normalized = _normalizeRelateGoods(relateGoods);
-    if (normalized.isEmpty && entry.relateGoods.isNotEmpty) {
-      _touchEntry(hash, entry);
-      return;
-    }
-
-    final mergedByQuality = <String, Map<String, dynamic>>{};
-    for (final existing in entry.relateGoods) {
-      final quality = existing['quality']?.toString();
-      if (quality == null || quality.isEmpty) continue;
-      mergedByQuality[quality] = Map<String, dynamic>.from(existing);
-    }
-
-    for (final item in normalized) {
-      final quality = item['quality']?.toString();
-      if (quality == null || quality.isEmpty) continue;
-      final merged = mergedByQuality[quality] ?? <String, dynamic>{};
-      merged['quality'] = quality;
-      merged['hash'] = item['hash'];
-      final newUrl = item['url']?.toString();
-      if (newUrl != null && newUrl.isNotEmpty) {
-        merged['url'] = newUrl;
-      } else if (merged['url']?.toString().isEmpty == true) {
-        merged.remove('url');
-      }
-      mergedByQuality[quality] = merged;
-    }
-
-    entry.relateGoods = mergedByQuality.values.toList(growable: false);
-    _entries[hash] = entry;
-    _touchEntry(hash, entry);
-  }
-
-  void _touchEntry(String hash, _AudioPlaybackCacheEntry entry) {
-    _entries[hash] = entry;
-    _order.remove(hash);
-    _order.add(hash);
-    _trimIfNeeded();
-  }
-
-  List<Map<String, dynamic>> _normalizeRelateGoods(
-    List<Map<String, dynamic>> relateGoods,
-  ) {
-    return relateGoods
-        .map((entry) {
-          final quality = entry['quality']?.toString() ?? '';
-          final hash = entry['hash']?.toString() ?? '';
-          if (quality.isEmpty || hash.isEmpty) return <String, dynamic>{};
-          final url = entry['url']?.toString();
-          final normalized = <String, dynamic>{
-            'quality': quality,
-            'hash': hash,
-          };
-          if (url != null && url.isNotEmpty) {
-            normalized['url'] = url;
-          }
-          return normalized;
-        })
-        .where((entry) => entry.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  Map<double, double>? getClimaxMarks({required String hash}) {
-    final entry = _getEntry(hash);
-    return entry?.climaxMarks;
-  }
-
-  void setClimaxMarks({
-    required String hash,
-    required Map<double, double> climaxMarks,
-  }) {
-    final entry =
-        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
-    entry.climaxMarks = Map<double, double>.from(climaxMarks);
-    _entries[hash] = entry;
-    _order.remove(hash);
-    _order.add(hash);
-    _trimIfNeeded();
-  }
-
-  void clear() {
-    _entries.clear();
-    _order.clear();
-  }
-
-  void updateConfig({required int maxEntries, required Duration ttl}) {
-    this.maxEntries = maxEntries;
-    this.ttl = ttl;
-    _pruneExpired();
-    _trimIfNeeded();
-  }
-
-  Map<String, dynamic> snapshot() {
-    _pruneExpired();
-    final data = <String, dynamic>{};
-    for (final hash in _order) {
-      final entry = _entries[hash];
-      if (entry == null) continue;
-      data[hash] = {
-        'cachedAt': entry.cachedAt.toIso8601String(),
-        'relateGoods': entry.relateGoods,
-        'climaxMarks': entry.climaxMarks?.map(
-          (key, value) => MapEntry(key.toString(), value),
-        ),
-      };
-    }
-    return data;
-  }
-
-  void hydrate(Map<String, dynamic> data) {
-    _entries.clear();
-    _order.clear();
-    data.forEach((hash, value) {
-      if (hash is! String || value is! Map) return;
-      final cachedAtRaw = value['cachedAt']?.toString();
-      final cachedAt = cachedAtRaw != null
-          ? DateTime.tryParse(cachedAtRaw) ?? DateTime.now()
-          : DateTime.now();
-      final entry = _AudioPlaybackCacheEntry(cachedAt: cachedAt);
-      final relateGoodsRaw = value['relateGoods'];
-      if (relateGoodsRaw is List) {
-        entry.relateGoods = relateGoodsRaw
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList(growable: false);
-      }
-      final climaxRaw = value['climaxMarks'];
-      if (climaxRaw is Map) {
-        entry.climaxMarks = climaxRaw.map(
-          (key, val) => MapEntry(
-            double.tryParse(key.toString()) ?? 0.0,
-            (val is num ? val.toDouble() : double.tryParse(val.toString()) ?? 0.0),
-          ),
-        );
-      }
-      _entries[hash] = entry;
-      _order.add(hash);
-    });
-    _trimIfNeeded();
-  }
-
-  void _pruneExpired() {
-    final now = DateTime.now();
-    for (final hash in List<String>.from(_order)) {
-      final entry = _entries[hash];
-      if (entry == null) {
-        _order.remove(hash);
-        continue;
-      }
-      if (now.difference(entry.cachedAt) > ttl) {
-        _entries.remove(hash);
-        _order.remove(hash);
-      }
-    }
-  }
-
-  void _trimIfNeeded() {
-    while (_order.length > maxEntries) {
-      final oldestKey = _order.removeAt(0);
-      _entries.remove(oldestKey);
-    }
   }
 }
