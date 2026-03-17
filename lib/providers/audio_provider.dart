@@ -876,9 +876,9 @@ class AudioProvider with ChangeNotifier {
     _isSeeking = true;
     _isHandlingEnd = false;
 
-    const maxWaitMs = 800;
-    const pollIntervalMs = 25;
-    const toleranceMs = 350;
+    const maxWaitMs = 400;
+    const pollIntervalMs = 20;
+    const toleranceMs = 400;
     int waited = 0;
     var finalPosition = _player.state.position;
 
@@ -1468,7 +1468,6 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
-    final persistence = _persistenceProvider;
 
     if (!song.canPlay) {
       return null;
@@ -1679,22 +1678,27 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider?.updatePlayerSetting(key, value);
     if (_currentSong != null) {
       final previousUrl = _currentUrl;
-      final pos = _player.state.position;
       final playing = _player.state.playing;
+
       _isLoading = true;
       _safeNotify();
+
       try {
         final result = await _getAudioUrlWithQuality(_currentSong!);
         if (result != null && result['url'] != null) {
           _currentUrl = result['url']; // 保存 URL
-          await _player.open(Media(result['url']), play: false);
-          await _player.seek(pos);
-          if (playing) _player.play();
+
+          _isInternalChanging = true;
+          await _player.open(Media(result['url']), play: playing);
           _player.setRate(_playbackRate);
+
+          // 恢复用户设置的音量
+          _player.setVolume(_isMuted ? 0.0 : _userVolume);
         } else {
           _currentUrl = previousUrl;
         }
-      } catch (_) {
+      } catch (e) {
+        LoggerService.e('[AudioProvider] Error during quality switch: $e');
         _currentUrl = previousUrl;
       } finally {
         _isLoading = false;
