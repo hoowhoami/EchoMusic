@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'persistence_provider.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class LyricCharacter {
   final String text;
@@ -41,6 +43,9 @@ class LyricProvider with ChangeNotifier {
   String? _loadedHash;
 
   PersistenceProvider? _persistenceProvider;
+  LyricsMode _preferredMode = LyricsMode.none;
+  double _fontScale = 1.0;
+  int _fontWeightIndex = 4; // Default to w500 (Medium)
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
@@ -50,9 +55,83 @@ class LyricProvider with ChangeNotifier {
   bool get hasRomanization => _hasRomanization;
   bool get isPageOpen => _isPageOpen;
   String? get loadedHash => _loadedHash;
+  double get fontScale => _fontScale;
+  int get fontWeightIndex => _fontWeightIndex;
+
+  FontWeight get lyricFontWeight {
+    const weights = [
+      FontWeight.w100,
+      FontWeight.w200,
+      FontWeight.w300,
+      AppTheme.fontWeightRegular,
+      AppTheme.fontWeightMedium,
+      AppTheme.fontWeightSemiBold,
+      AppTheme.fontWeightBold,
+      AppTheme.fontWeightExtraBold,
+      AppTheme.fontWeightBlack,
+    ];
+    return weights[_fontWeightIndex.clamp(0, 8)];
+  }
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
+    _preferredMode = _parsePreference(
+      p.settings['lyricsModePreference']?.toString(),
+    );
+    _fontScale = _parseFontScale(p.settings['lyricFontScale']);
+    _fontWeightIndex = _parseFontWeightIndex(p.settings['lyricFontWeightIndex']);
+  }
+
+  double _parseFontScale(dynamic value) {
+    if (value is num) {
+      return value.toDouble().clamp(0.7, 1.4);
+    }
+    final parsed = double.tryParse(value?.toString() ?? '');
+    if (parsed == null) return 1.0;
+    return parsed.clamp(0.7, 1.4);
+  }
+
+  int _parseFontWeightIndex(dynamic value) {
+    if (value is num) {
+      return value.toInt().clamp(0, 8);
+    }
+    final parsed = int.tryParse(value?.toString() ?? '');
+    if (parsed == null) return 8; // Default to w900
+    return parsed.clamp(0, 8);
+  }
+
+  Future<void> _persistFontScale(double scale) async {
+    _fontScale = scale;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricFontScale',
+        _fontScale,
+      );
+    }
+  }
+
+  Future<void> _persistFontWeightIndex(int index) async {
+    _fontWeightIndex = index;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricFontWeightIndex',
+        _fontWeightIndex,
+      );
+    }
+  }
+
+  Future<void> updateFontScale(double scale) async {
+    final next = scale.clamp(0.7, 1.4);
+    if (next == _fontScale) return;
+    await _persistFontScale(next);
+    notifyListeners();
+  }
+
+  Future<void> updateFontWeight(int index) async {
+    final next = index.clamp(0, 8);
+    if (next == _fontWeightIndex) return;
+    await _persistFontWeightIndex(next);
+    notifyListeners();
   }
 
   void setPageOpen(bool open) {
@@ -66,6 +145,39 @@ class LyricProvider with ChangeNotifier {
       _lyricsMode == LyricsMode.translation && _hasTranslation;
   bool get showRomanization =>
       _lyricsMode == LyricsMode.romanization && _hasRomanization;
+
+  LyricsMode _parsePreference(String? value) {
+    switch (value) {
+      case 'translation':
+        return LyricsMode.translation;
+      case 'romanization':
+        return LyricsMode.romanization;
+      default:
+        return LyricsMode.none;
+    }
+  }
+
+  Future<void> _persistPreference(LyricsMode mode) async {
+    _preferredMode = mode;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricsModePreference',
+        _preferredMode.name,
+      );
+    }
+  }
+
+  void _applyPreferredMode() {
+    if (_preferredMode == LyricsMode.translation && _hasTranslation) {
+      _lyricsMode = LyricsMode.translation;
+      return;
+    }
+    if (_preferredMode == LyricsMode.romanization && _hasRomanization) {
+      _lyricsMode = LyricsMode.romanization;
+      return;
+    }
+    _lyricsMode = LyricsMode.none;
+  }
 
   void _resetLyricsState({String? hash, String tips = '暂无歌词'}) {
     _lyrics = [];
@@ -101,6 +213,7 @@ class LyricProvider with ChangeNotifier {
       _lyricsMode = LyricsMode.none;
     }
 
+    unawaited(_persistPreference(_lyricsMode));
     notifyListeners();
   }
 
@@ -259,6 +372,7 @@ class LyricProvider with ChangeNotifier {
     }
 
     _tips = _lyrics.isEmpty ? '暂无歌词' : '歌词已加载';
+    _applyPreferredMode();
     notifyListeners();
   }
 

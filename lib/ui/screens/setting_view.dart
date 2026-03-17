@@ -18,6 +18,7 @@ import '../widgets/app_shortcuts.dart';
 import '../widgets/app_menu.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
+import 'package:echomusic/theme/app_theme.dart';
 
 class SettingView extends StatefulWidget {
   const SettingView({super.key});
@@ -282,7 +283,7 @@ class _SettingViewState extends State<SettingView> {
             _buildItem(
               context,
               '播放替换队列',
-              '在歌单/专辑/歌手列表中，双击播放单曲时，用当前单曲所在的歌曲列表替换播放列表',
+              '双击播放单曲时，用当前单曲所在的歌曲列表替换播放列表',
               trailing: _buildSwitch(
                 context,
                 settings['replacePlaylist'] ?? false,
@@ -291,8 +292,8 @@ class _SettingViewState extends State<SettingView> {
             ),
             _buildItem(
               context,
-              '音量淡入淡出',
-              '启用播放状态切换时的过渡效果',
+              '淡入淡出播放',
+              '启用歌曲切换时的过渡效果',
               trailing: _buildSwitch(
                 context,
                 settings['volumeFade'] ?? true,
@@ -436,7 +437,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontSize: 13,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
               ),
@@ -458,7 +459,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.error,
                     fontSize: 13,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
               ),
@@ -480,7 +481,7 @@ class _SettingViewState extends State<SettingView> {
                     style: TextStyle(
                       color: accentColor,
                       fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                     ),
                   ),
                 ),
@@ -546,7 +547,7 @@ class _SettingViewState extends State<SettingView> {
           '偏好设置',
           style: TextStyle(
             fontSize: 32,
-            fontWeight: FontWeight.w900,
+            fontWeight: AppTheme.fontWeightBold,
             color: theme.colorScheme.onSurface,
             letterSpacing: -1.0,
           ),
@@ -584,7 +585,7 @@ class _SettingViewState extends State<SettingView> {
                 title,
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: AppTheme.fontWeightBold,
                 ),
               ),
             ],
@@ -633,7 +634,7 @@ class _SettingViewState extends State<SettingView> {
                   title,
                   style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -642,7 +643,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: AppTheme.fontWeightMedium,
                   ),
                 ),
               ],
@@ -733,7 +734,7 @@ class _SettingViewState extends State<SettingView> {
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 12,
-          fontWeight: FontWeight.w800,
+          fontWeight: AppTheme.fontWeightBold,
           fontFamily: 'monospace',
         ),
       ),
@@ -799,7 +800,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.onSurface.withAlpha(150),
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                         ),
                       ),
                       Text(
@@ -807,7 +808,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.primary,
                           fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: AppTheme.fontWeightBold,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -898,7 +899,7 @@ class _SettingViewState extends State<SettingView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -976,7 +977,7 @@ class _SettingViewState extends State<SettingView> {
             maxLines: 1,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -987,7 +988,7 @@ class _SettingViewState extends State<SettingView> {
                   typeLabel,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                     color: typeBadgeColor,
                   ),
                 )
@@ -1100,7 +1101,7 @@ class _SettingViewState extends State<SettingView> {
             style: TextStyle(
               color: textColor ?? theme.colorScheme.onSurface,
               fontSize: 13,
-              fontWeight: FontWeight.w700,
+              fontWeight: AppTheme.fontWeightBold,
             ),
           ),
         ),
@@ -1150,7 +1151,7 @@ class _SettingViewState extends State<SettingView> {
               style: TextStyle(
                 color: warningColor.withAlpha(220),
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppTheme.fontWeightSemiBold,
               ),
             ),
           ),
@@ -1272,7 +1273,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontSize: 20,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: AppTheme.fontWeightBold,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1281,7 +1282,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.primary,
                   fontSize: 14,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: AppTheme.fontWeightBold,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1291,7 +1292,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                   color: theme.colorScheme.onSurfaceVariant,
                   fontSize: 13,
                   height: 1.5,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
               const SizedBox(height: 18),
@@ -1321,7 +1322,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1330,7 +1331,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurface,
                             fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTheme.fontWeightBold,
                             fontFamily: 'monospace',
                           ),
                         ),
@@ -1340,7 +1341,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1349,7 +1350,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: AppTheme.fontWeightBold,
                             fontFamily: 'monospace',
                           ),
                         ),

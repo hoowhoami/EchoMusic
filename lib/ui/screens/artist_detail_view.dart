@@ -4,18 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import '../../api/music_api.dart';
 import '../../models/artist.dart';
+import '../../models/album.dart';
 import '../../models/song.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
+import '../../providers/navigation_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
+import '../widgets/album_card.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ArtistDetailView extends StatefulWidget {
   final int artistId;
@@ -33,16 +38,23 @@ class ArtistDetailView extends StatefulWidget {
 class _ArtistDetailViewState extends State<ArtistDetailView>
     with RefreshableState {
   static const int _pageSize = 200;
+  static const int _albumPageSize = 30;
 
   @override
   String get refreshKey => 'artist_detail:${widget.artistId}';
 
   Artist? _artist;
   List<Song>? _songs;
+  List<Album>? _albums;
   bool _isLoading = true;
   int _currentPage = 1;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  bool _isAlbumLoading = true;
+  bool _isAlbumLoadingMore = false;
+  bool _hasMoreAlbums = true;
+  int _albumPage = 1;
+  bool _hasLoadedAlbums = false;
   bool _isResolvingAllSongs = false;
   bool _hasScheduledWarmUp = false;
   List<Song>? _allSongsCache;
@@ -51,6 +63,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
   int? _playbackAppendSessionId;
 
   int get _totalSongCount => _artist?.songCount ?? 0;
+  int get _totalAlbumCount => _artist?.albumCount ?? 0;
 
   bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
     final totalSongCount = _totalSongCount;
@@ -82,6 +95,12 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       _resolveAllSongsFuture = null;
       _playbackAppendProvider = null;
       _playbackAppendSessionId = null;
+      _albums = null;
+      _isAlbumLoading = true;
+      _isAlbumLoadingMore = false;
+      _hasMoreAlbums = true;
+      _albumPage = 1;
+      _hasLoadedAlbums = false;
     });
 
     final results = await Future.wait([
@@ -106,10 +125,34 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         if (!_hasMore) {
           _allSongsCache = List.unmodifiable(songs ?? const <Song>[]);
         }
+        _albums = const <Album>[];
+        _isAlbumLoading = false;
+        _hasMoreAlbums = false;
       });
 
       _scheduleBackgroundResolve();
     }
+  }
+
+  void _onPrimaryTabChanged(SongListPrimaryTab tab) {
+    if (tab != SongListPrimaryTab.comments || _hasLoadedAlbums) return;
+    _hasLoadedAlbums = true;
+    if (mounted) {
+      setState(() => _isAlbumLoading = true);
+    }
+    unawaited(_fetchAlbumsPage(1).then((albums) {
+      if (!mounted) return;
+      final albumLoadedCount = albums.length;
+      setState(() {
+        _albums = albums;
+        _isAlbumLoading = false;
+        _albumPage = 1;
+        _hasMoreAlbums = _computeHasMoreAlbums(
+          loadedCount: albumLoadedCount,
+          lastPageCount: albumLoadedCount,
+        );
+      });
+    }));
   }
 
   void _scheduleBackgroundResolve() {
@@ -129,6 +172,15 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
     );
   }
 
+  Future<List<Album>> _fetchAlbumsPage(int page) {
+    return MusicApi.getSingerAlbums(
+      widget.artistId,
+      page: page,
+      pagesize: _albumPageSize,
+      sort: 'hot',
+    );
+  }
+
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore || !mounted) return;
 
@@ -139,6 +191,38 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       if (mounted) {
         setState(() => _isLoadingMore = false);
       }
+    }
+  }
+
+  bool _computeHasMoreAlbums({required int loadedCount, required int lastPageCount}) {
+    final totalAlbumCount = _totalAlbumCount;
+    if (totalAlbumCount > 0) return loadedCount < totalAlbumCount;
+    return lastPageCount >= _albumPageSize;
+  }
+
+  Future<void> _loadMoreAlbums() async {
+    if (_isAlbumLoadingMore || !_hasMoreAlbums || !mounted) return;
+    setState(() => _isAlbumLoadingMore = true);
+
+    try {
+      final nextPage = _albumPage + 1;
+      final moreAlbums = await _fetchAlbumsPage(nextPage);
+      if (!mounted) return;
+
+      final updatedAlbums = [...?_albums, ...moreAlbums];
+      final hasMore = _computeHasMoreAlbums(
+        loadedCount: updatedAlbums.length,
+        lastPageCount: moreAlbums.length,
+      );
+
+      setState(() {
+        _albums = updatedAlbums;
+        _albumPage = nextPage;
+        _hasMoreAlbums = hasMore;
+        _isAlbumLoadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isAlbumLoadingMore = false);
     }
   }
 
@@ -324,11 +408,23 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithArtistSongs
           : null,
+      commentSlivers: _hasLoadedAlbums ? _buildAlbumSlivers(context) : null,
+      commentsTabTitle: '专辑',
+      hasMoreComments: _hasMoreAlbums,
+      isLoadingMoreComments: _isAlbumLoadingMore,
+      onCommentsLoadMore: _loadMoreAlbums,
+      commentsTabBadgeLabel:
+          _artist?.albumCount != null && _artist!.albumCount > 0
+              ? '${_artist!.albumCount}'
+              : null,
+      onPrimaryTabChanged: _onPrimaryTabChanged,
+      initialPrimaryTab: SongListPrimaryTab.songs,
+      hasCommentsTab: true,
       headers: [
         DetailPageSliverHeader(
           typeLabel: 'ARTIST',
           title: widget.artistName,
-          expandedHeight: 157,
+          expandedHeight: 200,
           expandedCover: _artist != null
               ? Container(
                   decoration: BoxDecoration(
@@ -394,7 +490,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                 ),
               ),
           ],
@@ -411,31 +507,30 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
         if (_artist != null && _artist!.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     '歌手简介',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 15,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _artist!.intro,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppTheme.fontWeightMedium,
                       fontSize: 12,
                     ),
                   ),
-                  if (_artist!.intro.length > 80)
-                    InkWell(
+                  InkWell(
                       onTap: () {
                         CustomDialog.show(
                           context,
@@ -456,7 +551,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                       ),
@@ -465,20 +560,76 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
               ),
             ),
           ),
+      ],
+    );
+  }
+
+  List<Widget> _buildAlbumSlivers(BuildContext context) {
+    final theme = Theme.of(context);
+    final albums = _albums ?? const <Album>[];
+
+    if (_isAlbumLoading) {
+      return const [
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
-            child: Text(
-              '热门歌曲',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 15,
+            padding: EdgeInsets.only(top: 60),
+            child: Center(child: CupertinoActivityIndicator()),
+          ),
+        ),
+      ];
+    }
+
+    if (albums.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+              child: Text(
+                '暂无专辑',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
           ),
         ),
-      ],
-    );
+      ];
+    }
+
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(24, 6, 24, 24),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 220,
+            mainAxisExtent: 230,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final album = albums[index];
+              final subtitleParts = <String>[];
+              if (album.publishTime.isNotEmpty) {
+                subtitleParts.add(album.publishTime);
+              }
+              if (album.songCount > 0) {
+                subtitleParts.add('${album.songCount} 首歌曲');
+              }
+              final subtitle =
+                  subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
+              return AlbumCard.grid(
+                album: album,
+                subtitle: subtitle,
+                onTap: () => context
+                    .read<NavigationProvider>()
+                    .openAlbum(album.id, album.name),
+              );
+            },
+            childCount: albums.length,
+          ),
+        ),
+      ),
+    ];
   }
 
   String _formatCount(int number) {

@@ -4,6 +4,7 @@ import 'package:echomusic/providers/user_provider.dart';
 import 'package:echomusic/ui/widgets/app_shortcuts.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 class PlayerShortcutActions {
   static const double _volumeStep = 5.0;
@@ -26,6 +27,8 @@ class PlayerShortcutActions {
         return toggleFavorite(context);
       case AppShortcutCommand.togglePlayMode:
         return togglePlayMode(context);
+      case AppShortcutCommand.toggleWindow:
+        return toggleWindow(context);
     }
   }
 
@@ -71,6 +74,20 @@ class PlayerShortcutActions {
 
   static Future<void> togglePlayMode(BuildContext context) async {
     context.read<AudioProvider>().togglePlayMode();
+  }
+
+  static Future<void> toggleWindow(BuildContext context) async {
+    final isVisible = await windowManager.isVisible();
+    if (isVisible) {
+      await windowManager.hide();
+    } else {
+      final isMinimized = await windowManager.isMinimized();
+      if (isMinimized) {
+        await windowManager.restore();
+      }
+      await windowManager.show();
+      await windowManager.focus();
+    }
   }
 
   static void _adjustVolume(BuildContext context, double delta) {

@@ -16,6 +16,7 @@ import 'playlist_picker_dialog.dart';
 import 'song_table_layout.dart';
 
 import '../../models/playlist.dart' as model;
+import 'package:echomusic/theme/app_theme.dart';
 
 enum _SongCardMenuAction { play, playNext, addToPlaylist, removeFromPlaylist }
 
@@ -27,6 +28,11 @@ class SongCard extends StatefulWidget {
   final bool showCover;
   final double coverSize;
   final bool showMore;
+  final bool showAlbum;
+  final bool showDuration;
+  final double albumWidth;
+  final double durationWidth;
+  final double rowHorizontalPadding;
   final bool suppressHover;
   final bool isRowSelected;
   final VoidCallback? onSelect;
@@ -40,8 +46,13 @@ class SongCard extends StatefulWidget {
     this.parentPlaylist,
     this.rowNumber,
     this.showCover = true,
-    this.coverSize = 46,
+    this.coverSize = SongTableLayout.listCoverSize,
     this.showMore = false,
+    this.showAlbum = true,
+    this.showDuration = true,
+    this.albumWidth = SongTableLayout.listAlbumWidth,
+    this.durationWidth = SongTableLayout.listDurationWidth,
+    this.rowHorizontalPadding = SongTableLayout.listRowHorizontalPadding,
     this.suppressHover = false,
     this.isRowSelected = false,
     this.onSelect,
@@ -56,7 +67,6 @@ class SongCard extends StatefulWidget {
 class _SongCardState extends State<SongCard> {
   bool _isMenuOpen = false;
   bool _isCardHovered = false;
-  bool _isCoverHovered = false;
 
   List<SingerInfo> get _displaySingers => widget.song.singers
       .where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty)
@@ -72,11 +82,18 @@ class _SongCardState extends State<SongCard> {
     super.didUpdateWidget(oldWidget);
     if (widget.suppressHover && !oldWidget.suppressHover) {
       _isCardHovered = false;
-      _isCoverHovered = false;
     }
   }
 
   void _showUnavailableToast(BuildContext context) {
+    if (widget.song.isNoCopyright) {
+      CustomToast.error(context, '该歌曲暂无版权');
+      return;
+    }
+    if (widget.song.isPayBlocked || widget.song.isPaid) {
+      CustomToast.error(context, '该歌曲需要购买');
+      return;
+    }
     CustomToast.error(context, '该歌曲暂无可用音源');
   }
 
@@ -109,21 +126,106 @@ class _SongCardState extends State<SongCard> {
     _queueAndPlayCurrentSong();
   }
 
+  Widget _buildLeadingCell({
+    required bool isCurrent,
+    required bool isPlaying,
+    required bool isLoading,
+    required Color primaryColor,
+    required bool isPlayable,
+    required bool isHoveringCard,
+    required ThemeData theme,
+  }) {
+    final showButton =
+        (!widget.suppressHover && isPlayable && isHoveringCard) || isCurrent;
+    final icon = isCurrent && isPlaying
+        ? CupertinoIcons.pause_fill
+        : CupertinoIcons.play_fill;
+    final tooltip = isCurrent && isPlaying ? '暂停当前歌曲' : '播放当前歌曲';
+    final iconColor =
+        Theme.of(context).colorScheme.onSurfaceVariant.withAlpha(200);
+
+    return SizedBox(
+      width: SongTableLayout.listLeadingWidth,
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: const BoxDecoration(color: Colors.transparent),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 120),
+            child: showButton
+                ? Tooltip(
+                    message: tooltip,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        key: const ValueKey('play'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _handleCoverPlayTap(
+                          isCurrent: isCurrent,
+                          isPlaying: isPlaying,
+                          isLoading: isLoading,
+                        ),
+                        onDoubleTap: widget.onDoubleTapPlay != null ||
+                                widget.enableDefaultDoubleTapPlay
+                            ? () => _handleSongDoubleTap(
+                                  isCurrent: isCurrent,
+                                  isPlaying: isPlaying,
+                                  isLoading: isLoading,
+                                )
+                            : null,
+                        child: Icon(
+                          icon,
+                          size: 16,
+                          color: iconColor,
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    widget.rowNumber?.toString() ?? '',
+                    key: const ValueKey('index'),
+                    style: TextStyle(
+                      color: isCurrent
+                          ? primaryColor.withAlpha(isPlayable ? 220 : 170)
+                          : theme.colorScheme.onSurfaceVariant.withAlpha(
+                                isPlayable ? 170 : 110,
+                              ),
+                      fontSize: 12,
+                      fontWeight:
+                          isCurrent ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _handleSongDoubleTap({
     required bool isCurrent,
     required bool isPlaying,
     required bool isLoading,
   }) {
+    if (!widget.song.isPlayable) {
+      _showUnavailableToast(context);
+      return;
+    }
     if (widget.onDoubleTapPlay != null) {
       unawaited(widget.onDoubleTapPlay!(widget.song));
       return;
     }
-    if (!widget.enableDefaultDoubleTapPlay) return;
-    _handleCoverPlayTap(
-      isCurrent: isCurrent,
-      isPlaying: isPlaying,
-      isLoading: isLoading,
-    );
+    // 默认双击播放：添加到队列播放（不替换播放列表）
+    if (widget.enableDefaultDoubleTapPlay) {
+      _handleCoverPlayTap(
+        isCurrent: isCurrent,
+        isPlaying: isPlaying,
+        isLoading: isLoading,
+      );
+      return;
+    }
+    // 如果没有启用默认双击播放，也执行队列播放
+    _queueAndPlayCurrentSong();
   }
 
   void _showActionToast({
@@ -180,6 +282,7 @@ class _SongCardState extends State<SongCard> {
               children: [
                 _SongCardActionIconButton(
                   icon: CupertinoIcons.chat_bubble_text,
+                  size: 18,
                   tooltip: '详情及评论',
                   onPressed: () => context
                       .read<NavigationProvider>()
@@ -267,34 +370,43 @@ class _SongCardState extends State<SongCard> {
       );
     }
 
-    return Wrap(
-      spacing: 0,
-      runSpacing: 0,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        for (int index = 0; index < singers.length; index++) ...[
-          _buildLinkText(
-            text: singers[index].name,
-            style: style,
-            onTap:
-                enabled &&
-                    singers[index].id > 0 &&
-                    !navigationProvider.isCurrentRoute(
-                      'artist_detail',
-                      id: singers[index].id,
-                    )
-                ? () => _openArtistDetail(singers[index])
-                : null,
-          ),
-          if (index < singers.length - 1)
-            Text(
-              ' / ',
-              style: style.copyWith(
-                color: style.color?.withAlpha(isPlayable ? 180 : 120),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int index = 0; index < singers.length; index++) ...[
+                  _buildLinkText(
+                    text: singers[index].name,
+                    style: style,
+                    onTap:
+                        enabled &&
+                            singers[index].id > 0 &&
+                            !navigationProvider.isCurrentRoute(
+                              'artist_detail',
+                              id: singers[index].id,
+                            )
+                        ? () => _openArtistDetail(singers[index])
+                        : null,
+                  ),
+                  if (index < singers.length - 1)
+                    Text(
+                      ' / ',
+                      style: style.copyWith(
+                        color: style.color?.withAlpha(isPlayable ? 180 : 120),
+                      ),
+                    ),
+                ],
+              ],
             ),
-        ],
-      ],
+          ),
+        );
+      },
     );
   }
 
@@ -341,7 +453,7 @@ class _SongCardState extends State<SongCard> {
               label,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w700,
+                fontWeight: AppTheme.fontWeightBold,
                 color: isDestructive
                     ? theme.colorScheme.error
                     : theme.colorScheme.onSurface,
@@ -468,6 +580,15 @@ class _SongCardState extends State<SongCard> {
               final isLoading = isCurrent && playbackState.isLoading;
               final isPlayable = widget.song.isPlayable;
               final contentOpacity = isPlayable ? 1.0 : 0.45;
+              final isNoCopyright = widget.song.isNoCopyright;
+              final isPayBlocked = widget.song.isPayBlocked || widget.song.isPaid;
+              final unavailableTag = !isPlayable
+                  ? (isNoCopyright
+                      ? '版权'
+                      : isPayBlocked
+                          ? '付费'
+                          : '音源')
+                  : null;
 
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
@@ -523,31 +644,26 @@ class _SongCardState extends State<SongCard> {
                           duration: const Duration(milliseconds: 120),
                           curve: Curves.easeOut,
                           decoration:
-                              isSingleRowSelected ||
-                                  (isSelectionMode && isSelected) ||
+                              (isSelectionMode && isSelected) ||
                                   _isMenuOpen ||
-                                  isHoveringCard
+                                  isHoveringCard ||
+                                  isCurrent
                               ? BoxDecoration(
-                                  color: primaryColor.withAlpha(
-                                    _isMenuOpen
-                                        ? 30
-                                        : (isHoveringCard ? 12 : 20),
-                                  ),
+                                  color: theme.brightness == Brightness.dark
+                                      ? theme.colorScheme.onSurface
+                                          .withAlpha(
+                                            (isHoveringCard || isCurrent)
+                                                ? 10
+                                                : 16,
+                                          )
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: primaryColor.withAlpha(
-                                      _isMenuOpen
-                                          ? 80
-                                          : (isHoveringCard ? 40 : 0),
-                                    ),
-                                    width: _isMenuOpen ? 1.5 : 1,
-                                  ),
+                                  boxShadow: const [],
                                 )
                               : null,
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal:
-                                  SongTableLayout.listRowHorizontalPadding,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: widget.rowHorizontalPadding,
                               vertical: 5,
                             ),
                             child: Row(
@@ -576,31 +692,18 @@ class _SongCardState extends State<SongCard> {
                                     ),
                                   ),
                                 if (widget.rowNumber != null)
-                                  SizedBox(
-                                    width: SongTableLayout.listLeadingWidth,
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        widget.rowNumber.toString(),
-                                        style: TextStyle(
-                                          color: isCurrent
-                                              ? primaryColor.withAlpha(
-                                                  isPlayable ? 220 : 170,
-                                                )
-                                              : theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant
-                                                    .withAlpha(
-                                                      isPlayable ? 170 : 110,
-                                                    ),
-                                          fontSize: 12,
-                                          fontWeight: isCurrent
-                                              ? FontWeight.w800
-                                              : FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
+                                  _buildLeadingCell(
+                                    isCurrent: isCurrent,
+                                    isPlaying: isPlaying,
+                                    isLoading: isLoading,
+                                    primaryColor: primaryColor,
+                                    isPlayable: isPlayable,
+                                    isHoveringCard: isHoveringCard,
+                                    theme: theme,
                                   ),
+                                const SizedBox(
+                                  width: SongTableLayout.listCoverLeadingGap,
+                                ),
                                 if (widget.showCover) ...[
                                   Opacity(
                                     opacity: contentOpacity,
@@ -612,7 +715,10 @@ class _SongCardState extends State<SongCard> {
                                       primaryColor,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(
+                                    width:
+                                        SongTableLayout.listCoverTrailingGap,
+                                  ),
                                 ],
                                 Expanded(
                                   child: Column(
@@ -641,18 +747,18 @@ class _SongCardState extends State<SongCard> {
                                                                 : 140,
                                                           ),
                                                 fontWeight: isCurrent
-                                                    ? FontWeight.w800
-                                                    : FontWeight.w700,
+                                                    ? AppTheme.fontWeightBold
+                                                    : AppTheme.fontWeightBold,
                                                 fontSize: 14,
                                                 height: 1,
                                                 letterSpacing: -0.3,
                                               ),
                                             ),
                                           ),
-                                          if (!isPlayable)
+                                          if (unavailableTag != null)
                                             _buildTag(
                                               context,
-                                              '无音源',
+                                              unavailableTag,
                                               theme.colorScheme.outline,
                                             ),
                                           if (widget.song.isPaid)
@@ -686,7 +792,7 @@ class _SongCardState extends State<SongCard> {
                                               ),
                                           fontSize: 12,
                                           height: 1.1,
-                                          fontWeight: FontWeight.w600,
+                                          fontWeight: AppTheme.fontWeightMedium,
                                         ),
                                         enabled: !isSelectionMode,
                                         isPlayable: isPlayable,
@@ -709,53 +815,62 @@ class _SongCardState extends State<SongCard> {
                                   isPlayable: isPlayable,
                                   theme: theme,
                                 ),
-                                if (widget.showMore) ...[
+                                if (widget.showMore &&
+                                    (widget.showAlbum ||
+                                        widget.showDuration)) ...[
                                   const SizedBox(
                                     width: SongTableLayout.listAlbumGap,
                                   ),
-                                  SizedBox(
-                                    width: SongTableLayout.listAlbumWidth,
-                                    child: _buildLinkText(
-                                      text: widget.song.displayAlbumName,
-                                      onTap:
-                                          !isSelectionMode &&
-                                              _hasAlbumDetail &&
-                                              !isCurrentAlbumDetail
-                                          ? _openAlbumDetail
-                                          : null,
-                                      style: TextStyle(
-                                        color: theme
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                            .withAlpha(isPlayable ? 255 : 140),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    width: SongTableLayout.listDurationGap,
-                                  ),
-                                  SizedBox(
-                                    width: SongTableLayout.listDurationWidth,
-                                    child: Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Text(
-                                        _formatDuration(widget.song.duration),
+                                  if (widget.showAlbum)
+                                    SizedBox(
+                                      width: widget.albumWidth,
+                                      child: _buildLinkText(
+                                        text: widget.song.displayAlbumName,
+                                        onTap:
+                                            !isSelectionMode &&
+                                                _hasAlbumDetail &&
+                                                !isCurrentAlbumDetail
+                                            ? _openAlbumDetail
+                                            : null,
                                         style: TextStyle(
                                           color: theme
                                               .colorScheme
                                               .onSurfaceVariant
                                               .withAlpha(
-                                                isPlayable ? 150 : 100,
+                                                isPlayable ? 255 : 140,
                                               ),
                                           fontSize: 12,
-                                          fontFamily: 'monospace',
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: AppTheme.fontWeightMedium,
                                         ),
                                       ),
                                     ),
-                                  ),
+                                  if (widget.showDuration) ...[
+                                    const SizedBox(
+                                      width: SongTableLayout.listDurationGap,
+                                    ),
+                                    SizedBox(
+                                      width: widget.durationWidth,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          _formatDuration(
+                                            widget.song.duration,
+                                          ),
+                                          style: TextStyle(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant
+                                                .withAlpha(
+                                                  isPlayable ? 150 : 100,
+                                                ),
+                                            fontSize: 12,
+                                            fontFamily: 'monospace',
+                                            fontWeight: AppTheme.fontWeightMedium,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                                 const SizedBox(width: 8),
                                 Builder(
@@ -792,65 +907,13 @@ class _SongCardState extends State<SongCard> {
     bool isLoading,
     Color primaryColor,
   ) {
-    final showOverlay = (!widget.suppressHover && _isCoverHovered) || isCurrent;
-    final tooltip = isCurrent && isPlaying ? '暂停当前歌曲' : '播放当前歌曲';
-
-    return MouseRegion(
-      onEnter: (_) {
-        if (widget.suppressHover) return;
-        setState(() => _isCoverHovered = true);
-      },
-      onExit: (_) => setState(() => _isCoverHovered = false),
-      child: Stack(
-        children: [
-          CoverImage(
-            url: widget.song.cover,
-            width: widget.coverSize,
-            height: widget.coverSize,
-            borderRadius: 12,
-            size: 100,
-            showShadow: false,
-          ),
-          if (showOverlay)
-            Positioned.fill(
-              child: Tooltip(
-                message: tooltip,
-                child: MouseRegion(
-                  cursor:
-                      widget.suppressHover ||
-                          isLoading ||
-                          !widget.song.isPlayable
-                      ? SystemMouseCursors.basic
-                      : SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _handleCoverPlayTap(
-                      isCurrent: isCurrent,
-                      isPlaying: isPlaying,
-                      isLoading: isLoading,
-                    ),
-                    onDoubleTap:
-                        widget.onDoubleTapPlay != null ||
-                            widget.enableDefaultDoubleTapPlay
-                        ? () => _handleSongDoubleTap(
-                            isCurrent: isCurrent,
-                            isPlaying: isPlaying,
-                            isLoading: isLoading,
-                          )
-                        : null,
-                    child: _PlayingCoverOverlay(
-                      size: widget.coverSize,
-                      isPlaying: isPlaying,
-                      isLoading: isLoading,
-                      shadowColor: Theme.of(context).colorScheme.shadow,
-                      iconColor: primaryColor,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+    return CoverImage(
+      url: widget.song.cover,
+      width: widget.coverSize,
+      height: widget.coverSize,
+      borderRadius: 12,
+      size: 100,
+      showShadow: false,
     );
   }
 
@@ -868,7 +931,7 @@ class _SongCardState extends State<SongCard> {
         style: TextStyle(
           color: color,
           fontSize: 9,
-          fontWeight: FontWeight.w800,
+          fontWeight: AppTheme.fontWeightBold,
           letterSpacing: 0.5,
         ),
       ),
@@ -1004,49 +1067,6 @@ class _SongCardActionIconButtonState extends State<_SongCardActionIconButton> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PlayingCoverOverlay extends StatelessWidget {
-  final double size;
-  final bool isPlaying;
-  final bool isLoading;
-  final Color shadowColor;
-  final Color iconColor;
-
-  const _PlayingCoverOverlay({
-    required this.size,
-    required this.isPlaying,
-    required this.isLoading,
-    required this.shadowColor,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: shadowColor.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: isLoading
-            ? SizedBox(
-                width: size * 0.32,
-                height: size * 0.32,
-                child: const CupertinoActivityIndicator(color: Colors.white),
-              )
-            : Icon(
-                isPlaying
-                    ? CupertinoIcons.pause_fill
-                    : CupertinoIcons.play_fill,
-                color: iconColor.withValues(alpha: 0.98),
-                size: size * 0.4,
-              ),
       ),
     );
   }

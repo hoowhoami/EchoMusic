@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class CustomDialog extends StatelessWidget {
   final String title;
@@ -82,7 +83,7 @@ class CustomDialog extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: AppTheme.fontWeightBold,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -105,7 +106,7 @@ class CustomDialog extends StatelessWidget {
                         fontSize: 14,
                         height: 1.6,
                         color: theme.colorScheme.onSurface.withAlpha(180),
-                        fontWeight: FontWeight.w500,
+                        fontWeight: AppTheme.fontWeightMedium,
                       ),
                     ),
                   ),
@@ -127,7 +128,7 @@ class CustomDialog extends StatelessWidget {
                           cancelText ?? '取消',
                           style: TextStyle(
                             color: theme.colorScheme.onSurface.withAlpha(120),
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                             fontSize: 14,
                           ),
                         ),
@@ -148,7 +149,7 @@ class CustomDialog extends StatelessWidget {
                       ),
                       child: Text(
                         confirmText,
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
                       ),
                     ),
                   ],

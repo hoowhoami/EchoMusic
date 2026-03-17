@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../api/music_api.dart';
@@ -17,6 +19,7 @@ class UserProvider with ChangeNotifier {
   List<Map<String, dynamic>> _userPlaylists = [];
   List<Map<String, dynamic>> _userFollows = [];
   List<Song> _likedSongs = [];
+  int _likedSongsFetchToken = 0;
 
   dynamic _likedPlaylistId;
   final ValueNotifier<int> playlistSongsChangeNotifier = ValueNotifier<int>(0);
@@ -144,28 +147,124 @@ class UserProvider with ChangeNotifier {
       return;
     }
 
+    const int pageSize = 200;
+    final int fetchToken = ++_likedSongsFetchToken;
     List<Song> songs = [];
+    bool usedGid = false;
 
     // STRATEGY 1: Use GID with the standard track/all API (Most reliable for cloud sync)
     if (targetGid != null) {
-      songs = await MusicApi.getPlaylistSongs(targetGid);
+      usedGid = true;
+      songs = await MusicApi.getPlaylistSongs(
+        targetGid,
+        page: 1,
+        pagesize: pageSize,
+      );
     }
 
     // STRATEGY 2: Fallback to Numeric ID with track/all/new if GID failed
     if (songs.isEmpty && targetListid != null) {
       final response = await MusicApi.getPlaylistTrackAllNew(
         targetListid,
-        pagesize: 500,
+        page: 1,
+        pagesize: pageSize,
       );
       songs = MusicApi.parseSongsFromResponse(response);
+      usedGid = false;
     }
+
+    if (fetchToken != _likedSongsFetchToken || !isAuthenticated) return;
 
     if (songs.isNotEmpty) {
       _likedSongs = songs;
       if (_persistenceProvider != null) {
-        _persistenceProvider!.syncCloudFavorites(_likedSongs);
+        await _persistenceProvider!.syncCloudFavorites(_likedSongs);
       }
       notifyListeners();
+
+      if (songs.length >= pageSize) {
+        unawaited(
+          _prefetchRemainingLikedSongs(
+            fetchToken: fetchToken,
+            startPage: 2,
+            pageSize: pageSize,
+            gid: usedGid ? targetGid : null,
+            listid: usedGid ? null : targetListid,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _prefetchRemainingLikedSongs({
+    required int fetchToken,
+    required int startPage,
+    required int pageSize,
+    String? gid,
+    int? listid,
+  }) async {
+    if (gid == null && listid == null) return;
+
+    final List<Song> songs = List<Song>.from(_likedSongs);
+    final Set<int> mixSongIds = {};
+    final Set<String> hashes = {};
+
+    void cacheSong(Song song) {
+      if (song.mixSongId != 0) mixSongIds.add(song.mixSongId);
+      if (song.hash.isNotEmpty) hashes.add(song.hash.toLowerCase());
+    }
+
+    for (final song in songs) {
+      cacheSong(song);
+    }
+
+    var page = startPage;
+    while (true) {
+      if (fetchToken != _likedSongsFetchToken || !isAuthenticated) return;
+
+      List<Song> pageSongs = [];
+      if (gid != null) {
+        pageSongs = await MusicApi.getPlaylistSongs(
+          gid,
+          page: page,
+          pagesize: pageSize,
+        );
+      } else if (listid != null) {
+        final response = await MusicApi.getPlaylistTrackAllNew(
+          listid,
+          page: page,
+          pagesize: pageSize,
+        );
+        pageSongs = MusicApi.parseSongsFromResponse(response);
+      }
+
+      if (pageSongs.isEmpty) break;
+
+      final newSongs = <Song>[];
+      for (final song in pageSongs) {
+        final int mixSongId = song.mixSongId;
+        final String hash = song.hash.toLowerCase();
+        final bool isKnown =
+            (mixSongId != 0 && mixSongIds.contains(mixSongId)) ||
+                (hash.isNotEmpty && hashes.contains(hash));
+        if (isKnown) continue;
+        newSongs.add(song);
+        songs.add(song);
+        cacheSong(song);
+      }
+
+      if (newSongs.isNotEmpty) {
+        _likedSongs = List<Song>.from(songs);
+        if (_persistenceProvider != null) {
+          await _persistenceProvider!.syncCloudFavorites(newSongs);
+        }
+        if (fetchToken == _likedSongsFetchToken) {
+          notifyListeners();
+        }
+      }
+
+      if (pageSongs.length < pageSize || newSongs.isEmpty) break;
+      page++;
     }
   }
 
@@ -224,8 +323,10 @@ class UserProvider with ChangeNotifier {
       fetchUserPlaylists(),
       fetchUserFollows(),
       fetchUserDetails(),
-      syncVipStatus(),
     ]);
+
+    // Sync VIP status after fetching user details so we can check if user already has SVIP
+    await syncVipStatus();
 
     await _autoClaimVipIfEnabled();
   }
@@ -268,15 +369,32 @@ class UserProvider with ChangeNotifier {
 
     _isTvipClaimedToday = list.any((item) => item['day'] == today);
 
-    // Check if user is currently an SVIP
+    // Check if user already has SVIP from cached user data
     final vipInfo = _user?.extendsInfo?['vip'] ?? {};
     final busiVip = vipInfo['busi_vip'] as List? ?? [];
-    final hasActiveSvip = busiVip.any(
+    final svip = busiVip.firstWhere(
       (v) => v['product_type'] == 'svip' && v['is_vip'] == 1,
+      orElse: () => null,
     );
 
-    if (hasActiveSvip) {
+    if (svip != null) {
+      // Already has SVIP, no need to call upgrade API
       _isSvipClaimedToday = true;
+    } else {
+      // Check SVIP status by calling upgrade API
+      // If error_code is 297002, it means already upgraded today
+      final upgradeResponse = await MusicApi.upgradeDayVip();
+      if (upgradeResponse['status'] == 1) {
+        // Successfully upgraded (shouldn't happen in sync, but handle it)
+        _isSvipClaimedToday = true;
+        await fetchUserDetails(); // Refresh VIP info
+      } else if (upgradeResponse['error_code'] == 297002) {
+        // Already upgraded today
+        _isSvipClaimedToday = true;
+      } else {
+        // Not upgraded yet or other error
+        _isSvipClaimedToday = false;
+      }
     }
 
     notifyListeners();
@@ -295,7 +413,8 @@ class UserProvider with ChangeNotifier {
 
   Future<bool> upgradeSvip() async {
     if (!_isTvipClaimedToday) return false;
-    final success = await MusicApi.upgradeDayVip();
+    final response = await MusicApi.upgradeDayVip();
+    final success = response['status'] == 1 || response['error_code'] == 297002;
     if (success) {
       _isSvipClaimedToday = true;
       await fetchUserDetails(); // Refresh VIP info
@@ -390,15 +509,6 @@ class UserProvider with ChangeNotifier {
       _user = _user!.copyWith(
         extendsInfo: {..._user!.extendsInfo ?? {}, 'vip': vip},
       );
-
-      // Update SVIP claimed status based on actual VIP info
-      final busiVip = vip['busi_vip'] as List? ?? [];
-      final hasActiveSvip = busiVip.any(
-        (v) => v['product_type'] == 'svip' && v['is_vip'] == 1,
-      );
-      if (hasActiveSvip) {
-        _isSvipClaimedToday = true;
-      }
 
       await _persistenceProvider?.setUserInfo(_user!.toJson());
       notifyListeners();
@@ -508,6 +618,32 @@ class UserProvider with ChangeNotifier {
 
   Future<bool> unfavoriteAlbum(int albumId) async {
     return unfavoritePlaylist(albumId);
+  }
+
+  Future<bool> createPlaylist(String name, {bool isPrivate = false}) async {
+    if (!isAuthenticated || _user == null) return false;
+
+    final success = await MusicApi.addPlaylist(
+      name,
+      isPri: isPrivate ? 1 : 0,
+      type: 0,
+      list_create_userid: _user!.userid,
+    );
+
+    if (success) {
+      await fetchUserPlaylists();
+    }
+    return success;
+  }
+
+  Future<bool> deletePlaylist(int listid) async {
+    if (!isAuthenticated) return false;
+
+    final success = await MusicApi.deletePlaylist(listid);
+    if (success) {
+      await fetchUserPlaylists();
+    }
+    return success;
   }
 
   Future<bool> addSongToPlaylist(dynamic listId, Song song) async {

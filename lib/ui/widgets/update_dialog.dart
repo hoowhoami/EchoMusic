@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'custom_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class UpdateDialog extends StatelessWidget {
   final String version;
@@ -40,7 +41,7 @@ class UpdateDialog extends StatelessWidget {
         children: [
           Text(
             isLatest ? '当前版本 v$version' : '新版本 $version 可用',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 15, fontWeight: AppTheme.fontWeightBold),
           ),
           if (releaseNotes != null && releaseNotes!.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -61,7 +62,7 @@ class UpdateDialog extends StatelessWidget {
                       fontSize: 13,
                       height: 1.5,
                       color: theme.colorScheme.onSurface.withAlpha(200),
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppTheme.fontWeightMedium,
                     ),
                   ),
                 ),

@@ -148,6 +148,7 @@ enum AppShortcutCommand {
   toggleMute,
   toggleFavorite,
   togglePlayMode,
+  toggleWindow,
 }
 
 class AppShortcutInfo {
@@ -176,6 +177,7 @@ class AppShortcuts extends StatelessWidget {
     this.onToggleMute,
     this.onToggleFavorite,
     this.onTogglePlayMode,
+    this.onToggleWindow,
   });
 
   final Widget child;
@@ -189,6 +191,7 @@ class AppShortcuts extends StatelessWidget {
   final FutureOr<void> Function()? onToggleMute;
   final FutureOr<void> Function()? onToggleFavorite;
   final FutureOr<void> Function()? onTogglePlayMode;
+  final FutureOr<void> Function()? onToggleWindow;
 
   static const String bindingsSettingKey = 'globalShortcutBindings';
 
@@ -232,6 +235,11 @@ class AppShortcuts extends StatelessWidget {
       command: AppShortcutCommand.togglePlayMode,
       title: '切换播放模式',
       description: '在列表循环、单曲循环、随机播放之间切换',
+    ),
+    AppShortcutInfo(
+      command: AppShortcutCommand.toggleWindow,
+      title: '显示 / 隐藏窗口',
+      description: '切换主窗口的显示和隐藏状态',
     ),
   ];
 
@@ -294,6 +302,12 @@ class AppShortcuts extends StatelessWidget {
         return AppShortcutBinding.withPlatformModifiers(
           physicalKey: PhysicalKeyboardKey.keyP,
           logicalKey: LogicalKeyboardKey.keyP,
+          platform: targetPlatform,
+        );
+      case AppShortcutCommand.toggleWindow:
+        return AppShortcutBinding.withPlatformModifiers(
+          physicalKey: PhysicalKeyboardKey.keyW,
+          logicalKey: LogicalKeyboardKey.keyW,
           platform: targetPlatform,
         );
     }
@@ -460,6 +474,8 @@ class AppShortcuts extends StatelessWidget {
         return const _ToggleFavoriteIntent();
       case AppShortcutCommand.togglePlayMode:
         return const _TogglePlayModeIntent();
+      case AppShortcutCommand.toggleWindow:
+        return const _ToggleWindowIntent();
     }
   }
 
@@ -515,6 +531,9 @@ class AppShortcuts extends StatelessWidget {
           ),
           _TogglePlayModeIntent: _buildAction<_TogglePlayModeIntent>(
             onTogglePlayMode,
+          ),
+          _ToggleWindowIntent: _buildAction<_ToggleWindowIntent>(
+            onToggleWindow,
           ),
         },
         child: Focus(autofocus: true, child: child),
@@ -575,4 +594,8 @@ class _ToggleFavoriteIntent extends Intent {
 
 class _TogglePlayModeIntent extends Intent {
   const _TogglePlayModeIntent();
+}
+
+class _ToggleWindowIntent extends Intent {
+  const _ToggleWindowIntent();
 }

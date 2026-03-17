@@ -1,12 +1,17 @@
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
 import 'package:echomusic/providers/audio_provider.dart';
 import 'package:echomusic/providers/lyric_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
+import '../widgets/windows_caption_controls.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class LyricPage extends StatefulWidget {
   const LyricPage({super.key});
@@ -33,7 +38,6 @@ class _LyricPageState extends State<LyricPage> {
         final lyricProvider = context.read<LyricProvider>();
         final audioProvider = context.read<AudioProvider>();
         lyricProvider.setPageOpen(true);
-        // Sync highlighting immediately when page opens
         lyricProvider.updateHighlight(audioProvider.effectivePosition);
       }
     });
@@ -99,41 +103,69 @@ class _LyricPageState extends State<LyricPage> {
         return KeyEventResult.ignored;
       },
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.15,
-              child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 400),
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.15,
+                child: CoverImage(url: song.cover, borderRadius: 0, showShadow: false, fit: BoxFit.cover, size: 400),
+              ),
             ),
-          ),
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black.withAlpha(200), Colors.black.withAlpha(100), Colors.black.withAlpha(220)],
-                  stops: const [0.0, 0.5, 1.0],
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black.withAlpha(200), Colors.black.withAlpha(100), Colors.black.withAlpha(220)],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          SafeArea(
-            child: Column(
+            Column(
               children: [
-                _buildTopBar(context, song),
+                DragToMoveArea(
+                  child: const SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: SizedBox(
+                    height: 48,
+                    child: Row(
+                      children: [
+                        _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
+                        const Spacer(),
+                        const _FontSettingsButton(),
+                        const SizedBox(width: 10),
+                        const _LyricsModeSwitcherWidget(),
+                        const SizedBox(width: 10),
+                        const _CopyLyricsButton(),
+                      ],
+                    ),
+                  ),
+                ),
+
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 60),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(flex: 5, child: _buildInfoSection(context, song)),
+                        Expanded(
+                          flex: 5,
+                          child: _buildInfoSection(context, song),
+                        ),
                         const SizedBox(width: 40),
-                        Expanded(flex: 7, child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme))),
+                        Expanded(
+                          flex: 7,
+                          child: RepaintBoundary(child: _buildLyricSection(audioProvider, theme)),
+                        ),
                       ],
                     ),
                   ),
@@ -142,24 +174,18 @@ class _LyricPageState extends State<LyricPage> {
                 const SizedBox(height: 32),
               ],
             ),
-          ),
-        ],
-      ),
-      ),
-    );
-  }
 
-  Widget _buildTopBar(BuildContext context, dynamic song) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
-      child: Row(
-        children: [
-          _buildIconBtn(Icons.keyboard_arrow_down_rounded, 36, () => Navigator.pop(context)),
-          const Spacer(),
-          const _LyricsModeSwitcherWidget(),
-          const SizedBox(width: 8),
-          const _CopyLyricsButton(),
-        ],
+            if (!Platform.isMacOS)
+              const Positioned(
+                top: 0,
+                right: 0,
+                child: SizedBox(
+                  height: WindowsCaptionControls.height,
+                  child: WindowsCaptionControls(brightness: Brightness.dark),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -167,14 +193,38 @@ class _LyricPageState extends State<LyricPage> {
   Widget _buildInfoSection(BuildContext context, dynamic song) {
     final screenHeight = MediaQuery.of(context).size.height;
     final coverSize = (screenHeight * 0.38).clamp(240.0, 400.0);
+    final fontScale = context.watch<LyricProvider>().fontScale;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Hero(tag: 'player_cover', child: Container(width: coverSize, height: coverSize, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withAlpha(150), blurRadius: 50, offset: const Offset(0, 20), spreadRadius: -10)]), child: CoverImage(url: song.cover, width: coverSize, height: coverSize, borderRadius: 24, size: 800, showShadow: false))),
         const SizedBox(height: 48),
-        Text(song.name, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -1, height: 1.2), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
+        Text(
+          song.name,
+          style: TextStyle(
+            fontSize: 32 * fontScale,
+            fontWeight: AppTheme.fontWeightBold,
+            color: Colors.white,
+            letterSpacing: -1,
+            height: 1.2,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: 12),
-        Text(song.singerName, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white.withAlpha(160), letterSpacing: 0.5), textAlign: TextAlign.center),
+        Text(
+          song.singerName,
+          style: TextStyle(
+            fontSize: 18 * fontScale,
+            fontWeight: AppTheme.fontWeightSemiBold,
+            color: Colors.white.withAlpha(160),
+            letterSpacing: 0.5,
+          ),
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
@@ -185,7 +235,8 @@ class _LyricPageState extends State<LyricPage> {
         if (lyricProvider.lyrics.isEmpty) return _buildEmptyState(lyricProvider.tips);
 
         final bool isDualLine = lyricProvider.showTranslation || lyricProvider.showRomanization;
-        final double lineHeight = isDualLine ? 100.0 : 70.0;
+        final double lineHeight =
+            (isDualLine ? 100.0 : 70.0) * lyricProvider.fontScale;
         
         bool forceSync = false;
         if (_lastMode != lyricProvider.lyricsMode || _lastLineHeight != lineHeight) {
@@ -195,9 +246,6 @@ class _LyricPageState extends State<LyricPage> {
           forceSync = true;
         }
 
-        // Only schedule a scroll callback when the active line actually changes
-        // or a force-sync is needed. This avoids queuing redundant callbacks on
-        // every character-highlight update (which fires ~every 300ms).
         final currentIndex = lyricProvider.currentLineIndex;
         if (currentIndex != _lastScrolledIndex || forceSync) {
           _lastScrolledIndex = currentIndex;
@@ -220,22 +268,27 @@ class _LyricPageState extends State<LyricPage> {
               child: ShaderMask(
                 shaderCallback: (rect) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent], stops: [0.0, 0.15, 0.85, 1.0]).createShader(rect),
                 blendMode: BlendMode.dstIn,
-                child: ListView.builder(
-                  controller: _scrollController,
-                  itemCount: lyricProvider.lyrics.length,
-                  itemExtent: lineHeight, 
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.symmetric(vertical: verticalPadding),
-                  itemBuilder: (context, index) {
-                    final line = lyricProvider.lyrics[index];
-                    String? secondary;
-                    if (lyricProvider.showTranslation) {
-                      secondary = line.translated;
-                    } else if (lyricProvider.showRomanization) {
-                      secondary = line.romanized;
-                    }
-                    return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
-                  },
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    scrollbars: false,
+                  ),
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    itemCount: lyricProvider.lyrics.length,
+                    itemExtent: lineHeight, 
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.symmetric(vertical: verticalPadding),
+                    itemBuilder: (context, index) {
+                      final line = lyricProvider.lyrics[index];
+                      String? secondary;
+                      if (lyricProvider.showTranslation) {
+                        secondary = line.translated;
+                      } else if (lyricProvider.showRomanization) {
+                        secondary = line.romanized;
+                      }
+                      return Container(height: lineHeight, padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center, child: _LyricLineWidget(line: line, secondaryText: secondary, isCurrent: lyricProvider.currentLineIndex == index, theme: theme, maxWidth: constraints.maxWidth - 32, fontScale: lyricProvider.fontScale, fontWeight: lyricProvider.lyricFontWeight, onTap: () { audioProvider.seek(Duration(milliseconds: line.startTime)); setState(() => _isAutoScrolling = true); }));
+                    },
+                  ),
                 ),
               ),
             );
@@ -247,34 +300,10 @@ class _LyricPageState extends State<LyricPage> {
 
   Widget _buildBottomSection(BuildContext context, AudioProvider audioProvider, ThemeData theme) {
     return Container(
-      width: 600, // Slightly wider for better desktop layout
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      width: 560,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
         children: [
-          StreamBuilder<PositionSnapshot>(
-            stream: audioProvider.positionSnapshotStream,
-            initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-            builder: (context, snapshot) {
-              final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-              return Column(
-                children: [
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: ProgressBar(
-                      progress: snap.position, total: snap.duration, barHeight: 4, baseBarColor: Colors.white.withAlpha(30), progressBarColor: theme.colorScheme.primary, thumbColor: Colors.white, thumbRadius: 6, thumbGlowRadius: 0, timeLabelLocation: TimeLabelLocation.none,
-                      onSeek: (duration) => audioProvider.seek(duration),
-                      onDragStart: (_) => audioProvider.notifyDragStart(),
-                      onDragEnd: () => audioProvider.notifyDragEnd(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_buildTimeText(snap.position), _buildTimeText(snap.duration)]),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          // Balanced Row for playback controls
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -285,14 +314,136 @@ class _LyricPageState extends State<LyricPage> {
               _buildIconBtn(CupertinoIcons.forward_fill, 24, audioProvider.next),
             ],
           ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: 420,
+            height: 24,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                StreamBuilder<PositionSnapshot>(
+                  stream: audioProvider.positionSnapshotStream,
+                  builder: (context, snapshot) {
+                    final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                    return SizedBox(width: 42, child: Center(child: _buildTimeText(snap.position, alignRight: true)));
+                  },
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const barHeight = 4.0;
+                        const thumbRadius = 6.0;
+                        const progressHeight = thumbRadius * 2;
+                        const markerWidth = 2.4;
+                        const markerHeight = 8.0;
+                        final markerTop = (constraints.maxHeight - markerHeight) / 2;
+                        final climaxMarks = audioProvider.climaxMarks;
+
+                        final markerLayer = climaxMarks.isNotEmpty
+                            ? IgnorePointer(
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    for (final entry in climaxMarks.entries) ...[
+                                      Positioned(
+                                        left: (constraints.maxWidth - markerWidth) * entry.key,
+                                        top: markerTop,
+                                        child: Container(
+                                          width: markerWidth,
+                                          height: markerHeight,
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.primary.withAlpha(200),
+                                            borderRadius: BorderRadius.circular(1),
+                                          ),
+                                        ),
+                                      ),
+                                      if (entry.value > entry.key)
+                                        Positioned(
+                                          left: (constraints.maxWidth - markerWidth) * entry.value,
+                                          top: markerTop,
+                                          child: Container(
+                                            width: markerWidth,
+                                            height: markerHeight,
+                                            decoration: BoxDecoration(
+                                              color: theme.colorScheme.primary.withAlpha(200),
+                                              borderRadius: BorderRadius.circular(1),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ],
+                                ),
+                              )
+                            : null;
+
+                        return StreamBuilder<PositionSnapshot>(
+                          stream: audioProvider.positionSnapshotStream,
+                          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
+                          builder: (context, snapshot) {
+                            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                            return Stack(
+                              alignment: Alignment.center,
+                              clipBehavior: Clip.none,
+                              children: [
+                                SizedBox(
+                                  height: progressHeight,
+                                  child: ProgressBar(
+                                    progress: snap.position,
+                                    total: snap.duration,
+                                    barHeight: barHeight,
+                                    baseBarColor: Colors.white.withAlpha(30),
+                                    progressBarColor: theme.colorScheme.primary,
+                                    thumbColor: Colors.white,
+                                    thumbRadius: thumbRadius,
+                                    thumbGlowRadius: 0,
+                                    timeLabelLocation: TimeLabelLocation.none,
+                                    onSeek: (duration) => audioProvider.seek(duration),
+                                    onDragStart: (_) => audioProvider.notifyDragStart(),
+                                    onDragEnd: () => audioProvider.notifyDragEnd(),
+                                  ),
+                                ),
+                                if (markerLayer != null) markerLayer,
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                StreamBuilder<PositionSnapshot>(
+                  stream: audioProvider.positionSnapshotStream,
+                  builder: (context, snapshot) {
+                    final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                    return SizedBox(width: 42, child: Center(child: _buildTimeText(snap.duration)));
+                  },
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTimeText(Duration d) {
+  Widget _buildTimeText(Duration d, {bool alignRight = false}) {
     String twoDigits(int n) => n.toString().padLeft(2, "0");
-    return Text("${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}", style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, fontFamily: 'monospace'));
+    return Align(
+      alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
+      child: Text(
+        "${twoDigits(d.inMinutes.remainder(60))}:${twoDigits(d.inSeconds.remainder(60))}",
+        style: const TextStyle(
+          color: Colors.white38,
+          fontSize: 11,
+          fontWeight: AppTheme.fontWeightBold,
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
   }
 
   Widget _buildIconBtn(IconData icon, double size, VoidCallback onTap) => MouseRegion(cursor: SystemMouseCursors.click, child: IconButton(icon: Icon(icon, size: size, color: Colors.white.withAlpha(180)), onPressed: onTap, splashRadius: 28));
@@ -303,19 +454,192 @@ class _LyricPageState extends State<LyricPage> {
       child: GestureDetector(
         onTap: audioProvider.isLoading ? null : audioProvider.togglePlay,
         child: Container(
-          width: 64, height: 64,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withAlpha(20), border: Border.all(color: Colors.white.withAlpha(20), width: 1.5)),
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withAlpha(20),
+            border: Border.all(color: Colors.white.withAlpha(20), width: 1.4),
+          ),
           child: Center(
             child: audioProvider.isLoading
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white70))
-                : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 32, color: Colors.white),
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white70))
+                : Icon(audioProvider.isPlaying ? CupertinoIcons.pause_fill : CupertinoIcons.play_fill, size: 26, color: Colors.white),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 1))]));
+  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: AppTheme.fontWeightBold, letterSpacing: 1))]));
+}
+
+class _FontSettingsButton extends StatefulWidget {
+  const _FontSettingsButton();
+
+  @override
+  State<_FontSettingsButton> createState() => _FontSettingsButtonState();
+}
+
+class _FontSettingsButtonState extends State<_FontSettingsButton> {
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+
+  void _toggleSettings() {
+    if (_overlayEntry == null) {
+      _overlayEntry = _createOverlayEntry();
+      Overlay.of(context).insert(_overlayEntry!);
+    } else {
+      _hideSettings();
+    }
+  }
+
+  void _hideSettings() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  OverlayEntry _createOverlayEntry() {
+    return OverlayEntry(
+      builder: (context) {
+        final lyricProvider = this.context.read<LyricProvider>();
+        return Stack(
+          children: [
+            Positioned.fill(child: GestureDetector(onTap: _hideSettings, behavior: HitTestBehavior.opaque, child: Container(color: Colors.transparent))),
+            CompositedTransformFollower(
+              link: _layerLink,
+              showWhenUnlinked: false,
+              offset: const Offset(-110, 54),
+              child: Material(
+                color: Colors.transparent,
+                child: ChangeNotifierProvider.value(
+                  value: lyricProvider,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                      child: Container(
+                        width: 260,
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withAlpha(200), // 增加深色背景浓度
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white.withAlpha(60), width: 1.2), // 强化边框
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withAlpha(120), blurRadius: 50, spreadRadius: 15),
+                          ],
+                        ),
+                        child: const _FontSettingsPanel(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: _toggleSettings,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(color: Colors.white.withAlpha(15), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withAlpha(20), width: 1)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.text_fields_rounded, size: 16, color: Colors.white70),
+                const SizedBox(width: 10),
+                const Text('字体', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FontSettingsPanel extends StatelessWidget {
+  const _FontSettingsPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final lyricProvider = context.watch<LyricProvider>();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSettingHeader('字体大小', '${(lyricProvider.fontScale * 100).toInt()}%'),
+        const SizedBox(height: 8),
+        _buildSlider(
+          value: lyricProvider.fontScale,
+          min: 0.7,
+          max: 1.4,
+          onChanged: (v) => lyricProvider.updateFontScale(v),
+        ),
+        const SizedBox(height: 24),
+        _buildSettingHeader('字体字重', 'W${(lyricProvider.fontWeightIndex + 1) * 100}'),
+        const SizedBox(height: 8),
+        _buildSlider(
+          value: lyricProvider.fontWeightIndex.toDouble(),
+          min: 0,
+          max: 8,
+          divisions: 8,
+          onChanged: (v) => lyricProvider.updateFontWeight(v.round()),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingHeader(String title, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title, style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, fontFamily: 'monospace')),
+      ],
+    );
+  }
+
+  Widget _buildSlider({
+    required double value,
+    required double min,
+    required double max,
+    int? divisions,
+    required ValueChanged<double> onChanged,
+  }) {
+    return SliderTheme(
+      data: SliderThemeData(
+        trackHeight: 4,
+        activeTrackColor: Colors.white,
+        inactiveTrackColor: Colors.white.withAlpha(30),
+        thumbColor: Colors.white,
+        overlayColor: Colors.white.withAlpha(20),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7, elevation: 0, pressedElevation: 0),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
 }
 
 class _CopyLyricsButton extends StatelessWidget {
@@ -345,7 +669,7 @@ class _CopyLyricsButton extends StatelessWidget {
             children: [
               const Icon(Icons.copy_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
             ],
           ),
         ),
@@ -376,7 +700,7 @@ class _LyricsModeSwitcherWidget extends StatelessWidget {
             children: [
               const Icon(Icons.translate_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
             ],
           ),
         ),
@@ -394,16 +718,18 @@ class _LyricLineWidget extends StatelessWidget {
   final bool isCurrent;
   final ThemeData theme;
   final double maxWidth;
+  final double fontScale;
+  final FontWeight fontWeight;
   final VoidCallback onTap;
 
-  const _LyricLineWidget({required this.line, this.secondaryText, required this.isCurrent, required this.theme, required this.maxWidth, required this.onTap});
+  const _LyricLineWidget({required this.line, this.secondaryText, required this.isCurrent, required this.theme, required this.maxWidth, required this.fontScale, required this.fontWeight, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    const primaryFontSize = 25.0;
+    final primaryFontSize = 25.0 * fontScale;
     final baseTextStyle = TextStyle(
       fontSize: primaryFontSize,
-      fontWeight: FontWeight.w900,
+      fontWeight: fontWeight,
       color: Colors.white,
       letterSpacing: 0.5,
       height: 1.3,
@@ -480,8 +806,8 @@ class _LyricLineWidget extends StatelessWidget {
                           duration: _lineTransitionDuration,
                           curve: Curves.easeOutCubic,
                           style: TextStyle(
-                            fontSize: isCurrent ? 14 : 13,
-                            fontWeight: FontWeight.w600,
+                            fontSize: (isCurrent ? 14 : 13) * fontScale,
+                            fontWeight: isCurrent ? fontWeight : AppTheme.fontWeightRegular,
                             color: Colors.white.withAlpha(isCurrent ? 160 : 120),
                             height: 1.2,
                           ),

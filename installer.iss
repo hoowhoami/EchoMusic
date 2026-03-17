@@ -1,18 +1,28 @@
+#ifndef AppVersion
+#define AppVersion "1.1.4"
+#endif
+#ifndef AppArch
+#define AppArch "x64"
+#endif
+#ifndef BuildDir
+#define BuildDir "build\\windows\\x64\\runner\\Release"
+#endif
+
 [Setup]
 AppId={{ECHO-MUSIC-DESKTOP-APP}}
 AppName=EchoMusic
-AppVersion=1.1.3
+AppVersion={#AppVersion}
 AppPublisher=EchoMusic Team
 DefaultDirName={autopf}\EchoMusic
 DefaultGroupName=EchoMusic
 OutputDir=.
-OutputBaseFilename=EchoMusic-Windows-Setup
+OutputBaseFilename=EchoMusic-Windows-Setup-{#AppArch}
 SetupIconFile=windows\runner\resources\app_icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed={#AppArch}
+ArchitecturesInstallIn64BitMode={#AppArch}
 CloseApplications=yes
 RestartApplications=no
 
@@ -23,7 +33,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\EchoMusic"; Filename: "{app}\echomusic.exe"
@@ -33,12 +43,15 @@ Name: "{commondesktop}\EchoMusic"; Filename: "{app}\echomusic.exe"; Tasks: deskt
 Filename: "{app}\echomusic.exe"; Description: "{cm:LaunchProgram,EchoMusic}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+const
+  VCRedistRegistryPath = 'SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\{#AppArch}';
+
 function IsVCRedistInstalled: Boolean;
 var
   Installed: Cardinal;
 begin
   Result := False;
-  if RegQueryDWordValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) then
+  if RegQueryDWordValue(HKEY_LOCAL_MACHINE, VCRedistRegistryPath, 'Installed', Installed) then
   begin
     Result := (Installed = 1);
   end;

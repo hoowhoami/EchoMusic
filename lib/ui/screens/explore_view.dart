@@ -5,7 +5,9 @@ import '../../models/playlist.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/navigation_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../widgets/playlist_card.dart';
+import '../widgets/cover_image.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
@@ -50,7 +52,7 @@ class _ExploreViewState extends State<ExploreView> {
       title,
       style: TextStyle(
         fontSize: 24,
-        fontWeight: FontWeight.bold,
+        fontWeight: AppTheme.fontWeightBold,
         color: theme.colorScheme.onSurface,
       ),
     );
@@ -72,36 +74,15 @@ class _ExploreViewState extends State<ExploreView> {
               final playlist = playlists[index];
               return Padding(
                 padding: const EdgeInsets.only(right: 20),
-                child: InkWell(
-                  onTap: () {
-                    context.read<NavigationProvider>().openPlaylist(playlist);
-                  },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: playlist.pic,
-                          width: 180,
-                          height: 180,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: 180,
-                        child: Text(
-                          playlist.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: theme.colorScheme.onSurface,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
+                child: SizedBox(
+                  width: 180,
+                  child: PlaylistCard.grid(
+                    playlist: playlist,
+                    onTap: () =>
+                        context.read<NavigationProvider>().openPlaylist(playlist),
+                    titleMaxLines: 1,
+                    coverRadius: 12,
+                    showShadow: false,
                   ),
                 ),
               );
@@ -122,11 +103,11 @@ class _ExploreViewState extends State<ExploreView> {
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            childAspectRatio: 0.8,
-            crossAxisSpacing: 15,
-            mainAxisSpacing: 15,
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 220,
+            mainAxisExtent: 230,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
           ),
           itemCount: songs.length.clamp(0, 10), // Show top 10
           itemBuilder: (context, index) {
@@ -141,11 +122,13 @@ class _ExploreViewState extends State<ExploreView> {
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: song.cover,
+                      child: CoverImage(
+                        url: song.cover,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorWidget: (context, url, error) => Icon(Icons.music_note, size: 50, color: theme.colorScheme.onSurfaceVariant),
+                        height: double.infinity,
+                        showShadow: false,
+                        size: 200,
                       ),
                     ),
                   ),
@@ -154,7 +137,7 @@ class _ExploreViewState extends State<ExploreView> {
                     song.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                    style: TextStyle(fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.onSurface),
                   ),
                   Text(
                     song.singerName,

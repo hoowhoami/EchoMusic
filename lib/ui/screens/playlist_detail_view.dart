@@ -15,8 +15,12 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
+import '../widgets/comment_floor_sheet.dart';
+import '../widgets/resource_comment_slivers.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class PlaylistDetailRouteArgs {
   const PlaylistDetailRouteArgs({required this.playlist});
@@ -51,10 +55,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
     with RefreshableState {
   static const int _pageSize = 200;
 
-  late final PlaylistDetailRouteArgs _routeArgs;
-
   @override
   String get refreshKey => 'playlist:${_routeArgs.lookupId}';
+
+  late final PlaylistDetailRouteArgs _routeArgs;
 
   List<Song>? _songs;
   Playlist? _detailedPlaylist;
@@ -72,6 +76,17 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
   AudioProvider? _playbackAppendProvider;
   int? _playbackAppendSessionId;
 
+  // 评论相关
+  bool _isCommentsLoading = false;
+  bool _isFetchingMoreComments = false;
+  bool _hasMoreComments = true;
+  int _currentCommentPage = 1;
+  static const int _commentPageSize = 30;
+  final List<dynamic> _allComments = [];
+  List<dynamic> _hotComments = [];
+  int _totalCommentCount = 0;
+  bool _hasLoadedComments = false;
+
   int get _totalSongCount {
     final detailedCount = _detailedPlaylist?.count ?? 0;
     if (detailedCount > 0) return detailedCount;
@@ -81,6 +96,27 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
   }
 
   String get _lookupId => _routeArgs.lookupId;
+
+  String get _playlistCommentId {
+    final playlist = _detailedPlaylist ?? _routeArgs.playlist;
+    final globalCollectionId = playlist.globalCollectionId;
+    if (globalCollectionId != null && globalCollectionId.isNotEmpty) {
+      return globalCollectionId;
+    }
+
+    final listCreateGid = playlist.listCreateGid;
+    if (listCreateGid != null && listCreateGid.isNotEmpty) {
+      return listCreateGid;
+    }
+
+    final userId = playlist.listCreateUserid;
+    final listId = playlist.listCreateListid;
+    if (userId != null && userId != 0 && listId != null && listId != 0) {
+      return 'collection_3_${userId}_${listId}_0';
+    }
+
+    return _lookupId;
+  }
 
   bool _computeHasMore({required int loadedCount, required int lastPageCount}) {
     final totalSongCount = _totalSongCount;
@@ -127,6 +163,14 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       _resolveAllSongsFuture = null;
       _playbackAppendProvider = null;
       _playbackAppendSessionId = null;
+      _isCommentsLoading = true;
+      _isFetchingMoreComments = false;
+      _hasMoreComments = true;
+      _currentCommentPage = 1;
+      _allComments.clear();
+      _hotComments = [];
+      _totalCommentCount = 0;
+      _hasLoadedComments = false;
     });
 
     // Fetch detailed info to get creator and timestamps
@@ -142,6 +186,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
 
     final result = await _fetchSongsPage(1);
     final songs = result.songs;
+
+    if (_isLikedPlaylist()) {
+      _syncLikedPlaylistFavorites(songs);
+    }
 
     if (mounted) {
       setState(() {
@@ -162,6 +210,12 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
     }
   }
 
+  void _onPrimaryTabChanged(SongListPrimaryTab tab) {
+    if (tab != SongListPrimaryTab.comments || _hasLoadedComments) return;
+    _hasLoadedComments = true;
+    unawaited(_fetchComments(isRefresh: true));
+  }
+
   void _scheduleBackgroundResolve() {
     if (_hasScheduledWarmUp || !_hasMore || !mounted) return;
     _hasScheduledWarmUp = true;
@@ -179,6 +233,109 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       listCreateUserid: _routeArgs.trackListCreateUserid,
       page: page,
       pagesize: _pageSize,
+    );
+  }
+
+  Future<void> _fetchComments({bool isRefresh = false}) async {
+    if ((_isCommentsLoading || _isFetchingMoreComments) && !isRefresh) return;
+    _hasLoadedComments = true;
+
+    if (mounted) {
+      setState(() {
+        if (isRefresh) {
+          _isCommentsLoading = true;
+          _currentCommentPage = 1;
+          _hasMoreComments = true;
+          _allComments.clear();
+          _hotComments = [];
+          _totalCommentCount = 0;
+        } else {
+          _isFetchingMoreComments = true;
+        }
+      });
+    }
+
+    try {
+      final data = await MusicApi.getPlaylistComments(
+        _playlistCommentId,
+        page: _currentCommentPage,
+        pagesize: _commentPageSize,
+        showClassify: isRefresh,
+        showHotwordList: isRefresh,
+      );
+      final payload = data['data'] is Map<String, dynamic>
+          ? data['data'] as Map<String, dynamic>
+          : data;
+      final newComments = payload['list'] is List
+          ? List<dynamic>.from(payload['list'] as List)
+          : const <dynamic>[];
+      final totalCount = _asInt(
+        payload['count'] ?? payload['total'] ?? data['count'] ?? data['total'],
+      );
+      final hotComments = payload['hot_list'] is List
+          ? List<dynamic>.from(payload['hot_list'] as List)
+          : payload['weight_list'] is List
+              ? List<dynamic>.from(payload['weight_list'] as List)
+              : const <dynamic>[];
+
+      if (!mounted) return;
+      setState(() {
+        if (isRefresh) {
+          _hotComments = hotComments;
+          _totalCommentCount = totalCount;
+        }
+        _allComments.addAll(newComments);
+        _hasMoreComments = totalCount > 0
+            ? _allComments.length < totalCount
+            : newComments.length >= _commentPageSize;
+        if (_hasMoreComments) {
+          _currentCommentPage++;
+        }
+        _isCommentsLoading = false;
+        _isFetchingMoreComments = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isCommentsLoading = false;
+        _isFetchingMoreComments = false;
+        _hasMoreComments = false;
+      });
+    }
+  }
+
+  void _loadMoreComments() {
+    if (_isCommentsLoading || _isFetchingMoreComments || !_hasMoreComments) {
+      return;
+    }
+    unawaited(_fetchComments());
+  }
+
+  Future<void> _openPlaylistFloorComments(Map<String, dynamic> rawComment) async {
+    final comment = Map<String, dynamic>.from(rawComment);
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final code = _firstNonEmptyString([comment['code']]);
+
+    if (specialId == null || tid == null || code == null) {
+      CustomToast.error(context, '歌单楼层评论暂不可用');
+      return;
+    }
+
+    await showCommentFloorSheet(
+      context,
+      comment: comment,
+      unavailableMessage: '歌单楼层评论暂不可用',
+      onFetch: ({required page, required pagesize}) {
+        return MusicApi.getFloorComments(
+          specialId,
+          tid,
+          code: code,
+          resourceType: 'playlist',
+          page: page,
+          pagesize: pagesize,
+        );
+      },
     );
   }
 
@@ -296,6 +453,10 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         nextPage++;
       }
 
+      if (_isLikedPlaylist()) {
+        _syncLikedPlaylistFavorites(songs);
+      }
+
       final resolvedSongs = List<Song>.unmodifiable(songs);
       _allSongsCache = resolvedSongs;
       _resolveAllSongsFuture = Future.value(resolvedSongs);
@@ -320,6 +481,28 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
   void _attachPlaybackPrefetch(AudioProvider audioProvider, int sessionId) {
     _playbackAppendProvider = audioProvider;
     _playbackAppendSessionId = sessionId;
+  }
+
+  bool _isLikedPlaylist() {
+    final likedId = _userProvider.likedPlaylistId?.toString();
+    if (likedId == null || likedId.isEmpty) return false;
+    final playlist = _detailedPlaylist ?? _routeArgs.playlist;
+    final playlistId = playlist.id.toString();
+    final playlistGid = playlist.listCreateGid?.toString();
+    final playlistListId = playlist.listCreateListid?.toString();
+    return likedId == playlistId ||
+        (playlistGid != null && likedId == playlistGid) ||
+        (playlistListId != null && likedId == playlistListId);
+  }
+
+  void _syncLikedPlaylistFavorites(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final persistenceProvider = context.read<PersistenceProvider>();
+    final newFavorites = songs
+        .where((song) => !persistenceProvider.isFavorite(song))
+        .toList(growable: false);
+    if (newFavorites.isEmpty) return;
+    unawaited(persistenceProvider.syncCloudFavorites(newFavorites));
   }
 
   void _playPlaylist() {
@@ -384,46 +567,46 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
     final isCreated = userProvider.isCreatedPlaylist(playlist.id);
     final songs = _songs ?? const <Song>[];
     final batchPreparing = _isResolvingAllSongs && _hasMore;
-    final secondaryAction = userProvider.isAuthenticated && !isCreated
-        ? DetailPageSecondaryAction(
-            icon: isFavorited
-                ? CupertinoIcons.heart_fill
-                : CupertinoIcons.heart,
-            label: '收藏',
-            emphasized: isFavorited,
-            onTap: () async {
-              bool success;
-              if (isFavorited) {
-                success = await userProvider.unfavoritePlaylist(
-                  playlist.id,
-                  globalId: playlist.listCreateGid,
-                );
-                if (context.mounted) {
-                  if (success) {
-                    CustomToast.success(context, '已取消收藏');
-                  } else {
-                    CustomToast.error(context, '操作失败');
-                  }
-                }
-              } else {
-                success = await userProvider.favoritePlaylist(
-                  playlist.originalId,
-                  playlist.name,
-                  listCreateUserid: playlist.listCreateUserid,
-                  listCreateGid: playlist.listCreateGid,
-                  listCreateListid: playlist.listCreateListid,
-                );
-                if (context.mounted) {
-                  if (success) {
-                    CustomToast.success(context, '已收藏歌单');
-                  } else {
-                    CustomToast.error(context, '收藏失败');
-                  }
+
+    final secondaryActions = <DetailPageSecondaryAction>[
+      if (userProvider.isAuthenticated && !isCreated)
+        DetailPageSecondaryAction(
+          icon: isFavorited ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+          label: '收藏',
+          emphasized: isFavorited,
+          onTap: () async {
+            bool success;
+            if (isFavorited) {
+              success = await userProvider.unfavoritePlaylist(
+                playlist.id,
+                globalId: playlist.listCreateGid,
+              );
+              if (context.mounted) {
+                if (success) {
+                  CustomToast.success(context, '已取消收藏');
+                } else {
+                  CustomToast.error(context, '操作失败');
                 }
               }
-            },
-          )
-        : null;
+            } else {
+              success = await userProvider.favoritePlaylist(
+                playlist.originalId,
+                playlist.name,
+                listCreateUserid: playlist.listCreateUserid,
+                listCreateGid: playlist.listCreateGid,
+                listCreateListid: playlist.listCreateListid,
+              );
+              if (context.mounted) {
+                if (success) {
+                  CustomToast.success(context, '已收藏歌单');
+                } else {
+                  CustomToast.error(context, '收藏失败');
+                }
+              }
+            }
+          },
+        ),
+    ];
 
     return SongListScaffold(
       songs: songs,
@@ -432,6 +615,25 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
+      commentSlivers: _hasLoadedComments
+          ? buildResourceCommentSlivers(
+              context: context,
+              isLoading: _isCommentsLoading,
+              hotComments: _hotComments,
+              comments: _allComments,
+              totalCount: _totalCommentCount,
+              onTapReplies: _openPlaylistFloorComments,
+            )
+          : null,
+      onCommentsLoadMore: _loadMoreComments,
+      hasMoreComments: _hasMoreComments,
+      isLoadingMoreComments: _isFetchingMoreComments,
+      commentsTabBadgeLabel: _totalCommentCount > 0
+          ? '$_totalCommentCount'
+          : null,
+      onPrimaryTabChanged: _onPrimaryTabChanged,
+      initialPrimaryTab: SongListPrimaryTab.songs,
+      hasCommentsTab: true,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithPlaylistSongs
@@ -440,7 +642,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         DetailPageSliverHeader(
           typeLabel: 'PLAYLIST',
           title: playlist.name,
-          expandedHeight: 169,
+          expandedHeight: 200,
           expandedCover: CoverImage(
             url: playlist.pic,
             width: 136,
@@ -481,7 +683,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     playlist.nickname,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 13,
                     ),
                   ),
@@ -490,7 +692,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     style: TextStyle(
                       color: theme.colorScheme.onSurface.withAlpha(100),
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                     ),
                   ),
                 ],
@@ -517,37 +719,36 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
             sourceId: playlist.id,
             onResolveSongs: _loadAllSongsForBatch,
             isBatchPreparing: batchPreparing,
-            secondaryAction: secondaryAction,
+            secondaryActions: secondaryActions,
           ),
         ),
         if (playlist.intro.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     '歌单介绍',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 15,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     playlist.intro,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppTheme.fontWeightMedium,
                       fontSize: 12,
                     ),
                   ),
-                  if (playlist.intro.length > 80)
-                    InkWell(
+                  InkWell(
                       onTap: () {
                         CustomDialog.show(
                           context,
@@ -568,7 +769,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                       ),
@@ -605,7 +806,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         label,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
           color: theme.colorScheme.primary,
         ),
       ),
@@ -627,11 +828,26 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),
       ],
     );
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString();
+      if (text != null && text.isNotEmpty && text != '0' && text != 'null') {
+        return text;
+      }
+    }
+    return null;
   }
 }

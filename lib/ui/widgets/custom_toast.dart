@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 enum ToastType { success, error, info, warning }
 
@@ -155,7 +156,7 @@ class _ToastWidgetState extends State<_ToastWidget> with SingleTickerProviderSta
                             style: TextStyle(
                               color: theme.colorScheme.onSurface,
                               fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: AppTheme.fontWeightBold,
                               letterSpacing: -0.2,
                             ),
                           ),

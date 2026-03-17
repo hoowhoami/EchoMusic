@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 
 import 'app_menu.dart';
 import 'custom_tab_bar.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class PickerOption {
   final String id;
@@ -218,7 +219,7 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
           item.name,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
             color: isSelected
                 ? (theme.brightness == Brightness.light
                     ? Colors.white
@@ -254,7 +255,7 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
             widget.title,
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.onSurface,
               letterSpacing: -0.5,
             ),

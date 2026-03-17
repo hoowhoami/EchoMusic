@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/refresh_provider.dart';
+import '../../providers/navigation_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -16,7 +19,10 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> with RefreshableState {
+  static const int _rootIndex = 6;
   bool _isLoading = false;
+  bool _loaded = false;
+  bool _wasAuthenticated = false;
 
   @override
   String get refreshKey => 'root:6';
@@ -26,13 +32,42 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     setState(() {});
   }
 
+  void _scheduleInitialLoad() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadData();
+      }
+    });
+  }
+
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _loaded = true;
+      _wasAuthenticated = true;
+    });
+
+    final userProvider = context.read<UserProvider>();
+    await userProvider.fetchAllUserData();
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final userProvider = context.watch<UserProvider>();
     final user = userProvider.user;
     final theme = Theme.of(context);
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
+    );
 
     if (!userProvider.isAuthenticated) {
+      _loaded = false;
+      _wasAuthenticated = false;
       return Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         body: Center(
@@ -41,17 +76,25 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
             children: [
               Icon(CupertinoIcons.person_crop_circle_badge_exclam, size: 64, color: theme.colorScheme.onSurface.withAlpha(30)),
               const SizedBox(height: 16),
-              Text('请先登录以查看个人中心', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontSize: 16, fontWeight: FontWeight.w600)),
+              Text('请先登录以查看个人中心', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontSize: 16, fontWeight: AppTheme.fontWeightSemiBold)),
             ],
           ),
         ),
       );
     }
 
+    if (!isCurrentRoot) {
+      _loaded = false;
+    }
+
+    if (isCurrentRoot && (!_loaded || !_wasAuthenticated) && !_isLoading) {
+      _scheduleInitialLoad();
+    }
+
     final detail = user?.extendsInfo?['detail'] ?? {};
     final vipInfo = user?.extendsInfo?['vip'] ?? {};
     final busiVip = vipInfo['busi_vip'] as List? ?? [];
-    
+
     final tvip = busiVip.firstWhere((v) => v['product_type'] == 'tvip' && v['is_vip'] == 1, orElse: () => null);
     final svip = busiVip.firstWhere((v) => v['product_type'] == 'svip' && v['is_vip'] == 1, orElse: () => null);
 
@@ -118,7 +161,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
               '个人中心',
               style: TextStyle(
                 fontSize: 32,
-                fontWeight: FontWeight.w900,
+                fontWeight: AppTheme.fontWeightBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -1.0,
               ),
@@ -135,19 +178,6 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
           ],
         ),
         const Spacer(),
-        if (_isLoading)
-          const CupertinoActivityIndicator()
-        else
-          _buildCircleButton(
-            context,
-            icon: CupertinoIcons.refresh,
-            onTap: () async {
-              setState(() => _isLoading = true);
-              await userProvider.fetchAllUserData();
-              setState(() => _isLoading = false);
-            },
-          ),
-        const SizedBox(width: 12),
         _buildCircleButton(
           context,
           icon: CupertinoIcons.square_arrow_right,
@@ -217,7 +247,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   children: [
                     Text(
                       user?.nickname ?? '',
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                      style: const TextStyle(fontSize: 28, fontWeight: AppTheme.fontWeightBold, letterSpacing: -0.5),
                     ),
                     const SizedBox(width: 16),
                     if (tvip != null) _buildModernVipTag('畅听', Colors.green),
@@ -232,7 +262,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   Text(
                     detail['descri'],
                     maxLines: 2,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightMedium),
                   ),
                 const SizedBox(height: 20),
                 Row(
@@ -259,8 +289,8 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold)),
+        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: AppTheme.fontWeightSemiBold)),
       ],
     );
   }
@@ -300,21 +330,29 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         children: [
           Icon(icon, size: 18, color: theme.colorScheme.primary.withAlpha(180)),
           const SizedBox(width: 16),
-          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightSemiBold)),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          Text(value, style: const TextStyle(fontSize: 14, fontWeight: AppTheme.fontWeightBold)),
         ],
       ),
     );
   }
 
   Widget _buildVipWorkflow(BuildContext context, UserProvider provider) {
+    final user = provider.user;
+    final vipInfo = user?.extendsInfo?['vip'] ?? {};
+    final busiVip = vipInfo['busi_vip'] as List? ?? [];
+
+    final tvip = busiVip.firstWhere((v) => v['product_type'] == 'tvip' && v['is_vip'] == 1, orElse: () => null);
+    final svip = busiVip.firstWhere((v) => v['product_type'] == 'svip' && v['is_vip'] == 1, orElse: () => null);
+
     return Column(
       children: [
         _buildVipStepItem(
           context,
           icon: CupertinoIcons.music_house,
           title: '领取畅听会员',
+          subtitle: tvip != null ? _getVipExpireText(tvip) : null,
           isCompleted: provider.isTvipClaimedToday,
           onTap: () async {
             setState(() => _isLoading = true);
@@ -335,8 +373,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
           context,
           icon: CupertinoIcons.rocket,
           title: '升级概念会员',
-          isCompleted: provider.isSvipClaimedToday,
-          isEnabled: provider.isTvipClaimedToday,
+          subtitle: svip != null ? _getVipExpireText(svip) : null,
+          isCompleted: provider.isSvipClaimedToday || svip != null,
+          isEnabled: provider.isTvipClaimedToday && !provider.isSvipClaimedToday,
           onTap: () async {
             setState(() => _isLoading = true);
             final success = await provider.upgradeSvip();
@@ -348,7 +387,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                 if (!provider.isTvipClaimedToday) {
                   CustomToast.error(context, '请先领取畅听会员');
                 } else {
-                  CustomToast.error(context, '升级失败或今日已升级');
+                  CustomToast.error(context, '升级失败');
                 }
               }
             }
@@ -362,6 +401,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
   Widget _buildVipStepItem(BuildContext context, {
     required IconData icon,
     required String title,
+    String? subtitle,
     required bool isCompleted,
     bool isEnabled = true,
     required VoidCallback onTap,
@@ -393,15 +433,32 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
               child: Icon(icon, color: isCompleted ? color : Colors.grey, size: 20),
             ),
             const SizedBox(width: 16),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: isCompleted ? color : (active ? theme.colorScheme.onSurface : Colors.grey),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: AppTheme.fontWeightBold,
+                      color: isCompleted ? color : (active ? theme.colorScheme.onSurface : Colors.grey),
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: AppTheme.fontWeightMedium,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            const Spacer(),
             if (isCompleted)
               Icon(CupertinoIcons.checkmark_alt_circle_fill, color: color, size: 20)
             else
@@ -422,9 +479,39 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: AppTheme.fontWeightBold),
       ),
     );
+  }
+
+  String? _getVipExpireText(dynamic vipData) {
+    if (vipData == null) return null;
+
+    try {
+      final String? endTimeStr = vipData['vip_end_time']?.toString();
+      if (endTimeStr == null || endTimeStr.isEmpty) return null;
+
+      // Parse date string format: "2026-03-13 15:14:38"
+      final expireDate = DateTime.parse(endTimeStr);
+      final now = DateTime.now();
+      final diff = expireDate.difference(now);
+
+      if (diff.isNegative) {
+        return '已过期';
+      } else if (diff.inDays > 365) {
+        return '${(diff.inDays / 365).floor()}年后到期';
+      } else if (diff.inDays > 30) {
+        return '${(diff.inDays / 30).floor()}个月后到期';
+      } else if (diff.inDays > 0) {
+        return '${diff.inDays}天后到期';
+      } else if (diff.inHours > 0) {
+        return '${diff.inHours}小时后到期';
+      } else {
+        return '即将到期';
+      }
+    } catch (e) {
+      return null;
+    }
   }
 
   Widget _buildSectionHeader(BuildContext context, String title, IconData icon) {
@@ -435,7 +522,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         const SizedBox(width: 10),
         Text(
           title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold),
         ),
       ],
     );

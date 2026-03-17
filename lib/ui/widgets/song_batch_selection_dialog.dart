@@ -10,6 +10,7 @@ import 'custom_dialog.dart';
 import 'custom_toast.dart';
 import 'playlist_picker_dialog.dart';
 import 'song_table_layout.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 Future<void> showSongBatchSelectionDialog(
   BuildContext context, {
@@ -149,15 +150,20 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
   }
 
   Future<void> _playSelected() async {
-    final firstPlayableIndex = _selectedSongs.indexWhere(
-      (song) => song.isPlayable,
-    );
-    if (firstPlayableIndex == -1) {
-      CustomToast.error(context, '所选歌曲暂无可用音源');
+    if (_selectedSongs.isEmpty) return;
+    final hasPlayable = _selectedSongs.any((song) => song.isPlayable);
+    if (!hasPlayable) {
+      if (_selectedSongs.any((song) => song.isNoCopyright)) {
+        CustomToast.error(context, '所选歌曲包含无版权内容');
+      } else if (_selectedSongs.any((song) => song.isPayBlocked || song.isPaid)) {
+        CustomToast.error(context, '所选歌曲包含需要购买的内容');
+      } else {
+        CustomToast.error(context, '所选歌曲暂无可用音源');
+      }
       return;
     }
     await context.read<AudioProvider>().playSong(
-      _selectedSongs[firstPlayableIndex],
+      _selectedSongs.first,
       playlist: _selectedSongs,
     );
     if (mounted) Navigator.of(context).pop();
@@ -343,7 +349,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
                                     '全选',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w700,
+                                      fontWeight: AppTheme.fontWeightBold,
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -351,7 +357,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
                                     '已选 ${_selectedSongs.length} / ${widget.songs.length}',
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: AppTheme.fontWeightSemiBold,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -409,7 +415,7 @@ ButtonStyle _buildDialogActionStyle(BuildContext context) {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
   );
 }
 
@@ -427,6 +433,17 @@ class _BatchSongTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isPlayable = song.isPlayable;
+    final contentOpacity = isPlayable ? 1.0 : 0.45;
+    final isNoCopyright = song.isNoCopyright;
+    final isPayBlocked = song.isPayBlocked || song.isPaid;
+    final unavailableTag = !isPlayable
+        ? (isNoCopyright
+            ? '版权'
+            : isPayBlocked
+                ? '付费'
+                : '音源')
+        : null;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -447,14 +464,17 @@ class _BatchSongTile extends StatelessWidget {
                     ),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  const SizedBox(width: 8),
-                  CoverImage(
-                    url: song.cover,
-                    width: 38,
-                    height: 38,
-                    borderRadius: 8,
-                    showShadow: false,
-                    size: 160,
+                  const SizedBox(width: 16),
+                  Opacity(
+                    opacity: contentOpacity,
+                    child: CoverImage(
+                      url: song.cover,
+                      width: 38,
+                      height: 38,
+                      borderRadius: 8,
+                      showShadow: false,
+                      size: 160,
+                    ),
                   ),
                   const SizedBox(width: 10),
                 ],
@@ -464,14 +484,29 @@ class _BatchSongTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    song.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.1,
+                  SizedBox(
+                    width: SongTableLayout.batchTitleMaxWidth,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            song.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: AppTheme.fontWeightBold,
+                              height: 1.1,
+                              color: theme.colorScheme.onSurface.withAlpha(
+                                isPlayable ? 255 : 140,
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (unavailableTag != null)
+                          _buildTag(context, unavailableTag, theme),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -482,7 +517,9 @@ class _BatchSongTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       height: 1.1,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                        isPlayable ? 255 : 140,
+                      ),
                     ),
                   ),
                 ],
@@ -497,7 +534,9 @@ class _BatchSongTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                    isPlayable ? 255 : 140,
+                  ),
                 ),
               ),
             ),
@@ -511,7 +550,9 @@ class _BatchSongTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontFamily: 'monospace',
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: theme.colorScheme.onSurfaceVariant.withAlpha(
+                      isPlayable ? 255 : 140,
+                    ),
                   ),
                 ),
               ),
@@ -521,6 +562,30 @@ class _BatchSongTile extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _buildTag(BuildContext context, String text, ThemeData theme) {
+  return Container(
+    margin: const EdgeInsets.only(left: 6),
+    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+    decoration: BoxDecoration(
+      color: theme.colorScheme.outline.withAlpha(20),
+      border: Border.all(
+        color: theme.colorScheme.outline.withAlpha(100),
+        width: 0.5,
+      ),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        color: theme.colorScheme.outline,
+        fontSize: 9,
+        fontWeight: AppTheme.fontWeightBold,
+        letterSpacing: 0.5,
+      ),
+    ),
+  );
 }
 
 String _songKey(Song song) =>

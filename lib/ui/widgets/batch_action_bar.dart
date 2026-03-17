@@ -10,6 +10,7 @@ import '../../theme/app_theme.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
 import 'playlist_picker_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 enum _BatchActionMenuResult {
   addToPlaylist,
@@ -124,7 +125,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                     '已选择',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       color: theme.colorScheme.onSurface.withAlpha(120),
                     ),
                   ),
@@ -132,7 +133,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                     '${selectionProvider.selectedCount} 首歌曲',
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: AppTheme.fontWeightBold,
                       color: theme.colorScheme.onSurface,
                       letterSpacing: -0.5,
                     ),
@@ -237,7 +238,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: FontWeight.w700,
+                fontWeight: AppTheme.fontWeightBold,
                 color: isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.onSurface.withAlpha(180),
               ),
             ),
@@ -255,13 +256,19 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
   void _playSongs(BuildContext context, List<Song> songs) {
     if (songs.isEmpty) return;
 
-    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
-    if (firstPlayableIndex == -1) {
-      CustomToast.error(context, '所选歌曲暂无可用音源');
+    final hasPlayable = songs.any((song) => song.isPlayable);
+    if (!hasPlayable) {
+      if (songs.any((song) => song.isNoCopyright)) {
+        CustomToast.error(context, '所选歌曲包含无版权内容');
+      } else if (songs.any((song) => song.isPayBlocked || song.isPaid)) {
+        CustomToast.error(context, '所选歌曲包含需要购买的内容');
+      } else {
+        CustomToast.error(context, '所选歌曲暂无可用音源');
+      }
       return;
     }
 
-    context.read<AudioProvider>().playSong(songs[firstPlayableIndex], playlist: songs);
+    context.read<AudioProvider>().playSong(songs.first, playlist: songs);
   }
 
   Future<void> _showBatchActions(
@@ -408,7 +415,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         title,
         style: TextStyle(
           fontSize: 14,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
           color: isDestructive
               ? theme.colorScheme.error
               : theme.colorScheme.onSurface,
@@ -418,7 +425,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         subtitle,
         style: TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ),

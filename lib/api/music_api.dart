@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/song.dart';
+import '../models/album.dart';
 import '../models/playlist.dart';
 import '../utils/logger.dart';
 import '../utils/server_orchestrator.dart';
@@ -364,6 +365,62 @@ class MusicApi {
     }
   }
 
+  static Future<Map<String, dynamic>> getPlaylistComments(String id, {int page = 1, int pagesize = 30, bool showClassify = false, bool showHotwordList = false}) async {
+    try {
+      final response = await _dio.get('/comment/playlist', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'show_classify': showClassify ? 1 : 0,
+        'show_hotword_list': showHotwordList ? 1 : 0,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getAlbumComments(String id, {int page = 1, int pagesize = 30, bool showClassify = false, bool showHotwordList = false}) async {
+    try {
+      final response = await _dio.get('/comment/album', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'show_classify': showClassify ? 1 : 0,
+        'show_hotword_list': showHotwordList ? 1 : 0,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getFloorComments(
+    String specialId,
+    String tid, {
+    String? mixsongid,
+    String? code,
+    String? resourceType,
+    int page = 1,
+    int pagesize = 30,
+  }) async {
+    try {
+      final response = await _dio.get('/comment/floor', queryParameters: {
+        'special_id': specialId,
+        'tid': tid,
+        if (mixsongid != null && mixsongid.isNotEmpty) 'mixsongid': mixsongid,
+        if (code != null && code.isNotEmpty) 'code': code,
+        if (resourceType != null && resourceType.isNotEmpty)
+          'resource_type': resourceType,
+        'page': page,
+        'pagesize': pagesize,
+      });
+      return response.data;
+    } catch (e) {
+      return {};
+    }
+  }
+
   static Future<List<Song>> getNewSongs() async {
     try {
       final response = await _dio.get('/top/song');
@@ -670,7 +727,33 @@ class MusicApi {
       if (response.data['status'] == 1) {
         final rawData = response.data['data'];
         final List data = rawData is List ? rawData : (rawData['info'] ?? rawData['list'] ?? []);
-        return data.map((json) => Song.fromArtistSongJson(json)).toList();
+        return data.map((json) => Song.fromArtistSongJson(id, json)).toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Album>> getSingerAlbums(
+    int id, {
+    int page = 1,
+    int pagesize = 30,
+    String sort = 'hot',
+  }) async {
+    try {
+      final response = await _dio.get('/artist/albums', queryParameters: {
+        'id': id,
+        'page': page,
+        'pagesize': pagesize,
+        'sort': sort,
+      });
+      if (response.data['status'] == 1) {
+        final rawData = response.data['data'];
+        final List data = rawData is List
+            ? rawData
+            : (rawData['info'] ?? rawData['list'] ?? rawData['albums'] ?? []);
+        return data.map((json) => Album.fromJson(json)).toList();
       }
       return [];
     } catch (e) {
@@ -1267,17 +1350,17 @@ class MusicApi {
 
   
 
-    static Future<bool> upgradeDayVip() async {
+    static Future<Map<String, dynamic>> upgradeDayVip() async {
 
       try {
 
         final response = await _dio.get('/youth/day/vip/upgrade');
 
-        return response.data['status'] == 1;
+        return response.data;
 
       } catch (e) {
 
-        return false;
+        return {'status': 0, 'error_code': 0};
 
       }
 

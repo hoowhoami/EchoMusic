@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'custom_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class DisclaimerDialog extends StatelessWidget {
   const DisclaimerDialog({super.key});
@@ -40,13 +41,13 @@ class DisclaimerDialog extends StatelessWidget {
         children: [
           Text(
             index,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               content,
-              style: const TextStyle(height: 1.6, fontSize: 14, fontWeight: FontWeight.w500),
+              style: const TextStyle(height: 1.6, fontSize: 14, fontWeight: AppTheme.fontWeightMedium),
             ),
           ),
         ],

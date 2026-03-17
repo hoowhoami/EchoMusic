@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../../api/music_api.dart';
 import '../../models/song.dart';
@@ -10,9 +10,15 @@ import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/custom_picker.dart';
 import '../widgets/custom_selector.dart';
-import '../widgets/song_card.dart';
 import '../widgets/back_to_top.dart';
-import '../widgets/song_batch_selection_dialog.dart';
+import '../widgets/song_list_scaffold.dart';
+import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/detail_page_action_row.dart';
+import '../../providers/audio_provider.dart';
+import '../widgets/custom_toast.dart';
+import '../../providers/persistence_provider.dart';
+import '../widgets/playlist_card.dart';
+import '../widgets/album_card.dart';
 import '../../models/album.dart';
 import 'rank_view.dart';
 
@@ -74,18 +80,15 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
           ),
         ),
       ),
-      body: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: TabBarView(
-          controller: _tabController,
-          physics: const BouncingScrollPhysics(),
-          children: [
-            const _DiscoverPlaylistTab(),
-            const RankView(backgroundColor: Colors.transparent, showTitle: false),
-            const _DiscoverAlbumTab(),
-            const _DiscoverSongTab(),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        physics: const BouncingScrollPhysics(),
+        children: [
+          const _DiscoverPlaylistTab(),
+          const RankView(backgroundColor: Colors.transparent, showTitle: false),
+          const _DiscoverAlbumTab(),
+          const _DiscoverSongTab(),
+        ],
       ),
     );
   }
@@ -210,25 +213,33 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : Stack(
-                children: [
-                  GridView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 5,
-                      childAspectRatio: 0.75,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
+            : Scrollbar(
+                controller: _scrollController,
+                child: Stack(
+                  children: [
+                    GridView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
+                        crossAxisSpacing: 20,
+                      ),
+                      itemCount: _playlists.length,
+                      itemBuilder: (context, index) {
+                        final playlist = _playlists[index];
+                        return PlaylistCard.grid(
+                          playlist: playlist,
+                          onTap: () =>
+                              context.read<NavigationProvider>().openPlaylist(playlist),
+                          titleMaxLines: 1,
+                        );
+                      },
                     ),
-                    itemCount: _playlists.length,
-                    itemBuilder: (context, index) {
-                      final playlist = _playlists[index];
-                      return _PlaylistCard(playlist: playlist);
-                    },
-                  ),
-                  BackToTop(controller: _scrollController),
-                ],
+                    BackToTop(controller: _scrollController),
+                  ],
+                ),
               ),
         ),
       ],
@@ -236,60 +247,7 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
   }
 }
 
-class _PlaylistCard extends StatelessWidget {
-  final Playlist playlist;
-  const _PlaylistCard({required this.playlist});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      onTap: () => context.read<NavigationProvider>().openPlaylist(playlist),
-      borderRadius: BorderRadius.circular(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.shadow.withAlpha(30),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: playlist.pic,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  placeholder: (context, url) => Container(color: theme.colorScheme.onSurface.withAlpha(10)),
-                  errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_note_list),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            playlist.name,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: theme.colorScheme.onSurface, 
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// Playlist card now lives in playlist_card.dart
 
 class _DiscoverAlbumTab extends StatefulWidget {
   const _DiscoverAlbumTab();
@@ -399,74 +357,34 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : Stack(
-                children: [
-                  GridView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 5,
-                      childAspectRatio: 0.75,
-                      crossAxisSpacing: 24,
-                      mainAxisSpacing: 24,
+            : Scrollbar(
+                controller: _scrollController,
+                child: Stack(
+                  children: [
+                    GridView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
+                        crossAxisSpacing: 20,
+                      ),
+                      itemCount: albums.length,
+                      itemBuilder: (context, index) {
+                        final album = albums[index];
+                        return AlbumCard.grid(
+                          album: album,
+                          subtitle: album.singerName,
+                          onTap: () => context
+                              .read<NavigationProvider>()
+                              .openAlbum(album.id, album.name),
+                        );
+                      },
                     ),
-                    itemCount: albums.length,
-                    itemBuilder: (context, index) {
-                      final album = albums[index];
-                      return InkWell(
-                        onTap: () => context.read<NavigationProvider>().openAlbum(album.id, album.name),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withAlpha(30),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: CachedNetworkImage(
-                                    imageUrl: album.pic,
-                                    fit: BoxFit.cover,
-                                    width: double.infinity,
-                                    placeholder: (context, url) => Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
-                                    errorWidget: (context, url, error) => const Icon(CupertinoIcons.music_albums),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              album.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onSurface, 
-                                fontSize: 13, 
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              album.singerName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  BackToTop(controller: _scrollController),
-                ],
+                    BackToTop(controller: _scrollController),
+                  ],
+                ),
               ),
         ),
       ],
@@ -481,8 +399,8 @@ class _DiscoverSongTab extends StatefulWidget {
   State<_DiscoverSongTab> createState() => _DiscoverSongTabState();
 }
 
-class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableState {
-  final ScrollController _scrollController = ScrollController();
+class _DiscoverSongTabState extends State<_DiscoverSongTab>
+    with RefreshableState {
   late Future<List<Song>> _songsFuture;
 
   @override
@@ -496,8 +414,31 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
 
   @override
   void dispose() {
-    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _playNewSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    final firstPlayableIndex = songs.indexWhere((song) => song.isPlayable);
+    if (firstPlayableIndex == -1) {
+      CustomToast.error(context, '当前暂无可播放歌曲');
+      return;
+    }
+    unawaited(_replacePlaybackWithNewSongs(songs[firstPlayableIndex], songs));
+  }
+
+  Future<void> _replacePlaybackWithNewSongs(
+    Song song,
+    List<Song> songs,
+  ) async {
+    if (songs.isEmpty) return;
+    if (!songs.any((entry) => entry.isPlayable)) {
+      CustomToast.error(context, '当前暂无可播放歌曲');
+      return;
+    }
+
+    final audioProvider = context.read<AudioProvider>();
+    unawaited(audioProvider.playSong(song, playlist: songs));
   }
 
   @override
@@ -512,47 +453,92 @@ class _DiscoverSongTabState extends State<_DiscoverSongTab> with RefreshableStat
     return FutureBuilder<List<Song>>(
       future: _songsFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CupertinoActivityIndicator());
+        if (!snapshot.hasData) {
+          return const Center(child: CupertinoActivityIndicator());
+        }
         final songs = snapshot.data!;
+        final replacePlaylistEnabled =
+            context.select<PersistenceProvider, bool>(
+          (provider) => provider.settings['replacePlaylist'] ?? false,
+        );
+        final theme = Theme.of(context);
 
-        return Stack(
-          children: [
-            Column(
-              children: [
-                if (songs.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
-                    child: Row(
-                      children: [
-                        const Spacer(),
-                        SongBatchActionButton(songs: songs),
-                      ],
-                    ),
-                  ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-                    itemCount: songs.length,
-                    itemBuilder: (context, index) {
-                      final song = songs[index];
-                      return Padding(
-                        padding: EdgeInsets.only(bottom: index == songs.length - 1 ? 20 : 0),
-                        child: SongCard(
-                          song: song,
-                          playlist: songs,
-                          showMore: true,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+        return SongListScaffold(
+          songs: songs,
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+          rowHorizontalPadding: 6,
+          hasCommentsTab: false,
+          enableDefaultDoubleTapPlay: true,
+          onSongDoubleTapPlay: replacePlaylistEnabled
+              ? (song) async {
+                  await _replacePlaybackWithNewSongs(song, songs);
+                }
+              : null,
+          headers: [
+            DetailPageSliverHeader(
+              typeLabel: 'NEW SONGS',
+              title: '新歌速递',
+              expandedHeight: kToolbarHeight,
+              expandedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 10),
+              collapsedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 0),
+              expandedCover: _buildCollapsedCover(theme),
+              collapsedCover: _buildCollapsedCover(theme),
+              detailChildren: const <Widget>[],
+              actions: DetailPageActionRow(
+                playLabel: '播放',
+                onPlay: () => _playNewSongs(songs),
+                songs: songs,
+              ),
             ),
-            BackToTop(controller: _scrollController),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildExpandedCover(ThemeData theme) {
+    return Container(
+      width: 136,
+      height: 136,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(220),
+            theme.colorScheme.tertiary.withAlpha(180),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.sparkles,
+        size: 56,
+        color: theme.colorScheme.onPrimary,
+      ),
+    );
+  }
+
+  Widget _buildCollapsedCover(ThemeData theme) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primary.withAlpha(200),
+            theme.colorScheme.tertiary.withAlpha(160),
+          ],
+        ),
+      ),
+      child: Icon(
+        CupertinoIcons.sparkles,
+        size: 16,
+        color: theme.colorScheme.onPrimary,
+      ),
     );
   }
 }

@@ -1,13 +1,19 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:provider/provider.dart';
 
 import '../../api/music_api.dart';
 import '../../models/song.dart';
+import 'package:echomusic/providers/navigation_provider.dart';
 import '../../utils/constants.dart';
 import '../widgets/back_to_top.dart';
+import '../widgets/comment_floor_sheet.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/detail_page_sliver_header.dart';
+import '../widgets/custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class SongDetailCommentView extends StatefulWidget {
   const SongDetailCommentView({super.key, required this.song});
@@ -37,6 +43,107 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
   bool _isFetchingMore = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  List<SingerInfo> _displaySingers(Song song) => song.singers
+      .where((singer) => Song.normalizeDisplayText(singer.name).isNotEmpty)
+      .toList(growable: false);
+
+  void _openArtistDetail(BuildContext context, SingerInfo singer) {
+    if (singer.id <= 0) {
+      CustomToast.error(context, '暂无歌手信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute(
+      'artist_detail',
+      id: singer.id,
+    )) {
+      return;
+    }
+    context.read<NavigationProvider>().openArtist(
+      singer.id,
+      Song.normalizeDisplayText(singer.name),
+    );
+  }
+
+  void _openAlbumDetail(BuildContext context, Song song) {
+    final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+    if (albumId <= 0 || song.albumName.trim().isEmpty) {
+      CustomToast.error(context, '暂无专辑信息');
+      return;
+    }
+    if (context.read<NavigationProvider>().isCurrentRoute(
+      'album_detail',
+      id: albumId,
+    )) {
+      return;
+    }
+    context.read<NavigationProvider>().openAlbum(
+      albumId,
+      song.displayAlbumName,
+    );
+  }
+
+  List<InlineSpan> _buildSingerSpans({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+    required NavigationProvider navigationProvider,
+  }) {
+    final singers = _displaySingers(song);
+    if (singers.isEmpty) {
+      return [
+        TextSpan(
+          text: song.displaySingerName,
+          style: style,
+        ),
+      ];
+    }
+
+    final spans = <InlineSpan>[];
+    for (int index = 0; index < singers.length; index++) {
+      final singer = singers[index];
+      final canOpenSinger =
+          !navigationProvider.isCurrentRoute('artist_detail', id: singer.id);
+      spans.add(
+        TextSpan(
+          text: Song.normalizeDisplayText(singer.name),
+          style: style,
+          recognizer: canOpenSinger
+              ? (TapGestureRecognizer()
+                  ..onTap = () => _openArtistDetail(context, singer))
+              : null,
+        ),
+      );
+      if (index < singers.length - 1) {
+        spans.add(
+          TextSpan(
+            text: ' / ',
+            style: style.copyWith(color: style.color?.withAlpha(180)),
+          ),
+        );
+      }
+    }
+    return spans;
+  }
+
+  Widget _buildSingerLine({
+    required BuildContext context,
+    required Song song,
+    required TextStyle style,
+  }) {
+    final navigationProvider = context.read<NavigationProvider>();
+    final spans = _buildSingerSpans(
+      context: context,
+      song: song,
+      style: style,
+      navigationProvider: navigationProvider,
+    );
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
+    );
+  }
   static const int _pageSize = 30;
 
   Map<String, dynamic>? _commentsData;
@@ -390,11 +497,11 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                             .withAlpha(120),
                         labelStyle: const TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: AppTheme.fontWeightBold,
                         ),
                         unselectedLabelStyle: const TextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                         ),
                         tabs: const [
                           Tab(text: '详情'),
@@ -408,7 +515,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
               ],
             ),
           ),
-          BackToTop(controller: _scrollController),
+          BackToTop(controller: _scrollController, bottom: 32),
         ],
       ),
     );
@@ -434,14 +541,13 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
         showShadow: false,
       ),
       detailChildren: [
-        Text(
-          widget.song.singerName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        _buildSingerLine(
+          context: context,
+          song: widget.song,
           style: TextStyle(
             color: theme.colorScheme.primary,
             fontSize: 14,
-            fontWeight: FontWeight.w700,
+            fontWeight: AppTheme.fontWeightBold,
           ),
         ),
         Wrap(
@@ -451,6 +557,10 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             _buildMetaItem(
               '专辑',
               widget.song.albumName.isEmpty ? '单曲' : widget.song.albumName,
+              valueColor: theme.colorScheme.primary,
+              onTap: _canOpenAlbum(widget.song)
+                  ? () => _openAlbumDetail(context, widget.song)
+                  : null,
             ),
             _buildMetaItem(
               '语言',
@@ -811,7 +921,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                 _getQualityLabel(quality),
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                   color: theme.colorScheme.primary,
                 ),
               ),
@@ -848,7 +958,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             const SizedBox(width: 8),
             const Text(
               '榜单成就',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              style: TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold),
             ),
             if (summary != null && summary.isNotEmpty) ...[
               const SizedBox(width: 8),
@@ -858,7 +968,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).disabledColor,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: AppTheme.fontWeightMedium,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -907,7 +1017,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   rank['platform_name'] ?? '未知平台',
                   style: const TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -927,7 +1037,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             '第 $currentRank 名',
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.primary,
               letterSpacing: -1,
             ),
@@ -947,7 +1057,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface.withAlpha(120),
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
           ),
         ),
         Text(
@@ -955,7 +1065,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface,
-            fontWeight: FontWeight.w800,
+            fontWeight: AppTheme.fontWeightBold,
           ),
         ),
       ],
@@ -1023,7 +1133,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ? Colors.white
                     : theme.colorScheme.onSurface.withAlpha(180),
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               ),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(
@@ -1071,7 +1181,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ? Colors.white
                     : theme.colorScheme.onSurface.withAlpha(180),
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               ),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(
@@ -1144,8 +1254,13 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
     Map comment, {
     bool isStar = false,
   }) {
+    final normalizedComment = Map<String, dynamic>.from(comment);
     final theme = Theme.of(context);
-    final likeCount = comment['like']?['count'] ?? 0;
+    final likeCount = _asInt(normalizedComment['like']?['count']);
+    final replyNum = _asInt(normalizedComment['reply_num']);
+    final canOpenReplies =
+        replyNum > 0 && _canOpenSongFloorComments(normalizedComment);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -1166,7 +1281,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
               ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: Image.network(
-                  comment['user_pic'] ?? '',
+                  normalizedComment['user_pic'] ?? '',
                   width: 36,
                   height: 36,
                   errorBuilder: (context, error, stackTrace) =>
@@ -1181,10 +1296,10 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     Row(
                       children: [
                         Text(
-                          comment['user_name'] ?? '匿名用户',
+                          normalizedComment['user_name'] ?? '匿名用户',
                           style: const TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                         if (isStar)
@@ -1203,7 +1318,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                               style: TextStyle(
                                 fontSize: 9,
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: AppTheme.fontWeightBold,
                               ),
                             ),
                           ),
@@ -1211,7 +1326,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      comment['addtime']?.toString() ?? '',
+                      normalizedComment['addtime']?.toString() ?? '',
                       style: TextStyle(
                         fontSize: 10,
                         color: theme.colorScheme.onSurface.withAlpha(100),
@@ -1220,21 +1335,115 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   ],
                 ),
               ),
-              _buildLikeBadge(context, likeCount as int),
+              _buildLikeBadge(context, likeCount),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            comment['content'] ?? '',
+            normalizedComment['content'] ?? '',
             style: const TextStyle(
               fontSize: 14,
               height: 1.5,
-              fontWeight: FontWeight.w500,
+              fontWeight: AppTheme.fontWeightMedium,
             ),
           ),
+          if (replyNum > 0) ...[
+            const SizedBox(height: 12),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: canOpenReplies
+                    ? () => _openSongFloorComments(normalizedComment)
+                    : null,
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        CupertinoIcons.chat_bubble_2,
+                        size: 14,
+                        color: canOpenReplies
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface.withAlpha(120),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        canOpenReplies
+                            ? '查看$replyNum条回复'
+                            : '$replyNum 条回复',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: AppTheme.fontWeightBold,
+                          color: canOpenReplies
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.onSurface.withAlpha(120),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  bool _canOpenSongFloorComments(Map<String, dynamic> comment) {
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final mixsongid = _resolveSongFloorMixsongid(comment);
+    return specialId != null && tid != null && mixsongid != null;
+  }
+
+  Future<void> _openSongFloorComments(Map<String, dynamic> rawComment) async {
+    final comment = Map<String, dynamic>.from(rawComment);
+    final specialId = _firstNonEmptyString([comment['special_child_id']]);
+    final tid = _firstNonEmptyString([comment['id']]);
+    final mixsongid = _resolveSongFloorMixsongid(comment);
+    if (specialId == null || tid == null || mixsongid == null) return;
+
+    await showCommentFloorSheet(
+      context,
+      comment: comment,
+      unavailableMessage: '歌曲楼层评论暂不可用',
+      onFetch: ({required page, required pagesize}) {
+        return MusicApi.getFloorComments(
+          specialId,
+          tid,
+          mixsongid: mixsongid,
+          page: page,
+          pagesize: pagesize,
+        );
+      },
+    );
+  }
+
+  String? _resolveSongFloorMixsongid(Map<String, dynamic> comment) {
+    return _firstNonEmptyString([
+      comment['album_audio_id'],
+      comment['mixsongid'],
+      comment['audio_id'],
+      widget.song.mixSongId != 0 ? widget.song.mixSongId : null,
+    ]);
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String? _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString();
+      if (text != null && text.isNotEmpty && text != '0' && text != 'null') {
+        return text;
+      }
+    }
+    return null;
   }
 
   Widget _buildSectionHeader(String title) {
@@ -1244,7 +1453,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
         title,
         style: const TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w900,
+          fontWeight: AppTheme.fontWeightBold,
           color: Colors.grey,
           letterSpacing: 1,
         ),
@@ -1280,7 +1489,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             _formatBigNumber(count),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.primary,
             ),
           ),
@@ -1339,15 +1548,43 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
       title,
       style: const TextStyle(
         fontSize: 13,
-        fontWeight: FontWeight.w900,
+        fontWeight: AppTheme.fontWeightBold,
         color: Colors.grey,
         letterSpacing: 1.2,
       ),
     );
   }
 
-  Widget _buildMetaItem(String label, String value) {
+  bool _canOpenAlbum(Song song) {
+    final albumId = int.tryParse(song.albumId ?? '0') ?? 0;
+    return albumId > 0 && song.albumName.trim().isNotEmpty;
+  }
+
+  Widget _buildMetaItem(
+    String label,
+    String value, {
+    VoidCallback? onTap,
+    Color? valueColor,
+  }) {
     final theme = Theme.of(context);
+    final valueText = Text(
+      value,
+      style: TextStyle(
+        fontSize: 14,
+        fontWeight: AppTheme.fontWeightBold,
+        color: valueColor,
+      ),
+    );
+    final valueWidget = onTap == null
+        ? valueText
+        : MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: valueText,
+            ),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1356,14 +1593,11 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface.withAlpha(100),
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-        ),
+        valueWidget,
       ],
     );
   }

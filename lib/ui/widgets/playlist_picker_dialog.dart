@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_menu.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 Future<Map<String, dynamic>?> showPlaylistPickerDialog(
   BuildContext context, {
@@ -57,7 +58,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                               title,
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w900,
+                                fontWeight: AppTheme.fontWeightBold,
                                 color:
                                     Theme.of(dialogContext).colorScheme.onSurface,
                               ),
@@ -85,7 +86,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                                   '暂无可用歌单',
                                   style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: AppTheme.fontWeightSemiBold,
                                     color: Theme.of(dialogContext)
                                         .colorScheme
                                         .onSurfaceVariant,
@@ -123,7 +124,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      fontWeight: FontWeight.w700,
+                                      fontWeight: AppTheme.fontWeightBold,
                                       color:
                                           Theme.of(context).colorScheme.onSurface,
                                     ),
@@ -132,7 +133,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                                     '${_playlistCount(playlist)} 首歌曲',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: AppTheme.fontWeightSemiBold,
                                       color: Theme.of(context)
                                           .colorScheme
                                           .onSurfaceVariant,

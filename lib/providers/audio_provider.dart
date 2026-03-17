@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -38,12 +39,18 @@ class AudioProvider with ChangeNotifier {
 
   Song? _currentSong;
   List<Song> _playlist = [];
-  List<Song> _originalPlaylist = [];
   int _currentIndex = -1;
   bool _isLoading = false;
   bool _isDisposed = false;
   double _playbackRate = 1.0;
   double _lastVolume = 50.0;
+  double _userVolume = 50.0;
+  bool _isMuted = false;
+  double? _lastPersistedVolume;
+  bool _hasLoadedVolume = false;
+  final math.Random _shuffleRandom = math.Random();
+  List<int> _shuffleOrder = [];
+  int _shuffleOrderIndex = -1;
   Map<double, double> _climaxMarks = {};
 
   String _playMode = 'repeat'; // 'repeat', 'repeat-once', 'shuffle'
@@ -95,6 +102,10 @@ class AudioProvider with ChangeNotifier {
   // Monotonic token for the currently active playlist-loading session.
   int _playlistSessionId = 0;
   int _activePlaylistFilteredInvalidSongCount = 0;
+  late _AudioPlaybackCache _audioPlaybackCache;
+  int _cachedResetVersion = 0;
+  String? _cacheConfigSignature;
+  int _cachePersistCountdown = 0;
 
   // Getters
   Song? get currentSong => _currentSong;
@@ -107,7 +118,8 @@ class AudioProvider with ChangeNotifier {
   double get playbackRate => _playbackRate;
   Map<double, double> get climaxMarks => _climaxMarks;
   Stream<double> get userVolumeStream => _userVolumeController.stream;
-  double get displayVolume => _player.state.volume;
+  double get displayVolume => _userVolume;
+  bool get isMuted => _isMuted;
   List<AudioDevice> get audioDevices => _player.state.audioDevices;
   AudioDevice get currentAudioDevice => _player.state.audioDevice;
   int get playlistSessionId => _playlistSessionId;
@@ -137,6 +149,8 @@ class AudioProvider with ChangeNotifier {
   }
 
   AudioProvider() {
+    _audioPlaybackCache = _AudioPlaybackCache(maxEntries: 1000);
+    _cacheConfigSignature = '6:1000';
     _player = Player();
     _initListeners();
     _initMediaSession();
@@ -158,6 +172,8 @@ class AudioProvider with ChangeNotifier {
     double? from,
     int? durationMs,
     VoidCallback? onComplete,
+    bool respectUserVolume = false,
+    Curve curve = Curves.linear,
   }) {
     _fadeTimer?.cancel();
     _fadeTimer = null;
@@ -172,22 +188,24 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    final double resolvedTarget = respectUserVolume
+        ? (target.clamp(0.0, _userVolume))
+        : target;
+    final double effectiveTarget = _isMuted ? 0.0 : resolvedTarget;
     final double startVolume = from ?? _player.state.volume;
     final int duration =
         durationMs ?? _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
 
-    if (duration <= 0 || (target - startVolume).abs() < 1.0) {
-      _player.setVolume(target);
+    if (duration <= 0 || (effectiveTarget - startVolume).abs() < 1.0) {
+      _player.setVolume(effectiveTarget);
       _isInternalChanging = false;
       onComplete?.call();
       return;
     }
 
     _isInternalChanging = true;
-    const int stepMs = 20;
-    final int totalSteps = (duration / stepMs).round().clamp(1, 9999);
-    final double volumeStep = (target - startVolume) / totalSteps;
-    int currentStep = 0;
+    const int stepMs = 16;
+    final stopwatch = Stopwatch()..start();
 
     _fadeTimer = Timer.periodic(const Duration(milliseconds: stepMs), (timer) {
       if (_isDisposed) {
@@ -195,16 +213,21 @@ class AudioProvider with ChangeNotifier {
         _fadeTimer = null;
         return;
       }
-      currentStep++;
-      final nextVol = (startVolume + volumeStep * currentStep).clamp(
+
+      final double progress =
+          (stopwatch.elapsedMilliseconds / duration).clamp(0.0, 1.0);
+      final double eased = curve.transform(progress);
+      final nextVol =
+          (startVolume + (effectiveTarget - startVolume) * eased).clamp(
         0.0,
         100.0,
       );
       _player.setVolume(nextVol);
-      if (currentStep >= totalSteps) {
+
+      if (progress >= 1.0) {
         timer.cancel();
         _fadeTimer = null;
-        _player.setVolume(target);
+        _player.setVolume(effectiveTarget);
         _isInternalChanging = false;
         onComplete?.call();
       }
@@ -282,10 +305,10 @@ class AudioProvider with ChangeNotifier {
 
           final total = effectiveDuration;
 
-          // Throttle: only emit to UI if position changed ≥200ms
+          // Throttle: only emit to UI if position changed ≥300ms
           final diff =
               (pos.inMilliseconds - _lastEmittedPosition.inMilliseconds).abs();
-          if (diff >= 200) {
+          if (diff >= 300) {
             _lastEmittedPosition = pos;
             if (!_positionController.isClosed) {
               _positionController.add(PositionSnapshot(pos, total));
@@ -450,20 +473,22 @@ class AudioProvider with ChangeNotifier {
 
     _subscriptions.add(
       _player.stream.volume.listen((v) {
-        if (_isDisposed || _isInternalChanging) return;
+        if (_isDisposed) return;
         try {
-          if (_fadeTimer == null || !_fadeTimer!.isActive) {
-            // Do NOT emit to _userVolumeController here. The displayed volume must
-            // reflect only the user's intent, not the player's physical volume which
-            // fluctuates during fades. All UI-visible volume updates go through
-            // setVolume() and toggleMute() explicitly.
+          if (_isMuted) {
             if (v > 0.1) {
-              _lastVolume = v;
-              _volumeSaveTimer?.cancel();
-              _volumeSaveTimer = Timer(const Duration(milliseconds: 1000), () {
-                if (!_isDisposed)
-                  _persistenceProvider?.updatePlayerSetting('volume', v);
-              });
+              _isInternalChanging = true;
+              _player.setVolume(0.0);
+              _isInternalChanging = false;
+            }
+            return;
+          }
+          if (_isInternalChanging) return;
+          if (_fadeTimer == null || !_fadeTimer!.isActive) {
+            // Only persist when the user explicitly changes volume.
+            // This listener just keeps the snapshot in sync for external changes.
+            if ((v - _userVolume).abs() > 0.1) {
+              _userVolume = v;
             }
           }
         } catch (_) {}
@@ -540,6 +565,18 @@ class AudioProvider with ChangeNotifier {
     _forceDisableWakelock();
   }
 
+  void _resetCurrentPlaybackState() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isInternalChanging = false;
+    _currentUrl = null;
+    _currentSong = null;
+    _currentIndex = -1;
+    _climaxMarks = {};
+    _savePlaybackState();
+    _safeNotify();
+  }
+
   Future<void> _stopPlayer() async {
     try {
       await _player.stop();
@@ -550,6 +587,9 @@ class AudioProvider with ChangeNotifier {
 
   void _handlePersistenceChanged() {
     _updateWakelock();
+    final persistence = _persistenceProvider;
+    if (persistence == null) return;
+    _configureAudioPlaybackCache(persistence);
   }
 
   void setLyricProvider(LyricProvider p) => _lyricProvider = p;
@@ -562,9 +602,30 @@ class AudioProvider with ChangeNotifier {
     _persistenceProvider = p;
     _updateWakelock();
     final savedVol = p.volume;
-    _player.setVolume(savedVol);
-    _userVolumeController.add(savedVol);
-    _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
+    final hasVolumeChange =
+        _lastPersistedVolume == null ||
+        (savedVol - _lastPersistedVolume!).abs() > 0.1;
+    _lastPersistedVolume = savedVol;
+
+    if (!_hasLoadedVolume) {
+      _userVolume = savedVol;
+      _isMuted = savedVol <= 0.1;
+      _player.setVolume(_isMuted ? 0.0 : savedVol);
+      _userVolumeController.add(_isMuted ? 0.0 : savedVol);
+      _lastVolume = savedVol > 0.1 ? savedVol : 50.0;
+      _hasLoadedVolume = true;
+    } else if (hasVolumeChange) {
+      if (_isMuted) {
+        if (savedVol > 0.1) {
+          _lastVolume = savedVol;
+        }
+      } else {
+        _userVolume = savedVol;
+        _player.setVolume(savedVol);
+        _userVolumeController.add(savedVol);
+        _lastVolume = savedVol > 0.1 ? savedVol : _lastVolume;
+      }
+    }
     _playMode = p.playerSettings['playMode'] ?? 'repeat';
 
     // Load the persisted preferred audio device name (applied later when the
@@ -576,9 +637,11 @@ class AudioProvider with ChangeNotifier {
           p.playerSettings['preferredAudioDeviceDescription'] as String?;
     }
 
+    _configureAudioPlaybackCache(p);
+    _hydratePlaybackCache(p.audioPlaybackCache);
+
     if (_currentIndex == -1 && p.playlist.isNotEmpty) {
       _playlist = List.from(p.playlist);
-      _originalPlaylist = [];
       _currentIndex = p.currentIndex;
       _activePlaylistFilteredInvalidSongCount =
           p.playlistFilteredInvalidSongCount;
@@ -592,6 +655,42 @@ class AudioProvider with ChangeNotifier {
     }
 
     _applyPlayMode();
+  }
+
+  void _configureAudioPlaybackCache(PersistenceProvider persistence) {
+    final settings = persistence.settings;
+    final ttlHours = settings['audioPlaybackCacheTtlHours'] as int? ?? 6;
+    final maxEntries = settings['audioPlaybackCacheSize'] as int? ?? 1000;
+    final signature = '$ttlHours:$maxEntries';
+    if (_cachedResetVersion != persistence.dataResetVersion) {
+      _audioPlaybackCache.clear();
+      _cachedResetVersion = persistence.dataResetVersion;
+      _persistPlaybackCache(force: true);
+    }
+    if (_cacheConfigSignature != signature) {
+      _audioPlaybackCache.updateConfig(
+        maxEntries: maxEntries,
+        ttl: Duration(hours: ttlHours),
+      );
+      _cacheConfigSignature = signature;
+    }
+  }
+
+  void _hydratePlaybackCache(Map<String, dynamic> persisted) {
+    if (persisted.isEmpty) return;
+    _audioPlaybackCache.hydrate(persisted);
+  }
+
+  void _persistPlaybackCache({bool force = false}) {
+    final persistence = _persistenceProvider;
+    if (persistence == null) return;
+    if (!force) {
+      _cachePersistCountdown++;
+      if (_cachePersistCountdown < 3) return;
+    }
+    _cachePersistCountdown = 0;
+    final snapshot = _audioPlaybackCache.snapshot();
+    unawaited(persistence.setAudioPlaybackCache(snapshot));
   }
 
   Future<void> _initRestore() async {
@@ -613,6 +712,7 @@ class AudioProvider with ChangeNotifier {
       }
     } catch (e) {
       LoggerService.e('Restore error: $e');
+      _resetCurrentPlaybackState();
     } finally {
       _isLoading = false;
       _safeNotify();
@@ -751,9 +851,18 @@ class AudioProvider with ChangeNotifier {
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
-    _player.setVolume(0.0);
     _player.play();
-    _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+    _player.setVolume(0.0);
+    if (_isMuted) {
+      _player.setVolume(0.0);
+      return;
+    }
+    _fadeVolume(
+      _userVolume,
+      from: 0.0,
+      respectUserVolume: true,
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _attemptDeviceRecovery({Duration delay = Duration.zero}) async {
@@ -809,7 +918,7 @@ class AudioProvider with ChangeNotifier {
       _isInternalChanging = false;
     }
     if (!_isInternalChanging) {
-      _player.setVolume(_persistenceProvider?.volume ?? 50.0);
+      _player.setVolume(_isMuted ? 0.0 : _userVolume);
     }
 
     _isSeeking = true;
@@ -884,27 +993,16 @@ class AudioProvider with ChangeNotifier {
       return false;
     }
 
-    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
-      final newSongs = songs
-          .where(
-            (song) =>
-                !_originalPlaylist.any((existing) => existing.isSameSong(song)),
-          )
-          .toList();
-      if (newSongs.isEmpty) return true;
+    final newSongs = songs
+        .where(
+          (song) => !_playlist.any((existing) => existing.isSameSong(song)),
+        )
+        .toList();
+    if (newSongs.isEmpty) return true;
 
-      _originalPlaylist.addAll(newSongs);
-      final shuffledNewSongs = List<Song>.from(newSongs)..shuffle();
-      _playlist.addAll(shuffledNewSongs);
-    } else {
-      final newSongs = songs
-          .where(
-            (song) => !_playlist.any((existing) => existing.isSameSong(song)),
-          )
-          .toList();
-      if (newSongs.isEmpty) return true;
-
-      _playlist.addAll(newSongs);
+    _playlist.addAll(newSongs);
+    if (_playMode == 'shuffle') {
+      _syncShuffleOrderForCurrent();
     }
 
     _savePlaybackState();
@@ -969,31 +1067,8 @@ class AudioProvider with ChangeNotifier {
     if (insertIndex > _playlist.length) insertIndex = _playlist.length;
     _playlist.insert(insertIndex, song);
 
-    if (_playMode == 'shuffle' && _originalPlaylist.isNotEmpty) {
-      var originalInsertIndex = _originalPlaylist.length;
-      if (currentSong != null) {
-        final currentOriginalIndex = _indexOfSongInList(
-          _originalPlaylist,
-          currentSong,
-        );
-        if (currentOriginalIndex != -1) {
-          originalInsertIndex = currentOriginalIndex + 1;
-        }
-      }
-
-      final existingOriginalIndex = _indexOfSongInList(_originalPlaylist, song);
-      if (existingOriginalIndex != -1) {
-        _originalPlaylist.removeAt(existingOriginalIndex);
-        if (existingOriginalIndex < originalInsertIndex) {
-          originalInsertIndex--;
-        }
-      }
-
-      if (originalInsertIndex < 0) originalInsertIndex = 0;
-      if (originalInsertIndex > _originalPlaylist.length) {
-        originalInsertIndex = _originalPlaylist.length;
-      }
-      _originalPlaylist.insert(originalInsertIndex, song);
+    if (_playMode == 'shuffle') {
+      _primeShuffleOrder();
     }
 
     _savePlaybackState();
@@ -1038,11 +1113,18 @@ class AudioProvider with ChangeNotifier {
     if (_isDisposed) return;
     _fadeTimer?.cancel();
     _fadeTimer = null;
+    _isInternalChanging = false;
 
     _player.setVolume(v);
 
+    _userVolume = v;
     _userVolumeController.add(v);
-    if (v > 0.1) _lastVolume = v;
+    if (v > 0.1) {
+      _lastVolume = v;
+      _isMuted = false;
+    } else {
+      _isMuted = true;
+    }
     _volumeSaveTimer?.cancel();
     _volumeSaveTimer = Timer(const Duration(milliseconds: 500), () {
       if (!_isDisposed && v > 0.1) {
@@ -1052,13 +1134,19 @@ class AudioProvider with ChangeNotifier {
   }
 
   void toggleMute() {
-    if (_player.state.volume > 1.0) {
-      _lastVolume = _player.state.volume;
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _isInternalChanging = false;
+    if (_userVolume > 1.0) {
+      _lastVolume = _userVolume;
+      _isMuted = true;
       _isInternalChanging = true;
       _player.setVolume(0.0);
+      _userVolume = 0.0;
       _userVolumeController.add(0.0);
       _isInternalChanging = false;
     } else {
+      _isMuted = false;
       final target = _lastVolume > 0.1
           ? _lastVolume
           : (_persistenceProvider?.volume ?? 50.0);
@@ -1103,25 +1191,58 @@ class AudioProvider with ChangeNotifier {
     // via the completed stream and _handlePlaybackEnded().
     _player.setPlaylistMode(PlaylistMode.none);
 
-    if (_playMode == 'shuffle' && _playlist.isNotEmpty) {
-      if (_originalPlaylist.isEmpty) {
-        _originalPlaylist = List.from(_playlist);
-        final current = _currentSong;
-        _playlist.shuffle();
-        if (current != null) {
-          _playlist.removeWhere((s) => s.isSameSong(current));
-          _playlist.insert(0, current);
-          _currentIndex = 0;
-        }
+    // Don't reset shuffle order if it's already initialized
+    // This preserves shuffle history when provider is rebuilt
+    if (_playMode == 'shuffle') {
+      if (_shuffleOrder.isEmpty) {
+        _primeShuffleOrder();
       }
-    } else if (_originalPlaylist.isNotEmpty) {
-      final current = _currentSong;
-      _playlist = List.from(_originalPlaylist);
-      _originalPlaylist = [];
-      if (current != null) {
-        _currentIndex = _playlist.indexWhere((s) => s.isSameSong(current));
-      }
+    } else {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
     }
+  }
+
+  void _primeShuffleOrder() {
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
+
+    if (_playlist.isEmpty) return;
+
+    if (_currentIndex >= 0 &&
+        _currentIndex < _playlist.length &&
+        _playlist[_currentIndex].isPlayable) {
+      _shuffleOrder.add(_currentIndex);
+      _shuffleOrderIndex = 0;
+    }
+  }
+
+  void _syncShuffleOrderForCurrent() {
+    if (_playlist.isEmpty) return;
+    if (_currentIndex < 0 || _currentIndex >= _playlist.length) return;
+
+    if (_shuffleOrder.isEmpty ||
+        _shuffleOrderIndex < 0 ||
+        _shuffleOrderIndex >= _shuffleOrder.length) {
+      _primeShuffleOrder();
+      return;
+    }
+
+    if (_shuffleOrder[_shuffleOrderIndex] == _currentIndex) {
+      return;
+    }
+
+    if (_shuffleOrderIndex < _shuffleOrder.length - 1) {
+      _shuffleOrder = _shuffleOrder.sublist(0, _shuffleOrderIndex + 1);
+    }
+
+    if (_shuffleOrder.isNotEmpty && _shuffleOrder.last == _currentIndex) {
+      _shuffleOrderIndex = _shuffleOrder.length - 1;
+      return;
+    }
+
+    _shuffleOrder.add(_currentIndex);
+    _shuffleOrderIndex = _shuffleOrder.length - 1;
   }
 
   void togglePlayMode() {
@@ -1159,6 +1280,55 @@ class AudioProvider with ChangeNotifier {
 
     return -1;
   }
+
+  int _pickNextShuffleIndex() {
+    if (_playlist.isEmpty) return -1;
+
+    if (_shuffleOrder.isEmpty) {
+      _primeShuffleOrder();
+    }
+
+    if (_shuffleOrderIndex + 1 < _shuffleOrder.length) {
+      _shuffleOrderIndex += 1;
+      return _shuffleOrder[_shuffleOrderIndex];
+    }
+
+    final candidates = <int>[];
+    for (int i = 0; i < _playlist.length; i++) {
+      if (!_playlist[i].isPlayable) continue;
+      if (i == _currentIndex) continue;
+      if (_shuffleOrder.contains(i)) continue;
+      candidates.add(i);
+    }
+
+    if (candidates.isEmpty) {
+      _primeShuffleOrder();
+      for (int i = 0; i < _playlist.length; i++) {
+        if (!_playlist[i].isPlayable) continue;
+        if (i == _currentIndex) continue;
+        candidates.add(i);
+      }
+    }
+
+    if (candidates.isEmpty) return -1;
+
+    final pick = _shuffleRandom.nextInt(candidates.length);
+    final nextIndex = candidates[pick];
+    _shuffleOrder.add(nextIndex);
+    _shuffleOrderIndex = _shuffleOrder.length - 1;
+    return nextIndex;
+  }
+
+  int _pickPreviousShuffleIndex() {
+    if (_playlist.isEmpty) return -1;
+    // If we're at the beginning of shuffle history, stay at current song
+    if (_shuffleOrderIndex <= 0) {
+      return _currentIndex;
+    }
+    _shuffleOrderIndex -= 1;
+    return _shuffleOrder[_shuffleOrderIndex];
+  }
+
 
   Song? _resolvePlayableSongForRequest(
     Song requestedSong, {
@@ -1225,31 +1395,47 @@ class AudioProvider with ChangeNotifier {
       '[AudioProvider] Playing: ${song.name} - ${song.singerName} (${song.hash})',
     );
 
+    final previousSong = _currentSong;
+    final previousIndex = _currentIndex;
+    final previousVolume = _player.state.volume;
+    final previousUrl = _currentUrl;
+    List<Song>? previousPlaylist;
+    int previousSessionId = _playlistSessionId;
+    int previousFilteredCount = _activePlaylistFilteredInvalidSongCount;
+
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _isInternalChanging = true;
     _clearDeviceRecoveryState();
     _player.setVolume(0.0);
-    _climaxMarks = {};
+    final cachedClimax = _audioPlaybackCache.getClimaxMarks(hash: song.hash);
+    _climaxMarks = cachedClimax != null
+        ? Map<double, double>.from(cachedClimax)
+        : <double, double>{};
+    if (cachedClimax != null) {
+      _safeNotify();
+    }
 
     if (playlist != null) {
+      previousPlaylist = List<Song>.from(_playlist);
+      previousSessionId = _playlistSessionId;
+      previousFilteredCount = _activePlaylistFilteredInvalidSongCount;
       _playlistSessionId++;
       _activePlaylistFilteredInvalidSongCount = 0;
       LoggerService.d(
         '[AudioProvider] Updating playlist, size: ${playlist.length}',
       );
       _playlist = List.from(playlist);
-      _originalPlaylist = [];
-      if (_playMode == 'shuffle') {
-        _originalPlaylist = List.from(playlist);
-        _playlist.shuffle();
-        _playlist.removeWhere((s) => identical(s, song) || s.isSameSong(song));
-        _playlist.insert(0, song);
-      }
     }
     _currentIndex = _indexOfSongInList(_playlist, song);
     _currentSong = song;
-    _climaxMarks = {};
+    if (_playMode == 'shuffle') {
+      if (playlist != null) {
+        _primeShuffleOrder();
+      } else {
+        _syncShuffleOrderForCurrent();
+      }
+    }
     _safeNotify();
 
     _isLoading = true;
@@ -1257,8 +1443,14 @@ class AudioProvider with ChangeNotifier {
 
     try {
       _persistenceProvider?.addToHistory(song);
-      MusicApi.uploadPlayHistory(song.mixSongId);
-      _fetchClimax(song);
+      // MusicApi.uploadPlayHistory(song.mixSongId);
+      if (cachedClimax == null) {
+        _fetchClimax(song);
+      }
+
+      if (_isMuted) {
+        _player.setVolume(0.0);
+      }
 
       final result = await _getAudioUrlWithQuality(song);
 
@@ -1266,6 +1458,18 @@ class AudioProvider with ChangeNotifier {
 
       if (result == null || result['url'] == null) {
         LoggerService.e('[AudioProvider] Failed to get URL');
+        _player.setVolume(previousVolume);
+        _isInternalChanging = false;
+        if (previousPlaylist != null) {
+          _playlist = previousPlaylist;
+          _playlistSessionId = previousSessionId;
+          _activePlaylistFilteredInvalidSongCount = previousFilteredCount;
+        }
+        _currentSong = previousSong;
+        _currentIndex = previousIndex;
+        _currentUrl = previousUrl;
+        _savePlaybackState();
+        _safeNotify();
 
         final settings = _persistenceProvider?.settings ?? {};
         final autoNext = settings['autoNext'] ?? false;
@@ -1299,9 +1503,16 @@ class AudioProvider with ChangeNotifier {
       _player.setRate(_playbackRate);
       _player.play();
 
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      if (_isMuted) {
+        _player.setVolume(0.0);
+      } else {
+        _fadeVolume(
+          _persistenceProvider?.volume ?? 50.0,
+          from: 0.0,
+          respectUserVolume: true,
+        );
+      }
 
-      _applyPlayMode();
       _savePlaybackState();
     } catch (e) {
       LoggerService.e('[AudioProvider] Error during playSong: $e');
@@ -1313,10 +1524,17 @@ class AudioProvider with ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> _getAudioUrlWithQuality(Song song) async {
-    if (song.source == 'cloud') {
-      LoggerService.d('[AudioProvider] Fetching cloud URL');
-      final url = await MusicApi.getCloudSongUrl(song.hash);
-      return url != null ? {'url': url} : null;
+    final persistence = _persistenceProvider;
+    if (persistence != null && _cachedResetVersion != persistence.dataResetVersion) {
+      _configureAudioPlaybackCache(persistence);
+    }
+
+    if (!song.canPlay) {
+      return null;
+    }
+
+    if (song.hash.isEmpty) {
+      return null;
     }
 
     final settings = _persistenceProvider?.settings ?? {};
@@ -1329,14 +1547,54 @@ class AudioProvider with ChangeNotifier {
         playerSettings['audioEffect'] ?? settings['audioEffect'] ?? 'none';
     final compatibilityMode = settings['compatibilityMode'] ?? true;
 
+    final cachedUrl = _audioPlaybackCache.getUrl(
+      hash: song.hash,
+      quality: audioQuality,
+    );
+    if (cachedUrl != null) {
+      LoggerService.d('[AudioProvider] URL cache hit');
+      return {'url': cachedUrl, 'status': 1};
+    }
+
+    if (song.source == 'cloud') {
+      LoggerService.d('[AudioProvider] Fetching cloud URL');
+      final url = await MusicApi.getCloudSongUrl(song.hash);
+      if (url != null) {
+        _audioPlaybackCache.putUrl(
+          hash: song.hash,
+          quality: audioQuality,
+          url: url,
+          sourceHash: song.hash,
+        );
+        return {'url': url, 'status': 1};
+      }
+      return null;
+    }
+
     LoggerService.d(
       '[AudioProvider] Quality: $audioQuality, Effect: $audioEffect, CompatibilityMode: $compatibilityMode',
     );
 
-    final privilege = await MusicApi.getSongPrivilege(song.hash);
-    final List<dynamic> relateGoods = (privilege.isNotEmpty)
-        ? (privilege[0]['relate_goods'] ?? [])
-        : [];
+    final cachedRelateGoods = _audioPlaybackCache.getRelateGoods(hash: song.hash);
+    List<Map<String, dynamic>> relateGoods =
+        cachedRelateGoods ?? const <Map<String, dynamic>>[];
+    if (cachedRelateGoods == null) {
+      final privilege = await MusicApi.getSongPrivilege(song.hash);
+      final List<dynamic> rawRelateGoods = (privilege.isNotEmpty)
+          ? (privilege[0]['relate_goods'] ?? [])
+          : [];
+      relateGoods = rawRelateGoods
+          .whereType<Map<String, dynamic>>()
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList(growable: false);
+      _audioPlaybackCache.setRelateGoods(
+        hash: song.hash,
+        relateGoods: relateGoods,
+      );
+      _persistPlaybackCache();
+      relateGoods =
+          _audioPlaybackCache.getRelateGoods(hash: song.hash) ?? relateGoods;
+    }
 
     // 1. 如果有音效，先尝试用音效获取
     if (audioEffect != 'none') {
@@ -1350,6 +1608,14 @@ class AudioProvider with ChangeNotifier {
           LoggerService.i(
             '[AudioProvider] ✓ Got URL with effect: $audioEffect',
           );
+          _audioPlaybackCache.putUrl(
+            hash: song.hash,
+            quality: audioQuality,
+            url: result['url'],
+            sourceHash: song.hash,
+          );
+          _persistPlaybackCache();
+          result['status'] ??= 1;
           return result;
         }
       } catch (e) {
@@ -1377,10 +1643,13 @@ class AudioProvider with ChangeNotifier {
       for (int i = 0; i < candidates.length; i++) {
         final quality = candidates[i];
         // 从 relateGoods 中查找对应音质的 hash
-        final good = relateGoods.firstWhere(
-          (item) => item['quality']?.toString() == quality,
-          orElse: () => null,
-        );
+        Map<String, dynamic>? good;
+        for (final item in relateGoods) {
+          if (item['quality']?.toString() == quality) {
+            good = item;
+            break;
+          }
+        }
 
         // 如果 relateGoods 里没有这个音质，跳过
         if (good == null || good['hash'] == null) {
@@ -1390,11 +1659,42 @@ class AudioProvider with ChangeNotifier {
           continue;
         }
 
+        final cachedEntryUrl = good['url']?.toString();
+        if (cachedEntryUrl != null && cachedEntryUrl.isNotEmpty) {
+          LoggerService.d('[AudioProvider] URL cache hit (relateGoods)');
+          return {'url': cachedEntryUrl, 'status': 1};
+        }
+
+        final cachedSongUrl = _audioPlaybackCache.getUrl(
+          hash: song.hash,
+          quality: quality,
+        );
+        if (cachedSongUrl != null) {
+          LoggerService.d('[AudioProvider] URL cache hit (song hash)');
+          return {'url': cachedSongUrl, 'status': 1};
+        }
+
         try {
           final targetHash = good['hash'] as String;
           LoggerService.d(
             '[AudioProvider] Trying quality: $quality (hash: ${targetHash.substring(0, 8)}...)',
           );
+
+          final cachedQualityUrl = _audioPlaybackCache.getUrl(
+            hash: targetHash,
+            quality: quality,
+          );
+          if (cachedQualityUrl != null) {
+            LoggerService.d('[AudioProvider] URL cache hit (quality hash)');
+            _audioPlaybackCache.putUrl(
+              hash: song.hash,
+              quality: quality,
+              url: cachedQualityUrl,
+              sourceHash: targetHash,
+            );
+            _persistPlaybackCache();
+            return {'url': cachedQualityUrl, 'status': 1};
+          }
 
           final result = await MusicApi.getSongUrl(
             targetHash,
@@ -1404,6 +1704,19 @@ class AudioProvider with ChangeNotifier {
               result['status'] == 1 &&
               result['url'] != null) {
             LoggerService.i('[AudioProvider] ✓ Got URL with quality: $quality');
+            _audioPlaybackCache.putUrl(
+              hash: song.hash,
+              quality: quality,
+              url: result['url'],
+              sourceHash: targetHash,
+            );
+            _audioPlaybackCache.putUrl(
+              hash: targetHash,
+              quality: quality,
+              url: result['url'],
+            );
+            _persistPlaybackCache();
+            result['status'] ??= 1;
             return result;
           }
         } catch (e) {
@@ -1418,6 +1731,14 @@ class AudioProvider with ChangeNotifier {
           final result = await MusicApi.getSongUrl(song.hash);
           if (result != null && result['url'] != null) {
             LoggerService.i('[AudioProvider] ✓ Got URL with fallback');
+            _audioPlaybackCache.putUrl(
+              hash: song.hash,
+              quality: audioQuality,
+              url: result['url'],
+              sourceHash: song.hash,
+            );
+            _persistPlaybackCache();
+            result['status'] ??= 1;
             return result;
           }
         } catch (e) {
@@ -1500,6 +1821,7 @@ class AudioProvider with ChangeNotifier {
   Future<void> updateAudioSetting(String key, String value) async {
     _persistenceProvider?.updatePlayerSetting(key, value);
     if (_currentSong != null) {
+      final previousUrl = _currentUrl;
       final pos = _player.state.position;
       final playing = _player.state.playing;
       _isLoading = true;
@@ -1512,8 +1834,11 @@ class AudioProvider with ChangeNotifier {
           await _player.seek(pos);
           if (playing) _player.play();
           _player.setRate(_playbackRate);
+        } else {
+          _currentUrl = previousUrl;
         }
       } catch (_) {
+        _currentUrl = previousUrl;
       } finally {
         _isLoading = false;
         _safeNotify();
@@ -1524,14 +1849,11 @@ class AudioProvider with ChangeNotifier {
   void togglePlay() {
     if (_player.state.playing) {
       _shouldResumeAfterDeviceRecovery = false;
-      // 暂停逻辑不变
-      _fadeVolume(
-        0.0,
-        onComplete: () {
-          _pausePlayer();
-          _savePlaybackState();
-        },
-      );
+      _fadeTimer?.cancel();
+      _fadeTimer = null;
+      _isInternalChanging = false;
+      _pausePlayer();
+      _savePlaybackState();
     } else {
       // 播放前检查是否需要恢复设备错误后的状态
       if (_positionBeforeDeviceError != null && _currentUrl != null) {
@@ -1595,7 +1917,11 @@ class AudioProvider with ChangeNotifier {
         );
       }
 
-      _fadeVolume(_persistenceProvider?.volume ?? 50.0, from: 0.0);
+      _fadeVolume(
+        _persistenceProvider?.volume ?? 50.0,
+        from: 0.0,
+        respectUserVolume: true,
+      );
       _clearDeviceRecoveryState();
     } catch (e) {
       LoggerService.e('[AudioProvider] Failed to rebuild audio pipeline: $e');
@@ -1608,13 +1934,19 @@ class AudioProvider with ChangeNotifier {
   void stop() {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
+    final baseFadeMs =
+        _persistenceProvider?.settings['volumeFadeTime'] ?? 1000;
+    final int pauseFadeMs = baseFadeMs.clamp(120, 300).toInt();
     _fadeVolume(
       0.0,
+      durationMs: pauseFadeMs,
       onComplete: () async {
         await _stopPlayer();
         _savePlaybackState();
         _safeNotify();
       },
+      respectUserVolume: true,
+      curve: Curves.easeInQuad,
     );
   }
 
@@ -1624,23 +1956,28 @@ class AudioProvider with ChangeNotifier {
     _climaxMarks = {};
     _clearDeviceRecoveryState();
 
+    _persistPlaybackCache(force: true);
+
     await _stopPlayer();
     _savePlaybackState();
   }
 
   void reset() {
-    _playlistSessionId++;
-    _activePlaylistFilteredInvalidSongCount = 0;
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _clearDeviceRecoveryState();
     unawaited(_stopPlayer());
     _currentSong = null;
+    _currentUrl = null;
     _playlist = [];
-    _originalPlaylist = [];
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
     _currentIndex = -1;
     _climaxMarks = {};
     _isLoading = false;
+    _playlistSessionId++;
+    _activePlaylistFilteredInvalidSongCount = 0;
+    _persistPlaybackCache(force: true);
     _savePlaybackState();
     _safeNotify();
   }
@@ -1657,7 +1994,18 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
-    final nextIndex = _findAdjacentPlayableIndex(forward: true);
+    int nextIndex = -1;
+    if (_playMode == 'shuffle') {
+      if (_shuffleOrder.isEmpty &&
+          _currentIndex >= 0 &&
+          _currentIndex < _playlist.length) {
+        _shuffleOrder.add(_currentIndex);
+        _shuffleOrderIndex = 0;
+      }
+      nextIndex = _pickNextShuffleIndex();
+    } else {
+      nextIndex = _findAdjacentPlayableIndex(forward: true);
+    }
     if (nextIndex == -1) {
       LoggerService.w(
         '[AudioProvider] No playable song available when skipping to next',
@@ -1665,6 +2013,10 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    if (_playMode != 'shuffle') {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
+    }
     if (_player.state.playing) {
       _fadeVolume(
         0.0,
@@ -1672,6 +2024,8 @@ class AudioProvider with ChangeNotifier {
           _pausePlayer();
           _playPlaylistIndex(nextIndex);
         },
+        respectUserVolume: true,
+        curve: Curves.easeOutCubic,
       );
     } else {
       _playPlaylistIndex(nextIndex);
@@ -1684,7 +2038,12 @@ class AudioProvider with ChangeNotifier {
     // 清除设备错误恢复状态，因为用户主动切歌
     _clearDeviceRecoveryState();
 
-    final previousIndex = _findAdjacentPlayableIndex(forward: false);
+    int previousIndex = -1;
+    if (_playMode == 'shuffle') {
+      previousIndex = _pickPreviousShuffleIndex();
+    } else {
+      previousIndex = _findAdjacentPlayableIndex(forward: false);
+    }
     if (previousIndex == -1) {
       LoggerService.w(
         '[AudioProvider] No playable song available when skipping to previous',
@@ -1692,6 +2051,10 @@ class AudioProvider with ChangeNotifier {
       return;
     }
 
+    if (_playMode != 'shuffle') {
+      _shuffleOrder = [];
+      _shuffleOrderIndex = -1;
+    }
     if (_player.state.playing) {
       _fadeVolume(
         0.0,
@@ -1699,6 +2062,8 @@ class AudioProvider with ChangeNotifier {
           _pausePlayer();
           _playPlaylistIndex(previousIndex);
         },
+        respectUserVolume: true,
+        curve: Curves.easeOutCubic,
       );
     } else {
       _playPlaylistIndex(previousIndex);
@@ -1710,7 +2075,8 @@ class AudioProvider with ChangeNotifier {
     _activePlaylistFilteredInvalidSongCount = 0;
     _clearDeviceRecoveryState();
     _playlist = [];
-    _originalPlaylist = [];
+    _shuffleOrder = [];
+    _shuffleOrderIndex = -1;
     _currentIndex = -1;
     _climaxMarks = {};
     _savePlaybackState();
@@ -1733,8 +2099,34 @@ class AudioProvider with ChangeNotifier {
     } else if (_currentIndex > index) {
       _currentIndex--;
     }
-    if (_playMode == 'shuffle')
-      _originalPlaylist.removeWhere((s) => s.isSameSong(removed));
+    if (_playMode == 'shuffle') {
+      _primeShuffleOrder();
+    }
+    _savePlaybackState();
+    _safeNotify();
+  }
+
+  void reorderPlaylist(int oldIndex, int newIndex) {
+    if (_playlist.isEmpty) return;
+    if (oldIndex < 0 || oldIndex >= _playlist.length) return;
+    if (newIndex < 0 || newIndex >= _playlist.length) return;
+    if (oldIndex == newIndex) return;
+
+    final movedSong = _playlist.removeAt(oldIndex);
+    _playlist.insert(newIndex, movedSong);
+
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex -= 1;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex += 1;
+    }
+
+    if (_playMode == 'shuffle') {
+      _primeShuffleOrder();
+    }
+
     _savePlaybackState();
     _safeNotify();
   }
@@ -1802,6 +2194,11 @@ class AudioProvider with ChangeNotifier {
         }
       }
       _climaxMarks = newMarks;
+      _audioPlaybackCache.setClimaxMarks(
+        hash: song.hash,
+        climaxMarks: newMarks,
+      );
+      _persistPlaybackCache();
       _safeNotify();
     } catch (_) {}
   }
@@ -1809,6 +2206,7 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _persistenceProvider?.removeListener(_handlePersistenceChanged);
+    _persistPlaybackCache(force: true);
     _isDisposed = true;
     _fadeTimer?.cancel();
     _volumeSaveTimer?.cancel();
@@ -1818,5 +2216,254 @@ class AudioProvider with ChangeNotifier {
     _forceDisableWakelock();
     _player.dispose();
     super.dispose();
+  }
+}
+
+class _AudioPlaybackCacheEntry {
+  _AudioPlaybackCacheEntry({required this.cachedAt});
+
+  final DateTime cachedAt;
+  List<Map<String, dynamic>> relateGoods = <Map<String, dynamic>>[];
+  Map<double, double>? climaxMarks;
+}
+
+class _AudioPlaybackCache {
+  _AudioPlaybackCache({required int maxEntries, Duration? ttl})
+      : maxEntries = maxEntries,
+        ttl = ttl ?? const Duration(hours: 6);
+
+  int maxEntries;
+  Duration ttl;
+  final Map<String, _AudioPlaybackCacheEntry> _entries = {};
+  final List<String> _order = [];
+
+  _AudioPlaybackCacheEntry? _getEntry(String hash) {
+    final entry = _entries[hash];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.cachedAt) > ttl) {
+      _entries.remove(hash);
+      _order.remove(hash);
+      return null;
+    }
+    _order.remove(hash);
+    _order.add(hash);
+    return entry;
+  }
+
+  String? getUrl({required String hash, required String quality}) {
+    final entry = _getEntry(hash);
+    if (entry == null) return null;
+    for (final item in entry.relateGoods) {
+      if (item['quality']?.toString() == quality) {
+        final url = item['url']?.toString();
+        if (url != null && url.isNotEmpty) return url;
+      }
+    }
+    return null;
+  }
+
+  void putUrl({
+    required String hash,
+    required String quality,
+    required String url,
+    String? sourceHash,
+  }) {
+    if (quality.isEmpty) return;
+    final entry =
+        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
+    final resolvedHash = (sourceHash ?? hash).toString();
+    final goods = List<Map<String, dynamic>>.from(entry.relateGoods);
+    var updated = false;
+    for (final item in goods) {
+      if (item['quality']?.toString() == quality) {
+        item['hash'] = resolvedHash;
+        item['url'] = url;
+        updated = true;
+        break;
+      }
+    }
+    if (!updated) {
+      goods.add({'quality': quality, 'hash': resolvedHash, 'url': url});
+    }
+    entry.relateGoods = goods;
+    _entries[hash] = entry;
+    _order.remove(hash);
+    _order.add(hash);
+    _trimIfNeeded();
+  }
+
+  List<Map<String, dynamic>>? getRelateGoods({required String hash}) {
+    final entry = _getEntry(hash);
+    if (entry == null) return null;
+    return entry.relateGoods;
+  }
+
+  void setRelateGoods({
+    required String hash,
+    required List<Map<String, dynamic>> relateGoods,
+  }) {
+    final entry =
+        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
+    final normalized = _normalizeRelateGoods(relateGoods);
+    if (normalized.isEmpty && entry.relateGoods.isNotEmpty) {
+      _touchEntry(hash, entry);
+      return;
+    }
+
+    final mergedByQuality = <String, Map<String, dynamic>>{};
+    for (final existing in entry.relateGoods) {
+      final quality = existing['quality']?.toString();
+      if (quality == null || quality.isEmpty) continue;
+      mergedByQuality[quality] = Map<String, dynamic>.from(existing);
+    }
+
+    for (final item in normalized) {
+      final quality = item['quality']?.toString();
+      if (quality == null || quality.isEmpty) continue;
+      final merged = mergedByQuality[quality] ?? <String, dynamic>{};
+      merged['quality'] = quality;
+      merged['hash'] = item['hash'];
+      final newUrl = item['url']?.toString();
+      if (newUrl != null && newUrl.isNotEmpty) {
+        merged['url'] = newUrl;
+      } else if (merged['url']?.toString().isEmpty == true) {
+        merged.remove('url');
+      }
+      mergedByQuality[quality] = merged;
+    }
+
+    entry.relateGoods = mergedByQuality.values.toList(growable: false);
+    _entries[hash] = entry;
+    _touchEntry(hash, entry);
+  }
+
+  void _touchEntry(String hash, _AudioPlaybackCacheEntry entry) {
+    _entries[hash] = entry;
+    _order.remove(hash);
+    _order.add(hash);
+    _trimIfNeeded();
+  }
+
+  List<Map<String, dynamic>> _normalizeRelateGoods(
+    List<Map<String, dynamic>> relateGoods,
+  ) {
+    return relateGoods
+        .map((entry) {
+          final quality = entry['quality']?.toString() ?? '';
+          final hash = entry['hash']?.toString() ?? '';
+          if (quality.isEmpty || hash.isEmpty) return <String, dynamic>{};
+          final url = entry['url']?.toString();
+          final normalized = <String, dynamic>{
+            'quality': quality,
+            'hash': hash,
+          };
+          if (url != null && url.isNotEmpty) {
+            normalized['url'] = url;
+          }
+          return normalized;
+        })
+        .where((entry) => entry.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Map<double, double>? getClimaxMarks({required String hash}) {
+    final entry = _getEntry(hash);
+    return entry?.climaxMarks;
+  }
+
+  void setClimaxMarks({
+    required String hash,
+    required Map<double, double> climaxMarks,
+  }) {
+    final entry =
+        _entries[hash] ?? _AudioPlaybackCacheEntry(cachedAt: DateTime.now());
+    entry.climaxMarks = Map<double, double>.from(climaxMarks);
+    _entries[hash] = entry;
+    _order.remove(hash);
+    _order.add(hash);
+    _trimIfNeeded();
+  }
+
+  void clear() {
+    _entries.clear();
+    _order.clear();
+  }
+
+  void updateConfig({required int maxEntries, required Duration ttl}) {
+    this.maxEntries = maxEntries;
+    this.ttl = ttl;
+    _pruneExpired();
+    _trimIfNeeded();
+  }
+
+  Map<String, dynamic> snapshot() {
+    _pruneExpired();
+    final data = <String, dynamic>{};
+    for (final hash in _order) {
+      final entry = _entries[hash];
+      if (entry == null) continue;
+      data[hash] = {
+        'cachedAt': entry.cachedAt.toIso8601String(),
+        'relateGoods': entry.relateGoods,
+        'climaxMarks': entry.climaxMarks?.map(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+      };
+    }
+    return data;
+  }
+
+  void hydrate(Map<String, dynamic> data) {
+    _entries.clear();
+    _order.clear();
+    data.forEach((hash, value) {
+      if (hash is! String || value is! Map) return;
+      final cachedAtRaw = value['cachedAt']?.toString();
+      final cachedAt = cachedAtRaw != null
+          ? DateTime.tryParse(cachedAtRaw) ?? DateTime.now()
+          : DateTime.now();
+      final entry = _AudioPlaybackCacheEntry(cachedAt: cachedAt);
+      final relateGoodsRaw = value['relateGoods'];
+      if (relateGoodsRaw is List) {
+        entry.relateGoods = relateGoodsRaw
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      }
+      final climaxRaw = value['climaxMarks'];
+      if (climaxRaw is Map) {
+        entry.climaxMarks = climaxRaw.map(
+          (key, val) => MapEntry(
+            double.tryParse(key.toString()) ?? 0.0,
+            (val is num ? val.toDouble() : double.tryParse(val.toString()) ?? 0.0),
+          ),
+        );
+      }
+      _entries[hash] = entry;
+      _order.add(hash);
+    });
+    _trimIfNeeded();
+  }
+
+  void _pruneExpired() {
+    final now = DateTime.now();
+    for (final hash in List<String>.from(_order)) {
+      final entry = _entries[hash];
+      if (entry == null) {
+        _order.remove(hash);
+        continue;
+      }
+      if (now.difference(entry.cachedAt) > ttl) {
+        _entries.remove(hash);
+        _order.remove(hash);
+      }
+    }
+  }
+
+  void _trimIfNeeded() {
+    while (_order.length > maxEntries) {
+      final oldestKey = _order.removeAt(0);
+      _entries.remove(oldestKey);
+    }
   }
 }

@@ -50,4 +50,62 @@ void main() {
     expect(navigation.currentRootIndex, 4);
     expect(navigation.currentRouteName, isNull);
   });
+
+  test('resetToRootAfterPlaylistDeletion returns to root and clears history', () {
+    final navigation = NavigationProvider();
+    addTearDown(navigation.dispose);
+
+    navigation.navigateToRoot(4);
+
+    navigation.observer.didPush(
+      MaterialPageRoute<void>(
+        builder: (_) => const SizedBox.shrink(),
+        settings: RouteSettings(
+          name: 'playlist_detail',
+          arguments: PlaylistDetailRouteArgs(
+            playlist: Playlist(
+              id: 42,
+              name: 'Owned Playlist',
+              pic: '',
+              intro: '',
+              playCount: 0,
+            ),
+          ),
+        ),
+      ),
+      null,
+    );
+
+    expect(navigation.currentRootIndex, 4);
+    expect(navigation.currentRouteName, 'playlist_detail');
+    expect(navigation.canGoBack, isTrue);
+
+    navigation.resetToRootAfterPlaylistDeletion();
+
+    expect(navigation.currentRootIndex, 4);
+    expect(navigation.currentRouteName, isNull);
+    expect(navigation.selectedSidebarPlaylistId, isNull);
+    expect(navigation.canGoBack, isFalse);
+    expect(navigation.canGoForward, isFalse);
+    expect(navigation.rootActivationVersion, 2);
+  });
+
+  test('resetToRootAfterPlaylistDeletion keeps current root and clears history', () {
+    final navigation = NavigationProvider();
+    addTearDown(navigation.dispose);
+
+    navigation.navigateToRoot(4);
+    navigation.navigateToRoot(2);
+
+    expect(navigation.currentRootIndex, 2);
+    expect(navigation.currentRouteName, isNull);
+    expect(navigation.canGoBack, isTrue);
+
+    navigation.resetToRootAfterPlaylistDeletion();
+
+    expect(navigation.currentRootIndex, 2);
+    expect(navigation.currentRouteName, isNull);
+    expect(navigation.canGoBack, isFalse);
+    expect(navigation.canGoForward, isFalse);
+  });
 }

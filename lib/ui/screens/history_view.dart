@@ -15,6 +15,7 @@ import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key, this.fetchHistoryPage});
@@ -332,10 +333,9 @@ class _HistoryViewState extends State<HistoryView>
     final isAuthenticated = context.select<UserProvider, bool>(
       (provider) => provider.isAuthenticated,
     );
-    final currentRootIndex = context.select<NavigationProvider, int>(
-      (provider) => provider.currentRootIndex,
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
     );
-    final isCurrentRoot = currentRootIndex == _rootIndex;
     final persistenceProvider = context.watch<PersistenceProvider>();
     final replacePlaylistEnabled = context.select<PersistenceProvider, bool>(
       (provider) => provider.settings['replacePlaylist'] ?? false,
@@ -362,6 +362,7 @@ class _HistoryViewState extends State<HistoryView>
       isLoadingMore: isAuthenticated
           ? (_isLoadingMore || batchPreparing)
           : false,
+      hasCommentsTab: false,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? (song) => _replacePlaybackWithHistorySongs(song, songs)
@@ -370,7 +371,7 @@ class _HistoryViewState extends State<HistoryView>
         DetailPageSliverHeader(
           typeLabel: 'HISTORY',
           title: '最近播放',
-          expandedHeight: 176,
+          expandedHeight: 200,
           expandedCover: _buildExpandedHistoryCover(theme),
           collapsedCover: _buildCollapsedHistoryCover(theme),
           detailChildren: [
@@ -383,7 +384,7 @@ class _HistoryViewState extends State<HistoryView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
             ),
@@ -405,7 +406,7 @@ class _HistoryViewState extends State<HistoryView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
           ],
@@ -482,7 +483,7 @@ class _HistoryViewState extends State<HistoryView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),

@@ -5,6 +5,7 @@ import '../../api/music_api.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/back_to_top.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class SongCommentView extends StatefulWidget {
   final Song song;
@@ -250,8 +251,8 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                                 children: [
                                   CoverImage(url: widget.song.cover, width: 32, height: 32, borderRadius: 6, showShadow: false),
                                   const SizedBox(width: 12),
-                                  Expanded(child: Text(widget.song.name, style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 16, fontWeight: FontWeight.w900), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                                  Padding(padding: const EdgeInsets.only(right: 24), child: Text(commentCount, style: TextStyle(color: theme.colorScheme.primary, fontSize: 14, fontWeight: FontWeight.w900, fontFamily: 'monospace'))),
+                                  Expanded(child: Text(widget.song.name, style: TextStyle(color: theme.colorScheme.onSurface, fontSize: 16, fontWeight: AppTheme.fontWeightBold), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                  Padding(padding: const EdgeInsets.only(right: 24), child: Text(commentCount, style: TextStyle(color: theme.colorScheme.primary, fontSize: 14, fontWeight: AppTheme.fontWeightBold, fontFamily: 'monospace'))),
                                 ],
                               ),
                             ),
@@ -270,11 +271,11 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Text('COMMENTS', style: TextStyle(color: theme.colorScheme.primary, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 2.0)),
+                                  Text('COMMENTS', style: TextStyle(color: theme.colorScheme.primary, fontSize: 10, fontWeight: AppTheme.fontWeightBold, letterSpacing: 2.0)),
                                   const SizedBox(height: 4),
-                                  Text(widget.song.name, style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, fontWeight: FontWeight.w900, height: 1.1), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  Text(widget.song.name, style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, fontWeight: AppTheme.fontWeightBold, height: 1.1), maxLines: 1, overflow: TextOverflow.ellipsis),
                                   const SizedBox(height: 8),
-                                  Text(widget.song.singerName, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: theme.colorScheme.primary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  Text(widget.song.singerName, style: TextStyle(fontSize: 14, fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.primary), maxLines: 1, overflow: TextOverflow.ellipsis),
                                 ],
                               ),
                             ),
@@ -283,9 +284,9 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text('评论总数', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withAlpha(100), fontWeight: FontWeight.w600)),
+                                Text('评论总数', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withAlpha(100), fontWeight: AppTheme.fontWeightSemiBold)),
                                 const SizedBox(height: 4),
-                                Text(commentCount, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, fontFamily: 'monospace')),
+                                Text(commentCount, style: const TextStyle(fontSize: 20, fontWeight: AppTheme.fontWeightBold, fontFamily: 'monospace')),
                               ],
                             ),
                           ],
@@ -322,6 +323,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
           BackToTop(
             show: _showBackToTop,
             onPressed: _scrollToTop,
+            bottom: 32,
           ),
         ],
       ),
@@ -444,7 +446,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                 }
               },
               selectedColor: theme.colorScheme.primary,
-              labelStyle: TextStyle(color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180), fontSize: 12, fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600),
+              labelStyle: TextStyle(color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180), fontSize: 12, fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               side: BorderSide.none,
@@ -485,7 +487,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                 }
               },
               selectedColor: theme.colorScheme.primary,
-              labelStyle: TextStyle(color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180), fontSize: 12, fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600),
+              labelStyle: TextStyle(color: isSelected ? Colors.white : theme.colorScheme.onSurface.withAlpha(180), fontSize: 12, fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               side: BorderSide.none,
@@ -561,8 +563,8 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
                   children: [
                     Row(
                       children: [
-                        Text(comment['user_name'] ?? '匿名用户', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-                        if (isStar) Container(margin: const EdgeInsets.only(left: 8), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: theme.colorScheme.primary, borderRadius: BorderRadius.circular(6)), child: const Text('歌手', style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold))),
+                        Text(comment['user_name'] ?? '匿名用户', style: const TextStyle(fontSize: 14, fontWeight: AppTheme.fontWeightBold)),
+                        if (isStar) Container(margin: const EdgeInsets.only(left: 8), padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: theme.colorScheme.primary, borderRadius: BorderRadius.circular(6)), child: const Text('歌手', style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: AppTheme.fontWeightBold))),
                       ],
                     ),
                     const SizedBox(height: 2),
@@ -574,14 +576,14 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
             ],
           ),
           const SizedBox(height: 12),
-          Text(comment['content'] ?? '', style: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500)),
+          Text(comment['content'] ?? '', style: const TextStyle(fontSize: 14, height: 1.5, fontWeight: AppTheme.fontWeightMedium)),
         ],
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) {
-    return Padding(padding: const EdgeInsets.only(left: 4, bottom: 12, top: 8), child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.0)));
+    return Padding(padding: const EdgeInsets.only(left: 4, bottom: 12, top: 8), child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold, color: Colors.grey, letterSpacing: 1.0)));
   }
 
   Widget _buildLikeBadge(BuildContext context, int count) {
@@ -594,7 +596,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
         children: [
           Icon(CupertinoIcons.hand_thumbsup_fill, size: 12, color: theme.colorScheme.primary),
           const SizedBox(width: 6),
-          Text(_formatBigNumber(count), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: theme.colorScheme.primary)),
+          Text(_formatBigNumber(count), style: TextStyle(fontSize: 11, fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.primary)),
         ],
       ),
     );

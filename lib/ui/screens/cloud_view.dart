@@ -16,6 +16,7 @@ import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class CloudView extends StatefulWidget {
   const CloudView({super.key, this.fetchSongsPage});
@@ -392,10 +393,9 @@ class _CloudViewState extends State<CloudView>
     final isAuthenticated = context.select<UserProvider, bool>(
       (provider) => provider.isAuthenticated,
     );
-    final currentRootIndex = context.select<NavigationProvider, int>(
-      (provider) => provider.currentRootIndex,
+    final isCurrentRoot = context.select<NavigationProvider, bool>(
+      (provider) => provider.isCurrentRoot(_rootIndex),
     );
-    final isCurrentRoot = currentRootIndex == _rootIndex;
     final theme = Theme.of(context);
 
     if (!isAuthenticated) {
@@ -404,7 +404,7 @@ class _CloudViewState extends State<CloudView>
         child: Text(
           '登录后查看云盘',
           style: TextStyle(
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurface.withAlpha(128),
           ),
         ),
@@ -433,6 +433,7 @@ class _CloudViewState extends State<CloudView>
       onLoadMore: _loadMore,
       hasMore: _hasMore,
       isLoadingMore: _isLoadingMore || batchPreparing,
+      hasCommentsTab: false,
       enableDefaultDoubleTapPlay: true,
       onSongDoubleTapPlay: replacePlaylistEnabled
           ? _replacePlaybackWithCloudSongs
@@ -441,7 +442,7 @@ class _CloudViewState extends State<CloudView>
         DetailPageSliverHeader(
           typeLabel: 'CLOUD',
           title: '音乐云盘',
-          expandedHeight: 181,
+          expandedHeight: 200,
           expandedCover: _buildExpandedCloudCover(theme),
           collapsedCover: _buildCollapsedCloudCover(theme),
           detailChildren: [
@@ -454,7 +455,7 @@ class _CloudViewState extends State<CloudView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
             ),
@@ -481,7 +482,7 @@ class _CloudViewState extends State<CloudView>
         ),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 6),
             child: _buildCloudInfoCard(theme, used, percentage),
           ),
         ),
@@ -557,7 +558,7 @@ class _CloudViewState extends State<CloudView>
                 '云盘容量',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                   color: theme.colorScheme.onSurface,
                 ),
               ),
@@ -565,7 +566,7 @@ class _CloudViewState extends State<CloudView>
                 '${(percentage * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                   color: theme.colorScheme.primary,
                 ),
               ),
@@ -593,7 +594,7 @@ class _CloudViewState extends State<CloudView>
                 '${formatBytes(used)} / ${formatBytes(total)}',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                   color: theme.colorScheme.onSurface.withAlpha(160),
                 ),
               ),
@@ -601,7 +602,7 @@ class _CloudViewState extends State<CloudView>
                 '可用 ${formatBytes(_cloudAvailable)}',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                   color: theme.colorScheme.onSurface.withAlpha(128),
                 ),
               ),
@@ -627,7 +628,7 @@ class _CloudViewState extends State<CloudView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),
