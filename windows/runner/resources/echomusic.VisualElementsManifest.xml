@@ -1,6 +1,6 @@
 <Application xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <VisualElements
-    BackgroundColor="transparent"
+    BackgroundColor="#1E1E1E"
     ShowNameOnSquare150x150Logo="on"
     ForegroundText="light"
     Description="EchoMusic">
