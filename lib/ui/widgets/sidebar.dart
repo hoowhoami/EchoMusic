@@ -9,7 +9,7 @@ import 'cover_image.dart';
 import 'custom_dialog.dart';
 import 'custom_toast.dart';
 
-class Sidebar extends StatelessWidget {
+class Sidebar extends StatefulWidget {
   final int selectedIndex;
   final dynamic selectedPlaylistId;
   final ValueChanged<int> onDestinationSelected;
@@ -24,6 +24,47 @@ class Sidebar extends StatelessWidget {
   });
 
   @override
+  State<Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<Sidebar> {
+  int _activePlaylistTab = 0; // 0 for Created, 1 for Favorited
+
+  @override
+  void didUpdateWidget(Sidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedPlaylistId != null && widget.selectedPlaylistId != oldWidget.selectedPlaylistId) {
+      _autoSwitchTab();
+    }
+  }
+
+  void _autoSwitchTab() {
+    final userProvider = context.read<UserProvider>();
+    final createdPlaylists = userProvider.createdPlaylists;
+    final favoritedPlaylists = userProvider.favoritedOnlyPlaylists;
+    final favoritedAlbums = userProvider.favoritedAlbums;
+
+    final id = widget.selectedPlaylistId;
+
+    bool isInCreated = createdPlaylists.any((p) => (p['listid'] ?? p['specialid']) == id);
+    if (isInCreated) {
+      if (_activePlaylistTab != 0) {
+        setState(() => _activePlaylistTab = 0);
+      }
+      return;
+    }
+
+    bool isInFavorited = favoritedPlaylists.any((p) => (p['listid'] ?? p['specialid']) == id) || 
+                         favoritedAlbums.any((p) => (p['listid'] ?? p['specialid']) == id);
+
+    if (isInFavorited) {
+      if (_activePlaylistTab != 1) {
+        setState(() => _activePlaylistTab = 1);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final user = context.select<UserProvider, dynamic>((p) => p.user);
@@ -31,9 +72,11 @@ class Sidebar extends StatelessWidget {
     final accentColor = theme.colorScheme.primary;
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 1. 顶部用户信息 (固定)
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -48,33 +91,35 @@ class Sidebar extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Container(height: 22, width: 1, color: theme.colorScheme.onSurface.withAlpha(40)),
                 ),
-                _buildSettingsIconButton(context, 5, onDestinationSelected, theme, accentColor),
+                _buildSettingsIconButton(context, 5, widget.onDestinationSelected, theme, accentColor),
               ],
             ),
           ),
         ),
+        
+        // 2. 发现音乐 & 我的乐库 (固定)
+        _buildGroupTitle(context, '发现音乐'),
+        _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
+        _buildNavItem(context, 1, CupertinoIcons.compass_fill, '探索发现'),
+        _buildNavItem(context, 2, CupertinoIcons.search, '全网搜索'),
+        const SizedBox(height: 22),
+        _buildGroupTitle(context, '我的乐库'),
+        _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
+        _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
+        const SizedBox(height: 22),
+
+        // 3. 分栏标题 (固定)
+        _buildTabGroupTitle(
+          context,
+          onAdd: isAuthenticated ? () => _showCreatePlaylistDialog(context) : null,
+        ),
+
+        // 4. 滚动列表区域 (仅此处滚动)
         Expanded(
-          child: Transform.translate(
-            offset: const Offset(0, -12),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildGroupTitle(context, '发现音乐'),
-                  _buildNavItem(context, 0, CupertinoIcons.rocket_fill, '为您推荐'),
-                  _buildNavItem(context, 1, CupertinoIcons.compass_fill, '探索发现'),
-                  _buildNavItem(context, 2, CupertinoIcons.search, '全网搜索'),
-                  const SizedBox(height: 18),
-                  _buildGroupTitle(context, '我的乐库'),
-                  _buildNavItem(context, 3, CupertinoIcons.clock_fill, '播放历史'),
-                  _buildNavItem(context, 4, CupertinoIcons.cloud_fill, '我的云盘'),
-                  const SizedBox(height: 18),
-                  _buildPlaylistSection(context),
-                ],
-              ),
-            ),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 20),
+            child: _buildPlaylistList(context),
           ),
         ),
       ],
@@ -82,7 +127,7 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildTopProfileItem(BuildContext context, bool isAuthenticated, dynamic user, ThemeData theme, Color accentColor) {
-    final isSelected = selectedPlaylistId == null && selectedIndex == 6;
+    final isSelected = widget.selectedPlaylistId == null && widget.selectedIndex == 6;
     return _TopItemWithHover(
       isSelected: isSelected,
       accentColor: accentColor,
@@ -90,7 +135,7 @@ class Sidebar extends StatelessWidget {
         if (!isAuthenticated) {
           Navigator.push(context, CupertinoPageRoute(builder: (_) => const LoginScreen()));
         } else {
-          onDestinationSelected(6);
+          widget.onDestinationSelected(6);
         }
       },
       child: Row(
@@ -104,7 +149,7 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildSettingsIconButton(BuildContext context, int index, ValueChanged<int> onTap, ThemeData theme, Color accentColor) {
-    final isSelected = selectedPlaylistId == null && selectedIndex == index;
+    final isSelected = widget.selectedPlaylistId == null && widget.selectedIndex == index;
     return _TopItemWithHover(
       isSelected: isSelected,
       accentColor: accentColor,
@@ -116,7 +161,7 @@ class Sidebar extends StatelessWidget {
   Widget _buildGroupTitle(BuildContext context, String title, {VoidCallback? onAdd}) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(left: 28, right: 25, top: 8, bottom: 10),
+      padding: const EdgeInsets.only(left: 28, right: 25, top: 12, bottom: 10),
       child: Row(
         children: [
           Expanded(
@@ -148,31 +193,115 @@ class Sidebar extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaylistSection(BuildContext context) {
+  Widget _buildTabGroupTitle(BuildContext context, {VoidCallback? onAdd}) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 28, right: 25, top: 12, bottom: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                _buildTabItem(0, '自建歌单'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '|',
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface.withAlpha(40),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+                _buildTabItem(1, '收藏歌单/专辑'),
+              ],
+            ),
+          ),
+          if (_activePlaylistTab == 0 && onAdd != null)
+            InkWell(
+              onTap: onAdd,
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  CupertinoIcons.add,
+                  size: 14,
+                  color: theme.colorScheme.onSurface.withAlpha(120),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabItem(int index, String label) {
+    final theme = Theme.of(context);
+    final isActive = _activePlaylistTab == index;
+    final accentColor = theme.colorScheme.primary;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => setState(() => _activePlaylistTab = index),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isActive ? accentColor : theme.colorScheme.onSurface.withAlpha(120),
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaylistList(BuildContext context) {
     final theme = Theme.of(context);
     final isAuthenticated = context.select<UserProvider, bool>((p) => p.isAuthenticated);
     final createdPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.createdPlaylists);
     final favoritedPlaylists = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedOnlyPlaylists);
     final favoritedAlbums = context.select<UserProvider, List<Map<String, dynamic>>>((p) => p.favoritedAlbums);
 
+    if (!isAuthenticated) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
+        child: Text(
+          '登录同步云端歌单',
+          style: TextStyle(
+            color: theme.colorScheme.onSurface.withAlpha(80),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildGroupTitle(
-          context,
-          '自建/收藏歌单',
-          onAdd: isAuthenticated ? () => _showCreatePlaylistDialog(context) : null,
-        ),
-        if (isAuthenticated) ...[
-          for (var p in createdPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.music_note_2),
+        if (_activePlaylistTab == 0)
+          for (var p in createdPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.music_note_2)
+        else ...[
+          // 收藏歌单
           for (var p in favoritedPlaylists) _buildPlaylistItem(context, p, CupertinoIcons.heart_circle_fill, imageUrl: p['pic']),
-          if (favoritedAlbums.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            _buildGroupTitle(context, '收藏专辑'),
-            for (var a in favoritedAlbums) _buildPlaylistItem(context, a, Icons.favorite_rounded, imageUrl: a['pic']),
-          ],
-        ] else
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8), child: Text('登录同步云端歌单', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80), fontSize: 12, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic))),
+          
+          // 如果歌单和专辑都有，展示分割线
+          if (favoritedPlaylists.isNotEmpty && favoritedAlbums.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              child: Container(
+                height: 0.5,
+                color: theme.colorScheme.onSurface.withAlpha(20),
+              ),
+            ),
+            
+          // 收藏专辑
+          for (var a in favoritedAlbums) _buildPlaylistItem(context, a, Icons.favorite_rounded, imageUrl: a['pic']),
+        ],
       ],
     );
   }
@@ -180,14 +309,12 @@ class Sidebar extends StatelessWidget {
   Widget _buildPlaylistItem(BuildContext context, Map<String, dynamic> playlistData, IconData icon, {String? imageUrl}) {
     final playlist = Playlist.fromUserPlaylist(playlistData);
     final theme = Theme.of(context);
-    final isSelected = selectedPlaylistId == playlist.id;
+    final isSelected = widget.selectedPlaylistId == playlist.id;
     final accentColor = theme.colorScheme.primary;
     final userProvider = context.read<UserProvider>();
     final isCreatedByUser = playlistData['list_create_userid'] == userProvider.user?.userid;
 
-    // 判断是否可删除：默认歌单不能删除
     final isDefaultPlaylist = playlistData['type'] == 0 && (playlistData['is_def'] == 1 || playlistData['is_def'] == 2);
-
     final canDelete = !isDefaultPlaylist;
 
     return Padding(
@@ -200,7 +327,7 @@ class Sidebar extends StatelessWidget {
           canDelete: canDelete,
           onTap: () {
             if (!isSelected) {
-              onPushPlaylist?.call(playlist);
+              widget.onPushPlaylist?.call(playlist);
             }
           },
           onDelete: canDelete ? () => _confirmDeletePlaylist(context, playlistData, isCreatedByUser) : null,
@@ -266,11 +393,8 @@ class Sidebar extends StatelessWidget {
         if (context.mounted) {
           if (success) {
             if (isCreatedByUser) {
-              // 删除自建歌单后，直接回到当前根节点，
-              // 并清空前进/后退历史，避免回到已失效的详情页。
               navigationProvider.resetToRootAfterPlaylistDeletion();
             }
-
             CustomToast.success(context, '${isCreatedByUser ? '删除' : '取消收藏'}成功');
           } else {
             CustomToast.error(context, '${isCreatedByUser ? '删除' : '取消收藏'}失败，请重试');
@@ -377,7 +501,7 @@ class Sidebar extends StatelessWidget {
   }
 
   Widget _buildNavItem(BuildContext context, int index, IconData icon, String label) {
-    final isSelected = selectedPlaylistId == null && selectedIndex == index;
+    final isSelected = widget.selectedPlaylistId == null && widget.selectedIndex == index;
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
 
@@ -390,7 +514,7 @@ class Sidebar extends StatelessWidget {
           accentColor: accentColor,
           onTap: () {
             if (!isSelected) {
-              onDestinationSelected(index);
+              widget.onDestinationSelected(index);
             }
           },
           child: Row(
