@@ -514,7 +514,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
               ],
             ),
           ),
-          BackToTop(controller: _scrollController),
+          BackToTop(controller: _scrollController, bottom: 32),
         ],
       ),
     );

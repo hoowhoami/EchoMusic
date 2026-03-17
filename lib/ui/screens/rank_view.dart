@@ -18,12 +18,14 @@ class RankView extends StatefulWidget {
   final Color? backgroundColor;
   final bool isRecommend;
   final bool showTitle;
+  final double? backToTopRight;
   const RankView({
     super.key, 
     this.initialRankId, 
     this.backgroundColor,
     this.isRecommend = false,
     this.showTitle = true,
+    this.backToTopRight,
   });
 
   @override

@@ -30,6 +30,8 @@ class SongListScaffold extends StatelessWidget {
   final bool showTableHeader;
   final bool showSearchField;
   final bool showLocateButton;
+  final double? backToTopRight;
+  final double? backToTopBottom;
 
   const SongListScaffold({
     super.key,
@@ -58,6 +60,8 @@ class SongListScaffold extends StatelessWidget {
     this.showTableHeader = true,
     this.showSearchField = true,
     this.showLocateButton = true,
+    this.backToTopRight,
+    this.backToTopBottom,
   });
 
   @override
@@ -91,6 +95,8 @@ class SongListScaffold extends StatelessWidget {
         showTableHeader: showTableHeader,
         showSearchField: showSearchField,
         showLocateButton: showLocateButton,
+        backToTopRight: backToTopRight,
+        backToTopBottom: backToTopBottom,
       ),
     );
   }

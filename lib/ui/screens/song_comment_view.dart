@@ -322,6 +322,7 @@ class _SongCommentViewState extends State<SongCommentView> with TickerProviderSt
           BackToTop(
             show: _showBackToTop,
             onPressed: _scrollToTop,
+            bottom: 32,
           ),
         ],
       ),

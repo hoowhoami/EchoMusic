@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 class WindowsCaptionControls extends StatefulWidget {
-  const WindowsCaptionControls({super.key});
+  final Brightness? brightness;
+
+  const WindowsCaptionControls({super.key, this.brightness});
 
   static const double buttonWidth = 46;
   static const double height = 32;
@@ -17,6 +19,7 @@ class WindowsCaptionControls extends StatefulWidget {
 class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
     with WindowListener {
   bool _isMaximized = false;
+  bool _isFocused = true;
 
   @override
   void initState() {
@@ -27,8 +30,12 @@ class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
 
   Future<void> _syncWindowState() async {
     final isMaximized = await windowManager.isMaximized();
+    final isFocused = await windowManager.isFocused();
     if (!mounted) return;
-    setState(() => _isMaximized = isMaximized);
+    setState(() {
+      _isMaximized = isMaximized;
+      _isFocused = isFocused;
+    });
   }
 
   @override
@@ -48,8 +55,18 @@ class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
   }
 
   @override
+  void onWindowFocus() {
+    setState(() => _isFocused = true);
+  }
+
+  @override
+  void onWindowBlur() {
+    setState(() => _isFocused = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
+    final brightness = widget.brightness ?? Theme.of(context).brightness;
 
     return SizedBox(
       width: WindowsCaptionControls.width,
@@ -59,6 +76,7 @@ class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
           _WindowsCaptionButton(
             type: _WindowsCaptionButtonType.minimize,
             brightness: brightness,
+            isFocused: _isFocused,
             onPressed: () => windowManager.minimize(),
           ),
           _WindowsCaptionButton(
@@ -66,6 +84,7 @@ class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
                 ? _WindowsCaptionButtonType.restore
                 : _WindowsCaptionButtonType.maximize,
             brightness: brightness,
+            isFocused: _isFocused,
             onPressed: _isMaximized
                 ? () => windowManager.unmaximize()
                 : () => windowManager.maximize(),
@@ -73,6 +92,7 @@ class _WindowsCaptionControlsState extends State<WindowsCaptionControls>
           _WindowsCaptionButton(
             type: _WindowsCaptionButtonType.close,
             brightness: brightness,
+            isFocused: _isFocused,
             onPressed: () => windowManager.close(),
           ),
         ],
@@ -87,11 +107,13 @@ class _WindowsCaptionButton extends StatefulWidget {
   const _WindowsCaptionButton({
     required this.type,
     required this.brightness,
+    required this.isFocused,
     required this.onPressed,
   });
 
   final _WindowsCaptionButtonType type;
   final Brightness brightness;
+  final bool isFocused;
   final VoidCallback onPressed;
 
   @override
@@ -116,8 +138,18 @@ class _WindowsCaptionButtonState extends State<_WindowsCaptionButton> {
   Widget build(BuildContext context) {
     final bool isDark = widget.brightness == Brightness.dark;
     final bool isClose = widget.type == _WindowsCaptionButtonType.close;
-    final Color baseIconColor =
-        isDark ? Colors.white : Colors.black.withAlpha(230);
+    
+    Color baseIconColor;
+    if (isDark) {
+      baseIconColor = widget.isFocused 
+          ? Colors.white 
+          : Colors.white.withAlpha(120);
+    } else {
+      baseIconColor = widget.isFocused 
+          ? Colors.black.withAlpha(230) 
+          : Colors.black.withAlpha(90);
+    }
+
     final Color hoverIconColor = isClose ? Colors.white : baseIconColor;
     final Color pressedIconColor = isClose
         ? Colors.white.withAlpha(210)

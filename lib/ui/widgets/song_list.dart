@@ -45,6 +45,8 @@ class SongList extends StatefulWidget {
   final bool showSearchField;
   final bool showLocateButton;
   final double rowHorizontalPadding;
+  final double? backToTopRight;
+  final double? backToTopBottom;
   final Future<List<Song>> Function()? onResolveBatchSongs;
   final String commentsTabTitle;
   final String? commentsTabBadgeLabel;
@@ -79,6 +81,8 @@ class SongList extends StatefulWidget {
     this.showSearchField = true,
     this.showLocateButton = true,
     this.rowHorizontalPadding = SongTableLayout.listRowHorizontalPadding,
+    this.backToTopRight,
+    this.backToTopBottom,
   });
 
   @override
@@ -132,8 +136,7 @@ class _SongListState extends State<SongList> {
     double height = 0.0;
     for (final header in headers) {
       if (header is SliverAppBar && header.pinned) {
-        height +=
-            header.collapsedHeight ?? header.toolbarHeight ?? kToolbarHeight;
+        height += header.collapsedHeight ?? header.toolbarHeight;
       } else if (header is SliverPersistentHeader && header.pinned) {
         height += header.delegate.minExtent;
       } else if (header is DetailPageSliverHeader) {
@@ -197,23 +200,20 @@ class _SongListState extends State<SongList> {
     final currentSong = audioProvider.currentSong;
     if (currentSong == null || !_scrollController.hasClients) return;
 
-
     final index = filteredSongs.indexWhere(
       (song) => song.isSameSong(currentSong),
     );
     if (index == -1) return;
 
     final position = _scrollController.position;
-    final hasTableHeader =
-        widget.showTableHeader && filteredSongs.isNotEmpty;
+    final hasTableHeader = widget.showTableHeader && filteredSongs.isNotEmpty;
     final pinnedHeight = _resolvePinnedHeight(hasTableHeader);
     final leadingExtent =
         _listLeadingScrollExtent ?? _estimatedHeaderScrollExtent;
     final visibleExtent = position.viewportDimension - pinnedHeight;
     if (visibleExtent <= _songItemExtent) return;
 
-    final alignedOffset =
-        _calculateLocateTargetOffset(index, leadingExtent);
+    final alignedOffset = _calculateLocateTargetOffset(index, leadingExtent);
     final itemTop = alignedOffset;
     final itemBottom = alignedOffset + _songItemExtent;
     final visibleTop = position.pixels + pinnedHeight;
@@ -418,18 +418,18 @@ class _SongListState extends State<SongList> {
         final isCommentsTabActive =
             _hasCommentTab && _activePrimaryTab == SongListPrimaryTab.comments;
         final baseAvailableWidth =
-            (constraints.maxWidth - listPadding.horizontal)
-                .clamp(0.0, double.infinity);
+            (constraints.maxWidth - listPadding.horizontal).clamp(
+              0.0,
+              double.infinity,
+            );
         final baseColumnConfig = _resolveColumnConfig(baseAvailableWidth);
         final rowHorizontalPadding =
-            (baseColumnConfig.rowHorizontalPadding <
-                    widget.rowHorizontalPadding
-                ? baseColumnConfig.rowHorizontalPadding
-                : widget.rowHorizontalPadding)
+            (baseColumnConfig.rowHorizontalPadding < widget.rowHorizontalPadding
+                    ? baseColumnConfig.rowHorizontalPadding
+                    : widget.rowHorizontalPadding)
                 .clamp(0.0, 24.0);
-        final availableWidth =
-            (baseAvailableWidth - (rowHorizontalPadding * 2))
-                .clamp(0.0, double.infinity);
+        final availableWidth = (baseAvailableWidth - (rowHorizontalPadding * 2))
+            .clamp(0.0, double.infinity);
         final finalColumnConfig = _resolveColumnConfig(availableWidth);
 
         if (widget.isLoading) {
@@ -445,84 +445,91 @@ class _SongListState extends State<SongList> {
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: _handleScrollNotification,
-              child: CustomScrollView(
+              child: Scrollbar(
                 controller: _scrollController,
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  if (widget.headers != null) ...widget.headers!,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    if (widget.headers != null) ...widget.headers!,
 
-                  if (widget.showStickyToolbar)
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _FixedHeightHeaderDelegate(
-                        height:
-                            (widget.showSearchField || widget.showLocateButton)
-                                ? _stickyToolbarHeight
-                                : _toolbarHeightWithoutExtras,
-                        child: _buildStickyToolbar(
-                          context,
-                          isCommentsTabActive: isCommentsTabActive,
-                          filteredSongs: filteredSongs,
-                          listPadding: listPadding,
+                    if (widget.showStickyToolbar)
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _FixedHeightHeaderDelegate(
+                          height:
+                              (widget.showSearchField ||
+                                  widget.showLocateButton)
+                              ? _stickyToolbarHeight
+                              : _toolbarHeightWithoutExtras,
+                          child: _buildStickyToolbar(
+                            context,
+                            isCommentsTabActive: isCommentsTabActive,
+                            filteredSongs: filteredSongs,
+                            listPadding: listPadding,
+                          ),
                         ),
                       ),
-                    ),
 
-                  if (widget.showTableHeader &&
-                      !isCommentsTabActive &&
-                      filteredSongs.isNotEmpty)
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: _FixedHeightHeaderDelegate(
-                        height: _tableHeaderHeight,
-                        child: _buildTableHeader(
-                          context,
-                          listPadding: listPadding,
-                          columnConfig: finalColumnConfig,
-                          rowHorizontalPadding: rowHorizontalPadding,
+                    if (widget.showTableHeader &&
+                        !isCommentsTabActive &&
+                        filteredSongs.isNotEmpty)
+                      SliverPersistentHeader(
+                        pinned: true,
+                        delegate: _FixedHeightHeaderDelegate(
+                          height: _tableHeaderHeight,
+                          child: _buildTableHeader(
+                            context,
+                            listPadding: listPadding,
+                            columnConfig: finalColumnConfig,
+                            rowHorizontalPadding: rowHorizontalPadding,
+                          ),
                         ),
                       ),
-                    ),
 
-                  if (isCommentsTabActive)
-                    ...?widget.commentSlivers
-                  else if (filteredSongs.isEmpty)
-                    SliverToBoxAdapter(
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
-                          child: Text(
-                            _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant,
+                    if (isCommentsTabActive)
+                      ...?widget.commentSlivers
+                    else if (filteredSongs.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+                            child: Text(
+                              _searchQuery.isEmpty ? '暂无歌曲' : '未找到相关歌曲',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
                         ),
+                      )
+                    else ...[
+                      SliverToBoxAdapter(
+                        key: _listAnchorKey,
+                        child: const SizedBox.shrink(),
                       ),
-                    )
-                  else ...[
-                    SliverToBoxAdapter(
-                      key: _listAnchorKey,
-                      child: const SizedBox.shrink(),
-                    ),
-                    SliverLayoutBuilder(
-                      builder: (context, constraints) {
-                        _listLeadingScrollExtent =
-                            constraints.precedingScrollExtent;
-                        return SliverPadding(
-                          padding: EdgeInsets.fromLTRB(
-                            listPadding.left,
-                            0,
-                            listPadding.right,
-                            listPadding.bottom,
-                          ),
-                          sliver: SliverFixedExtentList(
-                            itemExtent: _songItemExtent,
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
+                      SliverLayoutBuilder(
+                        builder: (context, constraints) {
+                          _listLeadingScrollExtent =
+                              constraints.precedingScrollExtent;
+                          return SliverPadding(
+                            padding: EdgeInsets.fromLTRB(
+                              listPadding.left,
+                              0,
+                              listPadding.right,
+                              listPadding.bottom,
+                            ),
+                            sliver: SliverFixedExtentList(
+                              itemExtent: _songItemExtent,
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                index,
+                              ) {
                                 final song = filteredSongs[index];
-                                final songSelectionKey =
-                                    _songSelectionKey(song, index);
+                                final songSelectionKey = _songSelectionKey(
+                                  song,
+                                  index,
+                                );
                                 return SongCard(
                                   song: song,
                                   playlist: filteredSongs,
@@ -542,8 +549,7 @@ class _SongListState extends State<SongList> {
                                       return;
                                     }
                                     setState(
-                                      () =>
-                                          _selectedSongKey = songSelectionKey,
+                                      () => _selectedSongKey = songSelectionKey,
                                     );
                                   },
                                   suppressHover: _suppressSongCardHover,
@@ -551,30 +557,33 @@ class _SongListState extends State<SongList> {
                                   enableDefaultDoubleTapPlay:
                                       widget.enableDefaultDoubleTapPlay,
                                 );
-                              },
-                              childCount: filteredSongs.length,
+                              }, childCount: filteredSongs.length),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-
-                  if (isCommentsTabActive
-                      ? widget.isLoadingMoreComments
-                      : widget.isLoadingMore)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Center(child: CupertinoActivityIndicator()),
+                          );
+                        },
                       ),
-                    ),
+                    ],
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
-                ],
+                    if (isCommentsTabActive
+                        ? widget.isLoadingMoreComments
+                        : widget.isLoadingMore)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: Center(child: CupertinoActivityIndicator()),
+                        ),
+                      ),
+
+                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                  ],
+                ),
               ),
             ),
-            BackToTop(controller: _scrollController),
+            BackToTop(
+              controller: _scrollController,
+              right: widget.backToTopRight ?? 24,
+              bottom: widget.backToTopBottom ?? 24,
+            ),
           ],
         );
       },
@@ -727,7 +736,9 @@ class _SongListState extends State<SongList> {
     )..layout();
     final badgeWidth = hasBadge ? badgePainter.width + 14 : 0.0;
     final badgeLeft = hasBadge ? math.max(titleWidth - 2, 0.0) : 0.0;
-    final tabWidth = hasBadge ? math.max(titleWidth, badgeLeft + badgeWidth) : titleWidth;
+    final tabWidth = hasBadge
+        ? math.max(titleWidth, badgeLeft + badgeWidth)
+        : titleWidth;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -908,9 +919,7 @@ class _SongListState extends State<SongList> {
           right: listPadding.right,
         ),
         child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: rowHorizontalPadding,
-                          ),
+          padding: EdgeInsets.symmetric(horizontal: rowHorizontalPadding),
           child: Row(
             children: [
               SizedBox(
@@ -957,9 +966,7 @@ class _SongListState extends State<SongList> {
                   ),
                 ],
               ],
-              const SizedBox(
-                width: SongTableLayout.listTrailingActionWidth,
-              ),
+              const SizedBox(width: SongTableLayout.listTrailingActionWidth),
             ],
           ),
         ),

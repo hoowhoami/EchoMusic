@@ -185,7 +185,7 @@ class _LyricPageState extends State<LyricPage> {
                 right: 0,
                 child: SizedBox(
                   height: WindowsCaptionControls.height,
-                  child: WindowsCaptionControls(),
+                  child: WindowsCaptionControls(brightness: Brightness.dark),
                 ),
               ),
           ],

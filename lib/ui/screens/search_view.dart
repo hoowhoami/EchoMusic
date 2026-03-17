@@ -364,60 +364,54 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             }
             return false;
           },
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              40,
-              _showPinnedSearch ? 0 : 32,
-              40,
-              0,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: _showPinnedSearch
-                      ? const SizedBox.shrink()
-                      : _buildSearchHeader(theme),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(
+                  top: _showPinnedSearch ? 0 : 32,
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      top: _showPinnedSearch ? _pinnedSearchBarHeight : 0,
-                      bottom: 0,
-                    ),
-                    child: Stack(
-                      children: [
-                        if (!_hasSearched) 
-                          _buildHotSearches()
-                        else if (_isLoading)
-                          const Center(child: CupertinoActivityIndicator())
-                        else
-                          // 统一隐藏滚动条
-                          ScrollConfiguration(
-                            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-                            child: TabBarView(
-                              controller: _tabController,
-                              physics: const BouncingScrollPhysics(),
-                              children: [
-                                _buildSongList(),
-                                _buildPlaylistList(),
-                                _buildAlbumList(),
-                                _buildArtistList(),
-                              ],
-                            ),
-                          ),
-                        if (_showSuggestions) 
-                          Positioned.fill(
-                            child: _buildSuggestions(theme),
-                          ),
-                      ],
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: _showPinnedSearch
+                        ? const SizedBox.shrink()
+                        : _buildSearchHeader(theme),
                   ),
                 ),
-              ],
-            ),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    if (!_hasSearched) 
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: _buildHotSearches(),
+                      )
+                    else if (_isLoading)
+                      const Center(child: CupertinoActivityIndicator())
+                    else
+                      TabBarView(
+                        controller: _tabController,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _buildSongList(),
+                          _buildPlaylistList(),
+                          _buildAlbumList(),
+                          _buildArtistList(),
+                        ],
+                      ),
+                    if (_showSuggestions) 
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: _buildSuggestions(theme),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         if (_showPinnedSearch)
@@ -675,7 +669,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
     return SongListScaffold(
       songs: _songResults,
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
       rowHorizontalPadding: 14,
       hasCommentsTab: false,
       enableDefaultDoubleTapPlay: true,
@@ -689,8 +683,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           typeLabel: 'SONGS',
           title: '热门单曲',
           expandedHeight: kToolbarHeight,
-          expandedPadding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
-          collapsedPadding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+          expandedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 10),
+          collapsedPadding: const EdgeInsets.fromLTRB(40, 0, 40, 0),
           expandedCover: _buildSearchMiniCover(theme),
           collapsedCover: _buildSearchMiniCover(theme),
           detailChildren: const <Widget>[],
@@ -776,26 +770,29 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildPlaylistList() {
     if (_playlistResults.isEmpty) return _buildEmptyState();
-    return GridView.builder(
+    return Scrollbar(
       controller: _playlistScrollController,
-      physics: const BouncingScrollPhysics(),
-      itemCount: _playlistResults.length,
-      padding: const EdgeInsets.only(bottom: 24),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 220,
-        mainAxisExtent: 230,
-        mainAxisSpacing: 20,
-        crossAxisSpacing: 20,
+      child: GridView.builder(
+        controller: _playlistScrollController,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _playlistResults.length,
+        padding: const EdgeInsets.fromLTRB(40, 0, 40, 24),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 220,
+          mainAxisExtent: 230,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+        ),
+        itemBuilder: (context, index) {
+          final playlist = _playlistResults[index];
+          return PlaylistCard.grid(
+            playlist: playlist,
+            titleMaxLines: 1,
+            onTap: () =>
+                context.read<NavigationProvider>().openPlaylist(playlist),
+          );
+        },
       ),
-      itemBuilder: (context, index) {
-        final playlist = _playlistResults[index];
-        return PlaylistCard.grid(
-          playlist: playlist,
-          titleMaxLines: 1,
-          onTap: () =>
-              context.read<NavigationProvider>().openPlaylist(playlist),
-        );
-      },
     );
   }
 
@@ -806,63 +803,69 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
   Widget _buildAlbumList() {
     if (_albumResults.isEmpty) return _buildEmptyState();
-    return GridView.builder(
+    return Scrollbar(
       controller: _albumScrollController,
-      physics: const BouncingScrollPhysics(),
-      itemCount: _albumResults.length,
-      padding: const EdgeInsets.only(bottom: 24),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 220,
-        mainAxisExtent: 230,
-        mainAxisSpacing: 20,
-        crossAxisSpacing: 20,
+      child: GridView.builder(
+        controller: _albumScrollController,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _albumResults.length,
+        padding: const EdgeInsets.fromLTRB(40, 0, 40, 24),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 220,
+          mainAxisExtent: 230,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+        ),
+        itemBuilder: (context, index) {
+          final album = _albumResults[index];
+          final subtitleParts = <String>[];
+          if (album.singerName.isNotEmpty) {
+            subtitleParts.add(album.singerName);
+          }
+          if (album.songCount > 0) {
+            subtitleParts.add('${album.songCount} 首歌曲');
+          }
+          final subtitle =
+              subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
+          return AlbumCard.grid(
+            album: album,
+            subtitle: subtitle,
+            onTap: () => context
+                .read<NavigationProvider>()
+                .openAlbum(album.id, album.name),
+          );
+        },
       ),
-      itemBuilder: (context, index) {
-        final album = _albumResults[index];
-        final subtitleParts = <String>[];
-        if (album.singerName.isNotEmpty) {
-          subtitleParts.add(album.singerName);
-        }
-        if (album.songCount > 0) {
-          subtitleParts.add('${album.songCount} 首歌曲');
-        }
-        final subtitle =
-            subtitleParts.isEmpty ? null : subtitleParts.join(' • ');
-        return AlbumCard.grid(
-          album: album,
-          subtitle: subtitle,
-          onTap: () => context
-              .read<NavigationProvider>()
-              .openAlbum(album.id, album.name),
-        );
-      },
     );
   }
 
   Widget _buildArtistList() {
     if (_artistResults.isEmpty) return _buildEmptyState();
-    return GridView.builder(
+    return Scrollbar(
       controller: _artistScrollController,
-      physics: const BouncingScrollPhysics(),
-      itemCount: _artistResults.length,
-      padding: const EdgeInsets.only(bottom: 24),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 220,
-        mainAxisExtent: 230,
-        mainAxisSpacing: 20,
-        crossAxisSpacing: 20,
+      child: GridView.builder(
+        controller: _artistScrollController,
+        physics: const BouncingScrollPhysics(),
+        itemCount: _artistResults.length,
+        padding: const EdgeInsets.fromLTRB(40, 0, 40, 24),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 220,
+          mainAxisExtent: 230,
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+        ),
+        itemBuilder: (context, index) {
+          final artist = _artistResults[index];
+          return ArtistCard.grid(
+            artist: artist,
+            subtitle:
+                '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑',
+            onTap: () => context
+                .read<NavigationProvider>()
+                .openArtist(artist.id, artist.name),
+          );
+        },
       ),
-      itemBuilder: (context, index) {
-        final artist = _artistResults[index];
-        return ArtistCard.grid(
-          artist: artist,
-          subtitle:
-              '${artist.songCount} 首歌曲 • ${artist.albumCount} 张专辑',
-          onTap: () => context
-              .read<NavigationProvider>()
-              .openArtist(artist.id, artist.name),
-        );
-      },
     );
   }
 

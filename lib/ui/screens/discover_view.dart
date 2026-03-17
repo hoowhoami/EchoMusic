@@ -80,18 +80,15 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
           ),
         ),
       ),
-      body: ScrollConfiguration(
-        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: TabBarView(
-          controller: _tabController,
-          physics: const BouncingScrollPhysics(),
-          children: [
-            const _DiscoverPlaylistTab(),
-            const RankView(backgroundColor: Colors.transparent, showTitle: false),
-            const _DiscoverAlbumTab(),
-            const _DiscoverSongTab(),
-          ],
-        ),
+      body: TabBarView(
+        controller: _tabController,
+        physics: const BouncingScrollPhysics(),
+        children: [
+          const _DiscoverPlaylistTab(),
+          const RankView(backgroundColor: Colors.transparent, showTitle: false),
+          const _DiscoverAlbumTab(),
+          const _DiscoverSongTab(),
+        ],
       ),
     );
   }
@@ -216,30 +213,33 @@ class _DiscoverPlaylistTabState extends State<_DiscoverPlaylistTab> with Refresh
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : Stack(
-                children: [
-                  GridView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 220,
-                      mainAxisExtent: 230,
-                      mainAxisSpacing: 20,
-                      crossAxisSpacing: 20,
+            : Scrollbar(
+                controller: _scrollController,
+                child: Stack(
+                  children: [
+                    GridView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
+                        crossAxisSpacing: 20,
+                      ),
+                      itemCount: _playlists.length,
+                      itemBuilder: (context, index) {
+                        final playlist = _playlists[index];
+                        return PlaylistCard.grid(
+                          playlist: playlist,
+                          onTap: () =>
+                              context.read<NavigationProvider>().openPlaylist(playlist),
+                          titleMaxLines: 1,
+                        );
+                      },
                     ),
-                    itemCount: _playlists.length,
-                    itemBuilder: (context, index) {
-                      final playlist = _playlists[index];
-                      return PlaylistCard.grid(
-                        playlist: playlist,
-                        onTap: () =>
-                            context.read<NavigationProvider>().openPlaylist(playlist),
-                        titleMaxLines: 1,
-                      );
-                    },
-                  ),
-                  BackToTop(controller: _scrollController),
-                ],
+                    BackToTop(controller: _scrollController),
+                  ],
+                ),
               ),
         ),
       ],
@@ -357,31 +357,34 @@ class _DiscoverAlbumTabState extends State<_DiscoverAlbumTab> with RefreshableSt
         Expanded(
           child: _isLoading
             ? const Center(child: CupertinoActivityIndicator())
-            : Stack(
-                children: [
-                  GridView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 220,
-                      mainAxisExtent: 230,
-                      mainAxisSpacing: 20,
-                      crossAxisSpacing: 20,
+            : Scrollbar(
+                controller: _scrollController,
+                child: Stack(
+                  children: [
+                    GridView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 220,
+                        mainAxisExtent: 230,
+                        mainAxisSpacing: 20,
+                        crossAxisSpacing: 20,
+                      ),
+                      itemCount: albums.length,
+                      itemBuilder: (context, index) {
+                        final album = albums[index];
+                        return AlbumCard.grid(
+                          album: album,
+                          subtitle: album.singerName,
+                          onTap: () => context
+                              .read<NavigationProvider>()
+                              .openAlbum(album.id, album.name),
+                        );
+                      },
                     ),
-                    itemCount: albums.length,
-                    itemBuilder: (context, index) {
-                      final album = albums[index];
-                      return AlbumCard.grid(
-                        album: album,
-                        subtitle: album.singerName,
-                        onTap: () => context
-                            .read<NavigationProvider>()
-                            .openAlbum(album.id, album.name),
-                      );
-                    },
-                  ),
-                  BackToTop(controller: _scrollController),
-                ],
+                    BackToTop(controller: _scrollController),
+                  ],
+                ),
               ),
         ),
       ],
