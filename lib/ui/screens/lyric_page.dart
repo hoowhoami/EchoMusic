@@ -314,42 +314,115 @@ class _LyricPageState extends State<LyricPage> {
             ],
           ),
           const SizedBox(height: 14),
-          StreamBuilder<PositionSnapshot>(
-            stream: audioProvider.positionSnapshotStream,
-            initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
-            builder: (context, snapshot) {
-              final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
-              return SizedBox(
-                width: 420,
-                child: Row(
-                  children: [
-                    SizedBox(width: 42, child: _buildTimeText(snap.position, alignRight: true)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: ProgressBar(
-                          progress: snap.position,
-                          total: snap.duration,
-                          barHeight: 4,
-                          baseBarColor: Colors.white.withAlpha(30),
-                          progressBarColor: theme.colorScheme.primary,
-                          thumbColor: Colors.white,
-                          thumbRadius: 6,
-                          thumbGlowRadius: 0,
-                          timeLabelLocation: TimeLabelLocation.none,
-                          onSeek: (duration) => audioProvider.seek(duration),
-                          onDragStart: (_) => audioProvider.notifyDragStart(),
-                          onDragEnd: () => audioProvider.notifyDragEnd(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(width: 42, child: _buildTimeText(snap.duration)),
-                  ],
+          SizedBox(
+            width: 420,
+            height: 24,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                StreamBuilder<PositionSnapshot>(
+                  stream: audioProvider.positionSnapshotStream,
+                  builder: (context, snapshot) {
+                    final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                    return SizedBox(width: 42, child: Center(child: _buildTimeText(snap.position, alignRight: true)));
+                  },
                 ),
-              );
-            },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const barHeight = 4.0;
+                        const thumbRadius = 6.0;
+                        const progressHeight = thumbRadius * 2;
+                        const markerWidth = 2.4;
+                        const markerHeight = 8.0;
+                        final markerTop = (constraints.maxHeight - markerHeight) / 2;
+                        final climaxMarks = audioProvider.climaxMarks;
+
+                        final markerLayer = climaxMarks.isNotEmpty
+                            ? IgnorePointer(
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    for (final entry in climaxMarks.entries) ...[
+                                      Positioned(
+                                        left: (constraints.maxWidth - markerWidth) * entry.key,
+                                        top: markerTop,
+                                        child: Container(
+                                          width: markerWidth,
+                                          height: markerHeight,
+                                          decoration: BoxDecoration(
+                                            color: theme.colorScheme.primary.withAlpha(200),
+                                            borderRadius: BorderRadius.circular(1),
+                                          ),
+                                        ),
+                                      ),
+                                      if (entry.value > entry.key)
+                                        Positioned(
+                                          left: (constraints.maxWidth - markerWidth) * entry.value,
+                                          top: markerTop,
+                                          child: Container(
+                                            width: markerWidth,
+                                            height: markerHeight,
+                                            decoration: BoxDecoration(
+                                              color: theme.colorScheme.primary.withAlpha(200),
+                                              borderRadius: BorderRadius.circular(1),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ],
+                                ),
+                              )
+                            : null;
+
+                        return StreamBuilder<PositionSnapshot>(
+                          stream: audioProvider.positionSnapshotStream,
+                          initialData: PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration),
+                          builder: (context, snapshot) {
+                            final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                            return Stack(
+                              alignment: Alignment.center,
+                              clipBehavior: Clip.none,
+                              children: [
+                                SizedBox(
+                                  height: progressHeight,
+                                  child: ProgressBar(
+                                    progress: snap.position,
+                                    total: snap.duration,
+                                    barHeight: barHeight,
+                                    baseBarColor: Colors.white.withAlpha(30),
+                                    progressBarColor: theme.colorScheme.primary,
+                                    thumbColor: Colors.white,
+                                    thumbRadius: thumbRadius,
+                                    thumbGlowRadius: 0,
+                                    timeLabelLocation: TimeLabelLocation.none,
+                                    onSeek: (duration) => audioProvider.seek(duration),
+                                    onDragStart: (_) => audioProvider.notifyDragStart(),
+                                    onDragEnd: () => audioProvider.notifyDragEnd(),
+                                  ),
+                                ),
+                                if (markerLayer != null) markerLayer,
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                StreamBuilder<PositionSnapshot>(
+                  stream: audioProvider.positionSnapshotStream,
+                  builder: (context, snapshot) {
+                    final snap = snapshot.data ?? PositionSnapshot(audioProvider.effectivePosition, audioProvider.effectiveDuration);
+                    return SizedBox(width: 42, child: Center(child: _buildTimeText(snap.duration)));
+                  },
+                ),
+              ],
+            ),
           ),
         ],
       ),
