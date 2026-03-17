@@ -44,6 +44,7 @@ class LyricProvider with ChangeNotifier {
   PersistenceProvider? _persistenceProvider;
   LyricsMode _preferredMode = LyricsMode.none;
   double _fontScale = 1.0;
+  int _fontWeightIndex = 4; // Default to w500 (Medium)
 
   List<LyricLine> get lyrics => _lyrics;
   int get currentLineIndex => _currentLineIndex;
@@ -54,6 +55,22 @@ class LyricProvider with ChangeNotifier {
   bool get isPageOpen => _isPageOpen;
   String? get loadedHash => _loadedHash;
   double get fontScale => _fontScale;
+  int get fontWeightIndex => _fontWeightIndex;
+
+  FontWeight get lyricFontWeight {
+    const weights = [
+      FontWeight.w100,
+      FontWeight.w200,
+      FontWeight.w300,
+      FontWeight.w400,
+      FontWeight.w500,
+      FontWeight.w600,
+      FontWeight.w700,
+      FontWeight.w800,
+      FontWeight.w900,
+    ];
+    return weights[_fontWeightIndex.clamp(0, 8)];
+  }
 
   void setPersistenceProvider(PersistenceProvider p) {
     _persistenceProvider = p;
@@ -61,6 +78,7 @@ class LyricProvider with ChangeNotifier {
       p.settings['lyricsModePreference']?.toString(),
     );
     _fontScale = _parseFontScale(p.settings['lyricFontScale']);
+    _fontWeightIndex = _parseFontWeightIndex(p.settings['lyricFontWeightIndex']);
   }
 
   double _parseFontScale(dynamic value) {
@@ -70,6 +88,15 @@ class LyricProvider with ChangeNotifier {
     final parsed = double.tryParse(value?.toString() ?? '');
     if (parsed == null) return 1.0;
     return parsed.clamp(0.7, 1.4);
+  }
+
+  int _parseFontWeightIndex(dynamic value) {
+    if (value is num) {
+      return value.toInt().clamp(0, 8);
+    }
+    final parsed = int.tryParse(value?.toString() ?? '');
+    if (parsed == null) return 8; // Default to w900
+    return parsed.clamp(0, 8);
   }
 
   Future<void> _persistFontScale(double scale) async {
@@ -82,10 +109,27 @@ class LyricProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _persistFontWeightIndex(int index) async {
+    _fontWeightIndex = index;
+    if (_persistenceProvider != null) {
+      await _persistenceProvider!.updateSetting(
+        'lyricFontWeightIndex',
+        _fontWeightIndex,
+      );
+    }
+  }
+
   Future<void> updateFontScale(double scale) async {
     final next = scale.clamp(0.7, 1.4);
     if (next == _fontScale) return;
     await _persistFontScale(next);
+    notifyListeners();
+  }
+
+  Future<void> updateFontWeight(int index) async {
+    final next = index.clamp(0, 8);
+    if (next == _fontWeightIndex) return;
+    await _persistFontWeightIndex(next);
     notifyListeners();
   }
 

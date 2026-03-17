@@ -42,7 +42,7 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 16, fontWeight: FontWeight.bold),
+        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 16, fontWeight: FontWeight.w600),
         iconTheme: IconThemeData(color: Color(0xFF1D1D1F)),
       ),
       cardTheme: CardThemeData(
@@ -93,14 +93,14 @@ class AppTheme {
         color: lightSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE5E5EA), width: 1)),
         elevation: 20,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1D1D1F)),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1D1D1F)),
       ),
       textTheme: base.textTheme.apply(
         bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w700, fontSize: 22, letterSpacing: -0.6, color: Color(0xFF1D1D1F)),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
+        titleLarge: const TextStyle(fontWeight: FontWeight.w600, fontSize: 22, letterSpacing: -0.6, color: Color(0xFF1D1D1F)),
+        titleMedium: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF1D1D1F)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF4B5563)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
@@ -155,7 +155,7 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFFFFFFFF), fontSize: 16, fontWeight: FontWeight.bold),
+        titleTextStyle: TextStyle(color: Color(0xFFFFFFFF), fontSize: 16, fontWeight: FontWeight.w600),
         iconTheme: IconThemeData(color: Color(0xFFF5F5F7)),
       ),
       cardTheme: CardThemeData(
@@ -206,14 +206,14 @@ class AppTheme {
         color: darkSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF38383A), width: 1)),
         elevation: 20,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFFF5F5F7)),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFFF5F5F7)),
       ),
       textTheme: base.textTheme.apply(
         bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w700, fontSize: 22, letterSpacing: -0.6, color: Color(0xFFF5F5F7)),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
+        titleLarge: const TextStyle(fontWeight: FontWeight.w600, fontSize: 22, letterSpacing: -0.6, color: Color(0xFFF5F5F7)),
+        titleMedium: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFFF5F5F7)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF9CA3AF)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),

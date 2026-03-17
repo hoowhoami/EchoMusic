@@ -107,11 +107,23 @@ flutter:
   fonts:
     - family: MiSans
       fonts:
+        - asset: fonts/MiSans-Thin.otf
+          weight: 100
+        - asset: fonts/MiSans-ExtraLight.otf
+          weight: 200
+        - asset: fonts/MiSans-Light.otf
+          weight: 300
+        - asset: fonts/MiSans-Regular.otf
+          weight: 400
         - asset: fonts/MiSans-Normal.otf
           weight: 400
         - asset: fonts/MiSans-Medium.otf
           weight: 500
+        - asset: fonts/MiSans-Demibold.otf
+          weight: 600
         - asset: fonts/MiSans-Semibold.otf
           weight: 600
         - asset: fonts/MiSans-Bold.otf
           weight: 700
+        - asset: fonts/MiSans-Heavy.otf
+          weight: 900
