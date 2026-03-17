@@ -20,6 +20,7 @@ import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/comment_floor_sheet.dart';
 import '../widgets/resource_comment_slivers.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class PlaylistDetailRouteArgs {
   const PlaylistDetailRouteArgs({required this.playlist});
@@ -682,7 +683,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     playlist.nickname,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 13,
                     ),
                   ),
@@ -691,7 +692,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     style: TextStyle(
                       color: theme.colorScheme.onSurface.withAlpha(100),
                       fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                     ),
                   ),
                 ],
@@ -731,7 +732,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                   Text(
                     '歌单介绍',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 15,
                     ),
                   ),
@@ -743,7 +744,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppTheme.fontWeightMedium,
                       fontSize: 12,
                     ),
                   ),
@@ -768,7 +769,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                       ),
@@ -805,7 +806,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         label,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
           color: theme.colorScheme.primary,
         ),
       ),
@@ -827,7 +828,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),

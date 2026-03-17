@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'cover_image.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class CommentItem extends StatelessWidget {
   const CommentItem({
@@ -80,7 +81,7 @@ class CommentItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: AppTheme.fontWeightBold,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
@@ -105,7 +106,7 @@ class CommentItem extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              fontWeight: FontWeight.w500,
+              fontWeight: AppTheme.fontWeightMedium,
               color: theme.colorScheme.onSurface,
             ),
           ),
@@ -133,7 +134,7 @@ class CommentItem extends StatelessWidget {
                             : '$replyNum 条回复',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                           color: replyColor,
                         ),
                       ),
@@ -176,7 +177,7 @@ class CommentItem extends StatelessWidget {
             _formatBigNumber(count),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.primary,
             ),
           ),

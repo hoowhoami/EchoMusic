@@ -13,6 +13,7 @@ import '../widgets/cover_image.dart';
 import '../widgets/custom_tab_bar.dart';
 import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class SongDetailCommentView extends StatefulWidget {
   const SongDetailCommentView({super.key, required this.song});
@@ -496,11 +497,11 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                             .withAlpha(120),
                         labelStyle: const TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: AppTheme.fontWeightBold,
                         ),
                         unselectedLabelStyle: const TextStyle(
                           fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                         ),
                         tabs: const [
                           Tab(text: '详情'),
@@ -546,7 +547,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             color: theme.colorScheme.primary,
             fontSize: 14,
-            fontWeight: FontWeight.w700,
+            fontWeight: AppTheme.fontWeightBold,
           ),
         ),
         Wrap(
@@ -920,7 +921,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                 _getQualityLabel(quality),
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                   color: theme.colorScheme.primary,
                 ),
               ),
@@ -957,7 +958,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             const SizedBox(width: 8),
             const Text(
               '榜单成就',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              style: TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold),
             ),
             if (summary != null && summary.isNotEmpty) ...[
               const SizedBox(width: 8),
@@ -967,7 +968,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).disabledColor,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: AppTheme.fontWeightMedium,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1016,7 +1017,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                   rank['platform_name'] ?? '未知平台',
                   style: const TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.w900,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -1036,7 +1037,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             '第 $currentRank 名',
             style: TextStyle(
               fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.primary,
               letterSpacing: -1,
             ),
@@ -1056,7 +1057,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface.withAlpha(120),
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
           ),
         ),
         Text(
@@ -1064,7 +1065,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface,
-            fontWeight: FontWeight.w800,
+            fontWeight: AppTheme.fontWeightBold,
           ),
         ),
       ],
@@ -1132,7 +1133,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ? Colors.white
                     : theme.colorScheme.onSurface.withAlpha(180),
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               ),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(
@@ -1180,7 +1181,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                     ? Colors.white
                     : theme.colorScheme.onSurface.withAlpha(180),
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
               ),
               backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
               shape: RoundedRectangleBorder(
@@ -1298,7 +1299,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                           normalizedComment['user_name'] ?? '匿名用户',
                           style: const TextStyle(
                             fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                         if (isStar)
@@ -1317,7 +1318,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                               style: TextStyle(
                                 fontSize: 9,
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: AppTheme.fontWeightBold,
                               ),
                             ),
                           ),
@@ -1343,7 +1344,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             style: const TextStyle(
               fontSize: 14,
               height: 1.5,
-              fontWeight: FontWeight.w500,
+              fontWeight: AppTheme.fontWeightMedium,
             ),
           ),
           if (replyNum > 0) ...[
@@ -1374,7 +1375,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
                             : '$replyNum 条回复',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                           color: canOpenReplies
                               ? theme.colorScheme.primary
                               : theme.colorScheme.onSurface.withAlpha(120),
@@ -1452,7 +1453,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
         title,
         style: const TextStyle(
           fontSize: 12,
-          fontWeight: FontWeight.w900,
+          fontWeight: AppTheme.fontWeightBold,
           color: Colors.grey,
           letterSpacing: 1,
         ),
@@ -1488,7 +1489,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
             _formatBigNumber(count),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w900,
+              fontWeight: AppTheme.fontWeightBold,
               color: theme.colorScheme.primary,
             ),
           ),
@@ -1547,7 +1548,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
       title,
       style: const TextStyle(
         fontSize: 13,
-        fontWeight: FontWeight.w900,
+        fontWeight: AppTheme.fontWeightBold,
         color: Colors.grey,
         letterSpacing: 1.2,
       ),
@@ -1570,7 +1571,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
       value,
       style: TextStyle(
         fontSize: 14,
-        fontWeight: FontWeight.w800,
+        fontWeight: AppTheme.fontWeightBold,
         color: valueColor,
       ),
     );
@@ -1592,7 +1593,7 @@ class _SongDetailCommentViewState extends State<SongDetailCommentView>
           style: TextStyle(
             fontSize: 12,
             color: theme.colorScheme.onSurface.withAlpha(100),
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
           ),
         ),
         const SizedBox(height: 4),

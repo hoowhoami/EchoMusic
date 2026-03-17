@@ -20,6 +20,7 @@ import '../widgets/song_list.dart';
 import '../widgets/song_list_scaffold.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/album_card.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ArtistDetailView extends StatefulWidget {
   final int artistId;
@@ -489,7 +490,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                 ),
               ),
           ],
@@ -513,7 +514,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                   Text(
                     '歌手简介',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                      fontWeight: AppTheme.fontWeightBold,
                       fontSize: 15,
                     ),
                   ),
@@ -525,7 +526,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: AppTheme.fontWeightMedium,
                       fontSize: 12,
                     ),
                   ),
@@ -550,7 +551,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: AppTheme.fontWeightBold,
                           ),
                         ),
                       ),

@@ -11,6 +11,7 @@ import 'package:echomusic/providers/lyric_provider.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/windows_caption_controls.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class LyricPage extends StatefulWidget {
   const LyricPage({super.key});
@@ -202,7 +203,7 @@ class _LyricPageState extends State<LyricPage> {
           song.name,
           style: TextStyle(
             fontSize: 32 * fontScale,
-            fontWeight: FontWeight.w900,
+            fontWeight: AppTheme.fontWeightBold,
             color: Colors.white,
             letterSpacing: -1,
             height: 1.2,
@@ -216,7 +217,7 @@ class _LyricPageState extends State<LyricPage> {
           song.singerName,
           style: TextStyle(
             fontSize: 18 * fontScale,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: Colors.white.withAlpha(160),
             letterSpacing: 0.5,
           ),
@@ -438,7 +439,7 @@ class _LyricPageState extends State<LyricPage> {
         style: const TextStyle(
           color: Colors.white38,
           fontSize: 11,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
           fontFamily: 'monospace',
         ),
       ),
@@ -470,7 +471,7 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 1))]));
+  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: AppTheme.fontWeightBold, letterSpacing: 1))]));
 }
 
 class _FontSettingsButton extends StatefulWidget {
@@ -557,7 +558,7 @@ class _FontSettingsButtonState extends State<_FontSettingsButton> {
               children: [
                 const Icon(Icons.text_fields_rounded, size: 16, color: Colors.white70),
                 const SizedBox(width: 10),
-                const Text('字体', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                const Text('字体', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
               ],
             ),
           ),
@@ -604,8 +605,8 @@ class _FontSettingsPanel extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13, fontWeight: FontWeight.w600)),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, fontFamily: 'monospace')),
+        Text(title, style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, fontFamily: 'monospace')),
       ],
     );
   }
@@ -668,7 +669,7 @@ class _CopyLyricsButton extends StatelessWidget {
             children: [
               const Icon(Icons.copy_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
             ],
           ),
         ),
@@ -699,7 +700,7 @@ class _LyricsModeSwitcherWidget extends StatelessWidget {
             children: [
               const Icon(Icons.translate_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
             ],
           ),
         ),
@@ -806,7 +807,7 @@ class _LyricLineWidget extends StatelessWidget {
                           curve: Curves.easeOutCubic,
                           style: TextStyle(
                             fontSize: (isCurrent ? 14 : 13) * fontScale,
-                            fontWeight: isCurrent ? fontWeight : FontWeight.normal,
+                            fontWeight: isCurrent ? fontWeight : AppTheme.fontWeightRegular,
                             color: Colors.white.withAlpha(isCurrent ? 160 : 120),
                             height: 1.2,
                           ),

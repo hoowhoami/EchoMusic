@@ -22,6 +22,7 @@ import '../widgets/detail_page_action_row.dart';
 import '../../models/playlist.dart' as model;
 import '../widgets/comment_floor_sheet.dart';
 import '../widgets/resource_comment_slivers.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 @visibleForTesting
 String resolveAlbumCommentId(Album? album, int fallbackAlbumId) {
@@ -184,7 +185,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
     final baseStyle = TextStyle(
       color: theme.colorScheme.onSurface,
       fontSize: 14,
-      fontWeight: FontWeight.w700,
+      fontWeight: AppTheme.fontWeightBold,
     );
     final spans = <InlineSpan>[];
     for (var index = 0; index < authors.length; index++) {
@@ -647,7 +648,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                       Text(
                         '专辑介绍',
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
+                          fontWeight: AppTheme.fontWeightBold,
                           fontSize: 15,
                         ),
                       ),
@@ -659,7 +660,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           height: 1.5,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: AppTheme.fontWeightMedium,
                           fontSize: 12,
                         ),
                       ),
@@ -684,7 +685,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                               style: TextStyle(
                                 color: theme.colorScheme.primary,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: AppTheme.fontWeightBold,
                               ),
                             ),
                           ),
@@ -714,7 +715,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         label,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
           color: theme.colorScheme.primary,
         ),
       ),
@@ -741,7 +742,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),

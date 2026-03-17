@@ -8,6 +8,7 @@ import '../../models/playlist.dart';
 import 'cover_image.dart';
 import 'custom_dialog.dart';
 import 'custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class Sidebar extends StatefulWidget {
   final int selectedIndex;
@@ -142,7 +143,7 @@ class _SidebarState extends State<Sidebar> {
         children: [
           ClipOval(child: user?.pic != null ? CoverImage(url: user!.pic!, width: 34, height: 34, borderRadius: 0, showShadow: false, size: 100) : Container(width: 34, height: 34, color: accentColor.withAlpha(20), child: Icon(CupertinoIcons.person_fill, color: accentColor, size: 18))),
           const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(user?.nickname ?? '未登录', style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: -0.4), maxLines: 1, overflow: TextOverflow.ellipsis), Text(isAuthenticated ? 'Lv.${user?.extendsInfo?['detail']?['p_grade'] ?? 0}' : '点击登录账号', style: TextStyle(color: isSelected ? accentColor.withAlpha(180) : theme.colorScheme.onSurfaceVariant, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 0.2))])),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [Text(user?.nickname ?? '未登录', style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: AppTheme.fontWeightBold, fontSize: 13, letterSpacing: -0.4), maxLines: 1, overflow: TextOverflow.ellipsis), Text(isAuthenticated ? 'Lv.${user?.extendsInfo?['detail']?['p_grade'] ?? 0}' : '点击登录账号', style: TextStyle(color: isSelected ? accentColor.withAlpha(180) : theme.colorScheme.onSurfaceVariant, fontSize: 9, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.2))])),
         ],
       ),
     );
@@ -170,8 +171,8 @@ class _SidebarState extends State<Sidebar> {
               style: TextStyle(
                 color: theme.colorScheme.onSurface.withAlpha(120),
                 fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.2,
+                fontWeight: AppTheme.fontWeightBold,
+                letterSpacing: 0.5,
               ),
             ),
           ),
@@ -250,7 +251,7 @@ class _SidebarState extends State<Sidebar> {
           style: TextStyle(
             color: isActive ? accentColor : theme.colorScheme.onSurface.withAlpha(120),
             fontSize: 11,
-            fontWeight: FontWeight.w900,
+            fontWeight: AppTheme.fontWeightBold,
             letterSpacing: 0.5,
           ),
         ),
@@ -273,7 +274,7 @@ class _SidebarState extends State<Sidebar> {
           style: TextStyle(
             color: theme.colorScheme.onSurface.withAlpha(80),
             fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             fontStyle: FontStyle.italic,
           ),
         ),
@@ -359,7 +360,7 @@ class _SidebarState extends State<Sidebar> {
                   style: TextStyle(
                     color: isSelected ? accentColor : theme.colorScheme.onSurface.withAlpha(220),
                     fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                    fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
                     letterSpacing: -0.2,
                   ),
                   maxLines: 1,
@@ -458,7 +459,7 @@ class _SidebarState extends State<Sidebar> {
                         '设为隐私歌单',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           color: theme.colorScheme.onSurface,
                         ),
                       ),
@@ -521,7 +522,7 @@ class _SidebarState extends State<Sidebar> {
             children: [
               Icon(icon, color: isSelected ? accentColor : theme.colorScheme.onSurfaceVariant, size: 20),
               const SizedBox(width: 14),
-              Text(label, style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700, fontSize: 14, letterSpacing: -0.2)),
+              Text(label, style: TextStyle(color: isSelected ? accentColor : theme.colorScheme.onSurface, fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold, fontSize: 14, letterSpacing: -0.2)),
             ],
           ),
         ),

@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/scrollable_content.dart';
 import '../widgets/custom_dialog.dart';
 import '../widgets/custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -75,7 +76,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
             children: [
               Icon(CupertinoIcons.person_crop_circle_badge_exclam, size: 64, color: theme.colorScheme.onSurface.withAlpha(30)),
               const SizedBox(height: 16),
-              Text('请先登录以查看个人中心', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontSize: 16, fontWeight: FontWeight.w600)),
+              Text('请先登录以查看个人中心', style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontSize: 16, fontWeight: AppTheme.fontWeightSemiBold)),
             ],
           ),
         ),
@@ -160,7 +161,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
               '个人中心',
               style: TextStyle(
                 fontSize: 32,
-                fontWeight: FontWeight.w900,
+                fontWeight: AppTheme.fontWeightBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -1.0,
               ),
@@ -246,7 +247,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   children: [
                     Text(
                       user?.nickname ?? '',
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                      style: const TextStyle(fontSize: 28, fontWeight: AppTheme.fontWeightBold, letterSpacing: -0.5),
                     ),
                     const SizedBox(width: 16),
                     if (tvip != null) _buildModernVipTag('畅听', Colors.green),
@@ -261,7 +262,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   Text(
                     detail['descri'],
                     maxLines: 2,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: FontWeight.w500),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightMedium),
                   ),
                 const SizedBox(height: 20),
                 Row(
@@ -288,8 +289,8 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: FontWeight.w600)),
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold)),
+        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: AppTheme.fontWeightSemiBold)),
       ],
     );
   }
@@ -329,9 +330,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         children: [
           Icon(icon, size: 18, color: theme.colorScheme.primary.withAlpha(180)),
           const SizedBox(width: 16),
-          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightSemiBold)),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          Text(value, style: const TextStyle(fontSize: 14, fontWeight: AppTheme.fontWeightBold)),
         ],
       ),
     );
@@ -440,7 +441,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                     title,
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: AppTheme.fontWeightBold,
                       color: isCompleted ? color : (active ? theme.colorScheme.onSurface : Colors.grey),
                     ),
                   ),
@@ -450,7 +451,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                       subtitle,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: AppTheme.fontWeightMedium,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
@@ -478,7 +479,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: AppTheme.fontWeightBold),
       ),
     );
   }
@@ -521,7 +522,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         const SizedBox(width: 10),
         Text(
           title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold),
         ),
       ],
     );

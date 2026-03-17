@@ -15,6 +15,7 @@ import '../widgets/custom_toast.dart';
 import '../widgets/detail_page_action_row.dart';
 import '../widgets/detail_page_sliver_header.dart';
 import '../widgets/song_list_scaffold.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key, this.fetchHistoryPage});
@@ -383,7 +384,7 @@ class _HistoryViewState extends State<HistoryView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
             ),
@@ -405,7 +406,7 @@ class _HistoryViewState extends State<HistoryView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
           ],
@@ -482,7 +483,7 @@ class _HistoryViewState extends State<HistoryView>
           label,
           style: TextStyle(
             fontSize: 11,
-            fontWeight: FontWeight.w600,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
           ),
         ),

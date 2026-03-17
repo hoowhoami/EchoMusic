@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class CustomSelector extends StatelessWidget {
   final String label;
@@ -44,7 +45,7 @@ class CustomSelector extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: AppTheme.fontWeightBold,
                   color: theme.colorScheme.onSurface.withAlpha(200),
                 ),
               ),

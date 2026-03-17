@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'comment_item.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 typedef FloorCommentsFetcher = Future<Map<String, dynamic>> Function({
   required int page,
@@ -194,7 +195,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
                     child: Text(
                       widget.title,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w900,
+                        fontWeight: AppTheme.fontWeightBold,
                       ),
                     ),
                   ),
@@ -228,7 +229,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
                                 style: TextStyle(
                                   color: theme.colorScheme.onSurfaceVariant,
                                   fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: AppTheme.fontWeightSemiBold,
                                 ),
                                 textAlign: TextAlign.center,
                               ),
@@ -259,7 +260,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
         title,
         style: theme.textTheme.labelLarge?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w800,
+          fontWeight: AppTheme.fontWeightBold,
         ),
       ),
     );
@@ -287,7 +288,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
           child: Text(
             label,
             style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
+              fontWeight: AppTheme.fontWeightBold,
             ),
           ),
         ),

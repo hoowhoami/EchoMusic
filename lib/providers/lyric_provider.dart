@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'persistence_provider.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class LyricCharacter {
   final String text;
@@ -62,12 +63,12 @@ class LyricProvider with ChangeNotifier {
       FontWeight.w100,
       FontWeight.w200,
       FontWeight.w300,
-      FontWeight.w400,
-      FontWeight.w500,
-      FontWeight.w600,
-      FontWeight.w700,
-      FontWeight.w800,
-      FontWeight.w900,
+      AppTheme.fontWeightRegular,
+      AppTheme.fontWeightMedium,
+      AppTheme.fontWeightSemiBold,
+      AppTheme.fontWeightBold,
+      AppTheme.fontWeightExtraBold,
+      AppTheme.fontWeightBlack,
     ];
     return weights[_fontWeightIndex.clamp(0, 8)];
   }

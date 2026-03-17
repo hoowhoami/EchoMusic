@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/navigation_provider.dart';
 import '../../theme/app_theme.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 typedef AppMenuContentBuilder<T> = Widget Function(
   BuildContext context,
@@ -921,7 +922,7 @@ class AppMenuSectionLabel extends StatelessWidget {
         title,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: FontWeight.w900,
+          fontWeight: AppTheme.fontWeightBold,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           letterSpacing: 1.1,
         ),
@@ -1004,7 +1005,7 @@ class _AppMenuTriggerState extends State<AppMenuTrigger> {
                         ? theme.disabledColor
                         : (widget.isOpen ? accentColor : textColor),
                     fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: AppTheme.fontWeightBold,
                   ),
                 ),
               ),

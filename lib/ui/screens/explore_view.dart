@@ -7,6 +7,7 @@ import '../../providers/audio_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../widgets/playlist_card.dart';
 import '../widgets/cover_image.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
@@ -51,7 +52,7 @@ class _ExploreViewState extends State<ExploreView> {
       title,
       style: TextStyle(
         fontSize: 24,
-        fontWeight: FontWeight.bold,
+        fontWeight: AppTheme.fontWeightBold,
         color: theme.colorScheme.onSurface,
       ),
     );
@@ -136,7 +137,7 @@ class _ExploreViewState extends State<ExploreView> {
                     song.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+                    style: TextStyle(fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.onSurface),
                   ),
                   Text(
                     song.singerName,

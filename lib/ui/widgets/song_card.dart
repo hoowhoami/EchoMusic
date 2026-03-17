@@ -16,6 +16,7 @@ import 'playlist_picker_dialog.dart';
 import 'song_table_layout.dart';
 
 import '../../models/playlist.dart' as model;
+import 'package:echomusic/theme/app_theme.dart';
 
 enum _SongCardMenuAction { play, playNext, addToPlaylist, removeFromPlaylist }
 
@@ -192,7 +193,7 @@ class _SongCardState extends State<SongCard> {
                               ),
                       fontSize: 12,
                       fontWeight:
-                          isCurrent ? FontWeight.w800 : FontWeight.w600,
+                          isCurrent ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
                     ),
                   ),
           ),
@@ -452,7 +453,7 @@ class _SongCardState extends State<SongCard> {
               label,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w700,
+                fontWeight: AppTheme.fontWeightBold,
                 color: isDestructive
                     ? theme.colorScheme.error
                     : theme.colorScheme.onSurface,
@@ -746,8 +747,8 @@ class _SongCardState extends State<SongCard> {
                                                                 : 140,
                                                           ),
                                                 fontWeight: isCurrent
-                                                    ? FontWeight.w800
-                                                    : FontWeight.w700,
+                                                    ? AppTheme.fontWeightBold
+                                                    : AppTheme.fontWeightBold,
                                                 fontSize: 14,
                                                 height: 1,
                                                 letterSpacing: -0.3,
@@ -791,7 +792,7 @@ class _SongCardState extends State<SongCard> {
                                               ),
                                           fontSize: 12,
                                           height: 1.1,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: AppTheme.fontWeightMedium,
                                         ),
                                         enabled: !isSelectionMode,
                                         isPlayable: isPlayable,
@@ -839,7 +840,7 @@ class _SongCardState extends State<SongCard> {
                                                 isPlayable ? 255 : 140,
                                               ),
                                           fontSize: 12,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: AppTheme.fontWeightMedium,
                                         ),
                                       ),
                                     ),
@@ -864,7 +865,7 @@ class _SongCardState extends State<SongCard> {
                                                 ),
                                             fontSize: 12,
                                             fontFamily: 'monospace',
-                                            fontWeight: FontWeight.w500,
+                                            fontWeight: AppTheme.fontWeightMedium,
                                           ),
                                         ),
                                       ),
@@ -930,7 +931,7 @@ class _SongCardState extends State<SongCard> {
         style: TextStyle(
           color: color,
           fontSize: 9,
-          fontWeight: FontWeight.w800,
+          fontWeight: AppTheme.fontWeightBold,
           letterSpacing: 0.5,
         ),
       ),

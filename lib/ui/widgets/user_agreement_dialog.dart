@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/persistence_provider.dart';
 import 'custom_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class UserAgreementDialog extends StatelessWidget {
   const UserAgreementDialog({super.key});
@@ -40,7 +41,7 @@ class UserAgreementDialog extends StatelessWidget {
               const Text(
                 '点击"同意并继续"即表示您已阅读并接受以上全部条款。',
                 style: TextStyle(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: AppTheme.fontWeightBold,
                   fontSize: 14,
                 ),
               ),
@@ -59,13 +60,13 @@ class UserAgreementDialog extends StatelessWidget {
         children: [
           Text(
             index,
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               content,
-              style: const TextStyle(height: 1.6, fontSize: 14, fontWeight: FontWeight.w500),
+              style: const TextStyle(height: 1.6, fontSize: 14, fontWeight: AppTheme.fontWeightMedium),
             ),
           ),
         ],

@@ -4,6 +4,7 @@ import '../../api/music_api.dart';
 import '../../models/album.dart';
 import '../widgets/back_to_top.dart';
 import '../widgets/comment_item.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class AlbumCommentView extends StatefulWidget {
   const AlbumCommentView({super.key, required this.album});
@@ -125,7 +126,7 @@ class _AlbumCommentViewState extends State<AlbumCommentView> {
                         '热门评论',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: AppTheme.fontWeightBold,
                           color: theme.colorScheme.onSurface.withAlpha(150),
                         ),
                       ),
@@ -145,7 +146,7 @@ class _AlbumCommentViewState extends State<AlbumCommentView> {
                       '最新评论 ${_totalCount > 0 ? '($_totalCount)' : ''}',
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: AppTheme.fontWeightBold,
                         color: theme.colorScheme.onSurface.withAlpha(150),
                       ),
                     ),

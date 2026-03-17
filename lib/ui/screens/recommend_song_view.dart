@@ -9,6 +9,7 @@ import '../widgets/detail_page_action_row.dart';
 import '../../providers/audio_provider.dart';
 import '../widgets/custom_toast.dart';
 import '../../providers/persistence_provider.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class RecommendSongView extends StatefulWidget {
   const RecommendSongView({super.key});
@@ -92,7 +93,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
                   style: TextStyle(
                     color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: AppTheme.fontWeightMedium,
                   ),
                 ),
               ],
@@ -128,7 +129,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
           '${DateTime.now().day}',
           style: const TextStyle(
             fontSize: 48,
-            fontWeight: FontWeight.w900,
+            fontWeight: AppTheme.fontWeightBold,
             color: Colors.white,
           ),
         ),
@@ -156,7 +157,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
           '${DateTime.now().day}',
           style: const TextStyle(
             fontSize: 12,
-            fontWeight: FontWeight.w800,
+            fontWeight: AppTheme.fontWeightBold,
             color: Colors.white,
           ),
         ),

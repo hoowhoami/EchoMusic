@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'comment_item.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 List<Widget> buildResourceCommentSlivers({
   required BuildContext context,
@@ -49,7 +50,7 @@ List<Widget> buildResourceCommentSlivers({
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppTheme.fontWeightSemiBold,
               ),
             ),
           ),
@@ -72,7 +73,7 @@ Widget _buildSectionHeader(BuildContext context, String title) {
       child: Text(
         title,
         style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: FontWeight.w900,
+          fontWeight: AppTheme.fontWeightBold,
           color: theme.colorScheme.onSurface.withAlpha(180),
         ),
       ),

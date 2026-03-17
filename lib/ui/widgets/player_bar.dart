@@ -19,6 +19,7 @@ import 'cover_image.dart';
 import 'queue_drawer.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 String _shortcutLabel(BuildContext context, AppShortcutCommand command) {
   final settings = context.watch<PersistenceProvider>().settings;
@@ -585,13 +586,13 @@ class _PlayerSongInfo extends StatelessWidget {
         final titleStyle = TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: FontWeight.w800,
+          fontWeight: AppTheme.fontWeightBold,
           height: 1.15,
         );
         final singerStyle = TextStyle(
           color: theme.colorScheme.onSurface.withAlpha(160),
           fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppTheme.fontWeightSemiBold,
           height: 1.15,
         );
         return SizedBox(
@@ -1057,7 +1058,7 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
       fontSize: 11,
       fontFamily: 'monospace',
       color: theme.colorScheme.onSurface.withAlpha(120),
-      fontWeight: FontWeight.w600,
+      fontWeight: AppTheme.fontWeightSemiBold,
       height: 1.0,
     );
     final positionTextStream = audioProvider.positionSnapshotStream
@@ -1460,7 +1461,7 @@ class _QueueButton extends StatelessWidget {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 8,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: AppTheme.fontWeightBold,
                         height: 1.1,
                       ),
                     ),
@@ -1656,7 +1657,7 @@ class _VolumePopup extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               '${vol.toInt()}%',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
             ),
             Expanded(
               child: RotatedBox(
@@ -1782,8 +1783,8 @@ class _PlayerPopupMenuItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: isSelected
-                          ? FontWeight.w800
-                          : FontWeight.w600,
+                          ? AppTheme.fontWeightBold
+                          : AppTheme.fontWeightSemiBold,
                       color: isSelected
                           ? theme.colorScheme.primary
                           : theme.colorScheme.onSurface,

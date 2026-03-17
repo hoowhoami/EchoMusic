@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/song.dart';
 import 'song_batch_selection_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class DetailPageSecondaryAction {
   final IconData icon;
@@ -119,6 +120,6 @@ ButtonStyle _buildFilledActionStyle(BuildContext context) {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
   );
 }

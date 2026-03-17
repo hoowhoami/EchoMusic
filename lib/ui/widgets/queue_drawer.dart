@@ -6,6 +6,7 @@ import '../../providers/audio_provider.dart';
 import 'cover_image.dart';
 import 'custom_dialog.dart';
 import 'custom_toast.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class QueueDrawer extends StatefulWidget {
   const QueueDrawer({super.key});
@@ -113,7 +114,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                       '播放列表',
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.w900,
+                        fontWeight: AppTheme.fontWeightBold,
                         color: theme.colorScheme.onSurface,
                         letterSpacing: -0.5,
                       ),
@@ -124,7 +125,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                           '共 ${audio.playlist.length} 首歌曲',
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         );
@@ -214,7 +215,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                         '当前播放列表已过滤 $filteredCount 条无效歌曲数据',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           color: theme.colorScheme.onSurface,
                           height: 1.35,
                         ),
@@ -251,7 +252,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                             '列表为空，快去发现好音乐吧',
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: AppTheme.fontWeightSemiBold,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
@@ -409,8 +410,8 @@ class _QueueItemState extends State<_QueueItem> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: widget.isCurrent
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+                                  ? AppTheme.fontWeightBold
+                                  : AppTheme.fontWeightSemiBold,
                               color: (widget.isCurrent
                                       ? theme.colorScheme.primary
                                       : theme.colorScheme.onSurfaceVariant)
@@ -476,8 +477,8 @@ class _QueueItemState extends State<_QueueItem> {
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: widget.isCurrent
-                                      ? FontWeight.w800
-                                      : FontWeight.w700,
+                                      ? AppTheme.fontWeightBold
+                                      : AppTheme.fontWeightBold,
                                   color: (widget.isCurrent
                                           ? theme.colorScheme.primary
                                           : theme.colorScheme.onSurface)
@@ -496,7 +497,7 @@ class _QueueItemState extends State<_QueueItem> {
                           widget.song.singerName,
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.onSurfaceVariant.withAlpha(isPlayable ? 255 : 140),
                           ),
                           maxLines: 1,
@@ -543,7 +544,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
       style: TextStyle(
         color: theme.colorScheme.outline,
         fontSize: 9,
-        fontWeight: FontWeight.w800,
+        fontWeight: AppTheme.fontWeightBold,
         letterSpacing: 0.5,
       ),
     ),

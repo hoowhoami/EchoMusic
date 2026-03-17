@@ -11,6 +11,7 @@ import 'song_card.dart';
 import 'back_to_top.dart';
 import 'song_table_layout.dart';
 import 'detail_page_sliver_header.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 enum _SongSortField { order, title, album, duration }
 
@@ -714,12 +715,12 @@ class _SongListState extends State<SongList> {
           ? theme.colorScheme.onSurface
           : theme.colorScheme.onSurface.withAlpha(160),
       fontSize: 14,
-      fontWeight: FontWeight.w700,
+      fontWeight: AppTheme.fontWeightBold,
     );
     final badgeTextStyle = const TextStyle(
       color: Colors.white,
       fontSize: 10,
-      fontWeight: FontWeight.w700,
+      fontWeight: AppTheme.fontWeightBold,
       height: 1.1,
     );
     final textDirection = Directionality.of(context);
@@ -831,7 +832,7 @@ class _SongListState extends State<SongList> {
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppTheme.fontWeightSemiBold,
           height: 1.2,
         ),
         textAlignVertical: TextAlignVertical.center,
@@ -842,7 +843,7 @@ class _SongListState extends State<SongList> {
           hintStyle: TextStyle(
             color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
             fontSize: 12,
-            fontWeight: FontWeight.w500,
+            fontWeight: AppTheme.fontWeightMedium,
             height: 1.2,
           ),
           prefixIcon: Padding(
@@ -1018,7 +1019,7 @@ class _SongListState extends State<SongList> {
                     style: TextStyle(
                       color: foregroundColor,
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                     ),
                   ),
                   const SizedBox(width: 5),

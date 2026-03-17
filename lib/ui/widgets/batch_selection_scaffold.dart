@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/song.dart';
 import 'song_batch_selection_dialog.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class BatchSelectionScaffold extends StatelessWidget {
   final Widget body;
@@ -53,7 +54,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               title!,
               style: TextStyle(
                 fontSize: 28,
-                fontWeight: FontWeight.w800,
+                fontWeight: AppTheme.fontWeightBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -0.6,
               ),
@@ -84,7 +85,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               title!,
               style: TextStyle(
                 fontSize: 28,
-                fontWeight: FontWeight.w800,
+                fontWeight: AppTheme.fontWeightBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -0.6,
               ),

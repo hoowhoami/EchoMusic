@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/artist.dart';
 import 'cover_image.dart';
 import 'media_card_style.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 enum ArtistCardLayout { grid, list }
 
@@ -73,11 +74,11 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         theme.textTheme.bodySmall?.copyWith(
-          fontWeight: FontWeight.w600,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: theme.colorScheme.onSurfaceVariant,
         );
     final subtitleText = widget.subtitle ?? _defaultSubtitle();
@@ -157,13 +158,13 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: FontWeight.w700,
+          fontWeight: AppTheme.fontWeightBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         TextStyle(
           color: theme.colorScheme.onSurfaceVariant,
           fontSize: 11,
-          fontWeight: FontWeight.w600,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final subtitleText = widget.subtitle ?? _defaultSubtitle();
 

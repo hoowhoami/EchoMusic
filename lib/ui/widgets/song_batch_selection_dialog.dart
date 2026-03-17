@@ -10,6 +10,7 @@ import 'custom_dialog.dart';
 import 'custom_toast.dart';
 import 'playlist_picker_dialog.dart';
 import 'song_table_layout.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 Future<void> showSongBatchSelectionDialog(
   BuildContext context, {
@@ -348,7 +349,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
                                     '全选',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      fontWeight: FontWeight.w700,
+                                      fontWeight: AppTheme.fontWeightBold,
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -356,7 +357,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
                                     '已选 ${_selectedSongs.length} / ${widget.songs.length}',
                                     style: TextStyle(
                                       color: theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: AppTheme.fontWeightSemiBold,
                                       fontSize: 12,
                                     ),
                                   ),
@@ -414,7 +415,7 @@ ButtonStyle _buildDialogActionStyle(BuildContext context) {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
   );
 }
 
@@ -495,7 +496,7 @@ class _BatchSongTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: AppTheme.fontWeightBold,
                               height: 1.1,
                               color: theme.colorScheme.onSurface.withAlpha(
                                 isPlayable ? 255 : 140,
@@ -580,7 +581,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
       style: TextStyle(
         color: theme.colorScheme.outline,
         fontSize: 9,
-        fontWeight: FontWeight.w800,
+        fontWeight: AppTheme.fontWeightBold,
         letterSpacing: 0.5,
       ),
     ),

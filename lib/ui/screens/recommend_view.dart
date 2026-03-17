@@ -7,6 +7,7 @@ import 'package:echomusic/providers/navigation_provider.dart';
 import '../widgets/back_to_top.dart';
 import 'package:echomusic/providers/refresh_provider.dart';
 import '../widgets/playlist_card.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class RecommendView extends StatefulWidget {
   const RecommendView({super.key});
@@ -262,7 +263,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                         iconContent,
                         style: TextStyle(
                           fontSize: 15, 
-                          fontWeight: FontWeight.w900, 
+                          fontWeight: AppTheme.fontWeightBold, 
                           color: theme.colorScheme.onPrimary,
                         ),
                       ),
@@ -278,14 +279,14 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                           title,
                           style: TextStyle(
                             fontSize: 14, 
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTheme.fontWeightBold,
                             color: theme.colorScheme.onSurface,
                           ),
                         ),
                         Text(
                           subtitle,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.onSurface.withAlpha(150),
                           ),
                           maxLines: 1,

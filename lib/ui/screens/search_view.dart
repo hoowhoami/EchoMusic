@@ -19,6 +19,7 @@ import '../widgets/back_to_top.dart';
 import '../widgets/playlist_card.dart';
 import '../widgets/album_card.dart';
 import '../widgets/artist_card.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class SearchView extends StatefulWidget {
   const SearchView({super.key});
@@ -453,7 +454,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
               textAlignVertical: const TextAlignVertical(y: -0.6),
               style: const TextStyle(
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
+                fontWeight: AppTheme.fontWeightMedium,
               ),
               decoration: InputDecoration(
                 hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
@@ -490,7 +491,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 minimumSize: const Size(0, 36),
               ),
-              child: const Text('搜索', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+              child: const Text('搜索', style: TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 13)),
             ),
           ),
         ],
@@ -532,7 +533,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                         label,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: AppTheme.fontWeightBold,
                           color: theme.colorScheme.primary,
                         ),
                       ),
@@ -544,7 +545,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                       leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
                       title: Text(
                         text,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                        style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightMedium),
                       ),
                       onTap: () => _onSearch(text), 
                     );
@@ -595,7 +596,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 Text(
                   '历史搜索',
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+                    fontWeight: AppTheme.fontWeightBold,
                     color: theme.colorScheme.onSurface.withAlpha(180),
                   ),
                 ),
@@ -631,7 +632,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                             style: TextStyle(
                               fontSize: 12,
                               color: theme.colorScheme.onSurface.withAlpha(200),
-                              fontWeight: FontWeight.w500,
+                              fontWeight: AppTheme.fontWeightMedium,
                             ),
                           ),
                           const SizedBox(width: 4),
@@ -666,7 +667,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         Text(
           '热门搜索',
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+            fontWeight: AppTheme.fontWeightBold,
             color: theme.colorScheme.onSurface.withAlpha(180),
           ),
         ),
@@ -696,7 +697,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                     },
                     labelStyle: TextStyle(
                       fontSize: 12,
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightMedium,
                       color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
                     ),
                     selectedColor: theme.colorScheme.primary,
@@ -739,7 +740,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                         keyword,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: AppTheme.fontWeightMedium,
                           color: theme.colorScheme.onSurface,
                         ),
                       ),
@@ -989,7 +990,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           const SizedBox(height: 16),
           Text(
             '暂无搜索结果',
-            style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontWeight: FontWeight.w500),
+            style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(100), fontWeight: AppTheme.fontWeightMedium),
           ),
         ],
       ),

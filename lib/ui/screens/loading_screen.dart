@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../utils/server_orchestrator.dart';
 import 'home_screen.dart';
 import '../widgets/windows_caption_controls.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key, this.autoStartServer = true});
@@ -141,7 +142,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                           'Echo',
                           style: TextStyle(
                             fontSize: 24,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: AppTheme.fontWeightBold,
                             color: theme.colorScheme.onSurface,
                             letterSpacing: -1,
                           ),
@@ -150,7 +151,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                           'MUSIC',
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: AppTheme.fontWeightBold,
                             color: theme.colorScheme.primary,
                             letterSpacing: 2,
                           ),
@@ -175,7 +176,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurface.withAlpha(100),
                             fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             letterSpacing: 0.5,
                           ),
                           textAlign: TextAlign.center,
@@ -270,7 +271,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
               style: TextStyle(
                 color: theme.colorScheme.onSurface.withAlpha(60),
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 letterSpacing: 1.2,
               ),
               textAlign: TextAlign.center,
@@ -305,7 +306,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
             color: isPrimary
                 ? theme.colorScheme.onPrimary
                 : theme.colorScheme.onSurface.withAlpha(200),
-            fontWeight: FontWeight.w700,
+            fontWeight: AppTheme.fontWeightBold,
             fontSize: 14,
           ),
         ),

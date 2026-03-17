@@ -2,6 +2,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class AppTheme {
+  // Font Weights - 整体调轻一级，适应桌面端清爽风格
+  static const fontWeightBlack = FontWeight.w800;      // 原 w900 -> w800
+  static const fontWeightExtraBold = FontWeight.w700; // 原 w800 -> w700
+  static const fontWeightBold = FontWeight.w600;      // 原 w700 -> w600 (桌面端 w600 通常足够)
+  static const fontWeightSemiBold = FontWeight.w600;  // 保持 w600
+  static const fontWeightMedium = FontWeight.w500;
+  static const fontWeightRegular = FontWeight.w400;
+
   // Premium Blue - 类似 Apple Music 的高级蓝灰配色
   static const primaryAccent = Color(0xFF0071E3); // 高级蓝
   static const secondaryAccent = Color(0xFF5AC8FA); // 天空蓝
@@ -42,7 +50,7 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 16, fontWeight: FontWeight.w600),
+        titleTextStyle: TextStyle(color: Color(0xFF111827), fontSize: 16, fontWeight: fontWeightSemiBold),
         iconTheme: IconThemeData(color: Color(0xFF1D1D1F)),
       ),
       cardTheme: CardThemeData(
@@ -93,16 +101,16 @@ class AppTheme {
         color: lightSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFE5E5EA), width: 1)),
         elevation: 20,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1D1D1F)),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: fontWeightMedium, color: Color(0xFF1D1D1F)),
       ),
       textTheme: base.textTheme.apply(
         bodyColor: const Color(0xFF1D1D1F),
         displayColor: const Color(0xFF111827),
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w600, fontSize: 22, letterSpacing: -0.6, color: Color(0xFF1D1D1F)),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
-        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF1D1D1F)),
-        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF4B5563)),
+        titleLarge: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 22, letterSpacing: -0.6, color: Color(0xFF1D1D1F)),
+        titleMedium: const TextStyle(fontWeight: fontWeightMedium, fontSize: 15, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
+        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF1D1D1F)),
+        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF4B5563)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ).apply(
         fontFamily: useMiSans ? 'MiSans' : null,
@@ -155,7 +163,7 @@ class AppTheme {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        titleTextStyle: TextStyle(color: Color(0xFFFFFFFF), fontSize: 16, fontWeight: FontWeight.w600),
+        titleTextStyle: TextStyle(color: Color(0xFFFFFFFF), fontSize: 16, fontWeight: fontWeightSemiBold),
         iconTheme: IconThemeData(color: Color(0xFFF5F5F7)),
       ),
       cardTheme: CardThemeData(
@@ -206,16 +214,16 @@ class AppTheme {
         color: darkSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFF38383A), width: 1)),
         elevation: 20,
-        textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFFF5F5F7)),
+        textStyle: const TextStyle(fontSize: 14, fontWeight: fontWeightMedium, color: Color(0xFFF5F5F7)),
       ),
       textTheme: base.textTheme.apply(
         bodyColor: const Color(0xFFF5F5F7),
         displayColor: Colors.white,
       ).copyWith(
-        titleLarge: const TextStyle(fontWeight: FontWeight.w600, fontSize: 22, letterSpacing: -0.6, color: Color(0xFFF5F5F7)),
-        titleMedium: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
-        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFFF5F5F7)),
-        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: FontWeight.normal, letterSpacing: 0, color: Color(0xFF9CA3AF)),
+        titleLarge: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 22, letterSpacing: -0.6, color: Color(0xFFF5F5F7)),
+        titleMedium: const TextStyle(fontWeight: fontWeightMedium, fontSize: 15, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
+        bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFFF5F5F7)),
+        bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF9CA3AF)),
         bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
       ).apply(
         fontFamily: useMiSans ? 'MiSans' : null,

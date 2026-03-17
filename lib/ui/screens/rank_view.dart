@@ -12,6 +12,7 @@ import '../widgets/detail_page_action_row.dart';
 import '../widgets/custom_toast.dart';
 import '../../providers/audio_provider.dart';
 import '../../providers/persistence_provider.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class RankView extends StatefulWidget {
   final int? initialRankId;
@@ -219,7 +220,7 @@ class _RankViewState extends State<RankView> {
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant.withAlpha(180),
                   fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: AppTheme.fontWeightMedium,
                 ),
               ),
             ],
