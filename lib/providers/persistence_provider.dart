@@ -16,11 +16,13 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlaylistFilteredInvalidSongCount =
       'current_playlist_filtered_invalid_song_count';
   static const String _keyAudioPlaybackCache = 'audio_playback_cache';
+  static const String _keySearchHistory = 'search_history';
 
   List<Song> _favorites = [];
   Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
   Set<int> _favoriteMixIds = {}; // non-zero mixSongId → O(1) isFavorite lookup
   List<Song> _history = [];
+  List<String> _searchHistory = [];
   List<Song> _playlist = [];
   int _currentIndex = -1;
   int _playlistFilteredInvalidSongCount = 0;
@@ -62,6 +64,7 @@ class PersistenceProvider with ChangeNotifier {
 
   List<Song> get favorites => _favorites;
   List<Song> get history => _history;
+  List<String> get searchHistory => _searchHistory;
   List<Song> get playlist => _playlist;
   int get currentIndex => _currentIndex;
   int get playlistFilteredInvalidSongCount => _playlistFilteredInvalidSongCount;
@@ -98,6 +101,9 @@ class PersistenceProvider with ChangeNotifier {
     // Load history
     final historyJson = prefs.getStringList(_keyHistory) ?? [];
     _history = historyJson.map((s) => Song.fromJson(jsonDecode(s))).toList();
+
+    // Load search history
+    _searchHistory = prefs.getStringList(_keySearchHistory) ?? [];
 
     // Load Playlist
     final playlistJson = prefs.getStringList(_keyPlaylist) ?? [];
@@ -188,6 +194,7 @@ class PersistenceProvider with ChangeNotifier {
     _favoriteHashes = {};
     _favoriteMixIds = {};
     _history = [];
+    _searchHistory = [];
     _playlist = [];
     _currentIndex = -1;
     _playlistFilteredInvalidSongCount = 0;
@@ -198,6 +205,7 @@ class PersistenceProvider with ChangeNotifier {
       prefs.remove(_keyUserInfo),
       prefs.remove(_keyFavorites),
       prefs.remove(_keyHistory),
+      prefs.remove(_keySearchHistory),
       prefs.remove(_keyPlaylist),
       prefs.remove(_keyCurrentIndex),
       prefs.remove(_keyPlaylistFilteredInvalidSongCount),
@@ -216,6 +224,7 @@ class PersistenceProvider with ChangeNotifier {
     _favoriteHashes = {};
     _favoriteMixIds = {};
     _history = [];
+    _searchHistory = [];
     _playlist = [];
     _currentIndex = -1;
     _playlistFilteredInvalidSongCount = 0;
@@ -364,6 +373,36 @@ class PersistenceProvider with ChangeNotifier {
       _keyHistory,
       _history.map((s) => jsonEncode(_songToMap(s))).toList(),
     );
+    notifyListeners();
+  }
+
+  Future<void> addToSearchHistory(String keyword) async {
+    final trimmed = keyword.trim();
+    if (trimmed.isEmpty) return;
+
+    _searchHistory.removeWhere((s) => s == trimmed);
+    _searchHistory.insert(0, trimmed);
+
+    if (_searchHistory.length > 10) {
+      _searchHistory = _searchHistory.sublist(0, 10);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keySearchHistory, _searchHistory);
+    notifyListeners();
+  }
+
+  Future<void> removeFromSearchHistory(String keyword) async {
+    _searchHistory.removeWhere((s) => s == keyword);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keySearchHistory, _searchHistory);
+    notifyListeners();
+  }
+
+  Future<void> clearSearchHistory() async {
+    _searchHistory = [];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keySearchHistory);
     notifyListeners();
   }
 

@@ -39,6 +39,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   final ScrollController _playlistScrollController = ScrollController();
   final ScrollController _albumScrollController = ScrollController();
   final ScrollController _artistScrollController = ScrollController();
+  final ScrollController _initialScrollController = ScrollController();
+  final ScrollController _suggestionScrollController = ScrollController();
 
   List<Song> _songResults = [];
   List<Album> _albumResults = [];
@@ -155,6 +157,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     _playlistScrollController.dispose();
     _albumScrollController.dispose();
     _artistScrollController.dispose();
+    _initialScrollController.dispose();
+    _suggestionScrollController.dispose();
     super.dispose();
   }
 
@@ -182,14 +186,18 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   void _onSearchChanged(String value) {
     if (_isIgnoringChanges) return;
     if (_debounce?.isActive ?? false) _debounce?.cancel();
+
+    if (value.isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _showSuggestions = false;
+        _hasSearched = false;
+        _showPinnedSearch = false;
+      });
+      return;
+    }
+
     _debounce = Timer(const Duration(milliseconds: 300), () async {
-      if (value.isEmpty) {
-        setState(() {
-          _suggestions = [];
-          _showSuggestions = false;
-        });
-        return;
-      }
       try {
         final suggestions = await MusicApi.getSearchSuggest(value);
         if (!mounted || _isIgnoringChanges) return;
@@ -202,7 +210,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       }
     });
 
-    if (_hasSearched && value.isNotEmpty) {
+    if (_hasSearched) {
       setState(() {
         _hasSearched = false;
         _showPinnedSearch = false;
@@ -235,6 +243,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
       _hasSearched = true;
     });
     _focusNode.unfocus();
+    
+    // 保存搜索历史
+    context.read<PersistenceProvider>().addToSearchHistory(keywords);
 
     try {
       final results = await Future.wait([
@@ -386,10 +397,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 child: Stack(
                   children: [
                     if (!_hasSearched) 
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 40),
-                        child: _buildHotSearches(),
-                      )
+                      _buildInitialState(theme)
                     else if (_isLoading)
                       const Center(child: CupertinoActivityIndicator())
                     else
@@ -404,10 +412,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                         ],
                       ),
                     if (_showSuggestions) 
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 40),
-                        child: _buildSuggestions(theme),
-                      ),
+                      _buildSuggestions(theme),
                   ],
                 ),
               ),
@@ -504,61 +509,168 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: _suggestions.length,
-          itemBuilder: (context, index) {
-            final category = _suggestions[index];
-            final label = category['LableName']?.toString() ?? '';
-            final records = (category['RecordDatas'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        child: Scrollbar(
+          controller: _suggestionScrollController,
+          child: ListView.builder(
+            controller: _suggestionScrollController,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 40),
+            itemCount: _suggestions.length,
+            itemBuilder: (context, index) {
+              final category = _suggestions[index];
+              final label = category['LableName']?.toString() ?? '';
+              final records = (category['RecordDatas'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
-            if (records.isEmpty || label == 'MV') return const SizedBox.shrink();
+              if (records.isEmpty || label == 'MV') return const SizedBox.shrink();
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (label.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.primary,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (label.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
                     ),
-                  ),
-                ...records.map((record) {
-                  final text = record['HintInfo']?.toString() ?? '';
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
-                    title: Text(
-                      text,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                    ),
-                    onTap: () => _onSearch(text), 
-                  );
-                }),
-              ],
-            );
-          },
+                  ...records.map((record) {
+                    final text = record['HintInfo']?.toString() ?? '';
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
+                      title: Text(
+                        text,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                      onTap: () => _onSearch(text), 
+                    );
+                  }),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHotSearches() {
+  Widget _buildInitialState(ThemeData theme) {
     if (_isLoadingHot) {
       return const Center(child: CupertinoActivityIndicator());
     }
-    if (_hotSearchCategories.isEmpty) return const SizedBox.shrink();
 
-    final theme = Theme.of(context);
+    return Scrollbar(
+      controller: _initialScrollController,
+      child: ListView(
+        controller: _initialScrollController,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        children: [
+          _buildSearchHistory(theme),
+          if (_hotSearchCategories.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _buildHotSearchesSection(theme),
+          ],
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchHistory(ThemeData theme) {
+    return Consumer<PersistenceProvider>(
+      builder: (context, persistence, child) {
+        final history = persistence.searchHistory;
+        if (history.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  '历史搜索',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.onSurface.withAlpha(180),
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: Icon(CupertinoIcons.trash, size: 16, color: theme.colorScheme.onSurface.withAlpha(100)),
+                  onPressed: () => persistence.clearSearchHistory(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: history.map((keyword) {
+                return MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => _onSearch(keyword),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.onSurface.withAlpha(10),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            keyword,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurface.withAlpha(200),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          MouseRegion(
+                            cursor: SystemMouseCursors.click,
+                            child: GestureDetector(
+                              onTap: () => persistence.removeFromSearchHistory(keyword),
+                              child: Icon(
+                                CupertinoIcons.xmark,
+                                size: 10,
+                                color: theme.colorScheme.onSurface.withAlpha(100),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHotSearchesSection(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Text(
+          '热门搜索',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.onSurface.withAlpha(180),
+          ),
+        ),
+        const SizedBox(height: 16),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
@@ -571,89 +683,87 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
 
               return Padding(
                 padding: const EdgeInsets.only(right: 12),
-                child: ChoiceChip(
-                  label: Text(name),
-                  selected: isSelected,
-                  showCheckmark: false,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _selectedHotCategoryIndex = idx);
-                    }
-                  },
-                  labelStyle: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: ChoiceChip(
+                    label: Text(name),
+                    selected: isSelected,
+                    showCheckmark: false,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() => _selectedHotCategoryIndex = idx);
+                      }
+                    },
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                    ),
+                    selectedColor: theme.colorScheme.primary,
+                    backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    side: BorderSide.none,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                   ),
-                  selectedColor: theme.colorScheme.primary,
-                  backgroundColor: theme.colorScheme.onSurface.withAlpha(10),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  side: BorderSide.none,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
                 ),
               );
             }).toList(),
           ),
         ),
-        const SizedBox(height: 24),
-        Expanded(
-          child: ListView(
-            physics: const BouncingScrollPhysics(),
-            children: [
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: (_hotSearchCategories[_selectedHotCategoryIndex]['keywords'] as List? ?? [])
-                    .map((item) {
-                  final keyword = item['keyword']?.toString() ?? '';
-                  final reason = item['reason']?.toString() ?? '';
-                  return GestureDetector(
-                    onTap: () => _onSearch(keyword),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.onSurface.withAlpha(10),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: theme.colorScheme.outlineVariant,
-                          width: 0.8,
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: (_hotSearchCategories[_selectedHotCategoryIndex]['keywords'] as List? ?? [])
+              .map((item) {
+            final keyword = item['keyword']?.toString() ?? '';
+            final reason = item['reason']?.toString() ?? '';
+            return MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () => _onSearch(keyword),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withAlpha(10),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        keyword,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            keyword,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: theme.colorScheme.onSurface,
-                            ),
+                      if (reason.isNotEmpty && reason != keyword) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '•',
+                          style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(50)),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          reason,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: theme.colorScheme.onSurface.withAlpha(100),
                           ),
-                          if (reason.isNotEmpty && reason != keyword) ...[
-                            const SizedBox(width: 4),
-                            Text(
-                              '•',
-                              style: TextStyle(color: theme.colorScheme.onSurface.withAlpha(50)),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              reason,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: theme.colorScheme.onSurface.withAlpha(100),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 40),
-            ],
-          ),
+            );
+          }).toList(),
         ),
       ],
     );
