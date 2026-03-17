@@ -95,62 +95,60 @@ class _AlbumCardState extends State<AlbumCard> {
       onExit: (_) => _setHover(false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+        child: AnimatedScale(
+          scale: _isHovering ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: style.backgroundColor,
-            borderRadius: BorderRadius.circular(widget.coverRadius + 6),
-            boxShadow: style.shadows,
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final coverHeight =
-                  (constraints.maxHeight - AlbumCard._gridFooterHeight)
-                      .clamp(0.0, constraints.maxHeight);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: coverHeight,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(widget.coverRadius),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CoverImage(
-                            url: widget.album.pic,
-                            fit: BoxFit.cover,
-                            borderRadius: widget.coverRadius,
-                            showShadow: false,
-                            size: widget.coverImageSize,
-                          ),
-                          if (_isHovering)
-                            Container(color: style.hoverOverlayStrong),
-                        ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: style.backgroundColor,
+              borderRadius: BorderRadius.circular(widget.coverRadius + 6),
+              boxShadow: style.shadows,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final coverHeight =
+                    (constraints.maxHeight - AlbumCard._gridFooterHeight)
+                        .clamp(0.0, constraints.maxHeight);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: coverHeight,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(widget.coverRadius),
+                        child: CoverImage(
+                          url: widget.album.pic,
+                          fit: BoxFit.cover,
+                          borderRadius: widget.coverRadius,
+                          showShadow: false,
+                          size: widget.coverImageSize,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.album.name,
-                    maxLines: widget.titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: resolvedTitleStyle,
-                  ),
-                  if (widget.subtitle != null) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 8),
                     Text(
-                      widget.subtitle!,
-                      maxLines: 1,
+                      widget.album.name,
+                      maxLines: widget.titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: resolvedSubtitleStyle,
+                      style: resolvedTitleStyle,
                     ),
+                    if (widget.subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: resolvedSubtitleStyle,
+                      ),
+                    ],
                   ],
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -179,11 +177,11 @@ class _AlbumCardState extends State<AlbumCard> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
           padding: widget.contentPadding,
           decoration: BoxDecoration(
-            color: style.backgroundColor,
+            color: _isHovering ? style.hoverOverlayColor : style.backgroundColor,
             borderRadius: BorderRadius.circular(widget.tileRadius),
             boxShadow: const <BoxShadow>[],
           ),
@@ -191,21 +189,13 @@ class _AlbumCardState extends State<AlbumCard> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(widget.coverRadius),
-                child: Stack(
-                  children: [
-                    CoverImage(
-                      url: widget.album.pic,
-                      width: widget.coverSize,
-                      height: widget.coverSize,
-                      borderRadius: widget.coverRadius,
-                      showShadow: false,
-                      size: widget.coverImageSize,
-                    ),
-                    if (_isHovering)
-                      Positioned.fill(
-                        child: Container(color: style.hoverOverlayColor),
-                      ),
-                  ],
+                child: CoverImage(
+                  url: widget.album.pic,
+                  width: widget.coverSize,
+                  height: widget.coverSize,
+                  borderRadius: widget.coverRadius,
+                  showShadow: false,
+                  size: widget.coverImageSize,
                 ),
               ),
               const SizedBox(width: 12),

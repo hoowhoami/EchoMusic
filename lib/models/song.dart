@@ -313,6 +313,7 @@ class Song {
       duration: duration,
       cover: cover,
       mixSongId: parseInt(base['audio_id'] ?? 0),
+      privilege: parseInt(json['privilege'] ?? json['copyright']?['privilege'] ??  0),
       payBlockTpl: parseInt(transParam['pay_block_tpl'] ?? 0),
     );
   }
@@ -365,6 +366,7 @@ class Song {
       cover: (json['trans_param']?['union_cover'] ?? '').toString().replaceAll('{size}', '400'),
       mixSongId: int.tryParse((json['mixsongid'] ?? json['album_audio_id'] ?? 0).toString()) ?? 0,
       relateGoods: relateGoods,
+      privilege: int.tryParse((json['privilege'] ?? 0).toString()),
       payBlockTpl: int.tryParse((json['trans_param']?['pay_block_tpl'] ?? 0).toString()),
     );
   }
