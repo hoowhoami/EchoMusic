@@ -18,7 +18,7 @@ def clean_transparent_pixels(img):
     return Image.fromarray(data, 'RGBA')
 
 def generate_ico(source, output):
-    """Generate .ico file with multiple sizes and proper padding."""
+    """Generate .ico file with multiple sizes."""
     try:
         # Open and clean source image
         img = Image.open(source).convert('RGBA')
@@ -29,26 +29,9 @@ def generate_ico(source, output):
         icons = []
 
         for size in sizes:
-            # For larger icons (used in tiles), add 15% padding
-            # For smaller icons (taskbar), use full size
-            if size >= 48:
-                # Add padding for tile icons
-                content_size = int(size * 0.70)  # Icon content is 70% of canvas
-                padding = (size - content_size) // 2
-
-                # Resize icon content
-                resized = img.resize((content_size, content_size), Image.Resampling.LANCZOS)
-                resized = clean_transparent_pixels(resized)
-
-                # Create canvas with padding
-                canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-                canvas.paste(resized, (padding, padding), resized)
-                icons.append(canvas)
-            else:
-                # Small icons use full size (no padding)
-                resized = img.resize((size, size), Image.Resampling.LANCZOS)
-                resized = clean_transparent_pixels(resized)
-                icons.append(resized)
+            resized = img.resize((size, size), Image.Resampling.LANCZOS)
+            resized = clean_transparent_pixels(resized)
+            icons.append(resized)
 
         # Save as .ico - first image with append_images for the rest
         icons[0].save(
@@ -59,7 +42,6 @@ def generate_ico(source, output):
         )
 
         print(f"✓ Generated {output} with sizes: {sizes}")
-        print(f"  Large icons (≥48px) have 15% padding for better tile appearance")
 
         # Verify the output
         import subprocess
