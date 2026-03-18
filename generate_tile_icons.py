@@ -43,11 +43,14 @@ def generate_tile_icon(source, output, canvas_size, icon_size):
 
 def main():
     source_icon = 'assets/icons/icon.png'
-    output_dir = 'windows/runner/resources'
+    output_dir = 'windows/runner/resources/Assets'
 
     if not os.path.exists(source_icon):
         print(f"Error: Source icon not found: {source_icon}")
         sys.exit(1)
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
 
     # Windows tile icon specifications
     # Format: (output_name, canvas_size, icon_content_size)

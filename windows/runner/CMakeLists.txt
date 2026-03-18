@@ -47,22 +47,26 @@ add_custom_command(
   "$<TARGET_FILE_DIR:${BINARY_NAME}>/EchoMusic.VisualElementsManifest.xml"
 )
 
-# Copy tile icon assets for Windows 10 Start Menu.
+# Copy tile icon assets for Windows 10 Start Menu to Assets subfolder.
 add_custom_command(
   TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Square150x150Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Square150x150Logo.png"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets"
 )
 add_custom_command(
   TARGET ${BINARY_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Square70x70Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Square70x70Logo.png"
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square150x150Logo.png"
+  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square150x150Logo.png"
 )
 add_custom_command(
   TARGET ${BINARY_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Square44x44Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Square44x44Logo.png"
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square70x70Logo.png"
+  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square70x70Logo.png"
+)
+add_custom_command(
+  TARGET ${BINARY_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy
+  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square44x44Logo.png"
+  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square44x44Logo.png"
 )
