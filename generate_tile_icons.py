@@ -8,23 +8,32 @@ from PIL import Image
 def generate_tile_icon(source, output, canvas_size, icon_size):
     """Generate a tile icon with transparent padding using Pillow."""
     try:
-        # Open source image
-        img = Image.open(source)
+        # Open source image and ensure RGBA mode
+        img = Image.open(source).convert('RGBA')
+
+        # Clean up transparent pixels - set RGB to black for fully transparent areas
+        # This prevents white halos on dark backgrounds
+        import numpy as np
+        data = np.array(img)
+        # Where alpha is 0, set RGB to 0 (black) to avoid color bleeding
+        mask = data[:, :, 3] == 0
+        data[mask] = [0, 0, 0, 0]
+        img = Image.fromarray(data, 'RGBA')
 
         # Resize to icon content size with high-quality resampling
         img = img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
 
-        # Create transparent canvas
+        # Create transparent canvas (black RGB with 0 alpha)
         canvas = Image.new('RGBA', (canvas_size, canvas_size), (0, 0, 0, 0))
 
         # Calculate position to center the icon
         padding = (canvas_size - icon_size) // 2
 
         # Paste icon onto canvas
-        canvas.paste(img, (padding, padding), img if img.mode == 'RGBA' else None)
+        canvas.paste(img, (padding, padding), img)
 
         # Save with transparency
-        canvas.save(output, 'PNG')
+        canvas.save(output, 'PNG', optimize=True)
 
         print(f"✓ Generated {output} ({canvas_size}x{canvas_size}, content: {icon_size}x{icon_size})")
         return True
