@@ -9,9 +9,12 @@ def clean_transparent_pixels(img):
     """Clean transparent pixels to prevent white halo."""
     import numpy as np
     data = np.array(img)
-    # Where alpha is 0, set RGB to 0 (black)
-    mask = data[:, :, 3] == 0
-    data[mask] = [0, 0, 0, 0]
+
+    # More aggressive cleaning: set RGB to 0 for any pixel with alpha < 255
+    # This removes semi-transparent white edges from anti-aliasing
+    mask = data[:, :, 3] < 255
+    data[mask, 0:3] = 0  # Set RGB to black, keep alpha
+
     return Image.fromarray(data, 'RGBA')
 
 def generate_ico(source, output):
