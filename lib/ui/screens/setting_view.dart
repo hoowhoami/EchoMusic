@@ -217,12 +217,12 @@ class _SettingViewState extends State<SettingView> {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
     return ScrollableContent(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+      padding: const EdgeInsets.fromLTRB(40, 20, 40, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(context),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
 
           _buildGroup(context, '外观与界面', CupertinoIcons.paintbrush, [
             _buildItem(
@@ -425,7 +425,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),
@@ -447,7 +447,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.error,
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),
@@ -469,7 +469,7 @@ class _SettingViewState extends State<SettingView> {
                     style: TextStyle(
                       color: accentColor,
                       fontSize: 13,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                     ),
                   ),
                 ),
@@ -534,19 +534,10 @@ class _SettingViewState extends State<SettingView> {
         Text(
           '偏好设置',
           style: TextStyle(
-            fontSize: 32,
-            fontWeight: AppTheme.fontWeightBold,
+            fontSize: 24,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurface,
-            letterSpacing: -1.0,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(2),
+            letterSpacing: -0.5,
           ),
         ),
       ],
@@ -573,7 +564,7 @@ class _SettingViewState extends State<SettingView> {
                 title,
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
             ],
@@ -622,7 +613,7 @@ class _SettingViewState extends State<SettingView> {
                   title,
                   style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -722,7 +713,7 @@ class _SettingViewState extends State<SettingView> {
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 12,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           fontFamily: 'monospace',
         ),
       ),
@@ -788,7 +779,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.onSurface.withAlpha(150),
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                         ),
                       ),
                       Text(
@@ -796,7 +787,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.primary,
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -887,7 +878,7 @@ class _SettingViewState extends State<SettingView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+              fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -965,7 +956,7 @@ class _SettingViewState extends State<SettingView> {
             maxLines: 1,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+              fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -1089,7 +1080,7 @@ class _SettingViewState extends State<SettingView> {
             style: TextStyle(
               color: textColor ?? theme.colorScheme.onSurface,
               fontSize: 13,
-              fontWeight: AppTheme.fontWeightBold,
+              fontWeight: AppTheme.fontWeightSemiBold,
             ),
           ),
         ),
@@ -1275,7 +1266,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontSize: 20,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1284,7 +1275,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.primary,
                   fontSize: 14,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1326,7 +1317,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1335,7 +1326,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurface,
                             fontSize: 16,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             fontFamily: 'monospace',
                           ),
                         ),
@@ -1345,7 +1336,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1356,7 +1347,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                                 ? theme.colorScheme.error
                                 : theme.colorScheme.primary,
                             fontSize: 18,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             fontFamily: 'monospace',
                           ),
                         ),

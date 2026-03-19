@@ -120,6 +120,6 @@ ButtonStyle _buildFilledActionStyle(BuildContext context) {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightSemiBold),
   );
 }

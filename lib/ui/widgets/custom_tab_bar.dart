@@ -102,7 +102,7 @@ class CustomTabBar extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+                  fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
                   color: isSelected 
                     ? modernTheme.tabSelectedTextColor
                     : theme.colorScheme.onSurface.withAlpha(120),

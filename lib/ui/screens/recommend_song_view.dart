@@ -129,7 +129,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
           '${DateTime.now().day}',
           style: const TextStyle(
             fontSize: 48,
-            fontWeight: AppTheme.fontWeightBold,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: Colors.white,
           ),
         ),
@@ -157,7 +157,7 @@ class _RecommendSongViewState extends State<RecommendSongView> {
           '${DateTime.now().day}',
           style: const TextStyle(
             fontSize: 12,
-            fontWeight: AppTheme.fontWeightBold,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: Colors.white,
           ),
         ),

@@ -490,7 +490,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                 style: TextStyle(
                   color: theme.colorScheme.onSurfaceVariant,
                   fontSize: 14,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
           ],
@@ -514,7 +514,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                   Text(
                     '歌手简介',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       fontSize: 15,
                     ),
                   ),
@@ -526,7 +526,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: AppTheme.fontWeightMedium,
+                      fontWeight: AppTheme.fontWeightRegular,
                       fontSize: 12,
                     ),
                   ),
@@ -551,7 +551,7 @@ class _ArtistDetailViewState extends State<ArtistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                       ),

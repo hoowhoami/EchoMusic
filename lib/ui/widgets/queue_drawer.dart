@@ -114,7 +114,7 @@ class _QueueDrawerState extends State<QueueDrawer> {
                       '播放列表',
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: AppTheme.fontWeightBold,
+                        fontWeight: AppTheme.fontWeightSemiBold,
                         color: theme.colorScheme.onSurface,
                         letterSpacing: -0.5,
                       ),
@@ -410,7 +410,7 @@ class _QueueItemState extends State<_QueueItem> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: widget.isCurrent
-                                  ? AppTheme.fontWeightBold
+                                  ? AppTheme.fontWeightSemiBold
                                   : AppTheme.fontWeightSemiBold,
                               color: (widget.isCurrent
                                       ? theme.colorScheme.primary
@@ -477,8 +477,8 @@ class _QueueItemState extends State<_QueueItem> {
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: widget.isCurrent
-                                      ? AppTheme.fontWeightBold
-                                      : AppTheme.fontWeightBold,
+                                      ? AppTheme.fontWeightSemiBold
+                                      : AppTheme.fontWeightSemiBold,
                                   color: (widget.isCurrent
                                           ? theme.colorScheme.primary
                                           : theme.colorScheme.onSurface)
@@ -544,7 +544,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
       style: TextStyle(
         color: theme.colorScheme.outline,
         fontSize: 9,
-        fontWeight: AppTheme.fontWeightBold,
+        fontWeight: AppTheme.fontWeightSemiBold,
         letterSpacing: 0.5,
       ),
     ),

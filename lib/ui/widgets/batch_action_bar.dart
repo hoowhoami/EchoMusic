@@ -133,7 +133,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                     '${selectionProvider.selectedCount} 首歌曲',
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       color: theme.colorScheme.onSurface,
                       letterSpacing: -0.5,
                     ),
@@ -238,7 +238,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.onSurface.withAlpha(180),
               ),
             ),
@@ -415,7 +415,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         title,
         style: TextStyle(
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: isDestructive
               ? theme.colorScheme.error
               : theme.colorScheme.onSurface,

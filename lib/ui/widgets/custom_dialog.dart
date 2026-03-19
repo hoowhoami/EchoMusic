@@ -83,7 +83,7 @@ class CustomDialog extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     fontSize: 20,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -106,7 +106,7 @@ class CustomDialog extends StatelessWidget {
                         fontSize: 14,
                         height: 1.6,
                         color: theme.colorScheme.onSurface.withAlpha(180),
-                        fontWeight: AppTheme.fontWeightMedium,
+                        fontWeight: AppTheme.fontWeightRegular,
                       ),
                     ),
                   ),
@@ -128,7 +128,7 @@ class CustomDialog extends StatelessWidget {
                           cancelText ?? '取消',
                           style: TextStyle(
                             color: theme.colorScheme.onSurface.withAlpha(120),
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             fontSize: 14,
                           ),
                         ),
@@ -149,7 +149,7 @@ class CustomDialog extends StatelessWidget {
                       ),
                       child: Text(
                         confirmText,
-                        style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
+                        style: const TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 14),
                       ),
                     ),
                   ],

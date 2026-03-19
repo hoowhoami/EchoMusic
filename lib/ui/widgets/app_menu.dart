@@ -922,7 +922,7 @@ class AppMenuSectionLabel extends StatelessWidget {
         title,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           letterSpacing: 1.1,
         ),
@@ -1005,7 +1005,7 @@ class _AppMenuTriggerState extends State<AppMenuTrigger> {
                         ? theme.disabledColor
                         : (widget.isOpen ? accentColor : textColor),
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),

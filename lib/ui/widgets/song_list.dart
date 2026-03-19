@@ -715,12 +715,12 @@ class _SongListState extends State<SongList> {
           ? theme.colorScheme.onSurface
           : theme.colorScheme.onSurface.withAlpha(160),
       fontSize: 14,
-      fontWeight: AppTheme.fontWeightBold,
+      fontWeight: AppTheme.fontWeightSemiBold,
     );
     final badgeTextStyle = const TextStyle(
       color: Colors.white,
       fontSize: 10,
-      fontWeight: AppTheme.fontWeightBold,
+      fontWeight: AppTheme.fontWeightSemiBold,
       height: 1.1,
     );
     final textDirection = Directionality.of(context);
@@ -832,7 +832,7 @@ class _SongListState extends State<SongList> {
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: AppTheme.fontWeightSemiBold,
+          fontWeight: AppTheme.fontWeightMedium,
           height: 1.2,
         ),
         textAlignVertical: TextAlignVertical.center,

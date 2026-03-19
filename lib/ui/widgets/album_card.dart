@@ -80,7 +80,7 @@ class _AlbumCardState extends State<AlbumCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           height: 1.1,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
@@ -162,7 +162,7 @@ class _AlbumCardState extends State<AlbumCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         theme.textTheme.bodySmall?.copyWith(

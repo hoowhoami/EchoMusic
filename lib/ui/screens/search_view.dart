@@ -306,17 +306,14 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              '搜索',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 22,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const Spacer(),
-          ],
+        Text(
+          '搜索',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: AppTheme.fontWeightSemiBold,
+            color: theme.colorScheme.onSurface,
+            letterSpacing: -0.5,
+          ),
         ),
         const SizedBox(height: 24),
         _buildSearchInput(theme),
@@ -381,7 +378,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             children: [
               Padding(
                 padding: EdgeInsets.only(
-                  top: _showPinnedSearch ? 0 : 32,
+                  top: _showPinnedSearch ? 0 : 20,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -491,7 +488,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 minimumSize: const Size(0, 36),
               ),
-              child: const Text('搜索', style: TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 13)),
+              child: const Text('搜索', style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 13)),
             ),
           ),
         ],
@@ -533,7 +530,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                         label,
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           color: theme.colorScheme.primary,
                         ),
                       ),
@@ -596,7 +593,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                 Text(
                   '历史搜索',
                   style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                     color: theme.colorScheme.onSurface.withAlpha(180),
                   ),
                 ),
@@ -667,7 +664,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
         Text(
           '热门搜索',
           style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: AppTheme.fontWeightBold,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurface.withAlpha(180),
           ),
         ),
@@ -697,7 +694,7 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                     },
                     labelStyle: TextStyle(
                       fontSize: 12,
-                      fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightMedium,
+                      fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightMedium,
                       color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
                     ),
                     selectedColor: theme.colorScheme.primary,

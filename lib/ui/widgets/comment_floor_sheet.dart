@@ -195,7 +195,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
                     child: Text(
                       widget.title,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: AppTheme.fontWeightBold,
+                        fontWeight: AppTheme.fontWeightSemiBold,
                       ),
                     ),
                   ),
@@ -260,7 +260,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
         title,
         style: theme.textTheme.labelLarge?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         ),
       ),
     );
@@ -288,7 +288,7 @@ class _CommentFloorSheetState extends State<_CommentFloorSheet> {
           child: Text(
             label,
             style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: AppTheme.fontWeightBold,
+              fontWeight: AppTheme.fontWeightSemiBold,
             ),
           ),
         ),

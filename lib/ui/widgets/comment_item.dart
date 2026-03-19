@@ -81,7 +81,7 @@ class CommentItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 14,
-                        fontWeight: AppTheme.fontWeightBold,
+                        fontWeight: AppTheme.fontWeightSemiBold,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
@@ -106,7 +106,7 @@ class CommentItem extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               height: 1.5,
-              fontWeight: AppTheme.fontWeightMedium,
+              fontWeight: AppTheme.fontWeightRegular,
               color: theme.colorScheme.onSurface,
             ),
           ),
@@ -134,7 +134,7 @@ class CommentItem extends StatelessWidget {
                             : '$replyNum 条回复',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightMedium,
                           color: replyColor,
                         ),
                       ),
@@ -177,7 +177,7 @@ class CommentItem extends StatelessWidget {
             _formatBigNumber(count),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: AppTheme.fontWeightBold,
+              fontWeight: AppTheme.fontWeightMedium,
               color: theme.colorScheme.primary,
             ),
           ),

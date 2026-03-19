@@ -349,7 +349,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
                                     '全选',
                                     style: TextStyle(
                                       fontSize: 12,
-                                      fontWeight: AppTheme.fontWeightBold,
+                                      fontWeight: AppTheme.fontWeightSemiBold,
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -415,7 +415,7 @@ ButtonStyle _buildDialogActionStyle(BuildContext context) {
     padding: const EdgeInsets.symmetric(horizontal: 12),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightSemiBold),
   );
 }
 
@@ -496,7 +496,7 @@ class _BatchSongTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight: AppTheme.fontWeightBold,
+                              fontWeight: AppTheme.fontWeightSemiBold,
                               height: 1.1,
                               color: theme.colorScheme.onSurface.withAlpha(
                                 isPlayable ? 255 : 140,
@@ -581,7 +581,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
       style: TextStyle(
         color: theme.colorScheme.outline,
         fontSize: 9,
-        fontWeight: AppTheme.fontWeightBold,
+        fontWeight: AppTheme.fontWeightSemiBold,
         letterSpacing: 0.5,
       ),
     ),

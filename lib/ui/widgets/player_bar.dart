@@ -586,13 +586,13 @@ class _PlayerSongInfo extends StatelessWidget {
         final titleStyle = TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           height: 1.15,
         );
         final singerStyle = TextStyle(
           color: theme.colorScheme.onSurface.withAlpha(160),
           fontSize: 12,
-          fontWeight: AppTheme.fontWeightSemiBold,
+          fontWeight: AppTheme.fontWeightRegular,
           height: 1.15,
         );
         return SizedBox(
@@ -1058,7 +1058,7 @@ class _InlineProgressRowState extends State<_InlineProgressRow> {
       fontSize: 11,
       fontFamily: 'monospace',
       color: theme.colorScheme.onSurface.withAlpha(120),
-      fontWeight: AppTheme.fontWeightSemiBold,
+      fontWeight: AppTheme.fontWeightRegular,
       height: 1.0,
     );
     final positionTextStream = audioProvider.positionSnapshotStream
@@ -1461,7 +1461,7 @@ class _QueueButton extends StatelessWidget {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 8,
-                        fontWeight: AppTheme.fontWeightBold,
+                        fontWeight: AppTheme.fontWeightMedium,
                         height: 1.1,
                       ),
                     ),
@@ -1657,7 +1657,7 @@ class _VolumePopup extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               '${vol.toInt()}%',
-              style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightBold),
+              style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightMedium),
             ),
             Expanded(
               child: RotatedBox(
@@ -1783,8 +1783,8 @@ class _PlayerPopupMenuItem extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: isSelected
-                          ? AppTheme.fontWeightBold
-                          : AppTheme.fontWeightSemiBold,
+                          ? AppTheme.fontWeightMedium
+                          : AppTheme.fontWeightRegular,
                       color: isSelected
                           ? theme.colorScheme.primary
                           : theme.colorScheme.onSurface,

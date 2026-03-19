@@ -73,7 +73,7 @@ Widget _buildSectionHeader(BuildContext context, String title) {
       child: Text(
         title,
         style: theme.textTheme.titleSmall?.copyWith(
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: theme.colorScheme.onSurface.withAlpha(180),
         ),
       ),

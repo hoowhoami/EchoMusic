@@ -74,7 +74,7 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         theme.textTheme.bodySmall?.copyWith(
@@ -150,7 +150,7 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         TextStyle(

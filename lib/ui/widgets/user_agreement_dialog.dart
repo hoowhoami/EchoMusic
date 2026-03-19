@@ -41,7 +41,7 @@ class UserAgreementDialog extends StatelessWidget {
               const Text(
                 '点击"同意并继续"即表示您已阅读并接受以上全部条款。',
                 style: TextStyle(
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                   fontSize: 14,
                 ),
               ),
@@ -60,7 +60,7 @@ class UserAgreementDialog extends StatelessWidget {
         children: [
           Text(
             index,
-            style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
+            style: const TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 14),
           ),
           const SizedBox(width: 8),
           Expanded(

@@ -193,7 +193,7 @@ class _SongCardState extends State<SongCard> {
                               ),
                       fontSize: 12,
                       fontWeight:
-                          isCurrent ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+                          isCurrent ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
                     ),
                   ),
           ),
@@ -453,7 +453,7 @@ class _SongCardState extends State<SongCard> {
               label,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: isDestructive
                     ? theme.colorScheme.error
                     : theme.colorScheme.onSurface,
@@ -747,8 +747,8 @@ class _SongCardState extends State<SongCard> {
                                                                 : 140,
                                                           ),
                                                 fontWeight: isCurrent
-                                                    ? AppTheme.fontWeightBold
-                                                    : AppTheme.fontWeightBold,
+                                                    ? AppTheme.fontWeightSemiBold
+                                                    : AppTheme.fontWeightSemiBold,
                                                 fontSize: 14,
                                                 height: 1,
                                                 letterSpacing: -0.3,
@@ -931,7 +931,7 @@ class _SongCardState extends State<SongCard> {
         style: TextStyle(
           color: color,
           fontSize: 9,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           letterSpacing: 0.5,
         ),
       ),

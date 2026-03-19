@@ -41,7 +41,7 @@ class DisclaimerDialog extends StatelessWidget {
         children: [
           Text(
             index,
-            style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 14),
+            style: const TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 14),
           ),
           const SizedBox(width: 8),
           Expanded(
