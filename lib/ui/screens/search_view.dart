@@ -36,6 +36,9 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
+  
+  final LayerLink _layerLink = LayerLink();
+  final GlobalKey _searchInputKey = GlobalKey();
 
   final ScrollController _playlistScrollController = ScrollController();
   final ScrollController _albumScrollController = ScrollController();
@@ -166,6 +169,13 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   void _onFocusChange() {
     if (_focusNode.hasFocus && _searchController.text.isNotEmpty && _suggestions.isNotEmpty) {
       setState(() => _showSuggestions = true);
+    } else if (!_focusNode.hasFocus) {
+      // Small delay to allow suggestion taps to be processed
+      Future.delayed(const Duration(milliseconds: 150), () {
+        if (mounted && !_focusNode.hasFocus) {
+          setState(() => _showSuggestions = false);
+        }
+      });
     }
   }
 
@@ -409,8 +419,6 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
                           _buildArtistList(),
                         ],
                       ),
-                    if (_showSuggestions) 
-                      _buildSuggestions(theme),
                   ],
                 ),
               ),
@@ -424,6 +432,8 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
             right: 0,
             child: _buildPinnedSearchBar(theme),
           ),
+        if (_showSuggestions) 
+          _buildSuggestions(theme),
         BackToTop(
           show: _showBackToTop,
           onPressed: _scrollToTop,
@@ -433,65 +443,69 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   }
 
   Widget _buildSearchInput(ThemeData theme) {
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withAlpha(10),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 12),
-          Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              textAlignVertical: const TextAlignVertical(y: -0.6),
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: AppTheme.fontWeightMedium,
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: Container(
+        key: _searchInputKey,
+        height: 44,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.onSurface.withAlpha(10),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 12),
+            Icon(CupertinoIcons.search, color: theme.colorScheme.onSurface.withAlpha(100), size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _focusNode,
+                textAlignVertical: const TextAlignVertical(y: -0.6),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: AppTheme.fontWeightMedium,
+                ),
+                decoration: InputDecoration(
+                  hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
+                  hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onChanged: _onSearchChanged,
+                onSubmitted: (_) => _onSearch(),
               ),
-              decoration: InputDecoration(
-                hintText: _defaultKeyword.isNotEmpty ? '搜索: $_defaultKeyword' : '搜索音乐、歌手、专辑',
-                hintStyle: TextStyle(color: theme.colorScheme.onSurface.withAlpha(80)),
-                border: InputBorder.none,
-                isCollapsed: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+            if (_searchController.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
+                onPressed: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                },
+                color: theme.colorScheme.onSurface.withAlpha(60),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
               ),
-              onChanged: _onSearchChanged,
-              onSubmitted: (_) => _onSearch(),
-            ),
-          ),
-          if (_searchController.text.isNotEmpty)
-            IconButton(
-              icon: const Icon(CupertinoIcons.clear_thick_circled, size: 16),
-              onPressed: () {
-                _searchController.clear();
-                _onSearchChanged('');
-              },
-              color: theme.colorScheme.onSurface.withAlpha(60),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: ElevatedButton(
-              onPressed: () => _onSearch(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                minimumSize: const Size(0, 36),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.all(4.0),
+              child: ElevatedButton(
+                onPressed: () => _onSearch(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  minimumSize: const Size(0, 36),
+                ),
+                child: const Text('搜索', style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 13)),
               ),
-              child: const Text('搜索', style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 13)),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -499,60 +513,93 @@ class _SearchViewState extends State<SearchView> with SingleTickerProviderStateM
   Widget _buildSuggestions(ThemeData theme) {
     if (_suggestions.isEmpty) return const SizedBox.shrink();
 
-    return GestureDetector(
-      onTap: () => setState(() => _showSuggestions = false),
-      behavior: HitTestBehavior.translucent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Scrollbar(
-          controller: _suggestionScrollController,
-          child: ListView.builder(
-            controller: _suggestionScrollController,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 40),
-            itemCount: _suggestions.length,
-            itemBuilder: (context, index) {
-              final category = _suggestions[index];
-              final label = category['LableName']?.toString() ?? '';
-              final records = (category['RecordDatas'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final RenderBox? renderBox = _searchInputKey.currentContext?.findRenderObject() as RenderBox?;
+    final double? inputWidth = renderBox?.size.width;
 
-              if (records.isEmpty || label == 'MV') return const SizedBox.shrink();
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (label.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: AppTheme.fontWeightSemiBold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                  ...records.map((record) {
-                    final text = record['HintInfo']?.toString() ?? '';
-                    return ListTile(
-                      dense: true,
-                      leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
-                      title: Text(
-                        text,
-                        style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightMedium),
-                      ),
-                      onTap: () => _onSearch(text), 
-                    );
-                  }),
-                ],
-              );
-            },
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: () => setState(() => _showSuggestions = false),
+            behavior: HitTestBehavior.translucent,
           ),
         ),
-      ),
+        CompositedTransformFollower(
+          link: _layerLink,
+          showWhenUnlinked: false,
+          offset: const Offset(0, 48),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Container(
+              width: inputWidth,
+              constraints: const BoxConstraints(maxHeight: 400),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(20),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withAlpha(50),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Scrollbar(
+                  controller: _suggestionScrollController,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    controller: _suggestionScrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: _suggestions.length,
+                    itemBuilder: (context, index) {
+                      final category = _suggestions[index];
+                      final label = category['LableName']?.toString() ?? '';
+                      final records = (category['RecordDatas'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+                      if (records.isEmpty || label == 'MV') return const SizedBox.shrink();
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (label.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: AppTheme.fontWeightSemiBold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ...records.map((record) {
+                            final text = record['HintInfo']?.toString() ?? '';
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(CupertinoIcons.search, size: 14, color: theme.colorScheme.onSurface.withAlpha(100)),
+                              title: Text(
+                                text,
+                                style: const TextStyle(fontSize: 12, fontWeight: AppTheme.fontWeightMedium),
+                              ),
+                              onTap: () => _onSearch(text), 
+                            );
+                          }),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
