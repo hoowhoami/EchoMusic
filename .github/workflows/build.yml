@@ -234,7 +234,9 @@ jobs:
             RANGE="${GITHUB_SHA}"
           fi
 
-          CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+          CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" \
+            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
+            | awk 'NR==1{printf "%s",$0;next}{printf "<br/>%s",$0}')
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="无"
           fi
@@ -255,7 +257,7 @@ jobs:
           CLEAN_VERSION="${VERSION#v}"
           REPO="${{ github.repository }}"
 
-          MESSAGE="🎉 <b>EchoMusic ${VERSION} 构建成功！</b>\n\n📝 <b>更新内容：</b>\n${CHANGELOG}\n\n📦 <b>下载地址：</b>\n🍎 macOS: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg\">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a>\n🪟 Windows: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe\">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a>\n🐧 Linux (deb): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb\">EchoMusic-${CLEAN_VERSION}-Linux.deb</a>\n🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>\n\n🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
+          MESSAGE="🎉 <b>EchoMusic ${VERSION} 构建成功！</b><br/><br/>📝 <b>更新内容：</b><br/>${CHANGELOG}<br/><br/>📦 <b>下载地址：</b><br/>🍎 macOS: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg\">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a><br/>🪟 Windows: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe\">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a><br/>🐧 Linux (deb): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb\">EchoMusic-${CLEAN_VERSION}-Linux.deb</a><br/>🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a><br/><br/>🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
 
           CURL_CMD="curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" \
             -d chat_id=\"${TELEGRAM_CHAT_ID}\" \
