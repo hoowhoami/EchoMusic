@@ -268,15 +268,18 @@ jobs:
             "🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>" \
             "🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
 
-          CURL_CMD="curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" \
-            -d chat_id=\"${TELEGRAM_CHAT_ID}\" \
-            -d text=\"${MESSAGE}\" \
-            -d parse_mode=\"HTML\" \
-            -d disable_web_page_preview=true"
+          # 构建 JSON payload
+          PAYLOAD=$(jq -n \
+            --arg chat_id "${TELEGRAM_CHAT_ID}" \
+            --arg text "${MESSAGE}" \
+            --arg parse_mode "HTML" \
+            '{chat_id: $chat_id, text: $text, parse_mode: $parse_mode, disable_web_page_preview: true}')
 
-          # 如果设置了 TELEGRAM_TOPIC_ID，则添加 message_thread_id 参数
+          # 如果设置了 TELEGRAM_TOPIC_ID，则添加 message_thread_id
           if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
-            CURL_CMD="${CURL_CMD} -d message_thread_id=\"${TELEGRAM_TOPIC_ID}\""
+            PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "${TELEGRAM_TOPIC_ID}" '. + {message_thread_id: ($topic_id | tonumber)}')
           fi
 
-          eval $CURL_CMD
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
