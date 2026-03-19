@@ -260,7 +260,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
     if (!hasPlayable) {
       if (songs.any((song) => song.isNoCopyright)) {
         CustomToast.error(context, '所选歌曲包含无版权内容');
-      } else if (songs.any((song) => song.isPayBlocked || song.isPaid)) {
+      } else if (songs.any((song) => song.isPaid)) {
         CustomToast.error(context, '所选歌曲包含需要购买的内容');
       } else {
         CustomToast.error(context, '所选歌曲暂无可用音源');

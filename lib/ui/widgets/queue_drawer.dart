@@ -359,20 +359,8 @@ class _QueueItemState extends State<_QueueItem> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isPlayable = widget.song.isPlayable;
-    final isNoCopyright = widget.song.isNoCopyright;
-    final isPayBlocked = widget.song.isPayBlocked || widget.song.isPaid;
-    final unavailableMessage = isNoCopyright
-        ? '该歌曲暂无版权'
-        : isPayBlocked
-            ? '该歌曲需要购买'
-            : '该歌曲暂无可用音源';
-    final unavailableTag = !isPlayable
-        ? (isNoCopyright
-            ? '版权'
-            : isPayBlocked
-                ? '付费'
-                : '音源')
-        : null;
+    final unavailableMessage = widget.song.unavailableMessage ?? '该歌曲暂无可用音源';
+    final privilegeTags = widget.song.privilegeTags;
 
     final showPlayButton = _isHovered || widget.isCurrent;
     final displayIndex = (widget.index + 1).toString();
@@ -488,8 +476,13 @@ class _QueueItemState extends State<_QueueItem> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (unavailableTag != null)
-                              _buildTag(context, unavailableTag, theme),
+                            for (final tag in privilegeTags)
+                              _buildTag(
+                                context,
+                                tag.label,
+                                theme,
+                                tag.color,
+                              ),
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -527,14 +520,15 @@ class _QueueItemState extends State<_QueueItem> {
 }
 
 
-Widget _buildTag(BuildContext context, String text, ThemeData theme) {
+Widget _buildTag(BuildContext context, String text, ThemeData theme, [int? colorValue]) {
+  final color = colorValue != null ? Color(colorValue) : theme.colorScheme.outline;
   return Container(
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
     decoration: BoxDecoration(
-      color: theme.colorScheme.outline.withAlpha(20),
+      color: color.withAlpha(20),
       border: Border.all(
-        color: theme.colorScheme.outline.withAlpha(100),
+        color: color.withAlpha(100),
         width: 0.5,
       ),
       borderRadius: BorderRadius.circular(6),
@@ -542,7 +536,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
     child: Text(
       text,
       style: TextStyle(
-        color: theme.colorScheme.outline,
+        color: color,
         fontSize: 9,
         fontWeight: AppTheme.fontWeightSemiBold,
         letterSpacing: 0.5,

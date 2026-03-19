@@ -155,7 +155,7 @@ class _SongBatchSelectionDialogState extends State<_SongBatchSelectionDialog> {
     if (!hasPlayable) {
       if (_selectedSongs.any((song) => song.isNoCopyright)) {
         CustomToast.error(context, '所选歌曲包含无版权内容');
-      } else if (_selectedSongs.any((song) => song.isPayBlocked || song.isPaid)) {
+      } else if (_selectedSongs.any((song) => song.isPaid)) {
         CustomToast.error(context, '所选歌曲包含需要购买的内容');
       } else {
         CustomToast.error(context, '所选歌曲暂无可用音源');
@@ -435,15 +435,7 @@ class _BatchSongTile extends StatelessWidget {
     final theme = Theme.of(context);
     final isPlayable = song.isPlayable;
     final contentOpacity = isPlayable ? 1.0 : 0.45;
-    final isNoCopyright = song.isNoCopyright;
-    final isPayBlocked = song.isPayBlocked || song.isPaid;
-    final unavailableTag = !isPlayable
-        ? (isNoCopyright
-            ? '版权'
-            : isPayBlocked
-                ? '付费'
-                : '音源')
-        : null;
+    final privilegeTags = song.privilegeTags;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -504,8 +496,8 @@ class _BatchSongTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (unavailableTag != null)
-                          _buildTag(context, unavailableTag, theme),
+                        for (final tag in privilegeTags)
+                          _buildTag(context, tag.label, theme, tag.color),
                       ],
                     ),
                   ),
@@ -564,14 +556,15 @@ class _BatchSongTile extends StatelessWidget {
   }
 }
 
-Widget _buildTag(BuildContext context, String text, ThemeData theme) {
+Widget _buildTag(BuildContext context, String text, ThemeData theme, [int? colorValue]) {
+  final color = colorValue != null ? Color(colorValue) : theme.colorScheme.outline;
   return Container(
     margin: const EdgeInsets.only(left: 6),
     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
     decoration: BoxDecoration(
-      color: theme.colorScheme.outline.withAlpha(20),
+      color: color.withAlpha(20),
       border: Border.all(
-        color: theme.colorScheme.outline.withAlpha(100),
+        color: color.withAlpha(100),
         width: 0.5,
       ),
       borderRadius: BorderRadius.circular(6),
@@ -579,7 +572,7 @@ Widget _buildTag(BuildContext context, String text, ThemeData theme) {
     child: Text(
       text,
       style: TextStyle(
-        color: theme.colorScheme.outline,
+        color: color,
         fontSize: 9,
         fontWeight: AppTheme.fontWeightSemiBold,
         letterSpacing: 0.5,
