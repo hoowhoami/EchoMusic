@@ -257,21 +257,25 @@ jobs:
           CLEAN_VERSION="${VERSION#v}"
           REPO="${{ github.repository }}"
 
-          MESSAGE=$(cat <<EOF
-🎉 <b>EchoMusic ${VERSION} 构建成功！</b>
+          MESSAGE=$(cat <<'EOF'
+🎉 <b>EchoMusic VERSION_PLACEHOLDER 构建成功！</b>
 
 📝 <b>更新内容：</b>
-${CHANGELOG}
+CHANGELOG_PLACEHOLDER
 
 📦 <b>下载地址：</b>
-🍎 macOS: <a href="https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a>
-🪟 Windows: <a href="https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a>
-🐧 Linux (deb): <a href="https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb">EchoMusic-${CLEAN_VERSION}-Linux.deb</a>
-🐧 Linux (AppImage): <a href="https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>
+🍎 macOS: <a href="https://github.com/REPO_PLACEHOLDER/releases/download/VERSION_PLACEHOLDER/EchoMusic-CLEAN_VERSION_PLACEHOLDER-macOS.dmg">EchoMusic-CLEAN_VERSION_PLACEHOLDER-macOS.dmg</a>
+🪟 Windows: <a href="https://github.com/REPO_PLACEHOLDER/releases/download/VERSION_PLACEHOLDER/EchoMusic-CLEAN_VERSION_PLACEHOLDER-Windows-Setup-x64.exe">EchoMusic-CLEAN_VERSION_PLACEHOLDER-Windows-Setup-x64.exe</a>
+🐧 Linux (deb): <a href="https://github.com/REPO_PLACEHOLDER/releases/download/VERSION_PLACEHOLDER/EchoMusic-CLEAN_VERSION_PLACEHOLDER-Linux.deb">EchoMusic-CLEAN_VERSION_PLACEHOLDER-Linux.deb</a>
+🐧 Linux (AppImage): <a href="https://github.com/REPO_PLACEHOLDER/releases/download/VERSION_PLACEHOLDER/EchoMusic-CLEAN_VERSION_PLACEHOLDER-x86_64.AppImage">EchoMusic-CLEAN_VERSION_PLACEHOLDER-x86_64.AppImage</a>
 
-🔗 <a href="https://github.com/${REPO}/releases/tag/${VERSION}">查看完整 Release</a>
+🔗 <a href="https://github.com/REPO_PLACEHOLDER/releases/tag/VERSION_PLACEHOLDER">查看完整 Release</a>
 EOF
 )
+          MESSAGE="${MESSAGE//VERSION_PLACEHOLDER/$VERSION}"
+          MESSAGE="${MESSAGE//CLEAN_VERSION_PLACEHOLDER/$CLEAN_VERSION}"
+          MESSAGE="${MESSAGE//REPO_PLACEHOLDER/$REPO}"
+          MESSAGE="${MESSAGE//CHANGELOG_PLACEHOLDER/$CHANGELOG}"
 
           CURL_CMD="curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" \
             -d chat_id=\"${TELEGRAM_CHAT_ID}\" \
