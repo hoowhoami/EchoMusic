@@ -210,3 +210,73 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Send Telegram Notification
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build changelog
+        shell: bash
+        run: |
+          set -e
+          git fetch --tags --force
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..${GITHUB_SHA}"
+          else
+            RANGE="${GITHUB_SHA}"
+          fi
+
+          CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="无"
+          fi
+
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Send Build Success Message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          CLEAN_VERSION="${VERSION#v}"
+          REPO="${{ github.repository }}"
+
+          MESSAGE="🎉 <b>EchoMusic ${VERSION} 构建成功！</b>
+
+📝 <b>更新内容：</b>
+${CHANGELOG}
+
+📦 <b>下载地址：</b>
+🍎 macOS: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg\">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a>
+🪟 Windows: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe\">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a>
+🐧 Linux (deb): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb\">EchoMusic-${CLEAN_VERSION}-Linux.deb</a>
+🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>
+
+🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
+
+          CURL_CMD="curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" \
+            -d chat_id=\"${TELEGRAM_CHAT_ID}\" \
+            -d text=\"${MESSAGE}\" \
+            -d parse_mode=\"HTML\" \
+            -d disable_web_page_preview=true"
+
+          # 如果设置了 TELEGRAM_TOPIC_ID，则添加 message_thread_id 参数
+          if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
+            CURL_CMD="${CURL_CMD} -d message_thread_id=\"${TELEGRAM_TOPIC_ID}\""
+          fi
+
+          eval $CURL_CMD
