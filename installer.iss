@@ -1,5 +1,5 @@
 #ifndef AppVersion
-#define AppVersion GetFileVersion(BuildDir + "\echomusic.exe")
+#define AppVersion GetFileVersion(BuildDir + "\EchoMusic.exe")
 #endif
 #ifndef AppArch
 #define AppArch "x64"
@@ -36,11 +36,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\EchoMusic"; Filename: "{app}\echomusic.exe"
-Name: "{commondesktop}\EchoMusic"; Filename: "{app}\echomusic.exe"; Tasks: desktopicon
+Name: "{group}\EchoMusic"; Filename: "{app}\EchoMusic.exe"
+Name: "{commondesktop}\EchoMusic"; Filename: "{app}\EchoMusic.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\echomusic.exe"; Description: "{cm:LaunchProgram,EchoMusic}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\EchoMusic.exe"; Description: "{cm:LaunchProgram,EchoMusic}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -105,7 +105,8 @@ var
 begin
   Result := '';
 
-  if (not IsProcessRunning('echomusic.exe')) and
+  if (not IsProcessRunning('EchoMusic.exe')) and
+     (not IsProcessRunning('echomusic.exe')) and
      (not IsProcessRunning('app_win.exe')) then
   begin
     Exit;
@@ -116,7 +117,7 @@ begin
     if MsgBox(
       '检测到 EchoMusic 或其后台服务仍在运行。' #13#10 #13#10 +
       '安装程序需要先关闭以下进程后才能继续：' #13#10 +
-      '- echomusic.exe' #13#10 +
+      '- EchoMusic.exe / echomusic.exe' #13#10 +
       '- app_win.exe' #13#10 #13#10 +
       '点击“是”后将自动关闭它们并继续安装。' #13#10 +
       '如果你正在播放音乐，请先保存好当前操作。',
@@ -129,12 +130,14 @@ begin
     end;
   end;
 
+  ForceKillProcess('EchoMusic.exe');
   ForceKillProcess('echomusic.exe');
   ForceKillProcess('app_win.exe');
 
   for Retry := 0 to 9 do
   begin
-    if (not IsProcessRunning('echomusic.exe')) and
+    if (not IsProcessRunning('EchoMusic.exe')) and
+       (not IsProcessRunning('echomusic.exe')) and
        (not IsProcessRunning('app_win.exe')) then
     begin
       Log('All EchoMusic processes have been closed.');
@@ -143,7 +146,7 @@ begin
     Sleep(500);
   end;
 
-  Result := '无法关闭正在运行的 EchoMusic 或后台服务。请在任务管理器中结束 echomusic.exe 和 app_win.exe 后重试安装。';
+  Result := '无法关闭正在运行的 EchoMusic 或后台服务。请在任务管理器中结束相关进程后重试安装。';
 end;
 
 function InitializeSetup: Boolean;
