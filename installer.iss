@@ -1,5 +1,5 @@
 #ifndef AppVersion
-#define AppVersion "1.1.5"
+#define AppVersion GetFileVersion(BuildDir + "\echomusic.exe")
 #endif
 #ifndef AppArch
 #define AppArch "x64"

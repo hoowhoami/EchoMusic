@@ -50,6 +50,7 @@ class PersistenceProvider with ChangeNotifier {
     'closeBehavior': 'tray',
     'pauseOnDeviceChange': false,
     'globalShortcutsEnabled': false,
+    'checkPrerelease': false,
   };
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,

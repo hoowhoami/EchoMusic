@@ -57,6 +57,14 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Extract App Version
+        shell: bash
+        run: |
+          # 从 pubspec.yaml 提取 app_version 字段
+          APP_RAW_VERSION=$(grep 'app_version:' pubspec.yaml | cut -d ' ' -f 2)
+          echo "APP_RAW_VERSION=$APP_RAW_VERSION" >> "$GITHUB_ENV"
+          echo "Using App Version: $APP_RAW_VERSION"
+
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -65,11 +73,11 @@ jobs:
 
       - name: Build Flutter Desktop (Windows)
         if: matrix.platform == 'windows'
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
 
       - name: Build Flutter Desktop (Non-Windows)
         if: matrix.platform != 'windows'
-        run: flutter build ${{ matrix.platform }} --release
+        run: flutter build ${{ matrix.platform }} --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
 
       - name: Bundle Server (macOS)
         if: matrix.platform == 'macos'

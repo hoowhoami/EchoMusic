@@ -37,16 +37,20 @@ class _SettingViewState extends State<SettingView> {
   }
 
   Future<void> _loadVersion() async {
-    final packageInfo = await PackageInfo.fromPlatform();
+    final fullVersion = await VersionService.getFullVersion();
     if (mounted) {
       setState(() {
-        _currentVersion = packageInfo.version;
+        _currentVersion = fullVersion;
       });
     }
   }
 
   Future<void> _checkForUpdates() async {
-    final updateInfo = await VersionService.checkForUpdates();
+    final persistence = context.read<PersistenceProvider>();
+    final checkPrerelease = persistence.settings['checkPrerelease'] ?? false;
+    final updateInfo = await VersionService.checkForUpdates(
+      checkPrerelease: checkPrerelease,
+    );
 
     if (mounted) {
       if (updateInfo != null && updateInfo.hasUpdate) {
@@ -458,8 +462,18 @@ class _SettingViewState extends State<SettingView> {
           _buildGroup(context, '关于 EchoMusic', CupertinoIcons.info_circle, [
             _buildItem(
               context,
+              '检查预发布版本',
+              '开启后可收到 Alpha/Beta/RC 等测试版本更新推送',
+              trailing: _buildSwitch(
+                context,
+                settings['checkPrerelease'] ?? false,
+                (v) => persistence.updateSetting('checkPrerelease', v),
+              ),
+            ),
+            _buildItem(
+              context,
               '当前版本',
-              'Version v$_currentVersion Stable',
+              'Version v$_currentVersion ${VersionService.isPrereleaseVersion(_currentVersion) ? 'Prerelease' : 'Release'}',
               trailing: MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
