@@ -176,7 +176,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: EchoMusic Team
-          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25, libayatana-appindicator3-1, libmpv1, libkeybinder-3.0-0
+          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp-dev, libayatana-appindicator3-1, libmpv-dev, libkeybinder-3.0-0
           Description: A minimalist music player.
           EOF
 
