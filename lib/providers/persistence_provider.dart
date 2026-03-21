@@ -16,6 +16,9 @@ class PersistenceProvider with ChangeNotifier {
   static const String _keyPlaylistFilteredInvalidSongCount =
       'current_playlist_filtered_invalid_song_count';
   static const String _keySearchHistory = 'search_history';
+  static const String _keyWindowSize = 'window_size';
+  static const String _keyWindowPosition = 'window_position';
+
 
   List<Song> _favorites = [];
   Set<String> _favoriteHashes = {}; // lowercase hash → O(1) isFavorite lookup
@@ -51,6 +54,7 @@ class PersistenceProvider with ChangeNotifier {
     'pauseOnDeviceChange': false,
     'globalShortcutsEnabled': false,
     'checkPrerelease': false,
+    'rememberWindowSize': false,
   };
   Map<String, dynamic> _playerSettings = {
     'volume': 50.0,
@@ -132,6 +136,36 @@ class PersistenceProvider with ChangeNotifier {
 
     _isLoaded = true;
     notifyListeners();
+  }
+
+  Future<void> saveWindowSize(Size size) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyWindowSize, jsonEncode({'width': size.width, 'height': size.height}));
+  }
+
+  Future<void> saveWindowPosition(Offset position) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyWindowPosition, jsonEncode({'x': position.dx, 'y': position.dy}));
+  }
+
+  Future<Size?> getWindowSize() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_keyWindowSize);
+    if (json != null) {
+      final map = jsonDecode(json);
+      return Size(map['width'], map['height']);
+    }
+    return null;
+  }
+
+  Future<Offset?> getWindowPosition() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_keyWindowPosition);
+    if (json != null) {
+      final map = jsonDecode(json);
+      return Offset(map['x'], map['y']);
+    }
+    return null;
   }
 
   Future<void> savePlaybackState(

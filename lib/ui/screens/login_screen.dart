@@ -12,7 +12,6 @@ import '../../theme/app_theme.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/windows_caption_controls.dart';
 import '../../utils/logger.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.autoLoadQrOnInit = true});

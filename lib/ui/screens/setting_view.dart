@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:media_kit/media_kit.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/audio_provider.dart';
@@ -240,6 +239,16 @@ class _SettingViewState extends State<SettingView> {
                 (label) {
                   persistence.updateSetting('theme', _labelToTheme(label));
                 },
+              ),
+            ),
+            _buildItem(
+              context,
+              '记住窗口大小',
+              '在下次启动时自动恢复到上次关闭时的窗口大小和位置',
+              trailing: _buildSwitch(
+                context,
+                settings['rememberWindowSize'] ?? false,
+                (v) => persistence.updateSetting('rememberWindowSize', v),
               ),
             ),
             _buildItem(

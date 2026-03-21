@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 class CustomTabBar extends StatelessWidget {
   final TabController controller;

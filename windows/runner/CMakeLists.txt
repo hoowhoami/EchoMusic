@@ -38,36 +38,3 @@ target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
-
-# Copy VisualElementsManifest.xml for Windows Start Menu tiles.
-add_custom_command(
-  TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/EchoMusic.VisualElementsManifest.xml"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/EchoMusic.VisualElementsManifest.xml"
-)
-
-# Copy tile icon assets for Windows Start Menu.
-add_custom_command(
-  TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets"
-)
-add_custom_command(
-  TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square150x150Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square150x150Logo.png"
-)
-add_custom_command(
-  TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square70x70Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square70x70Logo.png"
-)
-add_custom_command(
-  TARGET ${BINARY_NAME} POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-  "${CMAKE_CURRENT_SOURCE_DIR}/resources/Assets/Square44x44Logo.png"
-  "$<TARGET_FILE_DIR:${BINARY_NAME}>/Assets/Square44x44Logo.png"
-)

@@ -19,7 +19,6 @@ import 'cover_image.dart';
 import 'queue_drawer.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 String _shortcutLabel(BuildContext context, AppShortcutCommand command) {
   final settings = context.watch<PersistenceProvider>().settings;
@@ -106,7 +105,6 @@ class _PlayerMainContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
 
     return Selector<AudioProvider, bool>(
       selector: (_, p) => p.currentSong == null,

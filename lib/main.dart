@@ -25,6 +25,7 @@ import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
 import 'utils/player_shortcut_actions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 bool get _supportsSystemWideHotKeys =>
@@ -84,18 +85,54 @@ void main() async {
     });
   }
 
-  const WindowOptions windowOptions = WindowOptions(
-    size: Size(1100, 750),
-    minimumSize: Size(1050, 700),
-    center: true,
+  // Load persistence logic for window size and position
+  final prefs = await SharedPreferences.getInstance();
+  final settingsJson = prefs.getString('app_settings');
+  bool rememberWindowSize = false;
+  if (settingsJson != null) {
+    final settings = jsonDecode(settingsJson);
+    rememberWindowSize = settings['rememberWindowSize'] ?? false;
+  }
+
+  Size? savedSize;
+  Offset? savedPosition;
+  if (rememberWindowSize) {
+    final sizeJson = prefs.getString('window_size');
+    if (sizeJson != null) {
+      final map = jsonDecode(sizeJson);
+      savedSize = Size(map['width'], map['height']);
+    }
+    final posJson = prefs.getString('window_position');
+    if (posJson != null) {
+      final map = jsonDecode(posJson);
+      savedPosition = Offset(map['x'], map['y']);
+    }
+  }
+
+  final WindowOptions windowOptions = WindowOptions(
+    size: savedSize ?? const Size(1100, 750),
+    minimumSize: const Size(1050, 700),
+    center: savedPosition == null,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    if (rememberWindowSize && savedPosition != null) {
+      await windowManager.setPosition(savedPosition);
+    }
     await windowManager.show();
     await windowManager.focus();
+
+    // Fix for Windows occasionally having blank space on the right on startup.
+    // Re-applying the size after a short delay forces a layout refresh.
+    if (Platform.isWindows) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      final size = await windowManager.getSize();
+      await windowManager.setSize(Size(size.width + 0.1, size.height + 0.1));
+      await windowManager.setSize(size);
+    }
   });
 
   runApp(
@@ -413,6 +450,24 @@ class _WindowHandlerState extends State<WindowHandler>
   @override
   void onWindowRestore() async {
     await _showWindowFromTray();
+  }
+
+  @override
+  void onWindowResized() async {
+    final persistence = context.read<PersistenceProvider>();
+    if (persistence.settings['rememberWindowSize'] ?? false) {
+      final size = await windowManager.getSize();
+      await persistence.saveWindowSize(size);
+    }
+  }
+
+  @override
+  void onWindowMoved() async {
+    final persistence = context.read<PersistenceProvider>();
+    if (persistence.settings['rememberWindowSize'] ?? false) {
+      final position = await windowManager.getPosition();
+      await persistence.saveWindowPosition(position);
+    }
   }
 
   @override

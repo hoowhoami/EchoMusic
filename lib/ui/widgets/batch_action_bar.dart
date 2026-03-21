@@ -10,7 +10,6 @@ import '../../theme/app_theme.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
 import 'playlist_picker_dialog.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 enum _BatchActionMenuResult {
   addToPlaylist,

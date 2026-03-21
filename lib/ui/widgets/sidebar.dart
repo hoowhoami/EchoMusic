@@ -393,9 +393,7 @@ class _SidebarState extends State<Sidebar> {
         final success = await userProvider.deletePlaylist(listid);
         if (context.mounted) {
           if (success) {
-            if (isCreatedByUser) {
-              navigationProvider.resetToRootAfterPlaylistDeletion();
-            }
+            navigationProvider.handlePlaylistDeletion(listid);
             CustomToast.success(context, '${isCreatedByUser ? '删除' : '取消收藏'}成功');
           } else {
             CustomToast.error(context, '${isCreatedByUser ? '删除' : '取消收藏'}失败，请重试');

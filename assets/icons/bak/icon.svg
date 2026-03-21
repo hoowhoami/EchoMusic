@@ -1,19 +1,27 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-    <!-- 图标主体：白底 -->
-    <rect width="1024" height="1024" rx="180" fill="#FFFFFF"/>
+    <defs>
+        <!-- 背景渐变 -->
+        <linearGradient id="bgGradient" x1="512" y1="0" x2="512" y2="1024" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#1A1A1A"/>
+            <stop offset="1" stop-color="#000000"/>
+        </linearGradient>
+    </defs>
+
+    <!-- 图标主体：全尺寸 1024x1024，圆角 rx=180 (标准 Android/iOS 风格) -->
+    <rect width="1024" height="1024" rx="180" fill="url(#bgGradient)"/>
 
     <!-- 装饰性波纹 -->
-    <g opacity="0.1">
+    <g opacity="0.15">
         <circle cx="512" cy="512" r="380" fill="none" stroke="#4A9EFF" stroke-width="2"/>
         <circle cx="512" cy="512" r="440" fill="none" stroke="#4A9EFF" stroke-width="1"/>
     </g>
 
-    <!-- Echo 文字：改为深色 -->
+    <!-- Echo 文字 -->
     <text x="512" y="475"
           font-family="system-ui, -apple-system, sans-serif"
           font-size="180"
           font-weight="800"
-          fill="#1A1A1A"
+          fill="#FFFFFF"
           text-anchor="middle"
           letter-spacing="6">Echo</text>
 

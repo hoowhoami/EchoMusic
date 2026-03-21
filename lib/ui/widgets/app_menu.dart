@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 
 import '../../providers/navigation_provider.dart';
 import '../../theme/app_theme.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 typedef AppMenuContentBuilder<T> = Widget Function(
   BuildContext context,
