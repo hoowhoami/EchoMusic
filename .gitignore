@@ -120,3 +120,6 @@ app.*.symbols
 # Server
 server/
 .ace-tool/
+
+
+**/.DS_Store
