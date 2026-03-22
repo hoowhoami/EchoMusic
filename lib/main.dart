@@ -385,9 +385,16 @@ class _WindowHandlerState extends State<WindowHandler>
 
   Future<void> _initTray() async {
     try {
-      await trayManager.setIcon(
-        Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
-      );
+      if (Platform.isMacOS) {
+        await trayManager.setIcon(
+          'assets/icons/mac_tray_icon_template.png',
+          isTemplate: true,
+        );
+      } else {
+        await trayManager.setIcon(
+          Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
+        );
+      }
     } catch (e, stackTrace) {
       _logTrayError('_initTray setIcon failed', e, stackTrace);
       return;
