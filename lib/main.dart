@@ -119,20 +119,25 @@ void main() async {
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    // 1. Apply saved position and size while still hidden
     if (rememberWindowSize && savedPosition != null) {
       await windowManager.setPosition(savedPosition);
     }
-    await windowManager.show();
-    await windowManager.focus();
-
-    // Fix for Windows occasionally having blank space on the right on startup.
-    // Re-applying the size after a short delay forces a layout refresh.
+    
+    // 2. Fix for Windows occasionally having blank space on the right.
+    // Doing this while hidden makes the "jump" invisible to the user.
     if (Platform.isWindows) {
-      await Future.delayed(const Duration(milliseconds: 200));
       final size = await windowManager.getSize();
       await windowManager.setSize(Size(size.width + 0.1, size.height + 0.1));
       await windowManager.setSize(size);
     }
+
+    // 3. Ensure opacity is restored (critical for macOS alpha=0 fix)
+    await windowManager.setOpacity(1.0);
+
+    // 4. Finally show the window in its correct final state
+    await windowManager.show();
+    await windowManager.focus();
   });
 
   runApp(

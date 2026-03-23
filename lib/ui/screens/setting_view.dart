@@ -70,7 +70,7 @@ class _SettingViewState extends State<SettingView> {
     }
   }
 
-  Future<void> _exportLogs() async {
+  Future<void> _openLogDirectory() async {
     final logFile = LoggerService.logFile;
     if (logFile == null) {
       if (mounted) {
@@ -119,7 +119,10 @@ class _SettingViewState extends State<SettingView> {
         final executable = command.first;
         final arguments = [...command.skip(1), path];
         final result = await Process.run(executable, arguments);
-        if (result.exitCode == 0) {
+        
+        // On Windows, explorer.exe often returns exit code 1 even when it successfully 
+        // opens the folder (especially if an explorer window is already open).
+        if (result.exitCode == 0 || (Platform.isWindows && result.exitCode == 1)) {
           return;
         }
 
@@ -423,8 +426,8 @@ class _SettingViewState extends State<SettingView> {
           _buildGroup(context, '数据与安全', CupertinoIcons.shield, [
             _buildItem(
               context,
-              '导出运行日志',
-              '打包当前应用日志以供排查问题',
+              '查看运行日志',
+              '打开本地日志目录以供排查问题',
               trailing: CupertinoButton(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -432,9 +435,9 @@ class _SettingViewState extends State<SettingView> {
                 ),
                 color: theme.colorScheme.primary.withAlpha(20),
                 borderRadius: BorderRadius.circular(10),
-                onPressed: _exportLogs,
+                onPressed: _openLogDirectory,
                 child: Text(
-                  '立即导出',
+                  '立即查看',
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontSize: 13,
