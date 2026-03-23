@@ -133,10 +133,11 @@ void main() async {
 
     // 4. Fix for Windows occasionally having blank space on the right on startup.
     // This MUST happen after show() and with a slight delay to force a DWM layout refresh.
+    // Use a 1.0px jitter to ensure it's not ignored by DPI rounding on Win11.
     if (Platform.isWindows) {
       await Future.delayed(const Duration(milliseconds: 200));
       final size = await windowManager.getSize();
-      await windowManager.setSize(Size(size.width + 0.1, size.height + 0.1));
+      await windowManager.setSize(Size(size.width + 1.0, size.height + 1.0));
       await windowManager.setSize(size);
     }
   });
