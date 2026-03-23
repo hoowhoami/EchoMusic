@@ -124,20 +124,21 @@ void main() async {
       await windowManager.setPosition(savedPosition);
     }
     
-    // 2. Fix for Windows occasionally having blank space on the right.
-    // Doing this while hidden makes the "jump" invisible to the user.
+    // 2. Ensure opacity is restored (critical for macOS alpha=0 fix)
+    await windowManager.setOpacity(1.0);
+
+    // 3. Finally show the window
+    await windowManager.show();
+    await windowManager.focus();
+
+    // 4. Fix for Windows occasionally having blank space on the right on startup.
+    // This MUST happen after show() and with a slight delay to force a DWM layout refresh.
     if (Platform.isWindows) {
+      await Future.delayed(const Duration(milliseconds: 200));
       final size = await windowManager.getSize();
       await windowManager.setSize(Size(size.width + 0.1, size.height + 0.1));
       await windowManager.setSize(size);
     }
-
-    // 3. Ensure opacity is restored (critical for macOS alpha=0 fix)
-    await windowManager.setOpacity(1.0);
-
-    // 4. Finally show the window in its correct final state
-    await windowManager.show();
-    await windowManager.focus();
   });
 
   runApp(
