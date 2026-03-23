@@ -497,9 +497,14 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   @override
-  void onTrayIconRightMouseDown() {
+  void onTrayIconRightMouseDown() async {
     if (!Platform.isLinux) {
-      trayManager.popUpContextMenu();
+      if (Platform.isWindows) {
+        // Fix for Windows: context menu doesn't close when clicking away
+        // unless the window is the foreground window.
+        await windowManager.focus();
+      }
+      await trayManager.popUpContextMenu();
     }
   }
 
