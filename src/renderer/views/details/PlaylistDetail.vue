@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
 import { getPlaylistComments } from '@/api/comment';
@@ -62,7 +62,11 @@ const getPlaylistId = () => route.params.id as string;
 
 const loading = ref(true);
 const playlist = ref<PlaylistMeta | null>(null);
-const songs = ref<Song[]>([]);
+
+// 使用 shallowRef 极大减少响应式开销
+const songs = shallowRef<Song[]>([]);
+const loadedSongCount = ref(0);
+
 const playlistFilteredInvalidCount = ref(0);
 const activeTab = ref('songs');
 const loadingComments = ref(false);
@@ -119,7 +123,6 @@ const isFavoritePlaylist = computed(() => {
   });
 });
 
-const loadedSongCount = computed(() => songs.value.length);
 const songTotalCount = computed(() => {
   const metaCount = playlist.value?.count ?? 0;
   return metaCount > 0 ? metaCount : loadedSongCount.value;
@@ -273,6 +276,7 @@ const fetchData = async () => {
               : tracksRes;
         const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? tracksRes);
         songs.value = parsedSongs;
+        loadedSongCount.value = parsedSongs.length;
         playlistFilteredInvalidCount.value = filteredCount;
       }
     }
@@ -295,9 +299,10 @@ const fetchAllPlaylistTracks = async (
   const pageSize = 200;
   const seenIds = new Set(songs.value.map((song) => song.id));
   let page = 2;
+  let bufferedSongs = [...songs.value];
 
   try {
-    while (songs.value.length < totalCount) {
+    while (bufferedSongs.length < totalCount) {
       const res = await getPlaylistTracks(queryId, page, pageSize);
 
       if (!res || typeof res !== 'object') break;
@@ -321,9 +326,11 @@ const fetchAllPlaylistTracks = async (
       });
 
       if (nextSongs.length === 0) break;
-      songs.value = [...songs.value, ...nextSongs];
+      bufferedSongs = [...bufferedSongs, ...nextSongs];
+      loadedSongCount.value = bufferedSongs.length;
       page += 1;
     }
+    songs.value = bufferedSongs;
   } catch {
     toastStore.loadFailed('歌单歌曲');
   }
@@ -335,6 +342,7 @@ watch(
   () => {
     playlist.value = null;
     songs.value = [];
+    loadedSongCount.value = 0;
     playlistFilteredInvalidCount.value = 0;
     comments.value = [];
     hotComments.value = [];
@@ -442,17 +450,16 @@ const openCommentPageWithFloor = (comment: Comment) => {
 };
 
 const sortedSongs = computed(() => {
-  const base = songs.value.slice();
-  if (!sortField.value || !sortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  songs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
+  const data = songs.value;
+  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
+  if (sortField.value === 'index') {
+    return sortOrder.value === 'asc' ? data : [...data].reverse();
+  }
 
-  return base.sort((a, b) => {
+  const direction = sortOrder.value === 'asc' ? 1 : -1;
+  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+    
+  return [...data].sort((a, b) => {
     switch (sortField.value) {
       case 'title':
         return compareText(a.title, b.title) * direction;
@@ -460,8 +467,6 @@ const sortedSongs = computed(() => {
         return compareText(a.album ?? '', b.album ?? '') * direction;
       case 'duration':
         return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
       default:
         return 0;
     }
@@ -588,9 +593,8 @@ const sortedSongs = computed(() => {
       </div>
 
       <!-- 2. Sticky Tabs + 表头 -->
-      <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
-          <!-- Tab 切换栏 -->
+      <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
           <div class="px-6 border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <TabsList class="bg-transparent border-none gap-8">
@@ -605,7 +609,6 @@ const sortedSongs = computed(() => {
                 </TabsTrigger>
               </TabsList>
 
-              <!-- 右侧搜索与定位 -->
               <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                 <div class="relative">
                   <input
@@ -634,7 +637,6 @@ const sortedSongs = computed(() => {
             </div>
           </div>
 
-          <!-- 表头 (仅在歌曲 tab 显示) -->
           <SongListHeader
             v-if="activeTab === 'songs'"
             :sortField="sortField"
@@ -643,16 +645,15 @@ const sortedSongs = computed(() => {
             paddingClass="px-6"
             @sort="handleSort"
           />
-        </Tabs>
-      </div>
+        </div>
 
-      <!-- 3. 内容区域 -->
-      <div class="pb-12">
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <div class="pb-12">
           <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
             <SongList
               ref="songListRef"
               :songs="sortedSongs"
+              :loading="loading"
+              :active="activeTab === 'songs'"
               :searchQuery="searchQuery"
               :activeId="activeSongId"
               :showCover="true"
@@ -702,9 +703,8 @@ const sortedSongs = computed(() => {
               </div>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
-
+        </div>
+      </Tabs>
       <Dialog
         v-model:open="showIntroDialog"
         :title="'歌单介绍'"

@@ -12,7 +12,7 @@
     "build": "vue-tsc --noEmit && vite build && electron-builder",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
-    "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.ts\" \"tsconfig*.json\""
+    "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
   },
   "dependencies": {
     "@iconify/icons-tabler": "^1.2.95",

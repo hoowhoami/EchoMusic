@@ -414,10 +414,10 @@ watch(
 
     <div :class="['px-4 pb-3 shrink-0 no-drag', isMac ? 'mt-2' : 'mt-0']">
       <div
-        class="user-info-card flex items-center bg-bg-info-card border border-black/[0.08] dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
+        class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/[0.08] dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
       >
         <div
-          class="sidebar-user-link flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
+          class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
           @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
         >
           <div
@@ -425,13 +425,13 @@ watch(
           >
             <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
           </div>
-          <div class="flex flex-col min-w-0">
+          <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
             <span
               class="text-[13px] font-semibold text-text-main truncate leading-tight tracking-tight"
             >
               {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
             </span>
-            <span class="text-[9px] text-text-secondary font-medium opacity-60 tracking-wider">
+            <span class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider">
               {{ isLoggedIn ? `Lv.${userInfo?.p_grade || 0}` : '点击登录账号' }}
             </span>
           </div>
@@ -830,6 +830,18 @@ watch(
 .sidebar-section-action,
 .sidebar-playlist-action {
   background-color: transparent;
+}
+
+.user-info-card {
+  min-width: 0;
+}
+
+.sidebar-user-link {
+  min-width: 0;
+}
+
+.sidebar-settings-btn {
+  @apply h-9 w-9 shrink-0 flex items-center justify-center;
 }
 
 .sidebar-nav-item:not(.is-active):not(.is-disabled):hover,

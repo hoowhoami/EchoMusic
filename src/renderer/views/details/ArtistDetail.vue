@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getArtistDetail, getArtistSongs, getArtistAlbums, followArtist, unfollowArtist } from '@/api/artist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
@@ -38,11 +38,16 @@ const router = useRouter();
 const getArtistId = () => String(Array.isArray(route.params.id) ? route.params.id[0] ?? '' : route.params.id ?? '');
 
 const loading = ref(true);
+const loadingSongs = ref(true);
+const loadingAlbums = ref(true);
 const artist = ref<ReturnType<typeof mapArtistDetailMeta> | null>(null);
-const songs = ref<Song[]>([]);
-const albums = ref<ReturnType<typeof mapAlbumMeta>[]>([]);
+
+// 使用 shallowRef 避免对成千上万个歌曲对象进行深层响应式代理，极大提升性能
+const songs = shallowRef<Song[]>([]);
+const albums = shallowRef<ReturnType<typeof mapAlbumMeta>[]>([]);
+
 const activeTab = ref('songs');
-const loadedSongCount = computed(() => songs.value.length);
+const loadedSongCount = ref(0);
 const loadedAlbumCount = computed(() => albums.value.length);
 const showBatchDrawer = ref(false);
 const showIntroDialog = ref(false);
@@ -75,17 +80,18 @@ const handleSort = (field: SortField) => {
 };
 
 const sortedSongs = computed(() => {
-  const base = songs.value.slice();
-  if (!sortField.value || !sortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  songs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
+  const data = songs.value;
+  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
+  
+  if (sortField.value === 'index') {
+    return sortOrder.value === 'asc' ? data : [...data].reverse();
+  }
+  
   const direction = sortOrder.value === 'asc' ? 1 : -1;
+  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
 
-  return base.sort((a, b) => {
+  // 仅在需要排序时创建副本
+  return [...data].sort((a, b) => {
     switch (sortField.value) {
       case 'title':
         return compareText(a.title, b.title) * direction;
@@ -93,8 +99,6 @@ const sortedSongs = computed(() => {
         return compareText(a.album ?? '', b.album ?? '') * direction;
       case 'duration':
         return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
       default:
         return 0;
     }
@@ -109,8 +113,10 @@ const fetchAllArtistSongs = async (totalCount: number) => {
   const seenIds = new Set(songs.value.map((song) => song.id));
   let page = 2;
 
+  let bufferedSongs = [...songs.value];
+
   try {
-    while (songs.value.length < totalCount) {
+    while (bufferedSongs.length < totalCount) {
       const res = await getArtistSongs(artistId, page, pageSize, 'hot');
       const nextSongs = extractList(res).map((item) => mapArtistSong(artistId, item));
       const filtered = nextSongs.filter((song) => {
@@ -119,42 +125,58 @@ const fetchAllArtistSongs = async (totalCount: number) => {
         return true;
       });
       if (filtered.length === 0) break;
-      songs.value = [...songs.value, ...filtered];
+      bufferedSongs = [...bufferedSongs, ...filtered];
+      loadedSongCount.value = bufferedSongs.length;
       page += 1;
     }
+    songs.value = bufferedSongs;
   } catch {
     toastStore.loadFailed('歌手歌曲');
   }
 };
 
 const fetchData = async () => {
+  const artistId = getArtistId();
   loading.value = true;
-  try {
-    const [detailRes, songsRes, albumsRes] = await Promise.all([
-      getArtistDetail(getArtistId()),
-      getArtistSongs(getArtistId(), 1, 200, 'hot'),
-      getArtistAlbums(getArtistId(), 1, 30, 'hot'),
-    ]);
+  loadingSongs.value = true;
+  loadingAlbums.value = true;
 
-    const detailRaw = extractFirstObject(detailRes);
+  // 1. 获取歌手详情
+  const detailTask = getArtistDetail(artistId).then((res) => {
+    const detailRaw = extractFirstObject(res);
     if (detailRaw) {
       artist.value = mapArtistDetailMeta(detailRaw);
     }
+    loading.value = false;
+  }).catch(() => {
+    loading.value = false;
+  });
 
-    songs.value = extractList(songsRes).map((item) => mapArtistSong(getArtistId(), item));
-    albums.value = extractList(albumsRes).map((item) => mapAlbumMeta(item));
+  // 2. 获取歌曲列表
+  const songsTask = getArtistSongs(artistId, 1, 200, 'hot').then((res) => {
+    const fetched = extractList(res).map((item) => mapArtistSong(artistId, item));
+    songs.value = fetched;
+    loadedSongCount.value = fetched.length;
+    loadingSongs.value = false;
 
-    const totalSongs = artist.value?.songCount ?? 0;
-    if (totalSongs > songs.value.length) {
+    const totalSongs = artist.value?.songCount ?? fetched.length;
+    if (totalSongs > fetched.length) {
       void fetchAllArtistSongs(totalSongs);
     }
-  } catch (error) {
-    artist.value = null;
-    songs.value = [];
-    albums.value = [];
-  } finally {
-    loading.value = false;
-  }
+  }).catch(() => {
+    loadingSongs.value = false;
+  });
+
+  // 3. 获取专辑列表
+  const albumsTask = getArtistAlbums(artistId, 1, 30, 'hot').then((res) => {
+    const fetched = extractList(res).map((item) => mapAlbumMeta(item));
+    albums.value = fetched;
+    loadingAlbums.value = false;
+  }).catch(() => {
+    loadingAlbums.value = false;
+  });
+
+  await Promise.allSettled([detailTask, songsTask, albumsTask]);
 };
 
 watch(
@@ -163,6 +185,7 @@ watch(
     artist.value = null;
     songs.value = [];
     albums.value = [];
+    loadedSongCount.value = 0;
     searchQuery.value = '';
     sortField.value = null;
     sortOrder.value = null;
@@ -314,8 +337,8 @@ onMounted(() => {
         </Button>
       </div>
 
-      <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
-        <Tabs v-model="activeTab" class="w-full">
+      <Tabs v-model="activeTab" class="w-full">
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
           <div class="px-6 border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <TabsList class="bg-transparent border-none gap-8">
@@ -361,33 +384,40 @@ onMounted(() => {
             paddingClass="px-6"
             @sort="handleSort"
           />
-        </Tabs>
-      </div>
+        </div>
 
-      <div class="pb-12">
-        <Tabs v-model="activeTab" class="w-full">
+        <div class="pb-12">
           <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
-            <SongList ref="songListRef" :songs="sortedSongs" :searchQuery="searchQuery" :showCover="true"
+            <SongList
+              ref="songListRef"
+              :songs="sortedSongs"
+              :searchQuery="searchQuery"
+              :loading="loadingSongs"
+              :active="activeTab === 'songs'"
+              :showCover="true"
               :enableDefaultDoubleTapPlay="true"
-              :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined" />
+              :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
+            />
           </TabsContent>
 
           <TabsContent value="albums" class="mt-4 px-6">
-            <div class="artist-album-grid px-2">
+            <div v-if="loadingAlbums && albums.length === 0" class="flex items-center justify-center py-20">
+              <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <div v-else class="artist-album-grid px-2">
               <AlbumCard
-                v-for="album in albums"
-                :key="album.id"
-                :id="album.id"
-                :name="album.name"
-                :coverUrl="album.pic"
-                :artist="album.singerName"
-                :publishTime="album.publishTime"
+                v-for="albumItem in albums"
+                :key="albumItem.id"
+                :id="albumItem.id"
+                :name="albumItem.name"
+                :coverUrl="albumItem.pic"
+                :artist="albumItem.singerName"
+                :publishTime="albumItem.publishTime"
               />
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
-
+        </div>
+      </Tabs>
       <Dialog
         v-model:open="showIntroDialog"
         title="歌手介绍"

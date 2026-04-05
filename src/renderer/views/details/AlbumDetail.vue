@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';
 import { getAlbumDetail, getAlbumSongs, favoriteAlbum as favoriteAlbumApi, unfavoriteAlbum as unfavoriteAlbumApi } from '@/api/album';
@@ -60,7 +60,11 @@ const isSameRoute = (name: string, targetId: string | number) => {
 
 const loading = ref(true);
 const album = ref<AlbumMeta | null>(null);
-const songs = ref<Song[]>([]);
+
+// 使用 shallowRef 极大减少响应式开销
+const songs = shallowRef<Song[]>([]);
+const loadedSongCount = ref(0);
+
 const activeTab = ref('songs');
 const loadingComments = ref(false);
 const comments = ref<Comment[]>([]);
@@ -71,7 +75,6 @@ const hasMoreComments = ref(true);
 const showBatchDrawer = ref(false);
 const showIntroDialog = ref(false);
 
-const loadedSongCount = computed(() => songs.value.length);
 const albumSongCount = computed(() => {
   const metaCount = album.value?.songCount ?? 0;
   return metaCount > 0 ? metaCount : loadedSongCount.value;
@@ -209,17 +212,16 @@ const handleSort = (field: SortField) => {
 };
 
 const sortedSongs = computed(() => {
-  const base = songs.value.slice();
-  if (!sortField.value || !sortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  songs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
+  const data = songs.value;
+  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
+  if (sortField.value === 'index') {
+    return sortOrder.value === 'asc' ? data : [...data].reverse();
+  }
 
-  return base.sort((a, b) => {
+  const direction = sortOrder.value === 'asc' ? 1 : -1;
+  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+    
+  return [...data].sort((a, b) => {
     switch (sortField.value) {
       case 'title':
         return compareText(a.title, b.title) * direction;
@@ -227,8 +229,6 @@ const sortedSongs = computed(() => {
         return compareText(a.album ?? '', b.album ?? '') * direction;
       case 'duration':
         return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
       default:
         return 0;
     }
@@ -296,6 +296,8 @@ const fetchComments = async (reset = false) => {
   }
 };
 
+const loadingSongs = ref(true);
+
 const handleTabChange = (value: string | number) => {
   activeTab.value = String(value);
   if (value === 'comments' && comments.value.length === 0) {
@@ -305,13 +307,11 @@ const handleTabChange = (value: string | number) => {
 
 const fetchData = async () => {
   loading.value = true;
-  try {
-    const albumId = getAlbumId();
-    const [detailRes, songsRes] = await Promise.all([
-      getAlbumDetail(albumId),
-      getAlbumSongs(albumId, 1, 30),
-    ]);
+  loadingSongs.value = true;
+  const albumId = getAlbumId();
 
+  // 1. 先获取专辑详情，用于展示 Header
+  const detailTask = getAlbumDetail(albumId).then((detailRes) => {
     const detailRaw = extractFirstObject(detailRes);
     if (detailRaw) {
       album.value = mapAlbumDetailMeta(detailRaw);
@@ -319,18 +319,30 @@ const fetchData = async () => {
     } else {
       albumArtists.value = [];
     }
+    loading.value = false;
+  }).catch(e => {
+    console.error('Fetch album detail error:', e);
+    loading.value = false;
+  });
 
-    songs.value = extractList(songsRes).map((item) => mapAlbumSong(item));
+  // 2. 获取歌曲列表
+  const songsTask = getAlbumSongs(albumId, 1, 30).then((songsRes) => {
+    const fetched = extractList(songsRes).map((item) => mapAlbumSong(item));
+    songs.value = fetched;
+    loadedSongCount.value = fetched.length;
+    loadingSongs.value = false;
 
-    const totalSongs = albumSongCount.value;
-    if (totalSongs > songs.value.length) {
+    // 优先使用详情接口给出的总数，避免并发请求下读取到旧值
+    const totalSongs = album.value?.songCount ?? fetched.length;
+    if (totalSongs > fetched.length) {
       void fetchAllAlbumSongs(totalSongs);
     }
-  } catch (e) {
-    console.error('Fetch album detail error:', e);
-  } finally {
-    loading.value = false;
-  }
+  }).catch(e => {
+    console.error('Fetch album songs error:', e);
+    loadingSongs.value = false;
+  });
+
+  await Promise.allSettled([detailTask, songsTask]);
 };
 
 const fetchAllAlbumSongs = async (totalCount: number) => {
@@ -339,8 +351,10 @@ const fetchAllAlbumSongs = async (totalCount: number) => {
   const albumId = getAlbumId();
   const seenIds = new Set(songs.value.map((song) => song.id));
   let page = 2;
+  let bufferedSongs = [...songs.value];
+
   try {
-    while (songs.value.length < totalCount) {
+    while (bufferedSongs.length < totalCount) {
       const res = await getAlbumSongs(albumId, page, pageSize);
       if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) break;
       const nextSongs = extractList(res).map((item) => mapAlbumSong(item));
@@ -350,9 +364,11 @@ const fetchAllAlbumSongs = async (totalCount: number) => {
         return true;
       });
       if (filtered.length === 0) break;
-      songs.value = [...songs.value, ...filtered];
+      bufferedSongs = [...bufferedSongs, ...filtered];
+      loadedSongCount.value = bufferedSongs.length;
       page += 1;
     }
+    songs.value = bufferedSongs;
   } catch {
     toastStore.loadFailed('专辑歌曲');
   }
@@ -366,6 +382,7 @@ watch(
     album.value = null;
     albumArtists.value = [];
     songs.value = [];
+    loadedSongCount.value = 0;
     comments.value = [];
     hotComments.value = [];
     commentPage.value = 1;
@@ -517,9 +534,8 @@ const openCommentPageWithFloor = (comment: Comment) => {
       </div>
 
       <!-- 2. Sticky Tabs + 表头 -->
-      <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
-          <!-- Tab 切换栏 -->
+      <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
           <div class="px-6 border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <TabsList class="bg-transparent border-none gap-8">
@@ -534,7 +550,6 @@ const openCommentPageWithFloor = (comment: Comment) => {
                 </TabsTrigger>
               </TabsList>
 
-              <!-- 右侧操作 -->
               <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
                 <div class="relative">
                   <input
@@ -550,7 +565,9 @@ const openCommentPageWithFloor = (comment: Comment) => {
                     height="14"
                   />
                 </div>
-                <Button variant="unstyled" size="none"
+                <Button
+                  variant="unstyled"
+                  size="none"
                   @click="handleLocate"
                   class="song-locate-btn p-2 rounded-lg"
                   title="定位当前播放"
@@ -561,7 +578,6 @@ const openCommentPageWithFloor = (comment: Comment) => {
             </div>
           </div>
 
-          <!-- 表头 (仅在歌曲 tab 显示) -->
           <SongListHeader
             v-if="activeTab === 'songs'"
             :sortField="sortField"
@@ -570,16 +586,15 @@ const openCommentPageWithFloor = (comment: Comment) => {
             paddingClass="px-6"
             @sort="handleSort"
           />
-        </Tabs>
-      </div>
+        </div>
 
-      <!-- 3. 内容区域 -->
-      <div class="pb-12">
-        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+        <div class="pb-12">
           <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
             <SongList
               ref="songListRef"
               :songs="sortedSongs"
+              :loading="loadingSongs"
+              :active="activeTab === 'songs'"
               :searchQuery="searchQuery"
               :activeId="activeSongId"
               :showCover="true"
@@ -601,9 +616,8 @@ const openCommentPageWithFloor = (comment: Comment) => {
               </div>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
-
+        </div>
+      </Tabs>
       <Dialog
         v-model:open="showIntroDialog"
         title="专辑介绍"

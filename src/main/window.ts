@@ -195,7 +195,7 @@ export async function createWindow() {
     backgroundColor: initialBgColor, // 动态设置背景色
     frame: false,
     transparent: false,
-    hasShadow: false,
+    hasShadow: true,
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -236,6 +236,8 @@ export async function createWindow() {
     if (closeBehavior === 'tray') {
       event.preventDefault();
       win?.hide();
+    } else {
+      app.quit();
     }
   });
 

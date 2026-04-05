@@ -20,53 +20,53 @@ if (!gotTheLock) {
   app.on('second-instance', () => {
     restoreWindow();
   });
-}
 
-// 注册 IPC 处理器
-registerIpcHandlers({
-  getMainWindow,
-});
-
-app.whenReady().then(async () => {
-  try {
-    // 启动 API 服务
-    await startApiServer();
-  } catch (err) {
-    console.error('[Main] Failed to start API server:', err);
-  }
-  // 创建主窗口
-  createWindow();
-  initTray({
+  // 注册 IPC 处理器
+  registerIpcHandlers({
     getMainWindow,
-    restoreWindow,
   });
-  if (process.platform === 'darwin') {
-    app.dock?.setMenu(createDockMenu());
-  }
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('activate', () => {
-  const mainWindow = getMainWindow();
-
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
+  app.whenReady().then(async () => {
+    try {
+      // 启动 API 服务
+      await startApiServer();
+    } catch (err) {
+      console.error('[Main] Failed to start API server:', err);
     }
-    mainWindow.show();
-    mainWindow.focus();
-  } else {
+    // 创建主窗口
     createWindow();
-  }
-});
+    initTray({
+      getMainWindow,
+      restoreWindow,
+    });
+    if (process.platform === 'darwin') {
+      app.dock?.setMenu(createDockMenu());
+    }
+  });
 
-app.on('before-quit', () => {
-  globalShortcut.unregisterAll();
-  destroyTray();
-  stopApiServer();
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  app.on('activate', () => {
+    const mainWindow = getMainWindow();
+
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    } else {
+      createWindow();
+    }
+  });
+
+  app.on('before-quit', () => {
+    globalShortcut.unregisterAll();
+    destroyTray();
+    stopApiServer();
+  });
+}
