@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install root dependencies
-        run: pnpm install --no-audit --no-fund --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Install server dependencies
         working-directory: server
