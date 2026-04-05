@@ -11,13 +11,16 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
 </script>
 
 <template>
-  <header class="overlay-header fixed top-0 left-0 right-0 z-[2000] pointer-events-none select-none flex flex-col">
+  <header
+    class="overlay-header fixed top-0 left-0 right-0 z-[2000] h-10 pointer-events-none select-none"
+  >
     <!-- 1. macOS 顶部红绿灯占位 (40px) -->
-    <div v-if="isMac" class="h-10 w-full drag pointer-events-auto"></div>
+    <div v-if="isMac" class="h-full w-full drag pointer-events-auto"></div>
 
     <!-- 2. Windows/Linux 窗口控制行 -->
-    <div v-if="!isMac" class="flex justify-end h-10 w-full drag pointer-events-auto">
-      <div class="window-controls flex items-center h-full no-drag pointer-events-auto">
+    <template v-if="!isMac">
+      <div class="absolute inset-y-0 left-0 right-[132px] drag pointer-events-auto"></div>
+      <div class="window-controls absolute top-0 right-0 flex items-center h-full no-drag pointer-events-auto">
         <Button variant="unstyled" size="none" 
           @click="handleControl('minimize')" 
           class="w-11 h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.1]" 
@@ -40,7 +43,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
           <Icon :icon="iconX" width="10" height="10" />
         </Button>
       </div>
-    </div>
+    </template>
   </header>
 </template>
 

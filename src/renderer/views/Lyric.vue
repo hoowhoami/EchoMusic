@@ -277,8 +277,7 @@ onUnmounted(() => {
 
     <OverlayHeader />
 
-    <div class="relative z-10 flex h-full flex-col">
-      <div class="h-12 w-full drag"></div>
+    <div class="relative z-10 flex h-full flex-col pt-10">
 
       <div class="px-6 pb-3 no-drag">
         <div class="flex h-12 items-center">

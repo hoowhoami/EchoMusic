@@ -285,7 +285,7 @@ onUnmounted(() => {
     <div class="absolute inset-0 bg-gradient-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"></div>
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/[0.03] blur-[120px] pointer-events-none z-0"></div>
 
-    <OverlayHeader class="relative z-20" />
+    <OverlayHeader />
 
     <div class="flex-1 relative overflow-hidden flex items-center justify-center p-6 z-10">
       <div class="absolute top-12 left-6 z-[100]">

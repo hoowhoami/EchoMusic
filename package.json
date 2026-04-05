@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -87,7 +87,7 @@
       }
     ],
     "mac": {
-      "icon": "build/icons/icon.icns",
+      "icon": "icons/icon.icns",
       "category": "public.app-category.music",
       "target": [
         "dmg",
@@ -95,14 +95,14 @@
       ]
     },
     "win": {
-      "icon": "build/icons/icon.ico",
+      "icon": "icons/icon.ico",
       "target": [
         "nsis",
         "portable"
       ]
     },
     "linux": {
-      "icon": "build/icons",
+      "icon": "icons",
       "target": [
         "AppImage",
         "deb",
