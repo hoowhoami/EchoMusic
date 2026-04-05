@@ -11,5 +11,9 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+    
+    // Set alpha to 0 to prevent the initial flicker.
+    // window_manager will automatically handle the alpha when show() is called from Dart.
+    self.alphaValue = 0.0
   }
 }

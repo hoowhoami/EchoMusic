@@ -156,7 +156,7 @@ class _ToastWidgetState extends State<_ToastWidget> with SingleTickerProviderSta
                             style: TextStyle(
                               color: theme.colorScheme.onSurface,
                               fontSize: 14,
-                              fontWeight: AppTheme.fontWeightBold,
+                              fontWeight: AppTheme.fontWeightSemiBold,
                               letterSpacing: -0.2,
                             ),
                           ),

@@ -8,6 +8,7 @@ import '../../providers/navigation_provider.dart';
 import '../widgets/playlist_card.dart';
 import '../widgets/cover_image.dart';
 import 'package:echomusic/theme/app_theme.dart';
+import '../widgets/scrollable_content.dart';
 
 class ExploreView extends StatefulWidget {
   const ExploreView({super.key});
@@ -29,44 +30,58 @@ class _ExploreViewState extends State<ExploreView> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(30.0),
+    return ScrollableContent(
+      padding: const EdgeInsets.fromLTRB(40, 20, 40, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader('推荐歌单'),
-          const SizedBox(height: 20),
+          _buildMainHeader('探索发现'),
+          const SizedBox(height: 32),
+          _buildSectionHeader('推荐歌单'),
+          const SizedBox(height: 16),
           _buildRecommendedPlaylists(),
-          const SizedBox(height: 40),
-          _buildHeader('新歌速递'),
           const SizedBox(height: 20),
+          _buildSectionHeader('新歌速递'),
+          const SizedBox(height: 16),
           _buildNewSongs(),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(String title) {
+  Widget _buildMainHeader(String title) {
     final theme = Theme.of(context);
     return Text(
       title,
       style: TextStyle(
         fontSize: 24,
-        fontWeight: AppTheme.fontWeightBold,
+        fontWeight: AppTheme.fontWeightSemiBold,
+        color: theme.colorScheme.onSurface,
+        letterSpacing: -0.5,
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    final theme = Theme.of(context);
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: AppTheme.fontWeightSemiBold,
         color: theme.colorScheme.onSurface,
       ),
     );
   }
 
   Widget _buildRecommendedPlaylists() {
-    final theme = Theme.of(context);
     return FutureBuilder<List<Playlist>>(
       future: _recommendedPlaylistsFuture,
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox(height: 200);
         final playlists = snapshot.data!;
         return SizedBox(
-          height: 240,
+          height: 220,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: playlists.length,
@@ -75,13 +90,13 @@ class _ExploreViewState extends State<ExploreView> {
               return Padding(
                 padding: const EdgeInsets.only(right: 20),
                 child: SizedBox(
-                  width: 180,
+                  width: 160,
                   child: PlaylistCard.grid(
                     playlist: playlist,
                     onTap: () =>
                         context.read<NavigationProvider>().openPlaylist(playlist),
                     titleMaxLines: 1,
-                    coverRadius: 12,
+                    coverRadius: 16,
                     showShadow: false,
                   ),
                 ),
@@ -104,8 +119,8 @@ class _ExploreViewState extends State<ExploreView> {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 220,
-            mainAxisExtent: 230,
+            maxCrossAxisExtent: 200,
+            mainAxisExtent: 210,
             mainAxisSpacing: 20,
             crossAxisSpacing: 20,
           ),
@@ -121,7 +136,7 @@ class _ExploreViewState extends State<ExploreView> {
                 children: [
                   Expanded(
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       child: CoverImage(
                         url: song.cover,
                         fit: BoxFit.cover,
@@ -137,13 +152,13 @@ class _ExploreViewState extends State<ExploreView> {
                     song.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.onSurface),
+                    style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold, color: theme.colorScheme.onSurface, fontSize: 13),
                   ),
                   Text(
                     song.singerName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11),
                   ),
                 ],
               ),

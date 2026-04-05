@@ -97,7 +97,7 @@ class _PlaylistCardState extends State<PlaylistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           height: 1.1,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
@@ -113,62 +113,60 @@ class _PlaylistCardState extends State<PlaylistCard> {
       onExit: (_) => _setHover(false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+        child: AnimatedScale(
+          scale: _isHovering ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: style.backgroundColor,
-            borderRadius: BorderRadius.circular(widget.coverRadius + 6),
-            boxShadow: style.shadows,
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final coverHeight =
-                  (constraints.maxHeight - PlaylistCard._gridFooterHeight)
-                      .clamp(0.0, constraints.maxHeight);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: coverHeight,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(widget.coverRadius),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CoverImage(
-                            url: widget.playlist.pic,
-                            fit: BoxFit.cover,
-                            borderRadius: widget.coverRadius,
-                            showShadow: false,
-                            size: widget.coverImageSize,
-                          ),
-                          if (_isHovering)
-                            Container(color: style.hoverOverlayStrong),
-                        ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: style.backgroundColor,
+              borderRadius: BorderRadius.circular(widget.coverRadius + 6),
+              boxShadow: style.shadows,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final coverHeight =
+                    (constraints.maxHeight - PlaylistCard._gridFooterHeight)
+                        .clamp(0.0, constraints.maxHeight);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: coverHeight,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(widget.coverRadius),
+                        child: CoverImage(
+                          url: widget.playlist.pic,
+                          fit: BoxFit.cover,
+                          borderRadius: widget.coverRadius,
+                          showShadow: false,
+                          size: widget.coverImageSize,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.playlist.name,
-                    maxLines: widget.titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: resolvedTitleStyle,
-                  ),
-                  if (subtitle != null && subtitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 8),
                     Text(
-                      subtitle,
-                      maxLines: 1,
+                      widget.playlist.name,
+                      maxLines: widget.titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: resolvedSubtitleStyle,
+                      style: resolvedTitleStyle,
                     ),
+                    if (subtitle != null && subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: resolvedSubtitleStyle,
+                      ),
+                    ],
                   ],
-                ],
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -182,7 +180,7 @@ class _PlaylistCardState extends State<PlaylistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         theme.textTheme.bodySmall?.copyWith(
@@ -197,11 +195,11 @@ class _PlaylistCardState extends State<PlaylistCard> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
           padding: widget.contentPadding,
           decoration: BoxDecoration(
-            color: style.backgroundColor,
+            color: _isHovering ? style.hoverOverlayColor : style.backgroundColor,
             borderRadius: BorderRadius.circular(widget.tileRadius),
             boxShadow: const <BoxShadow>[],
           ),
@@ -209,21 +207,13 @@ class _PlaylistCardState extends State<PlaylistCard> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(widget.coverRadius),
-                child: Stack(
-                  children: [
-                    CoverImage(
-                      url: widget.playlist.pic,
-                      width: widget.coverSize,
-                      height: widget.coverSize,
-                      borderRadius: widget.coverRadius,
-                      showShadow: false,
-                      size: widget.coverImageSize,
-                    ),
-                    if (_isHovering)
-                      Positioned.fill(
-                        child: Container(color: style.hoverOverlayColor),
-                      ),
-                  ],
+                child: CoverImage(
+                  url: widget.playlist.pic,
+                  width: widget.coverSize,
+                  height: widget.coverSize,
+                  borderRadius: widget.coverRadius,
+                  showShadow: false,
+                  size: widget.coverImageSize,
                 ),
               ),
               const SizedBox(width: 12),

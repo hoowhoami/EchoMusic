@@ -25,6 +25,7 @@ import 'ui/widgets/auth_listener.dart';
 import 'utils/server_orchestrator.dart';
 import 'utils/logger.dart';
 import 'utils/player_shortcut_actions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 bool get _supportsSystemWideHotKeys =>
@@ -84,18 +85,61 @@ void main() async {
     });
   }
 
-  const WindowOptions windowOptions = WindowOptions(
-    size: Size(1100, 750),
-    minimumSize: Size(1050, 700),
-    center: true,
+  // Load persistence logic for window size and position
+  final prefs = await SharedPreferences.getInstance();
+  final settingsJson = prefs.getString('app_settings');
+  bool rememberWindowSize = false;
+  if (settingsJson != null) {
+    final settings = jsonDecode(settingsJson);
+    rememberWindowSize = settings['rememberWindowSize'] ?? false;
+  }
+
+  Size? savedSize;
+  Offset? savedPosition;
+  if (rememberWindowSize) {
+    final sizeJson = prefs.getString('window_size');
+    if (sizeJson != null) {
+      final map = jsonDecode(sizeJson);
+      savedSize = Size(map['width'], map['height']);
+    }
+    final posJson = prefs.getString('window_position');
+    if (posJson != null) {
+      final map = jsonDecode(posJson);
+      savedPosition = Offset(map['x'], map['y']);
+    }
+  }
+
+  final WindowOptions windowOptions = WindowOptions(
+    size: savedSize ?? const Size(1100, 750),
+    minimumSize: const Size(1050, 700),
+    center: savedPosition == null,
     backgroundColor: Colors.transparent,
     skipTaskbar: false,
     titleBarStyle: TitleBarStyle.hidden,
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    // 1. Apply saved position and size while still hidden
+    if (rememberWindowSize && savedPosition != null) {
+      await windowManager.setPosition(savedPosition);
+    }
+    
+    // 2. Ensure opacity is restored (critical for macOS alpha=0 fix)
+    await windowManager.setOpacity(1.0);
+
+    // 3. Finally show the window
     await windowManager.show();
     await windowManager.focus();
+
+    // 4. Fix for Windows occasionally having blank space on the right on startup.
+    // This MUST happen after show() and with a slight delay to force a DWM layout refresh.
+    // Use a 1.0px jitter to ensure it's not ignored by DPI rounding on Win11.
+    if (Platform.isWindows) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      final size = await windowManager.getSize();
+      await windowManager.setSize(Size(size.width + 1.0, size.height + 1.0));
+      await windowManager.setSize(size);
+    }
   });
 
   runApp(
@@ -348,9 +392,16 @@ class _WindowHandlerState extends State<WindowHandler>
 
   Future<void> _initTray() async {
     try {
-      await trayManager.setIcon(
-        Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
-      );
+      if (Platform.isMacOS) {
+        await trayManager.setIcon(
+          'assets/icons/mac_tray_icon_template.png',
+          isTemplate: true,
+        );
+      } else {
+        await trayManager.setIcon(
+          Platform.isWindows ? 'assets/icons/icon.ico' : 'assets/icons/icon.png',
+        );
+      }
     } catch (e, stackTrace) {
       _logTrayError('_initTray setIcon failed', e, stackTrace);
       return;
@@ -416,6 +467,24 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   @override
+  void onWindowResized() async {
+    final persistence = context.read<PersistenceProvider>();
+    if (persistence.settings['rememberWindowSize'] ?? false) {
+      final size = await windowManager.getSize();
+      await persistence.saveWindowSize(size);
+    }
+  }
+
+  @override
+  void onWindowMoved() async {
+    final persistence = context.read<PersistenceProvider>();
+    if (persistence.settings['rememberWindowSize'] ?? false) {
+      final position = await windowManager.getPosition();
+      await persistence.saveWindowPosition(position);
+    }
+  }
+
+  @override
   void onTrayIconMouseDown() async {
     if (!Platform.isLinux) {
       await _showWindowFromTray();
@@ -430,9 +499,14 @@ class _WindowHandlerState extends State<WindowHandler>
   }
 
   @override
-  void onTrayIconRightMouseDown() {
+  void onTrayIconRightMouseDown() async {
     if (!Platform.isLinux) {
-      trayManager.popUpContextMenu();
+      if (Platform.isWindows) {
+        // Fix for Windows: context menu doesn't close when clicking away
+        // unless the window is the foreground window.
+        await windowManager.focus();
+      }
+      await trayManager.popUpContextMenu();
     }
   }
 

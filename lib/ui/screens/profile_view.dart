@@ -103,16 +103,16 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: ScrollableContent(
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+        padding: const EdgeInsets.fromLTRB(40, 20, 40, 40),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(context, userProvider),
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
             
             // User Profile Card
             _buildUserCard(context, user, detail, tvip, svip),
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
 
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,19 +123,19 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildSectionHeader(context, '账号档案', CupertinoIcons.doc_person),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       _buildProfileDetails(context, user, detail, gender),
                     ],
                   ),
                 ),
-                const SizedBox(width: 40),
+                const SizedBox(width: 32),
                 Expanded(
                   flex: 2,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildSectionHeader(context, '每日权益', CupertinoIcons.gift),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       _buildVipWorkflow(context, userProvider),
                     ],
                   ),
@@ -154,28 +154,14 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '个人中心',
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: AppTheme.fontWeightBold,
-                color: theme.colorScheme.onSurface,
-                letterSpacing: -1.0,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
+        Text(
+          '个人中心',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: AppTheme.fontWeightSemiBold,
+            color: theme.colorScheme.onSurface,
+            letterSpacing: -0.5,
+          ),
         ),
         const Spacer(),
         _buildCircleButton(
@@ -196,12 +182,12 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             border: Border.all(color: theme.colorScheme.outlineVariant),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 20, color: color ?? theme.colorScheme.onSurfaceVariant),
+          child: Icon(icon, size: 18, color: color ?? theme.colorScheme.onSurfaceVariant),
         ),
       ),
     );
@@ -210,7 +196,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
   Widget _buildUserCard(BuildContext context, dynamic user, dynamic detail, dynamic tvip, dynamic svip) {
     final theme = Theme.of(context);
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -220,25 +206,25 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: theme.colorScheme.primary.withAlpha(30)),
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(3),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: theme.colorScheme.primary.withAlpha(50), width: 2),
             ),
             child: CircleAvatar(
-              radius: 54,
+              radius: 44,
               backgroundColor: theme.colorScheme.primary.withAlpha(20),
               backgroundImage: user?.pic != null ? CachedNetworkImageProvider(user!.pic!) : null,
-              child: user?.pic == null ? Icon(CupertinoIcons.person_fill, size: 50, color: theme.colorScheme.primary) : null,
+              child: user?.pic == null ? Icon(CupertinoIcons.person_fill, size: 40, color: theme.colorScheme.primary) : null,
             ),
           ),
-          const SizedBox(width: 32),
+          const SizedBox(width: 24),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,9 +233,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   children: [
                     Text(
                       user?.nickname ?? '',
-                      style: const TextStyle(fontSize: 28, fontWeight: AppTheme.fontWeightBold, letterSpacing: -0.5),
+                      style: const TextStyle(fontSize: 22, fontWeight: AppTheme.fontWeightSemiBold, letterSpacing: -0.5),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     if (tvip != null) _buildModernVipTag('畅听', Colors.green),
                     if (svip != null) ...[
                       const SizedBox(width: 8),
@@ -257,14 +243,14 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                     ],
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 if (detail['descri'] != null && detail['descri'].toString().isNotEmpty)
                   Text(
                     detail['descri'],
                     maxLines: 2,
-                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightMedium),
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: AppTheme.fontWeightMedium),
                   ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     _buildStatItem(context, 'Lv.${detail['p_grade'] ?? 0}', '等级'),
@@ -289,17 +275,17 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold)),
-        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 11, fontWeight: AppTheme.fontWeightSemiBold)),
+        Text(value, style: const TextStyle(fontSize: 16, fontWeight: AppTheme.fontWeightSemiBold)),
+        Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 10, fontWeight: AppTheme.fontWeightSemiBold)),
       ],
     );
   }
 
   Widget _buildStatDivider(BuildContext context) {
     return Container(
-      height: 24,
+      height: 20,
       width: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       color: Theme.of(context).colorScheme.outlineVariant,
     );
   }
@@ -308,7 +294,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.onSurface.withAlpha(10),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         children: [
@@ -325,14 +311,14 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
   Widget _buildDetailTile(BuildContext context, IconData icon, String label, String value) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: theme.colorScheme.primary.withAlpha(180)),
-          const SizedBox(width: 16),
-          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 14, fontWeight: AppTheme.fontWeightSemiBold)),
+          Icon(icon, size: 16, color: theme.colorScheme.primary.withAlpha(180)),
+          const SizedBox(width: 12),
+          Text(label, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
           const Spacer(),
-          Text(value, style: const TextStyle(fontSize: 14, fontWeight: AppTheme.fontWeightBold)),
+          Text(value, style: const TextStyle(fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
         ],
       ),
     );
@@ -414,7 +400,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
       onTap: active ? onTap : null,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isCompleted ? color.withAlpha(20) : theme.colorScheme.onSurface.withAlpha(10),
           borderRadius: BorderRadius.circular(20),
@@ -425,14 +411,14 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: (isCompleted ? color : Colors.grey).withAlpha(30),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: isCompleted ? color : Colors.grey, size: 20),
+              child: Icon(icon, color: isCompleted ? color : Colors.grey, size: 18),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -440,8 +426,8 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                   Text(
                     title,
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontSize: 14,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       color: isCompleted ? color : (active ? theme.colorScheme.onSurface : Colors.grey),
                     ),
                   ),
@@ -450,7 +436,7 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
                     Text(
                       subtitle,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: AppTheme.fontWeightMedium,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -460,9 +446,9 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
               ),
             ),
             if (isCompleted)
-              Icon(CupertinoIcons.checkmark_alt_circle_fill, color: color, size: 20)
+              Icon(CupertinoIcons.checkmark_alt_circle_fill, color: color, size: 18)
             else
-              Icon(CupertinoIcons.chevron_right, size: 14, color: active ? theme.colorScheme.onSurfaceVariant : Colors.grey.withAlpha(100)),
+              Icon(CupertinoIcons.chevron_right, size: 12, color: active ? theme.colorScheme.onSurfaceVariant : Colors.grey.withAlpha(100)),
           ],
         ),
       ),
@@ -471,15 +457,15 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
 
   Widget _buildModernVipTag(String text, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: [color, color.withAlpha(150)]),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [BoxShadow(color: color.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2))],
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [BoxShadow(color: color.withAlpha(60), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: AppTheme.fontWeightBold),
+        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: AppTheme.fontWeightSemiBold),
       ),
     );
   }
@@ -518,11 +504,11 @@ class _ProfileViewState extends State<ProfileView> with RefreshableState {
     final theme = Theme.of(context);
     return Row(
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 10),
+        Icon(icon, size: 16, color: theme.colorScheme.primary),
+        const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(fontSize: 18, fontWeight: AppTheme.fontWeightBold),
+          style: const TextStyle(fontSize: 16, fontWeight: AppTheme.fontWeightSemiBold),
         ),
       ],
     );

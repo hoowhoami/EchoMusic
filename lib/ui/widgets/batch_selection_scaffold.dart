@@ -54,7 +54,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               title!,
               style: TextStyle(
                 fontSize: 28,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -0.6,
               ),
@@ -85,7 +85,7 @@ class BatchSelectionScaffold extends StatelessWidget {
               title!,
               style: TextStyle(
                 fontSize: 28,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: theme.colorScheme.onSurface,
                 letterSpacing: -0.6,
               ),

@@ -142,7 +142,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                           'Echo',
                           style: TextStyle(
                             fontSize: 24,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.onSurface,
                             letterSpacing: -1,
                           ),
@@ -151,7 +151,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
                           'MUSIC',
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.primary,
                             letterSpacing: 2,
                           ),
@@ -306,7 +306,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
             color: isPrimary
                 ? theme.colorScheme.onPrimary
                 : theme.colorScheme.onSurface.withAlpha(200),
-            fontWeight: AppTheme.fontWeightBold,
+            fontWeight: AppTheme.fontWeightSemiBold,
             fontSize: 14,
           ),
         ),

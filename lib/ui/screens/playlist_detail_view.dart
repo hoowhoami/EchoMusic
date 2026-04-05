@@ -683,7 +683,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     playlist.nickname,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.primary,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       fontSize: 13,
                     ),
                   ),
@@ -732,7 +732,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                   Text(
                     '歌单介绍',
                     style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       fontSize: 15,
                     ),
                   ),
@@ -744,7 +744,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                       height: 1.5,
-                      fontWeight: AppTheme.fontWeightMedium,
+                      fontWeight: AppTheme.fontWeightRegular,
                       fontSize: 12,
                     ),
                   ),
@@ -769,7 +769,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
                           style: TextStyle(
                             color: theme.colorScheme.primary,
                             fontSize: 11,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                       ),
@@ -806,7 +806,7 @@ class _PlaylistDetailViewState extends State<PlaylistDetailView>
         label,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: theme.colorScheme.primary,
         ),
       ),

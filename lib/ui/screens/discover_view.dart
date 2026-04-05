@@ -21,6 +21,7 @@ import '../widgets/playlist_card.dart';
 import '../widgets/album_card.dart';
 import '../../models/album.dart';
 import 'rank_view.dart';
+import 'package:echomusic/theme/app_theme.dart';
 
 class DiscoverView extends StatefulWidget {
   const DiscoverView({super.key});
@@ -61,15 +62,20 @@ class _DiscoverViewState extends State<DiscoverView> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(100),
+        preferredSize: const Size.fromHeight(110),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(40, 10, 40, 0),
+          padding: const EdgeInsets.fromLTRB(40, 20, 40, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 '发现音乐',
-                style: theme.textTheme.titleLarge?.copyWith(fontSize: 20),
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: AppTheme.fontWeightSemiBold,
+                  color: theme.colorScheme.onSurface,
+                  letterSpacing: -0.5,
+                ),
               ),
               const SizedBox(height: 12),
               CustomTabBar(

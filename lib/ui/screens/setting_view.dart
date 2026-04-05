@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:media_kit/media_kit.dart';
 import '../../providers/persistence_provider.dart';
 import '../../providers/audio_provider.dart';
@@ -37,16 +36,20 @@ class _SettingViewState extends State<SettingView> {
   }
 
   Future<void> _loadVersion() async {
-    final packageInfo = await PackageInfo.fromPlatform();
+    final fullVersion = await VersionService.getFullVersion();
     if (mounted) {
       setState(() {
-        _currentVersion = packageInfo.version;
+        _currentVersion = fullVersion;
       });
     }
   }
 
   Future<void> _checkForUpdates() async {
-    final updateInfo = await VersionService.checkForUpdates();
+    final persistence = context.read<PersistenceProvider>();
+    final checkPrerelease = persistence.settings['checkPrerelease'] ?? false;
+    final updateInfo = await VersionService.checkForUpdates(
+      checkPrerelease: checkPrerelease,
+    );
 
     if (mounted) {
       if (updateInfo != null && updateInfo.hasUpdate) {
@@ -67,7 +70,7 @@ class _SettingViewState extends State<SettingView> {
     }
   }
 
-  Future<void> _exportLogs() async {
+  Future<void> _openLogDirectory() async {
     final logFile = LoggerService.logFile;
     if (logFile == null) {
       if (mounted) {
@@ -116,7 +119,10 @@ class _SettingViewState extends State<SettingView> {
         final executable = command.first;
         final arguments = [...command.skip(1), path];
         final result = await Process.run(executable, arguments);
-        if (result.exitCode == 0) {
+        
+        // On Windows, explorer.exe often returns exit code 1 even when it successfully 
+        // opens the folder (especially if an explorer window is already open).
+        if (result.exitCode == 0 || (Platform.isWindows && result.exitCode == 1)) {
           return;
         }
 
@@ -217,12 +223,12 @@ class _SettingViewState extends State<SettingView> {
     final theme = Theme.of(context);
     final accentColor = theme.colorScheme.primary;
     return ScrollableContent(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
+      padding: const EdgeInsets.fromLTRB(40, 20, 40, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildHeader(context),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
 
           _buildGroup(context, '外观与界面', CupertinoIcons.paintbrush, [
             _buildItem(
@@ -236,6 +242,16 @@ class _SettingViewState extends State<SettingView> {
                 (label) {
                   persistence.updateSetting('theme', _labelToTheme(label));
                 },
+              ),
+            ),
+            _buildItem(
+              context,
+              '记住窗口大小',
+              '在下次启动时自动恢复到上次关闭时的窗口大小和位置',
+              trailing: _buildSwitch(
+                context,
+                settings['rememberWindowSize'] ?? false,
+                (v) => persistence.updateSetting('rememberWindowSize', v),
               ),
             ),
             _buildItem(
@@ -410,8 +426,8 @@ class _SettingViewState extends State<SettingView> {
           _buildGroup(context, '数据与安全', CupertinoIcons.shield, [
             _buildItem(
               context,
-              '导出运行日志',
-              '打包当前应用日志以供排查问题',
+              '查看运行日志',
+              '打开本地日志目录以供排查问题',
               trailing: CupertinoButton(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -419,13 +435,13 @@ class _SettingViewState extends State<SettingView> {
                 ),
                 color: theme.colorScheme.primary.withAlpha(20),
                 borderRadius: BorderRadius.circular(10),
-                onPressed: _exportLogs,
+                onPressed: _openLogDirectory,
                 child: Text(
-                  '立即导出',
+                  '立即查看',
                   style: TextStyle(
                     color: theme.colorScheme.primary,
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),
@@ -447,7 +463,7 @@ class _SettingViewState extends State<SettingView> {
                   style: TextStyle(
                     color: theme.colorScheme.error,
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),
@@ -458,8 +474,18 @@ class _SettingViewState extends State<SettingView> {
           _buildGroup(context, '关于 EchoMusic', CupertinoIcons.info_circle, [
             _buildItem(
               context,
+              '检查预发布版本',
+              '开启后可收到 Alpha/Beta/RC 等测试版本更新推送',
+              trailing: _buildSwitch(
+                context,
+                settings['checkPrerelease'] ?? false,
+                (v) => persistence.updateSetting('checkPrerelease', v),
+              ),
+            ),
+            _buildItem(
+              context,
               '当前版本',
-              'Version v$_currentVersion Stable',
+              'Version v$_currentVersion ${VersionService.isPrereleaseVersion(_currentVersion) ? 'Prerelease' : 'Release'}',
               trailing: MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: GestureDetector(
@@ -469,7 +495,7 @@ class _SettingViewState extends State<SettingView> {
                     style: TextStyle(
                       color: accentColor,
                       fontSize: 13,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                     ),
                   ),
                 ),
@@ -534,19 +560,10 @@ class _SettingViewState extends State<SettingView> {
         Text(
           '偏好设置',
           style: TextStyle(
-            fontSize: 32,
-            fontWeight: AppTheme.fontWeightBold,
+            fontSize: 24,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: theme.colorScheme.onSurface,
-            letterSpacing: -1.0,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: BorderRadius.circular(2),
+            letterSpacing: -0.5,
           ),
         ),
       ],
@@ -573,7 +590,7 @@ class _SettingViewState extends State<SettingView> {
                 title,
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
             ],
@@ -622,7 +639,7 @@ class _SettingViewState extends State<SettingView> {
                   title,
                   style: const TextStyle(
                     fontSize: 15,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -722,7 +739,7 @@ class _SettingViewState extends State<SettingView> {
         style: TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 12,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           fontFamily: 'monospace',
         ),
       ),
@@ -788,7 +805,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.onSurface.withAlpha(150),
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                         ),
                       ),
                       Text(
@@ -796,7 +813,7 @@ class _SettingViewState extends State<SettingView> {
                         style: TextStyle(
                           color: theme.colorScheme.primary,
                           fontSize: 12,
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -887,7 +904,7 @@ class _SettingViewState extends State<SettingView> {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+              fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -965,7 +982,7 @@ class _SettingViewState extends State<SettingView> {
             maxLines: 1,
             style: TextStyle(
               fontSize: 13,
-              fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+              fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
               color: isSelected
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurface,
@@ -1089,7 +1106,7 @@ class _SettingViewState extends State<SettingView> {
             style: TextStyle(
               color: textColor ?? theme.colorScheme.onSurface,
               fontSize: 13,
-              fontWeight: AppTheme.fontWeightBold,
+              fontWeight: AppTheme.fontWeightSemiBold,
             ),
           ),
         ),
@@ -1275,7 +1292,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontSize: 20,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1284,7 +1301,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                 style: TextStyle(
                   color: theme.colorScheme.primary,
                   fontSize: 14,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1326,7 +1343,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1335,7 +1352,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurface,
                             fontSize: 16,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             fontFamily: 'monospace',
                           ),
                         ),
@@ -1345,7 +1362,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                           style: TextStyle(
                             color: theme.colorScheme.onSurfaceVariant,
                             fontSize: 12,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -1356,7 +1373,7 @@ class _ShortcutCaptureDialogState extends State<_ShortcutCaptureDialog> {
                                 ? theme.colorScheme.error
                                 : theme.colorScheme.primary,
                             fontSize: 18,
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             fontFamily: 'monospace',
                           ),
                         ),

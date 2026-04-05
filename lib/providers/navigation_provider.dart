@@ -209,25 +209,14 @@ class NavigationProvider extends ChangeNotifier {
     return _currentRootIndex == index && _detailStack.isEmpty;
   }
 
-  void resetToRootAfterPlaylistDeletion() {
-    final hadDetails = _detailStack.isNotEmpty;
-
-    _suppressHistory = true;
-    popUntilFirst();
-    _detailStack.clear();
-    if (hadDetails) {
-      _rootActivationVersion++;
-      _rootEntryVersion++;
+  Future<void> handlePlaylistDeletion(dynamic deletedId) async {
+    if (selectedSidebarPlaylistId?.toString() == deletedId?.toString()) {
+      if (canGoBack) {
+        await goBack();
+      } else {
+        popUntilFirst();
+      }
     }
-    _updateCurrentRouteFromStack(notify: false);
-    _suppressHistory = false;
-
-    _history
-      ..clear()
-      ..add(_currentSnapshot());
-    _historyIndex = 0;
-
-    notifyListeners();
   }
 
   Future<void> _restoreSnapshot(_ContentHistorySnapshot snapshot) async {

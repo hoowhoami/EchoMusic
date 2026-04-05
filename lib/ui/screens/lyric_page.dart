@@ -203,7 +203,7 @@ class _LyricPageState extends State<LyricPage> {
           song.name,
           style: TextStyle(
             fontSize: 32 * fontScale,
-            fontWeight: AppTheme.fontWeightBold,
+            fontWeight: AppTheme.fontWeightSemiBold,
             color: Colors.white,
             letterSpacing: -1,
             height: 1.2,
@@ -439,7 +439,7 @@ class _LyricPageState extends State<LyricPage> {
         style: const TextStyle(
           color: Colors.white38,
           fontSize: 11,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           fontFamily: 'monospace',
         ),
       ),
@@ -471,7 +471,7 @@ class _LyricPageState extends State<LyricPage> {
     );
   }
 
-  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: AppTheme.fontWeightBold, letterSpacing: 1))]));
+  Widget _buildEmptyState(String tips) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.music_note_rounded, size: 64, color: Colors.white.withAlpha(10)), const SizedBox(height: 20), Text(tips, style: TextStyle(color: Colors.white38, fontSize: 18, fontWeight: AppTheme.fontWeightSemiBold, letterSpacing: 1))]));
 }
 
 class _FontSettingsButton extends StatefulWidget {
@@ -558,7 +558,7 @@ class _FontSettingsButtonState extends State<_FontSettingsButton> {
               children: [
                 const Icon(Icons.text_fields_rounded, size: 16, color: Colors.white70),
                 const SizedBox(width: 10),
-                const Text('字体', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
+                const Text('字体', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold, letterSpacing: 0.5)),
               ],
             ),
           ),
@@ -606,7 +606,7 @@ class _FontSettingsPanel extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(title, style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, fontFamily: 'monospace')),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold, fontFamily: 'monospace')),
       ],
     );
   }
@@ -669,7 +669,7 @@ class _CopyLyricsButton extends StatelessWidget {
             children: [
               const Icon(Icons.copy_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
+              const Text('复制', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold, letterSpacing: 0.5)),
             ],
           ),
         ),
@@ -700,7 +700,7 @@ class _LyricsModeSwitcherWidget extends StatelessWidget {
             children: [
               const Icon(Icons.translate_rounded, size: 16, color: Colors.white70),
               const SizedBox(width: 10),
-              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightBold, letterSpacing: 0.5)),
+              Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold, letterSpacing: 0.5)),
             ],
           ),
         ),

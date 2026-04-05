@@ -41,7 +41,7 @@ class UpdateDialog extends StatelessWidget {
         children: [
           Text(
             isLatest ? '当前版本 v$version' : '新版本 $version 可用',
-            style: const TextStyle(fontSize: 15, fontWeight: AppTheme.fontWeightBold),
+            style: const TextStyle(fontSize: 15, fontWeight: AppTheme.fontWeightSemiBold),
           ),
           if (releaseNotes != null && releaseNotes!.isNotEmpty) ...[
             const SizedBox(height: 16),

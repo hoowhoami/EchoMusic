@@ -185,7 +185,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
     final baseStyle = TextStyle(
       color: theme.colorScheme.onSurface,
       fontSize: 14,
-      fontWeight: AppTheme.fontWeightBold,
+      fontWeight: AppTheme.fontWeightSemiBold,
     );
     final spans = <InlineSpan>[];
     for (var index = 0; index < authors.length; index++) {
@@ -648,7 +648,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                       Text(
                         '专辑介绍',
                         style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: AppTheme.fontWeightBold,
+                          fontWeight: AppTheme.fontWeightSemiBold,
                           fontSize: 15,
                         ),
                       ),
@@ -660,7 +660,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           height: 1.5,
-                          fontWeight: AppTheme.fontWeightMedium,
+                          fontWeight: AppTheme.fontWeightRegular,
                           fontSize: 12,
                         ),
                       ),
@@ -685,7 +685,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
                               style: TextStyle(
                                 color: theme.colorScheme.primary,
                                 fontSize: 11,
-                                fontWeight: AppTheme.fontWeightBold,
+                                fontWeight: AppTheme.fontWeightSemiBold,
                               ),
                             ),
                           ),
@@ -715,7 +715,7 @@ class _AlbumDetailViewState extends State<AlbumDetailView>
         label,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: theme.colorScheme.primary,
         ),
       ),

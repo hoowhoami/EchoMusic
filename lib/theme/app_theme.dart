@@ -2,11 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Font Weights - 整体调轻一级，适应桌面端清爽风格
-  static const fontWeightBlack = FontWeight.w800;      // 原 w900 -> w800
-  static const fontWeightExtraBold = FontWeight.w700; // 原 w800 -> w700
-  static const fontWeightBold = FontWeight.w600;      // 原 w700 -> w600 (桌面端 w600 通常足够)
-  static const fontWeightSemiBold = FontWeight.w600;  // 保持 w600
+  // Font Weights - 遵循最佳实践：标题使用 SemiBold (w600)，常规文本使用 Regular (w400)
+  static const fontWeightBlack = FontWeight.w900;
+  static const fontWeightExtraBold = FontWeight.w800;
+  static const fontWeightBold = FontWeight.w700;
+  static const fontWeightSemiBold = FontWeight.w600;
   static const fontWeightMedium = FontWeight.w500;
   static const fontWeightRegular = FontWeight.w400;
 
@@ -108,10 +108,11 @@ class AppTheme {
         displayColor: const Color(0xFF111827),
       ).copyWith(
         titleLarge: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 22, letterSpacing: -0.6, color: Color(0xFF1D1D1F)),
-        titleMedium: const TextStyle(fontWeight: fontWeightMedium, fontSize: 15, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
+        titleMedium: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 16, letterSpacing: -0.3, color: Color(0xFF1D1D1F)),
+        titleSmall: const TextStyle(fontWeight: fontWeightMedium, fontSize: 14, color: Color(0xFF1D1D1F)),
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF1D1D1F)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF4B5563)),
-        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: fontWeightRegular),
       ).apply(
         fontFamily: useMiSans ? 'MiSans' : null,
         fontFamilyFallback: useMiSans
@@ -221,10 +222,11 @@ class AppTheme {
         displayColor: Colors.white,
       ).copyWith(
         titleLarge: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 22, letterSpacing: -0.6, color: Color(0xFFF5F5F7)),
-        titleMedium: const TextStyle(fontWeight: fontWeightMedium, fontSize: 15, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
+        titleMedium: const TextStyle(fontWeight: fontWeightSemiBold, fontSize: 16, letterSpacing: -0.3, color: Color(0xFFF5F5F7)),
+        titleSmall: const TextStyle(fontWeight: fontWeightMedium, fontSize: 14, color: Color(0xFFF5F5F7)),
         bodyLarge: const TextStyle(fontSize: 14, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFFF5F5F7)),
         bodyMedium: const TextStyle(fontSize: 13, height: 1.5, fontWeight: fontWeightRegular, letterSpacing: 0, color: Color(0xFF9CA3AF)),
-        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+        bodySmall: const TextStyle(fontSize: 12, color: Color(0xFF6B7280), fontWeight: fontWeightRegular),
       ).apply(
         fontFamily: useMiSans ? 'MiSans' : null,
         fontFamilyFallback: useMiSans

@@ -57,6 +57,14 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Extract App Version
+        shell: bash
+        run: |
+          # 从 pubspec.yaml 提取 app_version 字段
+          APP_RAW_VERSION=$(grep 'app_version:' pubspec.yaml | cut -d ' ' -f 2)
+          echo "APP_RAW_VERSION=$APP_RAW_VERSION" >> "$GITHUB_ENV"
+          echo "Using App Version: $APP_RAW_VERSION"
+
       - name: Install Linux dependencies
         if: matrix.platform == 'linux'
         run: |
@@ -65,11 +73,11 @@ jobs:
 
       - name: Build Flutter Desktop (Windows)
         if: matrix.platform == 'windows'
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
 
       - name: Build Flutter Desktop (Non-Windows)
         if: matrix.platform != 'windows'
-        run: flutter build ${{ matrix.platform }} --release
+        run: flutter build ${{ matrix.platform }} --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
 
       - name: Bundle Server (macOS)
         if: matrix.platform == 'macos'
@@ -168,7 +176,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Maintainer: EchoMusic Team
-          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp25, libayatana-appindicator3-1, libmpv1, libkeybinder-3.0-0
+          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp-dev, libayatana-appindicator3-1, libmpv-dev, libkeybinder-3.0-0
           Description: A minimalist music player.
           EOF
 
@@ -210,3 +218,76 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Send Telegram Notification
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build changelog
+        shell: bash
+        run: |
+          set -e
+          git fetch --tags --force
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..${GITHUB_SHA}"
+          else
+            RANGE="${GITHUB_SHA}"
+          fi
+
+          CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" \
+            | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
+            | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="无"
+          fi
+
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Send Build Success Message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+          CLEAN_VERSION="${VERSION#v}"
+          REPO="${{ github.repository }}"
+
+          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s' \
+            "🎉 <b>EchoMusic ${VERSION} 构建成功！</b>" \
+            "📝 <b>更新内容：</b>" \
+            "${CHANGELOG}" \
+            "📦 <b>下载地址：</b>" \
+            "🍎 macOS: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg\">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a>" \
+            "🪟 Windows: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe\">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a>" \
+            "🐧 Linux (deb): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb\">EchoMusic-${CLEAN_VERSION}-Linux.deb</a>" \
+            "🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>" \
+            "🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
+
+          # 构建 JSON payload
+          PAYLOAD=$(jq -n \
+            --arg chat_id "${TELEGRAM_CHAT_ID}" \
+            --arg text "${MESSAGE}" \
+            --arg parse_mode "HTML" \
+            '{chat_id: $chat_id, text: $text, parse_mode: $parse_mode, disable_web_page_preview: true}')
+
+          # 如果设置了 TELEGRAM_TOPIC_ID，则添加 message_thread_id
+          if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
+            PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "${TELEGRAM_TOPIC_ID}" '. + {message_thread_id: ($topic_id | tonumber)}')
+          fi
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

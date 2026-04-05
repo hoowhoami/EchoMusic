@@ -10,7 +10,6 @@ import '../../theme/app_theme.dart';
 import 'app_menu.dart';
 import 'custom_toast.dart';
 import 'playlist_picker_dialog.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 enum _BatchActionMenuResult {
   addToPlaylist,
@@ -133,7 +132,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
                     '${selectionProvider.selectedCount} 首歌曲',
                     style: TextStyle(
                       fontSize: 15,
-                      fontWeight: AppTheme.fontWeightBold,
+                      fontWeight: AppTheme.fontWeightSemiBold,
                       color: theme.colorScheme.onSurface,
                       letterSpacing: -0.5,
                     ),
@@ -238,7 +237,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: isDestructive ? theme.colorScheme.error.withAlpha(200) : theme.colorScheme.onSurface.withAlpha(180),
               ),
             ),
@@ -260,7 +259,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
     if (!hasPlayable) {
       if (songs.any((song) => song.isNoCopyright)) {
         CustomToast.error(context, '所选歌曲包含无版权内容');
-      } else if (songs.any((song) => song.isPayBlocked || song.isPaid)) {
+      } else if (songs.any((song) => song.isPaid)) {
         CustomToast.error(context, '所选歌曲包含需要购买的内容');
       } else {
         CustomToast.error(context, '所选歌曲暂无可用音源');
@@ -415,7 +414,7 @@ class _BatchActionBarState extends State<BatchActionBar> with SingleTickerProvid
         title,
         style: TextStyle(
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: isDestructive
               ? theme.colorScheme.error
               : theme.colorScheme.onSurface,

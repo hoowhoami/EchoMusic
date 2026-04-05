@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 
 import '../../providers/navigation_provider.dart';
 import '../../theme/app_theme.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 typedef AppMenuContentBuilder<T> = Widget Function(
   BuildContext context,
@@ -170,7 +169,8 @@ class PlayerMenuAnchor<T> extends StatefulWidget {
 
 class _PlayerMenuAnchorState<T> extends State<PlayerMenuAnchor<T>> {
   final GlobalKey _targetKey = GlobalKey();
-  OverlayEntry? _entry;
+  final OverlayPortalController _controller = OverlayPortalController();
+  final Object _tapRegionGroupId = Object();
   bool _isOpen = false;
 
   void _toggleMenu() {
@@ -178,87 +178,85 @@ class _PlayerMenuAnchorState<T> extends State<PlayerMenuAnchor<T>> {
       _closeMenu();
       return;
     }
-    final anchorContext = _targetKey.currentContext;
-    if (anchorContext == null) return;
     setState(() => _isOpen = true);
-    _entry = _createOverlayEntry(anchorContext);
-    Overlay.of(context).insert(_entry!);
+    _controller.show();
   }
 
   void _closeMenu([T? _]) {
     if (!_isOpen) return;
-    _entry?.remove();
-    _entry = null;
+    _controller.hide();
     if (mounted) setState(() => _isOpen = false);
   }
 
   @override
   void dispose() {
-    _entry?.remove();
-    _entry = null;
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      key: _targetKey,
-      child: widget.builder(context, _toggleMenu, _isOpen),
-    );
-  }
+    return TapRegion(
+      groupId: _tapRegionGroupId,
+      onTapOutside: (_) => _closeMenu(),
+      child: OverlayPortal(
+        controller: _controller,
+        overlayChildBuilder: (context) {
+          final overlay = Overlay.of(context);
+          final overlayBox = overlay.context.findRenderObject() as RenderBox;
+          final anchorContext = _targetKey.currentContext;
+          if (anchorContext == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _closeMenu());
+            return const SizedBox.shrink();
+          }
+          final targetObject = anchorContext.findRenderObject();
+          if (targetObject is! RenderBox || !targetObject.attached) {
+            WidgetsBinding.instance.addPostFrameCallback((_) => _closeMenu());
+            return const SizedBox.shrink();
+          }
+          final targetBox = targetObject;
+          final targetOffset = targetBox.localToGlobal(
+            Offset.zero,
+            ancestor: overlayBox,
+          );
+          final targetRect = targetOffset & targetBox.size;
+          final overlaySize = overlayBox.size;
+          final placement = _resolvePlacement(targetRect, overlaySize);
 
-  OverlayEntry _createOverlayEntry(BuildContext anchorContext) {
-    return OverlayEntry(
-      builder: (overlayContext) {
-        final overlay = Overlay.of(overlayContext);
-        final overlayBox = overlay.context.findRenderObject() as RenderBox;
-        final targetObject = anchorContext.findRenderObject();
-        if (targetObject is! RenderBox || !targetObject.attached) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _closeMenu());
-          return const SizedBox.shrink();
-        }
-        final targetBox = targetObject;
-        final targetOffset = targetBox.localToGlobal(
-          Offset.zero,
-          ancestor: overlayBox,
-        );
-        final targetRect = targetOffset & targetBox.size;
-        final overlaySize = overlayBox.size;
-        final placement = _resolvePlacement(targetRect, overlaySize);
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () => _closeMenu(),
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Positioned(
-              left: placement.left,
-              top: placement.top,
-              width: placement.width,
-              child: Material(
-                color: Colors.transparent,
-                child: AppMenuPanel(
-                  width: placement.width,
-                  height: placement.height,
-                  constraints: placement.constraints,
-                  padding: widget.padding,
-                  borderRadius: widget.borderRadius,
-                  showArrow: widget.showArrow,
-                  arrowEdge: placement.arrowEdge,
-                  arrowAlignment: placement.arrowAlignment,
-                  child: Builder(
-                    builder: (context) => widget.menuBuilder(context, _closeMenu),
+          return Stack(
+            children: [
+              Positioned(
+                left: placement.left,
+                top: placement.top,
+                width: placement.width,
+                child: TapRegion(
+                  groupId: _tapRegionGroupId,
+                  onTapOutside: (_) => _closeMenu(),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: AppMenuPanel(
+                      width: placement.width,
+                      height: placement.height,
+                      constraints: placement.constraints,
+                      padding: widget.padding,
+                      borderRadius: widget.borderRadius,
+                      showArrow: widget.showArrow,
+                      arrowEdge: placement.arrowEdge,
+                      arrowAlignment: placement.arrowAlignment,
+                      child: Builder(
+                        builder: (context) => widget.menuBuilder(context, _closeMenu),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+        child: Container(
+          key: _targetKey,
+          child: widget.builder(context, _toggleMenu, _isOpen),
+        ),
+      ),
     );
   }
 
@@ -556,45 +554,40 @@ Future<T?> showAppContextMenu<T>(
         child: Stack(
           children: [
             Positioned.fill(
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) {},
-                onPointerSignal: (_) {},
-                onPointerPanZoomStart: (_) {},
-                onPointerPanZoomUpdate: (_) {},
-                onPointerPanZoomEnd: (_) {},
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => close(),
-                  onSecondaryTapDown: (_) => close(),
-                  child: const SizedBox.expand(),
-                ),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () => close(),
+                onSecondaryTapDown: (_) => close(),
+                child: const SizedBox.expand(),
               ),
             ),
-            CustomSingleChildLayout(
-              delegate: _AppContextMenuLayoutDelegate(
-                menuWidth: resolvedWidth,
-                tapPosition: tapPosition == null
-                    ? null
-                    : overlayBox.globalToLocal(tapPosition),
-                anchorRect: anchorRect,
-                alignRightToAnchor: alignRightToAnchor,
-                anchorOffset: anchorOffset,
-                screenPadding: screenPadding,
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: AppMenuPanel(
-                  width: resolvedWidth,
-                  constraints: BoxConstraints(
-                    minWidth: resolvedWidth,
-                    maxWidth: resolvedWidth,
-                    maxHeight: maxMenuHeight,
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  borderRadius: borderRadius,
-                  child: Builder(
-                    builder: (menuContext) => menuBuilder(menuContext, close),
+            TapRegion(
+              onTapOutside: (_) => close(),
+              child: CustomSingleChildLayout(
+                delegate: _AppContextMenuLayoutDelegate(
+                  menuWidth: resolvedWidth,
+                  tapPosition: tapPosition == null
+                      ? null
+                      : overlayBox.globalToLocal(tapPosition),
+                  anchorRect: anchorRect,
+                  alignRightToAnchor: alignRightToAnchor,
+                  anchorOffset: anchorOffset,
+                  screenPadding: screenPadding,
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: AppMenuPanel(
+                    width: resolvedWidth,
+                    constraints: BoxConstraints(
+                      minWidth: resolvedWidth,
+                      maxWidth: resolvedWidth,
+                      maxHeight: maxMenuHeight,
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    borderRadius: borderRadius,
+                    child: Builder(
+                      builder: (menuContext) => menuBuilder(menuContext, close),
+                    ),
                   ),
                 ),
               ),
@@ -922,7 +915,7 @@ class AppMenuSectionLabel extends StatelessWidget {
         title,
         style: TextStyle(
           fontSize: 10,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
           letterSpacing: 1.1,
         ),
@@ -1005,7 +998,7 @@ class _AppMenuTriggerState extends State<AppMenuTrigger> {
                         ? theme.disabledColor
                         : (widget.isOpen ? accentColor : textColor),
                     fontSize: 13,
-                    fontWeight: AppTheme.fontWeightBold,
+                    fontWeight: AppTheme.fontWeightSemiBold,
                   ),
                 ),
               ),

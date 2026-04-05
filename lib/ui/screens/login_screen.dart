@@ -12,7 +12,6 @@ import '../../theme/app_theme.dart';
 import '../widgets/custom_toast.dart';
 import '../widgets/windows_caption_controls.dart';
 import '../../utils/logger.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.autoLoadQrOnInit = true});
@@ -484,7 +483,7 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           '多账号选择', 
-          style: TextStyle(fontSize: 22, fontWeight: AppTheme.fontWeightBold, color: theme.colorScheme.onSurface, letterSpacing: -0.8)
+          style: TextStyle(fontSize: 22, fontWeight: AppTheme.fontWeightSemiBold, color: theme.colorScheme.onSurface, letterSpacing: -0.8)
         ),
         const SizedBox(height: 8),
         Text(
@@ -529,7 +528,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Text(
                                 account['nickname'] ?? '未命名用户',
-                                style: const TextStyle(fontWeight: AppTheme.fontWeightBold, fontSize: 15),
+                                style: const TextStyle(fontWeight: AppTheme.fontWeightSemiBold, fontSize: 15),
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
@@ -557,7 +556,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 24),
         TextButton(
           onPressed: () => setState(() => _showAccountSelection = false),
-          child: Text('返回登录', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontWeight: AppTheme.fontWeightBold)),
+          child: Text('返回登录', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontWeight: AppTheme.fontWeightSemiBold)),
         ),
       ],
     );
@@ -571,7 +570,7 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           '扫码登录', 
-          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightBold, color: textColor, letterSpacing: -0.8)
+          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightSemiBold, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 8),
         Text(
@@ -601,7 +600,7 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           '微信登录', 
-          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightBold, color: textColor, letterSpacing: -0.8)
+          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightSemiBold, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 8),
         Text(
@@ -643,7 +642,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: onRefresh,
-              child: const Text('重试', style: TextStyle(fontWeight: AppTheme.fontWeightBold)),
+              child: const Text('重试', style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold)),
             ),
           ],
         ),
@@ -684,8 +683,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text('二维码已过期', style: TextStyle(color: Colors.black, fontWeight: AppTheme.fontWeightBold)),
-                        TextButton(onPressed: onRefresh, child: const Text('点击刷新', style: TextStyle(fontWeight: AppTheme.fontWeightBold))),
+                        const Text('二维码已过期', style: TextStyle(color: Colors.black, fontWeight: AppTheme.fontWeightSemiBold)),
+                        TextButton(onPressed: onRefresh, child: const Text('点击刷新', style: TextStyle(fontWeight: AppTheme.fontWeightSemiBold))),
                       ],
                     ),
                   ),
@@ -698,7 +697,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         Icon(Icons.check_circle, color: Colors.green, size: 56),
                         SizedBox(height: 16),
-                        Text('已扫码，请在手机上确认', style: TextStyle(color: Colors.black, fontSize: 13, fontWeight: AppTheme.fontWeightBold)),
+                        Text('已扫码，请在手机上确认', style: TextStyle(color: Colors.black, fontSize: 13, fontWeight: AppTheme.fontWeightSemiBold)),
                       ],
                     ),
                   ),
@@ -805,7 +804,7 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Text(
           '验证码登录', 
-          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightBold, color: textColor, letterSpacing: -0.8)
+          style: TextStyle(fontSize: 24, fontWeight: AppTheme.fontWeightSemiBold, color: textColor, letterSpacing: -0.8)
         ),
         const SizedBox(height: 32),
         // 手机号码输入框
@@ -868,7 +867,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码', style: const TextStyle(fontWeight: AppTheme.fontWeightBold)),
+                child: Text(_countdown > 0 ? '${_countdown}s' : '获取验证码', style: const TextStyle(fontWeight: AppTheme.fontWeightSemiBold)),
               ),
             ],
           ),
@@ -894,7 +893,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             child: _isLoggingIn 
               ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.surface))
-              : const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: AppTheme.fontWeightBold)),
+              : const Text('立即登录', style: TextStyle(fontSize: 16, fontWeight: AppTheme.fontWeightSemiBold)),
           ),
         ),
       ],

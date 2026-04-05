@@ -219,7 +219,7 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
           item.name,
           style: TextStyle(
             fontSize: 12,
-            fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+            fontWeight: isSelected ? AppTheme.fontWeightMedium : AppTheme.fontWeightRegular,
             color: isSelected
                 ? (theme.brightness == Brightness.light
                     ? Colors.white
@@ -255,7 +255,7 @@ class _CustomPickerState extends State<CustomPicker> with SingleTickerProviderSt
             widget.title,
             style: TextStyle(
               fontSize: 16,
-              fontWeight: AppTheme.fontWeightBold,
+              fontWeight: AppTheme.fontWeightSemiBold,
               color: theme.colorScheme.onSurface,
               letterSpacing: -0.5,
             ),

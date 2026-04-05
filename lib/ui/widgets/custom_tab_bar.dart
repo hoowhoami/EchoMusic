@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
-import 'package:echomusic/theme/app_theme.dart';
 
 class CustomTabBar extends StatelessWidget {
   final TabController controller;
@@ -102,7 +101,7 @@ class CustomTabBar extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: isSelected ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+                  fontWeight: isSelected ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
                   color: isSelected 
                     ? modernTheme.tabSelectedTextColor
                     : theme.colorScheme.onSurface.withAlpha(120),

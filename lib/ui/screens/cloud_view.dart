@@ -558,7 +558,7 @@ class _CloudViewState extends State<CloudView>
                 '云盘容量',
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                   color: theme.colorScheme.onSurface,
                 ),
               ),

@@ -74,7 +74,7 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 14,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         theme.textTheme.bodySmall?.copyWith(
@@ -89,11 +89,11 @@ class _ArtistCardState extends State<ArtistCard> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
           padding: widget.contentPadding,
           decoration: BoxDecoration(
-            color: style.backgroundColor,
+            color: _isHovering ? style.hoverOverlayColor : style.backgroundColor,
             borderRadius: BorderRadius.circular(widget.tileRadius),
             boxShadow: const <BoxShadow>[],
           ),
@@ -103,21 +103,13 @@ class _ArtistCardState extends State<ArtistCard> {
                 width: widget.coverSize,
                 height: widget.coverSize,
                 child: ClipOval(
-                  child: Stack(
-                    children: [
-                      CoverImage(
-                        url: widget.artist.pic,
-                        width: widget.coverSize,
-                        height: widget.coverSize,
-                        borderRadius: 0,
-                        showShadow: false,
-                        size: widget.coverImageSize,
-                      ),
-                      if (_isHovering)
-                        Positioned.fill(
-                          child: Container(color: style.hoverOverlayColor),
-                        ),
-                    ],
+                  child: CoverImage(
+                    url: widget.artist.pic,
+                    width: widget.coverSize,
+                    height: widget.coverSize,
+                    borderRadius: 0,
+                    showShadow: false,
+                    size: widget.coverImageSize,
                   ),
                 ),
               ),
@@ -158,7 +150,7 @@ class _ArtistCardState extends State<ArtistCard> {
         TextStyle(
           color: theme.colorScheme.onSurface,
           fontSize: 13,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
         );
     final resolvedSubtitleStyle = widget.subtitleStyle ??
         TextStyle(
@@ -173,65 +165,60 @@ class _ArtistCardState extends State<ArtistCard> {
       onExit: (_) => _setHover(false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
+        child: AnimatedScale(
+          scale: _isHovering ? 1.03 : 1.0,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: style.backgroundColor,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: style.shadows,
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final coverHeight =
-                  (constraints.maxHeight - ArtistCard._gridFooterHeight)
-                      .clamp(0.0, constraints.maxHeight);
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    height: coverHeight,
-                    child: Center(
-                      child: ClipOval(
-                        child: Stack(
-                          children: [
-                            CoverImage(
-                              url: widget.artist.pic,
-                              width: widget.coverSize,
-                              height: widget.coverSize,
-                              borderRadius: 0,
-                              showShadow: false,
-                              size: widget.coverImageSize,
-                            ),
-                            if (_isHovering)
-                              Positioned.fill(
-                                child: Container(
-                                  color: style.hoverOverlayStrong,
-                                ),
-                              ),
-                          ],
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: style.backgroundColor,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: style.shadows,
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final coverHeight =
+                    (constraints.maxHeight - ArtistCard._gridFooterHeight)
+                        .clamp(0.0, constraints.maxHeight);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: coverHeight,
+                      child: Center(
+                        child: ClipOval(
+                          child: CoverImage(
+                            url: widget.artist.pic,
+                            width: widget.coverSize,
+                            height: widget.coverSize,
+                            borderRadius: 0,
+                            showShadow: false,
+                            size: widget.coverImageSize,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.artist.name,
-                    maxLines: widget.titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style: resolvedTitleStyle,
-                  ),
-                  if (subtitleText != null)
+                    const SizedBox(height: 6),
                     Text(
-                      subtitleText,
-                      maxLines: 1,
+                      widget.artist.name,
+                      maxLines: widget.titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: resolvedSubtitleStyle,
+                      style: resolvedTitleStyle,
                     ),
-                ],
-              );
-            },
+                    if (subtitleText != null)
+                      Text(
+                        subtitleText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: resolvedSubtitleStyle,
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

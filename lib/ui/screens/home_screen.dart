@@ -60,7 +60,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _checkForUpdates({bool silent = false}) async {
-    final updateInfo = await VersionService.checkForUpdates();
+    final persistence = context.read<PersistenceProvider>();
+    final checkPrerelease = persistence.settings['checkPrerelease'] ?? false;
+    final updateInfo = await VersionService.checkForUpdates(
+      checkPrerelease: checkPrerelease,
+    );
 
     if (updateInfo != null && updateInfo.hasUpdate && mounted) {
       showDialog(
@@ -73,10 +77,13 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (!silent && mounted) {
       final packageInfo = await PackageInfo.fromPlatform();
       if (!mounted) return;
+      final fullVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
       showDialog(
         context: context,
-        builder: (context) =>
-            UpdateDialog(version: packageInfo.version, isLatest: true),
+        builder: (context) => UpdateDialog(
+          version: fullVersion,
+          isLatest: true,
+        ),
       );
     }
   }

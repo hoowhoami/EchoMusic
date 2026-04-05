@@ -128,7 +128,7 @@ class DetailPageSliverHeader extends StatelessWidget {
                 style: TextStyle(
                   color: theme.colorScheme.onSurface,
                   fontSize: 16,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                 ),
               ),
             ),
@@ -162,7 +162,7 @@ class DetailPageSliverHeader extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontSize: 24,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 height: 1.08,
               ),
             ),
@@ -200,7 +200,7 @@ class DetailPageSliverHeader extends StatelessWidget {
         style: TextStyle(
           color: theme.colorScheme.primary,
           fontSize: 10,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           letterSpacing: 1.2,
         ),
       ),

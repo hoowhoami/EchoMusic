@@ -45,7 +45,7 @@ class CustomSelector extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: AppTheme.fontWeightBold,
+                  fontWeight: AppTheme.fontWeightSemiBold,
                   color: theme.colorScheme.onSurface.withAlpha(200),
                 ),
               ),

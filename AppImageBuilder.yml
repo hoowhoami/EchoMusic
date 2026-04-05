@@ -40,9 +40,9 @@ AppDir:
     include:
       - libgtk-3-0
       - libsecret-1-0
-      - libjsoncpp25
+      - libjsoncpp-dev
       - libayatana-appindicator3-1
-      - libmpv1
+      - libmpv-dev
       - libkeybinder-3.0-0
       - libgdk-pixbuf-2.0-0
       - libgdk-pixbuf2.0-bin

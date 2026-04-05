@@ -81,7 +81,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
             physics: const BouncingScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(40, 32, 40, 0),
+                padding: const EdgeInsets.fromLTRB(40, 20, 40, 0),
                 sliver: SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,7 +263,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                         iconContent,
                         style: TextStyle(
                           fontSize: 15, 
-                          fontWeight: AppTheme.fontWeightBold, 
+                          fontWeight: AppTheme.fontWeightSemiBold, 
                           color: theme.colorScheme.onPrimary,
                         ),
                       ),
@@ -279,7 +279,7 @@ class _RecommendViewState extends State<RecommendView> with RefreshableState {
                           title,
                           style: TextStyle(
                             fontSize: 14, 
-                            fontWeight: AppTheme.fontWeightBold,
+                            fontWeight: AppTheme.fontWeightSemiBold,
                             color: theme.colorScheme.onSurface,
                           ),
                         ),

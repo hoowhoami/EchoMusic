@@ -90,7 +90,7 @@ class _SongCardState extends State<SongCard> {
       CustomToast.error(context, '该歌曲暂无版权');
       return;
     }
-    if (widget.song.isPayBlocked || widget.song.isPaid) {
+    if (widget.song.isPaid) {
       CustomToast.error(context, '该歌曲需要购买');
       return;
     }
@@ -193,7 +193,7 @@ class _SongCardState extends State<SongCard> {
                               ),
                       fontSize: 12,
                       fontWeight:
-                          isCurrent ? AppTheme.fontWeightBold : AppTheme.fontWeightSemiBold,
+                          isCurrent ? AppTheme.fontWeightSemiBold : AppTheme.fontWeightSemiBold,
                     ),
                   ),
           ),
@@ -453,7 +453,7 @@ class _SongCardState extends State<SongCard> {
               label,
               style: TextStyle(
                 fontSize: 14,
-                fontWeight: AppTheme.fontWeightBold,
+                fontWeight: AppTheme.fontWeightSemiBold,
                 color: isDestructive
                     ? theme.colorScheme.error
                     : theme.colorScheme.onSurface,
@@ -580,15 +580,6 @@ class _SongCardState extends State<SongCard> {
               final isLoading = isCurrent && playbackState.isLoading;
               final isPlayable = widget.song.isPlayable;
               final contentOpacity = isPlayable ? 1.0 : 0.45;
-              final isNoCopyright = widget.song.isNoCopyright;
-              final isPayBlocked = widget.song.isPayBlocked || widget.song.isPaid;
-              final unavailableTag = !isPlayable
-                  ? (isNoCopyright
-                      ? '版权'
-                      : isPayBlocked
-                          ? '付费'
-                          : '音源')
-                  : null;
 
               return Selector<PersistenceProvider, bool>(
                 selector: (_, provider) => provider.isFavorite(widget.song),
@@ -747,31 +738,19 @@ class _SongCardState extends State<SongCard> {
                                                                 : 140,
                                                           ),
                                                 fontWeight: isCurrent
-                                                    ? AppTheme.fontWeightBold
-                                                    : AppTheme.fontWeightBold,
+                                                    ? AppTheme.fontWeightSemiBold
+                                                    : AppTheme.fontWeightSemiBold,
                                                 fontSize: 14,
                                                 height: 1,
                                                 letterSpacing: -0.3,
                                               ),
                                             ),
                                           ),
-                                          if (unavailableTag != null)
+                                          for (final tag in widget.song.privilegeTags)
                                             _buildTag(
                                               context,
-                                              unavailableTag,
-                                              theme.colorScheme.outline,
-                                            ),
-                                          if (widget.song.isPaid)
-                                            _buildTag(
-                                              context,
-                                              '付费',
-                                              const Color(0xFF8B5CF6),
-                                            )
-                                          else if (widget.song.isVip)
-                                            _buildTag(
-                                              context,
-                                              'VIP',
-                                              const Color(0xFFF59E0B),
+                                              tag.label,
+                                              Color(tag.color),
                                             ),
                                           if (widget.song.qualityTag.isNotEmpty)
                                             _buildTag(
@@ -931,7 +910,7 @@ class _SongCardState extends State<SongCard> {
         style: TextStyle(
           color: color,
           fontSize: 9,
-          fontWeight: AppTheme.fontWeightBold,
+          fontWeight: AppTheme.fontWeightSemiBold,
           letterSpacing: 0.5,
         ),
       ),

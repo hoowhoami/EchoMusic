@@ -58,7 +58,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                               title,
                               style: TextStyle(
                                 fontSize: 16,
-                                fontWeight: AppTheme.fontWeightBold,
+                                fontWeight: AppTheme.fontWeightSemiBold,
                                 color:
                                     Theme.of(dialogContext).colorScheme.onSurface,
                               ),
@@ -124,7 +124,7 @@ Future<Map<String, dynamic>?> showPlaylistPickerDialog(
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 14,
-                                      fontWeight: AppTheme.fontWeightBold,
+                                      fontWeight: AppTheme.fontWeightSemiBold,
                                       color:
                                           Theme.of(context).colorScheme.onSurface,
                                     ),
