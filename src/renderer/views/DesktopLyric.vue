@@ -230,12 +230,14 @@ const currentSecondaryText = computed(() => {
 const showSecondaryLine = computed(
   () =>
     snapshot.value.settings.secondaryEnabled
-      ? Boolean(currentSecondaryText.value)
+      ? Boolean(currentSecondaryText.value) || snapshot.value.settings.doubleLine
       : snapshot.value.settings.doubleLine,
 );
 
 const nextText = computed(() => {
-  if (snapshot.value.settings.secondaryEnabled) return currentSecondaryText.value;
+  if (snapshot.value.settings.secondaryEnabled && currentSecondaryText.value) {
+    return currentSecondaryText.value;
+  }
   if (nextLine.value?.text?.trim()) return nextLine.value.text.trim();
   return playback.value?.artist || '听你想听';
 });

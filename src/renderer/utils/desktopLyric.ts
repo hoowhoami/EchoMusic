@@ -113,7 +113,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [() => settingStore.desktopLyric, lyricsMode, secondaryEnabled],
+      [() => settingStore.desktopLyric, lyricsMode, secondaryEnabled, preferredMode],
       () => {
         void syncSettingsSnapshot();
       },

@@ -56,6 +56,8 @@ type ShortcutCommand =
   | 'togglePlayback'
   | 'previousTrack'
   | 'nextTrack'
+  | 'toggleMainLyric'
+  | 'toggleDesktopLyric'
   | 'volumeUp'
   | 'volumeDown'
   | 'toggleMute'
@@ -85,6 +87,8 @@ const shortcutItems: ShortcutItem[] = [
     desc: '在列表循环、单曲循环、随机播放之间切换',
   },
   { command: 'toggleWindow', title: '显示 / 隐藏窗口', desc: '切换主窗口的显示和隐藏状态' },
+  { command: 'toggleMainLyric', title: '主歌词开关', desc: '打开或关闭主歌词页面' },
+  { command: 'toggleDesktopLyric', title: '桌面歌词开关', desc: '打开或关闭桌面歌词窗口' },
 ];
 
 const themeOptions = [

@@ -4,6 +4,8 @@ type ShortcutCommand =
   | 'togglePlayback'
   | 'previousTrack'
   | 'nextTrack'
+  | 'toggleMainLyric'
+  | 'toggleDesktopLyric'
   | 'volumeUp'
   | 'volumeDown'
   | 'toggleMute'
@@ -22,6 +24,11 @@ let registeredShortcuts: ShortcutMap | null = null;
 const forwardToRenderer = (command: ShortcutCommand, getMainWindow: () => BrowserWindow | null) => {
   const win = getMainWindow();
   if (!win) return;
+  if (command === 'toggleMainLyric') {
+    if (win.isMinimized()) win.restore();
+    if (!win.isVisible()) win.show();
+    win.focus();
+  }
   win.webContents.send('shortcut-trigger', command);
 };
 

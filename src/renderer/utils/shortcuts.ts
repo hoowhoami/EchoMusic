@@ -2,11 +2,15 @@ import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
+import router from '@/router';
+import { closeTransientView } from '@/utils/navigation';
 
 type ShortcutCommand =
   | 'togglePlayback'
   | 'previousTrack'
   | 'nextTrack'
+  | 'toggleMainLyric'
+  | 'toggleDesktopLyric'
   | 'toggleLyricsMode'
   | 'cycleLyricsMode'
   | 'volumeUp'
@@ -111,6 +115,8 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     togglePlayback: labelToAccelerator(bindings.togglePlayback ?? defaults.togglePlayback ?? ''),
     previousTrack: labelToAccelerator(bindings.previousTrack ?? defaults.previousTrack ?? ''),
     nextTrack: labelToAccelerator(bindings.nextTrack ?? defaults.nextTrack ?? ''),
+    toggleMainLyric: labelToAccelerator(bindings.toggleMainLyric ?? defaults.toggleMainLyric ?? ''),
+    toggleDesktopLyric: labelToAccelerator(bindings.toggleDesktopLyric ?? defaults.toggleDesktopLyric ?? ''),
     toggleLyricsMode: '',
     cycleLyricsMode: '',
     volumeUp: labelToAccelerator(bindings.volumeUp ?? defaults.volumeUp ?? ''),
@@ -126,6 +132,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   const playerStore = usePlayerStore();
   const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
+  const settingStore = useSettingStore();
 
   if (command === 'togglePlayback') {
     playerStore.togglePlay();
@@ -133,6 +140,18 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.prev();
   } else if (command === 'nextTrack') {
     playerStore.next();
+  } else if (command === 'toggleMainLyric') {
+    const currentRoute = router.currentRoute.value;
+    if (currentRoute.name === 'lyric') {
+      void closeTransientView(router, currentRoute);
+      return;
+    }
+    router.push({
+      name: 'lyric',
+      query: { from: currentRoute.fullPath },
+    });
+  } else if (command === 'toggleDesktopLyric') {
+    void settingStore.setDesktopLyricEnabled(!settingStore.desktopLyric.enabled);
   } else if (command === 'toggleLyricsMode') {
     lyricStore.toggleSecondaryEnabled();
   } else if (command === 'cycleLyricsMode') {
