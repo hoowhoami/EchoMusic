@@ -610,7 +610,7 @@ export const ensureDesktopLyricWindow = async () => {
     hasShadow: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    type: 'panel',
+    type: process.platform === 'darwin' ? 'panel' : 'toolbar',
     fullscreenable: false,
     roundedCorners: false,
     focusable: false,
@@ -629,6 +629,8 @@ export const ensureDesktopLyricWindow = async () => {
     if (snapshot.settings.enabled) {
       desktopLyricWindow?.showInactive();
     }
+    // 强制同步一次置顶和交互逻辑，防止全屏或意外重叠
+    applyWindowInteractivity();
     syncWindowAppearance();
     sendSnapshot();
   });
@@ -698,17 +700,25 @@ export const ensureDesktopLyricWindow = async () => {
 };
 
 export const showDesktopLyricWindow = async () => {
+  const previousFocusedWindow = BrowserWindow.getFocusedWindow();
   const win = await ensureDesktopLyricWindow();
   if (win.isMinimized()) win.restore();
   if (!win.isVisible()) win.showInactive();
+  
+  // 确保在强制显示时应用正确的交互状态
+  applyWindowInteractivity();
   syncWindowAppearance();
   sendSnapshot();
+
+  if (process.platform === 'win32' && previousFocusedWindow && !previousFocusedWindow.isDestroyed()) {
+    previousFocusedWindow.focus();
+  }
   return win;
 };
 
-export const hideDesktopLyricWindow = () => {
+export const closeDesktopLyricWindow = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  desktopLyricWindow.hide();
+  desktopLyricWindow.close();
 };
 
 export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
@@ -755,7 +765,7 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   const merged: DesktopLyricSettings = {
     ...snapshot.settings,
     ...partial,
-    clickThrough: Boolean(partial.locked ?? snapshot.settings.locked),
+    clickThrough: Boolean(partial.locked ?? (partial.enabled === false ? false : snapshot.settings.locked)),
     opacity: clamp(Number(partial.opacity ?? snapshot.settings.opacity), 0.25, 1),
     scale: clamp(Number(partial.scale ?? snapshot.settings.scale), 0.75, 1.5),
     inactiveFontSize: clamp(
@@ -815,7 +825,7 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   if (merged.enabled) {
     await showDesktopLyricWindow();
   } else {
-    hideDesktopLyricWindow();
+    closeDesktopLyricWindow();
   }
 
   sendSnapshot();
@@ -842,7 +852,7 @@ export const updateDesktopLyricSnapshot = async (partial: DesktopLyricSnapshotPa
   if (shouldAutoShow) {
     await showDesktopLyricWindow();
   } else if (!snapshot.settings.enabled) {
-    hideDesktopLyricWindow();
+    closeDesktopLyricWindow();
   }
 
   sendSnapshot();
@@ -866,19 +876,16 @@ export const registerDesktopLyricHandlers = () => {
   ipcMain.handle('desktop-lyric:get-snapshot', () => snapshot);
 
   ipcMain.handle('desktop-lyric:show', async () => {
-    snapshot.settings.enabled = true;
-    settingsStore.set('enabled', true);
-    await showDesktopLyricWindow();
-    sendSnapshot();
-    return snapshot;
+    // 强制执行 show，确保即使 enabled 已经是 true 也能重新创建/显示窗口
+    const result = await updateDesktopLyricSettings({ enabled: true });
+    if (result.settings.enabled) {
+      await showDesktopLyricWindow();
+    }
+    return result;
   });
 
-  ipcMain.handle('desktop-lyric:hide', () => {
-    snapshot.settings.enabled = false;
-    settingsStore.set('enabled', false);
-    hideDesktopLyricWindow();
-    sendSnapshot();
-    return snapshot;
+  ipcMain.handle('desktop-lyric:hide', async () => {
+    return updateDesktopLyricSettings({ enabled: false });
   });
 
   ipcMain.handle('desktop-lyric:toggle-lock', async () => {

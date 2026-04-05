@@ -13,10 +13,10 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
 <template>
   <header class="overlay-header fixed top-0 left-0 right-0 z-[2000] pointer-events-none select-none flex flex-col">
     <!-- 1. macOS 顶部红绿灯占位 (40px) -->
-    <div class="h-10 w-full drag pointer-events-auto"></div>
+    <div v-if="isMac" class="h-10 w-full drag pointer-events-auto"></div>
 
     <!-- 2. Windows/Linux 窗口控制行 -->
-    <div v-if="!isMac" class="flex justify-end h-10 w-full">
+    <div v-if="!isMac" class="flex justify-end h-10 w-full drag pointer-events-auto">
       <div class="window-controls flex items-center h-full no-drag pointer-events-auto">
         <Button variant="unstyled" size="none" 
           @click="handleControl('minimize')" 

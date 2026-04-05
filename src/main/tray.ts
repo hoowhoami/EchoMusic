@@ -33,7 +33,7 @@ const resolveTrayIconPath = () => {
   const iconName = process.platform === 'darwin'
     ? 'IconTemplate.png'
     : process.platform === 'win32'
-      ? (nativeTheme.shouldUseDarkColors ? 'win_tray_icon_dark.ico' : 'win_tray_icon_light.ico')
+      ? (nativeTheme.shouldUseDarkColors ? 'win_tray_icon_light.ico' : 'win_tray_icon_dark.ico')
       : 'linux_tray_icon.png';
 
   if (app.isPackaged) {

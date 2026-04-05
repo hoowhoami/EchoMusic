@@ -288,7 +288,7 @@ onUnmounted(() => {
     <OverlayHeader class="relative z-20" />
 
     <div class="flex-1 relative overflow-hidden flex items-center justify-center p-6 z-10">
-      <div class="absolute top-4 left-6 z-[100]">
+      <div class="absolute top-12 left-6 z-[100]">
         <Button
           @click="closeLoginPage"
           variant="ghost"

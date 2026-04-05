@@ -8,6 +8,7 @@ import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import logger from '@/utils/logger';
 import Button from '@/components/ui/Button.vue';
+import OverlayHeader from '@/layouts/OverlayHeader.vue';
 
 const router = useRouter();
 const deviceStore = useDeviceStore();
@@ -112,16 +113,16 @@ onMounted(() => {
   <div
     class="loading-view h-full w-full relative overflow-hidden bg-bg-main text-text-main select-none transition-colors duration-500"
   >
-    <!-- 1. 背景渐变 -->
+    <!-- 1. 窗口控制 -->
+    <OverlayHeader />
+
+    <!-- 2. 背景渐变 -->
     <div class="absolute inset-0 bg-gradient-to-b from-bg-sidebar to-bg-main opacity-50"></div>
 
-    <!-- 2. 装饰圆 -->
+    <!-- 3. 装饰圆 -->
     <div
       class="absolute -top-[100px] -right-[100px] w-[300px] h-[300px] rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
     ></div>
-
-    <!-- 3. 拖拽区域 -->
-    <div class="absolute top-0 left-0 right-0 h-12 drag"></div>
 
     <!-- 4. 主体内容 -->
     <main class="relative h-full flex flex-col items-center justify-center">
