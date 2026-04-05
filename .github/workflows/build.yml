@@ -83,7 +83,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm build
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+        run: pnpm exec vue-tsc --noEmit && pnpm exec vite build && pnpm exec electron-builder --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
