@@ -1,4 +1,4 @@
-name: Build EchoMusic Desktop
+name: Build EchoMusicNext Desktop
 
 on:
   push:
@@ -6,31 +6,41 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build for ${{ matrix.os }}
+    timeout-minutes: 90
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
-            platform: macos
             server_bin: app_macos
             pkg_target: node18-macos-x64
-            pkg_script: pkgmacos
+            artifact_glob: |
+              dist/EchoMusic-*.dmg
+              dist/EchoMusic-*.zip
           - os: ubuntu-22.04
-            platform: linux
             server_bin: app_linux
             pkg_target: node18-linux-x64
-            pkg_script: pkglinux
+            artifact_glob: |
+              dist/EchoMusic-*.AppImage
+              dist/EchoMusic-*.deb
+              dist/EchoMusic-*.rpm
+              dist/EchoMusic-*.tar.gz
           - os: windows-latest
-            platform: windows
-            arch: x64
             server_bin: app_win.exe
             pkg_target: node18-win-x64
-            pkg_script: pkgwin
+            artifact_glob: |
+              dist/EchoMusic-*-Windows-Setup-*.exe
+              dist/EchoMusic-*.exe
 
     steps:
       - name: Checkout code
@@ -41,194 +51,99 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install Server Dependencies and Build Server Executable
-        working-directory: server
-        run: |
-          npm install
-          npx pkg . -t ${{ matrix.pkg_target }} -C GZip -o bin/${{ matrix.server_bin }} --no-bytecode
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          channel: 'stable'
+          version: 9
 
-      - name: Install Flutter dependencies
-        run: flutter pub get
+      - name: Install root dependencies
+        run: pnpm install --no-audit --no-fund --frozen-lockfile
 
-      - name: Extract App Version
+      - name: Install server dependencies
+        working-directory: server
         shell: bash
         run: |
-          # 从 pubspec.yaml 提取 app_version 字段
-          APP_RAW_VERSION=$(grep 'app_version:' pubspec.yaml | cut -d ' ' -f 2)
-          echo "APP_RAW_VERSION=$APP_RAW_VERSION" >> "$GITHUB_ENV"
-          echo "Using App Version: $APP_RAW_VERSION"
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev liblzma-dev libsecret-1-dev libjsoncpp-dev libayatana-appindicator3-dev libmpv-dev libkeybinder-3.0-dev mpv
-
-      - name: Build Flutter Desktop (Windows)
-        if: matrix.platform == 'windows'
-        run: flutter build windows --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
-
-      - name: Build Flutter Desktop (Non-Windows)
-        if: matrix.platform != 'windows'
-        run: flutter build ${{ matrix.platform }} --release --dart-define=APP_RAW_VERSION=${{ env.APP_RAW_VERSION }}
-
-      - name: Bundle Server (macOS)
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          mkdir -p build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server
-          cp server/bin/app_macos build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
-
-      - name: Bundle Server (Windows)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          mkdir -p build/windows/${{ matrix.arch }}/runner/Release/server
-          cp server/bin/app_win.exe build/windows/${{ matrix.arch }}/runner/Release/server/
-
-      - name: Bundle Server (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          mkdir -p build/linux/x64/release/bundle/server
-          cp server/bin/app_linux build/linux/x64/release/bundle/server/
-
-      - name: Set AppImage version (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          echo "APPIMAGE_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Verify Build Artifacts
-        shell: bash
-        run: |
-          echo "Listing build artifacts..."
-          if [ "${{ matrix.platform }}" == "macos" ]; then
-            ls -lhR build/macos/Build/Products/Release/EchoMusic.app/Contents/Resources/server/
-          elif [ "${{ matrix.platform }}" == "windows" ]; then
-            ls -lhR build/windows/${{ matrix.arch }}/runner/Release/server/
-          elif [ "${{ matrix.platform }}" == "linux" ]; then
-            ls -lhR build/linux/x64/release/bundle/server/
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
           fi
 
-      - name: Install create-dmg (macOS)
-        if: matrix.platform == 'macos'
-        run: brew install create-dmg
-
-      - name: Prepare Release (macOS)
-        if: matrix.platform == 'macos'
+      - name: Build server executable
+        working-directory: server
         shell: bash
-        run: |
-          VERSION=${{ github.ref_name }}
-          CLEAN_VERSION=${VERSION#v}
-          mkdir -p dmg_root
-          cp -r "build/macos/Build/Products/Release/EchoMusic.app" dmg_root/
+        run: npx pkg . -t ${{ matrix.pkg_target }} -C GZip -o bin/${{ matrix.server_bin }} --no-bytecode
 
-          create-dmg \
-            --volname "EchoMusic" \
-            --volicon "dmg_root/EchoMusic.app/Contents/Resources/AppIcon.icns" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "EchoMusic.app" 175 120 \
-            --hide-extension "EchoMusic.app" \
-            --app-drop-link 425 120 \
-            "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-macOS.dmg" \
-            dmg_root/
-
-      - name: Prepare Release (Windows)
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          VERSION=${{ github.ref_name }}
-          CLEAN_VERSION=${VERSION#v}
-          iscc //DAppVersion=${CLEAN_VERSION} //DAppArch=${{ matrix.arch }} //DBuildDir=build\\windows\\${{ matrix.arch }}\\runner\\Release installer.iss
-          mv EchoMusic-Windows-Setup-${{ matrix.arch }}.exe "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-${{ matrix.arch }}.exe"
-
-      - name: Prepare Release (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          VERSION=${{ github.ref_name }}
-          CLEAN_VERSION=${VERSION#v}
-          # Create .deb package structure
-          mkdir -p deb/usr/bin
-          mkdir -p deb/usr/share/echomusic
-          mkdir -p deb/usr/share/applications
-          mkdir -p deb/usr/share/icons/hicolor/512x512/apps
-          mkdir -p deb/DEBIAN
-
-          cp -r build/linux/x64/release/bundle/* deb/usr/share/echomusic/
-          ln -s /usr/share/echomusic/EchoMusic deb/usr/bin/echomusic
-          cp assets/icons/icon.png deb/usr/share/icons/hicolor/512x512/apps/echomusic.png
-
-          cat > deb/DEBIAN/control <<EOF
-          Package: echomusic
-          Version: ${CLEAN_VERSION}
-          Section: utils
-          Priority: optional
-          Architecture: amd64
-          Maintainer: EchoMusic Team
-          Depends: libgtk-3-0, libsecret-1-0, libjsoncpp-dev, libayatana-appindicator3-1, libmpv-dev, libkeybinder-3.0-0
-          Description: A minimalist music player.
-          EOF
-
-          cat > deb/usr/share/applications/echomusic.desktop <<EOF
-          [Desktop Entry]
-          Name=EchoMusic
-          Exec=echomusic
-          Icon=echomusic
-          Type=Application
-          Categories=AudioVideo;Audio;Player;
-          EOF
-
-          dpkg-deb --build deb "${{ github.workspace }}/EchoMusic-${CLEAN_VERSION}-Linux.deb"
-
-      - name: Build AppImage (Linux)
-        if: matrix.platform == 'linux'
+      - name: Build desktop app
         shell: bash
         env:
-          APPIMAGE_VERSION: ${{ env.APPIMAGE_VERSION }}
-        run: |
-          docker run --rm \
-            -e APPIMAGE_VERSION \
-            -v "${{ github.workspace }}:/github/workspace" \
-            -w /github/workspace \
-            --entrypoint /bin/sh \
-            appimagecrafters/appimage-builder:1.1.0 \
-            -lc 'apt-get update && apt-get install -y squashfs-tools && appimage-builder --recipe AppImageBuilder.yml --skip-test'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoMusicNext-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish Release Assets
+    timeout-minutes: 20
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: find release-artifacts -maxdepth 2 -type f | sort
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            EchoMusic-*.dmg
-            EchoMusic-*-Windows-Setup-*.exe
-            EchoMusic-*.deb
-            EchoMusic-*.AppImage
+          files: release-artifacts/**
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     name: Send Telegram Notification
-    needs: build
+    if: startsWith(github.ref, 'refs/tags/') && success()
+    needs:
+      - build
+      - release
     runs-on: ubuntu-latest
-    if: success()
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
 
       - name: Build changelog
         shell: bash
@@ -245,6 +160,7 @@ jobs:
           CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" \
             | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
             | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
+
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="无"
           fi
@@ -255,39 +171,71 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_ENV"
 
-      - name: Send Build Success Message
+      - name: Build artifact links
+        shell: bash
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          mapfile -t FILES < <(find release-artifacts -maxdepth 2 -type f | sort)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          LINKS=""
+          for filepath in "${FILES[@]}"; do
+            filename=$(basename "$filepath")
+            escaped_name=$(printf '%s' "$filename" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+            link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
+            if [ -z "$LINKS" ]; then
+              LINKS="• <a href=\"${link}\">${escaped_name}</a>"
+            else
+              LINKS="${LINKS}\n• <a href=\"${link}\">${escaped_name}</a>"
+            fi
+          done
+
+          {
+            echo "ARTIFACT_LINKS<<EOF"
+            printf '%b\n' "$LINKS"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Send Telegram message
+        shell: bash
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
         run: |
-          VERSION="${{ github.ref_name }}"
-          CLEAN_VERSION="${VERSION#v}"
-          REPO="${{ github.repository }}"
+          set -e
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets are missing, skip notification."
+            exit 0
+          fi
 
-          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s\n%s\n%s\n%s\n%s\n\n%s' \
+          VERSION="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          printf -v MESSAGE '%s\n\n%s\n%s\n\n%s\n%s\n\n%s' \
             "🎉 <b>EchoMusic ${VERSION} 构建成功！</b>" \
             "📝 <b>更新内容：</b>" \
             "${CHANGELOG}" \
             "📦 <b>下载地址：</b>" \
-            "🍎 macOS: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-macOS.dmg\">EchoMusic-${CLEAN_VERSION}-macOS.dmg</a>" \
-            "🪟 Windows: <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe\">EchoMusic-${CLEAN_VERSION}-Windows-Setup-x64.exe</a>" \
-            "🐧 Linux (deb): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-Linux.deb\">EchoMusic-${CLEAN_VERSION}-Linux.deb</a>" \
-            "🐧 Linux (AppImage): <a href=\"https://github.com/${REPO}/releases/download/${VERSION}/EchoMusic-${CLEAN_VERSION}-x86_64.AppImage\">EchoMusic-${CLEAN_VERSION}-x86_64.AppImage</a>" \
+            "${ARTIFACT_LINKS}" \
             "🔗 <a href=\"https://github.com/${REPO}/releases/tag/${VERSION}\">查看完整 Release</a>"
 
-          # 构建 JSON payload
           PAYLOAD=$(jq -n \
-            --arg chat_id "${TELEGRAM_CHAT_ID}" \
-            --arg text "${MESSAGE}" \
+            --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --arg text "$MESSAGE" \
             --arg parse_mode "HTML" \
             '{chat_id: $chat_id, text: $text, parse_mode: $parse_mode, disable_web_page_preview: true}')
 
-          # 如果设置了 TELEGRAM_TOPIC_ID，则添加 message_thread_id
-          if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
-            PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "${TELEGRAM_TOPIC_ID}" '. + {message_thread_id: ($topic_id | tonumber)}')
+          if [ -n "$TELEGRAM_TOPIC_ID" ]; then
+            PAYLOAD=$(echo "$PAYLOAD" | jq --arg topic_id "$TELEGRAM_TOPIC_ID" '. + {message_thread_id: ($topic_id | tonumber)}')
           fi
 
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"

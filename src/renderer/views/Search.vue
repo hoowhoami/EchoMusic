@@ -1,0 +1,1116 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { getSearchHot, getSearchSuggest, search } from '@/api/search';
+import { useSettingStore } from '@/stores/setting';
+import { usePlaylistStore } from '@/stores/playlist';
+import type { Song } from '@/models/song';
+import { usePlayerStore } from '@/stores/player';
+import Button from '@/components/ui/Button.vue';
+import {
+  mapAlbumMeta,
+  mapArtistMeta,
+  mapPlaylistMeta,
+  mapSearchSong,
+} from '@/utils/mappers';
+import type { AlbumMeta } from '@/models/album';
+import type { ArtistMeta } from '@/models/artist';
+import type { PlaylistMeta } from '@/models/playlist';
+import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import SongList from '@/components/music/SongList.vue';
+import SongListHeader, { type SortField, type SortOrder } from '@/components/music/SongListHeader.vue';
+import ActionRow from '@/components/music/DetailPageActionRow.vue';
+import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import PlaylistCard from '@/components/music/PlaylistCard.vue';
+import AlbumCard from '@/components/music/AlbumCard.vue';
+import ArtistCard from '@/components/music/ArtistCard.vue';
+import BackToTop from '@/components/ui/BackToTop.vue';
+import { iconChevronRight, iconClock, iconCurrentLocation, iconSearch, iconSparkles, iconTrash, iconX } from '@/icons';
+import { replaceQueueAndPlay } from '@/utils/playback';
+
+interface SearchHotKeyword {
+  keyword: string;
+  reason: string;
+}
+
+interface SearchHotCategory {
+  name: string;
+  keywords: SearchHotKeyword[];
+}
+
+interface SearchSuggestionRecord {
+  text: string;
+}
+
+interface SearchSuggestionCategory {
+  label: string;
+  records: SearchSuggestionRecord[];
+}
+
+const settingStore = useSettingStore();
+const playlistStore = usePlaylistStore();
+const playerStore = usePlayerStore();
+
+const searchInput = ref('');
+const searchInputRef = ref<HTMLInputElement | null>(null);
+const isLoading = ref(false);
+const isLoadingHot = ref(true);
+const isLoadingSuggestions = ref(false);
+const hasSearched = ref(false);
+const showSuggestions = ref(false);
+const isIgnoringChanges = ref(false);
+const showPinnedTabs = ref(false);
+const activeTabIndex = ref(0);
+const selectedHotCategoryIndex = ref(0);
+const defaultKeyword = ref('');
+const hotSearchCategories = ref<SearchHotCategory[]>([]);
+const suggestionCategories = ref<SearchSuggestionCategory[]>([]);
+
+const songResults = ref<Song[]>([]);
+const playlistResults = ref<PlaylistMeta[]>([]);
+const albumResults = ref<AlbumMeta[]>([]);
+const artistResults = ref<ArtistMeta[]>([]);
+
+const songSearchQuery = ref('');
+const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
+const showSongBatchDrawer = ref(false);
+const songSortField = ref<SortField | null>(null);
+const songSortOrder = ref<SortOrder>(null);
+
+const pinnedTabHeight = 50;
+const songToolbarHeight = 52;
+const songToolbarOffset = computed(() => (showPinnedTabs.value ? pinnedTabHeight : 0));
+const songListHeaderOffset = computed(() => songToolbarOffset.value + songToolbarHeight);
+const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
+
+let debounceTimer: number | null = null;
+let scrollTarget: HTMLElement | null = null;
+
+const searchHistory = computed(() => settingStore.searchHistory ?? []);
+const currentHotKeywords = computed(() => hotSearchCategories.value[selectedHotCategoryIndex.value]?.keywords ?? []);
+
+const sortedSongResults = computed(() => {
+  const base = songResults.value.slice();
+  if (!songSortField.value || !songSortOrder.value) return base;
+  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+  const indexMap = new Map<string, number>();
+  songResults.value.forEach((song, index) => {
+    indexMap.set(song.id, index);
+  });
+  const direction = songSortOrder.value === 'asc' ? 1 : -1;
+
+  return base.sort((a, b) => {
+    switch (songSortField.value) {
+      case 'title':
+        return compareText(a.title, b.title) * direction;
+      case 'album':
+        return compareText(a.album ?? '', b.album ?? '') * direction;
+      case 'duration':
+        return (a.duration - b.duration) * direction;
+      case 'index':
+        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
+      default:
+        return 0;
+    }
+  });
+});
+
+const songFilteredCount = computed(() => {
+  const query = songSearchQuery.value.trim().toLowerCase();
+  if (!query) return sortedSongResults.value.length;
+  return sortedSongResults.value.filter((song) => {
+    return (
+      song.title.toLowerCase().includes(query) ||
+      song.artist.toLowerCase().includes(query) ||
+      song.album?.toLowerCase().includes(query)
+    );
+  }).length;
+});
+
+const songCountLabel = computed(() => {
+  const total = songResults.value.length;
+  if (!songSearchQuery.value.trim()) return `${total}`;
+  return `${songFilteredCount.value} / ${total}`;
+});
+
+const toRecord = (value: unknown): Record<string, unknown> | undefined => {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
+};
+
+const extractSearchLists = (payload: unknown): unknown[] => {
+  const record = toRecord(payload);
+  const data = toRecord(record?.data);
+  const lists = data?.lists ?? data?.list ?? record?.lists ?? record?.list;
+  return Array.isArray(lists) ? lists : [];
+};
+
+const extractSearchDefaultKeyword = (payload: unknown): string => {
+  const record = toRecord(payload);
+  const data = toRecord(record?.data);
+  const raw = data?.keyword ?? data?.show_keyword ?? data?.fallback ?? '';
+  return typeof raw === 'string' ? raw : String(raw);
+};
+
+const extractHotCategories = (payload: unknown): SearchHotCategory[] => {
+  const record = toRecord(payload);
+  const data = toRecord(record?.data);
+  const list = Array.isArray(data?.list) ? data?.list : [];
+
+  return list
+    .map((item) => toRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => {
+      const rawKeywords = Array.isArray(item.keywords) ? item.keywords : [];
+      return {
+        name: typeof item.name === 'string' ? item.name : String(item.name ?? ''),
+        keywords: rawKeywords
+          .map((keywordItem) => toRecord(keywordItem))
+          .filter((keywordItem): keywordItem is Record<string, unknown> => Boolean(keywordItem))
+          .map((keywordItem) => ({
+            keyword:
+              typeof keywordItem.keyword === 'string'
+                ? keywordItem.keyword
+                : String(keywordItem.keyword ?? ''),
+            reason:
+              typeof keywordItem.reason === 'string'
+                ? keywordItem.reason
+                : String(keywordItem.reason ?? ''),
+          }))
+          .filter((keywordItem) => keywordItem.keyword.length > 0),
+      };
+    })
+    .filter((category) => category.name.length > 0);
+};
+
+const extractSuggestionCategories = (payload: unknown): SearchSuggestionCategory[] => {
+  const record = toRecord(payload);
+  const rawData = record?.data;
+  const list = Array.isArray(rawData) ? rawData : [];
+
+  return list
+    .map((item) => toRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => {
+      const label = typeof item.LableName === 'string' ? item.LableName : String(item.LableName ?? '');
+      const rawRecords = Array.isArray(item.RecordDatas) ? item.RecordDatas : [];
+      return {
+        label,
+        records: rawRecords
+          .map((recordItem) => toRecord(recordItem))
+          .filter((recordItem): recordItem is Record<string, unknown> => Boolean(recordItem))
+          .map((recordItem) => ({
+            text:
+              typeof recordItem.HintInfo === 'string'
+                ? recordItem.HintInfo
+                : String(recordItem.HintInfo ?? ''),
+          }))
+          .filter((recordItem) => recordItem.text.length > 0),
+      };
+    })
+    .filter((category) => category.records.length > 0 && category.label !== 'MV');
+};
+
+const handleScroll = () => {
+  const scrollTop = scrollTarget?.scrollTop ?? 0;
+  showPinnedTabs.value = hasSearched.value && activeTabIndex.value !== 0 && scrollTop > 80;
+};
+
+const attachScrollTarget = async () => {
+  await nextTick();
+  scrollTarget = document.querySelector('.view-port') as HTMLElement | null;
+  if (scrollTarget) {
+    scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+  }
+};
+
+const detachScrollTarget = () => {
+  if (scrollTarget) {
+    scrollTarget.removeEventListener('scroll', handleScroll);
+    scrollTarget = null;
+  }
+};
+
+const loadHotSearches = async () => {
+  isLoadingHot.value = true;
+  try {
+    const hotRes = await getSearchHot();
+    hotSearchCategories.value = extractHotCategories(hotRes);
+    defaultKeyword.value = '';
+    if (selectedHotCategoryIndex.value >= hotSearchCategories.value.length) {
+      selectedHotCategoryIndex.value = 0;
+    }
+  } catch (_error) {
+    hotSearchCategories.value = [];
+    defaultKeyword.value = '';
+  } finally {
+    isLoadingHot.value = false;
+  }
+};
+
+const clearSuggestions = () => {
+  suggestionCategories.value = [];
+  showSuggestions.value = false;
+  isLoadingSuggestions.value = false;
+};
+
+const handleInputFocus = () => {
+  if (searchInput.value.trim().length > 0) {
+    showSuggestions.value = true;
+    if (suggestionCategories.value.length === 0 && !isLoadingSuggestions.value) {
+      void fetchSuggestions(searchInput.value.trim());
+    }
+  }
+};
+
+const handleInputBlur = () => {
+  window.setTimeout(() => {
+    showSuggestions.value = false;
+  }, 150);
+};
+
+const handleSearchChanged = (value: string) => {
+  if (debounceTimer) {
+    window.clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  if (!value.trim()) {
+    clearSuggestions();
+    hasSearched.value = false;
+    showPinnedTabs.value = false;
+    isIgnoringChanges.value = false;
+    return;
+  }
+
+  if (isIgnoringChanges.value) return;
+
+  isLoadingSuggestions.value = true;
+  debounceTimer = window.setTimeout(() => {
+    void fetchSuggestions(value.trim());
+  }, 300);
+
+  if (hasSearched.value) {
+    hasSearched.value = false;
+    showPinnedTabs.value = false;
+  }
+};
+
+const fetchSuggestions = async (keywords: string) => {
+  if (!keywords.trim()) return;
+  try {
+    const res = await getSearchSuggest(keywords);
+    if (searchInput.value.trim() !== keywords) return;
+    suggestionCategories.value = extractSuggestionCategories(res);
+    isLoadingSuggestions.value = false;
+    if (document.activeElement === searchInputRef.value) {
+      showSuggestions.value = true;
+    }
+  } catch (_error) {
+    suggestionCategories.value = [];
+    isLoadingSuggestions.value = false;
+  }
+};
+
+const handleSongSort = (field: SortField) => {
+  if (songSortField.value === field) {
+    if (songSortOrder.value === 'asc') {
+      songSortOrder.value = 'desc';
+    } else if (songSortOrder.value === 'desc') {
+      songSortField.value = null;
+      songSortOrder.value = null;
+    }
+  } else {
+    songSortField.value = field;
+    songSortOrder.value = 'asc';
+  }
+};
+
+const playSearchSongs = async () => {
+  if (songResults.value.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value);
+};
+
+const handleSongDoubleTapPlay = async (song: Song) => {
+  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, song);
+};
+
+const openSongBatchDrawer = () => {
+  if (songResults.value.length === 0) return;
+  showSongBatchDrawer.value = true;
+};
+
+const handleSongLocate = () => songListRef.value?.scrollToActive?.();
+
+const runSearch = async (keyword?: string) => {
+  const keywords = (keyword ?? searchInput.value).trim();
+  if (!keywords && defaultKeyword.value) {
+    await runSearch(defaultKeyword.value);
+    return;
+  }
+  if (!keywords) return;
+
+  isIgnoringChanges.value = true;
+  if (keyword !== undefined) {
+    searchInput.value = keyword;
+  }
+
+  isLoading.value = true;
+  hasSearched.value = true;
+  showSuggestions.value = false;
+  songSortField.value = null;
+  songSortOrder.value = null;
+  songSearchQuery.value = '';
+  searchInputRef.value?.blur();
+  settingStore.addToSearchHistory(keywords);
+
+  try {
+    const [songRes, albumRes, artistRes, playlistRes] = await Promise.all([
+      search(keywords, 'song'),
+      search(keywords, 'album'),
+      search(keywords, 'author'),
+      search(keywords, 'special'),
+    ]);
+
+    songResults.value = extractSearchLists(songRes).map((item) => mapSearchSong(item));
+    albumResults.value = extractSearchLists(albumRes).map((item) => mapAlbumMeta(item));
+    artistResults.value = extractSearchLists(artistRes).map((item) => mapArtistMeta(item));
+    playlistResults.value = extractSearchLists(playlistRes).map((item) => mapPlaylistMeta(item));
+  } catch (_error) {
+    songResults.value = [];
+    albumResults.value = [];
+    artistResults.value = [];
+    playlistResults.value = [];
+  } finally {
+    isLoading.value = false;
+    window.setTimeout(() => {
+      isIgnoringChanges.value = false;
+    }, 100);
+    await nextTick();
+    handleScroll();
+  }
+};
+
+const resolvePlaylistRouteId = (entry: PlaylistMeta) => {
+  return entry.listCreateGid || entry.globalCollectionId || entry.listCreateListid || entry.id;
+};
+
+onMounted(async () => {
+  await loadHotSearches();
+  await attachScrollTarget();
+});
+
+watch(
+  () => activeTabIndex.value,
+  () => {
+    handleScroll();
+  },
+);
+
+onUnmounted(() => {
+  if (debounceTimer) {
+    window.clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  detachScrollTarget();
+});
+</script>
+
+<template>
+  <div class="search-view relative pb-10">
+    <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-[140]">
+      <div class="px-10 py-1.5">
+        <CustomTabBar v-model="activeTabIndex" :tabs="['单曲', '歌单', '专辑', '歌手']" />
+      </div>
+    </div>
+
+    <div v-show="!showPinnedTabs" class="px-10 pt-5">
+      <div class="text-[24px] font-semibold text-text-main tracking-tight">搜索</div>
+
+      <div class="search-input-shell mt-6" :class="{ 'has-suggestions': showSuggestions }">
+        <div class="search-input-wrap">
+          <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
+          <input
+            ref="searchInputRef"
+            v-model="searchInput"
+            type="text"
+            class="search-input"
+            :placeholder="defaultKeyword ? `搜索: ${defaultKeyword}` : '搜索音乐、歌手、专辑'"
+            @focus="handleInputFocus"
+            @blur="handleInputBlur"
+            @input="handleSearchChanged(searchInput)"
+            @keydown.enter.prevent="runSearch()"
+          />
+          <Button variant="unstyled" size="none"
+            v-if="searchInput"
+            type="button"
+            class="search-clear-btn"
+            @mousedown.prevent
+            @click="searchInput = ''; handleSearchChanged(''); searchInputRef?.focus()"
+          >
+            <Icon :icon="iconX" width="16" height="16" />
+          </Button>
+          <Button variant="unstyled" size="none" type="button" class="search-submit-btn" @click="runSearch()">搜索</Button>
+        </div>
+
+        <div v-if="showSuggestions" class="search-suggestions-panel">
+          <div v-if="isLoadingSuggestions && suggestionCategories.length === 0" class="search-suggestions-empty">
+            加载中...
+          </div>
+          <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
+            暂无建议
+          </div>
+          <div v-else class="search-suggestions-list">
+            <div
+              v-for="category in suggestionCategories"
+              :key="category.label"
+              class="search-suggestion-group"
+            >
+              <div class="search-suggestion-title">{{ category.label }}</div>
+              <Button variant="unstyled" size="none"
+                v-for="record in category.records"
+                :key="`${category.label}-${record.text}`"
+                type="button"
+                class="search-suggestion-item"
+                @mousedown.prevent
+                @click="runSearch(record.text)"
+              >
+                <span class="search-suggestion-leading">
+                  <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
+                </span>
+                <span class="search-suggestion-text truncate">{{ record.text }}</span>
+                <span class="search-suggestion-trailing">
+                  <Icon :icon="iconChevronRight" width="13" height="13" />
+                </span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="hasSearched" class="mt-6">
+        <CustomTabBar v-model="activeTabIndex" :tabs="['单曲', '歌单', '专辑', '歌手']" />
+      </div>
+    </div>
+
+    <div v-if="!hasSearched" class="px-10 pt-6">
+      <div v-if="isLoadingHot" class="search-placeholder">加载中...</div>
+      <template v-else>
+        <div v-if="searchHistory.length > 0" class="search-section">
+          <div class="search-section-header">
+            <div class="search-section-title">历史搜索</div>
+            <Button variant="unstyled" size="none" type="button" class="search-history-clear" @click="settingStore.clearSearchHistory()">
+              <Icon :icon="iconTrash" width="16" height="16" />
+            </Button>
+          </div>
+          <div class="search-chip-wrap">
+            <Button variant="unstyled" size="none"
+              v-for="keyword in searchHistory"
+              :key="keyword"
+              type="button"
+              class="history-chip"
+              @click="runSearch(keyword)"
+            >
+              <span class="history-chip-icon">
+                <Icon :icon="iconClock" width="11" height="11" />
+              </span>
+              <span class="truncate">{{ keyword }}</span>
+              <span class="history-chip-close" @click.stop="settingStore.removeFromSearchHistory(keyword)">
+                <Icon :icon="iconX" width="10" height="10" />
+              </span>
+            </Button>
+          </div>
+        </div>
+
+        <div class="search-section">
+          <div class="search-section-title">热门搜索</div>
+          <div v-if="hotSearchCategories.length > 0" class="search-hot-tabs">
+            <Button variant="unstyled" size="none"
+              v-for="(category, index) in hotSearchCategories"
+              :key="category.name"
+              type="button"
+              class="search-hot-tab"
+              :class="{ active: selectedHotCategoryIndex === index }"
+              @click="selectedHotCategoryIndex = index"
+            >
+              {{ category.name }}
+            </Button>
+          </div>
+          <div class="search-chip-wrap mt-5">
+            <Button variant="unstyled" size="none"
+              v-for="item in currentHotKeywords"
+              :key="`${item.keyword}-${item.reason}`"
+              type="button"
+              class="hot-chip"
+              @click="runSearch(item.keyword)"
+            >
+              <span>{{ item.keyword }}</span>
+              <template v-if="item.reason && item.reason !== item.keyword">
+                <span class="opacity-40">•</span>
+                <span class="hot-chip-reason">{{ item.reason }}</span>
+              </template>
+            </Button>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <div v-else-if="isLoading" class="search-loading-wrap">
+      <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <div v-else class="px-10 pt-4">
+      <div v-if="activeTabIndex === 0">
+        <div class="search-song-toolbar sticky z-[120] bg-bg-main" :style="{ top: `${songToolbarOffset}px` }">
+          <div class="search-song-toolbar-inner">
+            <div class="search-song-title-wrap">
+              <div class="search-song-badge-icon">
+                <Icon :icon="iconSparkles" width="16" height="16" />
+              </div>
+              <div class="text-[15px] font-semibold text-text-main leading-none">热门单曲</div>
+            </div>
+            <div class="search-song-toolbar-actions">
+              <div class="overflow-x-auto no-scrollbar">
+                <ActionRow @play="playSearchSongs" @batch="openSongBatchDrawer" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <BatchActionDrawer v-model:open="showSongBatchDrawer" :songs="songResults" source-id="search" />
+
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${songListHeaderOffset}px` }">
+          <div class="border-b border-border-light/10">
+            <div class="flex items-center justify-between h-14">
+              <div class="rank-song-tab">
+                <span class="rank-song-label">歌曲</span>
+                <span class="rank-song-badge">{{ songCountLabel }}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="songSearchQuery"
+                    type="text"
+                    placeholder="搜索歌曲..."
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                  />
+                  <Icon
+                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                    :icon="iconSearch"
+                    width="14"
+                    height="14"
+                  />
+                </div>
+                <Button variant="unstyled" size="none" @click="handleSongLocate" class="song-locate-btn p-2 rounded-lg" title="定位当前播放">
+                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <SongListHeader
+            :sortField="songSortField"
+            :sortOrder="songSortOrder"
+            :showCover="true"
+            paddingClass="px-0"
+            @sort="handleSongSort"
+          />
+        </div>
+
+        <div class="pb-12">
+          <SongList
+            ref="songListRef"
+            class="search-song-list"
+            :songs="sortedSongResults"
+            :searchQuery="songSearchQuery"
+            :activeId="activeSongId"
+            :showCover="true"
+            :enableDefaultDoubleTapPlay="true"
+            :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
+            rowPaddingClass="px-0"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 1">
+        <div v-if="playlistResults.length === 0" class="search-empty-wrap">
+          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
+          <div class="search-empty-text">暂无搜索结果</div>
+        </div>
+        <div v-else class="search-grid pb-6">
+          <div v-for="entry in playlistResults" :key="String(entry.id)">
+            <PlaylistCard
+              :id="resolvePlaylistRouteId(entry)"
+              :name="entry.name"
+              :coverUrl="entry.pic"
+              :creator="entry.nickname"
+              :songCount="entry.count"
+              layout="grid"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 2">
+        <div v-if="albumResults.length === 0" class="search-empty-wrap">
+          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
+          <div class="search-empty-text">暂无搜索结果</div>
+        </div>
+        <div v-else class="search-grid pb-6">
+          <AlbumCard
+            v-for="album in albumResults"
+            :key="String(album.id)"
+            :id="album.id"
+            :name="album.name"
+            :coverUrl="album.pic"
+            :artist="album.singerName"
+            :subtitle="[album.singerName, album.songCount ? `${album.songCount} 首歌曲` : ''].filter(Boolean).join(' • ')"
+          />
+        </div>
+      </div>
+
+      <div v-else>
+        <div v-if="artistResults.length === 0" class="search-empty-wrap">
+          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
+          <div class="search-empty-text">暂无搜索结果</div>
+        </div>
+        <div v-else class="search-grid pb-6">
+          <ArtistCard
+            v-for="artist in artistResults"
+            :key="String(artist.id)"
+            :id="artist.id"
+            :name="artist.name"
+            :coverUrl="artist.pic"
+            :songCount="artist.songCount"
+            :albumCount="artist.albumCount"
+          />
+        </div>
+      </div>
+    </div>
+
+    <BackToTop target-selector=".view-port" />
+  </div>
+</template>
+
+<style scoped>
+@reference "@/style.css";
+
+.search-pinned-tabs {
+  background: var(--color-bg-main);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+}
+
+.search-view {
+  position: relative;
+  isolation: isolate;
+}
+
+.search-input-shell {
+  position: relative;
+  z-index: 220;
+}
+
+.search-input-shell.has-suggestions {
+  z-index: 260;
+}
+
+.search-input-wrap {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  padding-left: 12px;
+}
+
+.search-input-icon {
+  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.search-input::placeholder {
+  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+}
+
+.search-clear-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  transition: all 0.2s ease;
+}
+
+.search-clear-btn:hover {
+  color: var(--color-text-main);
+}
+
+.search-submit-btn {
+  margin: 4px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.search-suggestions-panel {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  width: 100%;
+  max-height: 400px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 82%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: var(--color-bg-card);
+  backdrop-filter: blur(18px);
+  z-index: 260;
+}
+
+.search-suggestions-list {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px 0 10px;
+}
+
+.search-suggestions-empty {
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+}
+
+.search-suggestion-group + .search-suggestion-group {
+  margin-top: 6px;
+}
+
+.search-suggestion-group + .search-suggestion-group .search-suggestion-title {
+  border-top: 0.5px solid color-mix(in srgb, var(--color-border-light) 70%, transparent);
+  margin-top: 2px;
+}
+
+.search-suggestion-title {
+  padding: 12px 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-primary) 82%, transparent);
+  letter-spacing: 0.5px;
+}
+
+.search-suggestion-item {
+  width: calc(100% - 16px);
+  margin: 0 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  color: var(--color-text-main);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.18s ease;
+}
+
+.search-suggestion-item:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+}
+
+.search-suggestion-leading {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+}
+
+.search-suggestion-text {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.search-suggestion-trailing {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  opacity: 0;
+  transform: translateX(-2px);
+  transition: all 0.18s ease;
+}
+
+.search-suggestion-item:hover .search-suggestion-trailing {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.search-section + .search-section {
+  margin-top: 32px;
+}
+
+.search-section-header {
+  display: flex;
+  align-items: center;
+}
+
+.search-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-text-main) 88%, transparent);
+}
+
+.search-history-clear {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  transition: all 0.18s ease;
+}
+
+.search-history-clear:hover {
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  color: var(--color-text-main);
+}
+
+.search-chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.history-chip,
+.hot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  color: color-mix(in srgb, var(--color-text-main) 90%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.18s ease;
+}
+
+.history-chip {
+  padding: 6px 8px 6px 10px;
+}
+
+.history-chip:hover,
+.hot-chip:hover {
+  background: color-mix(in srgb, var(--color-text-main) 14%, transparent);
+  transform: translateY(-1px);
+}
+
+.hot-chip {
+  padding: 6px 12px;
+  border: 0.8px solid color-mix(in srgb, var(--color-border-light) 92%, transparent);
+}
+
+.history-chip-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+}
+
+.history-chip-close {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
+  transition: all 0.18s ease;
+}
+
+.history-chip-close:hover {
+  color: var(--color-text-main);
+}
+
+.hot-chip-reason {
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+  font-weight: 500;
+}
+
+.search-hot-tabs {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  margin-top: 16px;
+}
+
+.search-hot-tab {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.18s ease;
+}
+
+.search-hot-tab:hover {
+  background: color-mix(in srgb, var(--color-text-main) 14%, transparent);
+}
+
+.search-hot-tab.active {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.search-loading-wrap,
+.search-placeholder,
+.search-empty-wrap {
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.search-empty-icon {
+  color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+}
+
+.search-empty-text,
+.search-placeholder {
+  font-size: 14px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
+}
+
+.search-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.search-song-list {
+  width: 100%;
+}
+
+.search-song-list :deep(.song-list-container) {
+  width: 100%;
+}
+
+.search-song-toolbar {
+  background: var(--color-bg-main);
+}
+
+.search-song-toolbar-inner {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 6px;
+}
+
+.search-song-title-wrap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-song-badge-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  border-radius: 8px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 92%, white), var(--color-secondary));
+}
+
+.search-song-toolbar-actions {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rank-song-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  height: 36px;
+}
+
+.rank-song-label {
+  position: relative;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  padding-bottom: 6px;
+}
+
+.rank-song-label::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 70%, transparent);
+}
+
+.rank-song-badge {
+  margin-left: -4px;
+  transform: translateY(-8px);
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--color-primary);
+  border: 1.5px solid var(--color-bg-main);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+</style>

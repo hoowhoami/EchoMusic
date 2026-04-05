@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-electron
+out
+release
+*.json
+*.md
+.gitignore
+.DS_Store
+*.d.ts
+public
+server

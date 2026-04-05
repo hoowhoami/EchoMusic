@@ -1,0 +1,330 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-sidebar: #ffffff; /* 浅色侧栏纯白 */
+  --bg-main: #f5f5f7; /* 浅色主体浅灰白 */
+  --bg-card: #ffffff;
+  --bg-info-card: rgba(0, 0, 0, 0.04);
+  --text-main: #1d1d1f;
+  --text-secondary: #4b5563;
+  --border-light: #e5e5ea;
+}
+
+.dark {
+  --bg-sidebar: #1c1c1e; /* 深色侧栏深灰 */
+  --bg-main: #0c0c0e; /* 深色主体纯黑 */
+  --bg-card: #1c1c1e;
+  --bg-info-card: rgba(255, 255, 255, 0.06);
+  --text-main: #f5f5f7;
+  --text-secondary: #a8b0bf;
+  --border-light: #2c2c2e;
+}
+
+@theme {
+  --color-primary: #0071e3;
+  --color-primary-hover: #0077ed;
+  --color-primary-light: rgba(0, 113, 227, 0.15);
+  --color-primary-dark: rgba(0, 113, 227, 0.36);
+  --color-secondary: #5ac8fa;
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-main: var(--bg-main);
+  --color-bg-card: var(--bg-card);
+  --color-bg-info-card: var(--bg-info-card);
+  --color-text-main: var(--text-main);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-light: var(--border-light);
+}
+
+@layer base {
+  .drag {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  button,
+  [role='button'],
+  .cursor-pointer {
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  summary,
+  [role='button'],
+  [tabindex] {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body,
+  html,
+  #app {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    @apply bg-bg-main text-text-main transition-colors duration-300;
+  }
+
+  html.desktop-lyric-window,
+  html.desktop-lyric-window body,
+  html.desktop-lyric-window #app {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+
+  input,
+  textarea,
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    outline: none;
+    box-shadow: none;
+  }
+
+  input:focus:not(:focus-visible),
+  textarea:focus:not(:focus-visible),
+  select:focus:not(:focus-visible),
+  button:focus:not(:focus-visible),
+  [tabindex]:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  select:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus,
+  select:-webkit-autofill,
+  select:-webkit-autofill:hover,
+  select:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--color-text-main);
+    -webkit-box-shadow: 0 0 0 1000px var(--color-bg-card) inset;
+    transition: background-color 9999s ease-in-out 0s;
+    border-color: transparent;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-focus-ring {
+    outline: none !important;
+  }
+
+  .app-focus-ring:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .app-focus-ring-soft {
+    outline: none !important;
+  }
+
+  .app-focus-ring-soft:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .app-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app-icon-button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  .song-search-input {
+    background-color: #ffffff !important;
+    border-color: rgba(0, 0, 0, 0.3) !important;
+    color: #1d1d1f !important;
+  }
+
+  .song-search-input::placeholder {
+    color: rgba(29, 29, 31, 0.5) !important;
+  }
+
+  .song-search-input:focus-visible {
+    border-color: rgba(0, 0, 0, 0.3) !important;
+    box-shadow: none !important;
+  }
+
+  .dark .song-search-input {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #f5f5f7 !important;
+  }
+
+  .dark .song-search-input::placeholder {
+    color: rgba(245, 245, 247, 0.5) !important;
+  }
+
+  .dark .song-search-input:focus-visible {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    box-shadow: none !important;
+  }
+
+  .song-locate-btn {
+    background-color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    color: rgba(29, 29, 31, 0.7);
+    transition: all 0.2s ease;
+  }
+
+  .song-locate-btn:hover {
+    border-color: rgba(0, 0, 0, 0.28);
+    color: rgba(29, 29, 31, 0.9);
+  }
+
+  .dark .song-locate-btn {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: none;
+    color: rgba(245, 245, 247, 0.7);
+  }
+
+  .dark .song-locate-btn:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    color: rgba(245, 245, 247, 0.9);
+  }
+}
+
+.explore-header,
+.rank-toolbar,
+.new-song-toolbar,
+.search-song-toolbar,
+.song-list-sticky,
+.comment-main-tabs {
+  isolation: isolate;
+}
+
+.explore-header::before,
+.rank-toolbar::before,
+.new-song-toolbar::before,
+.search-song-toolbar::before,
+.song-list-sticky::before,
+.comment-main-tabs::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--color-bg-main);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.view-port,
+.sidebar-scroll,
+.queue-list,
+.batch-list,
+.profile-page,
+.dialog-scroll-area,
+.comment-floor-body {
+  scrollbar-gutter: stable;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.08); /* 基础浅色 */
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 36px;
+  transition: background-color 0.15s ease-out; /* 缩短时间，减少粘滞感 */
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.12); /* 深色模式基础浅色 */
+}
+
+/* 交互状态：当鼠标直接在滑块上时 */
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.28) !important;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* 激活状态 */
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(0, 0, 0, 0.45) !important;
+}
+
+.dark ::-webkit-scrollbar-thumb:active {
+  background-color: rgba(255, 255, 255, 0.55) !important;
+}
+
+/* 核心方案：基于容器 hover 触发滑块显色 */
+/* 即使滑块本身没被 hover，只要鼠标在容器内，它就是“活跃”颜色 */
+/* 一旦鼠标离开容器（或被弹出层遮挡导致离开），强制回退到上面的基础淡色 */
+.view-port,
+.queue-list,
+.batch-list,
+.sidebar-scroll,
+.overflow-auto,
+.overflow-y-auto,
+[class*='scroll'] {
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.22);
+  }
+}
+
+.dark .view-port,
+.dark .queue-list,
+.dark .batch-list,
+.dark .sidebar-scroll,
+.dark .overflow-auto,
+.dark .overflow-y-auto,
+.dark [class*='scroll'] {
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.28);
+  }
+}

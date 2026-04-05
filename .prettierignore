@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-electron
+out
+release
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+*.dmg
+*.exe
+*.deb
+*.rpm
+*.AppImage
+.DS_Store
+server
+public

@@ -1,0 +1,55 @@
+import type { DesktopLyricPointerState, DesktopLyricSettings, DesktopLyricSnapshot, DesktopLyricSnapshotPatch } from '../shared/desktop-lyric';
+
+export interface IElectronAPI {
+  platform: string;
+  ipcRenderer: {
+    send: (channel: string, data: unknown) => void;
+    on: (channel: string, func: (...args: unknown[]) => void) => void;
+    off: (channel: string, func: (...args: unknown[]) => void) => void;
+  };
+  shortcuts: {
+    register: (payload: { enabled: boolean; shortcutMap: Record<string, string> }) => void;
+    onTrigger: (func: (command: string) => void) => () => void;
+  };
+  windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
+  apiServer: {
+    start: () => Promise<{ success: boolean; error?: string }>;
+    stop: () => void;
+  };
+  tray: {
+    syncPlayback: (payload: { isPlaying?: boolean; playMode?: 'list' | 'random' | 'single' }) => void;
+    onSetPlayMode: (func: (playMode: 'list' | 'random' | 'single') => void) => () => void;
+  };
+  desktopLyric: {
+    getSnapshot: () => Promise<DesktopLyricSnapshot>;
+    show: () => Promise<DesktopLyricSnapshot>;
+    hide: () => Promise<DesktopLyricSnapshot>;
+    toggleLock: () => Promise<DesktopLyricSnapshot>;
+    updateSettings: (payload: Partial<DesktopLyricSettings>) => Promise<DesktopLyricSnapshot>;
+    syncSnapshot: (payload: DesktopLyricSnapshotPatch) => Promise<DesktopLyricSnapshot>;
+    onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
+    onPointerState: (func: (state: DesktopLyricPointerState) => void) => () => void;
+    setDragMode: (enabled: boolean) => void;
+    startResize: (direction: string, screenX: number, screenY: number) => void;
+    updateResize: (screenX: number, screenY: number) => void;
+    endResize: () => void;
+    setHover: (hovering: boolean) => void;
+    command: (command: 'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode') => void;
+  };
+  log: {
+    info: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+    debug: (...args: unknown[]) => void;
+    verbose: (...args: unknown[]) => void;
+  };
+}
+
+declare global {
+  interface Window {
+    electron: IElectronAPI;
+  }
+}
+
+// 确保这是一个模块
+export {};
