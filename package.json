@@ -1,6 +1,6 @@
 {
-  "name": "echo-music-next",
-  "version": "1.0.0",
+  "name": "echo-music",
+  "version": "2.0.0",
   "main": "dist-electron/main/index.js",
   "scripts": {
     "dev": "vite",
@@ -21,6 +21,7 @@
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.2.0",
     "reka-ui": "^2.9.2",
+    "semver": "^7.7.4",
     "sortablejs": "^1.15.7",
     "vue": "^3.5.30",
     "vue-router": "^4.5.0"
@@ -29,6 +30,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.13.9",
+    "@types/semver": "^7.7.1",
     "@types/sortablejs": "^1.15.9",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
@@ -52,7 +54,7 @@
     "vue-tsc": "^2.2.8"
   },
   "build": {
-    "appId": "com.hoowhoami.echomusicnext",
+    "appId": "com.hoowhoami.echomusic",
     "productName": "EchoMusic",
     "directories": {
       "output": "dist",

@@ -1,4 +1,4 @@
-name: Build EchoMusicNext Desktop
+name: Build EchoMusic Desktop
 
 on:
   push:
@@ -88,7 +88,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EchoMusicNext-${{ matrix.os }}
+          name: EchoMusic-${{ matrix.os }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
           retention-days: 7
