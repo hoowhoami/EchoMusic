@@ -1,4 +1,11 @@
-import { Menu, Tray, app, nativeImage, nativeTheme, type MenuItemConstructorOptions } from 'electron';
+import {
+  Menu,
+  Tray,
+  app,
+  nativeImage,
+  nativeTheme,
+  type MenuItemConstructorOptions,
+} from 'electron';
 import { join } from 'path';
 
 type TrayCommand = 'togglePlayback' | 'previousTrack' | 'nextTrack';
@@ -89,19 +96,21 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => ([
   },
 ]);
 
-const createTrayMenu = () => Menu.buildFromTemplate([
-  {
-    label: '显示主窗口',
-    click: () => trayContext?.restoreWindow(),
-  },
-  { type: 'separator' },
-  ...createPlaybackMenuItems(),
-  { type: 'separator' },
-  {
-    role: 'quit',
-    label: '退出',
-  },
-]);
+const createTrayMenu = () => {
+  return Menu.buildFromTemplate([
+    {
+      label: '显示主窗口',
+      click: () => trayContext?.restoreWindow(),
+    },
+    { type: 'separator' },
+    ...createPlaybackMenuItems(),
+    { type: 'separator' },
+    {
+      role: 'quit',
+      label: '退出',
+    },
+  ]);
+};
 
 export const createDockMenu = () => Menu.buildFromTemplate(createPlaybackMenuItems());
 
@@ -127,14 +136,24 @@ export const initTray = (context: TrayContext) => {
   appTray = new Tray(createTrayImage(), process.platform === 'linux' ? undefined : TRAY_GUID);
   appTray.setToolTip('EchoMusic');
   appTray.setContextMenu(createTrayMenu());
+
   appTray.on('double-click', () => {
     trayContext?.restoreWindow();
   });
+
   if (process.platform === 'win32') {
     nativeTheme.on('updated', rebuildTrayMenu);
   }
 
   return appTray;
+};
+
+export const refreshTray = () => {
+  if (!trayContext) return null;
+  if (appTray) {
+    destroyTray();
+  }
+  return initTray(trayContext);
 };
 
 export const destroyTray = () => {

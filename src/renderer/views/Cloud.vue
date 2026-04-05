@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { getUserCloud } from '@/api/user';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -32,7 +32,7 @@ const isBackgroundResolving = ref(false);
 const totalSongCount = ref(0);
 const cloudCapacity = ref(0);
 const cloudAvailable = ref(0);
-const songs = ref<Song[]>([]);
+const songs = shallowRef<Song[]>([]);
 const searchQuery = ref('');
 const showBatchDrawer = ref(false);
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);

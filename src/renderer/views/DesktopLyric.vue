@@ -63,7 +63,8 @@ const pointerState = ref<DesktopLyricPointerState>({
   insideUnlockHotzone: false,
   insideToolbarHotzone: false,
 });
-const isHovering = ref(false);
+const isDragging = ref(false);
+const isUnlockedInteractive = ref(false);
 const nowMs = ref(0);
 const currentLineViewportRef = ref<HTMLElement | null>(null);
 const currentLineContentRef = ref<HTMLElement | null>(null);
@@ -75,6 +76,56 @@ let animationFrame = 0;
 let measureFrame = 0;
 let disposeSnapshotListener: (() => void) | null = null;
 let disposeHoverStateListener: (() => void) | null = null;
+
+const setIgnoreMouseEvents = (ignore: boolean) => {
+  window.electron?.desktopLyric?.setIgnoreMouseEvents(ignore);
+};
+
+const syncUnlockedInteractivity = (event?: MouseEvent) => {
+  if (snapshot.value.settings.locked || isDragging.value) return;
+
+  const target = event?.target instanceof Element ? event.target : null;
+  const isInControls = Boolean(target?.closest('.qq-toolbar, .qq-lock-state, .qq-resize-handle'));
+  const isInLyrics = Boolean(target?.closest('.qq-lyric-line, .qq-lyric-line-content, .qq-char'));
+  const nextInteractive = pointerState.value.insideWindow && (isUnlockedInteractive.value || isInControls || isInLyrics);
+
+  if (isUnlockedInteractive.value === nextInteractive) return;
+  isUnlockedInteractive.value = nextInteractive;
+  setIgnoreMouseEvents(!nextInteractive);
+};
+
+const startDrag = (event: MouseEvent) => {
+  if (snapshot.value.settings.locked) return;
+  if (!isUnlockedInteractive.value) return;
+
+  const target = event.target instanceof Element ? event.target : null;
+  const isBlockedTarget = Boolean(target?.closest('.qq-toolbar, .qq-lock-state, .qq-resize-handle, button'));
+  if (isBlockedTarget) return;
+
+  isDragging.value = true;
+  isUnlockedInteractive.value = true;
+  setIgnoreMouseEvents(false);
+  window.electron?.desktopLyric?.startDrag(event.screenX, event.screenY);
+};
+
+const handleDragMove = (event: MouseEvent) => {
+  if (!isDragging.value) {
+    syncUnlockedInteractivity(event);
+    return;
+  }
+
+  window.electron?.desktopLyric?.updateDrag(event.screenX, event.screenY);
+};
+
+const endDrag = () => {
+  if (!isDragging.value) return;
+  isDragging.value = false;
+  window.electron?.desktopLyric?.endDrag();
+  isUnlockedInteractive.value = false;
+  if (!snapshot.value.settings.locked) {
+    setIgnoreMouseEvents(true);
+  }
+};
 
 const alignOptions = [
   { label: '左对齐', value: 'left' },
@@ -189,6 +240,32 @@ const nextText = computed(() => {
   return playback.value?.artist || '听你想听';
 });
 
+watch(
+  () => snapshot.value.settings.locked,
+  (locked) => {
+    if (locked) {
+      isUnlockedInteractive.value = false;
+      endDrag();
+      setIgnoreMouseEvents(true);
+      return;
+    }
+
+    isUnlockedInteractive.value = false;
+    setIgnoreMouseEvents(true);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => pointerState.value.insideWindow,
+  (insideWindow) => {
+    if (snapshot.value.settings.locked || isDragging.value || insideWindow) return;
+    if (!isUnlockedInteractive.value) return;
+    isUnlockedInteractive.value = false;
+    setIgnoreMouseEvents(true);
+  },
+);
+
 const currentShouldScroll = computed(() => currentLineOverflow.value > 6);
 const nextShouldScroll = computed(() => false);
 
@@ -258,12 +335,6 @@ const syncSettings = async (partial: Partial<DesktopLyricSettings>) => {
     ...partial,
   });
   return snapshot.value;
-};
-
-const setHoverState = (hovering: boolean) => {
-  if (snapshot.value.settings.locked) return;
-  isHovering.value = hovering;
-  window.electron?.desktopLyric?.setHover?.(hovering);
 };
 
 const startResize = (direction: ResizeDirection, event: MouseEvent) => {
@@ -346,7 +417,12 @@ onMounted(async () => {
     window.electron?.desktopLyric?.onPointerState((nextPointerState) => {
       pointerState.value = nextPointerState;
     }) ?? null;
-  window.electron?.desktopLyric?.setHover?.(false);
+  if (!snapshot.value.settings.locked) {
+    setIgnoreMouseEvents(true);
+  }
+  document.addEventListener('mousemove', handleDragMove);
+  document.addEventListener('mousedown', startDrag);
+  document.addEventListener('mouseup', endDrag);
   window.addEventListener('resize', requestMeasure);
   await nextTick();
   requestMeasure();
@@ -356,14 +432,17 @@ onMounted(async () => {
 onUnmounted(() => {
   if (animationFrame) window.cancelAnimationFrame(animationFrame);
   if (measureFrame) window.cancelAnimationFrame(measureFrame);
+  document.removeEventListener('mousemove', handleDragMove);
+  document.removeEventListener('mousedown', startDrag);
+  document.removeEventListener('mouseup', endDrag);
   window.removeEventListener('resize', requestMeasure);
+  endDrag();
   handleResizeEnd();
   pointerState.value = {
     insideWindow: false,
     insideUnlockHotzone: false,
     insideToolbarHotzone: false,
   };
-  window.electron?.desktopLyric?.setHover?.(false);
   document.documentElement.classList.remove('desktop-lyric-window');
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
@@ -385,11 +464,8 @@ onUnmounted(() => {
       '--qq-opacity': String(snapshot.settings.opacity),
       '--qq-font-weight': snapshot.settings.bold ? '700' : '400',
     }"
-    @mouseenter="setHoverState(true)"
-    @mousemove="setHoverState(true)"
-    @mouseleave="setHoverState(false)"
   >
-    <div class="qq-shell drag">
+    <div class="qq-shell">
       <div
         v-for="handle in resizeHandles"
         :key="handle.direction"
@@ -802,7 +878,6 @@ onUnmounted(() => {
   z-index: 2;
   display: flex;
   flex-direction: column;
-  pointer-events: none;
 }
 
 .qq-top-safe {

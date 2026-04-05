@@ -3,8 +3,8 @@
   "version": "2.0.1",
   "description": "EchoMusic desktop client.",
   "author": {
-    "name": "jiangliangtong",
-    "email": "jiangliangtong@gmail.com"
+    "name": "hoowhoami",
+    "email": "499196331@qq.com"
   },
   "main": "dist-electron/main/index.js",
   "scripts": {

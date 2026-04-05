@@ -36,8 +36,10 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('open-external');
   ipcMain.removeAllListeners('open-disclaimer');
   ipcMain.removeAllListeners('clear-app-data');
-  ipcMain.removeAllListeners('desktop-lyric:drag-mode');
-  ipcMain.removeAllListeners('desktop-lyric:hover');
+  ipcMain.removeAllListeners('desktop-lyric:set-ignore-mouse-events');
+  ipcMain.removeAllListeners('desktop-lyric:drag-start');
+  ipcMain.removeAllListeners('desktop-lyric:drag-update');
+  ipcMain.removeAllListeners('desktop-lyric:drag-end');
   ipcMain.removeAllListeners('desktop-lyric:resize-start');
   ipcMain.removeAllListeners('desktop-lyric:resize-update');
   ipcMain.removeAllListeners('desktop-lyric:resize-end');

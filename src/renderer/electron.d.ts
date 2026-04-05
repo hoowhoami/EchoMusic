@@ -29,11 +29,13 @@ export interface IElectronAPI {
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => Promise<DesktopLyricSnapshot>;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
     onPointerState: (func: (state: DesktopLyricPointerState) => void) => () => void;
-    setDragMode: (enabled: boolean) => void;
+    setIgnoreMouseEvents: (ignore: boolean) => void;
+    startDrag: (screenX: number, screenY: number) => void;
+    updateDrag: (screenX: number, screenY: number) => void;
+    endDrag: () => void;
     startResize: (direction: string, screenX: number, screenY: number) => void;
     updateResize: (screenX: number, screenY: number) => void;
     endResize: () => void;
-    setHover: (hovering: boolean) => void;
     command: (command: 'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode') => void;
   };
   log: {

@@ -79,13 +79,18 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('desktop-lyric:pointer-state', listener);
       return () => ipcRenderer.removeListener('desktop-lyric:pointer-state', listener);
     },
-    setDragMode: (enabled: boolean) => ipcRenderer.send('desktop-lyric:drag-mode', enabled),
+    setIgnoreMouseEvents: (ignore: boolean) =>
+      ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),
+    startDrag: (screenX: number, screenY: number) =>
+      ipcRenderer.send('desktop-lyric:drag-start', { screenX, screenY }),
+    updateDrag: (screenX: number, screenY: number) =>
+      ipcRenderer.send('desktop-lyric:drag-update', { screenX, screenY }),
+    endDrag: () => ipcRenderer.send('desktop-lyric:drag-end'),
     startResize: (direction: string, screenX: number, screenY: number) =>
       ipcRenderer.send('desktop-lyric:resize-start', { direction, screenX, screenY }),
     updateResize: (screenX: number, screenY: number) =>
       ipcRenderer.send('desktop-lyric:resize-update', { screenX, screenY }),
     endResize: () => ipcRenderer.send('desktop-lyric:resize-end'),
-    setHover: (hovering: boolean) => ipcRenderer.send('desktop-lyric:hover', hovering),
     command: (command: 'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode') =>
       ipcRenderer.send('desktop-lyric:command', command),
   },

@@ -3,7 +3,9 @@ import { initLogger } from './logger';
 import { startApiServer, stopApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow } from './window';
-import { createDockMenu, destroyTray, initTray } from './tray';
+import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
+
+const WM_TASKBARCREATED = 0x031a;
 
 // --- 初始化日志 ---
 initLogger();
@@ -11,6 +13,16 @@ initLogger();
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.hoowhoami.echomusic');
 }
+
+const installWindowsTrayRecovery = () => {
+  if (process.platform !== 'win32') return;
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  mainWindow.hookWindowMessage(WM_TASKBARCREATED, () => {
+    refreshTray();
+  });
+};
 
 // --- 保持应用单例运行 ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -28,17 +40,20 @@ if (!gotTheLock) {
 
   app.whenReady().then(async () => {
     try {
-      // 启动 API 服务
       await startApiServer();
     } catch (err) {
       console.error('[Main] Failed to start API server:', err);
     }
-    // 创建主窗口
-    createWindow();
-    initTray({
+
+    const trayContext = {
       getMainWindow,
       restoreWindow,
-    });
+    };
+
+    await createWindow();
+    initTray(trayContext);
+    installWindowsTrayRecovery();
+
     if (process.platform === 'darwin') {
       app.dock?.setMenu(createDockMenu());
     }
@@ -50,7 +65,7 @@ if (!gotTheLock) {
     }
   });
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     const mainWindow = getMainWindow();
 
     if (mainWindow) {
@@ -60,7 +75,8 @@ if (!gotTheLock) {
       mainWindow.show();
       mainWindow.focus();
     } else {
-      createWindow();
+      await createWindow();
+      installWindowsTrayRecovery();
     }
   });
 

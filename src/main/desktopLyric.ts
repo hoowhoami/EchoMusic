@@ -33,6 +33,12 @@ type DesktopLyricResizeSession = {
   startScreenY: number;
 };
 
+type DesktopLyricDragSession = {
+  startBounds: Electron.Rectangle;
+  startScreenX: number;
+  startScreenY: number;
+};
+
 type DesktopLyricPersistedSettings = DesktopLyricSettings & {
   windowState: DesktopLyricWindowState;
 };
@@ -247,7 +253,6 @@ const getBackgroundColor = (_theme: DesktopLyricSettings['theme']) => {
 };
 
 let desktopLyricWindow: BrowserWindow | null = null;
-let desktopLyricHovering = false;
 let desktopLyricPointerState: DesktopLyricPointerState = {
   insideWindow: false,
   insideUnlockHotzone: false,
@@ -258,6 +263,8 @@ let desktopLyricUnlockHotzoneBlockedUntil = 0;
 let desktopLyricUnlockHotzoneCooldownTimer: NodeJS.Timeout | null = null;
 let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
 let desktopLyricResizeSession: DesktopLyricResizeSession | null = null;
+let desktopLyricDragSession: DesktopLyricDragSession | null = null;
+let desktopLyricUnlockedInteractive = false;
 let desktopLyricClosingFromFailure = false;
 let desktopLyricAppIsQuitting = false;
 
@@ -356,7 +363,6 @@ const getCursorRelativeState = (): DesktopLyricPointerState => {
     point.y >= bounds.y + unlockHotzoneTop &&
     point.y <= bounds.y + unlockHotzoneTop + unlockHotzoneHeight;
 
-  // toolbar: 3 控制按钮 + 分割线 + 2 文本按钮 + 2 控制按钮，保守放宽热区
   const toolbarHotzoneWidth = 428;
   const toolbarHotzoneHeight = 28;
   const toolbarHotzoneTop = 8;
@@ -375,16 +381,11 @@ const getCursorRelativeState = (): DesktopLyricPointerState => {
   };
 };
 
-const setDesktopLyricHovering = (hovering: boolean) => {
-  const nextHovering = Boolean(hovering);
-  if (desktopLyricHovering === nextHovering) return;
-  desktopLyricHovering = nextHovering;
-};
-
 const setDesktopLyricPointerState = (nextState: DesktopLyricPointerState) => {
   const changed =
     desktopLyricPointerState.insideWindow !== nextState.insideWindow ||
-    desktopLyricPointerState.insideUnlockHotzone !== nextState.insideUnlockHotzone;
+    desktopLyricPointerState.insideUnlockHotzone !== nextState.insideUnlockHotzone ||
+    desktopLyricPointerState.insideToolbarHotzone !== nextState.insideToolbarHotzone;
 
   if (!changed) return;
 
@@ -441,6 +442,22 @@ const applyResizeBounds = (
   });
 };
 
+const applyDragBounds = (
+  session: DesktopLyricDragSession,
+  screenX: number,
+  screenY: number,
+) => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+
+  const deltaX = screenX - session.startScreenX;
+  const deltaY = screenY - session.startScreenY;
+
+  desktopLyricWindow.setPosition(
+    Math.round(session.startBounds.x + deltaX),
+    Math.round(session.startBounds.y + deltaY),
+  );
+};
+
 const startDesktopLyricResize = (
   direction: DesktopLyricResizeDirection,
   screenX: number,
@@ -464,6 +481,27 @@ const updateDesktopLyricResize = (screenX: number, screenY: number) => {
 const endDesktopLyricResize = () => {
   if (!desktopLyricResizeSession) return;
   desktopLyricResizeSession = null;
+  applyWindowInteractivity();
+};
+
+const startDesktopLyricDrag = (screenX: number, screenY: number) => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  desktopLyricDragSession = {
+    startBounds: desktopLyricWindow.getBounds(),
+    startScreenX: screenX,
+    startScreenY: screenY,
+  };
+  desktopLyricWindow.setIgnoreMouseEvents(false);
+};
+
+const updateDesktopLyricDrag = (screenX: number, screenY: number) => {
+  if (!desktopLyricDragSession) return;
+  applyDragBounds(desktopLyricDragSession, screenX, screenY);
+};
+
+const endDesktopLyricDrag = () => {
+  if (!desktopLyricDragSession) return;
+  desktopLyricDragSession = null;
   applyWindowInteractivity();
 };
 
@@ -532,7 +570,6 @@ const syncDesktopLyricHoverTracking = () => {
     stopDesktopLyricHoverTracking();
     clearUnlockHotzoneCooldownTimer();
     clearDesktopLyricLockPhaseTimer();
-    setDesktopLyricHovering(false);
     setDesktopLyricPointerState({ insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false });
     return;
   }
@@ -549,16 +586,24 @@ const syncDesktopLyricHoverTracking = () => {
 const applyWindowInteractivity = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   const { locked, alwaysOnTop } = snapshot.settings;
+
   const unlockHotzoneReady = Date.now() >= desktopLyricUnlockHotzoneBlockedUntil;
-  const shouldIgnoreMouse = locked
-    ? !unlockHotzoneReady || !desktopLyricPointerState.insideUnlockHotzone
-    : !desktopLyricPointerState.insideWindow;
+  const shouldForceInteractive = desktopLyricResizeSession !== null || desktopLyricDragSession !== null;
+  const shouldIgnoreMouse = shouldForceInteractive
+    ? false
+    : locked
+      ? !unlockHotzoneReady || !desktopLyricPointerState.insideUnlockHotzone
+      : !desktopLyricUnlockedInteractive;
   desktopLyricWindow.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
   desktopLyricWindow.setFocusable(false);
   if (desktopLyricWindow.isFocused()) {
     desktopLyricWindow.blur();
   }
-  desktopLyricWindow.setAlwaysOnTop(alwaysOnTop, 'screen-saver', 1);
+  desktopLyricWindow.setAlwaysOnTop(
+    alwaysOnTop,
+    process.platform === 'darwin' ? 'screen-saver' : 'floating',
+    1,
+  );
   desktopLyricWindow.setVisibleOnAllWorkspaces(alwaysOnTop, {
     visibleOnFullScreen: true,
     skipTransformProcessType: true,
@@ -660,7 +705,8 @@ export const ensureDesktopLyricWindow = async () => {
     stopDesktopLyricHoverTracking();
     clearUnlockHotzoneCooldownTimer();
     clearDesktopLyricLockPhaseTimer();
-    setDesktopLyricHovering(false);
+    desktopLyricDragSession = null;
+    desktopLyricUnlockedInteractive = false;
     setDesktopLyricPointerState({ insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false });
     setDesktopLyricLockPhase('idle');
   });
@@ -669,7 +715,8 @@ export const ensureDesktopLyricWindow = async () => {
     clearUnlockHotzoneCooldownTimer();
     clearDesktopLyricLockPhaseTimer();
     desktopLyricResizeSession = null;
-    desktopLyricHovering = false;
+    desktopLyricDragSession = null;
+    desktopLyricUnlockedInteractive = false;
     desktopLyricPointerState = { insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false };
     desktopLyricWindow = null;
     desktopLyricClosingFromFailure = false;
@@ -906,17 +953,34 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  ipcMain.on('desktop-lyric:drag-mode', (_event, enabled: boolean) => {
-    if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-    if (enabled) {
-      desktopLyricWindow.setIgnoreMouseEvents(false);
-      return;
-    }
-    applyWindowInteractivity();
-  });
+  ipcMain.on(
+    'desktop-lyric:set-ignore-mouse-events',
+    (_event, ignore: boolean) => {
+      desktopLyricUnlockedInteractive = !Boolean(ignore);
+      if (!snapshot.settings.locked) {
+        applyWindowInteractivity();
+      }
+    },
+  );
 
-  ipcMain.on('desktop-lyric:hover', (_event, hovering: boolean) => {
-    setDesktopLyricHovering(hovering);
+  ipcMain.on(
+    'desktop-lyric:drag-start',
+    (_event, payload: { screenX: number; screenY: number }) => {
+      if (!payload || snapshot.settings.locked) return;
+      startDesktopLyricDrag(Number(payload.screenX) || 0, Number(payload.screenY) || 0);
+    },
+  );
+
+  ipcMain.on(
+    'desktop-lyric:drag-update',
+    (_event, payload: { screenX: number; screenY: number }) => {
+      if (!payload) return;
+      updateDesktopLyricDrag(Number(payload.screenX) || 0, Number(payload.screenY) || 0);
+    },
+  );
+
+  ipcMain.on('desktop-lyric:drag-end', () => {
+    endDesktopLyricDrag();
   });
 
   ipcMain.on(
