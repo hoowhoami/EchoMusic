@@ -324,13 +324,14 @@ const handleClear = () => {
           <Button
             type="button"
             class="queue-remove"
-            variant="ghost"
-            size="xs"
+            variant="unstyled"
+            size="none"
             :class="{ 'is-hidden': String(entry.data.track.id) === String(currentTrackId) }"
             :disabled="String(entry.data.track.id) === String(currentTrackId)"
+            title="从队列移除"
             @click="handleRemove(entry.data.track)"
           >
-            <Icon :icon="iconX" width="14" height="14" />
+            <Icon :icon="iconTrash" width="14" height="14" />
           </Button>
         </div>
       </div>
@@ -443,7 +444,7 @@ const handleClear = () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0;
+  padding: 0 8px 0 0;
   border-radius: 10px;
   transition:
     background-color 0.22s ease,
@@ -519,6 +520,7 @@ const handleClear = () => {
 .queue-card {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   cursor: grab;
   border-radius: 10px;
   transition:
@@ -556,21 +558,26 @@ const handleClear = () => {
 }
 
 .queue-remove {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 999px;
   display: inline-flex;
+  margin-left: auto;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
   opacity: 0;
+  pointer-events: none;
   transition: all 0.2s ease;
-  position: relative;
-  left: -8px;
 }
 
-.queue-row:hover .queue-remove {
+.queue-row:hover .queue-remove,
+.queue-row:focus-within .queue-remove {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .queue-remove.is-hidden {
@@ -580,6 +587,7 @@ const handleClear = () => {
 
 .queue-remove:hover {
   color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
   transform: scale(1.05);
 }
 

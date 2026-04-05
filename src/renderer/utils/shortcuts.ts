@@ -8,6 +8,7 @@ type ShortcutCommand =
   | 'previousTrack'
   | 'nextTrack'
   | 'toggleLyricsMode'
+  | 'cycleLyricsMode'
   | 'volumeUp'
   | 'volumeDown'
   | 'toggleMute'
@@ -111,6 +112,7 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     previousTrack: labelToAccelerator(bindings.previousTrack ?? defaults.previousTrack ?? ''),
     nextTrack: labelToAccelerator(bindings.nextTrack ?? defaults.nextTrack ?? ''),
     toggleLyricsMode: '',
+    cycleLyricsMode: '',
     volumeUp: labelToAccelerator(bindings.volumeUp ?? defaults.volumeUp ?? ''),
     volumeDown: labelToAccelerator(bindings.volumeDown ?? defaults.volumeDown ?? ''),
     toggleMute: labelToAccelerator(bindings.toggleMute ?? defaults.toggleMute ?? ''),
@@ -133,6 +135,8 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.next();
   } else if (command === 'toggleLyricsMode') {
     lyricStore.toggleSecondaryEnabled();
+  } else if (command === 'cycleLyricsMode') {
+    lyricStore.cycleSecondaryMode();
   } else if (command === 'volumeUp') {
     playerStore.setVolume(playerStore.volume + 0.05);
   } else if (command === 'volumeDown') {

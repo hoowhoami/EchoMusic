@@ -25,6 +25,8 @@ import Button from '@/components/ui/Button.vue';
 import {
   iconChevronDown,
   iconCopy,
+  iconCurrentLocation,
+  iconCompass,
   iconLanguage,
   iconChevronUpDown,
   iconPause,
@@ -45,6 +47,7 @@ const progressValue = ref(0);
 const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const copyFeedback = ref(false);
+const isScrollMode = ref(false);
 
 const currentTrack = computed<Song | undefined>(() => {
   const currentId = String(playerStore.currentTrackId ?? '');
@@ -88,10 +91,18 @@ const secondaryFontSize = computed(
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 
+const toggleScrollMode = async () => {
+  isScrollMode.value = !isScrollMode.value;
+  if (!isScrollMode.value) {
+    await nextTick();
+    scrollToCurrentLine(false);
+  }
+};
+
 const scrollToCurrentLine = (smooth: boolean) => {
   const container = lyricListRef.value;
   const index = lyricStore.currentIndex;
-  if (!container || index < 0) return;
+  if (!container || index < 0 || isScrollMode.value) return;
 
   const target = container.querySelector<HTMLElement>(`[data-lyric-index="${index}"]`);
   if (!target) return;
@@ -152,6 +163,10 @@ const toggleSecondary = () => {
 const cycleSecondaryMode = () => {
   if (!canCycleSecondaryMode.value) return;
   lyricStore.cycleSecondaryMode();
+};
+
+const handleLyricLineClick = (time: number) => {
+  playerStore.seek(time);
 };
 
 const ensureLyricsForCurrentTrack = () => {
@@ -331,13 +346,29 @@ onUnmounted(() => {
                 </PopoverContent>
               </PopoverPortal>
             </PopoverRoot>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="lyric-tool-chip"
+              :class="{ 'is-active': isScrollMode }"
+              :disabled="!hasLyrics"
+              @click="toggleScrollMode"
+            >
+              <Icon
+                :icon="isScrollMode ? iconCompass : iconCurrentLocation"
+                width="14"
+                height="14"
+              />
+              <span>{{ isScrollMode ? '自由滚动' : '跟随播放' }}</span>
+            </Button>
             <div class="lyric-tool-group">
               <Button
                 variant="unstyled"
                 size="none"
                 type="button"
                 class="lyric-tool-chip lyric-tool-chip-main"
-                :class="{ 'is-active': lyricStore.secondaryEnabled }"
+                :class="{ 'is-active': lyricStore.secondaryEnabled && canToggleSecondary }"
                 :disabled="!canToggleSecondary"
                 @click="toggleSecondary"
               >
@@ -401,7 +432,11 @@ onUnmounted(() => {
 
           <section class="lyric-panel-surface relative flex min-w-0 flex-[7] flex-col justify-center self-stretch">
             <div class="lyric-stage absolute inset-0">
-              <div ref="lyricListRef" class="lyric-scroll absolute inset-0 overflow-y-auto">
+              <div
+                ref="lyricListRef"
+                class="lyric-scroll absolute inset-0"
+                :class="isScrollMode ? 'overflow-y-auto' : 'overflow-y-hidden'"
+              >
                 <template v-if="hasLyrics">
                   <div class="py-[40vh]">
                     <div
@@ -412,12 +447,12 @@ onUnmounted(() => {
                         minHeight:
                           (lyricStore.lyricsMode === 'translation' ||
                           lyricStore.lyricsMode === 'romanization'
-                            ? 100
-                            : 70) *
+                            ? 84
+                            : 56) *
                             lyricStore.fontScale +
                           'px',
-                        paddingTop: '16px',
-                        paddingBottom: '16px',
+                        paddingTop: '8px',
+                        paddingBottom: '8px',
                       }"
                     >
                       <Button
@@ -426,7 +461,7 @@ onUnmounted(() => {
                         type="button"
                         :data-lyric-index="index"
                         :class="['lyric-line', currentIndex === index ? 'is-current' : 'is-idle']"
-                        @click="playerStore.seek(line.time)"
+                        @click="handleLyricLineClick(line.time)"
                       >
                         <span
                           class="block leading-[1.24] tracking-[0.01em]"
@@ -450,7 +485,7 @@ onUnmounted(() => {
                         </span>
                         <span
                           v-if="lyricStore.lineSecondaryText(line)"
-                          class="lyric-subline mt-1.5 block max-w-full truncate"
+                          class="lyric-subline mt-1 block max-w-full truncate"
                           :style="{
                             fontSize: secondaryFontSize,
                             fontWeight: String(
@@ -695,23 +730,26 @@ onUnmounted(() => {
 
 .dark .lyric-tool-chip,
 .dark .lyric-icon-btn {
-  background: rgba(9, 12, 18, 0.62);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  background: rgba(22, 30, 44, 0.82);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .dark .lyric-tool-group {
-  background: rgba(9, 12, 18, 0.42);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
+  background: rgba(14, 18, 26, 0.66);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .dark .lyric-tool-chip-inline {
-  background: rgba(14, 18, 26, 0.76);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(28, 36, 52, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
   box-shadow: none;
 }
 
 .dark .lyric-tool-chip.is-active {
-  background: rgba(20, 27, 39, 0.94);
+  background: rgba(40, 54, 78, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.2);
 }
 
 .dark .lyric-tool-chip-label {
@@ -719,12 +757,19 @@ onUnmounted(() => {
 }
 
 .dark .lyric-tool-chip-inline:hover {
-  background: rgba(14, 18, 26, 0.78);
+  background: rgba(40, 54, 78, 0.96);
 }
 
 .dark .lyric-icon-btn:hover,
 .dark .lyric-tool-chip:hover {
-  background: rgba(14, 18, 26, 0.78);
+  background: rgba(36, 48, 70, 0.94);
+}
+
+.dark .lyric-tool-chip:disabled,
+.dark .lyric-weight-btn:disabled {
+  opacity: 0.5;
+  background: rgba(18, 24, 36, 0.72);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .lyric-weight-btn,
@@ -863,7 +908,7 @@ onUnmounted(() => {
 .lyric-line {
   width: 100%;
   max-width: min(100%, 920px);
-  padding: 18px 28px;
+  padding: 12px 24px;
   border-radius: 28px;
   text-align: center;
   color: inherit;

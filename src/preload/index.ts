@@ -91,7 +91,14 @@ contextBridge.exposeInMainWorld('electron', {
     updateResize: (screenX: number, screenY: number) =>
       ipcRenderer.send('desktop-lyric:resize-update', { screenX, screenY }),
     endResize: () => ipcRenderer.send('desktop-lyric:resize-end'),
-    command: (command: 'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode') =>
+    command: (
+      command:
+        | 'togglePlayback'
+        | 'previousTrack'
+        | 'nextTrack'
+        | 'toggleLyricsMode'
+        | 'cycleLyricsMode',
+    ) =>
       ipcRenderer.send('desktop-lyric:command', command),
   },
   log: log.functions

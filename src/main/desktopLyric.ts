@@ -1012,7 +1012,15 @@ export const registerDesktopLyricHandlers = () => {
 
   ipcMain.on(
     'desktop-lyric:command',
-    (_event, command: 'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode') => {
+    (
+      _event,
+      command:
+        | 'togglePlayback'
+        | 'previousTrack'
+        | 'nextTrack'
+        | 'toggleLyricsMode'
+        | 'cycleLyricsMode',
+    ) => {
       const focusedMainWindow = BrowserWindow.getAllWindows().find(
         (win) => win !== desktopLyricWindow && !win.isDestroyed(),
       );

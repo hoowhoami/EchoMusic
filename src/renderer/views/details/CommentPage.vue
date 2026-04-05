@@ -994,8 +994,9 @@ watch(total, (value) => {
 }
 
 .comment-content-wrap {
-  max-width: 820px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 8px 0 40px;
 }
 

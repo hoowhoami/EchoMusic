@@ -164,6 +164,7 @@ export const useLyricStore = defineStore('lyric', {
     fontScale: 1,
     fontWeightIndex: 8,
     requestSerial: 0,
+    detailResolved: false,
   }),
   getters: {
     showTranslation: (state) => state.secondaryEnabled && state.preferredMode === 'translation' && state.hasTranslation,
@@ -215,6 +216,7 @@ export const useLyricStore = defineStore('lyric', {
       this.lyricsMode = 'none';
       this.hasTranslation = false;
       this.hasRomanization = false;
+      this.detailResolved = false;
     },
     clear(hash = '', tips = '暂无歌词') {
       this.requestSerial += 1;
@@ -225,11 +227,26 @@ export const useLyricStore = defineStore('lyric', {
       this.isLoading = true;
     },
     applyPreferredMode() {
-      if (!this.secondaryEnabled || !this.hasTranslation && !this.hasRomanization) {
+      if (!this.secondaryEnabled || (!this.hasTranslation && !this.hasRomanization)) {
         this.lyricsMode = 'none';
         return;
       }
-      this.lyricsMode = this.preferredMode;
+
+      if (this.preferredMode === 'translation' && this.hasTranslation) {
+        this.lyricsMode = 'translation';
+        return;
+      }
+
+      if (this.preferredMode === 'romanization' && this.hasRomanization) {
+        this.lyricsMode = 'romanization';
+        return;
+      }
+
+      this.lyricsMode = this.hasTranslation
+        ? 'translation'
+        : this.hasRomanization
+          ? 'romanization'
+          : 'none';
     },
     toggleSecondaryEnabled() {
       if (!this.hasTranslation && !this.hasRomanization) {
@@ -258,15 +275,20 @@ export const useLyricStore = defineStore('lyric', {
       this.fontWeightIndex = clamp(Math.round(index), 0, 8);
     },
     setLyric(content: string, hash = '') {
-      this.parseLyricContent({ decodeContent: content }, hash);
+      this.parseLyricContent({ decodeContent: content }, hash, { detailResolved: false });
     },
-    parseLyricContent(payload: LyricDetailResponse, hash = '') {
+    parseLyricContent(
+      payload: LyricDetailResponse,
+      hash = '',
+      options?: { detailResolved?: boolean },
+    ) {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
       const content = String(payload.decodeContent ?? payload.lyric ?? '')
         .replace(/^\uFEFF/, '')
         .trim();
       this.rawLyric = content;
       this.loadedHash = hash;
+      this.detailResolved = Boolean(options?.detailResolved);
       this.isLoading = false;
 
       if (!content) {
@@ -417,19 +439,7 @@ export const useLyricStore = defineStore('lyric', {
       });
 
       this.tips = this.lines.length > 0 ? '歌词已加载' : '暂无歌词';
-      this.preferredMode = this.hasRomanization
-        ? this.preferredMode === 'romanization'
-          ? 'romanization'
-          : 'translation'
-        : 'translation';
 
-      if (!this.hasTranslation && !this.hasRomanization) {
-        this.secondaryEnabled = false;
-      } else if (this.preferredMode === 'romanization' && !this.hasRomanization && this.hasTranslation) {
-        this.preferredMode = 'translation';
-      } else if (this.preferredMode === 'translation' && !this.hasTranslation && this.hasRomanization) {
-        this.preferredMode = 'romanization';
-      }
       this.applyPreferredMode();
     },
     updateCurrentIndex(currentTime: number) {
@@ -482,11 +492,28 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
-      if (this.loadedHash === normalizedHash && this.lines.length > 0) return;
+      if (
+        this.loadedHash === normalizedHash &&
+        this.lines.length > 0 &&
+        (!options?.preserveCurrent || this.detailResolved)
+      ) {
+        return;
+      }
 
       const requestSerial = this.requestSerial + 1;
       this.requestSerial = requestSerial;
-      this.beginLoading(normalizedHash);
+
+      const shouldPreserveCurrentLines =
+        Boolean(options?.preserveCurrent) &&
+        this.loadedHash === normalizedHash &&
+        this.lines.length > 0;
+
+      if (shouldPreserveCurrentLines) {
+        this.isLoading = true;
+        this.tips = '歌词加载中...';
+      } else {
+        this.beginLoading(normalizedHash);
+      }
 
       try {
         const searchResult = normalizeSearchPayload(await searchLyric(normalizedHash));
@@ -504,6 +531,7 @@ export const useLyricStore = defineStore('lyric', {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
             this.tips = '歌词已加载';
+            this.detailResolved = false;
             return;
           }
           this.clear(normalizedHash, '暂无歌词');
@@ -520,13 +548,14 @@ export const useLyricStore = defineStore('lyric', {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
             this.tips = '歌词已加载';
+            this.detailResolved = false;
             return;
           }
           this.clear(normalizedHash, '暂无歌词');
           return;
         }
 
-        this.parseLyricContent(lyricData, normalizedHash);
+        this.parseLyricContent(lyricData, normalizedHash, { detailResolved: true });
       } catch (error) {
         if (requestSerial !== this.requestSerial) return;
         logger.error('LyricStore', 'Fetch lyrics failed', error, { hash: normalizedHash });
@@ -534,6 +563,7 @@ export const useLyricStore = defineStore('lyric', {
           this.isLoading = false;
           this.loadedHash = normalizedHash;
           this.tips = '歌词已加载';
+          this.detailResolved = false;
           return;
         }
         this.clear(normalizedHash, '歌词加载失败');

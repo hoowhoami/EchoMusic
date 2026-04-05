@@ -380,23 +380,12 @@ const playNext = () => {
 
 const toggleSecondary = async () => {
   if (!canToggleSecondary.value) return;
-  snapshot.value = await syncSettings({
-    secondaryEnabled: !snapshot.value.settings.secondaryEnabled,
-    secondaryMode:
-      snapshot.value.settings.secondaryMode === 'none'
-        ? hasRomanization.value
-          ? 'romanization'
-          : 'translation'
-        : snapshot.value.settings.secondaryMode,
-  });
+  window.electron?.desktopLyric?.command('toggleLyricsMode');
 };
 
 const cycleSecondaryMode = async () => {
   if (!canCycleSecondaryMode.value) return;
-  snapshot.value = await syncSettings({
-    secondaryMode:
-      snapshot.value.settings.secondaryMode === 'translation' ? 'romanization' : 'translation',
-  });
+  window.electron?.desktopLyric?.command('cycleLyricsMode');
 };
 
 const tick = () => {

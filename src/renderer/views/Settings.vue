@@ -426,7 +426,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="settings-view p-8 space-y-12 max-w-4xl transition-colors duration-300">
+  <div class="settings-view w-full min-h-full p-8 space-y-12 transition-colors duration-300">
     <header>
       <h1 class="text-3xl font-black tracking-tight text-text-main">偏好设置</h1>
     </header>
