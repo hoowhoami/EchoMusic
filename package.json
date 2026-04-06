@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -113,6 +113,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
     "dmg": {

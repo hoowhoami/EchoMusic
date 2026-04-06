@@ -8,6 +8,7 @@ import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import {
   iconPalette,
@@ -27,6 +28,43 @@ const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
 const showDisclaimer = ref(false);
 const isRequestingOutputPermission = ref(false);
+const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+
+const desktopLyricColorPresets = [
+  '#31cfa1',
+  '#b9b9b9',
+  '#ffffff',
+  '#ffd166',
+  '#ef476f',
+  '#118ab2',
+  '#8b5cf6',
+  '#f97316',
+  '#22c55e',
+  '#60a5fa',
+  '#f43f5e',
+  '#0f172a',
+];
+
+const activeDesktopLyricColorValue = computed(() => {
+  if (!activeDesktopLyricColorField.value) return '#31cfa1';
+  return settingStore.desktopLyric[activeDesktopLyricColorField.value];
+});
+
+const openDesktopLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
+  activeDesktopLyricColorField.value = field;
+};
+
+const closeDesktopLyricColorPicker = () => {
+  activeDesktopLyricColorField.value = null;
+};
+
+const applyDesktopLyricColor = async (value: string) => {
+  if (!activeDesktopLyricColorField.value) return;
+  await commitDesktopLyricSettings({
+    [activeDesktopLyricColorField.value]: value,
+  });
+  closeDesktopLyricColorPicker();
+};
 onMounted(() => {
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
@@ -649,34 +687,35 @@ onUnmounted(() => {
           <div class="flex items-center gap-5 pt-1">
             <div class="flex items-center gap-2.5">
               <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
-              <input
-                class="settings-color-input"
-                type="color"
-                :value="settingStore.desktopLyric.playedColor"
-                @input="
-                  commitDesktopLyricSettings({
-                    playedColor: String(($event.target as HTMLInputElement).value),
-                  })
-                "
-              />
+              <button
+                type="button"
+                class="settings-color-swatch"
+                :style="{ backgroundColor: settingStore.desktopLyric.playedColor }"
+                @click="openDesktopLyricColorPicker('playedColor')"
+              ></button>
             </div>
             <div class="flex items-center gap-2.5">
               <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
-              <input
-                class="settings-color-input"
-                type="color"
-                :value="settingStore.desktopLyric.unplayedColor"
-                @input="
-                  commitDesktopLyricSettings({
-                    unplayedColor: String(($event.target as HTMLInputElement).value),
-                  })
-                "
-              />
+              <button
+                type="button"
+                class="settings-color-swatch"
+                :style="{ backgroundColor: settingStore.desktopLyric.unplayedColor }"
+                @click="openDesktopLyricColorPicker('unplayedColor')"
+              ></button>
             </div>
           </div>
         </div>
       </div>
     </section>
+
+    <ColorPickerDialog
+      :open="activeDesktopLyricColorField !== null"
+      :title="activeDesktopLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
+      :value="activeDesktopLyricColorValue"
+      :presets="desktopLyricColorPresets"
+      @update:open="(open) => !open && closeDesktopLyricColorPicker()"
+      @confirm="applyDesktopLyricColor"
+    />
 
     <section class="space-y-6">
       <div class="flex items-center gap-3">
@@ -1180,6 +1219,19 @@ onUnmounted(() => {
 
 .settings-button.danger {
   @apply bg-red-500/10 text-red-500 hover:bg-red-500/20;
+}
+
+.settings-color-swatch {
+  width: 42px;
+  height: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+
+.dark .settings-color-swatch {
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 @keyframes fade-in {

@@ -5,6 +5,8 @@ import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared/desktop-lyric';
 
+const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
+
 const normalizeLinePayload = (line: ReturnType<typeof useLyricStore>['lines'][number]): LyricLinePayload => ({
   time: Number(line.time) || 0,
   text: String(line.text ?? ''),
@@ -66,13 +68,49 @@ export const initDesktopLyricSync = async () => {
   };
 
   let lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings());
+  let lastSyncedLyricsKey = '';
+  let lastSyncedPlaybackKey = '';
+  let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let progressSyncQueued = false;
+
+  const buildLyricsPayload = () => lines.value.map(normalizeLinePayload);
 
   const syncPlaybackSnapshot = async () => {
-    await window.electron.desktopLyric.syncSnapshot({
-      playback: buildPlaybackPayload(),
-      lyrics: lines.value.map(normalizeLinePayload),
+    const playback = buildPlaybackPayload();
+    const nextPlaybackKey = JSON.stringify({
+      playback,
       currentIndex: currentIndex.value,
     });
+    if (nextPlaybackKey === lastSyncedPlaybackKey) return;
+
+    await window.electron.desktopLyric.syncSnapshot({
+      playback,
+      currentIndex: currentIndex.value,
+    });
+    lastSyncedPlaybackKey = nextPlaybackKey;
+  };
+
+  const syncLyricsSnapshot = async () => {
+    const lyrics = buildLyricsPayload();
+    const nextLyricsKey = JSON.stringify({ lyrics });
+    if (nextLyricsKey === lastSyncedLyricsKey) return;
+
+    await window.electron.desktopLyric.syncSnapshot({
+      lyrics,
+    });
+    lastSyncedLyricsKey = nextLyricsKey;
+  };
+
+  const scheduleProgressSync = () => {
+    progressSyncQueued = true;
+    if (progressSyncTimer) return;
+
+    progressSyncTimer = setTimeout(() => {
+      progressSyncTimer = null;
+      if (!progressSyncQueued) return;
+      progressSyncQueued = false;
+      void syncPlaybackSnapshot();
+    }, DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS);
   };
 
   const syncSettingsSnapshot = async () => {
@@ -89,13 +127,20 @@ export const initDesktopLyricSync = async () => {
   const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((nextSnapshot) => {
     settingStore.setDesktopLyricLocal(nextSnapshot.settings);
     lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings(nextSnapshot.settings));
+    lastSyncedPlaybackKey = JSON.stringify({
+      playback: nextSnapshot.playback,
+      currentIndex: nextSnapshot.currentIndex,
+    });
+    lastSyncedLyricsKey = JSON.stringify({
+      lyrics: nextSnapshot.lyrics,
+    });
   });
 
   stops.push(
     watch(
       [currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot],
       () => {
-        void syncPlaybackSnapshot();
+        scheduleProgressSync();
       },
       { immediate: true, deep: true },
     ),
@@ -103,11 +148,21 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [lines, currentIndex],
+      [lines],
       () => {
-        void syncPlaybackSnapshot();
+        void syncLyricsSnapshot();
       },
       { immediate: true, deep: true },
+    ),
+  );
+
+  stops.push(
+    watch(
+      [currentIndex],
+      () => {
+        scheduleProgressSync();
+      },
+      { immediate: true },
     ),
   );
 
@@ -123,6 +178,10 @@ export const initDesktopLyricSync = async () => {
 
   return () => {
     disposeSnapshotListener();
+    if (progressSyncTimer) {
+      clearTimeout(progressSyncTimer);
+      progressSyncTimer = null;
+    }
     stops.forEach((stop) => stop());
   };
 };
