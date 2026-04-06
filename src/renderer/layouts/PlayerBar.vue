@@ -12,6 +12,7 @@ import Button from '@/components/ui/Button.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
+import MvIcon from '@/components/ui/MvIcon.vue';
 import {
   DropdownMenuRoot,
   DropdownMenuTrigger,
@@ -26,8 +27,7 @@ import {
   iconHeartFilled,
   iconCloud,
   iconTriangleAlert,
-  iconMessageCircle,
-  iconRepeat,
+  iconMessageCircle,  iconRepeat,
   iconShuffle,
   iconListRestart,
   iconSkipBack,
@@ -137,6 +137,30 @@ const goToComments = () => {
       albumId: track.albumId ?? '',
       hash: track.hash ?? '',
       mixSongId: track.mixSongId ?? '',
+    },
+  });
+};
+
+const goToMv = async () => {
+  const track = currentTrack.value;
+  const mvHash = String(track?.mvHash ?? '').trim();
+  if (!track || !mvHash) return;
+  if (player.isPlaying) {
+    await player.togglePlay();
+  }
+  router.push({
+    name: 'mv-detail',
+    params: { id: mvHash },
+    query: {
+      hash: mvHash,
+      albumAudioId: track.mixSongId ?? track.id,
+      title: track.title,
+      artist: track.artist,
+      cover: track.coverUrl ?? '',
+      album: track.album ?? '',
+      songId: track.id,
+      mixSongId: track.mixSongId ?? '',
+      from: router.currentRoute.value.fullPath,
     },
   });
 };
@@ -415,6 +439,17 @@ onUnmounted(() => {
               title="详情及评论"
             >
               <Icon :icon="iconMessageCircle" width="20" height="20" />
+            </Button>
+
+            <Button
+              v-if="currentTrack?.mvHash"
+              variant="unstyled"
+              size="none"
+              @click="goToMv"
+              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              title="播放 MV"
+            >
+              <MvIcon class="w-5 h-5" />
             </Button>
 
             <div v-if="currentTrack?.source === 'cloud'" class="text-primary/60" title="云盘歌曲">

@@ -85,14 +85,14 @@ const settingsStore = new Conf<DesktopLyricPersistedSettings>({
 const DESKTOP_LYRIC_MIN_WIDTH = 320;
 const DESKTOP_LYRIC_MIN_HEIGHT = 100;
 const DESKTOP_LYRIC_MAX_WIDTH = 1400;
-const DESKTOP_LYRIC_MAX_HEIGHT = 300;
+const DESKTOP_LYRIC_MAX_HEIGHT = 190;
 const DESKTOP_LYRIC_HORIZONTAL_PADDING = 88;
 const DESKTOP_LYRIC_VERTICAL_PADDING = 52;
 const DESKTOP_LYRIC_DOUBLE_LINE_WIDTH_SOFT_CAP = 11.5;
 const DESKTOP_LYRIC_SINGLE_LINE_WIDTH_SOFT_CAP = 8.8;
 const DESKTOP_LYRIC_DOUBLE_LINE_HEIGHT_FACTOR = 2.95;
 const DESKTOP_LYRIC_SINGLE_LINE_HEIGHT_FACTOR = 1.72;
-const DESKTOP_LYRIC_FOCUS_RESTORE_DELAY_MS = 60;
+const DESKTOP_LYRIC_LOCK_PHASE_DURATION_MS = 320;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -235,24 +235,31 @@ const getBestDisplayForBounds = (bounds: DesktopLyricWindowState) => {
   const displays = screen.getAllDisplays();
   const centerX = (bounds.x ?? 0) + bounds.width / 2;
   const centerY = (bounds.y ?? 0) + bounds.height / 2;
-
-  const displayByPoint = screen.getDisplayNearestPoint({ x: Math.round(centerX), y: Math.round(centerY) });
+  const displayByPoint = screen.getDisplayNearestPoint({
+    x: Math.round(centerX),
+    y: Math.round(centerY),
+  });
   if (displayByPoint) return displayByPoint;
-
   return displays[0] ?? screen.getPrimaryDisplay();
 };
 
 const constrainBoundsToDisplay = (bounds: DesktopLyricWindowState): DesktopLyricWindowState => {
   const display = getBestDisplayForBounds(bounds);
   const area = display.workArea;
-  const width = clamp(bounds.width, DESKTOP_LYRIC_MIN_WIDTH, Math.min(DESKTOP_LYRIC_MAX_WIDTH, area.width));
+  const width = clamp(
+    bounds.width,
+    DESKTOP_LYRIC_MIN_WIDTH,
+    Math.min(DESKTOP_LYRIC_MAX_WIDTH, area.width),
+  );
   const height = clamp(
     bounds.height,
     DESKTOP_LYRIC_MIN_HEIGHT,
     Math.min(DESKTOP_LYRIC_MAX_HEIGHT, area.height),
   );
-  const rawX = typeof bounds.x === 'number' ? bounds.x : area.x + Math.round((area.width - width) / 2);
-  const rawY = typeof bounds.y === 'number' ? bounds.y : area.y + Math.round(area.height * 0.72 - height / 2);
+  const rawX =
+    typeof bounds.x === 'number' ? bounds.x : area.x + Math.round((area.width - width) / 2);
+  const rawY =
+    typeof bounds.y === 'number' ? bounds.y : area.y + Math.round(area.height * 0.72 - height / 2);
 
   return {
     width,
@@ -263,26 +270,38 @@ const constrainBoundsToDisplay = (bounds: DesktopLyricWindowState): DesktopLyric
 };
 
 const resolveInitialBounds = () => {
-  const state = getWindowState();
-  if (hasVisibleArea(state)) return constrainBoundsToDisplay(state);
+  const primaryArea = screen.getPrimaryDisplay().workArea;
+  const screenWidth = primaryArea.width;
+  const screenHeight = primaryArea.height;
+  const defaultWidth = Math.floor(screenWidth * 0.7);
+  const defaultHeight = 200;
 
-  const primaryDisplay = screen.getPrimaryDisplay().workArea;
-  return {
-    width: state.width,
-    height: state.height,
-    x: Math.round(primaryDisplay.x + (primaryDisplay.width - state.width) / 2),
-    y: Math.round(primaryDisplay.y + primaryDisplay.height * 0.72 - state.height / 2),
-  };
+  const savedState = getWindowState();
+  let x = savedState.x;
+  let y = savedState.y;
+  let width = savedState.width || defaultWidth;
+  let height = savedState.height || defaultHeight;
+
+  width = Math.min(width, screenWidth);
+  height = Math.min(height, screenHeight);
+
+  const isValidPosition =
+    x !== undefined &&
+    y !== undefined &&
+    x >= primaryArea.x &&
+    x <= primaryArea.x + screenWidth &&
+    y >= primaryArea.y &&
+    y <= primaryArea.y + screenHeight;
+
+  if (!isValidPosition) {
+    x = Math.floor(primaryArea.x + (screenWidth - width) / 2);
+    y = Math.floor(primaryArea.y + screenHeight - height);
+  }
+
+  return constrainBoundsToDisplay({ width, height, x, y });
 };
 
-const getEffectiveTheme = (theme: DesktopLyricSettings['theme']) => {
-  if (theme === 'system') return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-  return theme;
-};
-
-const getBackgroundColor = (_theme: DesktopLyricSettings['theme']) => {
-  return '#00000000';
-};
+const getBackgroundColor = () => '#00000000';
 
 let desktopLyricWindow: BrowserWindow | null = null;
 let desktopLyricPointerState: DesktopLyricPointerState = {
@@ -290,108 +309,23 @@ let desktopLyricPointerState: DesktopLyricPointerState = {
   insideUnlockHotzone: false,
   insideToolbarHotzone: false,
 };
-let desktopLyricHoverPollTimer: NodeJS.Timeout | null = null;
-let desktopLyricUnlockHotzoneBlockedUntil = 0;
-let desktopLyricUnlockHotzoneCooldownTimer: NodeJS.Timeout | null = null;
-let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
 let desktopLyricResizeSession: DesktopLyricResizeSession | null = null;
 let desktopLyricDragSession: DesktopLyricDragSession | null = null;
-let desktopLyricUnlockedInteractive = false;
 let desktopLyricClosingFromFailure = false;
 let desktopLyricAppIsQuitting = false;
 let desktopLyricDisplayMetricsTimer: NodeJS.Timeout | null = null;
+let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
 });
+
 let snapshot: DesktopLyricSnapshot = {
   playback: null,
   lyrics: [],
   currentIndex: -1,
   settings: getDesktopLyricSettings(),
   lockPhase: 'idle',
-};
-
-const persistWindowBounds = () => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  const bounds = desktopLyricWindow.getBounds();
-  const isResizing = desktopLyricResizeSession !== null;
-  const nextFontSize = deriveFontSizeFromWindow(
-    bounds.width,
-    bounds.height,
-    snapshot.settings.doubleLine,
-    snapshot.settings.lineGap,
-  );
-
-  settingsStore.set('windowState', {
-    width: bounds.width,
-    height: bounds.height,
-    x: bounds.x,
-    y: bounds.y,
-  });
-
-  if (isResizing && (snapshot.settings.width !== bounds.width || snapshot.settings.height !== bounds.height)) {
-    snapshot = {
-      ...snapshot,
-      settings: {
-        ...snapshot.settings,
-        width: bounds.width,
-        height: bounds.height,
-        fontSize: nextFontSize,
-      },
-    };
-    settingsStore.set('width', bounds.width);
-    settingsStore.set('height', bounds.height);
-    settingsStore.set('fontSize', nextFontSize);
-    sendSnapshot();
-  } else if (isResizing && snapshot.settings.fontSize !== nextFontSize) {
-    snapshot = {
-      ...snapshot,
-      settings: {
-        ...snapshot.settings,
-        fontSize: nextFontSize,
-      },
-    };
-    settingsStore.set('fontSize', nextFontSize);
-    sendSnapshot();
-  }
-};
-
-const clearDesktopLyricDisplayMetricsTimer = () => {
-  if (!desktopLyricDisplayMetricsTimer) return;
-  clearTimeout(desktopLyricDisplayMetricsTimer);
-  desktopLyricDisplayMetricsTimer = null;
-};
-
-const reconcileDesktopLyricBounds = () => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-
-  const bounds = desktopLyricWindow.getBounds();
-  const nextBounds = constrainBoundsToDisplay(bounds);
-  const changed =
-    bounds.x !== nextBounds.x ||
-    bounds.y !== nextBounds.y ||
-    bounds.width !== nextBounds.width ||
-    bounds.height !== nextBounds.height;
-
-  if (!changed) return;
-
-  desktopLyricWindow.setBounds({
-    x: nextBounds.x ?? bounds.x,
-    y: nextBounds.y ?? bounds.y,
-    width: nextBounds.width,
-    height: nextBounds.height,
-  });
-  persistWindowBounds();
-  syncDesktopLyricHoverTracking();
-};
-
-const scheduleDesktopLyricBoundsReconcile = () => {
-  clearDesktopLyricDisplayMetricsTimer();
-  desktopLyricDisplayMetricsTimer = setTimeout(() => {
-    desktopLyricDisplayMetricsTimer = null;
-    reconcileDesktopLyricBounds();
-  }, 120);
 };
 
 const sendSnapshot = () => {
@@ -406,63 +340,132 @@ const sendPointerState = () => {
   desktopLyricWindow.webContents.send('desktop-lyric:pointer-state', desktopLyricPointerState);
 };
 
-const getCursorRelativeState = (): DesktopLyricPointerState => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || !desktopLyricWindow.isVisible()) {
-    return {
-      insideWindow: false,
-      insideUnlockHotzone: false,
-      insideToolbarHotzone: false,
-    };
-  }
-
-  const point = screen.getCursorScreenPoint();
-  const bounds = desktopLyricWindow.getBounds();
-  const insideWindow =
-    point.x >= bounds.x &&
-    point.x <= bounds.x + bounds.width &&
-    point.y >= bounds.y &&
-    point.y <= bounds.y + bounds.height;
-
-  const unlockHotzoneWidth = 70;
-  const unlockHotzoneHeight = 28;
-  const unlockHotzoneTop = 8;
-  const unlockHotzoneLeft = bounds.x + Math.round((bounds.width - unlockHotzoneWidth) / 2);
-  const insideUnlockHotzone =
-    insideWindow &&
-    point.x >= unlockHotzoneLeft &&
-    point.x <= unlockHotzoneLeft + unlockHotzoneWidth &&
-    point.y >= bounds.y + unlockHotzoneTop &&
-    point.y <= bounds.y + unlockHotzoneTop + unlockHotzoneHeight;
-
-  const toolbarHotzoneWidth = 428;
-  const toolbarHotzoneHeight = 28;
-  const toolbarHotzoneTop = 8;
-  const toolbarHotzoneLeft = bounds.x + Math.round((bounds.width - toolbarHotzoneWidth) / 2);
-  const insideToolbarHotzone =
-    insideWindow &&
-    point.x >= toolbarHotzoneLeft &&
-    point.x <= toolbarHotzoneLeft + toolbarHotzoneWidth &&
-    point.y >= bounds.y + toolbarHotzoneTop &&
-    point.y <= bounds.y + toolbarHotzoneTop + toolbarHotzoneHeight;
-
-  return {
-    insideWindow,
-    insideUnlockHotzone,
-    insideToolbarHotzone,
-  };
-};
-
 const setDesktopLyricPointerState = (nextState: DesktopLyricPointerState) => {
   const changed =
     desktopLyricPointerState.insideWindow !== nextState.insideWindow ||
     desktopLyricPointerState.insideUnlockHotzone !== nextState.insideUnlockHotzone ||
     desktopLyricPointerState.insideToolbarHotzone !== nextState.insideToolbarHotzone;
-
   if (!changed) return;
-
   desktopLyricPointerState = nextState;
   sendPointerState();
-  applyWindowInteractivity();
+};
+
+const clearDesktopLyricLockPhaseTimer = () => {
+  if (!desktopLyricLockPhaseTimer) return;
+  clearTimeout(desktopLyricLockPhaseTimer);
+  desktopLyricLockPhaseTimer = null;
+};
+
+const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = false) => {
+  clearDesktopLyricLockPhaseTimer();
+  if (snapshot.lockPhase !== phase) {
+    snapshot = {
+      ...snapshot,
+      lockPhase: phase,
+    };
+    sendSnapshot();
+  }
+  if (!withCooldown || phase === 'idle') return;
+  desktopLyricLockPhaseTimer = setTimeout(() => {
+    desktopLyricLockPhaseTimer = null;
+    setDesktopLyricLockPhase('idle');
+  }, DESKTOP_LYRIC_LOCK_PHASE_DURATION_MS);
+};
+
+const persistWindowBounds = () => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  const bounds = desktopLyricWindow.getBounds();
+  const nextFontSize = deriveFontSizeFromWindow(
+    bounds.width,
+    bounds.height,
+    snapshot.settings.doubleLine,
+    snapshot.settings.lineGap,
+  );
+
+  settingsStore.set('windowState', {
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+  });
+
+  const shouldSyncSize =
+    snapshot.settings.width !== bounds.width || snapshot.settings.height !== bounds.height;
+  const shouldSyncFont = snapshot.settings.fontSize !== nextFontSize;
+
+  if (!shouldSyncSize && !shouldSyncFont) return;
+
+  snapshot = {
+    ...snapshot,
+    settings: {
+      ...snapshot.settings,
+      width: bounds.width,
+      height: bounds.height,
+      fontSize: nextFontSize,
+    },
+  };
+  settingsStore.set('width', bounds.width);
+  settingsStore.set('height', bounds.height);
+  settingsStore.set('fontSize', nextFontSize);
+  sendSnapshot();
+};
+
+const reconcileDesktopLyricBounds = () => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  const bounds = desktopLyricWindow.getBounds();
+  const nextBounds = constrainBoundsToDisplay(bounds);
+  const changed =
+    bounds.x !== nextBounds.x ||
+    bounds.y !== nextBounds.y ||
+    bounds.width !== nextBounds.width ||
+    bounds.height !== nextBounds.height;
+  if (!changed) return;
+  desktopLyricWindow.setBounds({
+    x: nextBounds.x ?? bounds.x,
+    y: nextBounds.y ?? bounds.y,
+    width: nextBounds.width,
+    height: nextBounds.height,
+  });
+  persistWindowBounds();
+};
+
+const clearDesktopLyricDisplayMetricsTimer = () => {
+  if (!desktopLyricDisplayMetricsTimer) return;
+  clearTimeout(desktopLyricDisplayMetricsTimer);
+  desktopLyricDisplayMetricsTimer = null;
+};
+
+const scheduleDesktopLyricBoundsReconcile = () => {
+  clearDesktopLyricDisplayMetricsTimer();
+  desktopLyricDisplayMetricsTimer = setTimeout(() => {
+    desktopLyricDisplayMetricsTimer = null;
+    reconcileDesktopLyricBounds();
+  }, 120);
+};
+
+const syncWindowPresentation = () => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  desktopLyricWindow.setBackgroundColor(getBackgroundColor());
+  desktopLyricWindow.setFocusable(false);
+  if (desktopLyricWindow.isFocused()) desktopLyricWindow.blur();
+  desktopLyricWindow.setAlwaysOnTop(
+    snapshot.settings.alwaysOnTop,
+    process.platform === 'darwin' ? 'screen-saver' : 'floating',
+    1,
+  );
+  desktopLyricWindow.setVisibleOnAllWorkspaces(snapshot.settings.alwaysOnTop, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true,
+  });
+  desktopLyricWindow.setSkipTaskbar(true);
+};
+
+const destroyDesktopLyricWindowFromFailure = (reason: 'unresponsive' | 'render-process-gone') => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || desktopLyricClosingFromFailure)
+    return;
+  desktopLyricClosingFromFailure = true;
+  console.error(`[DesktopLyric] Window destroyed due to ${reason}`);
+  desktopLyricWindow.destroy();
 };
 
 const applyResizeBounds = (
@@ -513,20 +516,9 @@ const applyResizeBounds = (
   });
 };
 
-const applyDragBounds = (
-  session: DesktopLyricDragSession,
-  screenX: number,
-  screenY: number,
-) => {
+const applyDragBounds = (_session: DesktopLyricDragSession, screenX: number, screenY: number) => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-
-  const deltaX = screenX - session.startScreenX;
-  const deltaY = screenY - session.startScreenY;
-
-  desktopLyricWindow.setPosition(
-    Math.round(session.startBounds.x + deltaX),
-    Math.round(session.startBounds.y + deltaY),
-  );
+  desktopLyricWindow.setPosition(Math.round(screenX), Math.round(screenY));
 };
 
 const startDesktopLyricResize = (
@@ -534,7 +526,7 @@ const startDesktopLyricResize = (
   screenX: number,
   screenY: number,
 ) => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || snapshot.settings.locked) return;
   desktopLyricResizeSession = {
     direction,
     startBounds: desktopLyricWindow.getBounds(),
@@ -552,11 +544,15 @@ const updateDesktopLyricResize = (screenX: number, screenY: number) => {
 const endDesktopLyricResize = () => {
   if (!desktopLyricResizeSession) return;
   desktopLyricResizeSession = null;
-  applyWindowInteractivity();
+  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    desktopLyricWindow.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
+      forward: true,
+    });
+  }
 };
 
 const startDesktopLyricDrag = (screenX: number, screenY: number) => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || snapshot.settings.locked) return;
   desktopLyricDragSession = {
     startBounds: desktopLyricWindow.getBounds(),
     startScreenX: screenX,
@@ -573,151 +569,11 @@ const updateDesktopLyricDrag = (screenX: number, screenY: number) => {
 const endDesktopLyricDrag = () => {
   if (!desktopLyricDragSession) return;
   desktopLyricDragSession = null;
-  applyWindowInteractivity();
-};
-
-const clearDesktopLyricLockPhaseTimer = () => {
-  if (desktopLyricLockPhaseTimer) {
-    clearTimeout(desktopLyricLockPhaseTimer);
-    desktopLyricLockPhaseTimer = null;
+  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    desktopLyricWindow.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
+      forward: true,
+    });
   }
-};
-
-const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = false) => {
-  clearDesktopLyricLockPhaseTimer();
-  if (snapshot.lockPhase !== phase) {
-    snapshot = {
-      ...snapshot,
-      lockPhase: phase,
-    };
-    sendSnapshot();
-  }
-
-  if (!withCooldown || phase === 'idle') return;
-
-  desktopLyricLockPhaseTimer = setTimeout(() => {
-    desktopLyricLockPhaseTimer = null;
-    setDesktopLyricLockPhase('idle');
-  }, 320);
-};
-
-const clearUnlockHotzoneCooldownTimer = () => {
-  if (desktopLyricUnlockHotzoneCooldownTimer) {
-    clearTimeout(desktopLyricUnlockHotzoneCooldownTimer);
-    desktopLyricUnlockHotzoneCooldownTimer = null;
-  }
-};
-
-const scheduleUnlockHotzoneRefresh = () => {
-  clearUnlockHotzoneCooldownTimer();
-  const delay = desktopLyricUnlockHotzoneBlockedUntil - Date.now();
-  if (delay <= 0) {
-    applyWindowInteractivity();
-    return;
-  }
-
-  desktopLyricUnlockHotzoneCooldownTimer = setTimeout(() => {
-    desktopLyricUnlockHotzoneCooldownTimer = null;
-    applyWindowInteractivity();
-  }, delay);
-};
-
-const stopDesktopLyricHoverTracking = () => {
-  if (desktopLyricHoverPollTimer) {
-    clearInterval(desktopLyricHoverPollTimer);
-    desktopLyricHoverPollTimer = null;
-  }
-};
-
-const syncDesktopLyricHoverTracking = () => {
-  const shouldTrack = Boolean(
-    desktopLyricWindow &&
-    !desktopLyricWindow.isDestroyed() &&
-    desktopLyricWindow.isVisible() &&
-    snapshot.settings.enabled,
-  );
-
-  if (!shouldTrack) {
-    stopDesktopLyricHoverTracking();
-    clearUnlockHotzoneCooldownTimer();
-    clearDesktopLyricLockPhaseTimer();
-    setDesktopLyricPointerState({ insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false });
-    return;
-  }
-
-  if (!desktopLyricHoverPollTimer) {
-    desktopLyricHoverPollTimer = setInterval(() => {
-      setDesktopLyricPointerState(getCursorRelativeState());
-    }, 80);
-  }
-
-  setDesktopLyricPointerState(getCursorRelativeState());
-};
-
-const applyWindowInteractivity = () => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  const { locked, alwaysOnTop } = snapshot.settings;
-
-  const unlockHotzoneReady = Date.now() >= desktopLyricUnlockHotzoneBlockedUntil;
-  const shouldForceInteractive = desktopLyricResizeSession !== null || desktopLyricDragSession !== null;
-  const shouldIgnoreMouse = shouldForceInteractive
-    ? false
-    : locked
-      ? !unlockHotzoneReady || !desktopLyricPointerState.insideUnlockHotzone
-      : !desktopLyricUnlockedInteractive;
-  desktopLyricWindow.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
-  desktopLyricWindow.setFocusable(false);
-  if (desktopLyricWindow.isFocused()) {
-    desktopLyricWindow.blur();
-  }
-  desktopLyricWindow.setAlwaysOnTop(
-    alwaysOnTop,
-    process.platform === 'darwin' ? 'screen-saver' : 'floating',
-    1,
-  );
-  desktopLyricWindow.setVisibleOnAllWorkspaces(alwaysOnTop, {
-    visibleOnFullScreen: true,
-    skipTransformProcessType: true,
-  });
-  desktopLyricWindow.setSkipTaskbar(true);
-  syncDesktopLyricHoverTracking();
-};
-
-const restorePreviousFocus = (previousFocusedWindow: BrowserWindow | null) => {
-  if (
-    !previousFocusedWindow ||
-    previousFocusedWindow.isDestroyed() ||
-    previousFocusedWindow === desktopLyricWindow
-  ) {
-    return;
-  }
-
-  const restore = () => {
-    if (previousFocusedWindow.isDestroyed()) return;
-    if (previousFocusedWindow.isMinimized()) {
-      previousFocusedWindow.restore();
-    }
-    previousFocusedWindow.focus();
-  };
-
-  restore();
-
-  if (process.platform === 'win32') {
-    setTimeout(restore, DESKTOP_LYRIC_FOCUS_RESTORE_DELAY_MS);
-  }
-};
-
-const syncWindowAppearance = () => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  desktopLyricWindow.setBackgroundColor(getBackgroundColor(snapshot.settings.theme));
-  applyWindowInteractivity();
-};
-
-const destroyDesktopLyricWindowFromFailure = (reason: 'unresponsive' | 'render-process-gone') => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || desktopLyricClosingFromFailure) return;
-  desktopLyricClosingFromFailure = true;
-  console.error(`[DesktopLyric] Window destroyed due to ${reason}`);
-  desktopLyricWindow.destroy();
 };
 
 export const getDesktopLyricWindow = () => desktopLyricWindow;
@@ -743,17 +599,14 @@ export const ensureDesktopLyricWindow = async () => {
     maxHeight: DESKTOP_LYRIC_MAX_HEIGHT,
     frame: false,
     transparent: true,
-    backgroundColor: getBackgroundColor(snapshot.settings.theme),
+    backgroundColor: getBackgroundColor(),
     show: false,
     resizable: true,
     movable: true,
     hasShadow: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    type: process.platform === 'darwin' ? 'panel' : 'toolbar',
     fullscreenable: false,
-    roundedCorners: false,
-    focusable: false,
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -769,52 +622,45 @@ export const ensureDesktopLyricWindow = async () => {
     if (snapshot.settings.enabled) {
       desktopLyricWindow?.showInactive();
     }
-    // 强制同步一次置顶和交互逻辑，防止全屏或意外重叠
-    applyWindowInteractivity();
-    syncWindowAppearance();
+    syncWindowPresentation();
+    desktopLyricWindow?.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
+      forward: true,
+    });
     sendSnapshot();
+    sendPointerState();
   });
 
-  desktopLyricWindow.on('move', () => {
-    persistWindowBounds();
-    syncDesktopLyricHoverTracking();
-  });
-  desktopLyricWindow.on('resize', () => {
-    persistWindowBounds();
-    syncDesktopLyricHoverTracking();
-  });
+  desktopLyricWindow.on('move', persistWindowBounds);
+  desktopLyricWindow.on('resize', persistWindowBounds);
   desktopLyricWindow.on('show', () => {
     desktopLyricWindow?.blur();
-    syncDesktopLyricHoverTracking();
+    syncWindowPresentation();
   });
   desktopLyricWindow.on('focus', () => {
     desktopLyricWindow?.blur();
   });
-  desktopLyricWindow.on('unresponsive', () => {
-    destroyDesktopLyricWindowFromFailure('unresponsive');
-  });
-  desktopLyricWindow.webContents.on('render-process-gone', () => {
-    destroyDesktopLyricWindowFromFailure('render-process-gone');
-  });
   desktopLyricWindow.on('hide', () => {
-    stopDesktopLyricHoverTracking();
     clearDesktopLyricDisplayMetricsTimer();
-    clearUnlockHotzoneCooldownTimer();
-    clearDesktopLyricLockPhaseTimer();
-    desktopLyricDragSession = null;
-    desktopLyricUnlockedInteractive = false;
-    setDesktopLyricPointerState({ insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false });
-    setDesktopLyricLockPhase('idle');
-  });
-  desktopLyricWindow.on('closed', () => {
-    stopDesktopLyricHoverTracking();
-    clearDesktopLyricDisplayMetricsTimer();
-    clearUnlockHotzoneCooldownTimer();
     clearDesktopLyricLockPhaseTimer();
     desktopLyricResizeSession = null;
     desktopLyricDragSession = null;
-    desktopLyricUnlockedInteractive = false;
-    desktopLyricPointerState = { insideWindow: false, insideUnlockHotzone: false, insideToolbarHotzone: false };
+    setDesktopLyricPointerState({
+      insideWindow: false,
+      insideUnlockHotzone: false,
+      insideToolbarHotzone: false,
+    });
+    setDesktopLyricLockPhase('idle');
+  });
+  desktopLyricWindow.on('closed', () => {
+    clearDesktopLyricDisplayMetricsTimer();
+    clearDesktopLyricLockPhaseTimer();
+    desktopLyricResizeSession = null;
+    desktopLyricDragSession = null;
+    desktopLyricPointerState = {
+      insideWindow: false,
+      insideUnlockHotzone: false,
+      insideToolbarHotzone: false,
+    };
     desktopLyricWindow = null;
     desktopLyricClosingFromFailure = false;
 
@@ -833,6 +679,12 @@ export const ensureDesktopLyricWindow = async () => {
       sendSnapshot();
     }
   });
+  desktopLyricWindow.on('unresponsive', () => {
+    destroyDesktopLyricWindowFromFailure('unresponsive');
+  });
+  desktopLyricWindow.webContents.on('render-process-gone', () => {
+    destroyDesktopLyricWindowFromFailure('render-process-gone');
+  });
 
   if (url) {
     await desktopLyricWindow.loadURL(`${url}#/desktop-lyric`);
@@ -844,23 +696,16 @@ export const ensureDesktopLyricWindow = async () => {
 };
 
 export const showDesktopLyricWindow = async () => {
-  const previousFocusedWindow = BrowserWindow.getFocusedWindow();
   const win = await ensureDesktopLyricWindow();
   if (win.isMinimized()) {
-    if (typeof win.restore === 'function') {
-      win.restore();
-    }
+    if (typeof win.restore === 'function') win.restore();
     win.showInactive();
   }
   if (!win.isVisible()) win.showInactive();
-  
-  // 确保在强制显示时应用正确的交互状态
-  applyWindowInteractivity();
-  syncWindowAppearance();
+  syncWindowPresentation();
+  win.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), { forward: true });
   sendSnapshot();
-
-  restorePreviousFocus(previousFocusedWindow);
-  return win;
+  return snapshot;
 };
 
 export const closeDesktopLyricWindow = () => {
@@ -868,111 +713,159 @@ export const closeDesktopLyricWindow = () => {
   desktopLyricWindow.close();
 };
 
-export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
-  const wasLocked = snapshot.settings.locked;
-  const requestedWidth = clamp(
-    Math.round(Number(partial.width ?? snapshot.settings.width)),
-    DESKTOP_LYRIC_MIN_WIDTH,
+const sanitizeDesktopLyricSettings = (
+  partial: Partial<DesktopLyricSettings>,
+  current: DesktopLyricSettings,
+): DesktopLyricSettings => {
+  const mergedBase = {
+    ...current,
+    ...partial,
+  };
+
+  const minSize = deriveMinimumWindowSizeFromFont(
+    Number(mergedBase.fontSize) || current.fontSize,
+    Boolean(mergedBase.doubleLine),
+    Number(mergedBase.lineGap) || current.lineGap,
+  );
+
+  const width = clamp(
+    Math.round(Number(mergedBase.width) || current.width),
+    minSize.width,
     DESKTOP_LYRIC_MAX_WIDTH,
   );
-  const requestedHeight = clamp(
-    Math.round(Number(partial.height ?? snapshot.settings.height)),
-    DESKTOP_LYRIC_MIN_HEIGHT,
-    DESKTOP_LYRIC_MAX_HEIGHT,
-  );
-  const mergedLineGap = clamp(
-    Math.round(Number(partial.lineGap ?? snapshot.settings.lineGap)),
-    4,
-    28,
-  );
-  const mergedDoubleLine = Boolean(partial.doubleLine ?? snapshot.settings.doubleLine);
-  const mergedFontSize =
-    partial.fontSize == null
-      ? deriveFontSizeFromWindow(requestedWidth, requestedHeight, mergedDoubleLine, mergedLineGap)
-      : clamp(Math.round(Number(partial.fontSize)), 12, 80);
-  const minimumWindowSize = deriveMinimumWindowSizeFromFont(
-    mergedFontSize,
-    mergedDoubleLine,
-    mergedLineGap,
-  );
-  const mergedWidth = clamp(
-    Math.max(requestedWidth, partial.fontSize == null ? requestedWidth : minimumWindowSize.width),
-    DESKTOP_LYRIC_MIN_WIDTH,
-    DESKTOP_LYRIC_MAX_WIDTH,
-  );
-  const mergedHeight = clamp(
-    Math.max(
-      requestedHeight,
-      partial.fontSize == null ? requestedHeight : minimumWindowSize.height,
-    ),
-    DESKTOP_LYRIC_MIN_HEIGHT,
+  const height = clamp(
+    Math.round(Number(mergedBase.height) || current.height),
+    minSize.height,
     DESKTOP_LYRIC_MAX_HEIGHT,
   );
 
-  const merged: DesktopLyricSettings = {
-    ...snapshot.settings,
-    ...partial,
-    clickThrough: Boolean(partial.locked ?? (partial.enabled === false ? false : snapshot.settings.locked)),
-    opacity: clamp(Number(partial.opacity ?? snapshot.settings.opacity), 0.25, 1),
-    scale: clamp(Number(partial.scale ?? snapshot.settings.scale), 0.75, 1.5),
+  const fontSizeFromWindow = deriveFontSizeFromWindow(
+    width,
+    height,
+    Boolean(mergedBase.doubleLine),
+    Number(mergedBase.lineGap) || current.lineGap,
+  );
+  const requestedFontSize = Math.round(Number(mergedBase.fontSize) || current.fontSize);
+  const fontSize = clamp(
+    partial.fontSize === undefined ? fontSizeFromWindow : requestedFontSize,
+    12,
+    80,
+  );
+
+  return {
+    enabled: Boolean(mergedBase.enabled),
+    locked: Boolean(mergedBase.locked),
+    clickThrough: Boolean(mergedBase.clickThrough),
+    autoShow: Boolean(mergedBase.autoShow),
+    alwaysOnTop: Boolean(mergedBase.alwaysOnTop),
+    secondaryEnabled: Boolean(mergedBase.secondaryEnabled),
+    theme: mergedBase.theme ?? current.theme,
+    opacity: clamp(Number(mergedBase.opacity) || current.opacity, 0.25, 1),
+    scale: clamp(Number(mergedBase.scale) || current.scale, 0.75, 1.5),
+    fontFamily: String(mergedBase.fontFamily || current.fontFamily),
     inactiveFontSize: clamp(
-      Math.round(Number(partial.inactiveFontSize ?? snapshot.settings.inactiveFontSize)),
+      Math.round(Number(mergedBase.inactiveFontSize) || current.inactiveFontSize),
       18,
       56,
     ),
     activeFontSize: clamp(
-      Math.round(Number(partial.activeFontSize ?? snapshot.settings.activeFontSize)),
+      Math.round(Number(mergedBase.activeFontSize) || current.activeFontSize),
       24,
       76,
     ),
     secondaryFontSize: clamp(
-      Math.round(Number(partial.secondaryFontSize ?? snapshot.settings.secondaryFontSize)),
+      Math.round(Number(mergedBase.secondaryFontSize) || current.secondaryFontSize),
       12,
       36,
     ),
-    lineGap: mergedLineGap,
-    width: mergedWidth,
-    height: mergedHeight,
-    fontFamily: String(partial.fontFamily ?? snapshot.settings.fontFamily),
-    alignment: partial.alignment ?? snapshot.settings.alignment,
-    fontSize: mergedFontSize,
-    doubleLine: mergedDoubleLine,
-    playedColor: String(partial.playedColor ?? snapshot.settings.playedColor),
-    unplayedColor: String(partial.unplayedColor ?? snapshot.settings.unplayedColor),
-    strokeColor: String(partial.strokeColor ?? snapshot.settings.strokeColor),
-    strokeEnabled: Boolean(partial.strokeEnabled ?? snapshot.settings.strokeEnabled),
-    bold: Boolean(partial.bold ?? snapshot.settings.bold),
+    lineGap: clamp(Math.round(Number(mergedBase.lineGap) || current.lineGap), 4, 28),
+    width,
+    height,
+    secondaryMode: mergedBase.secondaryMode ?? current.secondaryMode,
+    alignment: mergedBase.alignment ?? current.alignment,
+    fontSize,
+    doubleLine: Boolean(mergedBase.doubleLine),
+    playedColor: String(mergedBase.playedColor || current.playedColor),
+    unplayedColor: String(mergedBase.unplayedColor || current.unplayedColor),
+    strokeColor: String(mergedBase.strokeColor || current.strokeColor),
+    strokeEnabled: Boolean(mergedBase.strokeEnabled),
+    bold: Boolean(mergedBase.bold),
   };
+};
+
+export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSettings>) => {
+  const current = snapshot.settings;
+  const nextSettings = sanitizeDesktopLyricSettings(partial, current);
 
   snapshot = {
     ...snapshot,
-    settings: merged,
+    settings: nextSettings,
   };
 
-  if (!wasLocked && merged.locked) {
-    desktopLyricUnlockHotzoneBlockedUntil = Date.now() + 320;
-    scheduleUnlockHotzoneRefresh();
-  } else if (!merged.locked) {
-    desktopLyricUnlockHotzoneBlockedUntil = 0;
-    clearUnlockHotzoneCooldownTimer();
-  }
+  settingsStore.set({
+    enabled: nextSettings.enabled,
+    locked: nextSettings.locked,
+    clickThrough: nextSettings.clickThrough,
+    autoShow: nextSettings.autoShow,
+    alwaysOnTop: nextSettings.alwaysOnTop,
+    secondaryEnabled: nextSettings.secondaryEnabled,
+    theme: nextSettings.theme,
+    opacity: nextSettings.opacity,
+    scale: nextSettings.scale,
+    fontFamily: nextSettings.fontFamily,
+    inactiveFontSize: nextSettings.inactiveFontSize,
+    activeFontSize: nextSettings.activeFontSize,
+    secondaryFontSize: nextSettings.secondaryFontSize,
+    lineGap: nextSettings.lineGap,
+    width: nextSettings.width,
+    height: nextSettings.height,
+    secondaryMode: nextSettings.secondaryMode,
+    alignment: nextSettings.alignment,
+    fontSize: nextSettings.fontSize,
+    doubleLine: nextSettings.doubleLine,
+    playedColor: nextSettings.playedColor,
+    unplayedColor: nextSettings.unplayedColor,
+    strokeColor: nextSettings.strokeColor,
+    strokeEnabled: nextSettings.strokeEnabled,
+    bold: nextSettings.bold,
+  });
 
-  for (const [key, value] of Object.entries(merged)) {
-    settingsStore.set(key as keyof DesktopLyricPersistedSettings, value as never);
-  }
+  const storedWindowState = getWindowState();
+  const nextWindowState = constrainBoundsToDisplay({
+    width: nextSettings.width,
+    height: nextSettings.height,
+    x: storedWindowState.x,
+    y: storedWindowState.y,
+  });
+  settingsStore.set('windowState', nextWindowState);
 
   if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    desktopLyricWindow.setMinimumSize(DESKTOP_LYRIC_MIN_WIDTH, DESKTOP_LYRIC_MIN_HEIGHT);
+    desktopLyricWindow.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
     const bounds = desktopLyricWindow.getBounds();
-    if (bounds.width !== merged.width || bounds.height !== merged.height) {
-      desktopLyricWindow.setBounds({ ...bounds, width: merged.width, height: merged.height });
+    const shouldResize =
+      bounds.width !== nextWindowState.width ||
+      bounds.height !== nextWindowState.height ||
+      bounds.x !== (nextWindowState.x ?? bounds.x) ||
+      bounds.y !== (nextWindowState.y ?? bounds.y);
+    if (shouldResize) {
+      desktopLyricWindow.setBounds({
+        x: nextWindowState.x ?? bounds.x,
+        y: nextWindowState.y ?? bounds.y,
+        width: nextWindowState.width,
+        height: nextWindowState.height,
+      });
     }
-    syncWindowAppearance();
-  }
+    syncWindowPresentation();
+    desktopLyricWindow.setIgnoreMouseEvents(Boolean(nextSettings.clickThrough), { forward: true });
 
-  if (merged.enabled) {
+    if (nextSettings.enabled) {
+      if (!desktopLyricWindow.isVisible()) desktopLyricWindow.showInactive();
+    } else if (desktopLyricWindow.isVisible()) {
+      desktopLyricWindow.hide();
+    }
+  } else if (nextSettings.enabled) {
     await showDesktopLyricWindow();
-  } else {
-    closeDesktopLyricWindow();
   }
 
   sendSnapshot();
@@ -986,20 +879,14 @@ export const updateDesktopLyricSnapshot = async (partial: DesktopLyricSnapshotPa
 
   snapshot = {
     ...snapshot,
-    ...partial,
+    ...(partial.playback !== undefined ? { playback: partial.playback } : {}),
+    ...(partial.lyrics !== undefined ? { lyrics: partial.lyrics } : {}),
+    ...(partial.currentIndex !== undefined ? { currentIndex: partial.currentIndex } : {}),
     settings: snapshot.settings,
   };
 
-  const shouldAutoShow =
-    snapshot.settings.enabled &&
-    snapshot.settings.autoShow &&
-    Boolean(snapshot.playback?.trackId) &&
-    Boolean(snapshot.playback?.isPlaying);
-
-  if (shouldAutoShow) {
+  if (snapshot.settings.enabled && snapshot.settings.autoShow) {
     await showDesktopLyricWindow();
-  } else if (!snapshot.settings.enabled) {
-    closeDesktopLyricWindow();
   }
 
   sendSnapshot();
@@ -1007,32 +894,29 @@ export const updateDesktopLyricSnapshot = async (partial: DesktopLyricSnapshotPa
 };
 
 export const toggleDesktopLyricLock = async () => {
-  if (snapshot.lockPhase !== 'idle') return snapshot;
-
   const nextLocked = !snapshot.settings.locked;
   setDesktopLyricLockPhase(nextLocked ? 'locking' : 'unlocking', true);
   return updateDesktopLyricSettings({
     locked: nextLocked,
-    clickThrough: nextLocked,
+    clickThrough: nextLocked ? true : snapshot.settings.clickThrough,
   });
 };
 
 export const getDesktopLyricSnapshot = () => snapshot;
 
 export const registerDesktopLyricHandlers = () => {
-  ipcMain.handle('desktop-lyric:get-snapshot', () => snapshot);
+  ipcMain.handle('desktop-lyric:get-snapshot', () => getDesktopLyricSnapshot());
 
   ipcMain.handle('desktop-lyric:show', async () => {
-    // 强制执行 show，确保即使 enabled 已经是 true 也能重新创建/显示窗口
     const result = await updateDesktopLyricSettings({ enabled: true });
-    if (result.settings.enabled) {
-      await showDesktopLyricWindow();
-    }
+    await showDesktopLyricWindow();
     return result;
   });
 
   ipcMain.handle('desktop-lyric:hide', async () => {
-    return updateDesktopLyricSettings({ enabled: false });
+    const result = await updateDesktopLyricSettings({ enabled: false });
+    closeDesktopLyricWindow();
+    return result;
   });
 
   ipcMain.handle('desktop-lyric:toggle-lock', async () => {
@@ -1053,20 +937,15 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  ipcMain.on(
-    'desktop-lyric:set-ignore-mouse-events',
-    (_event, ignore: boolean) => {
-      desktopLyricUnlockedInteractive = !Boolean(ignore);
-      if (!snapshot.settings.locked) {
-        applyWindowInteractivity();
-      }
-    },
-  );
+  ipcMain.on('desktop-lyric:set-ignore-mouse-events', (_event, ignore: boolean) => {
+    if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+    desktopLyricWindow.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
+  });
 
   ipcMain.on(
     'desktop-lyric:drag-start',
     (_event, payload: { screenX: number; screenY: number }) => {
-      if (!payload || snapshot.settings.locked) return;
+      if (!payload) return;
       startDesktopLyricDrag(Number(payload.screenX) || 0, Number(payload.screenY) || 0);
     },
   );
@@ -1132,7 +1011,6 @@ export const registerDesktopLyricHandlers = () => {
 
 nativeTheme.on('updated', () => {
   if (snapshot.settings.theme !== 'system') return;
-  syncWindowAppearance();
   sendSnapshot();
 });
 
@@ -1141,7 +1019,6 @@ let desktopLyricDisplayListenersInstalled = false;
 const installDesktopLyricDisplayListeners = () => {
   if (desktopLyricDisplayListenersInstalled) return;
   desktopLyricDisplayListenersInstalled = true;
-
   screen.on('display-added', scheduleDesktopLyricBoundsReconcile);
   screen.on('display-removed', scheduleDesktopLyricBoundsReconcile);
   screen.on('display-metrics-changed', scheduleDesktopLyricBoundsReconcile);

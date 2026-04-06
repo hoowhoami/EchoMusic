@@ -111,6 +111,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '评论' },
       },
       {
+        path: 'mv/:id',
+        name: 'mv-detail',
+        component: () => import('@/views/details/MvDetail.vue'),
+        meta: { title: 'MV详情' },
+      },
+      {
         path: 'error',
         name: 'error',
         component: () => import('@/views/ErrorPage.vue'),

@@ -12,13 +12,7 @@ import {
   iconStepForward,
   iconX,
 } from '@/icons';
-import type {
-  DesktopLyricAlign,
-  DesktopLyricPointerState,
-  DesktopLyricSettings,
-  DesktopLyricSnapshot,
-  LyricCharacterPayload,
-} from '../../shared/desktop-lyric';
+import type { DesktopLyricSettings, DesktopLyricSnapshot, LyricCharacterPayload } from '../../shared/desktop-lyric';
 
 const defaultSettings: DesktopLyricSettings = {
   enabled: false,
@@ -58,14 +52,13 @@ const fallbackSnapshot: DesktopLyricSnapshot = {
 };
 
 const snapshot = ref<DesktopLyricSnapshot>(fallbackSnapshot);
-const pointerState = ref<DesktopLyricPointerState>({
-  insideWindow: false,
-  insideUnlockHotzone: false,
-  insideToolbarHotzone: false,
-});
+const isLinux = window.electron?.platform === 'linux';
+const shellRef = ref<HTMLElement | null>(null);
+const controlsOverlayRef = ref<HTMLElement | null>(null);
 const isDragging = ref(false);
-const isUnlockedInteractive = ref(false);
+const isHovering = ref(false);
 const nowMs = ref(0);
+const dragOffset = ref({ x: 0, y: 0 });
 const currentLineViewportRef = ref<HTMLElement | null>(null);
 const currentLineContentRef = ref<HTMLElement | null>(null);
 const nextLineViewportRef = ref<HTMLElement | null>(null);
@@ -75,63 +68,117 @@ const nextLineOverflow = ref(0);
 let animationFrame = 0;
 let measureFrame = 0;
 let disposeSnapshotListener: (() => void) | null = null;
-let disposeHoverStateListener: (() => void) | null = null;
 
 const setIgnoreMouseEvents = (ignore: boolean) => {
+  if (isLinux) return;
   window.electron?.desktopLyric?.setIgnoreMouseEvents(ignore);
 };
 
-const syncUnlockedInteractivity = (event?: MouseEvent) => {
-  if (snapshot.value.settings.locked || isDragging.value) return;
+const syncMousePassthrough = (forceInteractive = false) => {
+  if (forceInteractive || isDragging.value) {
+    setIgnoreMouseEvents(false);
+    return;
+  }
 
-  const target = event?.target instanceof Element ? event.target : null;
-  const isInControls = Boolean(target?.closest('.qq-toolbar, .qq-lock-state, .qq-resize-handle'));
-  const isInLyrics = Boolean(target?.closest('.qq-lyric-line, .qq-lyric-line-content, .qq-char'));
-  const nextInteractive = pointerState.value.insideWindow && (isUnlockedInteractive.value || isInControls || isInLyrics);
+  if (!snapshot.value.settings.clickThrough) {
+    setIgnoreMouseEvents(false);
+    return;
+  }
 
-  if (isUnlockedInteractive.value === nextInteractive) return;
-  isUnlockedInteractive.value = nextInteractive;
-  setIgnoreMouseEvents(!nextInteractive);
+  if (snapshot.value.settings.locked) {
+    const controlsVisible = controlsOverlayRef.value?.classList.contains('show-locked-controls') ?? false;
+    setIgnoreMouseEvents(!controlsVisible);
+    return;
+  }
+
+  const isMouseInControls = controlsOverlayRef.value?.matches(':hover') ?? false;
+  setIgnoreMouseEvents(!(isMouseInControls || isHovering.value));
+};
+
+const checkMousePosition = (event: MouseEvent) => {
+  const target = event.target instanceof Element ? event.target : null;
+
+  if (snapshot.value.settings.locked) {
+    const isMouseInControls =
+      target?.closest('.desktop-controls-overlay') !== null ||
+      target?.closest('.desktop-lock-button') !== null;
+
+    controlsOverlayRef.value?.classList.toggle('show-locked-controls', isMouseInControls);
+    setIgnoreMouseEvents(!isMouseInControls);
+    return;
+  }
+
+  const shell = shellRef.value;
+  if (!shell) return;
+
+  const rect = shell.getBoundingClientRect();
+  const isMouseInContainer =
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom;
+
+  const isMouseOnLyrics = target?.closest('.desktop-lyric-line-content') !== null;
+  const isMouseInControls = target?.closest('.desktop-controls-overlay') !== null;
+
+  if (isMouseOnLyrics || isMouseInControls) {
+    isHovering.value = true;
+  }
+
+  if (!isMouseInContainer) {
+    isHovering.value = false;
+  }
+
+  setIgnoreMouseEvents(!(isMouseInControls || isHovering.value));
 };
 
 const startDrag = (event: MouseEvent) => {
   if (snapshot.value.settings.locked) return;
-  if (!isUnlockedInteractive.value) return;
+  if (!isHovering.value) return;
 
   const target = event.target instanceof Element ? event.target : null;
-  const isBlockedTarget = Boolean(target?.closest('.qq-toolbar, .qq-lock-state, .qq-resize-handle, button'));
-  if (isBlockedTarget) return;
+  if (target?.closest('.desktop-controls-overlay, .desktop-resize-handle, button')) return;
 
   isDragging.value = true;
-  isUnlockedInteractive.value = true;
-  setIgnoreMouseEvents(false);
-  window.electron?.desktopLyric?.startDrag(event.screenX, event.screenY);
+  dragOffset.value = {
+    x: event.clientX,
+    y: event.clientY,
+  };
+  window.electron?.desktopLyric?.startDrag(
+    event.screenX - dragOffset.value.x,
+    event.screenY - dragOffset.value.y,
+  );
 };
 
-const handleDragMove = (event: MouseEvent) => {
-  if (!isDragging.value) {
-    syncUnlockedInteractivity(event);
-    return;
-  }
+const onDrag = (event: MouseEvent) => {
+  if (!isDragging.value) return;
+  window.electron?.desktopLyric?.updateDrag(
+    event.screenX - dragOffset.value.x,
+    event.screenY - dragOffset.value.y,
+  );
+};
 
-  window.electron?.desktopLyric?.updateDrag(event.screenX, event.screenY);
+const resetHoverState = () => {
+  isHovering.value = false;
+  controlsOverlayRef.value?.classList.remove('show-locked-controls');
+  syncMousePassthrough();
+};
+
+const handlePointerLeave = (event: MouseEvent) => {
+  const relatedTarget = event.relatedTarget;
+  if (relatedTarget instanceof Node && shellRef.value?.contains(relatedTarget)) return;
+  resetHoverState();
+};
+
+const handleShellMouseLeave = () => {
+  resetHoverState();
 };
 
 const endDrag = () => {
   if (!isDragging.value) return;
   isDragging.value = false;
   window.electron?.desktopLyric?.endDrag();
-  isUnlockedInteractive.value = false;
-  if (!snapshot.value.settings.locked) {
-    setIgnoreMouseEvents(true);
-  }
 };
-
-const alignOptions = [
-  { label: '左对齐', value: 'left' },
-  { label: '居中', value: 'center' },
-  { label: '右对齐', value: 'right' },
-];
 
 type ResizeDirection =
   | 'top'
@@ -160,10 +207,10 @@ const effectiveTheme = computed(() => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 });
 
-const isDark = computed(() => effectiveTheme.value === 'dark');
 const currentLine = computed(() => snapshot.value.lyrics[snapshot.value.currentIndex] ?? null);
 const nextLine = computed(() => snapshot.value.lyrics[snapshot.value.currentIndex + 1] ?? null);
 const playback = computed(() => snapshot.value.playback);
+const isDark = computed(() => effectiveTheme.value === 'dark');
 const isPlaying = computed(() => Boolean(playback.value?.isPlaying));
 const hasTranslation = computed(() => snapshot.value.lyrics.some((line) => Boolean(line.translated?.trim())));
 const hasRomanization = computed(() => snapshot.value.lyrics.some((line) => Boolean(line.romanized?.trim())));
@@ -171,29 +218,17 @@ const canToggleSecondary = computed(() => hasTranslation.value || hasRomanizatio
 const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
 const displayLabel = computed(() => {
   if (!snapshot.value.settings.secondaryEnabled || !canToggleSecondary.value) return '原词';
-  return lyricModeLabel.value;
-});
-const lyricModeLabel = computed(() => {
   return snapshot.value.settings.secondaryMode === 'romanization' ? '音译' : '翻译';
 });
+const lyricModeLabel = computed(() =>
+  snapshot.value.settings.secondaryMode === 'romanization' ? '音译' : '翻译',
+);
 const justifyContent = computed(() => {
   const alignment = snapshot.value.settings.alignment;
   if (alignment === 'left') return 'flex-start';
   if (alignment === 'right') return 'flex-end';
   return 'center';
 });
-const showChrome = computed(
-  () =>
-    !snapshot.value.settings.locked &&
-    snapshot.value.lockPhase !== 'unlocking' &&
-    pointerState.value.insideWindow,
-);
-const showUnlockChip = computed(
-  () =>
-    snapshot.value.settings.locked &&
-    snapshot.value.lockPhase !== 'locking' &&
-    pointerState.value.insideWindow,
-);
 
 const currentMs = computed(() => {
   const state = playback.value;
@@ -244,27 +279,18 @@ const nextText = computed(() => {
 
 watch(
   () => snapshot.value.settings.locked,
-  (locked) => {
-    if (locked) {
-      isUnlockedInteractive.value = false;
-      endDrag();
-      setIgnoreMouseEvents(true);
-      return;
-    }
-
-    isUnlockedInteractive.value = false;
-    setIgnoreMouseEvents(true);
+  () => {
+    isHovering.value = false;
+    controlsOverlayRef.value?.classList.remove('show-locked-controls');
+    syncMousePassthrough();
   },
   { immediate: true },
 );
 
 watch(
-  () => pointerState.value.insideWindow,
-  (insideWindow) => {
-    if (snapshot.value.settings.locked || isDragging.value || insideWindow) return;
-    if (!isUnlockedInteractive.value) return;
-    isUnlockedInteractive.value = false;
-    setIgnoreMouseEvents(true);
+  () => snapshot.value.settings.clickThrough,
+  () => {
+    syncMousePassthrough();
   },
 );
 
@@ -275,8 +301,8 @@ const getScrollStyle = (overflow: number) => {
   if (overflow <= 6) return undefined;
   const duration = Math.max(4.8, Math.min(12, overflow / 48 + 3.2));
   return {
-    '--qq-scroll-distance': `${overflow}px`,
-    '--qq-scroll-duration': `${duration}s`,
+    '--desktop-scroll-distance': `${overflow}px`,
+    '--desktop-scroll-duration': `${duration}s`,
   };
 };
 
@@ -330,19 +356,11 @@ watch(
   { immediate: true },
 );
 
-const syncSettings = async (partial: Partial<DesktopLyricSettings>) => {
-  if (!window.electron?.desktopLyric) return snapshot.value;
-  snapshot.value = await window.electron.desktopLyric.updateSettings({
-    ...snapshot.value.settings,
-    ...partial,
-  });
-  return snapshot.value;
-};
-
 const startResize = (direction: ResizeDirection, event: MouseEvent) => {
   if (snapshot.value.settings.locked) return;
   event.preventDefault();
   event.stopPropagation();
+  syncMousePassthrough(true);
   window.electron?.desktopLyric?.startResize(direction, event.screenX, event.screenY);
   window.addEventListener('mousemove', handleResizeMove);
   window.addEventListener('mouseup', handleResizeEnd);
@@ -354,6 +372,7 @@ const handleResizeMove = (event: MouseEvent) => {
 
 const handleResizeEnd = () => {
   window.electron?.desktopLyric?.endResize();
+  syncMousePassthrough();
   window.removeEventListener('mousemove', handleResizeMove);
   window.removeEventListener('mouseup', handleResizeEnd);
 };
@@ -366,6 +385,8 @@ const closeWindow = async () => {
 const toggleLock = async () => {
   if (!window.electron?.desktopLyric) return;
   snapshot.value = await window.electron.desktopLyric.toggleLock();
+  controlsOverlayRef.value?.classList.remove('show-locked-controls');
+  syncMousePassthrough();
 };
 
 const togglePlayback = () => {
@@ -380,12 +401,12 @@ const playNext = () => {
   window.electron?.desktopLyric?.command('nextTrack');
 };
 
-const toggleSecondary = async () => {
+const toggleSecondary = () => {
   if (!canToggleSecondary.value) return;
   window.electron?.desktopLyric?.command('toggleLyricsMode');
 };
 
-const cycleSecondaryMode = async () => {
+const cycleSecondaryMode = () => {
   if (!canCycleSecondaryMode.value) return;
   window.electron?.desktopLyric?.command('cycleLyricsMode');
 };
@@ -403,17 +424,16 @@ onMounted(async () => {
   disposeSnapshotListener =
     window.electron?.desktopLyric?.onSnapshot((nextSnapshot) => {
       snapshot.value = nextSnapshot;
+      syncMousePassthrough();
     }) ?? null;
-  disposeHoverStateListener =
-    window.electron?.desktopLyric?.onPointerState((nextPointerState) => {
-      pointerState.value = nextPointerState;
-    }) ?? null;
-  if (!snapshot.value.settings.locked) {
-    setIgnoreMouseEvents(true);
-  }
-  document.addEventListener('mousemove', handleDragMove);
+
+  setIgnoreMouseEvents(true);
+  document.addEventListener('mousemove', checkMousePosition);
   document.addEventListener('mousedown', startDrag);
+  document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup', endDrag);
+  document.addEventListener('mouseout', handlePointerLeave);
+  window.addEventListener('blur', resetHoverState);
   window.addEventListener('resize', requestMeasure);
   await nextTick();
   requestMeasure();
@@ -423,139 +443,134 @@ onMounted(async () => {
 onUnmounted(() => {
   if (animationFrame) window.cancelAnimationFrame(animationFrame);
   if (measureFrame) window.cancelAnimationFrame(measureFrame);
-  document.removeEventListener('mousemove', handleDragMove);
+  document.removeEventListener('mousemove', checkMousePosition);
   document.removeEventListener('mousedown', startDrag);
+  document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup', endDrag);
+  document.removeEventListener('mouseout', handlePointerLeave);
+  window.removeEventListener('blur', resetHoverState);
   window.removeEventListener('resize', requestMeasure);
   endDrag();
   handleResizeEnd();
-  pointerState.value = {
-    insideWindow: false,
-    insideUnlockHotzone: false,
-    insideToolbarHotzone: false,
-  };
+  isHovering.value = false;
+  controlsOverlayRef.value?.classList.remove('show-locked-controls');
   document.documentElement.classList.remove('desktop-lyric-window');
   document.body.classList.remove('desktop-lyric-window');
   document.getElementById('app')?.classList.remove('desktop-lyric-window');
   disposeSnapshotListener?.();
-  disposeHoverStateListener?.();
 });
 </script>
 
 <template>
   <div
-    class="qq-desktop-lyric"
-    :class="{ dark: isDark, hovering: showChrome }"
+    class="desktop-lyric-window"
+    :class="{ dark: isDark, hovering: isHovering && !snapshot.settings.locked, locked: snapshot.settings.locked }"
     :style="{
-      '--qq-lyric-font-size': `${snapshot.settings.fontSize}px`,
-      '--qq-lyric-next-size': `${snapshot.settings.fontSize}px`,
-      '--qq-played-color': snapshot.settings.playedColor,
-      '--qq-unplayed-color': snapshot.settings.unplayedColor,
-      '--qq-font-family': snapshot.settings.fontFamily,
-      '--qq-opacity': String(snapshot.settings.opacity),
-      '--qq-font-weight': snapshot.settings.bold ? '700' : '400',
+      '--desktop-lyric-font-size': `${snapshot.settings.fontSize}px`,
+      '--desktop-lyric-next-size': `${snapshot.settings.fontSize}px`,
+      '--desktop-played-color': snapshot.settings.playedColor,
+      '--desktop-unplayed-color': snapshot.settings.unplayedColor,
+      '--desktop-font-family': snapshot.settings.fontFamily,
+      '--desktop-opacity': String(snapshot.settings.opacity),
+      '--desktop-font-weight': snapshot.settings.bold ? '700' : '400',
     }"
   >
-    <div class="qq-shell">
+    <div ref="shellRef" class="desktop-shell" @mouseleave="handleShellMouseLeave">
       <div
         v-for="handle in resizeHandles"
         :key="handle.direction"
-        class="qq-resize-handle no-drag"
+        class="desktop-resize-handle no-drag"
         :class="handle.className"
         @mousedown="startResize(handle.direction, $event)"
       ></div>
-      <div class="qq-hit-area"></div>
-      <div class="qq-background" :class="{ visible: showChrome }"></div>
+      <div class="desktop-hit-area"></div>
+      <div class="desktop-background"></div>
 
-      <div
-        v-if="snapshot.settings.locked"
-        class="qq-lock-state no-drag"
-        :class="{ visible: showUnlockChip }"
-      >
-        <Button
-          variant="unstyled"
-          size="none"
-          class="qq-unlock-chip"
-          title="解锁桌面歌词"
-          @click="toggleLock"
-        >
-          <Icon :icon="iconLockOpen" width="14" height="14" />
-          <span>解锁</span>
-        </Button>
-      </div>
-
-      <div v-else class="qq-toolbar no-drag" :class="{ visible: showChrome }">
-        <div class="qq-toolbar-main">
-          <Button variant="unstyled" size="none" class="qq-icon-btn" @click="playPrevious">
-            <Icon :icon="iconStepBack" width="16" height="16" />
-          </Button>
-          <Button variant="unstyled" size="none" class="qq-icon-btn" @click="togglePlayback">
-            <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="16" height="16" />
-          </Button>
-          <Button variant="unstyled" size="none" class="qq-icon-btn" @click="playNext">
-            <Icon :icon="iconStepForward" width="16" height="16" />
-          </Button>
-          <span class="qq-toolbar-divider"></span>
-          <div class="qq-mode-group">
+      <div ref="controlsOverlayRef" class="desktop-controls-overlay no-drag">
+        <div class="desktop-controls-wrapper" :class="{ 'locked-controls': snapshot.settings.locked }">
+          <template v-if="!snapshot.settings.locked">
+            <Button variant="unstyled" size="none" class="desktop-icon-btn" @click="playPrevious">
+              <Icon :icon="iconStepBack" width="16" height="16" />
+            </Button>
+            <Button variant="unstyled" size="none" class="desktop-icon-btn" @click="togglePlayback">
+              <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="16" height="16" />
+            </Button>
+            <Button variant="unstyled" size="none" class="desktop-icon-btn" @click="playNext">
+              <Icon :icon="iconStepForward" width="16" height="16" />
+            </Button>
+            <span class="desktop-toolbar-divider"></span>
+            <div class="desktop-mode-group">
+              <Button
+                variant="unstyled"
+                size="none"
+                class="desktop-icon-btn desktop-toggle-btn"
+                :class="{ 'is-active': snapshot.settings.secondaryEnabled }"
+                :disabled="!canToggleSecondary"
+                title="歌词显示模式"
+                @click="toggleSecondary"
+              >
+                <Icon :icon="iconLanguage" width="14" height="14" />
+                <span class="desktop-mode-label">{{ displayLabel }}</span>
+              </Button>
+              <Button
+                variant="unstyled"
+                size="none"
+                class="desktop-icon-btn desktop-mode-switch"
+                :disabled="!canCycleSecondaryMode"
+                :title="`切换辅文类型：${lyricModeLabel}`"
+                @click="cycleSecondaryMode"
+              >
+                <Icon :icon="iconChevronUpDown" width="14" height="14" />
+              </Button>
+            </div>
             <Button
               variant="unstyled"
               size="none"
-              class="qq-icon-btn qq-toggle-btn"
-              :class="{ 'is-active': snapshot.settings.secondaryEnabled }"
-              :disabled="!canToggleSecondary"
-              title="歌词显示模式"
-              @click="toggleSecondary"
+              class="desktop-icon-btn desktop-lock-button"
+              title="锁定桌面歌词"
+              @click="toggleLock"
             >
-              <Icon :icon="iconLanguage" width="16" height="16" />
-              <span class="qq-mode-label">{{ displayLabel }}</span>
+              <Icon :icon="iconLock" width="16" height="16" />
             </Button>
+            <Button variant="unstyled" size="none" class="desktop-icon-btn" @click="closeWindow">
+              <Icon :icon="iconX" width="16" height="16" />
+            </Button>
+          </template>
+          <template v-else>
             <Button
               variant="unstyled"
               size="none"
-              class="qq-icon-btn qq-mode-switch"
-              :disabled="!canCycleSecondaryMode"
-              :title="`切换辅文类型：${lyricModeLabel}`"
-              @click="cycleSecondaryMode"
+              class="desktop-icon-btn desktop-lock-button"
+              title="解锁桌面歌词"
+              @click="toggleLock"
             >
-              <Icon :icon="iconChevronUpDown" width="16" height="16" />
+              <Icon :icon="iconLockOpen" width="16" height="16" />
             </Button>
-          </div>
-          <Button
-            variant="unstyled"
-            size="none"
-            class="qq-icon-btn"
-            title="锁定桌面歌词"
-            @click="toggleLock"
-          >
-            <Icon :icon="iconLock" width="16" height="16" />
-          </Button>
-          <Button variant="unstyled" size="none" class="qq-icon-btn" @click="closeWindow">
-            <Icon :icon="iconX" width="16" height="16" />
-          </Button>
+          </template>
         </div>
       </div>
 
-      <div class="qq-content-layout">
-        <div class="qq-top-safe"></div>
-        <div class="qq-lyric-stage" :style="{ justifyContent }">
-          <div class="qq-lyric-stack" :class="{ 'double-line': showSecondaryLine }">
+      <div class="desktop-content-layout">
+        <div class="desktop-top-safe"></div>
+        <div class="desktop-lyric-stage" :style="{ justifyContent }">
+          <div class="desktop-lyric-stack" :class="{ 'double-line': showSecondaryLine }">
             <div
               ref="currentLineViewportRef"
-              class="qq-lyric-line current"
+              class="desktop-lyric-line current"
               :class="{ 'is-scrolling': currentShouldScroll }"
               :style="{ justifyContent: currentShouldScroll ? 'flex-start' : justifyContent }"
             >
               <div
                 ref="currentLineContentRef"
                 :key="`${currentText}-${snapshot.currentIndex}`"
-                class="qq-lyric-line-content"
+                class="desktop-lyric-line-content"
                 :style="getScrollStyle(currentLineOverflow)"
               >
                 <template v-if="currentChars">
                   <span
                     v-for="(char, index) in currentChars"
                     :key="`${currentText}-${index}-${char.startTime}`"
-                    class="qq-char"
+                    class="desktop-char"
                     :style="{
                       color:
                         getCharProgress(char) >= 1
@@ -571,21 +586,22 @@ onUnmounted(() => {
                 </template>
                 <template v-else>
                   <span
-                    class="qq-char"
+                    class="desktop-char"
                     :style="{
                       color: snapshot.settings.unplayedColor,
                       WebkitTextStroke: snapshot.settings.strokeEnabled
                         ? `1px ${snapshot.settings.strokeColor}`
                         : '0 transparent',
                     }"
-                  >{{ currentText }}</span>
+                    >{{ currentText }}</span
+                  >
                 </template>
               </div>
             </div>
             <div
               v-if="showSecondaryLine"
               ref="nextLineViewportRef"
-              class="qq-lyric-line next"
+              class="desktop-lyric-line next"
               :class="{
                 'is-secondary': Boolean(currentSecondaryText),
                 'is-scrolling': nextShouldScroll,
@@ -595,7 +611,7 @@ onUnmounted(() => {
               <div
                 ref="nextLineContentRef"
                 :key="`${nextText}-${snapshot.currentIndex}`"
-                class="qq-lyric-line-content"
+                class="desktop-lyric-line-content"
                 :style="getScrollStyle(nextLineOverflow)"
               >
                 {{ nextText }}
@@ -611,7 +627,7 @@ onUnmounted(() => {
 <style scoped>
 @reference "@/style.css";
 
-.qq-desktop-lyric {
+.desktop-lyric-window {
   width: 100vw;
   height: 100vh;
   background: transparent;
@@ -619,14 +635,14 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.qq-shell {
+.desktop-shell {
   position: relative;
   width: 100%;
   height: 100%;
   padding: 0;
 }
 
-.qq-hit-area {
+.desktop-hit-area {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -634,83 +650,83 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.qq-resize-handle {
+.desktop-resize-handle {
   position: absolute;
   z-index: 5;
 }
 
-.qq-resize-handle.top,
-.qq-resize-handle.bottom {
+.desktop-resize-handle.top,
+.desktop-resize-handle.bottom {
   left: 14px;
   right: 14px;
   height: 8px;
 }
 
-.qq-resize-handle.left,
-.qq-resize-handle.right {
+.desktop-resize-handle.left,
+.desktop-resize-handle.right {
   top: 14px;
   bottom: 14px;
   width: 8px;
 }
 
-.qq-resize-handle.top {
+.desktop-resize-handle.top {
   top: 0;
   cursor: ns-resize;
 }
 
-.qq-resize-handle.bottom {
+.desktop-resize-handle.bottom {
   bottom: 0;
   cursor: ns-resize;
 }
 
-.qq-resize-handle.left {
+.desktop-resize-handle.left {
   left: 0;
   cursor: ew-resize;
 }
 
-.qq-resize-handle.right {
+.desktop-resize-handle.right {
   right: 0;
   cursor: ew-resize;
 }
 
-.qq-resize-handle.top-left,
-.qq-resize-handle.top-right,
-.qq-resize-handle.bottom-left,
-.qq-resize-handle.bottom-right {
+.desktop-resize-handle.top-left,
+.desktop-resize-handle.top-right,
+.desktop-resize-handle.bottom-left,
+.desktop-resize-handle.bottom-right {
   width: 14px;
   height: 14px;
 }
 
-.qq-resize-handle.top-left {
+.desktop-resize-handle.top-left {
   top: 0;
   left: 0;
   cursor: nwse-resize;
 }
 
-.qq-resize-handle.top-right {
+.desktop-resize-handle.top-right {
   top: 0;
   right: 0;
   cursor: nesw-resize;
 }
 
-.qq-resize-handle.bottom-left {
+.desktop-resize-handle.bottom-left {
   bottom: 0;
   left: 0;
   cursor: nesw-resize;
 }
 
-.qq-resize-handle.bottom-right {
+.desktop-resize-handle.bottom-right {
   right: 0;
   bottom: 0;
   cursor: nwse-resize;
 }
 
-.qq-background {
+.desktop-background {
   position: absolute;
   inset: 0;
   z-index: 1;
   border-radius: 0;
-  background: rgba(255, 255, 255, calc(var(--qq-opacity) * 0.96));
+  background: rgba(255, 255, 255, calc(var(--desktop-opacity) * 0.96));
   border: 1px solid rgba(255, 255, 255, 0.82);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(18px);
@@ -718,18 +734,17 @@ onUnmounted(() => {
   transition: opacity 160ms ease;
 }
 
-.qq-background.visible {
+.desktop-lyric-window.hovering .desktop-background {
   opacity: 1;
 }
 
-.dark .qq-background {
-  background: rgba(13, 18, 29, calc(var(--qq-opacity) * 0.88));
+.dark .desktop-background {
+  background: rgba(13, 18, 29, calc(var(--desktop-opacity) * 0.88));
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
 }
 
-.qq-toolbar,
-.qq-lock-state {
+.desktop-controls-overlay {
   position: absolute;
   top: 8px;
   left: 50%;
@@ -739,131 +754,153 @@ onUnmounted(() => {
   transition:
     opacity 160ms ease,
     transform 160ms ease;
+  pointer-events: auto;
 }
 
-.qq-toolbar.visible,
-.qq-lock-state.visible {
+.desktop-lyric-window.hovering .desktop-controls-overlay {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
 
-.qq-toolbar-main {
+.desktop-lyric-window.locked .desktop-controls-overlay {
+  opacity: 0;
+}
+
+.desktop-lyric-window.locked .desktop-controls-overlay.show-locked-controls {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.desktop-controls-wrapper {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: rgba(0, 0, 0, 0.56);
+  color: rgba(255, 255, 255, 0.88);
+  padding: 0;
 }
 
-.dark .qq-toolbar-main {
-  color: rgba(255, 255, 255, 0.72);
+.desktop-controls-wrapper.locked-controls {
+  padding: 0;
+  min-width: auto;
 }
 
-.qq-icon-btn,
-.qq-unlock-chip {
+.desktop-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  backdrop-filter: blur(10px);
-}
-
-.qq-icon-btn {
   width: 28px;
   height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  backdrop-filter: none;
 }
 
-.qq-mode-btn:disabled {
-  opacity: 0.38;
-}
-
-.qq-mode-group {
+.desktop-mode-group {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0;
+  gap: 0;
+  padding: 3px;
+  height: 33.5px;
+  box-sizing: border-box;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
+  backdrop-filter: blur(18px);
 }
 
-.qq-toggle-btn.is-active {
-  background: rgba(0, 0, 0, 0.12);
+.desktop-toggle-btn.is-active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 10px 24px rgba(148, 163, 184, 0.14);
 }
 
-.qq-mode-btn,
-.qq-toggle-btn {
-  width: auto;
-  min-width: 26px;
-  padding: 0 8px;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  box-shadow: none;
-}
-
-.qq-mode-switch {
-  width: 26px;
-  height: 26px;
+.desktop-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: max-content;
+  flex-shrink: 0;
+  height: 27.5px;
+  padding: 0 12px;
+  gap: 6px;
   border-radius: 999px;
   background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: none;
+  transition: all 0.2s ease;
 }
 
-.qq-mode-label {
+.desktop-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27.5px;
+  height: 27.5px;
+  margin-left: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+  opacity: 0.92;
+  transition: all 0.2s ease;
+}
+
+.desktop-mode-label {
+  display: inline-block;
+  min-width: 2em;
   line-height: 1;
   white-space: nowrap;
+  color: rgba(15, 23, 42, 0.88);
 }
 
-.dark .qq-mode-group {
-  background: rgba(255, 255, 255, 0.08);
+.desktop-mode-switch:hover,
+.desktop-toggle-btn:hover {
+  transform: translateY(-1px);
 }
 
-.dark .qq-toggle-btn.is-active {
-  background: rgba(255, 255, 255, 0.16);
+.desktop-mode-switch:hover {
+  background: rgba(255, 255, 255, 0.62);
 }
 
-.qq-mode-switch:hover,
-.qq-toggle-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.dark .qq-mode-switch:hover,
-.dark .qq-toggle-btn:hover {
+.desktop-icon-btn:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.qq-unlock-chip {
-  height: 28px;
-  padding: 0 10px;
-  gap: 4px;
-  font-size: 11px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.28);
+.dark .desktop-mode-group {
+  background: rgba(14, 18, 26, 0.66);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.qq-icon-btn:hover,
-.qq-unlock-chip:hover {
-  background: rgba(0, 0, 0, 0.06);
+.dark .desktop-toggle-btn.is-active {
+  background: rgba(40, 54, 78, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.2);
 }
 
-.dark .qq-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+.dark .desktop-mode-label {
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.dark .qq-unlock-chip {
-  background: rgba(15, 23, 42, 0.6);
+.dark .desktop-mode-switch {
+  background: rgba(28, 36, 52, 0.92);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
-.qq-toolbar-divider {
+.dark .desktop-mode-switch:hover {
+  background: rgba(40, 54, 78, 0.96);
+}
+
+.desktop-toolbar-divider {
   width: 1px;
   height: 20px;
   margin: 0 4px;
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.dark .qq-toolbar-divider {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.qq-content-layout {
+.desktop-content-layout {
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -871,11 +908,11 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.qq-top-safe {
+.desktop-top-safe {
   flex: 0 0 42px;
 }
 
-.qq-lyric-stage {
+.desktop-lyric-stage {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -883,7 +920,7 @@ onUnmounted(() => {
   padding: 6px 20px 8px;
 }
 
-.qq-lyric-stack {
+.desktop-lyric-stack {
   flex: 1;
   width: 100%;
   min-height: 0;
@@ -894,77 +931,66 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.qq-lyric-stack.double-line {
+.desktop-lyric-stack.double-line {
   gap: 10px;
   justify-content: space-between;
 }
 
-.qq-lyric-line {
+.desktop-lyric-line {
+  min-width: 0;
+  width: 100%;
   display: flex;
   align-items: center;
-  width: 100%;
-  min-width: 0;
-  font-family: var(--qq-font-family);
-  font-weight: var(--qq-font-weight);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
   overflow: hidden;
 }
 
-.qq-lyric-line-content {
+.desktop-lyric-line.current {
+  min-height: calc(var(--desktop-lyric-font-size) * 1.36);
+  font-size: var(--desktop-lyric-font-size);
+  font-family: var(--desktop-font-family);
+  font-weight: var(--desktop-font-weight);
+  line-height: 1.28;
+}
+
+.desktop-lyric-line.next {
+  min-height: calc(var(--desktop-lyric-next-size) * 1.28);
+  font-size: var(--desktop-lyric-next-size);
+  font-family: var(--desktop-font-family);
+  font-weight: calc(var(--desktop-font-weight) - 100);
+  line-height: 1.22;
+  opacity: 0.88;
+}
+
+.desktop-lyric-line.next.is-secondary {
+  font-size: calc(var(--desktop-lyric-next-size) * 0.72);
+  opacity: 0.82;
+}
+
+.desktop-lyric-line-content {
   display: inline-flex;
   align-items: center;
-  min-width: max-content;
-  max-width: none;
-  transform: translate3d(0, 0, 0);
+  gap: 0;
+  white-space: nowrap;
+  transform: translateX(0);
+}
+
+.desktop-lyric-line.is-scrolling .desktop-lyric-line-content {
+  animation: desktop-lyric-marquee var(--desktop-scroll-duration) ease-in-out infinite alternate;
   will-change: transform;
 }
 
-.qq-lyric-line.is-scrolling .qq-lyric-line-content {
-  animation: qq-lyric-marquee var(--qq-scroll-duration, 6s) linear forwards;
-}
-
-.qq-lyric-line.current {
-  font-size: var(--qq-lyric-font-size);
-  line-height: 1.28;
-}
-
-.qq-lyric-stack:not(.double-line) .qq-lyric-line.current {
-  min-height: calc(var(--qq-lyric-font-size) * 1.46);
-}
-
-.qq-lyric-line.next {
-  font-size: var(--qq-lyric-next-size);
-  line-height: 1.28;
-  color: rgba(127, 127, 127, 0.9);
-}
-
-.qq-lyric-line.next.is-secondary {
-  opacity: 0.92;
-}
-
-.dark .qq-lyric-line.next {
-  color: rgba(220, 220, 220, 0.72);
-}
-
-.qq-char {
+.desktop-char {
   display: inline-block;
   white-space: pre;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: color 90ms linear;
 }
 
-.dark .qq-char {
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
-}
-
-@keyframes qq-lyric-marquee {
-  0%,
-  22% {
-    transform: translate3d(0, 0, 0);
+@keyframes desktop-lyric-marquee {
+  from {
+    transform: translateX(0);
   }
-
-  100% {
-    transform: translate3d(calc(-1 * var(--qq-scroll-distance, 0px)), 0, 0);
+  to {
+    transform: translateX(calc(var(--desktop-scroll-distance, 0px) * -1));
   }
 }
 </style>

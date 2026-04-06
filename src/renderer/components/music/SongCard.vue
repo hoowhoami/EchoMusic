@@ -19,6 +19,7 @@ import { useUserStore } from '@/stores/user';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconMessageCircle, iconHeart, iconHeartFilled } from '@/icons';
+import MvIcon from '@/components/ui/MvIcon.vue';
 import { isSameSong } from '@/utils/song';
 import { addSongToPlayNext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
@@ -49,6 +50,7 @@ interface Props {
   mixSongId?: string | number;
   fileId?: string | number;
   source?: string;
+  mvHash?: string;
   parentPlaylistId?: string | number;
   enableRemoveFromPlaylist?: boolean;
   disableLinks?: boolean;
@@ -63,6 +65,7 @@ const props = withDefaults(defineProps<Props>(), {
   mixSongId: '',
   fileId: '',
   source: '',
+  mvHash: '',
   parentPlaylistId: '',
   enableRemoveFromPlaylist: false,
   showAlbum: true,
@@ -109,7 +112,7 @@ const songState = computed<Song>(() => ({
   mixSongId: props.mixSongId ?? '',
   fileId: props.fileId,
   source: props.source,
-  mvHash: undefined,
+  mvHash: props.mvHash,
   privilege: props.privilege,
   payType: props.payType,
   oldCpy: props.oldCpy,
@@ -228,6 +231,29 @@ const goToSongDetail = () => {
   });
 };
 
+const hasMv = computed(() => Boolean((props.mvHash ?? '').trim()));
+
+const goToMvDetail = () => {
+  const mvHash = String(props.mvHash ?? '').trim();
+  if (!mvHash) return;
+  const albumAudioId = resolveNumericId(props.mixSongId) ?? resolveNumericId(props.id) ?? String(props.id);
+  router.push({
+    name: 'mv-detail',
+    params: { id: mvHash },
+    query: {
+      hash: mvHash,
+      albumAudioId: albumAudioId,
+      title: props.title,
+      artist: props.artist,
+      cover: props.coverUrl ?? '',
+      album: props.album ?? '',
+      songId: props.id,
+      mixSongId: props.mixSongId ?? props.id,
+      from: router.currentRoute.value.fullPath,
+    },
+  });
+};
+
 const buildSongPayload = (): Song => ({
   id: String(props.id),
   title: props.title,
@@ -246,7 +272,7 @@ const buildSongPayload = (): Song => ({
   mixSongId: props.mixSongId ?? props.id,
   fileId: props.fileId,
   source: props.source,
-  mvHash: undefined,
+  mvHash: props.mvHash,
   privilege: props.privilege,
   payType: props.payType,
   oldCpy: props.oldCpy,
@@ -376,6 +402,17 @@ const handleFavorite = () => {
 
         <!-- 详情及评论 / 收藏 -->
         <div v-if="showMore" class="song-actions ml-3 mr-[10px]" @click.stop>
+          <Button
+            v-if="hasMv"
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="song-action song-action-hover-only"
+            title="播放 MV"
+            @click.stop="goToMvDetail"
+          >
+            <MvIcon class="w-4 h-4" />
+          </Button>
           <Button variant="unstyled" size="none" type="button" class="song-action song-action-hover-only" title="详情及评论" @click.stop="goToSongDetail">
             <Icon :icon="iconMessageCircle" width="16" height="16" />
           </Button>

@@ -185,6 +185,7 @@ const handleRemove = (song: Song) => {
   const list = playlistStore.defaultList;
   const index = list.findIndex((item) => String(item.id) === targetId);
   if (index === -1) return;
+  const wasPlaying = playerStore.isPlaying;
   const nextList = list.filter((item) => String(item.id) !== targetId);
   playlistStore.removeFromQueue(targetId);
 
@@ -196,7 +197,9 @@ const handleRemove = (song: Song) => {
   }
 
   const nextIndex = Math.min(index, nextList.length - 1);
-  void playerStore.playTrack(String(nextList[nextIndex].id), nextList);
+  void playerStore.playTrack(String(nextList[nextIndex].id), nextList, {
+    autoPlay: wasPlaying,
+  });
 };
 
 const handleClear = () => {
@@ -304,6 +307,7 @@ const handleClear = () => {
               :duration="entry.data.track.duration"
               :audioUrl="entry.data.track.audioUrl"
               :source="entry.data.track.source"
+              :mvHash="entry.data.track.mvHash"
               :mixSongId="entry.data.track.mixSongId"
               :fileId="entry.data.track.fileId"
               :privilege="entry.data.track.privilege"
@@ -326,9 +330,13 @@ const handleClear = () => {
             class="queue-remove"
             variant="unstyled"
             size="none"
-            :class="{ 'is-hidden': String(entry.data.track.id) === String(currentTrackId) }"
-            :disabled="String(entry.data.track.id) === String(currentTrackId)"
-            title="从队列移除"
+            :title="
+              String(entry.data.track.id) === String(currentTrackId)
+                ? playerStore.isPlaying
+                  ? '移出队列并播放下一首'
+                  : '移出队列并切换到下一首'
+                : '从队列移除'
+            "
             @click="handleRemove(entry.data.track)"
           >
             <Icon :icon="iconTrash" width="14" height="14" />

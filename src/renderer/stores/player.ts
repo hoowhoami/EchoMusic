@@ -859,7 +859,11 @@ export const usePlayerStore = defineStore('player', {
       );
     },
 
-    async playTrack(id: string, playlist?: Song[], options?: { preserveFailureChain?: boolean }) {
+    async playTrack(
+      id: string,
+      playlist?: Song[],
+      options?: { preserveFailureChain?: boolean; autoPlay?: boolean },
+    ) {
       const playlistStore = usePlaylistStore();
       const lyricStore = useLyricStore();
       const settingStore = useSettingStore();
@@ -907,7 +911,8 @@ export const usePlayerStore = defineStore('player', {
         return;
       }
 
-      const wasPlaying = this.isPlaying;
+      const autoPlay = options?.autoPlay ?? true;
+      const wasPlaying = autoPlay ? this.isPlaying : false;
 
       if (wasPlaying && settingStore.volumeFade) {
         const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1000);
@@ -1016,7 +1021,9 @@ export const usePlayerStore = defineStore('player', {
       engine.setSource(resolved.url);
 
       try {
-        await engine.play();
+        if (autoPlay) {
+          await engine.play();
+        }
         if (requestSeq !== this.playbackRequestSeq) {
           logger.info('PlayerStore', 'Ignore stale playTrack after engine.play', {
             requestSeq,
@@ -1028,16 +1035,25 @@ export const usePlayerStore = defineStore('player', {
         logger.info('PlayerStore', 'Play track succeeded', {
           track: summarizeSong(track),
           wasPlaying,
+          autoPlay,
           playlistLength: sourceList.length,
         });
         this.isLoading = false;
         this.autoNextAttempts = 0;
         this.autoNextSourceTrackId = String(track.id);
         this.clearAutoNextTimer();
-        if (settingStore.volumeFade) {
+        if (autoPlay && settingStore.volumeFade) {
           this.fadeIn();
         } else {
           engine.setVolume(this.volume);
+        }
+        if (!autoPlay) {
+          this.isPlaying = false;
+          engine.updateMediaPlaybackState(
+            buildStoppedPlaybackState({
+              playbackRate: this.playbackRate,
+            }),
+          );
         }
         void this.fetchClimaxMarks(track);
         if (this.pendingSettingRefresh) {
