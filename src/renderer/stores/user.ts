@@ -180,9 +180,7 @@ export const useUserStore = defineStore('user', {
       this.isAutoClaimingVip = true;
       const toastStore = useToastStore();
       try {
-        if (!this.info) {
-          await this.fetchUserInfo();
-        }
+        await this.fetchUserInfo();
 
         const today = new Date().toISOString().split('T')[0];
         const recordRes = await getVipMonthRecord();
@@ -195,6 +193,8 @@ export const useUserStore = defineStore('user', {
           const claimRes = await claimDayVip(today) as { status?: number };
           isTvipClaimed = claimRes?.status === 1;
         }
+
+        await this.fetchUserInfo();
 
         const vipInfo = (this.info?.extendsInfo?.vip ?? this.info?.vip ?? {}) as Record<string, unknown>;
         const busiVip = Array.isArray(vipInfo.busi_vip) ? (vipInfo.busi_vip as Array<Record<string, unknown>>) : [];
@@ -209,6 +209,7 @@ export const useUserStore = defineStore('user', {
         this.setClaimStatus(isTvipClaimed, isSvipClaimed);
         if (isTvipClaimed || isSvipClaimed) {
           await this.fetchUserInfo();
+          this.hasFetchedUserInfo = true;
         }
       } catch (error) {
         logger.warn('UserStore', 'Auto receive VIP skipped:', error);

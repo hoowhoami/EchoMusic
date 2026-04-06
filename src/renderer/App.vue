@@ -6,13 +6,11 @@ import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
-import { useUserStore } from './stores/user';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/utils/desktopLyric';
 
 const player = usePlayerStore();
 const settings = useSettingStore();
-const user = useUserStore();
 const route = useRoute();
 const isDesktopLyricWindow = () => route.name === 'desktop-lyric';
 let disposeShortcuts: (() => void) | null = null;
@@ -48,9 +46,6 @@ onMounted(() => {
   settings.syncRememberWindowSize();
   if (!isDesktopLyricWindow()) {
     settings.syncPreventSleep(player.isPlaying);
-  }
-  if (settings.autoReceiveVip && user.isLoggedIn) {
-    void user.autoReceiveVipIfNeeded();
   }
   if (!isDesktopLyricWindow()) {
     disposeShortcuts = initShortcutSync();
@@ -88,15 +83,6 @@ watch(() => player.isPlaying, (isPlaying) => {
 watch(() => player.playMode, () => {
   syncTrayPlayback();
 });
-watch(
-  () => [settings.autoReceiveVip, user.isLoggedIn],
-  ([enabled, loggedIn]) => {
-    if (enabled && loggedIn) {
-      void user.autoReceiveVipIfNeeded();
-    }
-  },
-  { immediate: true },
-);
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
   () => {

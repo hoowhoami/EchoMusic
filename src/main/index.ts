@@ -7,6 +7,10 @@ import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 
 const WM_TASKBARCREATED = 0x031a;
 
+if (process.platform === 'win32' && app.isPackaged) {
+  app.commandLine.appendSwitch('no-sandbox');
+}
+
 // --- 初始化日志 ---
 initLogger();
 
@@ -39,12 +43,6 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    try {
-      await startApiServer();
-    } catch (err) {
-      console.error('[Main] Failed to start API server:', err);
-    }
-
     const trayContext = {
       getMainWindow,
       restoreWindow,
@@ -53,6 +51,10 @@ if (!gotTheLock) {
     await createWindow();
     initTray(trayContext);
     installWindowsTrayRecovery();
+
+    void startApiServer().catch((err) => {
+      console.error('[Main] Failed to start API server:', err);
+    });
 
     if (process.platform === 'darwin') {
       app.dock?.setMenu(createDockMenu());

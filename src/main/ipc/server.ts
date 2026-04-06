@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { startApiServer, stopApiServer } from '../server';
+import { getApiServerStatus, startApiServer, stopApiServer } from '../server';
 
 export const registerApiServerHandlers = () => {
   ipcMain.handle('api-server:start', async () => {
@@ -9,6 +9,10 @@ export const registerApiServerHandlers = () => {
     } catch (error) {
       return { success: false, error: String(error) };
     }
+  });
+
+  ipcMain.handle('api-server:status', () => {
+    return getApiServerStatus();
   });
 
   ipcMain.on('api-server:stop', () => {

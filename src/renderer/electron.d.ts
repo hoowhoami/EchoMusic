@@ -1,4 +1,10 @@
-import type { DesktopLyricPointerState, DesktopLyricSettings, DesktopLyricSnapshot, DesktopLyricSnapshotPatch } from '../shared/desktop-lyric';
+import type { ApiServerStatus } from '../shared/api-server';
+import type {
+  DesktopLyricPointerState,
+  DesktopLyricSettings,
+  DesktopLyricSnapshot,
+  DesktopLyricSnapshotPatch,
+} from '../shared/desktop-lyric';
 
 export interface IElectronAPI {
   platform: string;
@@ -14,6 +20,8 @@ export interface IElectronAPI {
   windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;
+    status: () => Promise<ApiServerStatus>;
+    onStatusChanged: (func: (status: ApiServerStatus) => void) => () => void;
     stop: () => void;
   };
   tray: {
@@ -60,5 +68,4 @@ declare global {
   }
 }
 
-// 确保这是一个模块
 export {};

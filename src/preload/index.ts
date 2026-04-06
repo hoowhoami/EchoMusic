@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import log from 'electron-log/renderer';
-import type { DesktopLyricPointerState, DesktopLyricSettings, DesktopLyricSnapshot, DesktopLyricSnapshotPatch } from '../shared/desktop-lyric';
+import type { ApiServerStatus } from '../shared/api-server';
+import type {
+  DesktopLyricPointerState,
+  DesktopLyricSettings,
+  DesktopLyricSnapshot,
+  DesktopLyricSnapshotPatch,
+} from '../shared/desktop-lyric';
 
 const ipcListenerMap = new Map<string, WeakMap<(...args: any[]) => void, (...args: any[]) => void>>();
 
@@ -47,19 +53,27 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.send('window-control', action),
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
+    status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,
+    onStatusChanged: (func: (status: ApiServerStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: ApiServerStatus) => func(status);
+      ipcRenderer.on('api-server:status-changed', listener);
+      return () => ipcRenderer.removeListener('api-server:status-changed', listener);
+    },
     stop: () => ipcRenderer.send('api-server:stop'),
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: 'list' | 'random' | 'single' }) =>
       ipcRenderer.send('tray:sync-playback', payload),
     onSetPlayMode: (func: (playMode: 'list' | 'random' | 'single') => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, playMode: 'list' | 'random' | 'single') => func(playMode);
+      const listener = (_event: Electron.IpcRendererEvent, playMode: 'list' | 'random' | 'single') =>
+        func(playMode);
       ipcRenderer.on('tray:set-play-mode', listener);
       return () => ipcRenderer.removeListener('tray:set-play-mode', listener);
     },
   },
   desktopLyric: {
-    getSnapshot: () => ipcRenderer.invoke('desktop-lyric:get-snapshot') as Promise<DesktopLyricSnapshot>,
+    getSnapshot: () =>
+      ipcRenderer.invoke('desktop-lyric:get-snapshot') as Promise<DesktopLyricSnapshot>,
     show: () => ipcRenderer.invoke('desktop-lyric:show') as Promise<DesktopLyricSnapshot>,
     hide: () => ipcRenderer.invoke('desktop-lyric:hide') as Promise<DesktopLyricSnapshot>,
     toggleLock: () => ipcRenderer.invoke('desktop-lyric:toggle-lock') as Promise<DesktopLyricSnapshot>,
@@ -98,8 +112,7 @@ contextBridge.exposeInMainWorld('electron', {
         | 'nextTrack'
         | 'toggleLyricsMode'
         | 'cycleLyricsMode',
-    ) =>
-      ipcRenderer.send('desktop-lyric:command', command),
+    ) => ipcRenderer.send('desktop-lyric:command', command),
   },
-  log: log.functions
+  log: log.functions,
 });

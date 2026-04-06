@@ -37,10 +37,15 @@ const playModeLabelMap: Record<PlayMode, string> = {
 };
 
 const resolveTrayIconPath = () => {
+  const shouldUseLightTrayIcon =
+    process.platform === 'win32'
+      ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+      : nativeTheme.shouldUseDarkColors;
+
   const iconName = process.platform === 'darwin'
     ? 'IconTemplate.png'
     : process.platform === 'win32'
-      ? (nativeTheme.shouldUseDarkColors ? 'win_tray_icon_light.ico' : 'win_tray_icon_dark.ico')
+      ? (shouldUseLightTrayIcon ? 'win_tray_icon_light.ico' : 'win_tray_icon_dark.ico')
       : 'linux_tray_icon.png';
 
   if (app.isPackaged) {

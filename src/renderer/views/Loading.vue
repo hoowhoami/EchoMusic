@@ -1,21 +1,28 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { registerDevice } from '@/api/user';
 import { iconTriangleAlert } from '@/icons';
 import { useDeviceStore, type DeviceInfo } from '@/stores/device';
-import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
+import { useUserStore } from '@/stores/user';
 import logger from '@/utils/logger';
 import Button from '@/components/ui/Button.vue';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
+import type { ApiServerStatus } from '@/../shared/api-server';
 
 const router = useRouter();
 const deviceStore = useDeviceStore();
-const userStore = useUserStore();
+const settingStore = useSettingStore();
 const toastStore = useToastStore();
+const userStore = useUserStore();
 const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
+const isDeviceReady = ref(false);
+const hasCompletedStartup = ref(false);
+let disposeStatusListener: (() => void) | undefined;
+let isNavigating = false;
 
 const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
   if (!payload || typeof payload !== 'object') return null;
@@ -45,8 +52,15 @@ const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
   };
 };
 
+const navigateToHome = () => {
+  if (isNavigating) return;
+  isNavigating = true;
+  router.push('/main/home');
+};
+
 const ensureDeviceReady = async () => {
-  if (deviceStore.info?.dfid) {
+  if (deviceStore.info?.dfid || isDeviceReady.value) {
+    isDeviceReady.value = true;
     return;
   }
 
@@ -59,53 +73,104 @@ const ensureDeviceReady = async () => {
     toastStore.actionFailed('注册设备');
     throw new Error('设备注册失败');
   }
-  const deviceInfo = extractDeviceInfo(response);
 
+  const deviceInfo = extractDeviceInfo(response);
   if (!deviceInfo?.dfid) {
     throw new Error('设备注册失败');
   }
 
   deviceStore.setDeviceInfo(deviceInfo);
+  isDeviceReady.value = true;
   logger.info('Loading', 'Device registered', deviceInfo);
 };
 
-const startServer = async () => {
+const maybeAutoReceiveVip = async () => {
+  if (!settingStore.autoReceiveVip || !userStore.isLoggedIn) return;
+
   try {
-    statusMessage.value = '正在初始化音乐引擎...';
+    await userStore.fetchUserInfoOnce();
+    await userStore.autoReceiveVipIfNeeded();
+  } catch (error) {
+    logger.warn('Loading', 'Auto receive VIP after startup skipped:', error);
+  }
+};
+
+const completeStartup = async () => {
+  if (hasCompletedStartup.value) return;
+  hasCompletedStartup.value = true;
+
+  await maybeAutoReceiveVip();
+
+  statusMessage.value = '引擎就绪，正在开启音乐世界...';
+  window.setTimeout(() => {
+    navigateToHome();
+  }, 800);
+};
+
+const applyStatus = async (status: ApiServerStatus) => {
+  logger.info('Loading', 'API status changed', status);
+
+  if (status.state === 'ready') {
     hasError.value = false;
-
-    // 调用主进程暴露的 API Server 启动方法
-    const result = await window.electron.apiServer.start();
-
-    if (result && result.success) {
+    try {
       await ensureDeviceReady();
-
-      statusMessage.value = '引擎就绪，正在开启音乐世界...';
-      // 增加一点点延迟，让用户看清状态切换
-      setTimeout(() => {
-        navigateToHome();
-      }, 800);
-    } else {
-      statusMessage.value = result?.error || '服务启动失败';
+      await completeStartup();
+    } catch (error) {
+      logger.error('Loading', 'Device init failed:', error);
+      statusMessage.value = error instanceof Error ? error.message : String(error);
       hasError.value = true;
     }
-  } catch (e) {
-    logger.error('Loading', 'Start error:', e);
-    statusMessage.value = '启动异常: ' + e;
+    return;
+  }
+
+  if (status.state === 'failed') {
+    statusMessage.value = status.error || '服务启动失败';
+    hasError.value = true;
+    return;
+  }
+
+  hasError.value = false;
+  statusMessage.value =
+    status.state === 'starting' ? '正在初始化音乐引擎...' : '正在等待音乐引擎启动...';
+};
+
+const initStatus = async () => {
+  try {
+    const status = await window.electron.apiServer.status();
+    await applyStatus(status);
+  } catch (error) {
+    logger.error('Loading', 'Status init failed:', error);
+    statusMessage.value = '读取启动状态失败';
     hasError.value = true;
   }
 };
 
-const navigateToHome = () => {
-  router.push('/main/home');
+const retryStart = async () => {
+  hasCompletedStartup.value = false;
+  hasError.value = false;
+  statusMessage.value = '正在重新启动音乐引擎...';
+
+  const result = await window.electron.apiServer.start();
+  if (!result?.success) {
+    statusMessage.value = result?.error || '服务启动失败';
+    hasError.value = true;
+  }
 };
 
 const closeWindow = () => {
   window.close();
 };
 
-onMounted(() => {
-  startServer();
+onMounted(async () => {
+  disposeStatusListener = window.electron.apiServer.onStatusChanged((status) => {
+    void applyStatus(status);
+  });
+
+  await initStatus();
+});
+
+onUnmounted(() => {
+  disposeStatusListener?.();
 });
 </script>
 
@@ -113,20 +178,15 @@ onMounted(() => {
   <div
     class="loading-view h-full w-full relative overflow-hidden bg-bg-main text-text-main select-none transition-colors duration-500"
   >
-    <!-- 1. 窗口控制 -->
     <OverlayHeader />
 
-    <!-- 2. 背景渐变 -->
     <div class="absolute inset-0 bg-gradient-to-b from-bg-sidebar to-bg-main opacity-50"></div>
 
-    <!-- 3. 装饰圆 -->
     <div
       class="absolute -top-[100px] -right-[100px] w-[300px] h-[300px] rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
     ></div>
 
-    <!-- 4. 主体内容 -->
     <main class="relative h-full flex flex-col items-center justify-center">
-      <!-- Logo 容器 -->
       <div
         class="w-[120px] h-[120px] bg-bg-card border border-border-light rounded-[32px] flex flex-col items-center justify-center shadow-sm mb-[60px]"
       >
@@ -136,9 +196,7 @@ onMounted(() => {
         >
       </div>
 
-      <!-- 动画 & 状态 -->
       <div v-if="!hasError" class="flex flex-col items-center space-y-6">
-        <!-- 三点跳动动画 -->
         <div class="flex items-center gap-1.5">
           <div
             class="w-2 h-2 rounded-full bg-primary/60 animate-bounce [animation-delay:-0.3s]"
@@ -156,7 +214,6 @@ onMounted(() => {
         </p>
       </div>
 
-      <!-- 错误状态 -->
       <div v-else class="flex flex-col items-center space-y-6 px-10">
         <div class="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-2">
           <Icon class="text-red-500" :icon="iconTriangleAlert" width="32" height="32" />
@@ -166,7 +223,7 @@ onMounted(() => {
           <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
         </div>
         <div class="flex gap-4 pt-6 no-drag">
-          <Button variant="primary" size="sm" @click="startServer">
+          <Button variant="primary" size="sm" @click="retryStart">
             重试启动
           </Button>
           <Button variant="secondary" size="sm" @click="closeWindow">
@@ -176,7 +233,6 @@ onMounted(() => {
       </div>
     </main>
 
-    <!-- 5. 底部标语 -->
     <footer class="absolute bottom-10 left-0 right-0 text-center">
       <span
         class="text-[12px] font-bold text-text-main/40 uppercase tracking-[1.5px] tracking-widest"
