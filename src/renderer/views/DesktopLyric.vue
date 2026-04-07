@@ -789,14 +789,6 @@ onUnmounted(() => {
                 </template>
               </div>
             </div>
-            <!-- No lyrics fallback -->
-            <div
-              v-if="!currentLine && !playback"
-              class="lyrics-content hovering nolyrics"
-              :style="defaultLineStyle"
-            >
-              EchoMusic
-            </div>
           </div>
         </div>
       </div>
