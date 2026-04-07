@@ -24,16 +24,10 @@ export function getSongPrivilegeLite(hash: string, albumId?: string | number) {
 /**
  * 获取云盘歌曲播放地址
  */
-export async function getCloudSongUrl(
-  hash: string,
-  audioId?: string | number,
-  albumAudioId?: string | number,
-): Promise<string | null> {
+export async function getCloudSongUrl(hash: string): Promise<string | null> {
   const res = await request.get('/user/cloud/url', {
     params: {
       hash,
-      audio_id: audioId,
-      album_audio_id: albumAudioId,
     },
   });
   if (res && typeof res === 'object') {

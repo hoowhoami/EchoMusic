@@ -667,8 +667,13 @@ export const usePlayerStore = defineStore('player', {
           );
         },
         error: (event) => {
+          // 过滤虚假的播放错误（isTrusted=false 表示合成事件，通常不是真实错误）
+          if (event && !event.isTrusted && !(event as any)?.detail) {
+            return;
+          }
+
           logger.error('PlayerStore', 'Audio playback error:', event);
-          this.lastError = event?.type ?? 'playback-error';
+          this.lastError = (event as any)?.type ?? 'playback-error';
           this.showPlaybackNotice('playback-failed', this.currentTrackSnapshot);
           this.applyFailedPlaybackState({ keepResolvedSource: true });
           settingStore.syncPreventSleep(false);
@@ -1620,7 +1625,13 @@ export const usePlayerStore = defineStore('player', {
 
       if (track.source === 'cloud') {
         logger.info('PlayerStore', 'Resolving cloud track audio url', summarizeSong(track));
-        const cloudUrl = await getCloudSongUrl(track.hash, track.mixSongId, track.albumId);
+        let cloudUrl: string | null = null;
+        try {
+          cloudUrl = await getCloudSongUrl(track.hash);
+        } catch (error) {
+          logger.error('PlayerStore', 'Fetch cloud track audio url error:', error);
+        }
+        
         if (cloudUrl) {
           logger.info(
             'PlayerStore',

@@ -117,7 +117,26 @@
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "${productName}-${version}-macOS.${ext}"
+      "artifactName": "${productName}-${version}-macOS.${ext}",
+      "background": "build/dmg-background.png",
+      "backgroundColor": "#ffffff",
+      "window": {
+        "width": 660,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 180,
+          "y": 170,
+          "type": "file"
+        },
+        {
+          "x": 480,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
   },

@@ -213,6 +213,10 @@ const navigateToLikedPlaylist = async () => {
   }
 
   if (!likedPlaylist) return;
+
+  // Silently sync favorites to update heart icons globally
+  void playlistStore.fetchLikedPlaylistSongs();
+
   navigateToPlaylist(likedPlaylist);
 };
 

@@ -84,6 +84,8 @@ const includesPlaylistIdentity = (playlist: PlaylistMeta, id: string): boolean =
   return getPlaylistIdentityValues(playlist).includes(id);
 };
 
+const FAVORITES_PAGE_SIZE = 200;
+
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
     defaultList: [
@@ -185,8 +187,29 @@ export const usePlaylistStore = defineStore('playlist', {
       let songs: Song[] = [];
 
       try {
-        const primary = await getPlaylistTracks(String(likedQueryId), 1, 200);
-        songs = parsePlaylistTracks(primary).songs;
+        let page = 1;
+        const seenIds = new Set<string>();
+
+        while (true) {
+          const response = await getPlaylistTracks(String(likedQueryId), page, FAVORITES_PAGE_SIZE);
+          const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
+
+          if (pageSongs.length === 0 && filteredCount === 0) break;
+
+          const nextSongs = pageSongs.filter((song) => {
+            const sid = String(song.id);
+            if (seenIds.has(sid)) return false;
+            seenIds.add(sid);
+            return true;
+          });
+
+          songs.push(...nextSongs);
+
+          if (pageSongs.length + filteredCount < FAVORITES_PAGE_SIZE) break;
+          
+          if (page >= 50) break;
+          page += 1;
+        }
       } catch (error) {
         logger.warn('PlaylistStore', 'Fetch liked playlist songs failed:', error);
       }
