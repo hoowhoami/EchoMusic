@@ -12,8 +12,6 @@ interface LoggerFunctions {
   verbose: (...args: any[]) => void;
 }
 
-const isDev = import.meta.env.DEV;
-
 // 确保在渲染进程中使用，window 应该是可用的
 const getElectronLog = (): LoggerFunctions | undefined => {
   try {
@@ -43,7 +41,7 @@ const formatArgs = (args: any[]) => {
 export const logger = {
   info: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.info(message);
     } else {
       console.info(`[INFO] [${module}]`, ...args);
@@ -51,7 +49,7 @@ export const logger = {
   },
   warn: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.warn(message);
     } else {
       console.warn(`[WARN] [${module}]`, ...args);
@@ -59,7 +57,7 @@ export const logger = {
   },
   error: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.error(message);
     } else {
       console.error(`[ERROR] [${module}]`, ...args);
@@ -67,24 +65,24 @@ export const logger = {
   },
   debug: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.debug(message);
-    } else if (isDev) {
+    } else {
       console.debug(`[DEBUG] [${module}]`, ...args);
     }
   },
   verbose: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.verbose(message);
-    } else if (isDev) {
+    } else {
       console.log(`[VERBOSE] [${module}]`, ...args);
     }
   },
   // 兼容旧调用或简单调用
   log: (module: string, ...args: any[]) => {
     const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog && !isDev) {
+    if (electronLog) {
       electronLog.info(message);
     } else {
       console.log(`[LOG] [${module}]`, ...args);

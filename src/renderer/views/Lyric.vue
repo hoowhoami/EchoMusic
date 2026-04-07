@@ -25,8 +25,6 @@ import Button from '@/components/ui/Button.vue';
 import {
   iconChevronDown,
   iconCopy,
-  iconCurrentLocation,
-  iconCompass,
   iconLanguage,
   iconChevronUpDown,
   iconPause,
@@ -47,7 +45,8 @@ const progressValue = ref(0);
 const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const copyFeedback = ref(false);
-const isScrollMode = ref(false);
+const isUserScrollingLyrics = ref(false);
+let userScrollResumeTimer: number | null = null;
 
 const currentTrack = computed<Song | undefined>(() => {
   const currentId = String(playerStore.currentTrackId ?? '');
@@ -91,18 +90,31 @@ const secondaryFontSize = computed(
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 
-const toggleScrollMode = async () => {
-  isScrollMode.value = !isScrollMode.value;
-  if (!isScrollMode.value) {
-    await nextTick();
-    scrollToCurrentLine(false);
-  }
+const clearUserScrollResumeTimer = () => {
+  if (userScrollResumeTimer === null) return;
+  window.clearTimeout(userScrollResumeTimer);
+  userScrollResumeTimer = null;
+};
+
+const scheduleResumeFollowScroll = () => {
+  clearUserScrollResumeTimer();
+  userScrollResumeTimer = window.setTimeout(() => {
+    userScrollResumeTimer = null;
+    isUserScrollingLyrics.value = false;
+    scrollToCurrentLine(true);
+  }, 5000);
+};
+
+const handleLyricWheel = () => {
+  if (!hasLyrics.value) return;
+  isUserScrollingLyrics.value = true;
+  scheduleResumeFollowScroll();
 };
 
 const scrollToCurrentLine = (smooth: boolean) => {
   const container = lyricListRef.value;
   const index = lyricStore.currentIndex;
-  if (!container || index < 0 || isScrollMode.value) return;
+  if (!container || index < 0 || isUserScrollingLyrics.value) return;
 
   const target = container.querySelector<HTMLElement>(`[data-lyric-index="${index}"]`);
   if (!target) return;
@@ -217,6 +229,8 @@ watch(
       ensureLyricsForCurrentTrack();
     }
     if (id) {
+      isUserScrollingLyrics.value = false;
+      clearUserScrollResumeTimer();
       await nextTick();
       scrollToCurrentLine(false);
     }
@@ -256,6 +270,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearUserScrollResumeTimer();
   window.removeEventListener('keydown', handleKeydown);
 });
 </script>
@@ -345,22 +360,6 @@ onUnmounted(() => {
                 </PopoverContent>
               </PopoverPortal>
             </PopoverRoot>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="lyric-tool-chip"
-              :class="{ 'is-active': isScrollMode }"
-              :disabled="!hasLyrics"
-              @click="toggleScrollMode"
-            >
-              <Icon
-                :icon="isScrollMode ? iconCompass : iconCurrentLocation"
-                width="14"
-                height="14"
-              />
-              <span>{{ isScrollMode ? '自由滚动' : '跟随播放' }}</span>
-            </Button>
             <div class="lyric-tool-group">
               <Button
                 variant="unstyled"
@@ -433,8 +432,8 @@ onUnmounted(() => {
             <div class="lyric-stage absolute inset-0">
               <div
                 ref="lyricListRef"
-                class="lyric-scroll absolute inset-0"
-                :class="isScrollMode ? 'overflow-y-auto' : 'overflow-y-hidden'"
+                class="lyric-scroll absolute inset-0 overflow-y-auto"
+                @wheel.passive="handleLyricWheel"
               >
                 <template v-if="hasLyrics">
                   <div class="py-[40vh]">

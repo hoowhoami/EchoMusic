@@ -2,7 +2,7 @@ import { app, globalShortcut } from 'electron';
 import { initLogger } from './logger';
 import { startApiServer, stopApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
-import { createWindow, getMainWindow, restoreWindow } from './window';
+import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 
 const WM_TASKBARCREATED = 0x031a;
@@ -67,11 +67,7 @@ if (!gotTheLock) {
     const mainWindow = getMainWindow();
 
     if (mainWindow) {
-      if (mainWindow.isMinimized()) {
-        mainWindow.restore();
-      }
-      mainWindow.show();
-      mainWindow.focus();
+      showMainWindow();
     } else {
       await createWindow();
       installWindowsTrayRecovery();

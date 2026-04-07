@@ -46,6 +46,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('desktop-lyric:command');
   ipcMain.removeHandler('api-server:start');
   ipcMain.removeHandler('api-server:status');
+  ipcMain.removeHandler('app:get-info');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
   ipcMain.removeHandler('desktop-lyric:show');
   ipcMain.removeHandler('desktop-lyric:hide');

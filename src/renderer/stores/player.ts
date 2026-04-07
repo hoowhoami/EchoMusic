@@ -1108,16 +1108,25 @@ export const usePlayerStore = defineStore('player', {
       );
     },
 
-    async ensureTrackRelateGoods(track: Song): Promise<SongRelateGood[]> {
+    async ensureTrackRelateGoods(
+      track: Song,
+      options?: { forceRefresh?: boolean },
+    ): Promise<SongRelateGood[]> {
       const existing = track.relateGoods ?? [];
-      if (existing.length > 0) return existing;
+      if (existing.length > 0 && !options?.forceRefresh) return existing;
       if (!track.hash || track.source === 'cloud') return existing;
 
       const requestKey = `${track.hash}:${track.albumId ?? ''}`;
       const pending = privilegeLiteRequests.get(requestKey);
       if (pending) return pending;
 
-      logger.info('PlayerStore', 'Preloading privilege lite for track', summarizeSong(track));
+      logger.info(
+        'PlayerStore',
+        options?.forceRefresh
+          ? 'Refreshing privilege lite for track before playback'
+          : 'Preloading privilege lite for track',
+        summarizeSong(track),
+      );
       const request = (async () => {
         try {
           const privilegeRes = await getSongPrivilegeLite(track.hash, track.albumId);
@@ -1628,10 +1637,7 @@ export const usePlayerStore = defineStore('player', {
         return { url: cloudUrl ?? '', quality: null, effect: 'none' };
       }
 
-      let relateGoods = track.relateGoods ?? [];
-      if (relateGoods.length === 0) {
-        relateGoods = await this.ensureTrackRelateGoods(track);
-      }
+      const relateGoods = await this.ensureTrackRelateGoods(track, { forceRefresh: true });
 
       if (audioEffect !== 'none') {
         const matchedEffect = relateGoods.find((item) => item.quality === audioEffect && item.hash);

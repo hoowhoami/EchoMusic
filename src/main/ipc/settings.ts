@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, shell, app, session } from 'electron';
 import Conf from 'conf';
 import log from 'electron-log';
 import { dirname } from 'path';
-import { compare, valid } from 'semver';
+import { compare, prerelease, valid } from 'semver';
 
 interface IpcContext {
   getMainWindow: () => BrowserWindow | null;
@@ -27,11 +27,24 @@ type UpdateCheckResult = {
   releaseUrl?: string;
   body?: string;
   message?: string;
+  silent?: boolean;
+};
+
+type AppInfoResult = {
+  version: string;
+  isPrerelease: boolean;
 };
 
 const RELEASES_API = 'https://api.github.com/repos/hoowhoami/EchoMusic/releases';
 
 const normalizeVersion = (value: string) => valid(value.trim()) ?? value.replace(/^v/i, '').trim();
+const getAppInfo = (): AppInfoResult => {
+  const version = app.getVersion();
+  return {
+    version,
+    isPrerelease: Array.isArray(prerelease(normalizeVersion(version))),
+  };
+};
 
 const compareVersions = (left: string, right: string) =>
   compare(normalizeVersion(left), normalizeVersion(right));
@@ -56,15 +69,18 @@ const fetchLatestRelease = async (includePrerelease: boolean) => {
 };
 
 export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
+  ipcMain.handle('app:get-info', () => getAppInfo());
+
   ipcMain.on('open-log-directory', async () => {
     await openLogDirectory();
   });
 
-  ipcMain.on('check-for-updates', async (_event, payload?: { prerelease?: boolean }) => {
+  ipcMain.on('check-for-updates', async (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
     const win = getMainWindow();
     if (!win) return;
 
-    const currentVersion = app.getVersion();
+    const { version: currentVersion } = getAppInfo();
+    const silent = Boolean(payload?.silent);
 
     try {
       const release = await fetchLatestRelease(Boolean(payload?.prerelease));
@@ -73,6 +89,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
           status: 'error',
           currentVersion,
           message: '未获取到有效的版本信息，请稍后再试。',
+          silent,
         };
         win.webContents.send('update-check-result', result);
         return;
@@ -91,6 +108,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
                   ? release.html_url
                   : 'https://github.com/hoowhoami/EchoMusic/releases',
               body: typeof release.body === 'string' ? release.body.slice(0, 1200) : '',
+              silent,
             }
           : {
               status: 'latest',
@@ -101,6 +119,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
                 typeof release.html_url === 'string'
                   ? release.html_url
                   : 'https://github.com/hoowhoami/EchoMusic/releases',
+              silent,
             };
 
       win.webContents.send('update-check-result', result);
@@ -109,6 +128,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         status: 'error',
         currentVersion,
         message: error instanceof Error ? error.message : '更新检查失败，请稍后重试。',
+        silent,
       };
       win.webContents.send('update-check-result', result);
     }

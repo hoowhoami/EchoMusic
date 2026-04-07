@@ -1,4 +1,10 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
+import {
+  hideMainWindow,
+  quitApplication,
+  requestMainWindowClose,
+  showMainWindow,
+} from '../window';
 
 interface IpcContext {
   getMainWindow: () => BrowserWindow | null;
@@ -12,21 +18,27 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     else if (action === 'maximize') {
       if (browserWindow.isMaximized()) browserWindow.unmaximize();
       else browserWindow.maximize();
-    } else if (action === 'close') browserWindow.close();
+    } else if (action === 'close') {
+      const mainWindow = getMainWindow();
+      if (mainWindow && browserWindow.id === mainWindow.id) {
+        requestMainWindowClose();
+      } else {
+        browserWindow.close();
+      }
+    }
   });
 
   ipcMain.on('window-toggle', () => {
     const browserWindow = getMainWindow();
     if (!browserWindow) return;
     if (browserWindow.isVisible()) {
-      browserWindow.hide();
+      hideMainWindow();
     } else {
-      browserWindow.show();
-      browserWindow.focus();
+      showMainWindow();
     }
   });
 
   ipcMain.on('quit-app', () => {
-    app.quit();
+    quitApplication();
   });
 };

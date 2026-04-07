@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   windowControl: (action: 'minimize' | 'maximize' | 'close') =>
     ipcRenderer.send('window-control', action),
+  appInfo: {
+    get: () => ipcRenderer.invoke('app:get-info') as Promise<{ version: string; isPrerelease: boolean }>,
+  },
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
     status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,

@@ -18,6 +18,9 @@ export interface IElectronAPI {
     onTrigger: (func: (command: string) => void) => () => void;
   };
   windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
+  appInfo: {
+    get: () => Promise<{ version: string; isPrerelease: boolean }>;
+  };
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;
     status: () => Promise<ApiServerStatus>;

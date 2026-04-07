@@ -6,7 +6,7 @@ import { formatDate, formatDuration, formatPlayCount } from '@/utils/format';
 import { useToastStore } from '@/stores/toast';
 import type { VideoMeta, VideoSource } from '@/models/video';
 import Image from '@/components/ui/Image.vue';
-import { extractVideoUrl, mapVideoMeta, mapVideoSourcesFromPrivilege, mergeVideoSources } from '@/utils/mappers/video';
+import { extractVideoUrl, mapVideoMeta, mapVideoMetaList, mapVideoSourcesFromPrivilege, mergeVideoSources } from '@/utils/mappers/video';
 import { usePlayerStore } from '@/stores/player';
 
 const route = useRoute();
@@ -17,6 +17,8 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 const loading = ref(false);
 const sourceLoading = ref(false);
 const meta = ref<VideoMeta | null>(null);
+const mvVersions = ref<VideoMeta[]>([]);
+const currentVersionIndex = ref(0);
 const currentSourceHash = ref('');
 const currentVideoUrl = ref('');
 const playbackError = ref('');
@@ -41,21 +43,23 @@ const sourceList = computed(() => meta.value?.sources ?? []);
 const selectedSource = computed(() =>
   sourceList.value.find((item) => item.hash === currentSourceHash.value) ?? sourceList.value[0] ?? null,
 );
+const hasPrevVersion = computed(() => currentVersionIndex.value > 0);
+const hasNextVersion = computed(() => currentVersionIndex.value < mvVersions.value.length - 1);
 const authorList = computed(() => meta.value?.authors ?? []);
+const primaryAuthor = computed(() => authorList.value[0] ?? null);
+const hasDescription = computed(() => Boolean(meta.value?.description?.trim()));
+const editionList = computed(() => {
+  const items = [meta.value?.topic, meta.value?.remark]
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean);
+  return [...new Set(items)];
+});
 const stats = computed(() => [
   { label: '播放量', value: formatPlayCount(meta.value?.playCount) },
+  { label: '时长', value: formatDuration(meta.value?.duration) },
   { label: '收藏', value: formatPlayCount(meta.value?.collectionCount) },
   { label: '下载', value: formatPlayCount(meta.value?.downloadCount) },
-  { label: '时长', value: formatDuration(meta.value?.duration) },
 ]);
-const sourceSummary = computed(() => {
-  const source = selectedSource.value;
-  if (!source) return '暂无片源';
-  const parts = [source.label, source.codec].filter(Boolean);
-  if (source.bitrate) parts.push(`${Math.round(source.bitrate / 1000)} kbps`);
-  if (source.size) parts.push(`${(source.size / 1024 / 1024).toFixed(1)} MB`);
-  return parts.join(' · ');
-});
 const publishText = computed(() => (meta.value?.publishTime ? formatDate(meta.value.publishTime) : '未知'));
 
 const buildInitialMeta = (): VideoMeta => ({
@@ -84,15 +88,20 @@ const mergeMeta = (nextMeta: VideoMeta | null) => {
     ...nextMeta,
     title: nextMeta.title || current.title,
     coverUrl: nextMeta.coverUrl || current.coverUrl,
+    description: nextMeta.description || current.description,
+    remark: nextMeta.remark || current.remark,
+    topic: nextMeta.topic || current.topic,
     artistName: nextMeta.artistName || current.artistName,
     albumName: nextMeta.albumName || current.albumName,
     authors: nextMeta.authors?.length ? nextMeta.authors : current.authors,
     tags: nextMeta.tags?.length ? nextMeta.tags : current.tags,
     sources: mergeVideoSources(current.sources ?? [], nextMeta.sources ?? []),
+    duration: nextMeta.duration || current.duration,
     playCount: nextMeta.playCount ?? current.playCount,
     publishTime: nextMeta.publishTime ?? current.publishTime,
     collectionCount: nextMeta.collectionCount ?? current.collectionCount,
     downloadCount: nextMeta.downloadCount ?? current.downloadCount,
+    hotScore: nextMeta.hotScore ?? current.hotScore,
     recommend: nextMeta.recommend ?? current.recommend,
   };
 };
@@ -102,6 +111,11 @@ const syncCurrentSource = () => {
   const sources = meta.value.sources ?? [];
   const target = sources.find((item) => item.hash === currentSourceHash.value) ?? sources[0] ?? null;
   currentSourceHash.value = target?.hash ?? '';
+};
+
+const pauseMusicPlayback = async () => {
+  if (!playerStore.isPlaying) return;
+  await playerStore.togglePlay().catch(() => undefined);
 };
 
 const loadVideoUrl = async (hash: string) => {
@@ -115,6 +129,7 @@ const loadVideoUrl = async (hash: string) => {
     currentVideoUrl.value = url;
     await nextTick();
     if (videoRef.value) {
+      await pauseMusicPlayback();
       videoRef.value.load();
       await videoRef.value.play().catch(() => undefined);
     }
@@ -136,9 +151,22 @@ const applySources = (sources: VideoSource[]) => {
   syncCurrentSource();
 };
 
+const applyVersion = (nextMeta: VideoMeta) => {
+  meta.value = {
+    ...buildInitialMeta(),
+    ...nextMeta,
+    sources: nextMeta.sources ?? [],
+  };
+  currentSourceHash.value = nextMeta.sources?.[0]?.hash ?? nextMeta.hash ?? '';
+  currentVideoUrl.value = '';
+  playbackError.value = '';
+};
+
 const fetchMvMeta = async () => {
   loading.value = true;
   meta.value = buildInitialMeta();
+  mvVersions.value = [];
+  currentVersionIndex.value = 0;
   try {
     const tasks: Promise<unknown>[] = [];
     if (routeAlbumAudioId.value) tasks.push(getSongMv(routeAlbumAudioId.value));
@@ -149,6 +177,12 @@ const fetchMvMeta = async () => {
     for (const result of results) {
       if (result.status !== 'fulfilled') continue;
       const payload = result.value;
+      const versionList = mapVideoMetaList(payload);
+      if (versionList.length > 0) {
+        mvVersions.value = versionList;
+        currentVersionIndex.value = 0;
+        applyVersion(versionList[0]);
+      }
       mergeMeta(mapVideoMeta(payload, routeHash.value));
       applySources(mapVideoSourcesFromPrivilege(payload));
     }
@@ -171,28 +205,35 @@ const changeSource = (hash: string) => {
   currentSourceHash.value = hash;
 };
 
-const formatSourceMeta = (source: VideoSource) => {
-  const parts: string[] = [];
-  if (source.codec) parts.push(source.codec);
-  if (source.width && source.height) parts.push(`${source.width}×${source.height}`);
-  if (source.bitrate) parts.push(`${Math.round(source.bitrate / 1000)} kbps`);
-  if (source.size) parts.push(`${(source.size / 1024 / 1024).toFixed(1)} MB`);
-  return parts.join(' · ');
+const handleVideoPlay = () => {
+  void pauseMusicPlayback();
+};
+
+const destroyVideoPlayer = () => {
+  const video = videoRef.value;
+  if (!video) return;
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  currentVideoUrl.value = '';
+};
+
+const switchVersion = (offset: -1 | 1) => {
+  const nextIndex = currentVersionIndex.value + offset;
+  if (nextIndex < 0 || nextIndex >= mvVersions.value.length) return;
+  const nextMeta = mvVersions.value[nextIndex];
+  if (!nextMeta) return;
+  currentVersionIndex.value = nextIndex;
+  applyVersion(nextMeta);
 };
 
 onMounted(async () => {
   meta.value = buildInitialMeta();
-  if (playerStore.isPlaying) {
-    await playerStore.togglePlay().catch(() => undefined);
-  }
   await fetchMvMeta();
 });
 
 onBeforeUnmount(() => {
-  if (videoRef.value) {
-    videoRef.value.pause();
-    videoRef.value.src = '';
-  }
+  destroyVideoPlayer();
 });
 
 watch(
@@ -216,6 +257,7 @@ watch(
           preload="metadata"
           playsinline
           :poster="cover"
+          @play="handleVideoPlay"
           @error="handleVideoError"
         >
           <source v-if="currentVideoUrl" :src="currentVideoUrl" />
@@ -241,15 +283,33 @@ watch(
           <div class="mv-title-block">
             <div v-if="meta?.recommend" class="mv-recommend">推荐版本</div>
             <h1 class="mv-title">{{ title }}</h1>
-            <div class="mv-author">{{ authorLine }}</div>
-            <div class="mv-submeta">发布于 {{ publishText }} · {{ sourceSummary }}</div>
+            <div class="mv-meta-line">
+              <Image
+                v-if="primaryAuthor?.avatar"
+                :src="primaryAuthor.avatar"
+                :alt="authorLine"
+                class="mv-inline-author-avatar"
+              />
+              <span class="mv-author">{{ authorLine }}</span>
+              <span class="mv-meta-separator">·</span>
+              <span class="mv-submeta">发布于 {{ publishText }}</span>
+            </div>
           </div>
-        </div>
 
-        <div v-if="authorList.length" class="mv-author-list">
-          <div v-for="author in authorList" :key="`${author.id ?? author.name}`" class="mv-author-item">
-            <Image :src="author.avatar" :alt="author.name" class="mv-author-avatar" />
-            <span>{{ author.name }}</span>
+          <div v-if="mvVersions.length > 1" class="mv-version-switcher">
+            <button
+              type="button"
+              class="mv-version-button"
+              :disabled="!hasPrevVersion"
+              @click="switchVersion(-1)"
+            >上一版</button>
+            <div class="mv-version-index">{{ currentVersionIndex + 1 }} / {{ mvVersions.length }}</div>
+            <button
+              type="button"
+              class="mv-version-button"
+              :disabled="!hasNextVersion"
+              @click="switchVersion(1)"
+            >下一版</button>
           </div>
         </div>
 
@@ -260,11 +320,15 @@ watch(
           </div>
         </div>
 
+        <div v-if="editionList.length" class="mv-tags mv-tags--edition">
+          <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{ item }}</span>
+        </div>
+
         <div v-if="tagList.length" class="mv-tags">
           <span v-for="tag in tagList" :key="tag" class="mv-tag">{{ tag }}</span>
         </div>
 
-        <div v-if="meta?.description" class="mv-description">{{ meta.description }}</div>
+        <div v-if="hasDescription" class="mv-description">{{ meta?.description }}</div>
       </section>
 
       <section class="card-block">
@@ -279,13 +343,19 @@ watch(
             @click="changeSource(source.hash)"
           >
             <div class="mv-source-row">
-              <div>
-                <div class="mv-source-title">{{ source.label }}</div>
-                <div class="mv-source-meta">{{ formatSourceMeta(source) || '默认片源' }}</div>
+              <div class="mv-source-main">
+                <div class="mv-source-copy">
+                  <div class="mv-source-title">{{ source.label }}</div>
+                  <div class="mv-source-badges">
+                    <span v-if="source.codec" class="mv-source-badge">{{ source.codec }}</span>
+                    <span v-if="source.width && source.height" class="mv-source-badge">{{ source.width }}×{{ source.height }}</span>
+                    <span v-if="source.bitrate" class="mv-source-badge">{{ Math.round(source.bitrate / 1000) }} kbps</span>
+                    <span v-if="source.size" class="mv-source-badge">{{ (source.size / 1024 / 1024).toFixed(1) }} MB</span>
+                  </div>
+                </div>
               </div>
               <div class="mv-source-status">{{ source.hash === currentSourceHash ? '当前播放' : '切换' }}</div>
             </div>
-            <div class="mv-source-hash">{{ source.hash }}</div>
           </button>
 
           <div v-if="!sourceList.length && !loading" class="mv-empty-hint">暂无更多片源</div>
@@ -387,6 +457,40 @@ watch(
 
 .mv-title-block {
   min-width: 0;
+  flex: 1;
+}
+
+.mv-version-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  align-self: flex-start;
+}
+
+.mv-version-button {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  background: var(--bg-info-card);
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 700;
+  transition: all 0.18s ease;
+}
+
+.mv-version-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mv-version-index {
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
 }
 
 .mv-recommend {
@@ -410,41 +514,34 @@ watch(
 }
 
 .mv-author {
-  margin-top: 6px;
   font-size: 14px;
   font-weight: 700;
   color: var(--color-text-main);
 }
 
+.mv-meta-line {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mv-inline-author-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.mv-meta-separator {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
 .mv-submeta {
-  margin-top: 6px;
   font-size: 13px;
   color: var(--color-text-secondary);
-}
-
-.mv-author-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.mv-author-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: var(--bg-info-card);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-main);
-}
-
-.mv-author-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  object-fit: cover;
 }
 
 .mv-stat-grid {
@@ -477,6 +574,10 @@ watch(
   gap: 8px;
 }
 
+.mv-tags--edition {
+  margin-top: -2px;
+}
+
 .mv-tag {
   display: inline-flex;
   align-items: center;
@@ -487,6 +588,11 @@ watch(
   color: var(--color-primary);
   font-size: 12px;
   font-weight: 700;
+}
+
+.mv-tag--edition {
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  color: var(--color-text-main);
 }
 
 .mv-description {
@@ -529,17 +635,39 @@ watch(
   gap: 16px;
 }
 
+.mv-source-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.mv-source-copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .mv-source-title {
   font-size: 14px;
   font-weight: 800;
   color: var(--color-text-main);
 }
 
-.mv-source-meta,
-.mv-source-hash {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
+.mv-source-badges {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mv-source-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-text-main);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .mv-source-status {
@@ -567,9 +695,18 @@ watch(
     align-items: flex-start;
   }
 
+  .mv-version-switcher {
+    margin-left: 0;
+  }
+
+  .mv-source-main {
+    width: 100%;
+  }
+
   .mv-stat-grid {
     grid-template-columns: 1fr 1fr;
   }
+
 }
 
 @keyframes mv-spin {

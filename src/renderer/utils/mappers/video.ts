@@ -77,7 +77,11 @@ const QUALITY_META: Record<(typeof QUALITY_ORDER)[number], { label: string; heig
   ld: { label: '270P', height: 270, width: 480 },
 };
 
-const buildSourceListFromCodecMap = (codecRecord: UnknownRecord, codecLabel: string): VideoSource[] => {
+const buildSourceListFromCodecMap = (
+  codecRecord: UnknownRecord,
+  codecLabel: string,
+  thumb = '',
+): VideoSource[] => {
   const sources: VideoSource[] = [];
 
   for (const quality of QUALITY_ORDER) {
@@ -94,6 +98,7 @@ const buildSourceListFromCodecMap = (codecRecord: UnknownRecord, codecLabel: str
       hash,
       url: '',
       label: meta.label,
+      thumb,
       codec: codecLabel,
       bitrate,
       width,
@@ -105,8 +110,20 @@ const buildSourceListFromCodecMap = (codecRecord: UnknownRecord, codecLabel: str
   return sources;
 };
 
+const pickFirstSourceFromCodecMap = (
+  codecRecord: UnknownRecord,
+  codecLabel: string,
+  thumb = '',
+): VideoSource | null => {
+  const sources = buildSourceListFromCodecMap(codecRecord, codecLabel, thumb);
+  return sources[0] ?? null;
+};
+
 const collectSourcesFromMvRecord = (record: UnknownRecord): VideoSource[] => {
-  const groups: VideoSource[] = [];
+  const thumb = getCoverUrl(
+    readString(record.hdpic ?? record.thumb ?? record.img ?? record.image, ''),
+    360,
+  );
   const codecMap: Array<{ key: string; label: string }> = [
     { key: 'h265', label: 'H.265' },
     { key: 'h264', label: 'H.264' },
@@ -115,27 +132,29 @@ const collectSourcesFromMvRecord = (record: UnknownRecord): VideoSource[] => {
 
   for (const codec of codecMap) {
     const codecRecord = toRecord(record[codec.key]);
-    groups.push(...buildSourceListFromCodecMap(codecRecord, codec.label));
+    const source = pickFirstSourceFromCodecMap(codecRecord, codec.label, thumb);
+    if (source) return [source];
   }
 
-  return dedupeBy(groups, (item) => item.hash.toLowerCase());
+  return [];
+};
+
+const resolveMvRecords = (payload: unknown): UnknownRecord[] => {
+  const root = toRecord(payload);
+  const data = root.data;
+  if (!Array.isArray(data) || data.length === 0) return [];
+
+  const firstGroup = data[0];
+  if (!Array.isArray(firstGroup) || firstGroup.length === 0) return [];
+
+  return firstGroup.filter((item): item is UnknownRecord => isRecord(item));
 };
 
 const resolveMvRecord = (payload: unknown): UnknownRecord | null => {
-  const root = toRecord(payload);
-  const data = root.data;
-  if (!Array.isArray(data) || data.length === 0) return null;
+  const records = resolveMvRecords(payload);
+  if (records.length === 0) return null;
 
-  const firstGroup = data[0];
-  if (!Array.isArray(firstGroup) || firstGroup.length === 0) return null;
-
-  const preferred = firstGroup.find(
-    (item) => isRecord(item) && Number(parseNumber((item as UnknownRecord).is_recommend) ?? 0) === 1,
-  );
-
-  if (preferred && isRecord(preferred)) return preferred;
-  const first = firstGroup[0];
-  return isRecord(first) ? first : null;
+  return records[0] ?? null;
 };
 
 const resolveDetailRecord = (payload: unknown): UnknownRecord | null => {
@@ -198,6 +217,8 @@ export const mapVideoMeta = (payload: unknown, targetHash = ''): VideoMeta | nul
     hash,
     title: readString(record.mv_name ?? record.name ?? record.video_name, 'MV播放'),
     description: readString(record.desc ?? record.remark ?? '', ''),
+    remark: readString(record.remark ?? '', ''),
+    topic: readString(record.topic ?? '', ''),
     coverUrl: getCoverUrl(cover, 720),
     duration: parseDuration(record.duration),
     playCount,
@@ -211,9 +232,17 @@ export const mapVideoMeta = (payload: unknown, targetHash = ''): VideoMeta | nul
     sources: collectSourcesFromMvRecord(record),
     collectionCount: parseNumber(record.collection_total),
     downloadCount: parseNumber(record.download_total),
+    hotScore: parseNumber(record.hot),
     recommend: Number(parseNumber(record.is_recommend) ?? 0) === 1,
     raw: record,
   };
+};
+
+export const mapVideoMetaList = (payload: unknown): VideoMeta[] => {
+  const records = resolveMvRecords(payload);
+  return records
+    .map((record) => mapVideoMeta({ data: [[record]] }))
+    .filter((item): item is VideoMeta => item !== null);
 };
 
 export const extractVideoUrl = (payload: unknown, targetHash = ''): string => {
@@ -230,6 +259,7 @@ export const mapVideoSourcesFromPrivilege = (payload: unknown): VideoSource[] =>
   const root = toRecord(payload);
   const list = Array.isArray(root.data) ? root.data : [];
   const mapped = list
+    .slice(0, 1)
     .map((item) => toRecord(item))
     .map((item): VideoSource | null => {
       const info = toRecord(item.info);
@@ -238,6 +268,7 @@ export const mapVideoSourcesFromPrivilege = (payload: unknown): VideoSource[] =>
       return {
         hash,
         url: '',
+        thumb: getCoverUrl(readString(item.hdpic ?? item.thumb ?? item.img ?? item.image, ''), 360),
         label:
           (parseNumber(item.level) === 5 && '1080P') ||
           (parseNumber(item.level) === 4 && '720P') ||

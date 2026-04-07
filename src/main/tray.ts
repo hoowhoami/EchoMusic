@@ -6,6 +6,7 @@ import {
   nativeTheme,
   type MenuItemConstructorOptions,
 } from 'electron';
+import { quitApplication } from './window';
 import { join } from 'path';
 
 type TrayCommand = 'togglePlayback' | 'previousTrack' | 'nextTrack';
@@ -111,8 +112,8 @@ const createTrayMenu = () => {
     ...createPlaybackMenuItems(),
     { type: 'separator' },
     {
-      role: 'quit',
       label: '退出',
+      click: () => quitApplication(),
     },
   ]);
 };
@@ -123,7 +124,6 @@ const rebuildTrayMenu = () => {
   if (appTray) {
     appTray.setImage(createTrayImage());
     appTray.setToolTip('EchoMusic');
-    appTray.setContextMenu(createTrayMenu());
   }
 
   if (process.platform === 'darwin') {
@@ -140,10 +140,13 @@ export const initTray = (context: TrayContext) => {
 
   appTray = new Tray(createTrayImage(), process.platform === 'linux' ? undefined : TRAY_GUID);
   appTray.setToolTip('EchoMusic');
-  appTray.setContextMenu(createTrayMenu());
 
-  appTray.on('double-click', () => {
+  appTray.on('click', () => {
     trayContext?.restoreWindow();
+  });
+
+  appTray.on('right-click', () => {
+    appTray?.popUpContextMenu(createTrayMenu());
   });
 
   if (process.platform === 'win32') {

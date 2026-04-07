@@ -102,8 +102,8 @@ export const useSettingStore = defineStore('setting', {
     outputDeviceDisconnectBehavior: 'pause' as OutputDeviceDisconnectBehavior,
     autoReceiveVip: false,
     checkPrerelease: false,
-    appVersion: '1.0.0',
-    isPrerelease: true,
+    appVersion: '',
+    isPrerelease: false,
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     desktopLyric: { ...DEFAULT_DESKTOP_LYRIC_SETTINGS } as DesktopLyricSettings,
@@ -136,11 +136,22 @@ export const useSettingStore = defineStore('setting', {
         window.location.reload();
       }, 80);
     },
-    checkForUpdates() {
+    checkForUpdates(silent = false) {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('check-for-updates', {
           prerelease: this.checkPrerelease,
+          silent,
         });
+      }
+    },
+    async hydrateAppInfo() {
+      if (!window.electron?.appInfo) return;
+      try {
+        const appInfo = await window.electron.appInfo.get();
+        this.appVersion = String(appInfo.version || '').trim();
+        this.isPrerelease = Boolean(appInfo.isPrerelease);
+      } catch {
+        // ignore hydration failure and keep current value
       }
     },
     openRepo() {

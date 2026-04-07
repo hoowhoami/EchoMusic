@@ -59,6 +59,64 @@ let powerSaveBlockerId = -1;
 let win: BrowserWindow | null = null;
 let isQuitting = false;
 
+const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is BrowserWindow => {
+  return Boolean(mainWindow && !mainWindow.isDestroyed());
+};
+
+export function hideMainWindow() {
+  if (!canUseMainWindow(win)) return;
+
+  if (win.isFullScreen()) {
+    win.setFullScreen(false);
+  }
+
+  if (win.isMinimized()) {
+    win.restore();
+  }
+
+  win.setSkipTaskbar(true);
+  win.hide();
+}
+
+export function showMainWindow() {
+  if (!canUseMainWindow(win)) return;
+
+  const wasVisible = win.isVisible();
+  const wasMinimized = win.isMinimized();
+  const wasFocused = win.isFocused();
+
+  if (wasMinimized) {
+    win.restore();
+  }
+
+  win.setSkipTaskbar(false);
+
+  if (!wasVisible) {
+    win.show();
+  }
+
+  if (!wasVisible || wasMinimized || !wasFocused) {
+    win.moveTop();
+    win.focus();
+  }
+}
+
+export function quitApplication() {
+  isQuitting = true;
+  app.quit();
+}
+
+export function requestMainWindowClose() {
+  if (!canUseMainWindow(win)) return;
+
+  if (isQuitting || closeBehavior === 'exit') {
+    quitApplication();
+    return;
+  }
+
+  hideMainWindow();
+}
+
 const resolveDevWindowIcon = () => join(process.cwd(), 'build/icons/icon.png');
 
 // 监听应用准备退出
@@ -235,9 +293,9 @@ export async function createWindow() {
 
     if (closeBehavior === 'tray') {
       event.preventDefault();
-      win?.hide();
+      hideMainWindow();
     } else {
-      app.quit();
+      quitApplication();
     }
   });
 
@@ -266,12 +324,5 @@ export async function createWindow() {
 }
 
 export function restoreWindow() {
-  const mainWindow = getMainWindow();
-  if (!mainWindow) return;
-
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-  mainWindow.show();
-  mainWindow.focus();
+  showMainWindow();
 }

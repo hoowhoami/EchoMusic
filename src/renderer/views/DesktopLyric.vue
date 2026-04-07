@@ -612,7 +612,13 @@ onUnmounted(() => {
                 ref="nextLineContentRef"
                 :key="`${nextText}-${snapshot.currentIndex}`"
                 class="desktop-lyric-line-content"
-                :style="getScrollStyle(nextLineOverflow)"
+                :style="{
+                  ...getScrollStyle(nextLineOverflow),
+                  color: snapshot.settings.unplayedColor,
+                  WebkitTextStroke: snapshot.settings.strokeEnabled
+                    ? `1px ${snapshot.settings.strokeColor}`
+                    : '0 transparent',
+                }"
               >
                 {{ nextText }}
               </div>
@@ -775,7 +781,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(15, 23, 42, 0.92);
   padding: 0;
 }
 
@@ -791,7 +797,9 @@ onUnmounted(() => {
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 6px 16px rgba(148, 163, 184, 0.12);
   backdrop-filter: none;
 }
 
@@ -866,7 +874,7 @@ onUnmounted(() => {
 }
 
 .desktop-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .dark .desktop-mode-group {
@@ -897,6 +905,24 @@ onUnmounted(() => {
   width: 1px;
   height: 20px;
   margin: 0 4px;
+  background: rgba(15, 23, 42, 0.12);
+}
+
+.dark .desktop-controls-wrapper {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.dark .desktop-icon-btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dark .desktop-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dark .desktop-toolbar-divider {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -956,14 +982,14 @@ onUnmounted(() => {
   min-height: calc(var(--desktop-lyric-next-size) * 1.28);
   font-size: var(--desktop-lyric-next-size);
   font-family: var(--desktop-font-family);
-  font-weight: calc(var(--desktop-font-weight) - 100);
+  font-weight: var(--desktop-font-weight);
   line-height: 1.22;
-  opacity: 0.88;
+  opacity: 1;
 }
 
 .desktop-lyric-line.next.is-secondary {
-  font-size: calc(var(--desktop-lyric-next-size) * 0.72);
-  opacity: 0.82;
+  font-size: var(--desktop-lyric-next-size);
+  opacity: 1;
 }
 
 .desktop-lyric-line-content {

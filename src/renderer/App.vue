@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, watch, onUnmounted } from 'vue';
-import { RouterView } from 'vue-router';
-import { useRoute } from 'vue-router';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { RouterView, useRoute } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
+import Dialog from '@/components/ui/Dialog.vue';
+import Button from '@/components/ui/Button.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
@@ -16,6 +17,19 @@ const isDesktopLyricWindow = () => route.name === 'desktop-lyric';
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
+let silentUpdateCheckTimer: number | null = null;
+
+const showStartupUpdateDialog = ref(false);
+const startupUpdateResult = ref<{
+  status: 'available' | 'latest' | 'error';
+  currentVersion: string;
+  latestVersion?: string;
+  releaseName?: string;
+  releaseUrl?: string;
+  body?: string;
+  message?: string;
+  silent?: boolean;
+} | null>(null);
 
 const updateTheme = () => {
   const isDark =
@@ -30,6 +44,30 @@ const syncTrayPlayback = () => {
     isPlaying: player.isPlaying,
     playMode: player.playMode,
   });
+};
+
+const startupUpdateDescription = computed(() => {
+  if (!startupUpdateResult.value) return '';
+  const nextVersion =
+    startupUpdateResult.value.releaseName || startupUpdateResult.value.latestVersion || '新版本';
+  return `当前版本 v${startupUpdateResult.value.currentVersion}，发现新版本 ${nextVersion}`;
+});
+
+const startupUpdateBody = computed(() => startupUpdateResult.value?.body?.trim() || '');
+
+const handleOpenStartupUpdateRelease = () => {
+  const url = startupUpdateResult.value?.releaseUrl;
+  if (!url) return;
+  window.electron?.ipcRenderer?.send('open-external', url);
+};
+
+const handleSilentUpdateCheckResult = (payload: unknown) => {
+  if (!payload || typeof payload !== 'object') return;
+  if (Reflect.get(payload, 'silent') !== true) return;
+  if (Reflect.get(payload, 'status') !== 'available') return;
+
+  startupUpdateResult.value = payload as typeof startupUpdateResult.value;
+  showStartupUpdateDialog.value = true;
 };
 
 onMounted(() => {
@@ -53,11 +91,20 @@ onMounted(() => {
       player.setPlayMode(playMode);
     }) ?? null;
     syncTrayPlayback();
+    window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
+    silentUpdateCheckTimer = window.setTimeout(() => {
+      settings.checkForUpdates(true);
+    }, 4000);
   }
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
 });
 
 onUnmounted(() => {
+  if (silentUpdateCheckTimer !== null) {
+    window.clearTimeout(silentUpdateCheckTimer);
+    silentUpdateCheckTimer = null;
+  }
+  window.electron?.ipcRenderer?.off('update-check-result', handleSilentUpdateCheckResult);
   disposeShortcuts?.();
   disposeShortcuts = null;
   disposeDesktopLyricSync?.();
@@ -101,6 +148,26 @@ watch(
   </RouterView>
   <AuthExpiredDialog />
   <ToastViewport />
+  <Dialog
+    :open="showStartupUpdateDialog"
+    title="发现新版本"
+    :description="startupUpdateDescription"
+    show-close
+    @update:open="showStartupUpdateDialog = $event"
+  >
+    <div class="space-y-4">
+      <div
+        v-if="startupUpdateBody"
+        class="max-h-[280px] overflow-y-auto rounded-2xl bg-black/5 px-4 py-3 text-sm leading-6 text-text-secondary dark:bg-white/5"
+      >
+        <pre class="whitespace-pre-wrap break-words font-inherit">{{ startupUpdateBody }}</pre>
+      </div>
+    </div>
+    <template #footer>
+      <Button variant="ghost" size="sm" @click="showStartupUpdateDialog = false">稍后</Button>
+      <Button variant="primary" size="sm" @click="handleOpenStartupUpdateRelease">前往下载</Button>
+    </template>
+  </Dialog>
 </template>
 
 <style>

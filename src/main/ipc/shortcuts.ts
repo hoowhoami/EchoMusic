@@ -1,4 +1,5 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
+import { hideMainWindow, showMainWindow } from '../window';
 
 type ShortcutCommand =
   | 'togglePlayback'
@@ -25,9 +26,7 @@ const forwardToRenderer = (command: ShortcutCommand, getMainWindow: () => Browse
   const win = getMainWindow();
   if (!win) return;
   if (command === 'toggleMainLyric') {
-    if (win.isMinimized()) win.restore();
-    if (!win.isVisible()) win.show();
-    win.focus();
+    showMainWindow();
   }
   win.webContents.send('shortcut-trigger', command);
 };
@@ -43,11 +42,8 @@ const registerShortcuts = (shortcutMap: ShortcutMap, getMainWindow: () => Browse
         if (command === 'toggleWindow') {
           const win = getMainWindow();
           if (!win) return;
-          if (win.isVisible()) win.hide();
-          else {
-            win.show();
-            win.focus();
-          }
+          if (win.isVisible()) hideMainWindow();
+          else showMainWindow();
           return;
         }
         forwardToRenderer(command, getMainWindow);

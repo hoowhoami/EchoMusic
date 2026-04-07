@@ -13,6 +13,7 @@ export interface VideoSource {
   hash: string;
   url: string;
   label: string;
+  thumb?: string;
   codec?: string;
   bitrate?: number;
   width?: number;
@@ -25,6 +26,8 @@ export interface VideoMeta {
   hash: string;
   title: string;
   description?: string;
+  remark?: string;
+  topic?: string;
   coverUrl: string;
   duration: number;
   playCount?: number;
@@ -38,6 +41,7 @@ export interface VideoMeta {
   sources?: VideoSource[];
   collectionCount?: number;
   downloadCount?: number;
+  hotScore?: number;
   recommend?: boolean;
   raw?: Record<string, unknown>;
 }

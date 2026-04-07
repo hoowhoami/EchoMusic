@@ -68,6 +68,7 @@ const applyDesktopLyricColor = async (value: string) => {
 onMounted(() => {
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
+  void settingStore.hydrateAppInfo();
   void settingStore.hydrateDesktopLyric();
 });
 
@@ -315,6 +316,7 @@ const updateResult = ref<{
   releaseUrl?: string;
   body?: string;
   message?: string;
+  silent?: boolean;
 } | null>(null);
 
 const audioQualityOptions = [
@@ -377,7 +379,7 @@ const outputDevicePermissionActionLabel = computed(() => {
   return settingStore.outputDeviceStatus === 'error' ? '重新获取设备' : '授权音频设备';
 });
 
-const versionLabel = computed(() => settingStore.appVersion || '1.0.0');
+const versionLabel = computed(() => settingStore.appVersion || '未知');
 const releaseChannelLabel = computed(() => (settingStore.isPrerelease ? 'Prerelease' : 'Release'));
 const updateDialogTitle = computed(() => {
   if (!updateResult.value) return '检查更新';
@@ -444,6 +446,15 @@ const handleOpenUpdateRelease = () => {
 };
 
 const handleUpdateCheckResult = (payload: unknown) => {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    Reflect.get(payload, 'silent') === true &&
+    !isCheckingUpdate.value
+  ) {
+    return;
+  }
+
   isCheckingUpdate.value = false;
   if (!payload || typeof payload !== 'object') {
     updateResult.value = {
