@@ -4,10 +4,15 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
-import { 
-  getLoginQrKey, createLoginQr, checkLoginQr, 
-  sendSmsCode, loginBySms,
-  createWxLogin, checkWxLogin, loginByOpenPlat 
+import {
+  getLoginQrKey,
+  createLoginQr,
+  checkLoginQr,
+  sendSmsCode,
+  loginBySms,
+  createWxLogin,
+  checkWxLogin,
+  loginByOpenPlat,
 } from '@/api/user';
 import logger from '@/utils/logger';
 import { closeTransientView } from '@/utils/navigation';
@@ -34,11 +39,16 @@ const router = useRouter();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
 
-
 const triggerAutoReceiveVipAfterLogin = () => {
   if (!settingStore.autoReceiveVip) return;
 
-  void userStore.fetchUserInfoOnce().then(() => userStore.autoReceiveVipIfNeeded());
+  void userStore
+    .fetchUserInfoOnce()
+    .then(() => userStore.autoReceiveVipIfNeeded())
+    .catch((e) => {
+      // 登录后自动领取失败不影响正常使用
+      console.warn('triggerAutoReceiveVipAfterLogin failed:', e);
+    });
 };
 
 // 当前选中的 Tab (0: 扫码, 1: 验证码, 2: 微信)
@@ -51,7 +61,7 @@ const closeLoginPage = async () => {
 // --- 酷狗扫码逻辑 ---
 const qrKey = ref<string | undefined>(undefined);
 const qrUrl = ref<string | undefined>(undefined);
-const qrStatus = ref(1); 
+const qrStatus = ref(1);
 const isLoadingQr = ref(false);
 const qrError = ref('');
 let isPollingQr = false;
@@ -92,12 +102,12 @@ const startCheckStatus = async () => {
   if (isPollingQr || activeTab.value !== '0') return;
   isPollingQr = true;
   logger.info('Login', 'Starting Kugou QR polling...');
-  
+
   while (isPollingQr && qrKey.value && activeTab.value === '0') {
     try {
       const res: any = await checkLoginQr(qrKey.value);
       if (!isPollingQr || activeTab.value !== '0') break;
-      
+
       if (res) {
         const status = res.data?.status ?? res.status;
         qrStatus.value = status;
@@ -118,7 +128,7 @@ const startCheckStatus = async () => {
       qrStatus.value = 0;
       break;
     }
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
   isPollingQr = false;
   logger.info('Login', 'Kugou QR polling stopped.');
@@ -130,7 +140,7 @@ const smsData = reactive({
   code: '',
   isSending: false,
   countdown: 0,
-  error: ''
+  error: '',
 });
 let smsTimer: any = null;
 
@@ -192,7 +202,7 @@ const wxQr = reactive({
   uuid: '',
   status: 0, // 0: 等待, 1: 扫描, 2: 确认, 3: 过期
   isLoading: false,
-  error: ''
+  error: '',
 });
 let isPollingWx = false;
 
@@ -236,18 +246,18 @@ const startCheckWxStatus = async () => {
       if (!isPollingWx || activeTab.value !== '2') break;
       if (res) {
         const code = res.wx_errcode || res.status;
-        if (code === 405) { 
-           isPollingWx = false;
-           const wxCode = res.wx_code;
-           if (wxCode) {
-             const loginRes: any = await loginByOpenPlat(wxCode);
-             if (loginRes?.status === 1 || loginRes?.code === 200) {
-               userStore.handleLoginSuccess(loginRes.data || loginRes.body?.data || loginRes);
-               triggerAutoReceiveVipAfterLogin();
-               router.push('/main/home');
-             }
-           }
-           break;
+        if (code === 405) {
+          isPollingWx = false;
+          const wxCode = res.wx_code;
+          if (wxCode) {
+            const loginRes: any = await loginByOpenPlat(wxCode);
+            if (loginRes?.status === 1 || loginRes?.code === 200) {
+              userStore.handleLoginSuccess(loginRes.data || loginRes.body?.data || loginRes);
+              triggerAutoReceiveVipAfterLogin();
+              router.push('/main/home');
+            }
+          }
+          break;
         } else if (code === 404) {
           wxQr.status = 1;
         } else if (code === 403 || code === 402) {
@@ -265,13 +275,13 @@ const startCheckWxStatus = async () => {
       break;
     }
     // 如果发生异常或请求结束，等待 3 秒再次尝试
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
   isPollingWx = false;
   logger.info('Login', 'WeChat polling stopped.');
 };
 
-const stopCheckStatus = () => { 
+const stopCheckStatus = () => {
   isPollingQr = false;
   isPollingWx = false;
 };
@@ -292,10 +302,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="login-page fixed inset-0 overflow-hidden bg-bg-main text-text-main transition-colors duration-500 select-none flex flex-col">
+  <div
+    class="login-page fixed inset-0 overflow-hidden bg-bg-main text-text-main transition-colors duration-500 select-none flex flex-col"
+  >
     <!-- 装饰背景 -->
-    <div class="absolute inset-0 bg-gradient-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/[0.03] blur-[120px] pointer-events-none z-0"></div>
+    <div
+      class="absolute inset-0 bg-gradient-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"
+    ></div>
+    <div
+      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/[0.03] blur-[120px] pointer-events-none z-0"
+    ></div>
 
     <OverlayHeader />
 
@@ -307,60 +323,84 @@ onUnmounted(() => {
           size="xs"
           class="no-drag h-10 w-10 min-w-0 rounded-full p-0 text-text-main dark:text-white bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.1]"
         >
-          <Icon class="opacity-60 group-hover:opacity-100" :icon="iconChevronLeft" width="24" height="24" />
+          <Icon
+            class="opacity-60 group-hover:opacity-100"
+            :icon="iconChevronLeft"
+            width="24"
+            height="24"
+          />
         </Button>
       </div>
 
       <!-- 设置 activationMode="manual" 防止焦点自动切换导致意外 Tab 跳转 -->
       <Tabs v-model="activeTab" activationMode="manual" class="w-full max-w-[420px] max-h-full">
-        <div class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/[0.05] dark:border-white/[0.05] rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-[510px]">
-          
+        <div
+          class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/[0.05] dark:border-white/[0.05] rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-[510px]"
+        >
           <div class="px-10 pt-8 flex-1 flex flex-col items-center justify-center">
-            
             <!-- 1. 扫码登录 -->
             <TabsContent value="0" class="w-full animate-fade-in flex flex-col items-center">
               <div class="text-center mb-4">
                 <h1 class="text-[26px] font-black tracking-tight leading-tight mb-1">扫码登录</h1>
-                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">使用酷狗概念版扫码</p>
+                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  使用酷狗概念版扫码
+                </p>
               </div>
-              <div class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]">
-                  <Image :src="qrUrl" class="w-full h-full rounded-xl" />
-                  <div v-if="qrStatus === 0" class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30">
-                      <span class="text-[13px] font-black opacity-60">{{ qrError || '二维码已过期' }}</span>
-                      <Button @click="loadQrCode" variant="ghost" size="xs" class="text-[13px] text-primary font-black hover:opacity-80">重新加载</Button>
+              <div
+                class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]"
+              >
+                <Image :src="qrUrl" class="w-full h-full rounded-xl" />
+                <div
+                  v-if="qrStatus === 0"
+                  class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
+                >
+                  <span class="text-[13px] font-black opacity-60">{{
+                    qrError || '二维码已过期'
+                  }}</span>
+                  <Button
+                    @click="loadQrCode"
+                    variant="ghost"
+                    size="xs"
+                    class="text-[13px] text-primary font-black hover:opacity-80"
+                    >重新加载</Button
+                  >
+                </div>
+                <div
+                  v-if="qrStatus === 2"
+                  class="absolute inset-0 bg-white/98 rounded-2xl flex flex-col items-center justify-center space-y-5 z-30"
+                >
+                  <div
+                    class="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center text-white"
+                  >
+                    <Icon :icon="iconCheck" width="32" height="32" />
                   </div>
-                  <div v-if="qrStatus === 2" class="absolute inset-0 bg-white/98 rounded-2xl flex flex-col items-center justify-center space-y-5 z-30">
-                      <div class="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center text-white">
-                        <Icon :icon="iconCheck" width="32" height="32" />
-                      </div>
-                      <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
-                  </div>
+                  <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
+                </div>
               </div>
-              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">等待扫码中</div>
+              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                等待扫码中
+              </div>
             </TabsContent>
 
             <!-- 2. 验证码登录 -->
             <TabsContent value="1" class="w-full animate-fade-in pb-2">
               <div class="text-center mb-4">
                 <h1 class="text-[26px] font-black mb-1">验证码登录</h1>
-                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">无需密码，快捷安全</p>
+                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  无需密码，快捷安全
+                </p>
               </div>
               <div class="flex flex-col">
-                <Input 
-                  v-model="smsData.mobile" 
-                  type="tel" 
-                  placeholder="手机号码" 
-                  class="mb-4"
-                />
+                <Input v-model="smsData.mobile" type="tel" placeholder="手机号码" class="mb-4" />
                 <div class="flex gap-3 mb-1">
-                  <Input 
-                    v-model="smsData.code" 
-                    placeholder="验证码" 
+                  <Input
+                    v-model="smsData.code"
+                    placeholder="验证码"
                     class="flex-1"
                     inputClass="pr-10"
                   />
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     class="shrink-0 whitespace-nowrap"
                     :disabled="smsData.countdown > 0"
                     @click="handleSendCode"
@@ -369,13 +409,11 @@ onUnmounted(() => {
                   </Button>
                 </div>
                 <div class="h-5 flex items-center px-2 mb-1">
-                  <p v-if="smsData.error" class="text-[11px] text-red-500 font-bold">{{ smsData.error }}</p>
+                  <p v-if="smsData.error" class="text-[11px] text-red-500 font-bold">
+                    {{ smsData.error }}
+                  </p>
                 </div>
-                <Button 
-                  class="w-full" 
-                  :loading="smsData.isSending" 
-                  @click="handleSmsLogin"
-                >
+                <Button class="w-full" :loading="smsData.isSending" @click="handleSmsLogin">
                   立即登录
                 </Button>
               </div>
@@ -385,49 +423,89 @@ onUnmounted(() => {
             <TabsContent value="2" class="w-full animate-fade-in flex flex-col items-center">
               <div class="text-center mb-4">
                 <h1 class="text-[26px] font-black mb-1">微信登录</h1>
-                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">请使用微信扫描二维码</p>
+                <p class="text-[13px] opacity-60 font-bold uppercase tracking-[1.5px]">
+                  请使用微信扫描二维码
+                </p>
               </div>
-              <div class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]">
-                  <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
-                  <div v-if="wxQr.status === 3" class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30">
-                      <span class="text-[13px] font-black opacity-60">{{ wxQr.error || '二维码已过期' }}</span>
-                      <Button @click="loadWxQr" variant="ghost" size="xs" class="text-[13px] text-[#07C160] font-black hover:opacity-80">重新加载</Button>
+              <div
+                class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]"
+              >
+                <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
+                <div
+                  v-if="wxQr.status === 3"
+                  class="absolute inset-0 bg-white/95 rounded-2xl flex flex-col items-center justify-center space-y-4 z-30"
+                >
+                  <span class="text-[13px] font-black opacity-60">{{
+                    wxQr.error || '二维码已过期'
+                  }}</span>
+                  <Button
+                    @click="loadWxQr"
+                    variant="ghost"
+                    size="xs"
+                    class="text-[13px] text-[#07C160] font-black hover:opacity-80"
+                    >重新加载</Button
+                  >
+                </div>
+                <div
+                  v-if="wxQr.status === 1"
+                  class="absolute inset-0 bg-white/98 rounded-2xl flex flex-col items-center justify-center space-y-5 z-30"
+                >
+                  <div
+                    class="w-14 h-14 bg-[#07C160] rounded-full flex items-center justify-center text-white"
+                  >
+                    <Icon :icon="iconCheck" width="32" height="32" />
                   </div>
-                  <div v-if="wxQr.status === 1" class="absolute inset-0 bg-white/98 rounded-2xl flex flex-col items-center justify-center space-y-5 z-30">
-                      <div class="w-14 h-14 bg-[#07C160] rounded-full flex items-center justify-center text-white">
-                        <Icon :icon="iconCheck" width="32" height="32" />
-                      </div>
-                      <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
-                  </div>
+                  <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
+                </div>
               </div>
-              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">等待微信扫码</div>
+              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                等待微信扫码
+              </div>
             </TabsContent>
           </div>
 
           <!-- 底部：其他方式 -->
           <div class="px-10 pb-8">
-            <div class="pt-6 border-t border-black/[0.03] dark:border-white/[0.03] flex flex-col items-center space-y-4">
-              <span class="text-[12px] font-black opacity-50 uppercase tracking-[4px]">其他登录方式</span>
+            <div
+              class="pt-6 border-t border-black/[0.03] dark:border-white/[0.03] flex flex-col items-center space-y-4"
+            >
+              <span class="text-[12px] font-black opacity-50 uppercase tracking-[4px]"
+                >其他登录方式</span
+              >
               <TabsList class="gap-10 !h-auto items-center">
-                  <TabsTrigger value="0" class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden">
-                    <div class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5">
-                      <Icon :icon="iconQrCode" width="22" height="22" />
-                    </div>
-                  </TabsTrigger>
-                  <TabsTrigger value="1" class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden">
-                    <div class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5">
-                      <Icon :icon="iconSmartphone" width="22" height="22" />
-                    </div>
-                  </TabsTrigger>
-                  <TabsTrigger value="2" class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden">
-                    <div class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5">
-                      <Icon :icon="iconBotMessageSquare" width="26" height="26" />
-                    </div>
-                  </TabsTrigger>
+                <TabsTrigger
+                  value="0"
+                  class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                >
+                  <div
+                    class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
+                  >
+                    <Icon :icon="iconQrCode" width="22" height="22" />
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="1"
+                  class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                >
+                  <div
+                    class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
+                  >
+                    <Icon :icon="iconSmartphone" width="22" height="22" />
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="2"
+                  class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                >
+                  <div
+                    class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5"
+                  >
+                    <Icon :icon="iconBotMessageSquare" width="26" height="26" />
+                  </div>
+                </TabsTrigger>
               </TabsList>
             </div>
           </div>
-
         </div>
       </Tabs>
     </div>
@@ -439,7 +517,13 @@ onUnmounted(() => {
   animation: fade-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

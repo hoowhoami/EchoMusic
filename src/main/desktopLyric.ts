@@ -66,7 +66,7 @@ const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricPersistedSettings = {
   fontSize: 30,
   doubleLine: true,
   playedColor: '#31cfa1',
-  unplayedColor: '#b9b9b9',
+  unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   bold: false,
@@ -82,7 +82,7 @@ const settingsStore = new Conf<DesktopLyricPersistedSettings>({
   defaults: DEFAULT_DESKTOP_LYRIC_SETTINGS,
 });
 
-const DESKTOP_LYRIC_MIN_WIDTH = 320;
+const DESKTOP_LYRIC_MIN_WIDTH = 380;
 const DESKTOP_LYRIC_MIN_HEIGHT = 100;
 const DESKTOP_LYRIC_MAX_WIDTH = 1400;
 const DESKTOP_LYRIC_MAX_HEIGHT = 190;
@@ -192,7 +192,7 @@ function getDesktopLyricSettings(): DesktopLyricSettings {
     fontSize: clamp(Math.round(Number(raw.fontSize) || 30), 12, 80),
     doubleLine: typeof raw.doubleLine === 'boolean' ? raw.doubleLine : true,
     playedColor: String(raw.playedColor || '#31cfa1'),
-    unplayedColor: String(raw.unplayedColor || '#b9b9b9'),
+    unplayedColor: String(raw.unplayedColor || '#7a7a7a'),
     strokeColor: String(raw.strokeColor || '#f1b8b3'),
     strokeEnabled: Boolean(raw.strokeEnabled),
     bold: Boolean(raw.bold),
@@ -446,17 +446,7 @@ const scheduleDesktopLyricBoundsReconcile = () => {
 const syncWindowPresentation = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   desktopLyricWindow.setBackgroundColor(getBackgroundColor());
-  desktopLyricWindow.setFocusable(false);
-  if (desktopLyricWindow.isFocused()) desktopLyricWindow.blur();
-  desktopLyricWindow.setAlwaysOnTop(
-    snapshot.settings.alwaysOnTop,
-    process.platform === 'darwin' ? 'screen-saver' : 'floating',
-    1,
-  );
-  desktopLyricWindow.setVisibleOnAllWorkspaces(snapshot.settings.alwaysOnTop, {
-    visibleOnFullScreen: true,
-    skipTransformProcessType: true,
-  });
+  desktopLyricWindow.setAlwaysOnTop(true, 'screen-saver');
   desktopLyricWindow.setSkipTaskbar(true);
 };
 
@@ -607,6 +597,7 @@ export const ensureDesktopLyricWindow = async () => {
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
+    focusable: false,
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -619,26 +610,19 @@ export const ensureDesktopLyricWindow = async () => {
   });
 
   desktopLyricWindow.once('ready-to-show', () => {
-    if (snapshot.settings.enabled) {
-      desktopLyricWindow?.showInactive();
-    }
     syncWindowPresentation();
     desktopLyricWindow?.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
       forward: true,
     });
+    if (snapshot.settings.enabled) {
+      desktopLyricWindow?.showInactive();
+    }
     sendSnapshot();
     sendPointerState();
   });
 
   desktopLyricWindow.on('move', persistWindowBounds);
   desktopLyricWindow.on('resize', persistWindowBounds);
-  desktopLyricWindow.on('show', () => {
-    desktopLyricWindow?.blur();
-    syncWindowPresentation();
-  });
-  desktopLyricWindow.on('focus', () => {
-    desktopLyricWindow?.blur();
-  });
   desktopLyricWindow.on('hide', () => {
     clearDesktopLyricDisplayMetricsTimer();
     clearDesktopLyricLockPhaseTimer();
@@ -702,8 +686,11 @@ export const showDesktopLyricWindow = async () => {
     win.showInactive();
   }
   if (!win.isVisible()) win.showInactive();
-  syncWindowPresentation();
   win.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), { forward: true });
+  // 延迟设置全屏可见属性，确保窗口已完全显示后再应用
+  setTimeout(() => {
+    syncWindowPresentation();
+  }, 100);
   sendSnapshot();
   return snapshot;
 };

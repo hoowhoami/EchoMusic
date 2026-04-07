@@ -35,7 +35,7 @@ const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   fontSize: 30,
   doubleLine: true,
   playedColor: '#31cfa1',
-  unplayedColor: '#b9b9b9',
+  unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   bold: false,
@@ -93,9 +93,7 @@ export const useSettingStore = defineStore('setting', {
     defaultShortcutLabels: { ...DEFAULT_SHORTCUT_LABELS } as Record<string, string>,
     defaultGlobalShortcutLabels: { ...DEFAULT_GLOBAL_SHORTCUT_LABELS } as Record<string, string>,
     outputDevice: 'default',
-    outputDevices: [
-      { label: '系统默认', value: 'default' },
-    ] as OutputDeviceOption[],
+    outputDevices: [{ label: '系统默认', value: 'default' }] as OutputDeviceOption[],
     outputDeviceType: 'default' as 'default' | 'wasapi',
     outputDeviceStatus: 'idle' as OutputDeviceStatus,
     outputDeviceStatusMessage: '',
@@ -249,7 +247,10 @@ export const useSettingStore = defineStore('setting', {
     addToSearchHistory(keyword: string) {
       const normalized = keyword.trim();
       if (!normalized) return;
-      this.searchHistory = [normalized, ...this.searchHistory.filter((item) => item !== normalized)].slice(0, 20);
+      this.searchHistory = [
+        normalized,
+        ...this.searchHistory.filter((item) => item !== normalized),
+      ].slice(0, 20);
     },
     removeFromSearchHistory(keyword: string) {
       this.searchHistory = this.searchHistory.filter((item) => item !== keyword);

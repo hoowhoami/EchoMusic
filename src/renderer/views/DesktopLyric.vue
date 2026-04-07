@@ -12,7 +12,11 @@ import {
   iconStepForward,
   iconX,
 } from '@/icons';
-import type { DesktopLyricSettings, DesktopLyricSnapshot, LyricCharacterPayload } from '../../shared/desktop-lyric';
+import type {
+  DesktopLyricSettings,
+  DesktopLyricSnapshot,
+  LyricCharacterPayload,
+} from '../../shared/desktop-lyric';
 
 const defaultSettings: DesktopLyricSettings = {
   enabled: false,
@@ -37,7 +41,7 @@ const defaultSettings: DesktopLyricSettings = {
   fontSize: 30,
   doubleLine: true,
   playedColor: '#31cfa1',
-  unplayedColor: '#b9b9b9',
+  unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   bold: false,
@@ -59,15 +63,82 @@ const isDragging = ref(false);
 const isHovering = ref(false);
 const nowMs = ref(0);
 const dragOffset = ref({ x: 0, y: 0 });
-const currentLineViewportRef = ref<HTMLElement | null>(null);
-const currentLineContentRef = ref<HTMLElement | null>(null);
-const nextLineViewportRef = ref<HTMLElement | null>(null);
-const nextLineContentRef = ref<HTMLElement | null>(null);
-const currentLineOverflow = ref(0);
-const nextLineOverflow = ref(0);
+const lyricsContainerRef = ref<HTMLElement | null>(null);
+const activeLyricsContentRef = ref<HTMLElement | null>(null);
+const currentLineScrollX = ref(0);
 let animationFrame = 0;
-let measureFrame = 0;
 let disposeSnapshotListener: (() => void) | null = null;
+
+// ── Color helpers (ported from MoeKoeMusic) ──
+
+const FALLBACK_COLOR = '#D4D4D4';
+let colorContext: CanvasRenderingContext2D | null = null;
+
+const getColorContext = () => {
+  if (colorContext) return colorContext;
+  const canvas = document.createElement('canvas');
+  colorContext = canvas.getContext('2d');
+  return colorContext;
+};
+
+const clampChannel = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+
+const parseHexColor = (hex: string) => {
+  const h = hex.replace('#', '');
+  if (h.length === 3) {
+    return {
+      r: parseInt(h[0] + h[0], 16),
+      g: parseInt(h[1] + h[1], 16),
+      b: parseInt(h[2] + h[2], 16),
+    };
+  }
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  };
+};
+
+const parseRgbString = (s: string) => {
+  const m = s.match(/rgba?\(([^)]+)\)/i);
+  if (!m) return null;
+  const [r = '0', g = '0', b = '0'] = m[1].split(',').map((x) => x.trim());
+  return {
+    r: clampChannel(parseFloat(r)),
+    g: clampChannel(parseFloat(g)),
+    b: clampChannel(parseFloat(b)),
+  };
+};
+
+const parseColorToRgb = (color: string) => {
+  const ctx = getColorContext();
+  if (!ctx) return parseHexColor(FALLBACK_COLOR);
+  ctx.fillStyle = FALLBACK_COLOR;
+  ctx.fillStyle = color;
+  const n = ctx.fillStyle;
+  if (n.startsWith('#')) return parseHexColor(n);
+  if (n.startsWith('rgb')) {
+    const rgb = parseRgbString(n);
+    if (rgb) return rgb;
+  }
+  return parseHexColor(FALLBACK_COLOR);
+};
+
+const rgbToHex = ({ r, g, b }: { r: number; g: number; b: number }) =>
+  `#${[r, g, b].map((c) => clampChannel(c).toString(16).padStart(2, '0')).join('')}`;
+
+const shiftRgb = (rgb: { r: number; g: number; b: number }, offset: number) => ({
+  r: clampChannel(rgb.r + offset),
+  g: clampChannel(rgb.g + offset),
+  b: clampChannel(rgb.b + offset),
+});
+
+const buildVerticalGradient = (baseColor: string) => {
+  const rgb = parseColorToRgb(baseColor);
+  return `linear-gradient(to bottom, ${rgbToHex(shiftRgb(rgb, -38))}, ${rgbToHex(shiftRgb(rgb, 28))})`;
+};
+
+// ── Mouse / passthrough ──
 
 const setIgnoreMouseEvents = (ignore: boolean) => {
   if (isLinux) return;
@@ -79,71 +150,53 @@ const syncMousePassthrough = (forceInteractive = false) => {
     setIgnoreMouseEvents(false);
     return;
   }
-
   if (!snapshot.value.settings.clickThrough) {
     setIgnoreMouseEvents(false);
     return;
   }
-
   if (snapshot.value.settings.locked) {
-    const controlsVisible = controlsOverlayRef.value?.classList.contains('show-locked-controls') ?? false;
-    setIgnoreMouseEvents(!controlsVisible);
+    const vis = controlsOverlayRef.value?.classList.contains('show-locked-controls') ?? false;
+    setIgnoreMouseEvents(!vis);
     return;
   }
-
-  const isMouseInControls = controlsOverlayRef.value?.matches(':hover') ?? false;
-  setIgnoreMouseEvents(!(isMouseInControls || isHovering.value));
+  const inCtrl = controlsOverlayRef.value?.matches(':hover') ?? false;
+  setIgnoreMouseEvents(!(inCtrl || isHovering.value));
 };
 
 const checkMousePosition = (event: MouseEvent) => {
   const target = event.target instanceof Element ? event.target : null;
-
   if (snapshot.value.settings.locked) {
-    const isMouseInControls =
+    const inCtrl =
       target?.closest('.desktop-controls-overlay') !== null ||
       target?.closest('.desktop-lock-button') !== null;
-
-    controlsOverlayRef.value?.classList.toggle('show-locked-controls', isMouseInControls);
-    setIgnoreMouseEvents(!isMouseInControls);
+    controlsOverlayRef.value?.classList.toggle('show-locked-controls', inCtrl);
+    setIgnoreMouseEvents(!inCtrl);
     return;
   }
-
   const shell = shellRef.value;
   if (!shell) return;
-
   const rect = shell.getBoundingClientRect();
-  const isMouseInContainer =
+  const inContainer =
     event.clientX >= rect.left &&
     event.clientX <= rect.right &&
     event.clientY >= rect.top &&
     event.clientY <= rect.bottom;
-
-  const isMouseOnLyrics = target?.closest('.desktop-lyric-line-content') !== null;
-  const isMouseInControls = target?.closest('.desktop-controls-overlay') !== null;
-
-  if (isMouseOnLyrics || isMouseInControls) {
-    isHovering.value = true;
-  }
-
-  if (!isMouseInContainer) {
-    isHovering.value = false;
-  }
-
-  setIgnoreMouseEvents(!(isMouseInControls || isHovering.value));
+  const onLyrics = target?.closest('.lyrics-content') !== null;
+  const inControls = target?.closest('.desktop-controls-overlay') !== null;
+  if (onLyrics || inControls) isHovering.value = true;
+  if (!inContainer) isHovering.value = false;
+  setIgnoreMouseEvents(!(inControls || isHovering.value));
 };
+
+// ── Drag ──
 
 const startDrag = (event: MouseEvent) => {
   if (snapshot.value.settings.locked) return;
   if (!isHovering.value) return;
-
   const target = event.target instanceof Element ? event.target : null;
   if (target?.closest('.desktop-controls-overlay, .desktop-resize-handle, button')) return;
-
   isDragging.value = true;
-  dragOffset.value = {
-    x: event.clientX,
-    y: event.clientY,
-  };
+  dragOffset.value = { x: event.clientX, y: event.clientY };
   window.electron?.desktopLyric?.startDrag(
     event.screenX - dragOffset.value.x,
     event.screenY - dragOffset.value.y,
@@ -165,8 +218,8 @@ const resetHoverState = () => {
 };
 
 const handlePointerLeave = (event: MouseEvent) => {
-  const relatedTarget = event.relatedTarget;
-  if (relatedTarget instanceof Node && shellRef.value?.contains(relatedTarget)) return;
+  const related = event.relatedTarget;
+  if (related instanceof Node && shellRef.value?.contains(related)) return;
   resetHoverState();
 };
 
@@ -179,6 +232,8 @@ const endDrag = () => {
   isDragging.value = false;
   window.electron?.desktopLyric?.endDrag();
 };
+
+// ── Resize ──
 
 type ResizeDirection =
   | 'top'
@@ -201,6 +256,27 @@ const resizeHandles: Array<{ direction: ResizeDirection; className: string }> = 
   { direction: 'bottom-right', className: 'bottom-right' },
 ];
 
+const startResize = (direction: ResizeDirection, event: MouseEvent) => {
+  if (snapshot.value.settings.locked) return;
+  event.preventDefault();
+  event.stopPropagation();
+  syncMousePassthrough(true);
+  window.electron?.desktopLyric?.startResize(direction, event.screenX, event.screenY);
+  window.addEventListener('mousemove', handleResizeMove);
+  window.addEventListener('mouseup', handleResizeEnd);
+};
+const handleResizeMove = (event: MouseEvent) => {
+  window.electron?.desktopLyric?.updateResize(event.screenX, event.screenY);
+};
+const handleResizeEnd = () => {
+  window.electron?.desktopLyric?.endResize();
+  syncMousePassthrough();
+  window.removeEventListener('mousemove', handleResizeMove);
+  window.removeEventListener('mouseup', handleResizeEnd);
+};
+
+// ── Computed state ──
+
 const effectiveTheme = computed(() => {
   const theme = snapshot.value.settings.theme;
   if (theme !== 'system') return theme;
@@ -212,8 +288,12 @@ const nextLine = computed(() => snapshot.value.lyrics[snapshot.value.currentInde
 const playback = computed(() => snapshot.value.playback);
 const isDark = computed(() => effectiveTheme.value === 'dark');
 const isPlaying = computed(() => Boolean(playback.value?.isPlaying));
-const hasTranslation = computed(() => snapshot.value.lyrics.some((line) => Boolean(line.translated?.trim())));
-const hasRomanization = computed(() => snapshot.value.lyrics.some((line) => Boolean(line.romanized?.trim())));
+const hasTranslation = computed(() =>
+  snapshot.value.lyrics.some((l) => Boolean(l.translated?.trim())),
+);
+const hasRomanization = computed(() =>
+  snapshot.value.lyrics.some((l) => Boolean(l.romanized?.trim())),
+);
 const canToggleSecondary = computed(() => hasTranslation.value || hasRomanization.value);
 const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
 const displayLabel = computed(() => {
@@ -224,9 +304,9 @@ const lyricModeLabel = computed(() =>
   snapshot.value.settings.secondaryMode === 'romanization' ? '音译' : '翻译',
 );
 const justifyContent = computed(() => {
-  const alignment = snapshot.value.settings.alignment;
-  if (alignment === 'left') return 'flex-start';
-  if (alignment === 'right') return 'flex-end';
+  const a = snapshot.value.settings.alignment;
+  if (a === 'left') return 'flex-start';
+  if (a === 'right') return 'flex-end';
   return 'center';
 });
 
@@ -238,14 +318,6 @@ const currentMs = computed(() => {
   const elapsed = Math.max(0, performance.now() - state.updatedAt);
   return base + elapsed * Math.max(0.5, state.playbackRate || 1);
 });
-
-const getCharProgress = (char: LyricCharacterPayload) => {
-  const start = Number(char.startTime) || 0;
-  const end = Math.max(start + 24, Number(char.endTime) || start + 140);
-  if (nowMs.value <= start) return 0;
-  if (nowMs.value >= end) return 1;
-  return (nowMs.value - start) / (end - start);
-};
 
 const currentText = computed(() => {
   if (currentLine.value?.text?.trim()) return currentLine.value.text.trim();
@@ -262,20 +334,132 @@ const currentSecondaryText = computed(() => {
   return '';
 });
 
-const showSecondaryLine = computed(
-  () =>
-    snapshot.value.settings.secondaryEnabled
-      ? Boolean(currentSecondaryText.value) || snapshot.value.settings.doubleLine
-      : snapshot.value.settings.doubleLine,
+const showSecondaryLine = computed(() =>
+  snapshot.value.settings.secondaryEnabled
+    ? Boolean(currentSecondaryText.value) || snapshot.value.settings.doubleLine
+    : snapshot.value.settings.doubleLine,
 );
 
 const nextText = computed(() => {
-  if (snapshot.value.settings.secondaryEnabled && currentSecondaryText.value) {
+  if (snapshot.value.settings.secondaryEnabled && currentSecondaryText.value)
     return currentSecondaryText.value;
-  }
   if (nextLine.value?.text?.trim()) return nextLine.value.text.trim();
   return playback.value?.artist || '听你想听';
 });
+
+// ── Displayed lines ──
+
+const displayedLines = computed(() => {
+  const idx = snapshot.value.currentIndex;
+  return [idx, idx + 1];
+});
+
+// ── Character-level highlight (MoeKoeMusic gradient approach) ──
+
+const currentChars = computed(() => {
+  if (currentLine.value?.characters?.length) return currentLine.value.characters;
+  if (currentLine.value?.text?.trim()) {
+    return Array.from(currentLine.value.text.trim()).map((char, i) => ({
+      text: char,
+      startTime: i * 70,
+      endTime: (i + 1) * 70,
+    }));
+  }
+  return null;
+});
+
+const computeHighlightProgress = (lineIndex: number) => {
+  const line = snapshot.value.lyrics[lineIndex];
+  if (!line?.characters?.length) return 0;
+  const chars = line.characters;
+  const text = line.text || '';
+  const safeLen = Math.max(1, text.length);
+  const lineStart = chars[0].startTime;
+  const lineEnd = chars[chars.length - 1].endTime;
+  const lineDuration = Math.max(1, lineEnd - lineStart);
+  if (nowMs.value < lineStart) return 0;
+  if (nowMs.value >= lineEnd) return 1;
+
+  let charPos = 0;
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (nowMs.value >= c.startTime && nowMs.value <= c.endTime) {
+      const dur = Math.max(1, c.endTime - c.startTime);
+      const p = (nowMs.value - c.startTime) / dur;
+      charPos = (i / safeLen) * 100 + p * (100 / safeLen);
+      break;
+    }
+    if (nowMs.value > c.endTime) charPos = ((i + 1) / safeLen) * 100;
+  }
+  const lineProgress = Math.min(1, Math.max(0, (nowMs.value - lineStart) / lineDuration));
+  return Math.max(0, Math.min(100, Math.max(charPos, lineProgress * 100))) / 100;
+};
+
+const defaultLineStyle = computed(() => ({
+  background: buildVerticalGradient(snapshot.value.settings.unplayedColor),
+  backgroundClip: 'text',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  color: 'transparent',
+  fontWeight: snapshot.value.settings.bold ? '700' : '400',
+}));
+
+const getLineHighlightStyle = (lineIndex: number) => ({
+  width: `${(computeHighlightProgress(lineIndex) * 100).toFixed(3)}%`,
+  background: buildVerticalGradient(snapshot.value.settings.playedColor),
+  backgroundClip: 'text',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  color: 'transparent',
+  fontWeight: snapshot.value.settings.bold ? '700' : '400',
+});
+
+// ── Scroll overflow by progress (MoeKoeMusic style) ──
+
+const throttle = <T extends (...args: unknown[]) => void>(fn: T, delay: number) => {
+  let last = 0;
+  return (...args: Parameters<T>) => {
+    const now = Date.now();
+    if (now - last >= delay) {
+      last = now;
+      fn(...args);
+    }
+  };
+};
+
+const updateActiveLineScroll = () => {
+  const activeIdx = displayedLines.value[0];
+  const containerEl = lyricsContainerRef.value;
+  const contentEl = activeLyricsContentRef.value;
+  if (activeIdx === undefined || !containerEl || !contentEl) return;
+  const line = snapshot.value.lyrics[activeIdx];
+  if (!line) {
+    if (currentLineScrollX.value !== 0) currentLineScrollX.value = 0;
+    return;
+  }
+  const cw = containerEl.clientWidth || 0;
+  const sw = contentEl.scrollWidth || 0;
+  const overflow = sw - cw;
+  if (overflow <= 0) {
+    if (currentLineScrollX.value !== 0) currentLineScrollX.value = 0;
+    return;
+  }
+  const progress = Math.min(1, Math.max(0, computeHighlightProgress(activeIdx)));
+  if (progress <= 0) {
+    if (currentLineScrollX.value !== 0) currentLineScrollX.value = 0;
+    return;
+  }
+  const target = -overflow * progress;
+  const clamped = Math.max(-overflow, Math.min(0, target));
+  if (currentLineScrollX.value !== clamped) currentLineScrollX.value = clamped;
+};
+
+const scheduleScroll = throttle(() => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(updateActiveLineScroll);
+  else updateActiveLineScroll();
+}, 50);
+
+// ── Watchers ──
 
 watch(
   () => snapshot.value.settings.locked,
@@ -294,122 +478,70 @@ watch(
   },
 );
 
-const currentShouldScroll = computed(() => currentLineOverflow.value > 6);
-const nextShouldScroll = computed(() => false);
-
-const getScrollStyle = (overflow: number) => {
-  if (overflow <= 6) return undefined;
-  const duration = Math.max(4.8, Math.min(12, overflow / 48 + 3.2));
-  return {
-    '--desktop-scroll-distance': `${overflow}px`,
-    '--desktop-scroll-duration': `${duration}s`,
-  };
-};
-
-const measureLineOverflow = (viewport: HTMLElement | null, content: HTMLElement | null) => {
-  if (!viewport || !content) return 0;
-  return Math.max(0, Math.ceil(content.scrollWidth - viewport.clientWidth));
-};
-
-const measureOverflow = () => {
-  currentLineOverflow.value = measureLineOverflow(
-    currentLineViewportRef.value,
-    currentLineContentRef.value,
-  );
-  nextLineOverflow.value = measureLineOverflow(nextLineViewportRef.value, nextLineContentRef.value);
-};
-
-const requestMeasure = () => {
-  if (measureFrame) window.cancelAnimationFrame(measureFrame);
-  measureFrame = window.requestAnimationFrame(() => {
-    measureFrame = 0;
-    measureOverflow();
-  });
-};
-
-const currentChars = computed(() => {
-  if (currentLine.value?.characters?.length) return currentLine.value.characters;
-  if (currentLine.value?.text?.trim()) {
-    return Array.from(currentLine.value.text.trim()).map((char, index) => ({
-      text: char,
-      startTime: index * 70,
-      endTime: (index + 1) * 70,
-    }));
-  }
-  return null;
-});
-
 watch(
-  [
-    currentText,
-    nextText,
-    currentSecondaryText,
-    () => snapshot.value.settings.fontSize,
-    () => snapshot.value.settings.secondaryFontSize,
-    () => snapshot.value.settings.doubleLine,
-    () => snapshot.value.settings.bold,
-  ],
-  async () => {
-    await nextTick();
-    requestMeasure();
+  [nowMs, () => snapshot.value.currentIndex, displayedLines],
+  () => {
+    scheduleScroll();
   },
   { immediate: true },
 );
+watch(
+  () => snapshot.value.lyrics,
+  () => {
+    scheduleScroll();
+  },
+);
+watch(
+  () => snapshot.value.settings.fontSize,
+  () => {
+    scheduleScroll();
+  },
+);
 
-const startResize = (direction: ResizeDirection, event: MouseEvent) => {
-  if (snapshot.value.settings.locked) return;
-  event.preventDefault();
-  event.stopPropagation();
-  syncMousePassthrough(true);
-  window.electron?.desktopLyric?.startResize(direction, event.screenX, event.screenY);
-  window.addEventListener('mousemove', handleResizeMove);
-  window.addEventListener('mouseup', handleResizeEnd);
-};
-
-const handleResizeMove = (event: MouseEvent) => {
-  window.electron?.desktopLyric?.updateResize(event.screenX, event.screenY);
-};
-
-const handleResizeEnd = () => {
-  window.electron?.desktopLyric?.endResize();
-  syncMousePassthrough();
-  window.removeEventListener('mousemove', handleResizeMove);
-  window.removeEventListener('mouseup', handleResizeEnd);
-};
+// ── Commands ──
 
 const closeWindow = async () => {
   if (!window.electron?.desktopLyric) return;
   snapshot.value = await window.electron.desktopLyric.hide();
 };
-
 const toggleLock = async () => {
   if (!window.electron?.desktopLyric) return;
   snapshot.value = await window.electron.desktopLyric.toggleLock();
   controlsOverlayRef.value?.classList.remove('show-locked-controls');
   syncMousePassthrough();
 };
-
 const togglePlayback = () => {
   window.electron?.desktopLyric?.command('togglePlayback');
 };
-
 const playPrevious = () => {
   window.electron?.desktopLyric?.command('previousTrack');
 };
-
 const playNext = () => {
   window.electron?.desktopLyric?.command('nextTrack');
 };
-
 const toggleSecondary = () => {
   if (!canToggleSecondary.value) return;
   window.electron?.desktopLyric?.command('toggleLyricsMode');
 };
-
 const cycleSecondaryMode = () => {
   if (!canCycleSecondaryMode.value) return;
   window.electron?.desktopLyric?.command('cycleLyricsMode');
 };
+
+// ── Color picker ──
+
+const defaultColorInput = ref<HTMLInputElement | null>(null);
+const highlightColorInput = ref<HTMLInputElement | null>(null);
+
+const handleColorChange = (color: string, type: 'default' | 'highlight') => {
+  if (type === 'default') {
+    window.electron?.desktopLyric?.updateSettings({ unplayedColor: color });
+  } else {
+    window.electron?.desktopLyric?.updateSettings({ playedColor: color });
+  }
+};
+
+// ── Tick ──
 
 const tick = () => {
   nowMs.value = currentMs.value;
@@ -422,11 +554,10 @@ onMounted(async () => {
   document.getElementById('app')?.classList.add('desktop-lyric-window');
   snapshot.value = (await window.electron?.desktopLyric?.getSnapshot()) ?? fallbackSnapshot;
   disposeSnapshotListener =
-    window.electron?.desktopLyric?.onSnapshot((nextSnapshot) => {
-      snapshot.value = nextSnapshot;
+    window.electron?.desktopLyric?.onSnapshot((next) => {
+      snapshot.value = next;
       syncMousePassthrough();
     }) ?? null;
-
   setIgnoreMouseEvents(true);
   document.addEventListener('mousemove', checkMousePosition);
   document.addEventListener('mousedown', startDrag);
@@ -434,22 +565,18 @@ onMounted(async () => {
   document.addEventListener('mouseup', endDrag);
   document.addEventListener('mouseout', handlePointerLeave);
   window.addEventListener('blur', resetHoverState);
-  window.addEventListener('resize', requestMeasure);
   await nextTick();
-  requestMeasure();
   tick();
 });
 
 onUnmounted(() => {
   if (animationFrame) window.cancelAnimationFrame(animationFrame);
-  if (measureFrame) window.cancelAnimationFrame(measureFrame);
   document.removeEventListener('mousemove', checkMousePosition);
   document.removeEventListener('mousedown', startDrag);
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup', endDrag);
   document.removeEventListener('mouseout', handlePointerLeave);
   window.removeEventListener('blur', resetHoverState);
-  window.removeEventListener('resize', requestMeasure);
   endDrag();
   handleResizeEnd();
   isHovering.value = false;
@@ -464,10 +591,13 @@ onUnmounted(() => {
 <template>
   <div
     class="desktop-lyric-window"
-    :class="{ dark: isDark, hovering: isHovering && !snapshot.settings.locked, locked: snapshot.settings.locked }"
+    :class="{
+      dark: isDark,
+      hovering: isHovering && !snapshot.settings.locked,
+      locked: snapshot.settings.locked,
+    }"
     :style="{
       '--desktop-lyric-font-size': `${snapshot.settings.fontSize}px`,
-      '--desktop-lyric-next-size': `${snapshot.settings.fontSize}px`,
       '--desktop-played-color': snapshot.settings.playedColor,
       '--desktop-unplayed-color': snapshot.settings.unplayedColor,
       '--desktop-font-family': snapshot.settings.fontFamily,
@@ -486,9 +616,55 @@ onUnmounted(() => {
       <div class="desktop-hit-area"></div>
       <div class="desktop-background"></div>
 
+      <!-- Controls overlay -->
       <div ref="controlsOverlayRef" class="desktop-controls-overlay no-drag">
-        <div class="desktop-controls-wrapper" :class="{ 'locked-controls': snapshot.settings.locked }">
+        <div
+          class="desktop-controls-wrapper"
+          :class="{ 'locked-controls': snapshot.settings.locked }"
+        >
           <template v-if="!snapshot.settings.locked">
+            <!-- Color pickers -->
+            <div class="desktop-color-controls">
+              <button
+                class="desktop-color-button"
+                title="默认颜色"
+                @click="defaultColorInput?.click()"
+              >
+                <div
+                  class="desktop-color-preview"
+                  :style="{ backgroundColor: snapshot.settings.unplayedColor }"
+                ></div>
+              </button>
+              <button
+                class="desktop-color-button"
+                title="高亮颜色"
+                @click="highlightColorInput?.click()"
+              >
+                <div
+                  class="desktop-color-preview"
+                  :style="{ backgroundColor: snapshot.settings.playedColor }"
+                ></div>
+              </button>
+              <input
+                ref="defaultColorInput"
+                type="color"
+                :value="snapshot.settings.unplayedColor"
+                class="desktop-hidden-color-input"
+                @input="
+                  (e: Event) => handleColorChange((e.target as HTMLInputElement).value, 'default')
+                "
+              />
+              <input
+                ref="highlightColorInput"
+                type="color"
+                :value="snapshot.settings.playedColor"
+                class="desktop-hidden-color-input"
+                @input="
+                  (e: Event) => handleColorChange((e.target as HTMLInputElement).value, 'highlight')
+                "
+              />
+            </div>
+            <!-- Playback controls -->
             <Button variant="unstyled" size="none" class="desktop-icon-btn" @click="playPrevious">
               <Icon :icon="iconStepBack" width="16" height="16" />
             </Button>
@@ -499,6 +675,7 @@ onUnmounted(() => {
               <Icon :icon="iconStepForward" width="16" height="16" />
             </Button>
             <span class="desktop-toolbar-divider"></span>
+            <!-- Lyrics mode -->
             <div class="desktop-mode-group">
               <Button
                 variant="unstyled"
@@ -523,6 +700,7 @@ onUnmounted(() => {
                 <Icon :icon="iconChevronUpDown" width="14" height="14" />
               </Button>
             </div>
+            <!-- Lock / Close -->
             <Button
               variant="unstyled"
               size="none"
@@ -550,78 +728,74 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- Lyrics content (MoeKoeMusic gradient-clip approach) -->
       <div class="desktop-content-layout">
         <div class="desktop-top-safe"></div>
-        <div class="desktop-lyric-stage" :style="{ justifyContent }">
+        <div ref="lyricsContainerRef" class="desktop-lyric-stage" :style="{ justifyContent }">
           <div class="desktop-lyric-stack" :class="{ 'double-line': showSecondaryLine }">
-            <div
-              ref="currentLineViewportRef"
-              class="desktop-lyric-line current"
-              :class="{ 'is-scrolling': currentShouldScroll }"
-              :style="{ justifyContent: currentShouldScroll ? 'flex-start' : justifyContent }"
-            >
+            <!-- Primary line -->
+            <div class="lyrics-line">
               <div
-                ref="currentLineContentRef"
-                :key="`${currentText}-${snapshot.currentIndex}`"
-                class="desktop-lyric-line-content"
-                :style="getScrollStyle(currentLineOverflow)"
+                ref="activeLyricsContentRef"
+                class="lyrics-content"
+                :class="{ hovering: isHovering && !snapshot.settings.locked }"
+                :style="{ transform: `translateX(${currentLineScrollX}px)` }"
               >
-                <template v-if="currentChars">
+                <span class="lyrics-text">
+                  <span class="lyrics-layer lyrics-layer-default" :style="defaultLineStyle">
+                    {{ currentText }}
+                  </span>
                   <span
-                    v-for="(char, index) in currentChars"
-                    :key="`${currentText}-${index}-${char.startTime}`"
-                    class="desktop-char"
-                    :style="{
-                      color:
-                        getCharProgress(char) >= 1
-                          ? snapshot.settings.playedColor
-                          : snapshot.settings.unplayedColor,
-                      WebkitTextStroke: snapshot.settings.strokeEnabled
-                        ? `1px ${snapshot.settings.strokeColor}`
-                        : '0 transparent',
-                    }"
+                    class="lyrics-layer lyrics-layer-highlight"
+                    :style="getLineHighlightStyle(displayedLines[0])"
                   >
-                    {{ char.text }}
+                    {{ currentText }}
+                  </span>
+                </span>
+              </div>
+            </div>
+            <!-- Secondary line: translation or next line -->
+            <div class="lyrics-line" v-if="showSecondaryLine">
+              <div
+                class="lyrics-content"
+                :class="{ hovering: isHovering && !snapshot.settings.locked }"
+              >
+                <template v-if="currentSecondaryText">
+                  <span class="lyrics-text lyrics-text-static">
+                    <span class="lyrics-layer lyrics-layer-default" :style="defaultLineStyle">
+                      {{ currentSecondaryText }}
+                    </span>
+                  </span>
+                </template>
+                <template v-else-if="nextLine">
+                  <span class="lyrics-text">
+                    <span class="lyrics-layer lyrics-layer-default" :style="defaultLineStyle">
+                      {{ nextText }}
+                    </span>
+                    <span
+                      class="lyrics-layer lyrics-layer-highlight"
+                      :style="getLineHighlightStyle(displayedLines[1] ?? -1)"
+                    >
+                      {{ nextText }}
+                    </span>
                   </span>
                 </template>
                 <template v-else>
-                  <span
-                    class="desktop-char"
-                    :style="{
-                      color: snapshot.settings.unplayedColor,
-                      WebkitTextStroke: snapshot.settings.strokeEnabled
-                        ? `1px ${snapshot.settings.strokeColor}`
-                        : '0 transparent',
-                    }"
-                    >{{ currentText }}</span
-                  >
+                  <span class="lyrics-text lyrics-text-static">
+                    <span class="lyrics-layer lyrics-layer-default" :style="defaultLineStyle">
+                      {{ nextText }}
+                    </span>
+                  </span>
                 </template>
               </div>
             </div>
+            <!-- No lyrics fallback -->
             <div
-              v-if="showSecondaryLine"
-              ref="nextLineViewportRef"
-              class="desktop-lyric-line next"
-              :class="{
-                'is-secondary': Boolean(currentSecondaryText),
-                'is-scrolling': nextShouldScroll,
-              }"
-              :style="{ justifyContent: nextShouldScroll ? 'flex-start' : justifyContent }"
+              v-if="!currentLine && !playback"
+              class="lyrics-content hovering nolyrics"
+              :style="defaultLineStyle"
             >
-              <div
-                ref="nextLineContentRef"
-                :key="`${nextText}-${snapshot.currentIndex}`"
-                class="desktop-lyric-line-content"
-                :style="{
-                  ...getScrollStyle(nextLineOverflow),
-                  color: snapshot.settings.unplayedColor,
-                  WebkitTextStroke: snapshot.settings.strokeEnabled
-                    ? `1px ${snapshot.settings.strokeColor}`
-                    : '0 transparent',
-                }"
-              >
-                {{ nextText }}
-              </div>
+              EchoMusic
             </div>
           </div>
         </div>
@@ -633,6 +807,7 @@ onUnmounted(() => {
 <style scoped>
 @reference "@/style.css";
 
+/* ── Window root ── */
 .desktop-lyric-window {
   width: 100vw;
   height: 100vh;
@@ -656,45 +831,39 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
+/* ── Resize handles ── */
 .desktop-resize-handle {
   position: absolute;
   z-index: 5;
 }
-
 .desktop-resize-handle.top,
 .desktop-resize-handle.bottom {
   left: 14px;
   right: 14px;
   height: 8px;
 }
-
 .desktop-resize-handle.left,
 .desktop-resize-handle.right {
   top: 14px;
   bottom: 14px;
   width: 8px;
 }
-
 .desktop-resize-handle.top {
   top: 0;
   cursor: ns-resize;
 }
-
 .desktop-resize-handle.bottom {
   bottom: 0;
   cursor: ns-resize;
 }
-
 .desktop-resize-handle.left {
   left: 0;
   cursor: ew-resize;
 }
-
 .desktop-resize-handle.right {
   right: 0;
   cursor: ew-resize;
 }
-
 .desktop-resize-handle.top-left,
 .desktop-resize-handle.top-right,
 .desktop-resize-handle.bottom-left,
@@ -702,54 +871,50 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
 }
-
 .desktop-resize-handle.top-left {
   top: 0;
   left: 0;
   cursor: nwse-resize;
 }
-
 .desktop-resize-handle.top-right {
   top: 0;
   right: 0;
   cursor: nesw-resize;
 }
-
 .desktop-resize-handle.bottom-left {
   bottom: 0;
   left: 0;
   cursor: nesw-resize;
 }
-
 .desktop-resize-handle.bottom-right {
   right: 0;
   bottom: 0;
   cursor: nwse-resize;
 }
 
+/* ── Background (EchoMusic style) ── */
 .desktop-background {
   position: absolute;
   inset: 0;
   z-index: 1;
-  border-radius: 0;
-  background: rgba(255, 255, 255, calc(var(--desktop-opacity) * 0.96));
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, calc(var(--desktop-opacity) * 0.98));
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   backdrop-filter: blur(18px);
   opacity: 0;
   transition: opacity 160ms ease;
 }
-
 .desktop-lyric-window.hovering .desktop-background {
   opacity: 1;
 }
-
 .dark .desktop-background {
   background: rgba(13, 18, 29, calc(var(--desktop-opacity) * 0.88));
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
 }
 
+/* ── Controls overlay (EchoMusic style) ── */
 .desktop-controls-overlay {
   position: absolute;
   top: 8px;
@@ -762,16 +927,13 @@ onUnmounted(() => {
     transform 160ms ease;
   pointer-events: auto;
 }
-
 .desktop-lyric-window.hovering .desktop-controls-overlay {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-
 .desktop-lyric-window.locked .desktop-controls-overlay {
   opacity: 0;
 }
-
 .desktop-lyric-window.locked .desktop-controls-overlay.show-locked-controls {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
@@ -784,7 +946,6 @@ onUnmounted(() => {
   color: rgba(15, 23, 42, 0.92);
   padding: 0;
 }
-
 .desktop-controls-wrapper.locked-controls {
   padding: 0;
   min-width: auto;
@@ -800,9 +961,77 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.58);
   border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow: 0 6px 16px rgba(148, 163, 184, 0.12);
-  backdrop-filter: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.desktop-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.88);
+  transform: scale(1.1);
+}
+.desktop-icon-btn:active {
+  transform: scale(0.95);
 }
 
+.dark .desktop-controls-wrapper {
+  color: rgba(255, 255, 255, 0.88);
+}
+.dark .desktop-icon-btn {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.dark .desktop-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Color controls (MoeKoeMusic style) ── */
+.desktop-color-controls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.desktop-color-button {
+  padding: 2px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.desktop-color-button:hover {
+  transform: scale(1.1);
+  border-color: rgba(15, 23, 42, 0.25);
+}
+.dark .desktop-color-button {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: transparent;
+}
+.dark .desktop-color-button:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.desktop-color-preview {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.desktop-hidden-color-input {
+  position: absolute;
+  visibility: hidden;
+  width: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+}
+
+/* ── Mode group (EchoMusic style) ── */
 .desktop-mode-group {
   display: inline-flex;
   align-items: center;
@@ -815,19 +1044,16 @@ onUnmounted(() => {
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
   backdrop-filter: blur(18px);
 }
-
 .desktop-toggle-btn.is-active {
   opacity: 1;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 10px 24px rgba(148, 163, 184, 0.14);
 }
-
 .desktop-toggle-btn {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
   min-width: max-content;
-  flex-shrink: 0;
   height: 27.5px;
   padding: 0 12px;
   gap: 6px;
@@ -839,7 +1065,6 @@ onUnmounted(() => {
   box-shadow: none;
   transition: all 0.2s ease;
 }
-
 .desktop-mode-switch {
   display: inline-flex;
   align-items: center;
@@ -855,7 +1080,6 @@ onUnmounted(() => {
   opacity: 0.92;
   transition: all 0.2s ease;
 }
-
 .desktop-mode-label {
   display: inline-block;
   min-width: 2em;
@@ -863,18 +1087,12 @@ onUnmounted(() => {
   white-space: nowrap;
   color: rgba(15, 23, 42, 0.88);
 }
-
 .desktop-mode-switch:hover,
 .desktop-toggle-btn:hover {
   transform: translateY(-1px);
 }
-
 .desktop-mode-switch:hover {
   background: rgba(255, 255, 255, 0.62);
-}
-
-.desktop-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.88);
 }
 
 .dark .desktop-mode-group {
@@ -882,21 +1100,17 @@ onUnmounted(() => {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
-
 .dark .desktop-toggle-btn.is-active {
   background: rgba(40, 54, 78, 0.96);
   box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.2);
 }
-
 .dark .desktop-mode-label {
   color: rgba(255, 255, 255, 0.9);
 }
-
 .dark .desktop-mode-switch {
   background: rgba(28, 36, 52, 0.92);
   border-color: rgba(255, 255, 255, 0.12);
 }
-
 .dark .desktop-mode-switch:hover {
   background: rgba(40, 54, 78, 0.96);
 }
@@ -907,25 +1121,11 @@ onUnmounted(() => {
   margin: 0 4px;
   background: rgba(15, 23, 42, 0.12);
 }
-
-.dark .desktop-controls-wrapper {
-  color: rgba(255, 255, 255, 0.88);
-}
-
-.dark .desktop-icon-btn {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.dark .desktop-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 .dark .desktop-toolbar-divider {
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* ── Content layout ── */
 .desktop-content-layout {
   position: absolute;
   inset: 0;
@@ -933,19 +1133,18 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-
 .desktop-top-safe {
   flex: 0 0 42px;
 }
-
 .desktop-lyric-stage {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  justify-content: center;
   padding: 6px 20px 8px;
+  overflow: hidden;
 }
-
 .desktop-lyric-stack {
   flex: 1;
   width: 100%;
@@ -953,70 +1152,73 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   padding: 6px 0 4px;
   text-align: center;
 }
-
 .desktop-lyric-stack.double-line {
   gap: 10px;
   justify-content: space-between;
 }
 
-.desktop-lyric-line {
-  min-width: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
+/* ── Lyrics lines (MoeKoeMusic gradient-clip approach) ── */
+.lyrics-text {
+  display: inline-block;
+  position: relative;
+  transform: translateZ(0);
+  white-space: pre;
+  letter-spacing: 0.5px;
+}
+.lyrics-layer {
+  display: block;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  white-space: pre;
+}
+.lyrics-layer-default {
+  position: relative;
+}
+.lyrics-layer-highlight {
+  position: absolute;
+  left: 0;
+  top: 0;
   overflow: hidden;
+  width: 0;
+  max-width: 100%;
+  will-change: width;
+}
+.lyrics-text-static .lyrics-layer {
+  position: relative;
 }
 
-.desktop-lyric-line.current {
-  min-height: calc(var(--desktop-lyric-font-size) * 1.36);
+.lyrics-line {
+  overflow: hidden;
+  position: relative;
+  opacity: 1;
+  will-change: background-position;
   font-size: var(--desktop-lyric-font-size);
   font-family: var(--desktop-font-family);
   font-weight: var(--desktop-font-weight);
   line-height: 1.28;
 }
-
-.desktop-lyric-line.next {
-  min-height: calc(var(--desktop-lyric-next-size) * 1.28);
-  font-size: var(--desktop-lyric-next-size);
-  font-family: var(--desktop-font-family);
-  font-weight: var(--desktop-font-weight);
-  line-height: 1.22;
-  opacity: 1;
-}
-
-.desktop-lyric-line.next.is-secondary {
-  font-size: var(--desktop-lyric-next-size);
-  opacity: 1;
-}
-
-.desktop-lyric-line-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  white-space: nowrap;
-  transform: translateX(0);
-}
-
-.desktop-lyric-line.is-scrolling .desktop-lyric-line-content {
-  animation: desktop-lyric-marquee var(--desktop-scroll-duration) ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-.desktop-char {
+.lyrics-content {
   display: inline-block;
-  white-space: pre;
-  transition: color 90ms linear;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 6px;
+  transform: translateX(0);
+  background-color: transparent;
+}
+.desktop-lyric-window:not(.locked) .lyrics-content.hovering:hover {
+  cursor: move;
+}
+.nolyrics {
+  margin-bottom: 30px;
 }
 
-@keyframes desktop-lyric-marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(calc(var(--desktop-scroll-distance, 0px) * -1));
-  }
+.desktop-lock-button {
+  position: relative;
+  z-index: 3;
 }
 </style>

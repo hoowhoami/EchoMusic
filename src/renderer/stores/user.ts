@@ -1,9 +1,8 @@
 import { defineStore } from 'pinia';
-import { claimDayVip, getUserDetail, getUserVipDetail, getVipMonthRecord, upgradeDayVip } from '@/api/user';
+import { claimDayVip, getUserDetail, getUserVipDetail, upgradeDayVip } from '@/api/user';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';
-import { useToastStore } from './toast';
 
 export type UserInfo = User;
 
@@ -22,7 +21,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
-const mergeExtendsInfo = (...sources: Array<UserExtendsInfo | undefined>): UserExtendsInfo | undefined => {
+const mergeExtendsInfo = (
+  ...sources: Array<UserExtendsInfo | undefined>
+): UserExtendsInfo | undefined => {
   const merged = sources.reduce<UserExtendsInfo>((acc, source) => {
     if (!source) return acc;
     return {
@@ -49,10 +50,18 @@ const mergeExtendsInfo = (...sources: Array<UserExtendsInfo | undefined>): UserE
 const normalizeUserInfo = (info: UserInfo): UserInfo => {
   const next = { ...info };
 
-  if ((typeof next.userid !== 'number' || next.userid <= 0) && typeof next.userId === 'number' && next.userId > 0) {
+  if (
+    (typeof next.userid !== 'number' || next.userid <= 0) &&
+    typeof next.userId === 'number' &&
+    next.userId > 0
+  ) {
     next.userid = next.userId;
   }
-  if ((typeof next.userId !== 'number' || next.userId <= 0) && typeof next.userid === 'number' && next.userid > 0) {
+  if (
+    (typeof next.userId !== 'number' || next.userId <= 0) &&
+    typeof next.userid === 'number' &&
+    next.userid > 0
+  ) {
     next.userId = next.userid;
   }
 
@@ -65,8 +74,6 @@ const buildPatchedUserInfo = (current: UserInfo | null, patch: Partial<UserInfo>
     ...patch,
   });
 };
-
-
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -95,7 +102,8 @@ export const useUserStore = defineStore('user', {
       const mapped = mapUser(data);
       const detailPayload = isRecord(data.detail)
         ? data.detail
-        : isRecord(data.extendsInfo) && isRecord((data.extendsInfo as Record<string, unknown>).detail)
+        : isRecord(data.extendsInfo) &&
+            isRecord((data.extendsInfo as Record<string, unknown>).detail)
           ? ((data.extendsInfo as Record<string, unknown>).detail as Record<string, unknown>)
           : isRecord(data)
             ? data
@@ -155,10 +163,12 @@ export const useUserStore = defineStore('user', {
             vipData ? { vip: vipData } : undefined,
           );
 
-          this.setUserInfo(buildPatchedUserInfo(this.info, {
-            ...(vipData ? { vip: vipData } : {}),
-            ...(mergedExtends ? { extends: mergedExtends, extendsInfo: mergedExtends } : {}),
-          }));
+          this.setUserInfo(
+            buildPatchedUserInfo(this.info, {
+              ...(vipData ? { vip: vipData } : {}),
+              ...(mergedExtends ? { extends: mergedExtends, extendsInfo: mergedExtends } : {}),
+            }),
+          );
         }
       } catch (e) {
         logger.error('UserStore', 'Fetch user info error:', e);
@@ -178,42 +188,33 @@ export const useUserStore = defineStore('user', {
     async autoReceiveVipIfNeeded() {
       if (!this.isLoggedIn || this.isAutoClaimingVip) return;
       this.isAutoClaimingVip = true;
-      const toastStore = useToastStore();
+
       try {
-        await this.fetchUserInfo();
-
         const today = new Date().toISOString().split('T')[0];
-        const recordRes = await getVipMonthRecord();
-        const recordList = Array.isArray(recordRes?.data?.list)
-          ? (recordRes.data.list as Array<Record<string, unknown>>)
-          : [];
-        let isTvipClaimed = recordList.some((item) => String(item.day ?? '') === today);
 
-        if (!isTvipClaimed) {
-          const claimRes = await claimDayVip(today) as { status?: number };
-          isTvipClaimed = claimRes?.status === 1;
+        // 尝试领取
+        try {
+          await claimDayVip(today);
+        } catch (e) {
+          logger.warn('UserStore', 'VIP claim: claimDayVip failed', e);
         }
 
-        await this.fetchUserInfo();
-
-        const vipInfo = (this.info?.extendsInfo?.vip ?? this.info?.vip ?? {}) as Record<string, unknown>;
-        const busiVip = Array.isArray(vipInfo.busi_vip) ? (vipInfo.busi_vip as Array<Record<string, unknown>>) : [];
-        const hasSvip = busiVip.some((item) => item.product_type === 'svip' && Number(item.is_vip ?? 0) === 1);
-
-        let isSvipClaimed = hasSvip;
-        if (isTvipClaimed && !hasSvip) {
-          const upgradeRes = await upgradeDayVip() as { status?: number; error_code?: number };
-          isSvipClaimed = upgradeRes?.status === 1 || upgradeRes?.error_code === 297002;
+        // 尝试升级
+        try {
+          await upgradeDayVip();
+        } catch (e) {
+          logger.warn('UserStore', 'VIP claim: upgradeDayVip failed', e);
         }
 
-        this.setClaimStatus(isTvipClaimed, isSvipClaimed);
-        if (isTvipClaimed || isSvipClaimed) {
+        // 刷新用户信息
+        try {
           await this.fetchUserInfo();
           this.hasFetchedUserInfo = true;
+        } catch (e) {
+          logger.warn('UserStore', 'VIP claim: fetchUserInfo failed', e);
         }
       } catch (error) {
-        logger.warn('UserStore', 'Auto receive VIP skipped:', error);
-        toastStore.actionFailed('领取 VIP');
+        logger.warn('UserStore', 'Auto receive VIP unexpected error:', error);
       } finally {
         this.isAutoClaimingVip = false;
       }

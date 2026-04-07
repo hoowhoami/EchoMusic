@@ -1,3 +1,4 @@
 [submodule "server"]
 	path = server
-	url = https://github.com/MakcRe/KuGouMusicApi.git
+	url = https://github.com/hoowhoami/KuGouMusicApi.git
+	branch = stable
