@@ -439,8 +439,9 @@ onUnmounted(() => {
                   <div class="py-[40vh]">
                     <div
                       v-for="(line, index) in lyricStore.lines"
-                      :key="`${line.time}-${index}`"
+                      :key="line.time"
                       class="lyric-row"
+                      :data-lyric-index="index"
                       :style="{
                         minHeight:
                           (lyricStore.lyricsMode === 'translation' ||
@@ -457,7 +458,6 @@ onUnmounted(() => {
                         variant="unstyled"
                         size="none"
                         type="button"
-                        :data-lyric-index="index"
                         :class="['lyric-line', currentIndex === index ? 'is-current' : 'is-idle']"
                         @click="handleLyricLineClick(line.time)"
                       >
@@ -470,8 +470,8 @@ onUnmounted(() => {
                         >
                           <template v-if="currentIndex === index && line.characters.length > 1">
                             <span
-                              v-for="(char, charIndex) in line.characters"
-                              :key="`${index}-${charIndex}-${char.startTime}`"
+                              v-for="char in line.characters"
+                              :key="`${char.startTime}`"
                               class="lyric-character"
                               :class="char.highlighted ? 'is-highlighted' : ''"
                               >{{ char.text }}</span
