@@ -118,7 +118,6 @@
     },
     "dmg": {
       "artifactName": "${productName}-${version}-macOS.${ext}",
-      "background": "build/dmg-background.png",
       "backgroundColor": "#ffffff",
       "window": {
         "width": 660,
