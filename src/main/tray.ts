@@ -43,11 +43,14 @@ const resolveTrayIconPath = () => {
       ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
       : nativeTheme.shouldUseDarkColors;
 
-  const iconName = process.platform === 'darwin'
-    ? 'IconTemplate.png'
-    : process.platform === 'win32'
-      ? (shouldUseLightTrayIcon ? 'win_tray_icon_light.ico' : 'win_tray_icon_dark.ico')
-      : 'linux_tray_icon.png';
+  const iconName =
+    process.platform === 'darwin'
+      ? 'IconTemplate.png'
+      : process.platform === 'win32'
+        ? shouldUseLightTrayIcon
+          ? 'win_tray_icon_light.ico'
+          : 'win_tray_icon_dark.ico'
+        : 'linux_tray_icon.png';
 
   if (app.isPackaged) {
     return join(process.resourcesPath, 'icons', iconName);
@@ -78,7 +81,7 @@ const setPlayModeFromTray = (playMode: PlayMode) => {
   mainWindow.webContents.send('tray:set-play-mode', playMode);
 };
 
-const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => ([
+const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
   {
     label: playbackState.isPlaying ? '暂停' : '播放',
     click: () => forwardCommandToRenderer('togglePlayback'),
@@ -93,14 +96,16 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => ([
   },
   {
     label: '播放模式',
-    submenu: (Object.entries(playModeLabelMap) as Array<[PlayMode, string]>).map<MenuItemConstructorOptions>(([mode, label]) => ({
+    submenu: (
+      Object.entries(playModeLabelMap) as Array<[PlayMode, string]>
+    ).map<MenuItemConstructorOptions>(([mode, label]) => ({
       label,
       type: 'radio',
       checked: playbackState.playMode === mode,
       click: () => setPlayModeFromTray(mode),
     })),
   },
-]);
+];
 
 const createTrayMenu = () => {
   return Menu.buildFromTemplate([
@@ -138,7 +143,8 @@ export const initTray = (context: TrayContext) => {
     return appTray;
   }
 
-  appTray = new Tray(createTrayImage(), process.platform === 'linux' ? undefined : TRAY_GUID);
+  const trayImage = createTrayImage();
+  appTray = process.platform === 'linux' ? new Tray(trayImage) : new Tray(trayImage, TRAY_GUID);
   appTray.setToolTip('EchoMusic');
 
   appTray.on('click', () => {

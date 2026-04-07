@@ -45,7 +45,11 @@ if (!gotTheLock) {
     };
 
     await createWindow();
-    initTray(trayContext);
+    try {
+      initTray(trayContext);
+    } catch (err) {
+      console.error('[Main] Failed to init tray:', err);
+    }
     installWindowsTrayRecovery();
 
     void startApiServer().catch((err) => {
