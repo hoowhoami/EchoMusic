@@ -108,7 +108,9 @@
         "deb",
         "rpm",
         "tar.gz"
-      ],
+      ]
+    },
+    "deb": {
       "depends": [
         "libasound2"
       ]

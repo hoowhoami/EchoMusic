@@ -374,6 +374,7 @@ const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = f
 
 const persistWindowBounds = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  if (desktopLyricDragSession) return;
   const bounds = desktopLyricWindow.getBounds();
   const nextFontSize = deriveFontSizeFromWindow(
     bounds.width,
@@ -506,9 +507,14 @@ const applyResizeBounds = (
   });
 };
 
-const applyDragBounds = (_session: DesktopLyricDragSession, screenX: number, screenY: number) => {
+const applyDragBounds = (session: DesktopLyricDragSession, screenX: number, screenY: number) => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  desktopLyricWindow.setPosition(Math.round(screenX), Math.round(screenY));
+  desktopLyricWindow.setBounds({
+    x: Math.round(screenX),
+    y: Math.round(screenY),
+    width: session.startBounds.width,
+    height: session.startBounds.height,
+  });
 };
 
 const startDesktopLyricResize = (
@@ -559,6 +565,7 @@ const updateDesktopLyricDrag = (screenX: number, screenY: number) => {
 const endDesktopLyricDrag = () => {
   if (!desktopLyricDragSession) return;
   desktopLyricDragSession = null;
+  persistWindowBounds();
   if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
     desktopLyricWindow.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
       forward: true,
