@@ -73,7 +73,9 @@ const displayLabel = computed(() => {
   return lyricStore.preferredMode === 'romanization' ? '音译' : '翻译';
 });
 const canToggleSecondary = computed(() => lyricStore.canShowSecondary);
-const canCycleSecondaryMode = computed(() => lyricStore.hasTranslation && lyricStore.hasRomanization);
+const canCycleSecondaryMode = computed(
+  () => lyricStore.hasTranslation && lyricStore.hasRomanization,
+);
 const emptyStateTitle = computed(() => {
   if (!hasActiveTrack.value) return '未在播放';
   if (lyricStore.isLoading) return '歌词加载中…';
@@ -183,7 +185,7 @@ const handleLyricLineClick = (time: number) => {
 
 const ensureLyricsForCurrentTrack = () => {
   const track = currentTrack.value;
-  if (!track || lyricStore.isLoading || !playerStore.isPlaying) return;
+  if (!track || lyricStore.isLoading) return;
 
   const lyricHash = currentTrackLyricHash.value;
   if (!lyricHash) {
@@ -224,10 +226,8 @@ watch(
 
 watch(
   () => [currentTrack.value?.id, playerStore.isPlaying],
-  async ([id, isPlaying]) => {
-    if (isPlaying) {
-      ensureLyricsForCurrentTrack();
-    }
+  async ([id]) => {
+    ensureLyricsForCurrentTrack();
     if (id) {
       isUserScrollingLyrics.value = false;
       clearUserScrollResumeTimer();
@@ -265,6 +265,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 };
 
 onMounted(() => {
+  ensureLyricsForCurrentTrack();
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
 });
@@ -293,7 +294,6 @@ onUnmounted(() => {
     <OverlayHeader />
 
     <div class="absolute inset-x-0 bottom-0 top-10 z-10 flex flex-col">
-
       <div class="px-6 pb-3 no-drag">
         <div class="flex h-12 items-center">
           <Button
@@ -428,7 +428,9 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="lyric-panel-surface relative flex min-w-0 flex-[7] flex-col justify-center self-stretch">
+          <section
+            class="lyric-panel-surface relative flex min-w-0 flex-[7] flex-col justify-center self-stretch"
+          >
             <div class="lyric-stage absolute inset-0">
               <div
                 ref="lyricListRef"
