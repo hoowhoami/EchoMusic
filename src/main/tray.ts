@@ -10,7 +10,7 @@ import { quitApplication } from './window';
 import { join } from 'path';
 
 type TrayCommand = 'togglePlayback' | 'previousTrack' | 'nextTrack';
-type PlayMode = 'list' | 'random' | 'single';
+type PlayMode = 'sequential' | 'list' | 'random' | 'single';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
@@ -32,6 +32,7 @@ let playbackState: TrayPlaybackState = {
 };
 
 const playModeLabelMap: Record<PlayMode, string> = {
+  sequential: '顺序播放',
   list: '列表循环',
   random: '随机播放',
   single: '单曲循环',

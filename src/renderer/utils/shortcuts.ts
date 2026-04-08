@@ -105,18 +105,22 @@ const acceleratorToKeys = (accelerator: string): string[] => {
 
 export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
   const settingStore = useSettingStore();
-  const bindings = scope === 'global'
-    ? (settingStore.globalShortcutBindings ?? {})
-    : (settingStore.shortcutBindings ?? {});
-  const defaults = scope === 'global'
-    ? (settingStore.defaultGlobalShortcutLabels ?? {})
-    : (settingStore.defaultShortcutLabels ?? {});
+  const bindings =
+    scope === 'global'
+      ? (settingStore.globalShortcutBindings ?? {})
+      : (settingStore.shortcutBindings ?? {});
+  const defaults =
+    scope === 'global'
+      ? (settingStore.defaultGlobalShortcutLabels ?? {})
+      : (settingStore.defaultShortcutLabels ?? {});
   return {
     togglePlayback: labelToAccelerator(bindings.togglePlayback ?? defaults.togglePlayback ?? ''),
     previousTrack: labelToAccelerator(bindings.previousTrack ?? defaults.previousTrack ?? ''),
     nextTrack: labelToAccelerator(bindings.nextTrack ?? defaults.nextTrack ?? ''),
     toggleMainLyric: labelToAccelerator(bindings.toggleMainLyric ?? defaults.toggleMainLyric ?? ''),
-    toggleDesktopLyric: labelToAccelerator(bindings.toggleDesktopLyric ?? defaults.toggleDesktopLyric ?? ''),
+    toggleDesktopLyric: labelToAccelerator(
+      bindings.toggleDesktopLyric ?? defaults.toggleDesktopLyric ?? '',
+    ),
     toggleLyricsMode: '',
     cycleLyricsMode: '',
     volumeUp: labelToAccelerator(bindings.volumeUp ?? defaults.volumeUp ?? ''),
@@ -174,11 +178,13 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     else playlistStore.addToFavorites(track);
   } else if (command === 'togglePlayMode') {
     const nextMode =
-      playerStore.playMode === 'list'
-        ? 'random'
-        : playerStore.playMode === 'random'
-          ? 'single'
-          : 'list';
+      playerStore.playMode === 'sequential'
+        ? 'list'
+        : playerStore.playMode === 'list'
+          ? 'random'
+          : playerStore.playMode === 'random'
+            ? 'single'
+            : 'sequential';
     playerStore.setPlayMode(nextMode);
   } else if (command === 'toggleWindow') {
     window.electron?.ipcRenderer?.send('window-toggle', null);
@@ -194,7 +200,7 @@ export const registerLocalShortcuts = () => {
     const shortcutMap = resolveShortcutMap('local');
     const pressed = buildShortcut(event);
     const matched = (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).find(
-      ([, accelerator]) => accelerator && acceleratorToKeys(accelerator).includes(pressed)
+      ([, accelerator]) => accelerator && acceleratorToKeys(accelerator).includes(pressed),
     );
     if (!matched) return;
     event.preventDefault();

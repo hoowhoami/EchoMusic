@@ -17,7 +17,7 @@ import { iconCloud, iconCurrentLocation, iconList, iconPlay, iconSearch } from '
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 100;
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -133,10 +133,12 @@ const resetCloudState = () => {
 };
 
 const mapCloudPage = (payload: unknown) => {
-  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
-  const data = record?.data && typeof record.data === 'object'
-    ? (record.data as Record<string, unknown>)
-    : record;
+  const record =
+    payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : undefined;
+  const data =
+    record?.data && typeof record.data === 'object'
+      ? (record.data as Record<string, unknown>)
+      : record;
   const rawList = Array.isArray(data?.list) ? data.list : [];
   const mapped = rawList
     .filter((item) => typeof item === 'object' && item !== null)
@@ -150,6 +152,28 @@ const mapCloudPage = (payload: unknown) => {
   };
 };
 
+/**
+ * 对云盘歌曲去重：如果 id 重复，给后续的歌曲追加序号后缀以保证唯一性。
+ * 同时将新 id 加入 seenIds 集合。
+ */
+const deduplicateCloudSongs = (batch: Song[], seenIds: Set<string>): Song[] => {
+  const result: Song[] = [];
+  for (const song of batch) {
+    let uniqueId = song.id;
+    if (seenIds.has(uniqueId)) {
+      // id 冲突，追加序号
+      let suffix = 2;
+      while (seenIds.has(`${song.id}_${suffix}`)) suffix++;
+      uniqueId = `${song.id}_${suffix}`;
+      result.push({ ...song, id: uniqueId });
+    } else {
+      result.push(song);
+    }
+    seenIds.add(uniqueId);
+  }
+  return result;
+};
+
 const resolveAllCloudSongs = async (totalCount: number) => {
   if (isBackgroundResolving.value || songs.value.length >= totalCount) return;
   isBackgroundResolving.value = true;
@@ -160,13 +184,14 @@ const resolveAllCloudSongs = async (totalCount: number) => {
     while (songs.value.length < totalCount) {
       const res = await getUserCloud(page, PAGE_SIZE);
       const nextBatch = mapCloudPage(res).songs;
-      const filtered = nextBatch.filter((song) => {
-        if (seenIds.has(song.id)) return false;
-        seenIds.add(song.id);
-        return true;
-      });
-      if (filtered.length === 0) break;
-      songs.value = [...songs.value, ...filtered];
+
+      if (nextBatch.length === 0) break;
+
+      const filtered = deduplicateCloudSongs(nextBatch, seenIds);
+      if (filtered.length > 0) {
+        songs.value = [...songs.value, ...filtered];
+      }
+
       currentPage.value = page;
       hasMore.value = songs.value.length < totalCount;
       page += 1;
@@ -185,7 +210,8 @@ const loadCloud = async () => {
   try {
     const res = await getUserCloud(1, PAGE_SIZE);
     const parsed = mapCloudPage(res);
-    songs.value = parsed.songs;
+    const seenIds = new Set<string>();
+    songs.value = deduplicateCloudSongs(parsed.songs, seenIds);
     currentPage.value = 1;
     totalSongCount.value = parsed.total;
     cloudCapacity.value = parsed.capacity;
@@ -242,8 +268,13 @@ onMounted(() => {
 
 <template>
   <div class="cloud-view bg-bg-main min-h-full">
-    <div v-if="!isLoggedIn" class="cloud-login-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6">
-      <div class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5">
+    <div
+      v-if="!isLoggedIn"
+      class="cloud-login-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+    >
+      <div
+        class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+      >
         <Icon :icon="iconCloud" width="32" height="32" />
       </div>
       <div class="text-[22px] font-semibold text-text-main">登录后查看云盘</div>
@@ -260,8 +291,12 @@ onMounted(() => {
       >
         <template #details>
           <div class="flex flex-col gap-2">
-            <div class="text-[12px] font-medium text-text-secondary/75">支持基础浏览、播放与容量查看</div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80">
+            <div class="text-[12px] font-medium text-text-secondary/75">
+              支持基础浏览、播放与容量查看
+            </div>
+            <div
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+            >
               <div class="inline-flex items-center gap-1.5">
                 <Icon :icon="iconPlay" width="12" height="12" />
                 <span>{{ displaySongCount }}</span>
@@ -279,13 +314,17 @@ onMounted(() => {
         </template>
 
         <template #collapsed-actions>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="handlePlayAll"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
           >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="openBatchDrawer"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
           >
@@ -300,12 +339,16 @@ onMounted(() => {
         <div class="cloud-info-card">
           <div class="flex items-center justify-between">
             <div class="text-[13px] font-semibold text-text-main">云盘容量</div>
-            <div class="text-[11px] font-semibold text-primary">{{ (usageRatio * 100).toFixed(1) }}%</div>
+            <div class="text-[11px] font-semibold text-primary">
+              {{ (usageRatio * 100).toFixed(1) }}%
+            </div>
           </div>
           <div class="cloud-progress-track">
             <div class="cloud-progress-value" :style="{ width: `${usageRatio * 100}%` }"></div>
           </div>
-          <div class="flex items-center justify-between text-[11px] font-medium text-text-secondary/80">
+          <div
+            class="flex items-center justify-between text-[11px] font-medium text-text-secondary/80"
+          >
             <span>{{ formatBytes(usedCapacity) }} / {{ formatBytes(cloudCapacity) }}</span>
             <span>可用 {{ formatBytes(cloudAvailable) }}</span>
           </div>
@@ -316,7 +359,8 @@ onMounted(() => {
         <div class="px-6 border-b border-border-light/10">
           <div class="flex items-center justify-between h-14">
             <div class="text-[14px] font-semibold text-text-main">
-              歌曲 <span class="ml-1 text-[12px] text-text-secondary/70">{{ displaySongCount }}</span>
+              歌曲
+              <span class="ml-1 text-[12px] text-text-secondary/70">{{ displaySongCount }}</span>
             </div>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -333,7 +377,9 @@ onMounted(() => {
                   height="14"
                 />
               </div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 @click="handleLocate"
                 class="song-locate-btn p-2 rounded-lg"
                 title="定位当前播放"
@@ -355,13 +401,17 @@ onMounted(() => {
 
       <div class="px-6 pb-12">
         <div v-if="loading" class="flex items-center justify-center py-20">
-          <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div
+            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+          ></div>
         </div>
         <div
           v-else-if="songs.length === 0"
           class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
         >
-          <div class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4">
+          <div
+            class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+          >
             <Icon :icon="iconCloud" width="28" height="28" />
           </div>
           <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
@@ -378,7 +428,9 @@ onMounted(() => {
           :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
         />
         <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
-          <div class="text-[12px] font-semibold text-text-secondary/70">正在后台补全剩余云盘歌曲...</div>
+          <div class="text-[12px] font-semibold text-text-secondary/70">
+            正在后台补全剩余云盘歌曲...
+          </div>
         </div>
       </div>
     </template>

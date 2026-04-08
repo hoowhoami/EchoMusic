@@ -191,7 +191,7 @@ export type PlaybackNotice = {
   trackId: string | null;
 };
 
-export type PlayMode = 'list' | 'single' | 'random';
+export type PlayMode = 'sequential' | 'list' | 'single' | 'random';
 
 // 保持一个全局 PlayerEngine 实例
 const engine = new PlayerEngine();
@@ -343,6 +343,8 @@ export const usePlayerStore = defineStore('player', {
     autoNextAttempts: 0,
     autoNextSourceTrackId: null as string | null,
     playbackNotice: null as PlaybackNotice | null,
+    shuffleQueue: null as number[] | null,
+    shuffleQueueLength: 0,
   }),
   actions: {
     showPlaybackNotice(code: string, track?: Song | null) {
@@ -851,6 +853,9 @@ export const usePlayerStore = defineStore('player', {
 
     setPlayMode(mode: PlayMode) {
       this.playMode = mode;
+      // 切换模式时重置随机队列
+      this.shuffleQueue = null;
+      this.shuffleQueueLength = 0;
       logger.info('PlayerStore', 'Play mode updated', {
         mode,
       });
@@ -1270,6 +1275,15 @@ export const usePlayerStore = defineStore('player', {
         nextIndex = this.pickRandomIndex(list.length, currentIndex);
       } else if (this.playMode === 'single') {
         nextIndex = currentIndex;
+      } else if (this.playMode === 'sequential') {
+        // 顺序播放：到末尾就停止
+        if (currentIndex >= list.length - 1) {
+          logger.info('PlayerStore', 'Sequential mode reached end of list, stopping playback');
+          this.isPlaying = false;
+          engine.pause();
+          return;
+        }
+        nextIndex = currentIndex + 1;
       } else {
         nextIndex = (currentIndex + 1) % list.length;
       }
@@ -1278,6 +1292,17 @@ export const usePlayerStore = defineStore('player', {
         nextIndex = findPlayableIndex(list, nextIndex, true, true);
       } else if (!isPlayableSong(list[nextIndex])) {
         nextIndex = findPlayableIndex(list, nextIndex, true, false);
+      }
+
+      // 顺序播放模式下，如果找到的可播放歌曲索引回绕到了当前歌曲之前，说明已到末尾
+      if (this.playMode === 'sequential' && nextIndex <= currentIndex) {
+        logger.info(
+          'PlayerStore',
+          'Sequential mode: no more playable tracks after current, stopping',
+        );
+        this.isPlaying = false;
+        engine.pause();
+        return;
       }
 
       const nextSong = list[nextIndex];
@@ -1631,7 +1656,7 @@ export const usePlayerStore = defineStore('player', {
         } catch (error) {
           logger.error('PlayerStore', 'Fetch cloud track audio url error:', error);
         }
-        
+
         if (cloudUrl) {
           logger.info(
             'PlayerStore',
@@ -1998,15 +2023,35 @@ export const usePlayerStore = defineStore('player', {
 
     pickRandomIndex(length: number, currentIndex: number) {
       if (length <= 1) return currentIndex;
-      logger.debug('PlayerStore', 'Picking random next index', {
+
+      // Lazily build or rebuild the shuffle queue when needed
+      if (
+        !this.shuffleQueue ||
+        this.shuffleQueue.length === 0 ||
+        this.shuffleQueueLength !== length
+      ) {
+        this.shuffleQueue = this.buildShuffleQueue(length, currentIndex);
+        this.shuffleQueueLength = length;
+      }
+
+      const nextIndex = this.shuffleQueue.shift()!;
+      logger.debug('PlayerStore', 'Picking random next index (shuffle)', {
         length,
         currentIndex,
+        nextIndex,
+        remaining: this.shuffleQueue.length,
       });
-      let nextIndex = Math.floor(Math.random() * length);
-      if (nextIndex === currentIndex) {
-        nextIndex = (nextIndex + 1) % length;
-      }
       return nextIndex;
+    },
+
+    buildShuffleQueue(length: number, excludeIndex: number): number[] {
+      const indices = Array.from({ length }, (_, i) => i).filter((i) => i !== excludeIndex);
+      // Fisher-Yates shuffle
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      return indices;
     },
   },
   persist: {

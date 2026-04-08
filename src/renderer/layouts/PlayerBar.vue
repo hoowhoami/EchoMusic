@@ -27,9 +27,11 @@ import {
   iconHeartFilled,
   iconCloud,
   iconTriangleAlert,
-  iconMessageCircle,  iconRepeat,
+  iconMessageCircle,
+  iconRepeat,
   iconShuffle,
   iconListRestart,
+  iconArrowNarrowRight,
   iconSkipBack,
   iconSkipForward,
   iconPlay,
@@ -487,16 +489,29 @@ onUnmounted(() => {
             size="none"
             @click="
               player.setPlayMode(
-                player.playMode === 'list'
-                  ? 'random'
-                  : player.playMode === 'random'
-                    ? 'single'
-                    : 'list',
+                player.playMode === 'sequential'
+                  ? 'list'
+                  : player.playMode === 'list'
+                    ? 'random'
+                    : player.playMode === 'random'
+                      ? 'single'
+                      : 'sequential',
               )
             "
             class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
           >
-            <Icon v-if="player.playMode === 'list'" :icon="iconRepeat" width="22" height="22" />
+            <Icon
+              v-if="player.playMode === 'sequential'"
+              :icon="iconArrowNarrowRight"
+              width="22"
+              height="22"
+            />
+            <Icon
+              v-else-if="player.playMode === 'list'"
+              :icon="iconRepeat"
+              width="22"
+              height="22"
+            />
             <Icon
               v-else-if="player.playMode === 'random'"
               :icon="iconShuffle"

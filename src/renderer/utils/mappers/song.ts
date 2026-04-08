@@ -42,12 +42,7 @@ export const mapTopSong = (json: unknown): Song => {
   singerName = cleanupAudioExtension(singerName);
 
   const artists = buildArtists(record, EMPTY_RECORD);
-  const singers =
-    artists.length > 0
-      ? artists
-      : singerName
-        ? [{ name: singerName }]
-        : [];
+  const singers = artists.length > 0 ? artists : singerName ? [{ name: singerName }] : [];
   const relateGoods = buildRelateGoods(record, EMPTY_RECORD);
   const durationFromTimeLength = parseIntSafe(pickValue(record.time_length, 0));
   const durationRaw =
@@ -61,7 +56,9 @@ export const mapTopSong = (json: unknown): Song => {
   );
 
   return {
-    id: readString(pickValue(record.mixsongid, record.audio_id, record.album_audio_id, record.hash, '')),
+    id: readString(
+      pickValue(record.mixsongid, record.audio_id, record.album_audio_id, record.hash, ''),
+    ),
     title: title || '未知歌曲',
     name: title || '未知歌曲',
     artist: normalizeText(
@@ -79,14 +76,15 @@ export const mapTopSong = (json: unknown): Song => {
     hash: readString(pickValue(record.hash, record.hash_128, record.FileHash, '')),
     mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, record.audio_id, 0)),
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id)),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id),
+    ),
     privilege: parseOptionalInt(pickValue(record.privilege, undefined)),
     payType: parseOptionalInt(pickValue(record.pay_type, undefined)),
     oldCpy: parseOptionalInt(pickValue(record.old_cpy, record.media_old_cpy, undefined)),
     relateGoods,
   };
 };
-
 
 export const mapPlaylistSong = (json: unknown): Song => {
   const record = toRecord(json);
@@ -148,12 +146,7 @@ export const mapPlaylistSong = (json: unknown): Song => {
 
   const relateGoods = buildRelateGoods(record, audioInfo);
   const artists = buildArtists(record, audioInfo);
-  const singers =
-    artists.length > 0
-      ? artists
-      : singerName
-        ? [{ name: singerName }]
-        : [];
+  const singers = artists.length > 0 ? artists : singerName ? [{ name: singerName }] : [];
 
   const privilegeDownload =
     getRecord(record, 'privilege_download') ??
@@ -202,8 +195,12 @@ export const mapPlaylistSong = (json: unknown): Song => {
     audioUrl: '',
     hash,
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
-    mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0)),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id)),
+    mixSongId: parseIntSafe(
+      pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
+    ),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id),
+    ),
     privilege,
     relateGoods,
     source,
@@ -246,7 +243,9 @@ export const mapArtistSong = (artistId: string | number, json: unknown): Song =>
     audioUrl: '',
     hash,
     mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, 0)),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id)),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id),
+    ),
     privilege: parseOptionalInt(
       pickValue(record.privilege, privilegeDownload.privilege, undefined),
     ),
@@ -271,8 +270,15 @@ export const mapAlbumSong = (json: unknown): Song => {
   const singers =
     artists.length > 0
       ? artists
-      : [{ id: readString(pickValue(base.author_id, base.AuthorId), '') || undefined, name: fallbackArtistName }];
-  const albumName = normalizeText(readString(pickValue(albumInfo.album_name, record.album_name, '')));
+      : [
+          {
+            id: readString(pickValue(base.author_id, base.AuthorId), '') || undefined,
+            name: fallbackArtistName,
+          },
+        ];
+  const albumName = normalizeText(
+    readString(pickValue(albumInfo.album_name, record.album_name, '')),
+  );
   const cover = formatPic(
     pickValue(record.pic, record.img, audioInfo.img, albumInfo.cover, transParam.union_cover, ''),
   );
@@ -287,7 +293,14 @@ export const mapAlbumSong = (json: unknown): Song => {
     album: albumName,
     albumName,
     albumId: readString(
-      pickValue(base.album_id, base.albumid, record.album_id, record.albumid, albumInfo.album_id, ''),
+      pickValue(
+        base.album_id,
+        base.albumid,
+        record.album_id,
+        record.albumid,
+        albumInfo.album_id,
+        '',
+      ),
       '',
     ),
     duration: Math.floor(parseIntSafe(pickValue(audioInfo.duration, record.timelength, 0)) / 1000),
@@ -296,8 +309,20 @@ export const mapAlbumSong = (json: unknown): Song => {
     audioUrl: '',
     hash: readString(pickValue(audioInfo.hash, record.hash, '')),
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
-    mixSongId: parseIntSafe(pickValue(base.mixsongid, base.album_audio_id, base.audio_id, record.mixsongid, record.album_audio_id, record.audio_id, 0)),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id)),
+    mixSongId: parseIntSafe(
+      pickValue(
+        base.mixsongid,
+        base.album_audio_id,
+        base.audio_id,
+        record.mixsongid,
+        record.album_audio_id,
+        record.audio_id,
+        0,
+      ),
+    ),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
+    ),
     privilege: parseOptionalInt(pickValue(record.privilege, copyright.privilege, undefined)),
     relateGoods: buildRelateGoods(record, audioInfo),
     oldCpy: parseOptionalInt(pickValue(deprecated.old_cpy, record.old_cpy, record.media_old_cpy)),
@@ -329,7 +354,9 @@ export const mapRankSong = (json: unknown): Song => {
   const privilege = parseOptionalInt(pickValue(record.privilege, privilegeDownload.privilege));
   const oldCpy = parseOptionalInt(pickValue(deprecated.old_cpy, record.old_cpy));
   const payType = parseOptionalInt(pickValue(deprecated.pay_type, record.pay_type));
-  const albumName = normalizeText(readString(pickValue(albumInfo.album_name, record.album_name, '')));
+  const albumName = normalizeText(
+    readString(pickValue(albumInfo.album_name, record.album_name, '')),
+  );
   const relateGoods = buildRelateGoods(record, audioInfo);
 
   return {
@@ -350,8 +377,12 @@ export const mapRankSong = (json: unknown): Song => {
     cover,
     audioUrl: '',
     hash: readString(pickValue(audioInfo.hash_128, audioInfo.hash, record.hash, '')),
-    mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0)),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id)),
+    mixSongId: parseIntSafe(
+      pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
+    ),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
+    ),
     privilege,
     relateGoods,
     oldCpy,
@@ -422,7 +453,9 @@ export const mapSearchSong = (json: unknown): Song => {
     hash: readString(pickValue(record.FileHash, '')),
     mvHash: readString(pickValue(record.video_hash, record.mvhash, record.MVHash, ''), ''),
     mixSongId: parseIntSafe(pickValue(record.MixSongID, 0)),
-    fileId: parseOptionalInt(pickValue(record.Audioid, record.audio_id, record.fileid, record.file_id)),
+    fileId: parseOptionalInt(
+      pickValue(record.Audioid, record.audio_id, record.fileid, record.file_id),
+    ),
     privilege: parseOptionalInt(pickValue(record.AlbumPrivilege, undefined)),
     relateGoods,
     oldCpy: parseOptionalInt(pickValue(record.OldCpy, undefined)),
@@ -509,7 +542,16 @@ export const mapCloudSong = (json: unknown): Song => {
       : durationRaw;
 
   return {
-    id: readString(pickValue(record.audio_id, record.mixsongid, audioInfo.audio_id, record.hash, '')),
+    id: readString(
+      pickValue(
+        record.hash,
+        audioInfo.hash,
+        record.audio_id,
+        record.mixsongid,
+        audioInfo.audio_id,
+        '',
+      ),
+    ),
     title,
     name: title,
     artist: normalizeText(singerName),
@@ -527,8 +569,12 @@ export const mapCloudSong = (json: unknown): Song => {
     audioUrl: '',
     hash: readString(pickValue(record.hash, audioInfo.hash, audioInfo.hash_128, '')),
     mvHash: readString(pickValue(record.video_hash, record.mvhash, ''), ''),
-    mixSongId: parseIntSafe(pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0)),
-    fileId: parseOptionalInt(pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id)),
+    mixSongId: parseIntSafe(
+      pickValue(record.mixsongid, record.album_audio_id, record.audio_id, audioInfo.audio_id, 0),
+    ),
+    fileId: parseOptionalInt(
+      pickValue(record.fileid, record.file_id, record.Audioid, record.audio_id, audioInfo.audio_id),
+    ),
     source: 'cloud',
   };
 };
