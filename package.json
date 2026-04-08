@@ -78,11 +78,10 @@
         ]
       },
       {
-        "from": "server",
+        "from": "server/bin",
         "to": "server",
         "filter": [
-          "**/*",
-          "!node_modules"
+          "**/*"
         ]
       }
     ],
