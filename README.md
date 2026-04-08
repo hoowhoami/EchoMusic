@@ -133,6 +133,7 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 ## 交流群
 
 - [Telegram](https://t.me/+H9vpkAJrDlViZjU1)
+- QQ群: 1036693403
 
 ## 💡 灵感来源
 
