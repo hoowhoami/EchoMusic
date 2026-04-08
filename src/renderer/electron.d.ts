@@ -22,13 +22,17 @@ export interface IElectronAPI {
     get: () => Promise<{ version: string; isPrerelease: boolean }>;
   };
   apiServer: {
-    start: () => Promise<{ success: boolean; error?: string }>;
-    status: () => Promise<ApiServerStatus>;
+    start: () => Promise<{ success: boolean; port?: number; error?: string }>;
+    status: () => Promise<ApiServerStatus & { port?: number }>;
+    port: () => Promise<number>;
     onStatusChanged: (func: (status: ApiServerStatus) => void) => () => void;
     stop: () => void;
   };
   tray: {
-    syncPlayback: (payload: { isPlaying?: boolean; playMode?: 'list' | 'random' | 'single' }) => void;
+    syncPlayback: (payload: {
+      isPlaying?: boolean;
+      playMode?: 'list' | 'random' | 'single';
+    }) => void;
     onSetPlayMode: (func: (playMode: 'list' | 'random' | 'single') => void) => () => void;
   };
   desktopLyric: {

@@ -129,6 +129,9 @@ const rebuildTrayMenu = () => {
   if (appTray) {
     appTray.setImage(createTrayImage());
     appTray.setToolTip('EchoMusic');
+    if (process.platform === 'linux') {
+      appTray.setContextMenu(createTrayMenu());
+    }
   }
 
   if (process.platform === 'darwin') {
@@ -151,9 +154,13 @@ export const initTray = (context: TrayContext) => {
     trayContext?.restoreWindow();
   });
 
-  appTray.on('right-click', () => {
-    appTray?.popUpContextMenu(createTrayMenu());
-  });
+  if (process.platform === 'linux') {
+    appTray.setContextMenu(createTrayMenu());
+  } else {
+    appTray.on('right-click', () => {
+      appTray?.popUpContextMenu(createTrayMenu());
+    });
+  }
 
   if (process.platform === 'win32') {
     nativeTheme.on('updated', rebuildTrayMenu);

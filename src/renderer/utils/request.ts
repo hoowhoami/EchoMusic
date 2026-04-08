@@ -5,7 +5,7 @@ import { useDeviceStore } from '@/stores/device';
 import { logger } from './logger';
 
 const isDev = import.meta.env.DEV;
-const API_BASE_URL = isDev ? '/api' : 'http://127.0.0.1:12306';
+const API_BASE_URL = isDev ? '/api' : 'http://127.0.0.1:6609';
 
 const request = axios.create({
   baseURL: API_BASE_URL,

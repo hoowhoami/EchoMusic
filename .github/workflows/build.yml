@@ -22,22 +22,19 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            server_bin: app_macos
-            pkg_target: node18-macos-x64
+            server_pkg_script: pkgmacos
             artifact_glob: |
               dist/EchoMusic-*.dmg
               dist/EchoMusic-*.zip
           - os: ubuntu-22.04
-            server_bin: app_linux
-            pkg_target: node18-linux-x64
+            server_pkg_script: pkglinux
             artifact_glob: |
               dist/EchoMusic-*.AppImage
               dist/EchoMusic-*.deb
               dist/EchoMusic-*.rpm
               dist/EchoMusic-*.tar.gz
           - os: windows-latest
-            server_bin: app_win.exe
-            pkg_target: node18-win-x64
+            server_pkg_script: pkgwin
             artifact_glob: |
               dist/EchoMusic-*-Windows-Setup-*.exe
               dist/EchoMusic-*.exe
@@ -82,7 +79,7 @@ jobs:
       - name: Build server executable
         working-directory: server
         shell: bash
-        run: npx pkg . -t ${{ matrix.pkg_target }} -C GZip -o bin/${{ matrix.server_bin }} --no-bytecode
+        run: npm run ${{ matrix.server_pkg_script }}
 
       - name: Build desktop app
         shell: bash

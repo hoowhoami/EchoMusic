@@ -10,7 +10,7 @@ let apiProcess: ChildProcess | null = null;
 let apiStartPromise: Promise<void> | null = null;
 
 const isDev = !app.isPackaged;
-const API_PORT = 12306;
+const API_PORT = 6609;
 const API_HOST = '127.0.0.1';
 const API_START_TIMEOUT_MS = 15000;
 const API_POLL_INTERVAL_MS = 300;
@@ -38,6 +38,8 @@ const setApiStatus = (state: ApiServerState, error?: string) => {
 
 export const getApiServerStatus = (): ApiServerStatus => apiStatus;
 
+export const getActiveApiPort = (): number => API_PORT;
+
 const resolvePackagedServerEntry = (cwd: string) => {
   const platformBinaryName =
     process.platform === 'win32'
@@ -50,14 +52,25 @@ const resolvePackagedServerEntry = (cwd: string) => {
 
   if (!platformBinaryName) return '';
 
-  const candidates = [path.join(cwd, platformBinaryName), path.join(cwd, 'bin', platformBinaryName)];
+  const candidates = [
+    path.join(cwd, platformBinaryName),
+    path.join(cwd, 'bin', platformBinaryName),
+  ];
 
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
 };
 
+const ensureExecutable = (filePath: string) => {
+  if (process.platform === 'win32' || !fs.existsSync(filePath)) return;
+  try {
+    fs.chmodSync(filePath, 0o755);
+  } catch (err) {
+    log.warn(`[Server] Failed to chmod ${filePath}:`, err);
+  }
+};
+
 const isChildProcessAlive = (child: ChildProcess | null) => {
   if (!child?.pid) return false;
-
   try {
     process.kill(child.pid, 0);
     return true;
@@ -69,15 +82,11 @@ const isChildProcessAlive = (child: ChildProcess | null) => {
 const isPortReachable = (port: number, host: string) => {
   return new Promise<boolean>((resolve) => {
     const socket = net.connect({ port, host });
-
     const finalize = (result: boolean) => {
       socket.removeAllListeners();
-      if (!socket.destroyed) {
-        socket.destroy();
-      }
+      if (!socket.destroyed) socket.destroy();
       resolve(result);
     };
-
     socket.setTimeout(1000);
     socket.once('connect', () => finalize(true));
     socket.once('timeout', () => finalize(false));
@@ -89,53 +98,97 @@ const waitForApiReady = (port: number, host: string, timeoutMs: number) => {
   return new Promise<void>((resolve, reject) => {
     const startedAt = Date.now();
     let finished = false;
-
-    const finish = (callback: () => void) => {
+    const finish = (cb: () => void) => {
       if (finished) return;
       finished = true;
-      callback();
+      cb();
     };
-
     const poll = async () => {
       if (finished) return;
-
       if (Date.now() - startedAt >= timeoutMs) {
         finish(() => reject(new Error('API start timeout')));
         return;
       }
-
-      const reachable = await isPortReachable(port, host);
-      if (reachable) {
+      if (await isPortReachable(port, host)) {
         finish(() => resolve());
         return;
       }
-
       if (apiProcess && !isChildProcessAlive(apiProcess)) {
         finish(() => reject(new Error('API process exited before becoming ready')));
         return;
       }
-
-      setTimeout(() => {
-        void poll();
-      }, API_POLL_INTERVAL_MS);
+      setTimeout(() => void poll(), API_POLL_INTERVAL_MS);
     };
-
     void poll();
   });
 };
 
-const cleanupPort = (port: number) => {
+/** 获取占用指定端口的进程 PID */
+const getPortOccupantPid = (port: number): number | null => {
   try {
-    log.info(`[Server] Cleaning up port ${port}...`);
     if (process.platform === 'win32') {
-      execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port}') do taskkill /f /pid %a`, {
-        stdio: 'ignore',
-      });
+      const output = execSync(`netstat -aon | findstr :${port} | findstr LISTENING`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      const match = output.split('\n')[0]?.trim().split(/\s+/).pop();
+      return match ? parseInt(match, 10) || null : null;
     } else {
-      execSync(`lsof -ti :${port} | xargs kill -9`, { stdio: 'ignore' });
+      const output = execSync(`lsof -ti :${port} -sTCP:LISTEN`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      return parseInt(output.split('\n')[0], 10) || null;
     }
   } catch {
-    log.info(`[Server] Port ${port} is available`);
+    return null;
+  }
+};
+
+/** 检查 PID 是否是我们自己的 server 二进制 */
+const isOwnServerProcess = (pid: number): boolean => {
+  const ownNames = ['app_win.exe', 'app_macos', 'app_linux'];
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync(
+        `wmic process where ProcessId=${pid} get ExecutablePath /format:list`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
+      );
+      return ownNames.some((n) => output.toLowerCase().includes(n.toLowerCase()));
+    } else {
+      const output = execSync(`ps -p ${pid} -o comm=`, {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      return ownNames.some((n) => output.includes(n));
+    }
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * 清理端口上残留的自己的 server 进程。
+ * 只杀确认是自己二进制的进程，不动别人的。
+ */
+const cleanupOwnStaleServer = () => {
+  const pid = getPortOccupantPid(API_PORT);
+  if (!pid) return;
+  if (!isOwnServerProcess(pid)) {
+    log.info(
+      `[Server] Port ${API_PORT} occupied by foreign process (PID ${pid}), skipping cleanup`,
+    );
+    return;
+  }
+  log.info(`[Server] Killing stale own server on port ${API_PORT} (PID ${pid})`);
+  try {
+    if (process.platform === 'win32') {
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
+    } else {
+      process.kill(pid, 'SIGKILL');
+    }
+  } catch {
+    // 进程可能已退出
   }
 };
 
@@ -151,15 +204,15 @@ export function startApiServer() {
   setApiStatus('starting');
 
   apiStartPromise = (async () => {
-    const port = API_PORT;
-
-    if (await isPortReachable(port, API_HOST)) {
-      log.info(`[Server] API already reachable at http://${API_HOST}:${port}`);
+    // 端口已有服务在监听，可能是上次残留的实例，直接复用
+    if (await isPortReachable(API_PORT, API_HOST)) {
+      log.info(`[Server] API already reachable at http://${API_HOST}:${API_PORT}`);
       setApiStatus('ready');
       return;
     }
 
-    cleanupPort(port);
+    // 清理自己的残留进程（崩溃/强退后可能残留）
+    cleanupOwnStaleServer();
 
     let apiPath = '';
     let cwd = '';
@@ -179,18 +232,15 @@ export function startApiServer() {
 
       log.info('[Server] Dev mode: Starting API server...');
       apiPath = npmCmd;
-      args = ['run', 'dev', '--', `--port=${port}`, '--platform=lite', `--host=${API_HOST}`];
+      args = ['run', 'dev', '--', `--port=${API_PORT}`, '--platform=lite', `--host=${API_HOST}`];
     } else {
       cwd = path.join(process.resourcesPath, 'server');
       apiPath = resolvePackagedServerEntry(cwd);
       if (!apiPath) {
         throw new Error(`Unsupported platform: ${process.platform}`);
       }
-      args = [`--port=${port}`, '--platform=lite', `--host=${API_HOST}`];
-    }
-
-    if (!isDev && !fs.existsSync(apiPath)) {
-      throw new Error(`API executable not found: ${apiPath}`);
+      ensureExecutable(apiPath);
+      args = [`--port=${API_PORT}`, '--platform=lite', `--host=${API_HOST}`];
     }
 
     log.info(`[Server] Launching API: ${apiPath} ${args.join(' ')} (cwd: ${cwd})`);
@@ -203,25 +253,20 @@ export function startApiServer() {
       env: {
         ...process.env,
         HOST: API_HOST,
-        PORT: String(port),
+        PORT: String(API_PORT),
         platform: 'lite',
       },
     });
 
     apiProcess.stdout?.on('data', (data) => {
       const output = data.toString().trim();
-      if (!output || output.includes('[OK]') || output.includes('[ERR]')) {
-        return;
-      }
-
+      if (!output || output.includes('[OK]') || output.includes('[ERR]')) return;
       log.info(`[Server] ${output}`);
     });
 
     apiProcess.stderr?.on('data', (data) => {
       const output = data.toString().trim();
-      if (output) {
-        log.warn(`[Server] API Warning: ${output}`);
-      }
+      if (output) log.warn(`[Server] API Warning: ${output}`);
     });
 
     apiProcess.once('error', (error) => {
@@ -231,14 +276,12 @@ export function startApiServer() {
     apiProcess.once('close', (code, signal) => {
       log.info(`[Server] API Process exited with code: ${code}, signal: ${signal ?? 'none'}`);
       apiProcess = null;
-      if (apiStatus.state !== 'failed') {
-        setApiStatus('idle');
-      }
+      if (apiStatus.state !== 'failed') setApiStatus('idle');
     });
 
     try {
-      await waitForApiReady(port, API_HOST, API_START_TIMEOUT_MS);
-      log.info(`[Server] API Server is ready at http://${API_HOST}:${port}`);
+      await waitForApiReady(API_PORT, API_HOST, API_START_TIMEOUT_MS);
+      log.info(`[Server] API Server is ready at http://${API_HOST}:${API_PORT}`);
       setApiStatus('ready');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -260,8 +303,7 @@ export function stopApiServer(updateStatus = true) {
     try {
       process.kill(apiProcess.pid, 0);
       if (process.platform === 'win32') {
-        const { exec } = require('child_process');
-        exec(`taskkill /F /T /PID ${apiProcess.pid}`);
+        execSync(`taskkill /F /T /PID ${apiProcess.pid}`, { stdio: 'ignore' });
       } else {
         process.kill(-apiProcess.pid, 'SIGKILL');
       }

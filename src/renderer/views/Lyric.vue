@@ -280,7 +280,7 @@ onUnmounted(() => {
   <div
     class="lyric-view relative h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
   >
-    <div class="absolute inset-0 overflow-hidden">
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div
         class="absolute inset-[-6%] scale-[1.06] bg-cover bg-center opacity-[0.18] blur-[2px] transition-all duration-500 dark:opacity-[0.22]"
         :style="{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined }"
@@ -293,7 +293,7 @@ onUnmounted(() => {
 
     <OverlayHeader />
 
-    <div class="absolute inset-x-0 bottom-0 top-10 z-10 flex flex-col">
+    <div class="absolute inset-x-0 bottom-0 top-10 z-10 flex flex-col overflow-hidden">
       <div class="px-6 pb-3 no-drag">
         <div class="flex h-12 items-center">
           <Button
@@ -456,10 +456,7 @@ onUnmounted(() => {
                         paddingBottom: '8px',
                       }"
                     >
-                      <Button
-                        variant="unstyled"
-                        size="none"
-                        type="button"
+                      <div
                         :class="['lyric-line', currentIndex === index ? 'is-current' : 'is-idle']"
                         @click="handleLyricLineClick(line.time)"
                       >
@@ -497,7 +494,7 @@ onUnmounted(() => {
                         >
                           {{ lyricStore.lineSecondaryText(line) }}
                         </span>
-                      </Button>
+                      </div>
                     </div>
                   </div>
                 </template>
@@ -912,6 +909,7 @@ onUnmounted(() => {
   border-radius: 28px;
   text-align: center;
   color: inherit;
+  cursor: pointer;
   transition:
     opacity 0.26s ease,
     transform 0.26s ease,
