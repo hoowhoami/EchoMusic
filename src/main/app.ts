@@ -47,9 +47,6 @@ if (!gotTheLock) {
     await createWindow();
     try {
       initTray(trayContext);
-      if (process.platform === 'win32') {
-        setTimeout(() => refreshTray(), 500);
-      }
     } catch (err) {
       console.error('[Main] Failed to init tray:', err);
     }

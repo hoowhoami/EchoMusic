@@ -38,33 +38,20 @@ const playModeLabelMap: Record<PlayMode, string> = {
 };
 
 const resolveTrayIconPath = () => {
-  let shouldUseLightTrayIcon = nativeTheme.shouldUseDarkColors;
-
-  if (process.platform === 'win32') {
-    // 读取 Windows 注册表判断任务栏是否为深色
-    // SystemUsesLightTheme: 0 = 深色任务栏（需要浅色图标），1 = 浅色任务栏（需要深色图标）
-    try {
-      const { execSync } = require('child_process');
-      const result = execSync(
-        'reg query "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize" /v SystemUsesLightTheme',
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
-      );
-      const match = result.match(/SystemUsesLightTheme\s+REG_DWORD\s+0x(\d+)/);
-      if (match) {
-        shouldUseLightTrayIcon = match[1] === '0'; // 0 = 深色系统 → 用浅色图标
-      }
-    } catch {
-      shouldUseLightTrayIcon = nativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
-    }
-  }
+  // win_tray_icon_dark.ico = 白色图标（用于深色任务栏）
+  // win_tray_icon_light.ico = 黑色图标（用于浅色任务栏）
+  const isDarkTaskbar =
+    process.platform === 'win32'
+      ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+      : nativeTheme.shouldUseDarkColors;
 
   const iconName =
     process.platform === 'darwin'
       ? 'IconTemplate.png'
       : process.platform === 'win32'
-        ? shouldUseLightTrayIcon
-          ? 'win_tray_icon_light.ico'
-          : 'win_tray_icon_dark.ico'
+        ? isDarkTaskbar
+          ? 'win_tray_icon_dark.ico'
+          : 'win_tray_icon_light.ico'
         : 'linux_tray_icon.png';
 
   if (app.isPackaged) {
