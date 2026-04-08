@@ -76,6 +76,11 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
+      - name: Remove server test files before packaging
+        working-directory: server
+        shell: bash
+        run: find module -name '*.test.js' -delete
+
       - name: Build server executable
         working-directory: server
         shell: bash
