@@ -3,9 +3,9 @@ import request from '@/utils/request';
 /**
  * 获取歌曲播放地址
  */
-export function getSongUrl(hash: string, quality = '') {
+export function getSongUrl(hash: string, quality = '', ppageId?: string | number) {
   return request.get('/song/url', {
-    params: { hash, quality },
+    params: { hash, quality, ...(ppageId ? { ppage_id: ppageId } : {}) },
   });
 }
 

@@ -10,6 +10,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build:win": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkgwin && cd .. && vue-tsc --noEmit && vite build && electron-builder --win --x64",
+    "build:mac": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkgmacos && cd .. && vue-tsc --noEmit && vite build && electron-builder --mac",
+    "build:linux": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkglinux && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
@@ -96,8 +99,20 @@
     "win": {
       "icon": "icons/icon.ico",
       "target": [
-        "nsis",
-        "portable"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     },
     "linux": {

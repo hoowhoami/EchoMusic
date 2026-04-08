@@ -1772,6 +1772,27 @@ export const usePlayerStore = defineStore('player', {
         }
       }
 
+      // 兜底：带 ppage_id 再尝试一次
+      try {
+        logger.debug('PlayerStore', 'Trying fallback with ppage_id', summarizeSong(track));
+        const res = await getSongUrl(track.hash, '', 356753938);
+        const url = resolveUrlFromResponse(res);
+        if (url) {
+          logger.info(
+            'PlayerStore',
+            'Resolved fallback with ppage_id successfully',
+            summarizeSong(track),
+          );
+          return {
+            url,
+            quality: this.getResolvedAudioQuality(track, settingStore),
+            effect: 'none',
+          };
+        }
+      } catch (error) {
+        logger.warn('PlayerStore', 'Fetch fallback with ppage_id failed:', error);
+      }
+
       logger.error('PlayerStore', 'All audio url attempts failed', {
         track: summarizeSong(track),
         effectiveAudioQuality: audioQuality,
