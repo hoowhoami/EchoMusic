@@ -31,7 +31,7 @@ import {
   iconRepeat,
   iconShuffle,
   iconListRestart,
-  iconArrowNarrowRight,
+  iconRepeatOff,
   iconSkipBack,
   iconSkipForward,
   iconPlay,
@@ -241,17 +241,38 @@ watch(isQualityMenuOpen, (open) => {
   void player.ensureTrackRelateGoods(currentTrack.value);
 });
 
+const pendingSeekTime = ref<number | null>(null);
+const isDraggingSeek = ref(false);
+
+const progressValue = computed(() => {
+  if (isDraggingSeek.value && pendingSeekTime.value !== null) {
+    return [pendingSeekTime.value];
+  }
+  return [player.currentTime];
+});
+
 const handleSeek = (value: number[] | undefined) => {
-  if (value && value.length > 0) {
+  if (!value || value.length === 0) return;
+  if (isDraggingSeek.value) {
+    // 拖动中只更新视觉，不 seek
+    pendingSeekTime.value = value[0];
+  } else {
+    // 点击直接 seek
     player.seek(value[0]);
   }
 };
 
 const handleSeekStart = () => {
+  isDraggingSeek.value = true;
   player.notifySeekStart();
 };
 
 const handleSeekEnd = () => {
+  if (pendingSeekTime.value !== null) {
+    player.seek(pendingSeekTime.value);
+    pendingSeekTime.value = null;
+  }
+  isDraggingSeek.value = false;
   player.notifySeekEnd();
 };
 
@@ -274,6 +295,28 @@ const toggleMute = (e: Event) => {
   } else {
     player.setVolume(lastVolume.value || 0.8);
   }
+};
+
+const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
+
+let volumeWheelTimer: ReturnType<typeof setTimeout> | null = null;
+
+const handleVolumeWheel = (e: WheelEvent) => {
+  e.preventDefault();
+  const normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
+  const step = (normalized / 120) * 0.05;
+  // macOS 自然滚动：deltaY > 0 = 手指向上 = 增大音量
+  // Windows 鼠标滚轮：deltaY < 0 = 滚轮向上 = 增大音量
+  const direction = isMacPlatform ? 1 : -1;
+  const newVolume = Math.max(0, Math.min(1, player.volume + step * direction));
+  player.setVolume(newVolume);
+  isVolumeVisible.value = true;
+
+  if (volumeWheelTimer) clearTimeout(volumeWheelTimer);
+  volumeWheelTimer = setTimeout(() => {
+    isVolumeVisible.value = false;
+    volumeWheelTimer = null;
+  }, 1000);
 };
 
 const handleClickOutside = (e: MouseEvent) => {
@@ -502,7 +545,7 @@ onUnmounted(() => {
           >
             <Icon
               v-if="player.playMode === 'sequential'"
-              :icon="iconArrowNarrowRight"
+              :icon="iconRepeatOff"
               width="22"
               height="22"
             />
@@ -550,7 +593,11 @@ onUnmounted(() => {
           </Button>
 
           <!-- 音量控制 - 点击弹出 -->
-          <div ref="volumeContainerRef" class="relative flex items-center group/vol">
+          <div
+            ref="volumeContainerRef"
+            class="relative flex items-center group/vol"
+            @wheel.prevent="handleVolumeWheel"
+          >
             <Button
               variant="unstyled"
               size="none"
@@ -621,10 +668,14 @@ onUnmounted(() => {
         <div class="w-full max-w-[480px] flex items-center gap-3 px-1 h-[14px] min-w-0">
           <span
             class="text-[10px] font-medium text-text-main/50 w-9 shrink-0 text-right tabular-nums"
-            >{{ formatTime(player.currentTime) }}</span
+            >{{
+              formatTime(
+                isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : player.currentTime,
+              )
+            }}</span
           >
           <SliderRoot
-            :model-value="[player.currentTime]"
+            :model-value="progressValue"
             :max="player.duration || 100"
             :step="0.1"
             class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 group/progress"

@@ -345,6 +345,8 @@ export const usePlayerStore = defineStore('player', {
     playbackNotice: null as PlaybackNotice | null,
     shuffleQueue: null as number[] | null,
     shuffleQueueLength: 0,
+    seekTargetTime: null as number | null,
+    seekTimestamp: 0,
   }),
   actions: {
     showPlaybackNotice(code: string, track?: Song | null) {
@@ -595,6 +597,16 @@ export const usePlayerStore = defineStore('player', {
 
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime) => {
+          if (this.isDraggingProgress) return;
+          // seek 后短暂忽略回退的 timeUpdate
+          if (
+            this.seekTargetTime !== null &&
+            Date.now() - this.seekTimestamp < 500 &&
+            currentTime < this.seekTargetTime - 0.5
+          ) {
+            return;
+          }
+          this.seekTargetTime = null;
           this.currentTime = currentTime;
           lyricStore.updateCurrentIndex(currentTime);
           this.maybeCommitListeningHistory();
@@ -834,6 +846,8 @@ export const usePlayerStore = defineStore('player', {
       if (this.isDraggingProgress) {
         this.isDraggingProgress = false;
       }
+      this.seekTargetTime = targetTime;
+      this.seekTimestamp = Date.now();
       engine.seek(targetTime);
       this.currentTime = targetTime;
       this.recentSeekIgnoreEnd = true;
@@ -1772,7 +1786,7 @@ export const usePlayerStore = defineStore('player', {
         }
       }
 
-      // 兜底：带 ppage_id 再尝试一次
+      // 带 ppage_id 再尝试一次，应该能获取到收藏的无版权歌曲地址
       try {
         logger.debug('PlayerStore', 'Trying fallback with ppage_id', summarizeSong(track));
         const res = await getSongUrl(track.hash, '', 356753938);
