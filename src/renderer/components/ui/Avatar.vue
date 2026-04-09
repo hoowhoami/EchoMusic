@@ -57,12 +57,12 @@ const sizeStyle = computed<CSSProperties | undefined>(() => {
       class="flex h-full w-full items-center justify-center bg-black/[0.03] dark:bg-white/[0.03]"
     >
       <!-- 加载中骨架屏 -->
-      <div 
+      <div
         v-if="showSkeleton"
         class="absolute inset-0 bg-black/[0.05] dark:bg-white/[0.05] animate-pulse z-10"
         :class="skeletonClass"
       ></div>
-      
+
       <!-- 失败图标 (用户头像占位) -->
       <Icon
         :icon="iconUser"

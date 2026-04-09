@@ -1,9 +1,12 @@
 /**
  * 格式化时间戳 (秒) 为日期字符串
  */
-export function formatDate(timestamp: number | string | undefined, format: string = 'YYYY-MM-DD'): string {
+export function formatDate(
+  timestamp: number | string | undefined,
+  format: string = 'YYYY-MM-DD',
+): string {
   if (!timestamp) return '未知';
-  
+
   const date = new Date(Number(timestamp) * 1000);
   if (isNaN(date.getTime())) return '未知';
 

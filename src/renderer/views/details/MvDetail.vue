@@ -6,7 +6,13 @@ import { formatDate, formatDuration, formatPlayCount } from '@/utils/format';
 import { useToastStore } from '@/stores/toast';
 import type { VideoMeta, VideoSource } from '@/models/video';
 import Image from '@/components/ui/Image.vue';
-import { extractVideoUrl, mapVideoMeta, mapVideoMetaList, mapVideoSourcesFromPrivilege, mergeVideoSources } from '@/utils/mappers/video';
+import {
+  extractVideoUrl,
+  mapVideoMeta,
+  mapVideoMetaList,
+  mapVideoSourcesFromPrivilege,
+  mergeVideoSources,
+} from '@/utils/mappers/video';
 import { usePlayerStore } from '@/stores/player';
 
 const route = useRoute();
@@ -25,7 +31,9 @@ const playbackError = ref('');
 
 const routeHash = computed(() => String(route.query.hash ?? route.params.id ?? '').trim());
 const routeVideoId = computed(() => String(route.query.videoId ?? route.params.id ?? '').trim());
-const routeAlbumAudioId = computed(() => String(route.query.albumAudioId ?? route.query.mixSongId ?? '').trim());
+const routeAlbumAudioId = computed(() =>
+  String(route.query.albumAudioId ?? route.query.mixSongId ?? '').trim(),
+);
 
 const fallbackTitle = computed(() => String(route.query.title ?? 'MV播放'));
 const fallbackArtist = computed(() => String(route.query.artist ?? ''));
@@ -40,8 +48,11 @@ const authorLine = computed(() => {
 });
 const tagList = computed(() => meta.value?.tags?.map((item) => item.name).filter(Boolean) ?? []);
 const sourceList = computed(() => meta.value?.sources ?? []);
-const selectedSource = computed(() =>
-  sourceList.value.find((item) => item.hash === currentSourceHash.value) ?? sourceList.value[0] ?? null,
+const selectedSource = computed(
+  () =>
+    sourceList.value.find((item) => item.hash === currentSourceHash.value) ??
+    sourceList.value[0] ??
+    null,
 );
 const hasPrevVersion = computed(() => currentVersionIndex.value > 0);
 const hasNextVersion = computed(() => currentVersionIndex.value < mvVersions.value.length - 1);
@@ -60,7 +71,9 @@ const stats = computed(() => [
   { label: '收藏', value: formatPlayCount(meta.value?.collectionCount) },
   { label: '下载', value: formatPlayCount(meta.value?.downloadCount) },
 ]);
-const publishText = computed(() => (meta.value?.publishTime ? formatDate(meta.value.publishTime) : '未知'));
+const publishText = computed(() =>
+  meta.value?.publishTime ? formatDate(meta.value.publishTime) : '未知',
+);
 
 const buildInitialMeta = (): VideoMeta => ({
   id: routeVideoId.value || routeHash.value,
@@ -109,7 +122,8 @@ const mergeMeta = (nextMeta: VideoMeta | null) => {
 const syncCurrentSource = () => {
   if (!meta.value) return;
   const sources = meta.value.sources ?? [];
-  const target = sources.find((item) => item.hash === currentSourceHash.value) ?? sources[0] ?? null;
+  const target =
+    sources.find((item) => item.hash === currentSourceHash.value) ?? sources[0] ?? null;
   currentSourceHash.value = target?.hash ?? '';
 };
 
@@ -170,7 +184,8 @@ const fetchMvMeta = async () => {
   try {
     const tasks: Promise<unknown>[] = [];
     if (routeAlbumAudioId.value) tasks.push(getSongMv(routeAlbumAudioId.value));
-    if (routeVideoId.value && routeVideoId.value !== routeHash.value) tasks.push(getVideoDetail(routeVideoId.value));
+    if (routeVideoId.value && routeVideoId.value !== routeHash.value)
+      tasks.push(getVideoDetail(routeVideoId.value));
     if (routeHash.value) tasks.push(getVideoPrivilege(routeHash.value));
 
     const results = await Promise.allSettled(tasks);
@@ -302,14 +317,20 @@ watch(
               class="mv-version-button"
               :disabled="!hasPrevVersion"
               @click="switchVersion(-1)"
-            >上一版</button>
-            <div class="mv-version-index">{{ currentVersionIndex + 1 }} / {{ mvVersions.length }}</div>
+            >
+              上一版
+            </button>
+            <div class="mv-version-index">
+              {{ currentVersionIndex + 1 }} / {{ mvVersions.length }}
+            </div>
             <button
               type="button"
               class="mv-version-button"
               :disabled="!hasNextVersion"
               @click="switchVersion(1)"
-            >下一版</button>
+            >
+              下一版
+            </button>
           </div>
         </div>
 
@@ -321,7 +342,9 @@ watch(
         </div>
 
         <div v-if="editionList.length" class="mv-tags mv-tags--edition">
-          <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{ item }}</span>
+          <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{
+            item
+          }}</span>
         </div>
 
         <div v-if="tagList.length" class="mv-tags">
@@ -348,13 +371,21 @@ watch(
                   <div class="mv-source-title">{{ source.label }}</div>
                   <div class="mv-source-badges">
                     <span v-if="source.codec" class="mv-source-badge">{{ source.codec }}</span>
-                    <span v-if="source.width && source.height" class="mv-source-badge">{{ source.width }}×{{ source.height }}</span>
-                    <span v-if="source.bitrate" class="mv-source-badge">{{ Math.round(source.bitrate / 1000) }} kbps</span>
-                    <span v-if="source.size" class="mv-source-badge">{{ (source.size / 1024 / 1024).toFixed(1) }} MB</span>
+                    <span v-if="source.width && source.height" class="mv-source-badge"
+                      >{{ source.width }}×{{ source.height }}</span
+                    >
+                    <span v-if="source.bitrate" class="mv-source-badge"
+                      >{{ Math.round(source.bitrate / 1000) }} kbps</span
+                    >
+                    <span v-if="source.size" class="mv-source-badge"
+                      >{{ (source.size / 1024 / 1024).toFixed(1) }} MB</span
+                    >
                   </div>
                 </div>
               </div>
-              <div class="mv-source-status">{{ source.hash === currentSourceHash ? '当前播放' : '切换' }}</div>
+              <div class="mv-source-status">
+                {{ source.hash === currentSourceHash ? '当前播放' : '切换' }}
+              </div>
             </div>
           </button>
 
@@ -620,7 +651,9 @@ watch(
   border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
   background: var(--bg-info-card);
   text-align: left;
-  transition: border-color 0.18s ease, background 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 
 .mv-source-card.is-active {
@@ -706,7 +739,6 @@ watch(
   .mv-stat-grid {
     grid-template-columns: 1fr 1fr;
   }
-
 }
 
 @keyframes mv-spin {

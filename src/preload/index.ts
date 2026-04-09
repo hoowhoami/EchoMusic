@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type {
-  DesktopLyricPointerState,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
@@ -31,7 +30,8 @@ const getWrappedListener = (channel: string, func: (...args: any[]) => void) => 
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
   ipcRenderer: {
-    send: (channel: string, data: any) => ipcRenderer.send(channel, data),
+    send: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),
+    invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
     on: (channel: string, func: (...args: any[]) => void) => {
       const wrapped = getWrappedListener(channel, func);
       ipcRenderer.on(channel, wrapped);
@@ -93,20 +93,12 @@ contextBridge.exposeInMainWorld('electron', {
     updateSettings: (payload: Partial<DesktopLyricSettings>) =>
       ipcRenderer.invoke('desktop-lyric:update-settings', payload) as Promise<DesktopLyricSnapshot>,
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
-      ipcRenderer.invoke('desktop-lyric:sync-snapshot', payload) as Promise<DesktopLyricSnapshot>,
+      ipcRenderer.send('desktop-lyric:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: DesktopLyricSnapshot) =>
         func(snapshotPayload);
       ipcRenderer.on('desktop-lyric:snapshot', listener);
       return () => ipcRenderer.removeListener('desktop-lyric:snapshot', listener);
-    },
-    onPointerState: (func: (state: DesktopLyricPointerState) => void) => {
-      const listener = (
-        _event: Electron.IpcRendererEvent,
-        pointerState: DesktopLyricPointerState,
-      ) => func(pointerState);
-      ipcRenderer.on('desktop-lyric:pointer-state', listener);
-      return () => ipcRenderer.removeListener('desktop-lyric:pointer-state', listener);
     },
     setIgnoreMouseEvents: (ignore: boolean) =>
       ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),

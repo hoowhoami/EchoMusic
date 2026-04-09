@@ -2,7 +2,12 @@
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';
-import { getAlbumDetail, getAlbumSongs, favoriteAlbum as favoriteAlbumApi, unfavoriteAlbum as unfavoriteAlbumApi } from '@/api/album';
+import {
+  getAlbumDetail,
+  getAlbumSongs,
+  favoriteAlbum as favoriteAlbumApi,
+  unfavoriteAlbum as unfavoriteAlbumApi,
+} from '@/api/album';
 import { getAlbumComments, getFloorComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
@@ -19,11 +24,7 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song, SongArtist } from '@/models/song';
 import Button from '@/components/ui/Button.vue';
-import {
-  mapAlbumDetailMeta,
-  mapAlbumSong,
-  mapCommentItem,
-} from '@/utils/mappers';
+import { mapAlbumDetailMeta, mapAlbumSong, mapCommentItem } from '@/utils/mappers';
 import type { AlbumMeta } from '@/models/album';
 import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
@@ -122,7 +123,12 @@ const parseAlbumArtists = (payload: unknown): SongArtist[] => {
 
   if (mapped.length > 0) return mapped;
   if (!album.value?.singerName) return [];
-  return [{ id: album.value.singerId ? String(album.value.singerId) : undefined, name: album.value.singerName }];
+  return [
+    {
+      id: album.value.singerId ? String(album.value.singerId) : undefined,
+      name: album.value.singerName,
+    },
+  ];
 };
 
 const isAlbumArtistClickable = (artist: SongArtist) => {
@@ -151,8 +157,17 @@ const isFavoriteAlbum = computed(() => {
   if (ids.length === 0) return false;
   return playlistStore.userPlaylists.some((entry) => {
     if (entry.source !== 2) return false;
-    const entryIds = [entry.id, entry.listid, entry.listCreateListid, entry.globalCollectionId, entry.listCreateGid]
-      .filter((item): item is string | number => item !== undefined && item !== null && String(item) !== '')
+    const entryIds = [
+      entry.id,
+      entry.listid,
+      entry.listCreateListid,
+      entry.globalCollectionId,
+      entry.listCreateGid,
+    ]
+      .filter(
+        (item): item is string | number =>
+          item !== undefined && item !== null && String(item) !== '',
+      )
       .map((item) => String(item));
     return entryIds.some((id) => ids.includes(id));
   });
@@ -169,8 +184,17 @@ const toggleFavoriteAlbum = async () => {
   if (isFavoriteAlbum.value) {
     const target = playlistStore.userPlaylists.find((entry) => {
       if (entry.source !== 2) return false;
-      const entryIds = [entry.id, entry.listid, entry.listCreateListid, entry.globalCollectionId, entry.listCreateGid]
-        .filter((item): item is string | number => item !== undefined && item !== null && String(item) !== '')
+      const entryIds = [
+        entry.id,
+        entry.listid,
+        entry.listCreateListid,
+        entry.globalCollectionId,
+        entry.listCreateGid,
+      ]
+        .filter(
+          (item): item is string | number =>
+            item !== undefined && item !== null && String(item) !== '',
+        )
         .map((item) => String(item));
       return entryIds.some((id) => currentAlbumIds.value.includes(id));
     });
@@ -229,8 +253,9 @@ const sortedSongs = computed(() => {
   }
 
   const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-    
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+
   return [...data].sort((a, b) => {
     switch (sortField.value) {
       case 'title':
@@ -321,36 +346,40 @@ const fetchData = async () => {
   const albumId = getAlbumId();
 
   // 1. 先获取专辑详情，用于展示 Header
-  const detailTask = getAlbumDetail(albumId).then((detailRes) => {
-    const detailRaw = extractFirstObject(detailRes);
-    if (detailRaw) {
-      album.value = mapAlbumDetailMeta(detailRaw);
-      albumArtists.value = parseAlbumArtists(detailRaw);
-    } else {
-      albumArtists.value = [];
-    }
-    loading.value = false;
-  }).catch(e => {
-    console.error('Fetch album detail error:', e);
-    loading.value = false;
-  });
+  const detailTask = getAlbumDetail(albumId)
+    .then((detailRes) => {
+      const detailRaw = extractFirstObject(detailRes);
+      if (detailRaw) {
+        album.value = mapAlbumDetailMeta(detailRaw);
+        albumArtists.value = parseAlbumArtists(detailRaw);
+      } else {
+        albumArtists.value = [];
+      }
+      loading.value = false;
+    })
+    .catch((e) => {
+      console.error('Fetch album detail error:', e);
+      loading.value = false;
+    });
 
   // 2. 获取歌曲列表
-  const songsTask = getAlbumSongs(albumId, 1, 30).then((songsRes) => {
-    const fetched = extractList(songsRes).map((item) => mapAlbumSong(item));
-    songs.value = fetched;
-    loadedSongCount.value = fetched.length;
-    loadingSongs.value = false;
+  const songsTask = getAlbumSongs(albumId, 1, 30)
+    .then((songsRes) => {
+      const fetched = extractList(songsRes).map((item) => mapAlbumSong(item));
+      songs.value = fetched;
+      loadedSongCount.value = fetched.length;
+      loadingSongs.value = false;
 
-    // 优先使用详情接口给出的总数，避免并发请求下读取到旧值
-    const totalSongs = album.value?.songCount ?? fetched.length;
-    if (totalSongs > fetched.length) {
-      void fetchAllAlbumSongs(totalSongs);
-    }
-  }).catch(e => {
-    console.error('Fetch album songs error:', e);
-    loadingSongs.value = false;
-  });
+      // 优先使用详情接口给出的总数，避免并发请求下读取到旧值
+      const totalSongs = album.value?.songCount ?? fetched.length;
+      if (totalSongs > fetched.length) {
+        void fetchAllAlbumSongs(totalSongs);
+      }
+    })
+    .catch((e) => {
+      console.error('Fetch album songs error:', e);
+      loadingSongs.value = false;
+    });
 
   await Promise.allSettled([detailTask, songsTask]);
 };
@@ -407,16 +436,18 @@ watch(
 
 const secondaryActions = computed(() => {
   if (!userStore.isLoggedIn || !album.value) return [];
-  return [{
-    icon: iconHeart,
-    label: isFavoriteAlbum.value ? '已收藏' : '收藏',
-    emphasized: isFavoriteAlbum.value,
-    tone: 'favorite' as const,
-    onTap: async () => {
-      if (!album.value) return;
-      await toggleFavoriteAlbum()
+  return [
+    {
+      icon: iconHeart,
+      label: isFavoriteAlbum.value ? '已收藏' : '收藏',
+      emphasized: isFavoriteAlbum.value,
+      tone: 'favorite' as const,
+      onTap: async () => {
+        if (!album.value) return;
+        await toggleFavoriteAlbum();
+      },
     },
-  }];
+  ];
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
@@ -492,7 +523,8 @@ const fetchFloorReplies = async (reset = false) => {
       floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
       const totalCount = Number(record.comments_num ?? 0) || 0;
       floorTotal.value = totalCount;
-      floorHasMore.value = totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
+      floorHasMore.value =
+        totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
       if (floorHasMore.value) floorPage.value += 1;
       if (floorReplies.value.length === 0) {
         floorMessage.value = String(record.message ?? '') || '暂无回复';
@@ -528,8 +560,13 @@ const fetchFloorReplies = async (reset = false) => {
         <template #details>
           <div class="flex flex-col gap-1 text-text-main/60">
             <div class="album-artist-line">
-              <template v-for="(artistItem, index) in albumArtists" :key="`${artistItem.name}-${index}`">
-                <Button variant="unstyled" size="none"
+              <template
+                v-for="(artistItem, index) in albumArtists"
+                :key="`${artistItem.name}-${index}`"
+              >
+                <Button
+                  variant="unstyled"
+                  size="none"
                   type="button"
                   class="album-singer-link"
                   :class="{ 'is-link': isAlbumArtistClickable(artistItem) }"
@@ -538,7 +575,9 @@ const fetchFloorReplies = async (reset = false) => {
                 >
                   {{ artistItem.name }}
                 </Button>
-                <span v-if="index < albumArtists.length - 1" class="album-artist-separator"> / </span>
+                <span v-if="index < albumArtists.length - 1" class="album-artist-separator">
+                  /
+                </span>
               </template>
             </div>
             <div class="text-[11px] font-semibold opacity-60">
@@ -556,13 +595,17 @@ const fetchFloorReplies = async (reset = false) => {
         </template>
 
         <template #collapsed-actions>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="handlePlayAll"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
           >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="openBatchDrawer"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
           >
@@ -578,7 +621,9 @@ const fetchFloorReplies = async (reset = false) => {
         <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
           {{ album.intro }}
         </div>
-        <Button variant="unstyled" size="none"
+        <Button
+          variant="unstyled"
+          size="none"
           type="button"
           class="mt-[2px] text-[11px] font-semibold text-primary"
           @click="showIntroDialog = true"
@@ -653,17 +698,43 @@ const fetchFloorReplies = async (reset = false) => {
               :activeId="activeSongId"
               :showCover="true"
               :enableDefaultDoubleTapPlay="true"
-              :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
+              :onSongDoubleTapPlay="
+                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+              "
             />
           </TabsContent>
 
           <TabsContent value="comments" class="px-6 pt-5 pb-10">
             <div class="w-full">
-              <div v-if="hotComments.length" class="text-[12px] font-semibold text-text-secondary mt-2 mb-3">热门评论</div>
-              <CommentList :comments="hotComments" :loading="loadingComments" :onTapReplies="openCommentPageWithFloor" compact hide-empty />
-              <CommentList :comments="comments" :loading="loadingComments" :total="commentTotal" :onTapReplies="openCommentPageWithFloor" compact :hide-empty="hotComments.length > 0" />
+              <div
+                v-if="hotComments.length"
+                class="text-[12px] font-semibold text-text-secondary mt-2 mb-3"
+              >
+                热门评论
+              </div>
+              <CommentList
+                :comments="hotComments"
+                :loading="loadingComments"
+                :onTapReplies="openCommentPageWithFloor"
+                compact
+                hide-empty
+              />
+              <CommentList
+                :comments="comments"
+                :loading="loadingComments"
+                :total="commentTotal"
+                :onTapReplies="openCommentPageWithFloor"
+                compact
+                :hide-empty="hotComments.length > 0"
+              />
 
-              <div v-if="loadingComments || ((hotComments.length > 0 || comments.length > 0) && !hasMoreComments)" class="flex justify-center mt-8">
+              <div
+                v-if="
+                  loadingComments ||
+                  ((hotComments.length > 0 || comments.length > 0) && !hasMoreComments)
+                "
+                class="flex justify-center mt-8"
+              >
                 <div class="text-[12px] font-semibold text-text-secondary">
                   {{ loadingComments ? '加载中...' : '已加载全部评论' }}
                 </div>
@@ -703,16 +774,29 @@ const fetchFloorReplies = async (reset = false) => {
           <div class="comment-floor-section">
             回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
           </div>
-          <CommentList :comments="floorReplies" :loading="floorLoading" :showDivider="true" compact />
+          <CommentList
+            :comments="floorReplies"
+            :loading="floorLoading"
+            :showDivider="true"
+            compact
+          />
           <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
             {{ floorMessage || '暂无回复' }}
           </div>
-          <div v-if="floorHasMore || floorLoading || floorReplies.length > 0" class="comment-load-more comment-load-more-floor">
+          <div
+            v-if="floorHasMore || floorLoading || floorReplies.length > 0"
+            class="comment-load-more comment-load-more-floor"
+          >
             <div v-if="floorLoading" class="comment-loading-inline">
               <div class="comment-loading-spinner"></div>
               <span>加载中...</span>
             </div>
-            <Button v-else-if="floorHasMore" variant="outline" size="xs" @click="fetchFloorReplies()">
+            <Button
+              v-else-if="floorHasMore"
+              variant="outline"
+              size="xs"
+              @click="fetchFloorReplies()"
+            >
               {{ floorLoadMoreMessage || '加载更多' }}
             </Button>
             <div v-else class="comment-end-hint">已加载全部评论</div>
@@ -753,7 +837,6 @@ const fetchFloorReplies = async (reset = false) => {
   font-weight: 600;
   opacity: 0.5;
 }
-
 
 .search-expand-enter-active,
 .search-expand-leave-active {

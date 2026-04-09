@@ -6,10 +6,7 @@ const forwardedProps = useForwardProps(props);
 </script>
 
 <template>
-  <TabsContent
-    v-bind="forwardedProps"
-    :class="['focus-visible:outline-none', props.class]"
-  >
+  <TabsContent v-bind="forwardedProps" :class="['focus-visible:outline-none', props.class]">
     <slot />
   </TabsContent>
 </template>

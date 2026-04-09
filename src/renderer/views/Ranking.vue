@@ -37,8 +37,8 @@ const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 
-const selectedRank = computed(() =>
-  ranks.value.find((item) => item.id === selectedRankId.value) ?? ranks.value[0],
+const selectedRank = computed(
+  () => ranks.value.find((item) => item.id === selectedRankId.value) ?? ranks.value[0],
 );
 
 const groupedRanks = computed(() => {
@@ -258,7 +258,9 @@ watch(
 <template>
   <div class="ranking-view bg-bg-main min-h-full">
     <div v-if="loadingRanks" class="flex items-center justify-center py-24">
-      <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
     </div>
 
     <template v-else>
@@ -278,7 +280,9 @@ watch(
 
         <template #actions>
           <div class="rank-header-actions">
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               class="rank-selector"
               @click="showSelectorDialog = true"
             >
@@ -290,19 +294,25 @@ watch(
         </template>
 
         <template #collapsed-actions>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="showSelectorDialog = true"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main"
           >
             <Icon :icon="iconChevronDown" width="18" height="18" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="handlePlayAll"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
           >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="openBatchDrawer"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
           >
@@ -335,7 +345,9 @@ watch(
                   height="14"
                 />
               </div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 @click="handleLocate"
                 class="song-locate-btn p-2 rounded-lg"
                 title="定位当前播放"
@@ -357,7 +369,9 @@ watch(
 
       <div class="px-6 pb-12">
         <div v-if="loadingSongs" class="flex items-center justify-center py-20">
-          <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div
+            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+          ></div>
         </div>
         <SongList
           v-else
@@ -371,7 +385,12 @@ watch(
         />
       </div>
 
-      <Dialog v-model:open="showSelectorDialog" title="排行榜选择" showClose contentClass="rank-selector-dialog">
+      <Dialog
+        v-model:open="showSelectorDialog"
+        title="排行榜选择"
+        showClose
+        contentClass="rank-selector-dialog"
+      >
         <div v-if="groupedRanks.length > 1" class="rank-selector-tabs">
           <CustomTabBar
             :tabs="groupedRanks.map((group) => group[0])"

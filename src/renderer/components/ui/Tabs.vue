@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { 
-  TabsRoot, TabsList, TabsTrigger, TabsContent,
-  type TabsRootProps, type TabsRootEmits, useForwardPropsEmits
+import {
+  TabsRoot,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  type TabsRootProps,
+  type TabsRootEmits,
+  useForwardPropsEmits,
 } from 'reka-ui';
 import { computed } from 'vue';
 

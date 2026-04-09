@@ -19,7 +19,14 @@ const handleClick = () => {
 </script>
 
 <template>
-  <Button variant="unstyled" size="none" type="button" class="custom-selector" :class="props.class" @click="handleClick">
+  <Button
+    variant="unstyled"
+    size="none"
+    type="button"
+    class="custom-selector"
+    :class="props.class"
+    @click="handleClick"
+  >
     <span class="custom-selector-label">{{ label }}</span>
     <Icon :icon="iconChevronDown" width="14" height="14" class="custom-selector-icon" />
   </Button>

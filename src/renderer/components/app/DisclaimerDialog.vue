@@ -22,7 +22,11 @@ const emit = defineEmits<{
     title="免责声明"
     contentClass="legal-dialog"
     bodyClass="legal-dialog-body"
-    :contentStyle="{ width: '620px', maxWidth: '92vw', maxHeight: 'min(560px, calc(100vh - 140px))' }"
+    :contentStyle="{
+      width: '620px',
+      maxWidth: '92vw',
+      maxHeight: 'min(560px, calc(100vh - 140px))',
+    }"
     showClose
     @update:open="emit('update:open', $event)"
   >

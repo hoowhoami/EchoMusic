@@ -167,11 +167,14 @@ export const useLyricStore = defineStore('lyric', {
     detailResolved: false,
   }),
   getters: {
-    showTranslation: (state) => state.secondaryEnabled && state.preferredMode === 'translation' && state.hasTranslation,
-    showRomanization: (state) => state.secondaryEnabled && state.preferredMode === 'romanization' && state.hasRomanization,
+    showTranslation: (state) =>
+      state.secondaryEnabled && state.preferredMode === 'translation' && state.hasTranslation,
+    showRomanization: (state) =>
+      state.secondaryEnabled && state.preferredMode === 'romanization' && state.hasRomanization,
     canShowSecondary: (state) => state.hasTranslation || state.hasRomanization,
     currentDisplayLabel: (state) => {
-      if (!state.secondaryEnabled || !state.hasTranslation && !state.hasRomanization) return '原词';
+      if (!state.secondaryEnabled || (!state.hasTranslation && !state.hasRomanization))
+        return '原词';
       if (state.lyricsMode === 'romanization') return '音译';
       if (state.lyricsMode === 'translation') return '翻译';
       return state.preferredMode === 'romanization' ? '音译' : '翻译';

@@ -29,7 +29,8 @@ const handleClick = () => {
       <div class="info-wrapper w-full">
         <h3 class="title">{{ name }}</h3>
         <p class="subtitle">
-          {{ songCount || 0 }} 歌曲 <span class="mx-0.5 opacity-60">•</span> {{ albumCount || 0 }} 专辑
+          {{ songCount || 0 }} 歌曲 <span class="mx-0.5 opacity-60">•</span>
+          {{ albumCount || 0 }} 专辑
         </p>
       </div>
     </div>
@@ -58,11 +59,15 @@ const handleClick = () => {
 }
 
 .artist-card:hover .card-container {
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.12),
+    0 0 24px var(--color-primary-light);
 }
 
 .dark .artist-card:hover .card-container {
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42), 0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .cover-shell {

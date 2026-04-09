@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getArtistDetail, getArtistSongs, getArtistAlbums, followArtist, unfollowArtist } from '@/api/artist';
+import {
+  getArtistDetail,
+  getArtistSongs,
+  getArtistAlbums,
+  followArtist,
+  unfollowArtist,
+} from '@/api/artist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -22,7 +28,14 @@ import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
-import { iconCurrentLocation, iconSearch, iconPlay, iconList, iconHeart, iconHeartFilled } from '@/icons';
+import {
+  iconCurrentLocation,
+  iconSearch,
+  iconPlay,
+  iconList,
+  iconHeart,
+  iconHeartFilled,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
@@ -35,7 +48,8 @@ const toastStore = useToastStore();
 
 const route = useRoute();
 const router = useRouter();
-const getArtistId = () => String(Array.isArray(route.params.id) ? route.params.id[0] ?? '' : route.params.id ?? '');
+const getArtistId = () =>
+  String(Array.isArray(route.params.id) ? (route.params.id[0] ?? '') : (route.params.id ?? ''));
 
 const loading = ref(true);
 const loadingSongs = ref(true);
@@ -82,13 +96,14 @@ const handleSort = (field: SortField) => {
 const sortedSongs = computed(() => {
   const data = songs.value;
   if (!sortField.value || !sortOrder.value || data.length === 0) return data;
-  
+
   if (sortField.value === 'index') {
     return sortOrder.value === 'asc' ? data : [...data].reverse();
   }
-  
+
   const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
 
   // 仅在需要排序时创建副本
   return [...data].sort((a, b) => {
@@ -104,7 +119,6 @@ const sortedSongs = computed(() => {
     }
   });
 });
-
 
 const fetchAllArtistSongs = async (totalCount: number) => {
   if (songs.value.length >= totalCount) return;
@@ -142,39 +156,45 @@ const fetchData = async () => {
   loadingAlbums.value = true;
 
   // 1. 获取歌手详情
-  const detailTask = getArtistDetail(artistId).then((res) => {
-    const detailRaw = extractFirstObject(res);
-    if (detailRaw) {
-      artist.value = mapArtistDetailMeta(detailRaw);
-    }
-    loading.value = false;
-  }).catch(() => {
-    loading.value = false;
-  });
+  const detailTask = getArtistDetail(artistId)
+    .then((res) => {
+      const detailRaw = extractFirstObject(res);
+      if (detailRaw) {
+        artist.value = mapArtistDetailMeta(detailRaw);
+      }
+      loading.value = false;
+    })
+    .catch(() => {
+      loading.value = false;
+    });
 
   // 2. 获取歌曲列表
-  const songsTask = getArtistSongs(artistId, 1, 200, 'hot').then((res) => {
-    const fetched = extractList(res).map((item) => mapArtistSong(artistId, item));
-    songs.value = fetched;
-    loadedSongCount.value = fetched.length;
-    loadingSongs.value = false;
+  const songsTask = getArtistSongs(artistId, 1, 200, 'hot')
+    .then((res) => {
+      const fetched = extractList(res).map((item) => mapArtistSong(artistId, item));
+      songs.value = fetched;
+      loadedSongCount.value = fetched.length;
+      loadingSongs.value = false;
 
-    const totalSongs = artist.value?.songCount ?? fetched.length;
-    if (totalSongs > fetched.length) {
-      void fetchAllArtistSongs(totalSongs);
-    }
-  }).catch(() => {
-    loadingSongs.value = false;
-  });
+      const totalSongs = artist.value?.songCount ?? fetched.length;
+      if (totalSongs > fetched.length) {
+        void fetchAllArtistSongs(totalSongs);
+      }
+    })
+    .catch(() => {
+      loadingSongs.value = false;
+    });
 
   // 3. 获取专辑列表
-  const albumsTask = getArtistAlbums(artistId, 1, 30, 'hot').then((res) => {
-    const fetched = extractList(res).map((item) => mapAlbumMeta(item));
-    albums.value = fetched;
-    loadingAlbums.value = false;
-  }).catch(() => {
-    loadingAlbums.value = false;
-  });
+  const albumsTask = getArtistAlbums(artistId, 1, 30, 'hot')
+    .then((res) => {
+      const fetched = extractList(res).map((item) => mapAlbumMeta(item));
+      albums.value = fetched;
+      loadingAlbums.value = false;
+    })
+    .catch(() => {
+      loadingAlbums.value = false;
+    });
 
   await Promise.allSettled([detailTask, songsTask, albumsTask]);
 };
@@ -245,7 +265,13 @@ const secondaryActions = computed(() => {
   return [
     {
       icon: isFollowed.value ? iconHeartFilled : iconHeart,
-      label: togglingFollow.value ? (isFollowed.value ? '取消中...' : '关注中...') : (isFollowed.value ? '已关注' : '关注'),
+      label: togglingFollow.value
+        ? isFollowed.value
+          ? '取消中...'
+          : '关注中...'
+        : isFollowed.value
+          ? '已关注'
+          : '关注',
       emphasized: isFollowed.value,
       tone: 'favorite' as const,
       onTap: toggleArtistFollow,
@@ -275,7 +301,9 @@ onMounted(() => {
 <template>
   <div class="artist-detail-container bg-bg-main min-h-full">
     <div v-if="loading && !artist" class="flex items-center justify-center py-40">
-      <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
     </div>
 
     <template v-else-if="artist">
@@ -290,7 +318,8 @@ onMounted(() => {
         <template #details>
           <div class="flex flex-col gap-1 text-text-main/60">
             <div class="text-[13px] font-semibold text-primary">
-              {{ artist.songCount || songs.length }} 歌曲 • {{ artist.albumCount || albums.length }} 专辑
+              {{ artist.songCount || songs.length }} 歌曲 •
+              {{ artist.albumCount || albums.length }} 专辑
             </div>
           </div>
         </template>
@@ -312,10 +341,20 @@ onMounted(() => {
           >
             <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
           </Button>
-          <Button variant="unstyled" size="none" @click="handlePlayAll" class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary">
+          <Button
+            variant="unstyled"
+            size="none"
+            @click="handlePlayAll"
+            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+          >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>
-          <Button variant="unstyled" size="none" @click="openBatchDrawer" class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60">
+          <Button
+            variant="unstyled"
+            size="none"
+            @click="openBatchDrawer"
+            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+          >
             <Icon :icon="iconList" width="18" height="18" />
           </Button>
         </template>
@@ -328,7 +367,9 @@ onMounted(() => {
         <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
           {{ artist.intro }}
         </div>
-        <Button variant="unstyled" size="none"
+        <Button
+          variant="unstyled"
+          size="none"
           type="button"
           class="mt-[2px] text-[11px] font-semibold text-primary"
           @click="showIntroDialog = true"
@@ -365,7 +406,9 @@ onMounted(() => {
                     height="14"
                   />
                 </div>
-                <Button variant="unstyled" size="none"
+                <Button
+                  variant="unstyled"
+                  size="none"
                   @click="handleLocate"
                   class="song-locate-btn p-2 rounded-lg"
                   title="定位当前播放"
@@ -396,13 +439,20 @@ onMounted(() => {
               :active="activeTab === 'songs'"
               :showCover="true"
               :enableDefaultDoubleTapPlay="true"
-              :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
+              :onSongDoubleTapPlay="
+                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+              "
             />
           </TabsContent>
 
           <TabsContent value="albums" class="mt-4 px-6">
-            <div v-if="loadingAlbums && albums.length === 0" class="flex items-center justify-center py-20">
-              <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <div
+              v-if="loadingAlbums && albums.length === 0"
+              class="flex items-center justify-center py-20"
+            >
+              <div
+                class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"
+              ></div>
             </div>
             <div v-else class="artist-album-grid px-2">
               <AlbumCard
@@ -433,10 +483,12 @@ onMounted(() => {
 <style scoped>
 @reference "@/style.css";
 
-.search-expand-enter-active, .search-expand-leave-active {
+.search-expand-enter-active,
+.search-expand-leave-active {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.search-expand-enter-from, .search-expand-leave-to {
+.search-expand-enter-from,
+.search-expand-leave-to {
   opacity: 0;
   width: 0;
   transform: translateX(10px);

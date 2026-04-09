@@ -110,7 +110,7 @@ const scrollToCurrent = (force = true) => {
   if (!force && isCurrentVisible()) return;
   const index = queueTracks.value.findIndex((song) => String(song.id) === targetId);
   if (index < 0) return;
-  
+
   const targetScrollTop = index * itemHeight;
   containerProps.ref.value?.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
 };
@@ -242,10 +242,24 @@ const handleClear = () => {
         >
           <Icon :icon="iconCurrentLocation" width="22" height="22" />
         </Button>
-        <Button type="button" class="queue-icon-btn" variant="ghost" size="xs" title="清空列表" @click="handleClear">
+        <Button
+          type="button"
+          class="queue-icon-btn"
+          variant="ghost"
+          size="xs"
+          title="清空列表"
+          @click="handleClear"
+        >
           <Icon :icon="iconTrash" width="22" height="22" />
         </Button>
-        <Button type="button" class="queue-icon-btn" variant="ghost" size="xs" title="关闭" @click="open = false">
+        <Button
+          type="button"
+          class="queue-icon-btn"
+          variant="ghost"
+          size="xs"
+          title="关闭"
+          @click="open = false"
+        >
           <Icon :icon="iconX" width="22" height="22" />
         </Button>
       </div>
@@ -254,11 +268,7 @@ const handleClear = () => {
     <div class="queue-divider"></div>
 
     <div v-bind="containerProps" class="queue-list">
-      <div
-        v-bind="wrapperProps"
-        ref="sortableContainerRef"
-        class="queue-list-inner"
-      >
+      <div v-bind="wrapperProps" ref="sortableContainerRef" class="queue-list-inner">
         <div
           v-for="entry in list"
           :key="entry.data.queueRenderKey"
@@ -281,7 +291,9 @@ const handleClear = () => {
               @click="handlePlay(entry.data.track)"
             >
               <Icon
-                v-if="String(entry.data.track.id) !== String(currentTrackId) || !playerStore.isPlaying"
+                v-if="
+                  String(entry.data.track.id) !== String(currentTrackId) || !playerStore.isPlaying
+                "
                 :icon="iconPlay"
                 width="14"
                 height="14"

@@ -148,13 +148,17 @@ onMounted(() => {
       </template>
 
       <template #collapsed-actions>
-        <Button variant="unstyled" size="none"
+        <Button
+          variant="unstyled"
+          size="none"
           @click="handlePlayAll"
           class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
         >
           <Icon :icon="iconPlay" width="20" height="20" />
         </Button>
-        <Button variant="unstyled" size="none"
+        <Button
+          variant="unstyled"
+          size="none"
           @click="openBatchDrawer"
           class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
         >
@@ -186,7 +190,9 @@ onMounted(() => {
                 height="14"
               />
             </div>
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               @click="handleLocate"
               class="song-locate-btn p-2 rounded-lg"
               title="定位当前播放"
@@ -208,7 +214,9 @@ onMounted(() => {
 
     <div class="px-6 pb-12">
       <div v-if="loading" class="flex items-center justify-center py-20">
-        <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        <div
+          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+        ></div>
       </div>
       <SongList
         v-else

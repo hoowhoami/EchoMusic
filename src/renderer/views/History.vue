@@ -152,10 +152,12 @@ const loadHistory = async (append = false) => {
 
   try {
     const res = await getUserHistory(append ? nextBp.value || undefined : undefined);
-    const record = res && typeof res === 'object' ? (res as unknown as Record<string, unknown>) : undefined;
-    const data = record?.data && typeof record.data === 'object'
-      ? (record.data as Record<string, unknown>)
-      : record;
+    const record =
+      res && typeof res === 'object' ? (res as unknown as Record<string, unknown>) : undefined;
+    const data =
+      record?.data && typeof record.data === 'object'
+        ? (record.data as Record<string, unknown>)
+        : record;
     const rawList = Array.isArray(data?.list)
       ? data?.list
       : Array.isArray(data?.songs)
@@ -173,7 +175,9 @@ const loadHistory = async (append = false) => {
       .map((item) => mapHistorySong(item));
 
     playerStore.hydrateHistoryPlayCounts(mapped);
-    remoteSongs.value = append ? mergeHistorySongs(remoteSongs.value, mapped) : mergeHistorySongs([], mapped);
+    remoteSongs.value = append
+      ? mergeHistorySongs(remoteSongs.value, mapped)
+      : mergeHistorySongs([], mapped);
     nextBp.value = typeof data?.bp === 'string' ? data.bp : '';
     hasMore.value = Boolean(data?.has_more ?? (mapped.length > 0 && nextBp.value));
   } catch {
@@ -228,8 +232,13 @@ onMounted(() => {
 
 <template>
   <div class="history-view bg-bg-main min-h-full">
-    <div v-if="!isLoggedIn" class="history-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6">
-      <div class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5">
+    <div
+      v-if="!isLoggedIn"
+      class="history-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+    >
+      <div
+        class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+      >
         <Icon :icon="iconClock" width="32" height="32" />
       </div>
       <div class="text-[22px] font-semibold text-text-main">登录后查看播放历史</div>
@@ -247,7 +256,9 @@ onMounted(() => {
         <template #details>
           <div class="flex flex-col gap-2">
             <div class="text-[13px] font-semibold text-text-secondary">历史记录仅供参考</div>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80">
+            <div
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+            >
               <div class="inline-flex items-center gap-1.5">
                 <Icon :icon="iconPlay" width="12" height="12" />
                 <span>{{ displayedCountLabel }}</span>
@@ -261,13 +272,17 @@ onMounted(() => {
         </template>
 
         <template #collapsed-actions>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="handlePlayAll"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
           >
             <Icon :icon="iconPlay" width="20" height="20" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             @click="openBatchDrawer"
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
           >
@@ -282,7 +297,8 @@ onMounted(() => {
         <div class="px-6 border-b border-border-light/10">
           <div class="flex items-center justify-between h-14">
             <div class="text-[14px] font-semibold text-text-main">
-              歌曲 <span class="ml-1 text-[12px] text-text-secondary/70">{{ displayedCountLabel }}</span>
+              歌曲
+              <span class="ml-1 text-[12px] text-text-secondary/70">{{ displayedCountLabel }}</span>
             </div>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -299,7 +315,9 @@ onMounted(() => {
                   height="14"
                 />
               </div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 @click="handleLocate"
                 class="song-locate-btn p-2 rounded-lg"
                 title="定位当前播放"
@@ -321,17 +339,23 @@ onMounted(() => {
 
       <div class="px-6 pb-12">
         <div v-if="loading" class="flex items-center justify-center py-20">
-          <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div
+            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+          ></div>
         </div>
         <div
           v-else-if="songs.length === 0"
           class="history-empty flex flex-col items-center justify-center py-24 text-center"
         >
-          <div class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4">
+          <div
+            class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+          >
             <Icon :icon="iconClock" width="28" height="28" />
           </div>
           <div class="text-[18px] font-semibold text-text-main">暂无播放历史</div>
-          <div class="mt-2 text-[13px] font-medium text-text-secondary/75">最近播放的歌曲会展示在这里</div>
+          <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+            最近播放的歌曲会展示在这里
+          </div>
         </div>
         <SongList
           v-else
@@ -345,7 +369,9 @@ onMounted(() => {
           :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
         />
         <div v-if="!loading && hasMore" class="flex justify-center pt-4">
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             class="px-4 h-9 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-[12px] font-semibold text-text-main/75 hover:text-text-main transition-colors"
             :disabled="loadingMore"
             @click="handleLoadMore"

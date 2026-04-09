@@ -6,25 +6,31 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import Button from '@/components/ui/Button.vue';
-import {
-  mapAlbumMeta,
-  mapArtistMeta,
-  mapPlaylistMeta,
-  mapSearchSong,
-} from '@/utils/mappers';
+import { mapAlbumMeta, mapArtistMeta, mapPlaylistMeta, mapSearchSong } from '@/utils/mappers';
 import type { AlbumMeta } from '@/models/album';
 import type { ArtistMeta } from '@/models/artist';
 import type { PlaylistMeta } from '@/models/playlist';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import SongList from '@/components/music/SongList.vue';
-import SongListHeader, { type SortField, type SortOrder } from '@/components/music/SongListHeader.vue';
+import SongListHeader, {
+  type SortField,
+  type SortOrder,
+} from '@/components/music/SongListHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
-import { iconChevronRight, iconClock, iconCurrentLocation, iconSearch, iconSparkles, iconTrash, iconX } from '@/icons';
+import {
+  iconChevronRight,
+  iconClock,
+  iconCurrentLocation,
+  iconSearch,
+  iconSparkles,
+  iconTrash,
+  iconX,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 
 interface SearchHotKeyword {
@@ -86,12 +92,15 @@ let debounceTimer: number | null = null;
 let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
-const currentHotKeywords = computed(() => hotSearchCategories.value[selectedHotCategoryIndex.value]?.keywords ?? []);
+const currentHotKeywords = computed(
+  () => hotSearchCategories.value[selectedHotCategoryIndex.value]?.keywords ?? [],
+);
 
 const sortedSongResults = computed(() => {
   const base = songResults.value.slice();
   if (!songSortField.value || !songSortOrder.value) return base;
-  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
   const indexMap = new Map<string, number>();
   songResults.value.forEach((song, index) => {
     indexMap.set(song.id, index);
@@ -193,7 +202,8 @@ const extractSuggestionCategories = (payload: unknown): SearchSuggestionCategory
     .map((item) => toRecord(item))
     .filter((item): item is Record<string, unknown> => Boolean(item))
     .map((item) => {
-      const label = typeof item.LableName === 'string' ? item.LableName : String(item.LableName ?? '');
+      const label =
+        typeof item.LableName === 'string' ? item.LableName : String(item.LableName ?? '');
       const rawRecords = Array.isArray(item.RecordDatas) ? item.RecordDatas : [];
       return {
         label,
@@ -443,20 +453,36 @@ onUnmounted(() => {
             @input="handleSearchChanged(searchInput)"
             @keydown.enter.prevent="runSearch()"
           />
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             v-if="searchInput"
             type="button"
             class="search-clear-btn"
             @mousedown.prevent
-            @click="searchInput = ''; handleSearchChanged(''); searchInputRef?.focus()"
+            @click="
+              searchInput = '';
+              handleSearchChanged('');
+              searchInputRef?.focus();
+            "
           >
             <Icon :icon="iconX" width="16" height="16" />
           </Button>
-          <Button variant="unstyled" size="none" type="button" class="search-submit-btn" @click="runSearch()">搜索</Button>
+          <Button
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="search-submit-btn"
+            @click="runSearch()"
+            >搜索</Button
+          >
         </div>
 
         <div v-if="showSuggestions" class="search-suggestions-panel">
-          <div v-if="isLoadingSuggestions && suggestionCategories.length === 0" class="search-suggestions-empty">
+          <div
+            v-if="isLoadingSuggestions && suggestionCategories.length === 0"
+            class="search-suggestions-empty"
+          >
             加载中...
           </div>
           <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
@@ -469,7 +495,9 @@ onUnmounted(() => {
               class="search-suggestion-group"
             >
               <div class="search-suggestion-title">{{ category.label }}</div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 v-for="record in category.records"
                 :key="`${category.label}-${record.text}`"
                 type="button"
@@ -501,12 +529,20 @@ onUnmounted(() => {
         <div v-if="searchHistory.length > 0" class="search-section">
           <div class="search-section-header">
             <div class="search-section-title">历史搜索</div>
-            <Button variant="unstyled" size="none" type="button" class="search-history-clear" @click="settingStore.clearSearchHistory()">
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="search-history-clear"
+              @click="settingStore.clearSearchHistory()"
+            >
               <Icon :icon="iconTrash" width="16" height="16" />
             </Button>
           </div>
           <div class="search-chip-wrap">
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               v-for="keyword in searchHistory"
               :key="keyword"
               type="button"
@@ -517,7 +553,10 @@ onUnmounted(() => {
                 <Icon :icon="iconClock" width="11" height="11" />
               </span>
               <span class="truncate">{{ keyword }}</span>
-              <span class="history-chip-close" @click.stop="settingStore.removeFromSearchHistory(keyword)">
+              <span
+                class="history-chip-close"
+                @click.stop="settingStore.removeFromSearchHistory(keyword)"
+              >
                 <Icon :icon="iconX" width="10" height="10" />
               </span>
             </Button>
@@ -527,7 +566,9 @@ onUnmounted(() => {
         <div class="search-section">
           <div class="search-section-title">热门搜索</div>
           <div v-if="hotSearchCategories.length > 0" class="search-hot-tabs">
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               v-for="(category, index) in hotSearchCategories"
               :key="category.name"
               type="button"
@@ -539,7 +580,9 @@ onUnmounted(() => {
             </Button>
           </div>
           <div class="search-chip-wrap mt-5">
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               v-for="item in currentHotKeywords"
               :key="`${item.keyword}-${item.reason}`"
               type="button"
@@ -558,12 +601,17 @@ onUnmounted(() => {
     </div>
 
     <div v-else-if="isLoading" class="search-loading-wrap">
-      <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
     </div>
 
     <div v-else class="px-10 pt-4">
       <div v-if="activeTabIndex === 0">
-        <div class="search-song-toolbar sticky z-[120] bg-bg-main" :style="{ top: `${songToolbarOffset}px` }">
+        <div
+          class="search-song-toolbar sticky z-[120] bg-bg-main"
+          :style="{ top: `${songToolbarOffset}px` }"
+        >
           <div class="search-song-toolbar-inner">
             <div class="search-song-title-wrap">
               <div class="search-song-badge-icon">
@@ -579,9 +627,16 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <BatchActionDrawer v-model:open="showSongBatchDrawer" :songs="songResults" source-id="search" />
+        <BatchActionDrawer
+          v-model:open="showSongBatchDrawer"
+          :songs="songResults"
+          source-id="search"
+        />
 
-        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${songListHeaderOffset}px` }">
+        <div
+          class="song-list-sticky sticky z-[110] bg-bg-main"
+          :style="{ top: `${songListHeaderOffset}px` }"
+        >
           <div class="border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <div class="rank-song-tab">
@@ -603,7 +658,13 @@ onUnmounted(() => {
                     height="14"
                   />
                 </div>
-                <Button variant="unstyled" size="none" @click="handleSongLocate" class="song-locate-btn p-2 rounded-lg" title="定位当前播放">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleSongLocate"
+                  class="song-locate-btn p-2 rounded-lg"
+                  title="定位当前播放"
+                >
                   <Icon :icon="iconCurrentLocation" width="16" height="16" />
                 </Button>
               </div>
@@ -628,7 +689,9 @@ onUnmounted(() => {
             :activeId="activeSongId"
             :showCover="true"
             :enableDefaultDoubleTapPlay="true"
-            :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
+            :onSongDoubleTapPlay="
+              settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+            "
             rowPaddingClass="px-0"
           />
         </div>
@@ -666,7 +729,11 @@ onUnmounted(() => {
             :name="album.name"
             :coverUrl="album.pic"
             :artist="album.singerName"
-            :subtitle="[album.singerName, album.songCount ? `${album.songCount} 首歌曲` : ''].filter(Boolean).join(' • ')"
+            :subtitle="
+              [album.singerName, album.songCount ? `${album.songCount} 首歌曲` : '']
+                .filter(Boolean)
+                .join(' • ')
+            "
           />
         </div>
       </div>
@@ -782,7 +849,9 @@ onUnmounted(() => {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-border-light) 82%, transparent);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.06);
   background: var(--color-bg-card);
   backdrop-filter: blur(18px);
   z-index: 260;
@@ -1065,7 +1134,11 @@ onUnmounted(() => {
   justify-content: center;
   color: #ffffff;
   border-radius: 8px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 92%, white), var(--color-secondary));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary) 92%, white),
+    var(--color-secondary)
+  );
 }
 
 .search-song-toolbar-actions {

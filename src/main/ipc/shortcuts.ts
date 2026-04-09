@@ -35,34 +35,39 @@ const registerShortcuts = (shortcutMap: ShortcutMap, getMainWindow: () => Browse
   globalShortcut.unregisterAll();
   registeredShortcuts = shortcutMap;
 
-  (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(([command, accelerator]) => {
-    if (!accelerator) return;
-    try {
-      globalShortcut.register(accelerator, () => {
-        if (command === 'toggleWindow') {
-          const win = getMainWindow();
-          if (!win) return;
-          if (win.isVisible()) hideMainWindow();
-          else showMainWindow();
-          return;
-        }
-        forwardToRenderer(command, getMainWindow);
-      });
-    } catch {
-      // ignore invalid accelerator
-    }
-  });
+  (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(
+    ([command, accelerator]) => {
+      if (!accelerator) return;
+      try {
+        globalShortcut.register(accelerator, () => {
+          if (command === 'toggleWindow') {
+            const win = getMainWindow();
+            if (!win) return;
+            if (win.isVisible()) hideMainWindow();
+            else showMainWindow();
+            return;
+          }
+          forwardToRenderer(command, getMainWindow);
+        });
+      } catch {
+        // ignore invalid accelerator
+      }
+    },
+  );
 };
 
 export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
-  ipcMain.on('shortcuts:register', (_event, payload: { enabled: boolean; shortcutMap: ShortcutMap }) => {
-    if (!payload?.enabled) {
-      globalShortcut.unregisterAll();
-      registeredShortcuts = null;
-      return;
-    }
-    registerShortcuts(payload.shortcutMap, getMainWindow);
-  });
+  ipcMain.on(
+    'shortcuts:register',
+    (_event, payload: { enabled: boolean; shortcutMap: ShortcutMap }) => {
+      if (!payload?.enabled) {
+        globalShortcut.unregisterAll();
+        registeredShortcuts = null;
+        return;
+      }
+      registerShortcuts(payload.shortcutMap, getMainWindow);
+    },
+  );
 
   ipcMain.on('shortcuts:refresh', () => {
     if (!registeredShortcuts) return;

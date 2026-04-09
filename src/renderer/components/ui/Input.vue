@@ -16,7 +16,7 @@ interface Props extends PrimitiveProps {
 const props = withDefaults(defineProps<Props>(), {
   as: 'input',
   type: 'text',
-  showClear: true
+  showClear: true,
 });
 
 const emits = defineEmits(['update:modelValue', 'clear']);
@@ -37,10 +37,10 @@ const handleClear = () => {
       :placeholder="placeholder"
       :class="[
         'w-full h-14 pl-6 pr-12 bg-black/[0.03] dark:bg-white/[0.03] border border-transparent rounded-2xl outline-none transition-all font-medium text-[15px] placeholder:opacity-50',
-        props.inputClass
+        props.inputClass,
       ]"
     />
-    
+
     <!-- 清除图标按钮 -->
     <Button
       v-if="showClear && value"

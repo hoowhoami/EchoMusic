@@ -90,7 +90,12 @@ const confirm = () => {
           :style="{ backgroundColor: color }"
           @click="applyPreset(color)"
         >
-          <Icon v-if="normalizedDraft === color.toLowerCase()" :icon="iconCheck" width="14" height="14" />
+          <Icon
+            v-if="normalizedDraft === color.toLowerCase()"
+            :icon="iconCheck"
+            width="14"
+            height="14"
+          />
         </button>
       </div>
 

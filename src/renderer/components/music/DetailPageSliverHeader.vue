@@ -31,7 +31,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const scrollY = ref(0);
 const scrollThreshold = computed(() => props.expandedHeight - props.collapsedHeight);
-const currentHeight = computed(() => Math.max(props.collapsedHeight, props.expandedHeight - scrollY.value));
+const currentHeight = computed(() =>
+  Math.max(props.collapsedHeight, props.expandedHeight - scrollY.value),
+);
 
 // 计算收缩比例 (0 到 1)
 const progress = computed(() => {

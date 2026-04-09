@@ -12,7 +12,7 @@ export function getRecommendPlaylists() {
  */
 export function getPlaylistDetail(ids: string) {
   return request.get('/playlist/detail', {
-    params: { ids }
+    params: { ids },
   });
 }
 
@@ -21,7 +21,7 @@ export function getPlaylistDetail(ids: string) {
  */
 export function getPlaylistTracks(id: string | number, page = 1, pagesize = 30) {
   return request.get('/playlist/track/all', {
-    params: { id, page, pagesize }
+    params: { id, page, pagesize },
   });
 }
 
@@ -30,7 +30,7 @@ export function getPlaylistTracks(id: string | number, page = 1, pagesize = 30) 
  */
 export function getPlaylistTracksNew(listid: string | number, page = 1, pagesize = 30) {
   return request.get('/playlist/track/all/new', {
-    params: { listid, page, pagesize }
+    params: { listid, page, pagesize },
   });
 }
 
@@ -39,7 +39,7 @@ export function getPlaylistTracksNew(listid: string | number, page = 1, pagesize
  */
 export function getUserPlaylists(page = 1, pagesize = 30) {
   return request.get('/user/playlist', {
-    params: { page, pagesize }
+    params: { page, pagesize },
   });
 }
 
@@ -89,7 +89,7 @@ export function getTopIP() {
  */
 export function getRankSongs(rankid: number, page = 1, pagesize = 100) {
   return request.get('/rank/audio', {
-    params: { rankid, page, pagesize }
+    params: { rankid, page, pagesize },
   });
 }
 
@@ -100,7 +100,7 @@ export function getRankSongs(rankid: number, page = 1, pagesize = 100) {
  */
 export function addPlaylistTrack(listid: string | number, data: string) {
   return request.get('/playlist/tracks/add', {
-    params: { listid, data }
+    params: { listid, data },
   });
 }
 
@@ -111,7 +111,7 @@ export function addPlaylistTrack(listid: string | number, data: string) {
  */
 export function deletePlaylistTrack(listid: string | number, fileids: string) {
   return request.get('/playlist/tracks/del', {
-    params: { listid, fileids }
+    params: { listid, fileids },
   });
 }
 
@@ -132,7 +132,7 @@ export function addPlaylist(
     list_create_listid?: number;
     list_create_gid?: string;
     source?: number;
-  } = {}
+  } = {},
 ) {
   return request.get('/playlist/add', {
     params: {

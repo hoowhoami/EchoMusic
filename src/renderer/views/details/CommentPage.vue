@@ -80,7 +80,11 @@ const mainTab = ref<'detail' | 'comment'>('detail');
 const activeCommentTab = ref('hot');
 const commentTabValues = ['hot', 'all', 'classify', 'hotword'] as const;
 const activeCommentTabIndex = computed({
-  get: () => Math.max(0, commentTabValues.indexOf(activeCommentTab.value as (typeof commentTabValues)[number])),
+  get: () =>
+    Math.max(
+      0,
+      commentTabValues.indexOf(activeCommentTab.value as (typeof commentTabValues)[number]),
+    ),
   set: (value: number) => {
     handleCommentTabChange(commentTabValues[value] ?? 'hot');
   },
@@ -161,7 +165,8 @@ const title = computed(() => {
 });
 
 const songLanguage = computed(() => {
-  const transParam = (privilegeData.value?.trans_param as Record<string, unknown> | undefined) ?? undefined;
+  const transParam =
+    (privilegeData.value?.trans_param as Record<string, unknown> | undefined) ?? undefined;
   return String(transParam?.language ?? '未知');
 });
 
@@ -179,20 +184,33 @@ const isSameRoute = (name: string, targetId: string | number) => {
 
 const singerInfo = computed<Record<string, unknown> | null>(() => {
   if (!privilegeData.value) return null;
-  const singerRaw = (privilegeData.value.singerinfo as unknown[] | undefined) ?? (privilegeData.value.authors as unknown[] | undefined);
+  const singerRaw =
+    (privilegeData.value.singerinfo as unknown[] | undefined) ??
+    (privilegeData.value.authors as unknown[] | undefined);
   if (!Array.isArray(singerRaw) || singerRaw.length === 0) return null;
-  const first = singerRaw.find((item) => typeof item === 'object' && item !== null) as Record<string, unknown> | undefined;
+  const first = singerRaw.find((item) => typeof item === 'object' && item !== null) as
+    | Record<string, unknown>
+    | undefined;
   return first ?? null;
 });
 
 const songArtistId = computed(() => {
   const queryId = resolveNumericId(songArtistIdFromQuery.value);
   if (queryId !== null) return queryId;
-  const raw = singerInfo.value?.id ?? singerInfo.value?.author_id ?? singerInfo.value?.singerid ?? singerInfo.value?.singer_id;
+  const raw =
+    singerInfo.value?.id ??
+    singerInfo.value?.author_id ??
+    singerInfo.value?.singerid ??
+    singerInfo.value?.singer_id;
   return resolveNumericId(raw);
 });
 
-const canOpenArtist = computed(() => isMusicType.value && songArtistId.value !== null && !isSameRoute('artist-detail', songArtistId.value));
+const canOpenArtist = computed(
+  () =>
+    isMusicType.value &&
+    songArtistId.value !== null &&
+    !isSameRoute('artist-detail', songArtistId.value),
+);
 const canOpenAlbum = computed(() => {
   const albumId = resolveNumericId(songAlbumId.value);
   return isMusicType.value && albumId !== null && !isSameRoute('album-detail', albumId);
@@ -216,10 +234,18 @@ const openAlbumDetail = () => {
 };
 
 const totalLabel = computed(() => (total.value > 0 ? `(${total.value})` : ''));
-const showCommentsEnd = computed(() => !hasMore.value && !isLoadingComments.value && comments.value.length > 0);
-const showClassifyEnd = computed(() => !hasMoreClassify.value && !isLoadingClassify.value && classifyComments.value.length > 0);
-const showHotwordEnd = computed(() => !hasMoreHotword.value && !isLoadingHotword.value && hotwordComments.value.length > 0);
-const showFloorEnd = computed(() => !floorHasMore.value && !floorLoading.value && floorReplies.value.length > 0);
+const showCommentsEnd = computed(
+  () => !hasMore.value && !isLoadingComments.value && comments.value.length > 0,
+);
+const showClassifyEnd = computed(
+  () => !hasMoreClassify.value && !isLoadingClassify.value && classifyComments.value.length > 0,
+);
+const showHotwordEnd = computed(
+  () => !hasMoreHotword.value && !isLoadingHotword.value && hotwordComments.value.length > 0,
+);
+const showFloorEnd = computed(
+  () => !floorHasMore.value && !floorLoading.value && floorReplies.value.length > 0,
+);
 
 const resolveCommentCountFromHeaderStats = (): number | null => {
   const data = commentCountData.value;
@@ -254,7 +280,8 @@ const scrollChipRowToActive = (container: HTMLElement | null) => {
 };
 
 const maybeFetchByScroll = () => {
-  const scrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  const scrollTop =
+    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
   const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
   if (fullHeight - scrollTop - viewportHeight > 400) return;
@@ -287,11 +314,13 @@ const formatCount = (value: number) => {
 };
 
 const relateGoods = computed(() =>
-  ((privilegeData.value?.relate_goods as Record<string, unknown>[] | undefined) ?? []).map((item) => ({
-    quality: String(item.quality ?? ''),
-    level: typeof item.level === 'number' ? item.level : undefined,
-    hash: String(item.hash ?? ''),
-  })),
+  ((privilegeData.value?.relate_goods as Record<string, unknown>[] | undefined) ?? []).map(
+    (item) => ({
+      quality: String(item.quality ?? ''),
+      level: typeof item.level === 'number' ? item.level : undefined,
+      hash: String(item.hash ?? ''),
+    }),
+  ),
 );
 
 const qualityTags = computed(() => getSongQualityTags(relateGoods.value));
@@ -301,7 +330,11 @@ const effectTags = computed(() => getSongEffectTags(relateGoods.value));
 const rankingInfo = computed<Array<Record<string, unknown>>>(() => {
   const data = rankingData.value?.data as Record<string, unknown> | undefined;
   const list = data?.info;
-  return Array.isArray(list) ? list.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null) : [];
+  return Array.isArray(list)
+    ? list.filter(
+        (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+      )
+    : [];
 });
 
 const rankingSummary = computed(() => {
@@ -310,8 +343,12 @@ const rankingSummary = computed(() => {
 });
 
 const singerComments = computed(() => hotComments.value.filter((item) => item.isStar));
-const popularComments = computed(() => hotComments.value.filter((item) => item.isHot && !item.isStar));
-const hasFeaturedComments = computed(() => singerComments.value.length > 0 || popularComments.value.length > 0);
+const popularComments = computed(() =>
+  hotComments.value.filter((item) => item.isHot && !item.isStar),
+);
+const hasFeaturedComments = computed(
+  () => singerComments.value.length > 0 || popularComments.value.length > 0,
+);
 
 const buildPayload = (data: unknown): CommentPayload => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
@@ -334,9 +371,7 @@ const buildPayload = (data: unknown): CommentPayload => {
   const hotwordCandidate = payload.hot_word_list ?? [];
 
   const hotMapped = hotList.map(mapCommentItem).map((item) => ({ ...item, isHot: true }));
-  const starMapped = starList
-    .map(mapCommentItem)
-    .map((item) => ({ ...item, isStar: true }));
+  const starMapped = starList.map(mapCommentItem).map((item) => ({ ...item, isStar: true }));
 
   return {
     hot: [...starMapped, ...hotMapped],
@@ -372,7 +407,12 @@ const fetchMusicComments = async (reset = false) => {
       showClassify: reset,
       showHotwordList: reset,
     });
-    if (res && typeof res === 'object' && 'status' in res && (res as { status?: number }).status === 1) {
+    if (
+      res &&
+      typeof res === 'object' &&
+      'status' in res &&
+      (res as { status?: number }).status === 1
+    ) {
       const payload = buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
@@ -389,7 +429,8 @@ const fetchMusicComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value = total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      hasMore.value =
+        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -413,7 +454,12 @@ const fetchPlaylistComments = async (reset = false) => {
       showClassify: reset,
       showHotwordList: reset,
     });
-    if (res && typeof res === 'object' && 'status' in res && (res as { status?: number }).status === 1) {
+    if (
+      res &&
+      typeof res === 'object' &&
+      'status' in res &&
+      (res as { status?: number }).status === 1
+    ) {
       const payload = buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
@@ -422,7 +468,8 @@ const fetchPlaylistComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value = total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      hasMore.value =
+        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -446,7 +493,12 @@ const fetchAlbumComments = async (reset = false) => {
       showClassify: reset,
       showHotwordList: reset,
     });
-    if (res && typeof res === 'object' && 'status' in res && (res as { status?: number }).status === 1) {
+    if (
+      res &&
+      typeof res === 'object' &&
+      'status' in res &&
+      (res as { status?: number }).status === 1
+    ) {
       const payload = buildPayload(res);
       if (reset) {
         hotComments.value = payload.hot ?? [];
@@ -455,7 +507,8 @@ const fetchAlbumComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value = total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      hasMore.value =
+        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -482,14 +535,18 @@ const fetchClassifyComments = async (reset = false) => {
       classifyPage.value,
       30,
     );
-    if (res && typeof res === 'object' && 'status' in res && (res as { status?: number }).status === 1) {
+    if (
+      res &&
+      typeof res === 'object' &&
+      'status' in res &&
+      (res as { status?: number }).status === 1
+    ) {
       const payload = buildPayload(res);
       classifyComments.value = reset ? payload.list : [...classifyComments.value, ...payload.list];
       const selectedItem = classifyList.value.find((item) => item.id === selectedClassify.value);
       const totalCount = payload.total || selectedItem?.count || 0;
-      hasMoreClassify.value = totalCount > 0
-        ? classifyComments.value.length < totalCount
-        : payload.list.length >= 30;
+      hasMoreClassify.value =
+        totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30;
       if (hasMoreClassify.value) classifyPage.value += 1;
     }
   } catch {
@@ -516,14 +573,18 @@ const fetchHotwordComments = async (reset = false) => {
       hotwordPage.value,
       30,
     );
-    if (res && typeof res === 'object' && 'status' in res && (res as { status?: number }).status === 1) {
+    if (
+      res &&
+      typeof res === 'object' &&
+      'status' in res &&
+      (res as { status?: number }).status === 1
+    ) {
       const payload = buildPayload(res);
       hotwordComments.value = reset ? payload.list : [...hotwordComments.value, ...payload.list];
       const selectedItem = hotwordList.value.find((item) => item.content === selectedHotword.value);
       const totalCount = payload.total || selectedItem?.count || 0;
-      hasMoreHotword.value = totalCount > 0
-        ? hotwordComments.value.length < totalCount
-        : payload.list.length >= 30;
+      hasMoreHotword.value =
+        totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30;
       if (hasMoreHotword.value) hotwordPage.value += 1;
     }
   } catch {
@@ -578,7 +639,8 @@ const fetchFloorReplies = async (reset = false) => {
     const comment = activeFloorComment.value;
     const specialId = comment.specialId ?? '';
     const tid = comment.tid ?? String(comment.id);
-    const mixSongId = comment.mixSongId ?? (type === 'music' ? songMixSongId.value || id : undefined);
+    const mixSongId =
+      comment.mixSongId ?? (type === 'music' ? songMixSongId.value || id : undefined);
     if (!specialId || !tid) {
       floorMessage.value = '楼层评论暂不可用';
       floorHasMore.value = false;
@@ -603,14 +665,11 @@ const fetchFloorReplies = async (reset = false) => {
       floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
       const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
       floorTotal.value = totalCount;
-      floorHasMore.value = totalCount > 0
-        ? floorReplies.value.length < totalCount
-        : mapped.length >= 30;
+      floorHasMore.value =
+        totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
       if (floorHasMore.value) floorPage.value += 1;
       if (floorReplies.value.length === 0) {
-        floorMessage.value = errCode !== 0
-          ? '楼层评论暂不可用'
-          : message || '暂无回复';
+        floorMessage.value = errCode !== 0 ? '楼层评论暂不可用' : message || '暂无回复';
       }
     }
   } catch {
@@ -647,7 +706,8 @@ const fetchHeaderStats = async () => {
       const data = (record.data as Record<string, unknown>) || record;
       const list = (data.list as Record<string, unknown>[]) || [];
       const first = Array.isArray(list) ? list[0] : undefined;
-      const count = Number(first?.count ?? first?.collect_count ?? data.count ?? data.collect_count ?? 0) || 0;
+      const count =
+        Number(first?.count ?? first?.collect_count ?? data.count ?? data.collect_count ?? 0) || 0;
       favoriteCount.value = count;
     }
     if (commentRes && typeof commentRes === 'object') {
@@ -676,9 +736,10 @@ const fetchDetailData = async () => {
       const record = privilegeRes as unknown as Record<string, unknown>;
       const data = (record.data as unknown[]) || [];
       const list = Array.isArray(data) ? data : [];
-      privilegeData.value = list.length > 0 && typeof list[0] === 'object'
-        ? (list[0] as Record<string, unknown>)
-        : null;
+      privilegeData.value =
+        list.length > 0 && typeof list[0] === 'object'
+          ? (list[0] as Record<string, unknown>)
+          : null;
     }
     if (rankingRes && typeof rankingRes === 'object') {
       rankingData.value = rankingRes as unknown as Record<string, unknown>;
@@ -692,7 +753,10 @@ onMounted(async () => {
   if (route.query.floorSpecialId || route.query.floorTid) {
     mainTab.value = 'comment';
   } else {
-    mainTab.value = String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
+    mainTab.value =
+      String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment'
+        ? 'comment'
+        : 'detail';
   }
   window.addEventListener('scroll', maybeFetchByScroll, { passive: true });
   await fetchComments(true);
@@ -746,7 +810,9 @@ watch(total, (value) => {
     >
       <template #details>
         <div class="comment-song-header">
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             v-if="songArtist"
             type="button"
             class="comment-song-subtitle"
@@ -757,7 +823,9 @@ watch(total, (value) => {
             {{ songArtist }}
           </Button>
           <div v-if="isMusicType" class="comment-song-meta-row">
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               type="button"
               class="comment-song-meta"
               :class="{ 'is-link': canOpenAlbum }"
@@ -785,9 +853,8 @@ watch(total, (value) => {
     </SliverHeader>
 
     <div class="comment-content-wrap comment-content-wrap--music">
-
       <template v-if="isMusicType">
-        <Tabs :model-value="mainTab" @update:model-value="mainTab = ($event as 'detail' | 'comment')">
+        <Tabs :model-value="mainTab" @update:model-value="mainTab = $event as 'detail' | 'comment'">
           <div class="comment-main-tabs sticky z-[120] bg-bg-main" :style="{ top: '56px' }">
             <TabsList class="comment-main-tab-list">
               <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
@@ -796,7 +863,13 @@ watch(total, (value) => {
           </div>
 
           <TabsContent value="detail">
-            <div v-if="!detailLoading && (qualityTags.length || effectTags.length || rankingInfo.length || rankingSummary)" class="detail-section detail-section--plain">
+            <div
+              v-if="
+                !detailLoading &&
+                (qualityTags.length || effectTags.length || rankingInfo.length || rankingSummary)
+              "
+              class="detail-section detail-section--plain"
+            >
               <div v-if="qualityTags.length" class="detail-block">
                 <div class="detail-title">可选音质</div>
                 <div class="detail-tags">
@@ -856,10 +929,7 @@ watch(total, (value) => {
                     compact
                     hide-empty
                   />
-                  <div
-                    v-if="!isLoadingComments && !hasFeaturedComments"
-                    class="comment-only-empty"
-                  >
+                  <div v-if="!isLoadingComments && !hasFeaturedComments" class="comment-only-empty">
                     暂无评论
                   </div>
                 </div>
@@ -867,7 +937,12 @@ watch(total, (value) => {
 
               <template v-else-if="activeCommentTab === 'all'">
                 <div class="comment-list-wrap">
-                  <CommentList :comments="comments" :loading="isLoadingComments" :onTapReplies="openFloor" compact />
+                  <CommentList
+                    :comments="comments"
+                    :loading="isLoadingComments"
+                    :onTapReplies="openFloor"
+                    compact
+                  />
                   <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
                     <div v-if="isLoadingComments" class="comment-loading-inline">
                       <div class="comment-loading-spinner"></div>
@@ -881,16 +956,28 @@ watch(total, (value) => {
               <template v-else-if="activeCommentTab === 'classify'">
                 <div class="comment-list-wrap">
                   <div ref="classifyChipRowRef" class="comment-chip-row">
-                    <Button variant="unstyled" size="none"
+                    <Button
+                      variant="unstyled"
+                      size="none"
                       v-for="item in classifyList"
                       :key="item.id"
                       :class="['comment-chip', selectedClassify === item.id && 'is-active']"
-                      @click="selectedClassify = item.id; void fetchClassifyComments(true)"
+                      @click="
+                        selectedClassify = item.id;
+                        void fetchClassifyComments(true);
+                      "
                     >
-                      {{ item.name }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
+                      {{ item.name
+                      }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
                     </Button>
                   </div>
-                  <CommentList :comments="classifyComments" :loading="isLoadingClassify" :onTapReplies="openFloor" compact empty-text="该分类下暂无评论" />
+                  <CommentList
+                    :comments="classifyComments"
+                    :loading="isLoadingClassify"
+                    :onTapReplies="openFloor"
+                    compact
+                    empty-text="该分类下暂无评论"
+                  />
                   <div v-if="isLoadingClassify || showClassifyEnd" class="comment-load-more">
                     <div v-if="isLoadingClassify" class="comment-loading-inline">
                       <div class="comment-loading-spinner"></div>
@@ -904,16 +991,28 @@ watch(total, (value) => {
               <template v-else>
                 <div class="comment-list-wrap">
                   <div ref="hotwordChipRowRef" class="comment-chip-row">
-                    <Button variant="unstyled" size="none"
+                    <Button
+                      variant="unstyled"
+                      size="none"
                       v-for="item in hotwordList"
                       :key="item.content"
                       :class="['comment-chip', selectedHotword === item.content && 'is-active']"
-                      @click="selectedHotword = item.content; void fetchHotwordComments(true)"
+                      @click="
+                        selectedHotword = item.content;
+                        void fetchHotwordComments(true);
+                      "
                     >
-                      {{ item.content }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
+                      {{ item.content
+                      }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
                     </Button>
                   </div>
-                  <CommentList :comments="hotwordComments" :loading="isLoadingHotword" :onTapReplies="openFloor" compact empty-text="该热词下暂无评论" />
+                  <CommentList
+                    :comments="hotwordComments"
+                    :loading="isLoadingHotword"
+                    :onTapReplies="openFloor"
+                    compact
+                    empty-text="该热词下暂无评论"
+                  />
                   <div v-if="isLoadingHotword || showHotwordEnd" class="comment-load-more">
                     <div v-if="isLoadingHotword" class="comment-loading-inline">
                       <div class="comment-loading-spinner"></div>
@@ -930,8 +1029,19 @@ watch(total, (value) => {
 
       <template v-else>
         <div v-if="hotComments.length" class="comment-section-title">热门评论</div>
-        <CommentList :comments="hotComments" :loading="isLoadingComments" :onTapReplies="openFloor" compact hide-empty />
-        <CommentList :comments="comments" :loading="isLoadingComments" :onTapReplies="openFloor" compact />
+        <CommentList
+          :comments="hotComments"
+          :loading="isLoadingComments"
+          :onTapReplies="openFloor"
+          compact
+          hide-empty
+        />
+        <CommentList
+          :comments="comments"
+          :loading="isLoadingComments"
+          :onTapReplies="openFloor"
+          compact
+        />
         <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
           <div v-if="isLoadingComments" class="comment-loading-inline">
             <div class="comment-loading-spinner"></div>
@@ -962,14 +1072,15 @@ watch(total, (value) => {
           :loading="false"
           compact
         />
-        <div class="comment-floor-section">
-          回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
-        </div>
+        <div class="comment-floor-section">回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}</div>
         <CommentList :comments="floorReplies" :loading="floorLoading" :showDivider="true" compact />
         <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
           {{ floorMessage || '暂无回复' }}
         </div>
-        <div v-if="floorHasMore || floorLoading || showFloorEnd" class="comment-load-more comment-load-more-floor">
+        <div
+          v-if="floorHasMore || floorLoading || showFloorEnd"
+          class="comment-load-more comment-load-more-floor"
+        >
           <div v-if="floorLoading" class="comment-loading-inline">
             <div class="comment-loading-spinner"></div>
             <span>加载中...</span>
@@ -1366,7 +1477,6 @@ watch(total, (value) => {
   background: var(--color-bg-main);
   border-bottom: 1px solid color-mix(in srgb, var(--color-border-light) 72%, transparent);
 }
-
 
 .comment-floor-title {
   font-size: 16px;

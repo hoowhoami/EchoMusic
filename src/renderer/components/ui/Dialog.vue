@@ -51,10 +51,7 @@ const hasBody = computed(() => Boolean(slots.default));
 
 const overlayClass = computed(() => ['dialog-overlay', props.overlayClass]);
 const contentClass = computed(() => ['dialog-content', props.contentClass]);
-const computedDescriptionClass = computed(() => [
-  'dialog-description',
-  props.descriptionClass,
-]);
+const computedDescriptionClass = computed(() => ['dialog-description', props.descriptionClass]);
 const computedBodyClass = computed(() => [
   'dialog-body',
   hasDescription.value ? 'mt-2' : null,
@@ -81,7 +78,11 @@ const handleInteractOutside = (event: Event) => {
         <div :class="overlayClass" />
       </DialogOverlay>
 
-      <DialogContent as-child @escape-key-down="handleEscapeKeyDown" @interact-outside="handleInteractOutside">
+      <DialogContent
+        as-child
+        @escape-key-down="handleEscapeKeyDown"
+        @interact-outside="handleInteractOutside"
+      >
         <div :class="contentClass" :style="props.contentStyle">
           <!-- 关闭按钮 -->
           <DialogClose v-if="props.showClose" as-child>

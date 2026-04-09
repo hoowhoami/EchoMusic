@@ -69,7 +69,10 @@ const parseTags = (value: unknown): VideoTag[] => {
 
 const QUALITY_ORDER = ['fhd', 'hd', 'qhd', 'sd', 'ld'] as const;
 
-const QUALITY_META: Record<(typeof QUALITY_ORDER)[number], { label: string; height?: number; width?: number }> = {
+const QUALITY_META: Record<
+  (typeof QUALITY_ORDER)[number],
+  { label: string; height?: number; width?: number }
+> = {
   fhd: { label: '1080P', height: 1080, width: 1920 },
   hd: { label: '720P', height: 720, width: 1280 },
   qhd: { label: '540P', height: 540, width: 960 },

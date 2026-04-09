@@ -37,9 +37,7 @@ const containerRadius = computed(() => {
 const cardShadow = computed(() => (props.showShadow ? 'var(--playlist-card-shadow)' : 'none'));
 
 const cardHoverShadow = computed(() =>
-  props.showShadow
-    ? 'var(--playlist-card-hover-shadow)'
-    : 'none',
+  props.showShadow ? 'var(--playlist-card-hover-shadow)' : 'none',
 );
 
 const coverShadowClass = computed(() => (props.showShadow ? 'shadow-sm' : ''));
@@ -57,7 +55,7 @@ const handleClick = () => {
 </script>
 
 <template>
-  <div 
+  <div
     v-if="layout === 'grid'"
     class="playlist-card-grid group cursor-pointer"
     @click="handleClick"
@@ -89,11 +87,7 @@ const handleClick = () => {
     </div>
   </div>
 
-  <div 
-    v-else
-    class="playlist-card-list group cursor-pointer"
-    @click="handleClick"
-  >
+  <div v-else class="playlist-card-list group cursor-pointer" @click="handleClick">
     <Cover
       :url="coverUrl"
       :size="200"
@@ -124,13 +118,16 @@ const handleClick = () => {
 .card-container {
   @apply p-[10px] rounded-[20px] bg-bg-card border border-border-light/50 transition-all duration-300;
   --playlist-card-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-  --playlist-card-hover-shadow: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
+  --playlist-card-hover-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
 }
 
 .dark .card-container {
   border-color: color-mix(in srgb, var(--color-border-light) 92%, transparent);
   --playlist-card-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
-  --playlist-card-hover-shadow: 0 14px 34px rgba(0, 0, 0, 0.42), 0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --playlist-card-hover-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .playlist-card-grid:hover .card-container {

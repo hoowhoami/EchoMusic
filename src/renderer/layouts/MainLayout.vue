@@ -11,7 +11,9 @@ const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
 </script>
 
 <template>
-  <div class="main-layout h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300">
+  <div
+    class="main-layout h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
+  >
     <!-- 1. 左侧侧边栏 (固定宽度) -->
     <Sidebar class="w-[220px] shrink-0" />
 
@@ -28,7 +30,7 @@ const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
 
       <!-- 2.2 底部悬浮播放控制栏 (相对于右侧容器居中) -->
       <PlayerBar />
-      
+
       <!-- 2.3 返回顶部 -->
       <BackToTop target-selector=".view-port" />
     </div>

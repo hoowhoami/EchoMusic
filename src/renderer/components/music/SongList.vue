@@ -94,11 +94,13 @@ const visibleBlockStyle = computed(() => ({
   transform: `translateY(${visibleStart.value * itemHeight}px)`,
 }));
 
-const rowGridTemplate = computed(() => buildSongListGridTemplate({
-  showIndex: props.showIndex,
-  showAlbum: props.showAlbum,
-  showDuration: props.showDuration,
-}));
+const rowGridTemplate = computed(() =>
+  buildSongListGridTemplate({
+    showIndex: props.showIndex,
+    showAlbum: props.showAlbum,
+    showDuration: props.showDuration,
+  }),
+);
 
 const isSongPlayable = (song: Song) => isPlayableSong(song);
 
@@ -300,24 +302,36 @@ const scrollToActive = async () => {
   requestAnimationFrame(() => adjustActiveIntoView(true));
 };
 
-watch(filteredSongs, () => {
-  scheduleMeasure();
-}, { flush: 'post' });
+watch(
+  filteredSongs,
+  () => {
+    scheduleMeasure();
+  },
+  { flush: 'post' },
+);
 
-watch(() => props.loading, () => {
-  scheduleMeasure();
-}, { flush: 'post' });
+watch(
+  () => props.loading,
+  () => {
+    scheduleMeasure();
+  },
+  { flush: 'post' },
+);
 
-watch(() => props.active, async (active) => {
-  if (!active) {
-    visibleStart.value = 0;
-    visibleEnd.value = 0;
-    return;
-  }
-  await nextTick();
-  bindScrollContainer();
-  scheduleMeasure();
-}, { flush: 'post' });
+watch(
+  () => props.active,
+  async (active) => {
+    if (!active) {
+      visibleStart.value = 0;
+      visibleEnd.value = 0;
+      return;
+    }
+    await nextTick();
+    bindScrollContainer();
+    scheduleMeasure();
+  },
+  { flush: 'post' },
+);
 
 onMounted(async () => {
   await nextTick();
@@ -341,11 +355,19 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
 
 <template>
   <div ref="containerRef" class="song-list-container scroll-smooth">
-    <div v-if="!props.loading && filteredSongs.length > 0" :style="wrapperStyle" class="song-list-inner">
+    <div
+      v-if="!props.loading && filteredSongs.length > 0"
+      :style="wrapperStyle"
+      class="song-list-inner"
+    >
       <div :style="visibleBlockStyle">
         <div
           v-for="entry in list"
-          :key="props.itemKeyField === 'historyKey' ? (entry.data.historyKey ?? entry.data.id) : entry.data.id"
+          :key="
+            props.itemKeyField === 'historyKey'
+              ? (entry.data.historyKey ?? entry.data.id)
+              : entry.data.id
+          "
           class="song-list-row group rounded-lg transition-all duration-200 cursor-default"
           :style="{ height: `${itemHeight}px`, opacity: rowOpacity(entry.data) }"
           :class="{ 'is-active': isActiveSong(entry.data) }"
@@ -439,7 +461,10 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
               {{ entry.data.album || '未知专辑' }}
             </Button>
 
-            <div v-if="showDuration" class="pl-2 text-[12px] opacity-60 text-left whitespace-nowrap">
+            <div
+              v-if="showDuration"
+              class="pl-2 text-[12px] opacity-60 text-left whitespace-nowrap"
+            >
               {{ formatDuration(entry.data.duration) }}
             </div>
           </div>
@@ -449,11 +474,16 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
 
     <!-- 加载动画 -->
     <div v-if="props.loading" class="flex items-center justify-center py-20">
-      <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
     </div>
 
     <!-- 暂无数据 -->
-    <div v-else-if="filteredSongs.length === 0" class="py-20 text-center opacity-50 text-[14px] italic">
+    <div
+      v-else-if="filteredSongs.length === 0"
+      class="py-20 text-center opacity-50 text-[14px] italic"
+    >
       {{ props.searchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
     </div>
   </div>

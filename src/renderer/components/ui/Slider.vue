@@ -59,7 +59,12 @@ const valueLabel = computed(() => `${normalizedValue.value}${props.valueSuffix}`
 </script>
 
 <template>
-  <div class="slider-wrapper" :class="props.orientation === 'vertical' ? 'slider-wrapper-vertical' : 'slider-wrapper-horizontal'">
+  <div
+    class="slider-wrapper"
+    :class="
+      props.orientation === 'vertical' ? 'slider-wrapper-vertical' : 'slider-wrapper-horizontal'
+    "
+  >
     <SliderRoot
       :model-value="[normalizedValue]"
       :min="props.min"

@@ -13,7 +13,9 @@ const toneClassMap = {
 </script>
 
 <template>
-  <div class="toast-viewport pointer-events-none fixed right-5 top-5 z-[5000] flex w-[min(360px,calc(100vw-24px))] flex-col gap-2">
+  <div
+    class="toast-viewport pointer-events-none fixed right-5 top-5 z-[5000] flex w-[min(360px,calc(100vw-24px))] flex-col gap-2"
+  >
     <transition-group name="toast-slide">
       <div
         v-for="item in toastStore.items"
@@ -22,7 +24,13 @@ const toneClassMap = {
         class="pointer-events-auto"
       >
         <div class="toast-message">{{ item.message }}</div>
-        <Button variant="unstyled" size="none" class="toast-close" @click="toastStore.remove(item.id)">×</Button>
+        <Button
+          variant="unstyled"
+          size="none"
+          class="toast-close"
+          @click="toastStore.remove(item.id)"
+          >×</Button
+        >
       </div>
     </transition-group>
   </div>

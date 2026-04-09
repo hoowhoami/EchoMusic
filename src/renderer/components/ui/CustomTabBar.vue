@@ -36,7 +36,9 @@ const handleSelect = (index: number) => {
   <div class="custom-tab-root" :class="props.class">
     <div class="custom-tab-track">
       <div class="custom-tab-slider" :style="sliderStyle"></div>
-      <Button variant="unstyled" size="none"
+      <Button
+        variant="unstyled"
+        size="none"
         v-for="(label, index) in props.tabs"
         :key="label + index"
         type="button"
@@ -91,7 +93,6 @@ const handleSelect = (index: number) => {
   background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
   border-color: color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
-
 
 .custom-tab-item {
   position: relative;

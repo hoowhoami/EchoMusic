@@ -20,15 +20,15 @@ const scrollToTop = () => {
   if (!scrollTarget) return;
   scrollTarget.scrollTo({
     top: 0,
-    behavior: 'smooth'
+    behavior: 'smooth',
   });
 };
 
 onMounted(() => {
-  scrollTarget = props.targetSelector 
-    ? document.querySelector(props.targetSelector) 
+  scrollTarget = props.targetSelector
+    ? document.querySelector(props.targetSelector)
     : document.querySelector('.view-port');
-    
+
   if (scrollTarget) {
     scrollTarget.addEventListener('scroll', handleScroll);
   }
@@ -43,7 +43,9 @@ onUnmounted(() => {
 
 <template>
   <Transition name="fade">
-    <Button variant="unstyled" size="none"
+    <Button
+      variant="unstyled"
+      size="none"
       v-if="visible"
       @click="scrollToTop"
       class="fixed right-8 bottom-32 z-50 p-3 rounded-full back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
@@ -63,14 +65,14 @@ onUnmounted(() => {
 @reference "@/style.css";
 
 .back-to-top-btn {
-  background: #FFFFFF;
-  color: #1D1D1F;
+  background: #ffffff;
+  color: #1d1d1f;
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .dark .back-to-top-btn {
-  background: #2C2C2E;
-  color: #F5F5F7;
+  background: #2c2c2e;
+  color: #f5f5f7;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
@@ -84,7 +86,9 @@ onUnmounted(() => {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
 }
 
 .fade-enter-from,

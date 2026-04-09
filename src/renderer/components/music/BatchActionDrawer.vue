@@ -111,9 +111,12 @@ watch(
 );
 
 const itemHeight = 56;
-const { list, containerProps, wrapperProps } = useVirtualList(computed(() => props.songs), {
-  itemHeight,
-});
+const { list, containerProps, wrapperProps } = useVirtualList(
+  computed(() => props.songs),
+  {
+    itemHeight,
+  },
+);
 
 const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
 
@@ -424,7 +427,6 @@ const handleRemoveFromPlaylist = async () => {
   -webkit-tap-highlight-color: transparent;
   transition: all 0.2s ease;
 }
-
 
 .batch-close:hover {
   color: var(--color-text-main);

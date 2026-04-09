@@ -27,7 +27,7 @@ export type DesktopLyricPlaybackPayload = {
 
 export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
 export type DesktopLyricSecondaryMode = 'none' | 'translation' | 'romanization';
-export type DesktopLyricAlign = 'left' | 'center' | 'right';
+export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
 
 export type DesktopLyricSettings = {
   enabled: boolean;
@@ -57,14 +57,7 @@ export type DesktopLyricSettings = {
   bold: boolean;
 };
 
-
 export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';
-
-export type DesktopLyricPointerState = {
-  insideWindow: boolean;
-  insideUnlockHotzone: boolean;
-  insideToolbarHotzone: boolean;
-};
 
 export type DesktopLyricSnapshot = {
   playback: DesktopLyricPlaybackPayload | null;

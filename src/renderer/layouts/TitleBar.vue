@@ -3,13 +3,7 @@ import { computed, watch, ref, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
-import {
-  iconChevronLeft,
-  iconChevronRight,
-  iconMinus,
-  iconSquare,
-  iconX,
-} from '@/icons';
+import { iconChevronLeft, iconChevronRight, iconMinus, iconSquare, iconX } from '@/icons';
 
 const route = useRoute();
 const router = useRouter();
@@ -20,7 +14,10 @@ const canGoForward = ref(false);
 
 const updateNavState = () => {
   if (typeof window === 'undefined') return;
-  const historyState = window.history.state as { back?: string | null; forward?: string | null } | null;
+  const historyState = window.history.state as {
+    back?: string | null;
+    forward?: string | null;
+  } | null;
   const skipCurrent = route.matched.some((record) => record.meta?.skipHistory === true);
   canGoBack.value = !skipCurrent && !!historyState?.back;
   canGoForward.value = !skipCurrent && !!historyState?.forward;
@@ -65,23 +62,45 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <header class="title-bar drag flex items-center px-6 shrink-0 select-none transition-colors duration-300 z-[100] bg-transparent">
+  <header
+    class="title-bar drag flex items-center px-6 shrink-0 select-none transition-colors duration-300 z-[100] bg-transparent"
+  >
     <!-- 1. 左侧：导航按钮 (no-drag) -->
     <div class="flex items-center gap-1 no-drag">
-      <Button variant="unstyled" size="none" @click="goBack" class="nav-btn group" :disabled="!canGoBack" title="后退">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="goBack"
+        class="nav-btn group"
+        :disabled="!canGoBack"
+        title="后退"
+      >
         <Icon
           :icon="iconChevronLeft"
           width="20"
           height="20"
-          :class="['text-text-main transition-opacity', canGoBack ? 'opacity-60 group-hover:opacity-100' : 'opacity-40']"
+          :class="[
+            'text-text-main transition-opacity',
+            canGoBack ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
+          ]"
         />
       </Button>
-      <Button variant="unstyled" size="none" @click="goForward" class="nav-btn group" :disabled="!canGoForward" title="前进">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="goForward"
+        class="nav-btn group"
+        :disabled="!canGoForward"
+        title="前进"
+      >
         <Icon
           :icon="iconChevronRight"
           width="20"
           height="20"
-          :class="['text-text-main transition-opacity', canGoForward ? 'opacity-60 group-hover:opacity-100' : 'opacity-40']"
+          :class="[
+            'text-text-main transition-opacity',
+            canGoForward ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
+          ]"
         />
       </Button>
       <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" title="刷新">
@@ -98,13 +117,28 @@ onUnmounted(() => {
 
     <!-- 3. 右侧：窗口控制 (no-drag) -->
     <div v-if="!isMac" class="window-controls flex items-center no-drag h-full ml-4">
-      <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn hover:bg-text-main/5">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('minimize')"
+        class="control-btn hover:bg-text-main/5"
+      >
         <Icon :icon="iconMinus" width="10" height="10" />
       </Button>
-      <Button variant="unstyled" size="none" @click="handleControl('maximize')" class="control-btn hover:bg-text-main/5">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('maximize')"
+        class="control-btn hover:bg-text-main/5"
+      >
         <Icon :icon="iconSquare" width="9" height="9" />
       </Button>
-      <Button variant="unstyled" size="none" @click="handleControl('close')" class="control-btn hover:bg-red-500 hover:text-white">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('close')"
+        class="control-btn hover:bg-red-500 hover:text-white"
+      >
         <Icon :icon="iconX" width="10" height="10" />
       </Button>
     </div>

@@ -25,16 +25,18 @@ const getElectronLog = (): LoggerFunctions | undefined => {
 const electronLog = getElectronLog();
 
 const formatArgs = (args: any[]) => {
-  return args.map(arg => {
-    if (typeof arg === 'object') {
-      try {
-        return JSON.stringify(arg);
-      } catch (e) {
-        return arg;
+  return args
+    .map((arg) => {
+      if (typeof arg === 'object') {
+        try {
+          return JSON.stringify(arg);
+        } catch (e) {
+          return arg;
+        }
       }
-    }
-    return arg;
-  }).join(' ');
+      return arg;
+    })
+    .join(' ');
 };
 
 // 创建一个符合 Logger 接口的对象
@@ -87,7 +89,7 @@ export const logger = {
     } else {
       console.log(`[LOG] [${module}]`, ...args);
     }
-  }
+  },
 };
 
 export default logger;

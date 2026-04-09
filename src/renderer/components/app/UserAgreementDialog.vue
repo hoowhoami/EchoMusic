@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
-import {
-  USER_AGREEMENT_FOOTER,
-  USER_AGREEMENT_SECTIONS,
-} from '@/constants/legal';
+import { USER_AGREEMENT_FOOTER, USER_AGREEMENT_SECTIONS } from '@/constants/legal';
 
 interface Props {
   open?: boolean;
@@ -36,7 +33,11 @@ const handleReject = () => {
     title="用户条款"
     contentClass="legal-dialog"
     bodyClass="legal-dialog-body"
-    :contentStyle="{ width: '600px', maxWidth: '92vw', maxHeight: 'min(560px, calc(100vh - 140px))' }"
+    :contentStyle="{
+      width: '600px',
+      maxWidth: '92vw',
+      maxHeight: 'min(560px, calc(100vh - 140px))',
+    }"
     :showClose="false"
     :closeOnEscape="false"
     :closeOnInteractOutside="false"
@@ -50,7 +51,12 @@ const handleReject = () => {
     </div>
 
     <template #footer>
-      <Button class="legal-button legal-button--danger" variant="danger" size="sm" @click="handleReject">
+      <Button
+        class="legal-button legal-button--danger"
+        variant="danger"
+        size="sm"
+        @click="handleReject"
+      >
         不同意并退出
       </Button>
       <Button class="legal-button" variant="primary" size="sm" @click="handleAccept">

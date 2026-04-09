@@ -31,7 +31,9 @@ const formatLike = (value: number) => {
 <template>
   <div class="comment-list" :class="{ 'is-compact': compact }">
     <div v-if="loading && comments.length === 0" class="comment-loading">
-      <div class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div
+        class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"
+      ></div>
     </div>
 
     <div v-else-if="!hideEmpty && comments.length === 0" class="comment-empty">
@@ -64,7 +66,9 @@ const formatLike = (value: number) => {
 
           <div class="comment-content">{{ comment.content }}</div>
 
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             v-if="props.onTapReplies && comment.replyCount && comment.replyCount > 0"
             type="button"
             class="comment-reply"
@@ -75,7 +79,6 @@ const formatLike = (value: number) => {
           </Button>
         </div>
       </div>
-
     </div>
   </div>
 </template>
@@ -233,5 +236,4 @@ const formatLike = (value: number) => {
   border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
-
 </style>

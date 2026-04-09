@@ -150,7 +150,9 @@ const handleRejectAgreement = () => {
         <div class="section-title">推荐歌单</div>
       </div>
       <div v-if="recommendState.loading" class="section-placeholder">加载中...</div>
-      <div v-else-if="recommendState.error" class="section-placeholder">{{ recommendState.error }}</div>
+      <div v-else-if="recommendState.error" class="section-placeholder">
+        {{ recommendState.error }}
+      </div>
       <div v-else class="playlist-grid">
         <PlaylistCard
           v-for="entry in recommendedPlaylists"

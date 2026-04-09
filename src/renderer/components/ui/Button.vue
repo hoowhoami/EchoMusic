@@ -18,9 +18,11 @@ const props = withDefaults(defineProps<Props>(), {
 
 const variants = {
   primary: 'bg-primary text-white shadow-lg shadow-primary/20 hover:opacity-90',
-  secondary: 'bg-black/[0.03] dark:bg-white/[0.03] text-text-main hover:bg-black/[0.05] dark:hover:bg-white/[0.05]',
+  secondary:
+    'bg-black/[0.03] dark:bg-white/[0.03] text-text-main hover:bg-black/[0.05] dark:hover:bg-white/[0.05]',
   ghost: 'bg-transparent text-text-main hover:bg-black/[0.05] dark:hover:bg-white/[0.05]',
-  outline: 'border border-border-light bg-transparent hover:bg-black/[0.02] dark:hover:bg-white/[0.02]',
+  outline:
+    'border border-border-light bg-transparent hover:bg-black/[0.02] dark:hover:bg-white/[0.02]',
   danger: 'bg-red-500 text-white hover:bg-red-500/90',
   unstyled: '',
 };
@@ -45,10 +47,13 @@ const sizes = {
         : 'app-focus-ring-soft inline-flex items-center justify-center transition-all active:scale-[0.98] disabled:opacity-60 disabled:active:scale-100 disabled:cursor-not-allowed',
       variants[variant],
       sizes[size],
-      props.class
+      props.class,
     ]"
   >
-    <div v-if="loading" class="mr-2 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+    <div
+      v-if="loading"
+      class="mr-2 w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+    ></div>
     <slot />
   </Primitive>
 </template>

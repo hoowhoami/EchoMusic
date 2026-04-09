@@ -7,7 +7,9 @@ import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
 
-const normalizeLinePayload = (line: ReturnType<typeof useLyricStore>['lines'][number]): LyricLinePayload => ({
+const normalizeLinePayload = (
+  line: ReturnType<typeof useLyricStore>['lines'][number],
+): LyricLinePayload => ({
   time: Number(line.time) || 0,
   text: String(line.text ?? ''),
   translated: line.translated ? String(line.translated) : undefined,
@@ -56,7 +58,8 @@ export const initDesktopLyricSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
-  const { lines, currentIndex, lyricsMode, secondaryEnabled, preferredMode } = storeToRefs(lyricStore);
+  const { lines, currentIndex, lyricsMode, secondaryEnabled, preferredMode } =
+    storeToRefs(lyricStore);
 
   const buildSyncedSettings = (settings = settingStore.desktopLyric) => {
     const { locked: _locked, clickThrough: _clickThrough, ...desktopLyricSettings } = settings;
@@ -83,7 +86,7 @@ export const initDesktopLyricSync = async () => {
     });
     if (nextPlaybackKey === lastSyncedPlaybackKey) return;
 
-    await window.electron.desktopLyric.syncSnapshot({
+    window.electron.desktopLyric.syncSnapshot({
       playback,
       currentIndex: currentIndex.value,
     });
@@ -95,7 +98,7 @@ export const initDesktopLyricSync = async () => {
     const nextLyricsKey = JSON.stringify({ lyrics });
     if (nextLyricsKey === lastSyncedLyricsKey) return;
 
-    await window.electron.desktopLyric.syncSnapshot({
+    window.electron.desktopLyric.syncSnapshot({
       lyrics,
     });
     lastSyncedLyricsKey = nextLyricsKey;
@@ -118,7 +121,7 @@ export const initDesktopLyricSync = async () => {
     const nextSettingsKey = JSON.stringify(nextSettings);
     if (nextSettingsKey === lastSyncedSettingsKey) return;
 
-    await window.electron.desktopLyric.syncSnapshot({
+    window.electron.desktopLyric.syncSnapshot({
       settings: nextSettings,
     });
     lastSyncedSettingsKey = nextSettingsKey;

@@ -17,17 +17,6 @@ import { isSameSong } from '@/utils/song';
 export type { Song, SongRelateGood, SongArtist } from '@/models/song';
 export type { PlaylistInfo } from '@/models/playlist';
 
-const sampleLrc = `[00:00.00]梦中的婚礼
-[00:02.00]作曲 : Paul de Senneville
-[00:04.00]编曲 : Olivier Toussaint
-[00:06.00]演奏 : Richard Clayderman
-[00:08.00]
-[00:40.00]音符在指尖跳跃
-[01:10.00]旋律在心中回荡
-[01:40.00]梦境与现实交织
-[02:10.00]在这浪漫的夜晚
-[02:40.00]EchoMusic 陪伴着你`;
-
 const normalizePlaylistName = (value: string | undefined): string => String(value ?? '').trim();
 
 const getPlaylistIdentityValues = (playlist: PlaylistMeta): string[] => {
@@ -88,24 +77,7 @@ const FAVORITES_PAGE_SIZE = 200;
 
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
-    defaultList: [
-      {
-        id: '1',
-        title: '梦中的婚礼',
-        artist: 'Richard Clayderman',
-        artists: [{ id: '0', name: 'Richard Clayderman' }],
-        duration: 167,
-        coverUrl: 'https://p2.music.126.net/6y-U_9D-x7Pz1B6T0o2_oA==/109951165034938827.jpg',
-        audioUrl: 'https://music.163.com/song/media/outer/url?id=431795921.mp3',
-        hash: 'A1B2C3D4E5F6G7H8I9J0',
-        mixSongId: '123456',
-        lyric: sampleLrc,
-        privilege: 10,
-        payType: 3,
-        oldCpy: 1,
-        relateGoods: [{ quality: 'high', hash: 'A1B2C3D4E5F6G7H8I9J0' }],
-      },
-    ] as Song[],
+    defaultList: [] as Song[],
     favorites: [] as Song[],
     userPlaylists: [] as PlaylistMeta[],
     queueFilteredInvalidCount: 0,
@@ -118,7 +90,9 @@ export const usePlaylistStore = defineStore('playlist', {
     likedPlaylistQueryId(): string | number | null {
       const playlist = this.likedPlaylist;
       if (!playlist) return null;
-      return playlist.listCreateGid || playlist.globalCollectionId || playlist.listid || playlist.id;
+      return (
+        playlist.listCreateGid || playlist.globalCollectionId || playlist.listid || playlist.id
+      );
     },
     likedPlaylistListId(): number | null {
       const playlist = this.likedPlaylist;
@@ -143,7 +117,9 @@ export const usePlaylistStore = defineStore('playlist', {
       };
     },
     isFavoriteSong(song: Song) {
-      return this.favorites.some((item) => isSameSong(item, song) || String(item.id) === String(song.id));
+      return this.favorites.some(
+        (item) => isSameSong(item, song) || String(item.id) === String(song.id),
+      );
     },
     findPlaylistByIdentity(id: string | number | null | undefined) {
       if (id === undefined || id === null || String(id) === '') return undefined;
@@ -153,7 +129,9 @@ export const usePlaylistStore = defineStore('playlist', {
     isFavoriteAlbum(albumId: string | number | null | undefined) {
       if (albumId === undefined || albumId === null || String(albumId) === '') return false;
       const target = String(albumId);
-      return this.userPlaylists.some((playlist) => playlist.source === 2 && includesPlaylistIdentity(playlist, target));
+      return this.userPlaylists.some(
+        (playlist) => playlist.source === 2 && includesPlaylistIdentity(playlist, target),
+      );
     },
     isOwnedPlaylist(listId: string | number | null | undefined, currentUserId?: number) {
       if (!currentUserId) return false;
@@ -184,7 +162,7 @@ export const usePlaylistStore = defineStore('playlist', {
         return false;
       }
 
-      let songs: Song[] = [];
+      const songs: Song[] = [];
 
       try {
         let page = 1;
@@ -206,7 +184,7 @@ export const usePlaylistStore = defineStore('playlist', {
           songs.push(...nextSongs);
 
           if (pageSongs.length + filteredCount < FAVORITES_PAGE_SIZE) break;
-          
+
           if (page >= 50) break;
           page += 1;
         }
@@ -335,7 +313,9 @@ export const usePlaylistStore = defineStore('playlist', {
       if (!song) return;
 
       const previousFavorites = this.favorites.slice();
-      this.favorites = this.favorites.filter((item) => !isSameSong(item, song) && String(item.id) !== String(id));
+      this.favorites = this.favorites.filter(
+        (item) => !isSameSong(item, song) && String(item.id) !== String(id),
+      );
 
       const likedPlaylist = await this.ensureLikedPlaylistReady();
       const listId = likedPlaylist.listId;
@@ -360,7 +340,9 @@ export const usePlaylistStore = defineStore('playlist', {
       return false;
     },
     async removeFavoriteSong(song: Song) {
-      const matched = this.favorites.find((item) => isSameSong(item, song) || String(item.id) === String(song.id));
+      const matched = this.favorites.find(
+        (item) => isSameSong(item, song) || String(item.id) === String(song.id),
+      );
       if (!matched) return;
       return this.removeFromFavorites(String(matched.id));
     },
@@ -450,7 +432,9 @@ export const usePlaylistStore = defineStore('playlist', {
     async unfavoriteAlbum(albumId: string | number) {
       try {
         const targetId = String(albumId);
-        const target = this.userPlaylists.find((playlist) => playlist.source === 2 && includesPlaylistIdentity(playlist, targetId));
+        const target = this.userPlaylists.find(
+          (playlist) => playlist.source === 2 && includesPlaylistIdentity(playlist, targetId),
+        );
         const listId = target?.listid ?? target?.id;
         if (!listId) return false;
         const res = await deletePlaylist(listId);

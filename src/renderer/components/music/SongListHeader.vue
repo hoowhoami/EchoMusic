@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { iconChevronUpDown, iconSortDown, iconSortUp } from '@/icons';
 import { computed } from 'vue';
-import {
-  buildSongListGridTemplate,
-  SONG_LIST_TITLE_OFFSET_WITH_COVER,
-} from './songListLayout';
+import { buildSongListGridTemplate, SONG_LIST_TITLE_OFFSET_WITH_COVER } from './songListLayout';
 
 export type SortField = 'index' | 'title' | 'album' | 'duration';
 export type SortOrder = 'asc' | 'desc' | null;
@@ -35,11 +32,13 @@ const handleSort = (field: SortField) => {
   emit('sort', field);
 };
 
-const gridTemplate = computed(() => buildSongListGridTemplate({
-  showIndex: props.showIndex,
-  showAlbum: props.showAlbum,
-  showDuration: true,
-}));
+const gridTemplate = computed(() =>
+  buildSongListGridTemplate({
+    showIndex: props.showIndex,
+    showAlbum: props.showAlbum,
+    showDuration: true,
+  }),
+);
 </script>
 
 <template>
@@ -57,7 +56,9 @@ const gridTemplate = computed(() => buildSongListGridTemplate({
       <Icon
         v-if="sortField === 'index'"
         class="sort-icon"
-        :icon="sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown"
+        :icon="
+          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
+        "
       />
       <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
     </div>
@@ -66,13 +67,23 @@ const gridTemplate = computed(() => buildSongListGridTemplate({
       class="min-w-0 cursor-pointer hover:opacity-100 transition-opacity flex items-center"
       @click="handleSort('title')"
     >
-      <div v-if="props.showCover" class="shrink-0" :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"></div>
+      <div
+        v-if="props.showCover"
+        class="shrink-0"
+        :style="{ width: `${SONG_LIST_TITLE_OFFSET_WITH_COVER}px` }"
+      ></div>
       <div class="min-w-0 flex items-center gap-1">
         <span>歌曲</span>
         <Icon
           v-if="sortField === 'title'"
           class="sort-icon"
-          :icon="sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown"
+          :icon="
+            sortOrder === 'asc'
+              ? iconSortUp
+              : sortOrder === 'desc'
+                ? iconSortDown
+                : iconChevronUpDown
+          "
         />
         <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
       </div>
@@ -87,7 +98,9 @@ const gridTemplate = computed(() => buildSongListGridTemplate({
       <Icon
         v-if="sortField === 'album'"
         class="sort-icon"
-        :icon="sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown"
+        :icon="
+          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
+        "
       />
       <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
     </div>
@@ -100,7 +113,9 @@ const gridTemplate = computed(() => buildSongListGridTemplate({
       <Icon
         v-if="sortField === 'duration'"
         class="sort-icon"
-        :icon="sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown"
+        :icon="
+          sortOrder === 'asc' ? iconSortUp : sortOrder === 'desc' ? iconSortDown : iconChevronUpDown
+        "
       />
       <Icon v-else class="sort-icon" :icon="iconChevronUpDown" />
     </div>

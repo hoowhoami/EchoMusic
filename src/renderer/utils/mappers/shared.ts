@@ -86,23 +86,11 @@ export const buildArtists = (record: UnknownRecord, audioInfo: UnknownRecord): S
     for (const raw of singerInfo) {
       if (!isRecord(raw)) continue;
       const name = readString(
-        pickValue(
-          raw.name,
-          raw.AuthorName,
-          raw.author_name,
-          raw.singername,
-          raw.singer,
-        ),
+        pickValue(raw.name, raw.AuthorName, raw.author_name, raw.singername, raw.singer),
         '',
       ).trim();
       if (!name) continue;
-      const id = pickValue(
-        raw.id,
-        raw.AuthorId,
-        raw.author_id,
-        raw.singerid,
-        raw.singer_id,
-      );
+      const id = pickValue(raw.id, raw.AuthorId, raw.author_id, raw.singerid, raw.singer_id);
       artists.push({
         id: id !== undefined && id !== null ? readString(id) : undefined,
         name,
@@ -146,7 +134,10 @@ export const buildArtists = (record: UnknownRecord, audioInfo: UnknownRecord): S
   return artists;
 };
 
-export const buildRelateGoods = (record: UnknownRecord, audioInfo: UnknownRecord): SongRelateGood[] => {
+export const buildRelateGoods = (
+  record: UnknownRecord,
+  audioInfo: UnknownRecord,
+): SongRelateGood[] => {
   const goods: SongRelateGood[] = [];
   const rawGoods = getArray(
     pickValue(
@@ -203,4 +194,3 @@ export const processSongTitle = (rawName: string): string => {
   }
   return rawName;
 };
-

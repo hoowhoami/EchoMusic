@@ -52,7 +52,8 @@ export const canPlaySong = (song: Song): boolean => {
   return true;
 };
 
-export const isPlayableSong = (song: Song): boolean => Boolean(song.hash?.trim()) && canPlaySong(song);
+export const isPlayableSong = (song: Song): boolean =>
+  Boolean(song.hash?.trim()) && canPlaySong(song);
 
 export const isSameSong = (left: Song, right: Song): boolean => {
   const leftMixSongId = String(left.mixSongId ?? '0');
@@ -61,8 +62,12 @@ export const isSameSong = (left: Song, right: Song): boolean => {
     return true;
   }
 
-  const leftHash = String(left.hash ?? '').trim().toLowerCase();
-  const rightHash = String(right.hash ?? '').trim().toLowerCase();
+  const leftHash = String(left.hash ?? '')
+    .trim()
+    .toLowerCase();
+  const rightHash = String(right.hash ?? '')
+    .trim()
+    .toLowerCase();
   if (leftHash && rightHash && leftHash === rightHash) {
     return true;
   }
@@ -141,7 +146,9 @@ export const doesRelateGoodMatchQuality = (
 ): boolean => {
   if (quality === '128') return true;
 
-  const normalizedQuality = String(item.quality ?? '').trim().toLowerCase();
+  const normalizedQuality = String(item.quality ?? '')
+    .trim()
+    .toLowerCase();
   const level = item.level;
 
   if (quality === '320') {
@@ -152,7 +159,13 @@ export const doesRelateGoodMatchQuality = (
     return normalizedQuality === 'flac' || normalizedQuality === 'sq' || level === 5;
   }
 
-  return normalizedQuality === 'high' || normalizedQuality === 'hires' || normalizedQuality === 'hi-res' || normalizedQuality === 'res' || level === 6;
+  return (
+    normalizedQuality === 'high' ||
+    normalizedQuality === 'hires' ||
+    normalizedQuality === 'hi-res' ||
+    normalizedQuality === 'res' ||
+    level === 6
+  );
 };
 
 export const hasSongQuality = (
@@ -174,7 +187,6 @@ export const getAvailableSongQualities = (
   return result;
 };
 
-
 export const getSongQualityCandidates = (
   preferred: '128' | '320' | 'flac' | 'high',
   compatibilityMode = true,
@@ -182,7 +194,9 @@ export const getSongQualityCandidates = (
   const normalized = AUDIO_QUALITY_ORDER.includes(preferred) ? preferred : '128';
   const index = AUDIO_QUALITY_ORDER.indexOf(normalized);
   if (!compatibilityMode) return [normalized];
-  return AUDIO_QUALITY_ORDER.slice(0, index + 1).reverse() as Array<'128' | '320' | 'flac' | 'high'>;
+  return AUDIO_QUALITY_ORDER.slice(0, index + 1).reverse() as Array<
+    '128' | '320' | 'flac' | 'high'
+  >;
 };
 
 export const resolveEffectiveSongQuality = (
@@ -237,7 +251,15 @@ export const isMeaninglessHashlessSong = (song: Song): boolean => {
   const mixSongId = String(song.mixSongId ?? '0').trim();
   const artists = song.artists ?? [];
 
-  return !hash && !title && !artist && artists.length === 0 && !album && !cover && (!mixSongId || mixSongId === '0');
+  return (
+    !hash &&
+    !title &&
+    !artist &&
+    artists.length === 0 &&
+    !album &&
+    !cover &&
+    (!mixSongId || mixSongId === '0')
+  );
 };
 
 export const shouldFilterInvalidSong = (song: Song): boolean => {

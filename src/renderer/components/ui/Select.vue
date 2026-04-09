@@ -82,9 +82,7 @@ const selectedLabel = computed(() => {
             <SelectItemText class="select-item-text" :title="option.label">
               {{ option.label }}
             </SelectItemText>
-            <SelectItemIndicator class="select-item-indicator">
-              ✓
-            </SelectItemIndicator>
+            <SelectItemIndicator class="select-item-indicator"> ✓ </SelectItemIndicator>
           </SelectItem>
         </SelectViewport>
       </SelectContent>
@@ -169,12 +167,24 @@ const selectedLabel = computed(() => {
 }
 
 @keyframes select-fade-in {
-  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes select-fade-out {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }
 </style>

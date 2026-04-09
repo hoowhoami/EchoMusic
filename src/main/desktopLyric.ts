@@ -3,7 +3,6 @@ import Conf from 'conf';
 import { join } from 'path';
 import type {
   DesktopLyricLockPhase,
-  DesktopLyricPointerState,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
@@ -83,9 +82,9 @@ const settingsStore = new Conf<DesktopLyricPersistedSettings>({
 });
 
 const DESKTOP_LYRIC_MIN_WIDTH = 380;
-const DESKTOP_LYRIC_MIN_HEIGHT = 100;
+const DESKTOP_LYRIC_MIN_HEIGHT = 140;
 const DESKTOP_LYRIC_MAX_WIDTH = 1400;
-const DESKTOP_LYRIC_MAX_HEIGHT = 190;
+const DESKTOP_LYRIC_MAX_HEIGHT = 360;
 const DESKTOP_LYRIC_HORIZONTAL_PADDING = 88;
 const DESKTOP_LYRIC_VERTICAL_PADDING = 52;
 const DESKTOP_LYRIC_DOUBLE_LINE_WIDTH_SOFT_CAP = 11.5;
@@ -304,17 +303,16 @@ const resolveInitialBounds = () => {
 const getBackgroundColor = () => '#00000000';
 
 let desktopLyricWindow: BrowserWindow | null = null;
-let desktopLyricPointerState: DesktopLyricPointerState = {
-  insideWindow: false,
-  insideUnlockHotzone: false,
-  insideToolbarHotzone: false,
-};
+// 独立的锁定状态（复刻 SPlayer，不与 clickThrough 耦合）
+let desktopLyricIsLocked = false;
 let desktopLyricResizeSession: DesktopLyricResizeSession | null = null;
 let desktopLyricDragSession: DesktopLyricDragSession | null = null;
 let desktopLyricClosingFromFailure = false;
 let desktopLyricAppIsQuitting = false;
 let desktopLyricDisplayMetricsTimer: NodeJS.Timeout | null = null;
 let desktopLyricLockPhaseTimer: NodeJS.Timeout | null = null;
+// 主窗口 move/resize 时的穿透防抖定时器
+let desktopLyricForwardRestoreTimer: NodeJS.Timeout | null = null;
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
@@ -333,21 +331,6 @@ const sendSnapshot = () => {
     if (win.isDestroyed()) return;
     win.webContents.send('desktop-lyric:snapshot', snapshot);
   });
-};
-
-const sendPointerState = () => {
-  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  desktopLyricWindow.webContents.send('desktop-lyric:pointer-state', desktopLyricPointerState);
-};
-
-const setDesktopLyricPointerState = (nextState: DesktopLyricPointerState) => {
-  const changed =
-    desktopLyricPointerState.insideWindow !== nextState.insideWindow ||
-    desktopLyricPointerState.insideUnlockHotzone !== nextState.insideUnlockHotzone ||
-    desktopLyricPointerState.insideToolbarHotzone !== nextState.insideToolbarHotzone;
-  if (!changed) return;
-  desktopLyricPointerState = nextState;
-  sendPointerState();
 };
 
 const clearDesktopLyricLockPhaseTimer = () => {
@@ -372,43 +355,16 @@ const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = f
   }, DESKTOP_LYRIC_LOCK_PHASE_DURATION_MS);
 };
 
+// 保存窗口位置（复刻 SPlayer：只保存，不算字体，不广播）
 const persistWindowBounds = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-  if (desktopLyricDragSession) return;
   const bounds = desktopLyricWindow.getBounds();
-  const nextFontSize = deriveFontSizeFromWindow(
-    bounds.width,
-    bounds.height,
-    snapshot.settings.doubleLine,
-    snapshot.settings.lineGap,
-  );
-
   settingsStore.set('windowState', {
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
   });
-
-  const shouldSyncSize =
-    snapshot.settings.width !== bounds.width || snapshot.settings.height !== bounds.height;
-  const shouldSyncFont = snapshot.settings.fontSize !== nextFontSize;
-
-  if (!shouldSyncSize && !shouldSyncFont) return;
-
-  snapshot = {
-    ...snapshot,
-    settings: {
-      ...snapshot.settings,
-      width: bounds.width,
-      height: bounds.height,
-      fontSize: nextFontSize,
-    },
-  };
-  settingsStore.set('width', bounds.width);
-  settingsStore.set('height', bounds.height);
-  settingsStore.set('fontSize', nextFontSize);
-  sendSnapshot();
 };
 
 const reconcileDesktopLyricBounds = () => {
@@ -449,6 +405,64 @@ const syncWindowPresentation = () => {
   desktopLyricWindow.setBackgroundColor(getBackgroundColor());
   desktopLyricWindow.setAlwaysOnTop(true, 'screen-saver');
   desktopLyricWindow.setSkipTaskbar(true);
+};
+
+// 主窗口 move/resize 时临时禁用 forward，防止锁定状态下穿透闪烁
+const setDesktopLyricForward = (enableForward: boolean) => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  if (!snapshot.settings.locked) return;
+  desktopLyricWindow.setIgnoreMouseEvents(true, enableForward ? { forward: true } : undefined);
+};
+
+const onMainWindowMoveOrResize = () => {
+  if (!snapshot.settings.locked) return;
+  setDesktopLyricForward(false);
+  if (desktopLyricForwardRestoreTimer) clearTimeout(desktopLyricForwardRestoreTimer);
+  desktopLyricForwardRestoreTimer = setTimeout(() => {
+    desktopLyricForwardRestoreTimer = null;
+    setDesktopLyricForward(true);
+  }, 300);
+};
+
+const onMainWindowMoveOrResizeEnd = () => {
+  if (!snapshot.settings.locked) return;
+  if (desktopLyricForwardRestoreTimer) clearTimeout(desktopLyricForwardRestoreTimer);
+  desktopLyricForwardRestoreTimer = null;
+  setDesktopLyricForward(true);
+};
+
+let desktopLyricMainWindowBound = false;
+
+const bindMainWindowEvents = () => {
+  if (desktopLyricMainWindowBound) return;
+  const allWindows = BrowserWindow.getAllWindows();
+  const mainWin = allWindows.find((w) => w !== desktopLyricWindow && !w.isDestroyed());
+  if (!mainWin) return;
+  desktopLyricMainWindowBound = true;
+  mainWin.on('move', onMainWindowMoveOrResize);
+  mainWin.on('resize', onMainWindowMoveOrResize);
+  if (process.platform !== 'linux') {
+    mainWin.on('moved', onMainWindowMoveOrResizeEnd);
+    mainWin.on('resized', onMainWindowMoveOrResizeEnd);
+  }
+};
+
+const unbindMainWindowEvents = () => {
+  if (!desktopLyricMainWindowBound) return;
+  desktopLyricMainWindowBound = false;
+  const allWindows = BrowserWindow.getAllWindows();
+  const mainWin = allWindows.find((w) => w !== desktopLyricWindow && !w.isDestroyed());
+  if (!mainWin) return;
+  mainWin.removeListener('move', onMainWindowMoveOrResize);
+  mainWin.removeListener('resize', onMainWindowMoveOrResize);
+  if (process.platform !== 'linux') {
+    mainWin.removeListener('moved', onMainWindowMoveOrResizeEnd);
+    mainWin.removeListener('resized', onMainWindowMoveOrResizeEnd);
+  }
+  if (desktopLyricForwardRestoreTimer) {
+    clearTimeout(desktopLyricForwardRestoreTimer);
+    desktopLyricForwardRestoreTimer = null;
+  }
 };
 
 const destroyDesktopLyricWindowFromFailure = (reason: 'unresponsive' | 'render-process-gone') => {
@@ -540,10 +554,10 @@ const updateDesktopLyricResize = (screenX: number, screenY: number) => {
 const endDesktopLyricResize = () => {
   if (!desktopLyricResizeSession) return;
   desktopLyricResizeSession = null;
-  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
-    desktopLyricWindow.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
-      forward: true,
-    });
+  if (desktopLyricIsLocked) {
+    desktopLyricWindow?.setIgnoreMouseEvents(true, { forward: true });
+  } else if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    desktopLyricWindow.setIgnoreMouseEvents(false);
   }
 };
 
@@ -566,10 +580,10 @@ const endDesktopLyricDrag = () => {
   if (!desktopLyricDragSession) return;
   desktopLyricDragSession = null;
   persistWindowBounds();
-  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
-    desktopLyricWindow.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
-      forward: true,
-    });
+  if (desktopLyricIsLocked) {
+    desktopLyricWindow?.setIgnoreMouseEvents(true, { forward: true });
+  } else if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    desktopLyricWindow.setIgnoreMouseEvents(false);
   }
 };
 
@@ -604,7 +618,8 @@ export const ensureDesktopLyricWindow = async () => {
     skipTaskbar: true,
     alwaysOnTop: true,
     fullscreenable: false,
-    focusable: false,
+    minimizable: false,
+    maximizable: false,
     webPreferences: {
       preload,
       contextIsolation: true,
@@ -613,19 +628,30 @@ export const ensureDesktopLyricWindow = async () => {
       webSecurity: false,
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
+      zoomFactor: 1.0,
+      partition: 'persist:desktop-lyric',
     },
   });
 
   desktopLyricWindow.once('ready-to-show', () => {
     syncWindowPresentation();
-    desktopLyricWindow?.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), {
-      forward: true,
-    });
+    // 根据锁定状态设置穿透
+    if (desktopLyricIsLocked) {
+      desktopLyricWindow?.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      desktopLyricWindow?.setIgnoreMouseEvents(false);
+    }
     if (snapshot.settings.enabled) {
       desktopLyricWindow?.showInactive();
     }
     sendSnapshot();
-    sendPointerState();
+    // 绑定主窗口事件，实现锁定状态下的穿透防抖
+    bindMainWindowEvents();
+  });
+
+  // 强制重置缩放为 1.0，防止跟随主窗口缩放
+  desktopLyricWindow.webContents.on('did-finish-load', () => {
+    desktopLyricWindow?.webContents.setZoomFactor(1.0);
   });
 
   desktopLyricWindow.on('move', persistWindowBounds);
@@ -633,25 +659,17 @@ export const ensureDesktopLyricWindow = async () => {
   desktopLyricWindow.on('hide', () => {
     clearDesktopLyricDisplayMetricsTimer();
     clearDesktopLyricLockPhaseTimer();
+    unbindMainWindowEvents();
     desktopLyricResizeSession = null;
     desktopLyricDragSession = null;
-    setDesktopLyricPointerState({
-      insideWindow: false,
-      insideUnlockHotzone: false,
-      insideToolbarHotzone: false,
-    });
     setDesktopLyricLockPhase('idle');
   });
   desktopLyricWindow.on('closed', () => {
     clearDesktopLyricDisplayMetricsTimer();
     clearDesktopLyricLockPhaseTimer();
+    unbindMainWindowEvents();
     desktopLyricResizeSession = null;
     desktopLyricDragSession = null;
-    desktopLyricPointerState = {
-      insideWindow: false,
-      insideUnlockHotzone: false,
-      insideToolbarHotzone: false,
-    };
     desktopLyricWindow = null;
     desktopLyricClosingFromFailure = false;
 
@@ -693,11 +711,16 @@ export const showDesktopLyricWindow = async () => {
     win.showInactive();
   }
   if (!win.isVisible()) win.showInactive();
-  win.setIgnoreMouseEvents(Boolean(snapshot.settings.clickThrough), { forward: true });
-  // 延迟设置全屏可见属性，确保窗口已完全显示后再应用
+  // 根据锁定状态设置穿透
+  if (desktopLyricIsLocked) {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  } else {
+    win.setIgnoreMouseEvents(false);
+  }
   setTimeout(() => {
     syncWindowPresentation();
   }, 100);
+  bindMainWindowEvents();
   sendSnapshot();
   return snapshot;
 };
@@ -851,7 +874,6 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
       });
     }
     syncWindowPresentation();
-    desktopLyricWindow.setIgnoreMouseEvents(Boolean(nextSettings.clickThrough), { forward: true });
 
     if (nextSettings.enabled) {
       if (!desktopLyricWindow.isVisible()) desktopLyricWindow.showInactive();
@@ -866,34 +888,25 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   return snapshot;
 };
 
-export const updateDesktopLyricSnapshot = async (partial: DesktopLyricSnapshotPatch) => {
-  if (partial.settings) {
-    await updateDesktopLyricSettings(partial.settings);
+export const toggleDesktopLyricLock = async () => {
+  const nextLocked = !desktopLyricIsLocked;
+  desktopLyricIsLocked = nextLocked;
+  setDesktopLyricLockPhase(nextLocked ? 'locking' : 'unlocking', true);
+
+  // 设置穿透
+  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    if (nextLocked) {
+      desktopLyricWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      desktopLyricWindow.setIgnoreMouseEvents(false);
+    }
   }
 
-  snapshot = {
-    ...snapshot,
-    ...(partial.playback !== undefined ? { playback: partial.playback } : {}),
-    ...(partial.lyrics !== undefined ? { lyrics: partial.lyrics } : {}),
-    ...(partial.currentIndex !== undefined ? { currentIndex: partial.currentIndex } : {}),
-    settings: snapshot.settings,
-  };
-
-  if (snapshot.settings.enabled && snapshot.settings.autoShow) {
-    await showDesktopLyricWindow();
-  }
-
+  // 只更新 snapshot 和持久化，不动窗口
+  snapshot = { ...snapshot, settings: { ...snapshot.settings, locked: nextLocked } };
+  settingsStore.set('locked', nextLocked);
   sendSnapshot();
   return snapshot;
-};
-
-export const toggleDesktopLyricLock = async () => {
-  const nextLocked = !snapshot.settings.locked;
-  setDesktopLyricLockPhase(nextLocked ? 'locking' : 'unlocking', true);
-  return updateDesktopLyricSettings({
-    locked: nextLocked,
-    clickThrough: nextLocked ? true : snapshot.settings.clickThrough,
-  });
 };
 
 export const getDesktopLyricSnapshot = () => snapshot;
@@ -924,16 +937,149 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  ipcMain.handle(
-    'desktop-lyric:sync-snapshot',
-    async (_event, payload: DesktopLyricSnapshotPatch) => {
-      return updateDesktopLyricSnapshot(payload ?? {});
-    },
-  );
+  // SPlayer 风格：单向推送，不等待返回
+  ipcMain.on('desktop-lyric:sync-snapshot', (_event, payload: DesktopLyricSnapshotPatch) => {
+    if (!payload) return;
+    // 只更新内存中的 snapshot，不走 updateDesktopLyricSettings
+    if (payload.playback !== undefined) snapshot = { ...snapshot, playback: payload.playback };
+    if (payload.lyrics !== undefined) snapshot = { ...snapshot, lyrics: payload.lyrics };
+    if (payload.currentIndex !== undefined)
+      snapshot = { ...snapshot, currentIndex: payload.currentIndex };
+    if (payload.settings) {
+      snapshot = { ...snapshot, settings: { ...snapshot.settings, ...payload.settings } };
+    }
+    sendSnapshot();
+  });
 
   ipcMain.on('desktop-lyric:set-ignore-mouse-events', (_event, ignore: boolean) => {
     if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
-    desktopLyricWindow.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
+    if (ignore) {
+      desktopLyricWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      desktopLyricWindow.setIgnoreMouseEvents(false);
+    }
+  });
+
+  // 复刻 SPlayer 的 desktop-lyric:set-option：只保存配置，不动窗口
+  ipcMain.on(
+    'desktop-lyric:set-option',
+    (_event, option: Record<string, any>, callback?: boolean) => {
+      if (!option) return;
+      // 增量更新 snapshot 中的 settings
+      snapshot = {
+        ...snapshot,
+        settings: { ...snapshot.settings, ...option },
+      };
+      // 持久化
+      for (const [key, value] of Object.entries(option)) {
+        settingsStore.set(key as any, value);
+      }
+      // 通知歌词窗口更新配置
+      if (callback && desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+        sendSnapshot();
+      }
+    },
+  );
+
+  // SPlayer 风格的锁定/解锁（支持 temp 临时切换）
+  ipcMain.on(
+    'desktop-lyric:toggle-lock-sync',
+    (_event, payload: { lock: boolean; temp?: boolean }) => {
+      if (!payload) return;
+      const { lock, temp } = payload;
+
+      // 更新锁定状态（非临时时才更新）
+      if (!temp) desktopLyricIsLocked = lock;
+
+      // 设置穿透
+      if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+        if (lock) {
+          desktopLyricWindow.setIgnoreMouseEvents(true, { forward: true });
+        } else {
+          desktopLyricWindow.setIgnoreMouseEvents(false);
+        }
+      }
+
+      if (temp) return;
+      // 只更新 snapshot 和持久化，不动窗口（复刻 SPlayer）
+      snapshot = { ...snapshot, settings: { ...snapshot.settings, locked: lock } };
+      settingsStore.set('locked', lock);
+      sendSnapshot();
+    },
+  );
+
+  ipcMain.on(
+    'desktop-lyric:move',
+    (_event, x: number, y: number, width: number, height: number) => {
+      if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+      desktopLyricWindow.setBounds({
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height),
+      });
+      settingsStore.set('windowState', { width, height, x, y });
+    },
+  );
+
+  ipcMain.on('desktop-lyric:resize', (_event, width: number, height: number) => {
+    if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+    const bounds = desktopLyricWindow.getBounds();
+    desktopLyricWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: Math.round(width),
+      height: Math.round(height),
+    });
+    settingsStore.set('windowState', {
+      ...settingsStore.get('windowState'),
+      width,
+      height,
+    });
+  });
+
+  // 更新高度
+  ipcMain.on('desktop-lyric:set-height', (_event, height: number) => {
+    if (!desktopLyricWindow || desktopLyricWindow.isDestroyed() || !height) return;
+    const bounds = desktopLyricWindow.getBounds();
+    desktopLyricWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: Math.round(height),
+    });
+    settingsStore.set('windowState', { ...settingsStore.get('windowState'), height });
+  });
+
+  // 固定/恢复最大宽高（拖拽时防止 DPI 缩放 bug）
+  ipcMain.on(
+    'desktop-lyric:toggle-fixed-size',
+    (_event, options: { width: number; height: number; fixed: boolean }) => {
+      if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+      if (options.fixed) {
+        desktopLyricWindow.setMaximumSize(options.width, options.height);
+      } else {
+        desktopLyricWindow.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
+      }
+    },
+  );
+
+  // 获取窗口位置
+  ipcMain.handle('desktop-lyric:get-bounds', () => {
+    if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return {};
+    return desktopLyricWindow.getBounds();
+  });
+
+  // 获取多屏虚拟边界
+  ipcMain.handle('desktop-lyric:get-virtual-screen-bounds', () => {
+    const displays = screen.getAllDisplays();
+    const bounds = displays.map((d) => d.workArea);
+    return {
+      minX: Math.min(...bounds.map((b) => b.x)),
+      minY: Math.min(...bounds.map((b) => b.y)),
+      maxX: Math.max(...bounds.map((b) => b.x + b.width)),
+      maxY: Math.max(...bounds.map((b) => b.y + b.height)),
+    };
   });
 
   ipcMain.on(

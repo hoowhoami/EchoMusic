@@ -5,7 +5,7 @@ import request from '@/utils/request';
  */
 export function search(keywords: string, type = 'song', page = 1, pagesize = 30) {
   return request.get('/search', {
-    params: { keywords, type, page, pagesize }
+    params: { keywords, type, page, pagesize },
   });
 }
 
@@ -28,6 +28,6 @@ export function getSearchDefault() {
  */
 export function getSearchSuggest(keywords: string) {
   return request.get('/search/suggest', {
-    params: { keywords }
+    params: { keywords },
   });
 }

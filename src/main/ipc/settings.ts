@@ -75,64 +75,67 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     await openLogDirectory();
   });
 
-  ipcMain.on('check-for-updates', async (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
-    const win = getMainWindow();
-    if (!win) return;
+  ipcMain.on(
+    'check-for-updates',
+    async (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
+      const win = getMainWindow();
+      if (!win) return;
 
-    const { version: currentVersion } = getAppInfo();
-    const silent = Boolean(payload?.silent);
+      const { version: currentVersion } = getAppInfo();
+      const silent = Boolean(payload?.silent);
 
-    try {
-      const release = await fetchLatestRelease(Boolean(payload?.prerelease));
-      if (!release || typeof release.tag_name !== 'string') {
+      try {
+        const release = await fetchLatestRelease(Boolean(payload?.prerelease));
+        if (!release || typeof release.tag_name !== 'string') {
+          const result: UpdateCheckResult = {
+            status: 'error',
+            currentVersion,
+            message: '未获取到有效的版本信息，请稍后再试。',
+            silent,
+          };
+          win.webContents.send('update-check-result', result);
+          return;
+        }
+
+        const latestVersion = String(release.tag_name);
+        const result: UpdateCheckResult =
+          compareVersions(latestVersion, currentVersion) > 0
+            ? {
+                status: 'available',
+                currentVersion,
+                latestVersion,
+                releaseName: typeof release.name === 'string' ? release.name : latestVersion,
+                releaseUrl:
+                  typeof release.html_url === 'string'
+                    ? release.html_url
+                    : 'https://github.com/hoowhoami/EchoMusic/releases',
+                body: typeof release.body === 'string' ? release.body.slice(0, 1200) : '',
+                silent,
+              }
+            : {
+                status: 'latest',
+                currentVersion,
+                latestVersion,
+                releaseName: typeof release.name === 'string' ? release.name : latestVersion,
+                releaseUrl:
+                  typeof release.html_url === 'string'
+                    ? release.html_url
+                    : 'https://github.com/hoowhoami/EchoMusic/releases',
+                silent,
+              };
+
+        win.webContents.send('update-check-result', result);
+      } catch (error) {
         const result: UpdateCheckResult = {
           status: 'error',
           currentVersion,
-          message: '未获取到有效的版本信息，请稍后再试。',
+          message: error instanceof Error ? error.message : '更新检查失败，请稍后重试。',
           silent,
         };
         win.webContents.send('update-check-result', result);
-        return;
       }
-
-      const latestVersion = String(release.tag_name);
-      const result: UpdateCheckResult =
-        compareVersions(latestVersion, currentVersion) > 0
-          ? {
-              status: 'available',
-              currentVersion,
-              latestVersion,
-              releaseName: typeof release.name === 'string' ? release.name : latestVersion,
-              releaseUrl:
-                typeof release.html_url === 'string'
-                  ? release.html_url
-                  : 'https://github.com/hoowhoami/EchoMusic/releases',
-              body: typeof release.body === 'string' ? release.body.slice(0, 1200) : '',
-              silent,
-            }
-          : {
-              status: 'latest',
-              currentVersion,
-              latestVersion,
-              releaseName: typeof release.name === 'string' ? release.name : latestVersion,
-              releaseUrl:
-                typeof release.html_url === 'string'
-                  ? release.html_url
-                  : 'https://github.com/hoowhoami/EchoMusic/releases',
-              silent,
-            };
-
-      win.webContents.send('update-check-result', result);
-    } catch (error) {
-      const result: UpdateCheckResult = {
-        status: 'error',
-        currentVersion,
-        message: error instanceof Error ? error.message : '更新检查失败，请稍后重试。',
-        silent,
-      };
-      win.webContents.send('update-check-result', result);
-    }
-  });
+    },
+  );
 
   ipcMain.on('open-external', async (_event, url: string) => {
     if (typeof url !== 'string' || !url.startsWith('http')) return;

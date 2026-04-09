@@ -37,6 +37,12 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('open-disclaimer');
   ipcMain.removeAllListeners('clear-app-data');
   ipcMain.removeAllListeners('desktop-lyric:set-ignore-mouse-events');
+  ipcMain.removeAllListeners('desktop-lyric:set-option');
+  ipcMain.removeAllListeners('desktop-lyric:toggle-lock-sync');
+  ipcMain.removeAllListeners('desktop-lyric:move');
+  ipcMain.removeAllListeners('desktop-lyric:resize');
+  ipcMain.removeAllListeners('desktop-lyric:set-height');
+  ipcMain.removeAllListeners('desktop-lyric:toggle-fixed-size');
   ipcMain.removeAllListeners('desktop-lyric:drag-start');
   ipcMain.removeAllListeners('desktop-lyric:drag-update');
   ipcMain.removeAllListeners('desktop-lyric:drag-end');
@@ -48,8 +54,11 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('api-server:status');
   ipcMain.removeHandler('app:get-info');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
+  ipcMain.removeHandler('desktop-lyric:get-bounds');
+  ipcMain.removeHandler('desktop-lyric:get-virtual-screen-bounds');
   ipcMain.removeHandler('desktop-lyric:show');
   ipcMain.removeHandler('desktop-lyric:hide');
+  ipcMain.removeHandler('desktop-lyric:toggle-lock');
   ipcMain.removeHandler('desktop-lyric:update-settings');
-  ipcMain.removeHandler('desktop-lyric:sync-snapshot');
+  ipcMain.removeAllListeners('desktop-lyric:sync-snapshot');
 };

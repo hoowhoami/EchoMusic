@@ -97,9 +97,9 @@ export class PlayerEngine {
     this.events.error?.(errorEvent);
   }
 
-
   private getAudioNode(): HTMLAudioElement | null {
-    const sound = (this.howl as unknown as { _sounds?: Array<{ _node?: HTMLAudioElement }> } | null)?._sounds?.[0];
+    const sound = (this.howl as unknown as { _sounds?: Array<{ _node?: HTMLAudioElement }> } | null)
+      ?._sounds?.[0];
     const node = sound?._node;
     return node instanceof HTMLAudioElement ? node : null;
   }
@@ -114,7 +114,9 @@ export class PlayerEngine {
     }
 
     const nextSinkId = this.preferredSinkId || 'default';
-    const mediaNode = targetNode as HTMLAudioElement & { setSinkId?: (sinkId: string) => Promise<void> };
+    const mediaNode = targetNode as HTMLAudioElement & {
+      setSinkId?: (sinkId: string) => Promise<void>;
+    };
     if (typeof mediaNode.setSinkId !== 'function') {
       logger.warn('PlayerEngine', 'setSinkId is not supported by current media element', {
         requestedDeviceId: nextSinkId,
@@ -309,7 +311,6 @@ export class PlayerEngine {
     this.events.durationChange?.(0);
     this.buildHowl(url);
   }
-
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
     this.preferredSinkId = deviceId || 'default';

@@ -12,7 +12,7 @@ const props = defineProps<Props>();
     v-if="count !== undefined"
     :class="[
       'badge absolute -top-1.5 -right-5 min-w-[16px] h-4 px-1 rounded-full text-[9px] leading-4 font-bold bg-primary text-white shadow-sm select-none pointer-events-none',
-      props.class
+      props.class,
     ]"
   >
     {{ count }}

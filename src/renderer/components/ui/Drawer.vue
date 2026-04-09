@@ -35,11 +35,7 @@ const emit = defineEmits<{
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 
 const overlayClass = computed(() => ['drawer-overlay', props.overlayClass]);
-const panelClass = computed(() => [
-  'drawer-panel',
-  `drawer-${props.side}`,
-  props.panelClass,
-]);
+const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props.panelClass]);
 </script>
 
 <template>
@@ -86,7 +82,9 @@ const panelClass = computed(() => [
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
   opacity: 0;
   z-index: 1410;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
   display: flex;
   flex-direction: column;
 }

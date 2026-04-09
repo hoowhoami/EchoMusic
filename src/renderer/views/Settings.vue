@@ -82,6 +82,7 @@ const desktopLyricAlignOptions = [
   { label: '左对齐', value: 'left' },
   { label: '居中', value: 'center' },
   { label: '右对齐', value: 'right' },
+  { label: '交替', value: 'both' },
 ];
 
 const commitDesktopLyricSettings = async (partial?: Partial<typeof settingStore.desktopLyric>) => {
@@ -539,8 +540,6 @@ onUnmounted(() => {
       </div>
     </section>
 
-
-
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -679,6 +678,41 @@ onUnmounted(() => {
         <h2 class="text-lg font-bold">桌面歌词</h2>
       </div>
       <div class="settings-card">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">双行显示</h3>
+            <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
+          </div>
+          <Switch
+            :model-value="settingStore.desktopLyric.doubleLine"
+            @update:model-value="commitDesktopLyricSettings({ doubleLine: Boolean($event) })"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">显示翻译</h3>
+            <p class="text-sm text-text-secondary">有翻译时优先显示翻译而非下一行</p>
+          </div>
+          <Switch
+            :model-value="settingStore.desktopLyric.secondaryEnabled"
+            @update:model-value="commitDesktopLyricSettings({ secondaryEnabled: Boolean($event) })"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">文字对齐</h3>
+            <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
+          </div>
+          <Select
+            class="min-w-[120px]"
+            :model-value="settingStore.desktopLyric.alignment"
+            :options="desktopLyricAlignOptions"
+            @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
+          />
+        </div>
+        <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">文字粗体</h3>

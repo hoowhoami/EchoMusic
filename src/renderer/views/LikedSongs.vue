@@ -31,7 +31,10 @@ const openLikedPlaylist = async () => {
   const routeId =
     likedPlaylist.source === 2
       ? String(likedPlaylist.listCreateListid ?? likedPlaylist.id)
-      : likedPlaylist.listCreateGid || likedPlaylist.globalCollectionId || likedPlaylist.listCreateListid || likedPlaylist.id;
+      : likedPlaylist.listCreateGid ||
+        likedPlaylist.globalCollectionId ||
+        likedPlaylist.listCreateListid ||
+        likedPlaylist.id;
 
   try {
     await router.replace({
@@ -50,8 +53,13 @@ onMounted(() => {
 
 <template>
   <div class="liked-view bg-bg-main min-h-full">
-    <div v-if="!isLoggedIn" class="liked-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6">
-      <div class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5">
+    <div
+      v-if="!isLoggedIn"
+      class="liked-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+    >
+      <div
+        class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+      >
         <Icon :icon="iconHeart" width="32" height="32" />
       </div>
       <div class="text-[22px] font-semibold text-text-main">登录后查看我最喜爱</div>

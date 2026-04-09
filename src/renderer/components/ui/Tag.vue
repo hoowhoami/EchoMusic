@@ -22,9 +22,10 @@ const sizes = {
 
 const parseHex = (value: string) => {
   if (!value.startsWith('#')) return null;
-  const hex = value.length === 4
-    ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
-    : value;
+  const hex =
+    value.length === 4
+      ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
+      : value;
   if (hex.length !== 7) return null;
   const r = Number.parseInt(hex.slice(1, 3), 16);
   const g = Number.parseInt(hex.slice(3, 5), 16);

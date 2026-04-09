@@ -1,10 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import {
-  hideMainWindow,
-  quitApplication,
-  requestMainWindowClose,
-  showMainWindow,
-} from '../window';
+import { hideMainWindow, quitApplication, requestMainWindowClose, showMainWindow } from '../window';
 
 interface IpcContext {
   getMainWindow: () => BrowserWindow | null;

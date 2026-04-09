@@ -23,7 +23,7 @@ export function getLoginQrKey() {
  */
 export function createLoginQr(key: string) {
   return request.get('/login/qr/create', {
-    params: { key, qrimg: 'true' }
+    params: { key, qrimg: 'true' },
   });
 }
 
@@ -32,7 +32,7 @@ export function createLoginQr(key: string) {
  */
 export function checkLoginQr(key: string) {
   return request.get('/login/qr/check', {
-    params: { key }
+    params: { key },
   });
 }
 
@@ -41,7 +41,7 @@ export function checkLoginQr(key: string) {
  */
 export function sendSmsCode(mobile: string) {
   return request.get('/captcha/sent', {
-    params: { mobile }
+    params: { mobile },
   });
 }
 
@@ -50,7 +50,7 @@ export function sendSmsCode(mobile: string) {
  */
 export function loginBySms(mobile: string, code: string) {
   return request.get('/login/cellphone', {
-    params: { mobile, code }
+    params: { mobile, code },
   });
 }
 
@@ -66,7 +66,7 @@ export function createWxLogin() {
  */
 export function checkWxLogin(uuid: string, timestamp?: number) {
   return request.get('/login/wx/check', {
-    params: { uuid, timestamp }
+    params: { uuid, timestamp },
   });
 }
 
@@ -75,7 +75,7 @@ export function checkWxLogin(uuid: string, timestamp?: number) {
  */
 export function loginByOpenPlat(code: string) {
   return request.get('/login/openplat', {
-    params: { code, plat: 2 } // plat 2 通常代表微信
+    params: { code, plat: 2 }, // plat 2 通常代表微信
   });
 }
 
@@ -98,7 +98,7 @@ export function getUserVipDetail() {
  */
 export function claimDayVip(day: string) {
   return request.get('/youth/day/vip', {
-    params: { receive_day: day }
+    params: { receive_day: day },
   });
 }
 
@@ -121,7 +121,7 @@ export function getVipMonthRecord() {
  */
 export function getUserHistory(bp?: string) {
   return request.get('/user/history', {
-    params: { bp }
+    params: { bp },
   });
 }
 
@@ -148,16 +148,15 @@ export function uploadPlayHistory(
       mxid,
       time: options?.time,
       pc: options?.pc,
-    }
+    },
   });
 }
-
 
 /**
  * 获取用户云盘
  */
 export function getUserCloud(page = 1, pagesize = 30) {
   return request.get('/user/cloud', {
-    params: { page, pagesize }
+    params: { page, pagesize },
   });
 }

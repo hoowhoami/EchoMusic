@@ -1,6 +1,5 @@
 import type { ApiServerStatus } from '../shared/api-server';
 import type {
-  DesktopLyricPointerState,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
@@ -9,7 +8,8 @@ import type {
 export interface IElectronAPI {
   platform: string;
   ipcRenderer: {
-    send: (channel: string, data: unknown) => void;
+    send: (channel: string, ...args: unknown[]) => void;
+    invoke: (channel: string, ...args: unknown[]) => Promise<any>;
     on: (channel: string, func: (...args: unknown[]) => void) => void;
     off: (channel: string, func: (...args: unknown[]) => void) => void;
   };
@@ -43,9 +43,8 @@ export interface IElectronAPI {
     hide: () => Promise<DesktopLyricSnapshot>;
     toggleLock: () => Promise<DesktopLyricSnapshot>;
     updateSettings: (payload: Partial<DesktopLyricSettings>) => Promise<DesktopLyricSnapshot>;
-    syncSnapshot: (payload: DesktopLyricSnapshotPatch) => Promise<DesktopLyricSnapshot>;
+    syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
-    onPointerState: (func: (state: DesktopLyricPointerState) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
     startDrag: (screenX: number, screenY: number) => void;
     updateDrag: (screenX: number, screenY: number) => void;

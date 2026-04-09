@@ -509,7 +509,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
                   height="14"
                 />
               </div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 @click="handleRankLocate"
                 class="song-locate-btn p-2 rounded-lg"
                 title="定位当前播放"
@@ -543,7 +545,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
           :activeId="activeSongId"
           :showCover="true"
           :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined"
+          :onSongDoubleTapPlay="
+            settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined
+          "
           rowPaddingClass="px-0"
         />
       </div>
@@ -628,7 +632,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
                   height="14"
                 />
               </div>
-              <Button variant="unstyled" size="none"
+              <Button
+                variant="unstyled"
+                size="none"
                 @click="handleNewSongLocate"
                 class="song-locate-btn p-2 rounded-lg"
                 title="定位当前播放"
@@ -662,7 +668,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
           :activeId="activeSongId"
           :showCover="true"
           :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined"
+          :onSongDoubleTapPlay="
+            settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined
+          "
           rowPaddingClass="px-0"
         />
       </div>

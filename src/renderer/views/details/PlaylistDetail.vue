@@ -303,10 +303,7 @@ const fetchData = async () => {
   }
 };
 
-const fetchAllPlaylistTracks = async (
-  queryId: string,
-  totalCount: number,
-) => {
+const fetchAllPlaylistTracks = async (queryId: string, totalCount: number) => {
   const pageSize = 200;
   const seenIds = new Set(songs.value.map((song) => song.id));
   let page = 2;
@@ -490,7 +487,8 @@ const fetchFloorReplies = async (reset = false) => {
       floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
       const totalCount = Number(record.comments_num ?? 0) || 0;
       floorTotal.value = totalCount;
-      floorHasMore.value = totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
+      floorHasMore.value =
+        totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
       if (floorHasMore.value) floorPage.value += 1;
       if (floorReplies.value.length === 0) {
         floorMessage.value = String(record.message ?? '') || '暂无回复';
@@ -512,8 +510,9 @@ const sortedSongs = computed(() => {
   }
 
   const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) => a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-    
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+
   return [...data].sort((a, b) => {
     switch (sortField.value) {
       case 'title':
@@ -791,16 +790,29 @@ const sortedSongs = computed(() => {
           <div class="comment-floor-section">
             回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
           </div>
-          <CommentList :comments="floorReplies" :loading="floorLoading" :showDivider="true" compact />
+          <CommentList
+            :comments="floorReplies"
+            :loading="floorLoading"
+            :showDivider="true"
+            compact
+          />
           <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
             {{ floorMessage || '暂无回复' }}
           </div>
-          <div v-if="floorHasMore || floorLoading || floorReplies.length > 0" class="comment-load-more comment-load-more-floor">
+          <div
+            v-if="floorHasMore || floorLoading || floorReplies.length > 0"
+            class="comment-load-more comment-load-more-floor"
+          >
             <div v-if="floorLoading" class="comment-loading-inline">
               <div class="comment-loading-spinner"></div>
               <span>加载中...</span>
             </div>
-            <Button v-else-if="floorHasMore" variant="outline" size="xs" @click="fetchFloorReplies()">
+            <Button
+              v-else-if="floorHasMore"
+              variant="outline"
+              size="xs"
+              @click="fetchFloorReplies()"
+            >
               {{ floorLoadMoreMessage || '加载更多' }}
             </Button>
             <div v-else class="comment-end-hint">已加载全部评论</div>

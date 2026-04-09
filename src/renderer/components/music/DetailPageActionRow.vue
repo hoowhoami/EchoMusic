@@ -30,12 +30,14 @@ const emit = defineEmits<{
 <template>
   <div class="action-row-wrap flex flex-wrap gap-2">
     <!-- 次要操作 (收藏、批量等) -->
-    <Button variant="unstyled" size="none"
+    <Button
+      variant="unstyled"
+      size="none"
       v-for="action in secondaryActions"
       :key="action.label"
       @click="action.onTap"
       class="action-btn secondary"
-      :class="[{ 'emphasized': action.emphasized }, action.tone === 'favorite' ? 'favorite' : '']"
+      :class="[{ emphasized: action.emphasized }, action.tone === 'favorite' ? 'favorite' : '']"
     >
       <div class="icon-wrap">
         <Icon :icon="action.icon" width="16" height="16" />

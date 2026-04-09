@@ -138,7 +138,9 @@ const privilegeTags = computed(() =>
 );
 
 const isFavorite = computed(() =>
-  playlistStore.favorites.some((item) => isSameSong(item, songState.value) || String(item.id) === String(props.id)),
+  playlistStore.favorites.some(
+    (item) => isSameSong(item, songState.value) || String(item.id) === String(props.id),
+  ),
 );
 
 const selectablePlaylists = computed(() =>
@@ -236,7 +238,8 @@ const hasMv = computed(() => Boolean((props.mvHash ?? '').trim()));
 const goToMvDetail = () => {
   const mvHash = String(props.mvHash ?? '').trim();
   if (!mvHash) return;
-  const albumAudioId = resolveNumericId(props.mixSongId) ?? resolveNumericId(props.id) ?? String(props.id);
+  const albumAudioId =
+    resolveNumericId(props.mixSongId) ?? resolveNumericId(props.id) ?? String(props.id);
   router.push({
     name: 'mv-detail',
     params: { id: mvHash },
@@ -387,7 +390,9 @@ const handleFavorite = () => {
                 <span v-if="index < artistList.length - 1" class="mx-1 opacity-50">/</span>
               </span>
             </span>
-            <Button variant="unstyled" size="none"
+            <Button
+              variant="unstyled"
+              size="none"
               v-if="showAlbum && album"
               type="button"
               :class="
@@ -413,10 +418,19 @@ const handleFavorite = () => {
           >
             <MvIcon class="w-4 h-4" />
           </Button>
-          <Button variant="unstyled" size="none" type="button" class="song-action song-action-hover-only" title="详情及评论" @click.stop="goToSongDetail">
+          <Button
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="song-action song-action-hover-only"
+            title="详情及评论"
+            @click.stop="goToSongDetail"
+          >
             <Icon :icon="iconMessageCircle" width="16" height="16" />
           </Button>
-          <Button variant="unstyled" size="none"
+          <Button
+            variant="unstyled"
+            size="none"
             type="button"
             class="song-action song-action-favorite"
             :class="{ 'is-active': isFavorite }"
@@ -483,7 +497,10 @@ const handleFavorite = () => {
       <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
         加载歌单中...
       </div>
-      <div v-else-if="selectablePlaylists.length === 0" class="py-6 text-center text-text-secondary text-[12px]">
+      <div
+        v-else-if="selectablePlaylists.length === 0"
+        class="py-6 text-center text-text-secondary text-[12px]"
+      >
         暂无可用歌单
       </div>
       <Button

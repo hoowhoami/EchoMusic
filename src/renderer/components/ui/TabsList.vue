@@ -6,10 +6,7 @@ const forwardedProps = useForwardProps(props);
 </script>
 
 <template>
-  <TabsList
-    v-bind="forwardedProps"
-    :class="['flex items-center gap-3 h-9', props.class]"
-  >
+  <TabsList v-bind="forwardedProps" :class="['flex items-center gap-3 h-9', props.class]">
     <slot />
   </TabsList>
 </template>

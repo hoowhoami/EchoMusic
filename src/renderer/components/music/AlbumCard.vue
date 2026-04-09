@@ -28,7 +28,10 @@ const handleClick = () => {
       <div class="info-wrapper">
         <h3 class="title">{{ name }}</h3>
         <p class="subtitle">
-          {{ subtitle || `${artist || ''}${artist && publishTime ? ' • ' : ''}${publishTime || ''}`.trim() }}
+          {{
+            subtitle ||
+            `${artist || ''}${artist && publishTime ? ' • ' : ''}${publishTime || ''}`.trim()
+          }}
         </p>
       </div>
     </div>
@@ -57,11 +60,15 @@ const handleClick = () => {
 }
 
 .album-card:hover .card-container {
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.12),
+    0 0 24px var(--color-primary-light);
 }
 
 .dark .album-card:hover .card-container {
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42), 0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .cover-wrapper {

@@ -87,9 +87,10 @@ onMounted(() => {
   }
   if (!isDesktopLyricWindow()) {
     disposeShortcuts = initShortcutSync();
-    disposeTrayPlayModeSync = window.electron?.tray?.onSetPlayMode((playMode) => {
-      player.setPlayMode(playMode);
-    }) ?? null;
+    disposeTrayPlayModeSync =
+      window.electron?.tray?.onSetPlayMode((playMode) => {
+        player.setPlayMode(playMode);
+      }) ?? null;
     syncTrayPlayback();
     window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
     silentUpdateCheckTimer = window.setTimeout(() => {
@@ -114,22 +115,34 @@ onUnmounted(() => {
 });
 
 watch(() => settings.theme, updateTheme);
-watch(() => settings.rememberWindowSize, () => {
-  if (isDesktopLyricWindow()) return;
-  settings.syncRememberWindowSize();
-});
-watch(() => settings.preventSleep, () => {
-  if (isDesktopLyricWindow()) return;
-  settings.syncPreventSleep(player.isPlaying);
-});
-watch(() => player.isPlaying, (isPlaying) => {
-  if (isDesktopLyricWindow()) return;
-  settings.syncPreventSleep(isPlaying);
-  syncTrayPlayback();
-});
-watch(() => player.playMode, () => {
-  syncTrayPlayback();
-});
+watch(
+  () => settings.rememberWindowSize,
+  () => {
+    if (isDesktopLyricWindow()) return;
+    settings.syncRememberWindowSize();
+  },
+);
+watch(
+  () => settings.preventSleep,
+  () => {
+    if (isDesktopLyricWindow()) return;
+    settings.syncPreventSleep(player.isPlaying);
+  },
+);
+watch(
+  () => player.isPlaying,
+  (isPlaying) => {
+    if (isDesktopLyricWindow()) return;
+    settings.syncPreventSleep(isPlaying);
+    syncTrayPlayback();
+  },
+);
+watch(
+  () => player.playMode,
+  () => {
+    syncTrayPlayback();
+  },
+);
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
   () => {

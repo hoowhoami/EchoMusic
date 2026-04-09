@@ -223,12 +223,8 @@ onUnmounted(() => {
           <p class="text-sm text-text-secondary max-w-xs">{{ statusMessage }}</p>
         </div>
         <div class="flex gap-4 pt-6 no-drag">
-          <Button variant="primary" size="sm" @click="retryStart">
-            重试启动
-          </Button>
-          <Button variant="secondary" size="sm" @click="closeWindow">
-            退出应用
-          </Button>
+          <Button variant="primary" size="sm" @click="retryStart"> 重试启动 </Button>
+          <Button variant="secondary" size="sm" @click="closeWindow"> 退出应用 </Button>
         </div>
       </div>
     </main>

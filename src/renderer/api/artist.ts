@@ -14,7 +14,7 @@ export function getArtistSongs(
   id: string | number,
   page = 1,
   pagesize = 200,
-  sort: 'hot' | 'new' = 'hot'
+  sort: 'hot' | 'new' = 'hot',
 ) {
   return request.get('/artist/audios', { params: { id, page, pagesize, sort } });
 }
@@ -26,7 +26,7 @@ export function getArtistAlbums(
   id: string | number,
   page = 1,
   pagesize = 30,
-  sort: 'hot' | 'new' = 'hot'
+  sort: 'hot' | 'new' = 'hot',
 ) {
   return request.get('/artist/albums', { params: { id, page, pagesize, sort } });
 }

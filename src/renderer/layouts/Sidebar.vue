@@ -435,7 +435,9 @@ watch(
             >
               {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
             </span>
-            <span class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider">
+            <span
+              class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider"
+            >
               {{ isLoggedIn ? `Lv.${userInfo?.p_grade || 0}` : '点击登录账号' }}
             </span>
           </div>
