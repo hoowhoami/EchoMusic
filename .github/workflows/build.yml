@@ -102,10 +102,12 @@ jobs:
         working-directory: server
         shell: bash
         run: |
-          if [ -n "${{ matrix.server_pkg_cmd }}" ]; then
-            ${{ matrix.server_pkg_cmd }}
+          CMD="${{ matrix.server_pkg_cmd }}"
+          SCRIPT="${{ matrix.server_pkg_script }}"
+          if [ -n "$CMD" ]; then
+            eval "$CMD"
           else
-            npm run ${{ matrix.server_pkg_script }}
+            npm run "$SCRIPT"
           fi
 
       - name: Build desktop app
