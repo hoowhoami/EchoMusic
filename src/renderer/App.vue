@@ -13,7 +13,8 @@ import { initDesktopLyricSync } from '@/utils/desktopLyric';
 const player = usePlayerStore();
 const settings = useSettingStore();
 const route = useRoute();
-const isDesktopLyricWindow = () => route.name === 'desktop-lyric';
+const isDesktopLyricWindow = () =>
+  route.name === 'desktop-lyric' || window.location.hash.includes('desktop-lyric');
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;

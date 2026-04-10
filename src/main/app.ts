@@ -85,6 +85,7 @@ if (!gotTheLock) {
     if (isExiting) return;
     isExiting = true;
     event.preventDefault();
+    console.log('[Main] before-quit: cleaning up and exiting...');
     globalShortcut.unregisterAll();
     destroyTray();
     stopApiServer();

@@ -250,12 +250,6 @@ let desktopLyricForwardRestoreTimer: NodeJS.Timeout | null = null;
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
-  // 确保桌面歌词窗口被销毁
-  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
-    const win = desktopLyricWindow;
-    desktopLyricWindow = null;
-    win.destroy();
-  }
 });
 
 let snapshot: DesktopLyricSnapshot = {
