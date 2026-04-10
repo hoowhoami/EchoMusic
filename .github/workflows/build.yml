@@ -22,12 +22,20 @@ jobs:
       matrix:
         include:
           - os: macos-latest
+            server_pkg_script: ""
+            server_pkg_cmd: "npx pkg . -t node14-macos-arm64 -C GZip -o bin/app_macos --no-bytecode"
+            artifact_glob: |
+              dist/EchoMusic-*.dmg
+              dist/EchoMusic-*.zip
+          - os: macos-13
             server_pkg_script: pkgmacos
+            server_pkg_cmd: ""
             artifact_glob: |
               dist/EchoMusic-*.dmg
               dist/EchoMusic-*.zip
           - os: ubuntu-22.04
             server_pkg_script: pkglinux
+            server_pkg_cmd: ""
             artifact_glob: |
               dist/EchoMusic-*.AppImage
               dist/EchoMusic-*.deb
@@ -35,6 +43,7 @@ jobs:
               dist/EchoMusic-*.tar.gz
           - os: windows-latest
             server_pkg_script: pkgwin
+            server_pkg_cmd: ""
             artifact_glob: |
               dist/EchoMusic-*-Windows-Setup-*.exe
               dist/EchoMusic-*.exe
@@ -84,7 +93,12 @@ jobs:
       - name: Build server executable
         working-directory: server
         shell: bash
-        run: npm run ${{ matrix.server_pkg_script }}
+        run: |
+          if [ -n "${{ matrix.server_pkg_cmd }}" ]; then
+            ${{ matrix.server_pkg_cmd }}
+          else
+            npm run ${{ matrix.server_pkg_script }}
+          fi
 
       - name: Build desktop app
         shell: bash
@@ -94,11 +108,7 @@ jobs:
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
         run: |
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            pnpm exec electron-builder --mac --x64 --arm64 --publish never
-          else
-            pnpm exec electron-builder --publish never
-          fi
+          pnpm exec electron-builder --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

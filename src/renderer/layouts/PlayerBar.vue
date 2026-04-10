@@ -917,7 +917,7 @@ onUnmounted(() => {
                   :class="{ 'is-active': player.audioEffect === 'acappella' }"
                   @select="setAudioEffect('acappella')"
                 >
-                  <span>清唱</span>
+                  <span>人声</span>
                   <span
                     class="player-dropdown-check"
                     :class="{ 'is-visible': player.audioEffect === 'acappella' }"
@@ -929,7 +929,7 @@ onUnmounted(() => {
                   :class="{ 'is-active': player.audioEffect === 'subwoofer' }"
                   @select="setAudioEffect('subwoofer')"
                 >
-                  <span>重低音</span>
+                  <span>骨笛</span>
                   <span
                     class="player-dropdown-check"
                     :class="{ 'is-visible': player.audioEffect === 'subwoofer' }"
@@ -941,7 +941,7 @@ onUnmounted(() => {
                   :class="{ 'is-active': player.audioEffect === 'ancient' }"
                   @select="setAudioEffect('ancient')"
                 >
-                  <span>古风</span>
+                  <span>尤克里里</span>
                   <span
                     class="player-dropdown-check"
                     :class="{ 'is-visible': player.audioEffect === 'ancient' }"
