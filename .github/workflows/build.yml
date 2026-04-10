@@ -24,18 +24,24 @@ jobs:
           - os: macos-latest
             server_pkg_script: ""
             server_pkg_cmd: "npx pkg . -t node14-macos-arm64 -C GZip -o bin/app_macos --no-bytecode"
+            electron_builder_args: ""
+            artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               dist/EchoMusic-*.dmg
               dist/EchoMusic-*.zip
-          - os: macos-13
+          - os: macos-14
             server_pkg_script: pkgmacos
             server_pkg_cmd: ""
+            electron_builder_args: "--mac --x64"
+            artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               dist/EchoMusic-*.dmg
               dist/EchoMusic-*.zip
           - os: ubuntu-22.04
             server_pkg_script: pkglinux
             server_pkg_cmd: ""
+            electron_builder_args: ""
+            artifact_name: EchoMusic-Linux
             artifact_glob: |
               dist/EchoMusic-*.AppImage
               dist/EchoMusic-*.deb
@@ -44,6 +50,8 @@ jobs:
           - os: windows-latest
             server_pkg_script: pkgwin
             server_pkg_cmd: ""
+            electron_builder_args: ""
+            artifact_name: EchoMusic-Windows
             artifact_glob: |
               dist/EchoMusic-*-Windows-Setup-*.exe
               dist/EchoMusic-*.exe
@@ -108,12 +116,12 @@ jobs:
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
         run: |
           pnpm exec vue-tsc --noEmit && pnpm exec vite build
-          pnpm exec electron-builder --publish never
+          pnpm exec electron-builder ${{ matrix.electron_builder_args }} --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EchoMusic-${{ matrix.os }}
+          name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
           retention-days: 7
