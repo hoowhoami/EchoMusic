@@ -134,7 +134,7 @@
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
     "dmg": {
-      "artifactName": "${productName}-${version}-macOS.${ext}",
+      "artifactName": "${productName}-${version}-macOS-${arch}.${ext}",
       "backgroundColor": "#ffffff",
       "window": {
         "width": 660,
