@@ -261,9 +261,7 @@ onMounted(() => loadData());
             </div>
             <div class="flex items-center justify-between px-4 py-3">
               <span class="text-[13px] opacity-60 font-bold">所在地区</span>
-              <span class="text-[13px] font-black"
-                >{{ detail.loc || '未知' }} {{ detail.city || '' }}</span
-              >
+              <span class="text-[13px] font-black">{{ detail.city || '-' }}</span>
             </div>
           </div>
         </div>

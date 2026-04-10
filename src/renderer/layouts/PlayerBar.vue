@@ -917,7 +917,7 @@ onUnmounted(() => {
                   :class="{ 'is-active': player.audioEffect === 'acappella' }"
                   @select="setAudioEffect('acappella')"
                 >
-                  <span>人声</span>
+                  <span>人声（伴奏）</span>
                   <span
                     class="player-dropdown-check"
                     :class="{ 'is-visible': player.audioEffect === 'acappella' }"
@@ -1301,8 +1301,9 @@ onUnmounted(() => {
 :deep(.player-dropdown-tag) {
   margin-left: 4px;
   margin-right: 6px;
-  min-width: 22px;
+  width: 28px;
   justify-content: center;
+  text-align: center;
 }
 
 .dark :deep(.player-dropdown-tag) {
