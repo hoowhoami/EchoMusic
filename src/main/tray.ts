@@ -39,11 +39,9 @@ const playModeLabelMap: Record<PlayMode, string> = {
 };
 
 const resolveTrayIconPath = () => {
-  // win_tray_icon_dark.ico = 白色图标（用于深色任务栏）
-  // win_tray_icon_light.ico = 黑色图标（用于浅色任务栏）
   const isDarkTaskbar =
     process.platform === 'win32'
-      ? nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+      ? (nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ?? nativeTheme.shouldUseDarkColors)
       : nativeTheme.shouldUseDarkColors;
 
   const iconName =
@@ -63,13 +61,24 @@ const resolveTrayIconPath = () => {
 };
 
 const createTrayImage = () => {
-  const image = nativeImage.createFromPath(resolveTrayIconPath());
-
-  if (process.platform === 'darwin') {
-    image.setTemplateImage(true);
+  const iconPath = resolveTrayIconPath();
+  try {
+    const image = nativeImage.createFromPath(iconPath);
+    if (image.isEmpty()) {
+      console.warn('[Tray] Icon image is empty:', iconPath);
+      return nativeImage.createEmpty();
+    }
+    if (process.platform === 'darwin') {
+      image.setTemplateImage(true);
+    } else {
+      // Win10/Win11/Linux：resize 到标准尺寸，避免兼容性问题
+      return image.resize({ width: 20, height: 20 });
+    }
+    return image;
+  } catch (e) {
+    console.error('[Tray] Failed to create tray image:', e);
+    return nativeImage.createEmpty();
   }
-
-  return image;
 };
 
 const forwardCommandToRenderer = (command: TrayCommand) => {
