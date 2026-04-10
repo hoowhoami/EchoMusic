@@ -22,8 +22,6 @@ interface TrayPlaybackState {
   playMode: PlayMode;
 }
 
-const TRAY_GUID = '3f7a61a2-6707-46ba-95d9-4c53dbb9581a';
-
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;
 let playbackState: TrayPlaybackState = {
@@ -159,7 +157,7 @@ export const initTray = (context: TrayContext) => {
   }
 
   const trayImage = createTrayImage();
-  appTray = process.platform === 'linux' ? new Tray(trayImage) : new Tray(trayImage, TRAY_GUID);
+  appTray = new Tray(trayImage);
   appTray.setToolTip('EchoMusic');
 
   appTray.on('click', () => {

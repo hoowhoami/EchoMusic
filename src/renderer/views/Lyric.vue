@@ -81,6 +81,9 @@ const volumeIcon = computed(() => {
 });
 
 const lastVolume = ref(0.8);
+const isVolumeVisible = ref(false);
+const volumeContainerRef = ref<HTMLElement | null>(null);
+let volumeWheelTimer: ReturnType<typeof setTimeout> | null = null;
 
 const cyclePlayMode = () => {
   const next: PlayMode =
@@ -105,6 +108,38 @@ const toggleMute = () => {
     playerStore.setVolume(0);
   } else {
     playerStore.setVolume(lastVolume.value || 0.8);
+  }
+};
+
+const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
+
+const toggleVolume = () => {
+  isVolumeVisible.value = !isVolumeVisible.value;
+};
+
+const handleVolumeWheel = (e: WheelEvent) => {
+  e.preventDefault();
+  const normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
+  const step = (normalized / 120) * 0.05;
+  const direction = isMacPlatform ? 1 : -1;
+  const newVolume = Math.max(0, Math.min(1, playerStore.volume + step * direction));
+  playerStore.setVolume(newVolume);
+  isVolumeVisible.value = true;
+
+  if (volumeWheelTimer) clearTimeout(volumeWheelTimer);
+  volumeWheelTimer = setTimeout(() => {
+    isVolumeVisible.value = false;
+    volumeWheelTimer = null;
+  }, 1000);
+};
+
+const handleVolumeClickOutside = (e: MouseEvent) => {
+  if (
+    isVolumeVisible.value &&
+    volumeContainerRef.value &&
+    !volumeContainerRef.value.contains(e.target as Node)
+  ) {
+    isVolumeVisible.value = false;
   }
 };
 
@@ -329,11 +364,14 @@ onMounted(() => {
   ensureLyricsForCurrentTrack();
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
+  document.addEventListener('click', handleVolumeClickOutside);
 });
 
 onUnmounted(() => {
   clearUserScrollResumeTimer();
   window.removeEventListener('keydown', handleKeydown);
+  document.removeEventListener('click', handleVolumeClickOutside);
+  if (volumeWheelTimer) clearTimeout(volumeWheelTimer);
 });
 </script>
 
@@ -680,63 +718,71 @@ onUnmounted(() => {
               />
             </Button>
             <!-- 音量 -->
-            <PopoverRoot>
-              <PopoverTrigger as-child>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-                  title="音量"
+            <div
+              ref="volumeContainerRef"
+              class="relative flex items-center"
+              @wheel.prevent="handleVolumeWheel"
+            >
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+                @click="toggleVolume"
+              >
+                <Icon
+                  :icon="volumeIcon"
+                  width="22"
+                  height="22"
+                  class="text-black/60 dark:text-white/60"
+                />
+              </Button>
+              <Transition name="volume-pop">
+                <div
+                  v-show="isVolumeVisible"
+                  class="absolute bottom-[100%] left-1/2 -translate-x-1/2 pb-2 z-[100]"
+                  @click.stop
                 >
-                  <Icon
-                    :icon="volumeIcon"
-                    width="22"
-                    height="22"
-                    class="text-black/60 dark:text-white/60"
-                  />
-                </Button>
-              </PopoverTrigger>
-              <PopoverPortal>
-                <PopoverContent
-                  class="z-[100] rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
-                  :side-offset="8"
-                  side="top"
-                >
-                  <div class="flex h-36 flex-col items-center gap-2">
-                    <SliderRoot
-                      :model-value="[playerStore.volume * 100]"
-                      :max="100"
-                      orientation="vertical"
-                      class="relative flex flex-col items-center select-none touch-none w-5 h-full"
-                      @update:model-value="handleVolumeChange"
-                    >
-                      <SliderTrack
-                        class="relative grow rounded-full w-[3px] bg-black/15 dark:bg-white/30"
+                  <div
+                    class="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  >
+                    <div class="flex h-36 flex-col items-center gap-2">
+                      <SliderRoot
+                        :model-value="[playerStore.volume * 100]"
+                        :max="100"
+                        orientation="vertical"
+                        class="relative flex flex-col items-center select-none touch-none w-5 h-full"
+                        @update:model-value="handleVolumeChange"
                       >
-                        <SliderRange class="absolute bg-black dark:bg-white rounded-full w-full" />
-                      </SliderTrack>
-                      <SliderThumb
-                        class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
-                      />
-                    </SliderRoot>
-                    <Button
-                      variant="unstyled"
-                      size="none"
-                      type="button"
-                      class="p-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors"
-                      @click="toggleMute"
-                    >
-                      <Icon :icon="volumeIcon" width="18" height="18" />
-                    </Button>
-                    <span
-                      class="text-[10px] font-semibold text-black/50 dark:text-white/50 tabular-nums"
-                      >{{ Math.round(playerStore.volume * 100) }}</span
-                    >
+                        <SliderTrack
+                          class="relative grow rounded-full w-[3px] bg-black/15 dark:bg-white/30"
+                        >
+                          <SliderRange
+                            class="absolute bg-black dark:bg-white rounded-full w-full"
+                          />
+                        </SliderTrack>
+                        <SliderThumb
+                          class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
+                        />
+                      </SliderRoot>
+                      <Button
+                        variant="unstyled"
+                        size="none"
+                        type="button"
+                        class="p-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors"
+                        @click="toggleMute"
+                      >
+                        <Icon :icon="volumeIcon" width="18" height="18" />
+                      </Button>
+                      <span
+                        class="text-[10px] font-semibold text-black/50 dark:text-white/50 tabular-nums"
+                        >{{ Math.round(playerStore.volume * 100) }}</span
+                      >
+                    </div>
                   </div>
-                </PopoverContent>
-              </PopoverPortal>
-            </PopoverRoot>
+                </div>
+              </Transition>
+            </div>
           </div>
 
           <div class="mt-4 flex w-[420px] max-w-full items-center gap-3">
@@ -1198,5 +1244,18 @@ onUnmounted(() => {
   opacity: 0.38;
   cursor: not-allowed;
   transform: none !important;
+}
+
+.volume-pop-enter-active,
+.volume-pop-leave-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.volume-pop-enter-from,
+.volume-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 6px);
 }
 </style>
