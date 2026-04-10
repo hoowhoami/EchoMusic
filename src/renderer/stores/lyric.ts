@@ -17,7 +17,7 @@ export interface LyricLine {
   characters: LyricCharacter[];
 }
 
-export type LyricsMode = 'none' | 'translation' | 'romanization';
+export type LyricsMode = 'none' | 'translation' | 'romanization' | 'both';
 
 type LyricSearchCandidate = {
   id?: string | number;
@@ -46,6 +46,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const parsePreference = (value: unknown): Exclude<LyricsMode, 'none'> => {
   if (value === 'romanization') return 'romanization';
+  if (value === 'both') return 'both';
   return 'translation';
 };
 
@@ -134,6 +135,10 @@ const buildFallbackCharacters = (
 const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
   const romanized = line.romanized?.trim() ?? '';
   const translated = line.translated?.trim() ?? '';
+  if (mode === 'both') {
+    const parts = [translated, romanized].filter(Boolean);
+    return parts.join(' / ');
+  }
   if (mode === 'romanization') return romanized || translated;
   if (mode === 'translation') return translated || romanized;
   return '';
@@ -175,6 +180,7 @@ export const useLyricStore = defineStore('lyric', {
     currentDisplayLabel: (state) => {
       if (!state.secondaryEnabled || (!state.hasTranslation && !state.hasRomanization))
         return '原词';
+      if (state.lyricsMode === 'both') return '译+音';
       if (state.lyricsMode === 'romanization') return '音译';
       if (state.lyricsMode === 'translation') return '翻译';
       return state.preferredMode === 'romanization' ? '音译' : '翻译';
@@ -201,7 +207,14 @@ export const useLyricStore = defineStore('lyric', {
       return state.lines
         .map((line) => {
           const primary = line.text.trim();
-          const secondary = state.secondaryEnabled ? getSecondaryText(line, mode) : '';
+          if (!state.secondaryEnabled) return primary;
+          if (mode === 'both') {
+            const translated = line.translated?.trim() ?? '';
+            const romanized = line.romanized?.trim() ?? '';
+            const parts = [primary, translated, romanized].filter(Boolean);
+            return parts.join('\n');
+          }
+          const secondary = getSecondaryText(line, mode);
           return secondary ? `${primary}\n${secondary}` : primary;
         })
         .filter(Boolean)
@@ -235,6 +248,12 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
+      // both 模式需要同时有翻译和音译
+      if (this.preferredMode === 'both' && this.hasTranslation && this.hasRomanization) {
+        this.lyricsMode = 'both';
+        return;
+      }
+
       if (this.preferredMode === 'translation' && this.hasTranslation) {
         this.lyricsMode = 'translation';
         return;
@@ -262,8 +281,15 @@ export const useLyricStore = defineStore('lyric', {
     },
     cycleSecondaryMode() {
       if (!this.hasTranslation && !this.hasRomanization) return;
+      // 同时有翻译和音译时：翻译 → 音译 → 同时显示 → 翻译
       if (this.hasTranslation && this.hasRomanization) {
-        this.preferredMode = this.preferredMode === 'translation' ? 'romanization' : 'translation';
+        if (this.preferredMode === 'translation') {
+          this.preferredMode = 'romanization';
+        } else if (this.preferredMode === 'romanization') {
+          this.preferredMode = 'both' as Exclude<LyricsMode, 'none'>;
+        } else {
+          this.preferredMode = 'translation';
+        }
       } else {
         this.preferredMode = this.hasRomanization ? 'romanization' : 'translation';
       }

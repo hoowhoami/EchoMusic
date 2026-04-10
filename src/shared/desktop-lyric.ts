@@ -26,7 +26,7 @@ export type DesktopLyricPlaybackPayload = {
 };
 
 export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
-export type DesktopLyricSecondaryMode = 'none' | 'translation' | 'romanization';
+export type DesktopLyricSecondaryMode = 'none' | 'translation' | 'romanization' | 'both';
 export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
 
 export type DesktopLyricSettings = {
@@ -44,11 +44,8 @@ export type DesktopLyricSettings = {
   activeFontSize: number;
   secondaryFontSize: number;
   lineGap: number;
-  width: number;
-  height: number;
   secondaryMode: DesktopLyricSecondaryMode;
   alignment: DesktopLyricAlign;
-  fontSize: number;
   doubleLine: boolean;
   playedColor: string;
   unplayedColor: string;

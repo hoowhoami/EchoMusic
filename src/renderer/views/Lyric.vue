@@ -22,6 +22,7 @@ import { formatDuration } from '@/utils/format';
 import { closeTransientView } from '@/utils/navigation';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import {
   iconChevronDown,
   iconCopy,
@@ -32,7 +33,15 @@ import {
   iconSkipBack,
   iconSkipForward,
   iconTypography,
+  iconRepeat,
+  iconRepeatOff,
+  iconShuffle,
+  iconListRestart,
+  iconVolume2,
+  iconVolume1,
+  iconVolumeX,
 } from '@/icons';
+import type { PlayMode } from '@/stores/player';
 
 const router = useRouter();
 const route = useRoute();
@@ -47,6 +56,57 @@ const isHoveringProgress = ref(false);
 const copyFeedback = ref(false);
 const isUserScrollingLyrics = ref(false);
 let userScrollResumeTimer: number | null = null;
+
+const playModeLabel = computed(() => {
+  const labels: Record<PlayMode, string> = {
+    sequential: '顺序播放',
+    list: '列表循环',
+    random: '随机播放',
+    single: '单曲循环',
+  };
+  return labels[playerStore.playMode] ?? '顺序播放';
+});
+
+const playModeIcon = computed(() => {
+  if (playerStore.playMode === 'sequential') return iconRepeatOff;
+  if (playerStore.playMode === 'list') return iconRepeat;
+  if (playerStore.playMode === 'random') return iconShuffle;
+  return iconListRestart;
+});
+
+const volumeIcon = computed(() => {
+  if (playerStore.volume > 0.5) return iconVolume2;
+  if (playerStore.volume > 0) return iconVolume1;
+  return iconVolumeX;
+});
+
+const lastVolume = ref(0.8);
+
+const cyclePlayMode = () => {
+  const next: PlayMode =
+    playerStore.playMode === 'sequential'
+      ? 'list'
+      : playerStore.playMode === 'list'
+        ? 'random'
+        : playerStore.playMode === 'random'
+          ? 'single'
+          : 'sequential';
+  playerStore.setPlayMode(next);
+};
+
+const handleVolumeChange = (value: number[] | undefined) => {
+  if (!value?.length) return;
+  playerStore.setVolume(value[0] / 100);
+};
+
+const toggleMute = () => {
+  if (playerStore.volume > 0) {
+    lastVolume.value = playerStore.volume;
+    playerStore.setVolume(0);
+  } else {
+    playerStore.setVolume(lastVolume.value || 0.8);
+  }
+};
 
 const currentTrack = computed<Song | undefined>(() => {
   const currentId = String(playerStore.currentTrackId ?? '');
@@ -68,6 +128,7 @@ const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const hasActiveTrack = computed(() => Boolean(currentTrack.value));
 const displayLabel = computed(() => {
   if (!lyricStore.secondaryEnabled || !lyricStore.canShowSecondary) return '原词';
+  if (lyricStore.lyricsMode === 'both') return '译+音';
   if (lyricStore.lyricsMode === 'romanization') return '音译';
   if (lyricStore.lyricsMode === 'translation') return '翻译';
   return lyricStore.preferredMode === 'romanization' ? '音译' : '翻译';
@@ -446,10 +507,12 @@ onUnmounted(() => {
                       :data-lyric-index="index"
                       :style="{
                         minHeight:
-                          (lyricStore.lyricsMode === 'translation' ||
-                          lyricStore.lyricsMode === 'romanization'
-                            ? 84
-                            : 56) *
+                          (lyricStore.lyricsMode === 'both'
+                            ? 108
+                            : lyricStore.lyricsMode === 'translation' ||
+                                lyricStore.lyricsMode === 'romanization'
+                              ? 84
+                              : 56) *
                             lyricStore.fontScale +
                           'px',
                         paddingTop: '8px',
@@ -480,20 +543,57 @@ onUnmounted(() => {
                             {{ line.text }}
                           </template>
                         </span>
-                        <span
-                          v-if="lyricStore.lineSecondaryText(line)"
-                          class="lyric-subline mt-1 block max-w-full truncate"
-                          :style="{
-                            fontSize: secondaryFontSize,
-                            fontWeight: String(
-                              currentIndex === index
-                                ? Math.max(500, lyricStore.fontWeightValue - 200)
-                                : 400,
-                            ),
-                          }"
+                        <!-- both 模式：翻译和音译分行显示 -->
+                        <template
+                          v-if="lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled"
                         >
-                          {{ lyricStore.lineSecondaryText(line) }}
-                        </span>
+                          <span
+                            v-if="line.translated?.trim()"
+                            class="lyric-subline mt-1 block max-w-full truncate"
+                            :style="{
+                              fontSize: secondaryFontSize,
+                              fontWeight: String(
+                                currentIndex === index
+                                  ? Math.max(500, lyricStore.fontWeightValue - 200)
+                                  : 400,
+                              ),
+                            }"
+                          >
+                            {{ line.translated.trim() }}
+                          </span>
+                          <span
+                            v-if="line.romanized?.trim()"
+                            class="lyric-subline mt-1 block max-w-full truncate"
+                            :style="{
+                              fontSize: secondaryFontSize,
+                              fontWeight: String(
+                                currentIndex === index
+                                  ? Math.max(500, lyricStore.fontWeightValue - 200)
+                                  : 400,
+                              ),
+                              opacity: 0.72,
+                            }"
+                          >
+                            {{ line.romanized.trim() }}
+                          </span>
+                        </template>
+                        <!-- 单一翻译/音译模式 -->
+                        <template v-else>
+                          <span
+                            v-if="lyricStore.lineSecondaryText(line)"
+                            class="lyric-subline mt-1 block max-w-full truncate"
+                            :style="{
+                              fontSize: secondaryFontSize,
+                              fontWeight: String(
+                                currentIndex === index
+                                  ? Math.max(500, lyricStore.fontWeightValue - 200)
+                                  : 400,
+                              ),
+                            }"
+                          >
+                            {{ lyricStore.lineSecondaryText(line) }}
+                          </span>
+                        </template>
                       </div>
                     </div>
                   </div>
@@ -515,6 +615,25 @@ onUnmounted(() => {
       <div class="px-6 pb-6 pt-2 no-drag">
         <div class="lyric-controls-surface mx-auto flex w-full max-w-[560px] flex-col items-center">
           <div class="flex items-center justify-center gap-8">
+            <!-- 播放模式 -->
+            <Tooltip :content="playModeLabel" side="top">
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+                  @click="cyclePlayMode"
+                >
+                  <Icon
+                    :icon="playModeIcon"
+                    width="22"
+                    height="22"
+                    class="text-black/60 dark:text-white/60"
+                  />
+                </Button>
+              </template>
+            </Tooltip>
             <Button
               variant="unstyled"
               size="none"
@@ -560,6 +679,64 @@ onUnmounted(() => {
                 class="text-black/80 dark:text-white/80"
               />
             </Button>
+            <!-- 音量 -->
+            <PopoverRoot>
+              <PopoverTrigger as-child>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+                  title="音量"
+                >
+                  <Icon
+                    :icon="volumeIcon"
+                    width="22"
+                    height="22"
+                    class="text-black/60 dark:text-white/60"
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverPortal>
+                <PopoverContent
+                  class="z-[100] rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  :side-offset="8"
+                  side="top"
+                >
+                  <div class="flex h-36 flex-col items-center gap-2">
+                    <SliderRoot
+                      :model-value="[playerStore.volume * 100]"
+                      :max="100"
+                      orientation="vertical"
+                      class="relative flex flex-col items-center select-none touch-none w-5 h-full"
+                      @update:model-value="handleVolumeChange"
+                    >
+                      <SliderTrack
+                        class="relative grow rounded-full w-[3px] bg-black/15 dark:bg-white/30"
+                      >
+                        <SliderRange class="absolute bg-black dark:bg-white rounded-full w-full" />
+                      </SliderTrack>
+                      <SliderThumb
+                        class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
+                      />
+                    </SliderRoot>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      type="button"
+                      class="p-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors"
+                      @click="toggleMute"
+                    >
+                      <Icon :icon="volumeIcon" width="18" height="18" />
+                    </Button>
+                    <span
+                      class="text-[10px] font-semibold text-black/50 dark:text-white/50 tabular-nums"
+                      >{{ Math.round(playerStore.volume * 100) }}</span
+                    >
+                  </div>
+                </PopoverContent>
+              </PopoverPortal>
+            </PopoverRoot>
           </div>
 
           <div class="mt-4 flex w-[420px] max-w-full items-center gap-3">

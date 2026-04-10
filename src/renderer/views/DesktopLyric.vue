@@ -10,6 +10,7 @@ import {
 } from 'vue';
 import { useRafFn, useThrottleFn, useTimeoutFn, useWindowSize, useDebounceFn } from '@vueuse/core';
 import {
+  iconLanguage,
   iconLock,
   iconLockOpen,
   iconPause,
@@ -71,6 +72,10 @@ const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
 const doubleLine = computed(() => settings.value?.doubleLine ?? true);
 const secondaryEnabled = computed(() => settings.value?.secondaryEnabled ?? false);
+// 当前歌词是否有翻译或音译数据
+const hasSecondary = computed(() =>
+  lyrics.value.some((l) => l.translated?.trim() || l.romanized?.trim()),
+);
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
 const shadowColor = computed(() =>
@@ -144,32 +149,38 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     ? (next.characters?.[0]?.startTime ?? next.time * 1000)
     : (current.characters?.[current.characters.length - 1]?.endTime ?? 0);
 
-  // 翻译模式：原文 + 翻译（复刻 SPlayer 的 showTran 逻辑）
-  if (secondaryEnabled.value && current.translated) {
-    return [
-      {
-        line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
-        index: idx,
-        key: `${idx}-orig`,
-        active: true,
-      },
-      {
-        line: {
-          time: current.time,
-          text: current.translated,
-          characters: [
-            {
-              text: current.translated,
-              startTime: current.characters?.[0]?.startTime ?? 0,
-              endTime: safeEnd,
-            },
-          ],
+  // 翻译模式：原文 + 副行（翻译/音译合并显示，复刻 SPlayer）
+  if (secondaryEnabled.value) {
+    const tran = current.translated?.trim() ?? '';
+    const roman = current.romanized?.trim() ?? '';
+    // 合并翻译和音译到一行
+    const secondaryText = [tran, roman].filter(Boolean).join(' / ');
+    if (secondaryText) {
+      return [
+        {
+          line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
+          index: idx,
+          key: `${idx}-orig`,
+          active: true,
         },
-        index: idx,
-        key: `${idx}-tran`,
-        active: false,
-      },
-    ];
+        {
+          line: {
+            time: current.time,
+            text: secondaryText,
+            characters: [
+              {
+                text: secondaryText,
+                startTime: current.characters?.[0]?.startTime ?? 0,
+                endTime: safeEnd,
+              },
+            ],
+          },
+          index: idx,
+          key: `${idx}-secondary`,
+          active: false,
+        },
+      ];
+    }
   }
   // 双行模式：当前 + 下一句
   if (doubleLine.value) {
@@ -298,6 +309,7 @@ const onDocPointerDown = (event: PointerEvent) => {
   dragState.startWinY = cachedBounds.y;
   dragState.winWidth = safeWidth;
   dragState.winHeight = safeHeight;
+  // 固定最大尺寸以规避 DPI 缩放 bug
   sendToMain('desktop-lyric:toggle-fixed-size', {
     width: safeWidth,
     height: safeHeight,
@@ -402,6 +414,12 @@ const tempToggleLyricLock = (lock: boolean) => {
 
 // ── 操作命令 ──
 
+const toggleSecondary = () => {
+  const next = !secondaryEnabled.value;
+  // 只更新配置，不触发窗口大小重算
+  sendToMain('desktop-lyric:set-option', { secondaryEnabled: next }, true);
+};
+
 const closeWindow = async () => {
   if (!window.electron?.desktopLyric) return;
   snapshot.value = await window.electron.desktopLyric.hide();
@@ -443,8 +461,8 @@ onMounted(async () => {
   document.getElementById('app')?.classList.add('desktop-lyric-window');
 
   snapshot.value = (await window.electron?.desktopLyric?.getSnapshot()) ?? null;
-  // 初始化本地字体大小
-  localFontSize.value = snapshot.value?.settings?.fontSize ?? 30;
+  // 从窗口高度计算初始字体大小
+  localFontSize.value = computedFontSize.value;
 
   disposeSnapshotListener =
     window.electron?.desktopLyric?.onSnapshot((next) => {
@@ -460,7 +478,7 @@ onMounted(async () => {
       }
     }) ?? null;
 
-  updateCachedBounds();
+  await updateCachedBounds();
 
   // 启动 RAF
   if (isPlaying.value) {
@@ -511,6 +529,14 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="header-right" @pointerdown.stop>
+        <button
+          class="menu-btn tran-btn"
+          :class="{ 'is-active': secondaryEnabled && hasSecondary }"
+          title="翻译"
+          @click.stop="toggleSecondary"
+        >
+          <Icon :icon="iconLanguage" width="20" height="20" />
+        </button>
         <button
           class="menu-btn lock-btn"
           @mouseenter.stop="tempToggleLyricLock(false)"
@@ -683,11 +709,17 @@ onBeforeUnmount(() => {
 .menu-btn.lock-btn {
   pointer-events: auto;
 }
+.menu-btn.lock-btn svg {
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8));
+}
 .menu-btn:hover {
   background-color: rgba(255, 255, 255, 0.3);
 }
 .menu-btn:active {
   transform: scale(0.98);
+}
+.menu-btn.tran-btn.is-active svg {
+  color: #31cfa1;
 }
 
 /* 默认隐藏工具栏 */

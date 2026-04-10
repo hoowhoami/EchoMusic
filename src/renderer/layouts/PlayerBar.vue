@@ -527,42 +527,57 @@ onUnmounted(() => {
       <div class="flex-[1.5] flex flex-col items-center justify-center gap-1 min-w-[150px]">
         <div class="flex items-center justify-center gap-4 h-10">
           <!-- 播放模式 -->
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="
-              player.setPlayMode(
-                player.playMode === 'sequential'
-                  ? 'list'
-                  : player.playMode === 'list'
-                    ? 'random'
-                    : player.playMode === 'random'
-                      ? 'single'
-                      : 'sequential',
-              )
+          <Tooltip
+            :content="
+              player.playMode === 'sequential'
+                ? '顺序播放'
+                : player.playMode === 'list'
+                  ? '列表循环'
+                  : player.playMode === 'random'
+                    ? '随机播放'
+                    : '单曲循环'
             "
-            class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+            side="top"
           >
-            <Icon
-              v-if="player.playMode === 'sequential'"
-              :icon="iconRepeatOff"
-              width="22"
-              height="22"
-            />
-            <Icon
-              v-else-if="player.playMode === 'list'"
-              :icon="iconRepeat"
-              width="22"
-              height="22"
-            />
-            <Icon
-              v-else-if="player.playMode === 'random'"
-              :icon="iconShuffle"
-              width="22"
-              height="22"
-            />
-            <Icon v-else :icon="iconListRestart" width="22" height="22" />
-          </Button>
+            <template #trigger>
+              <Button
+                variant="unstyled"
+                size="none"
+                @click="
+                  player.setPlayMode(
+                    player.playMode === 'sequential'
+                      ? 'list'
+                      : player.playMode === 'list'
+                        ? 'random'
+                        : player.playMode === 'random'
+                          ? 'single'
+                          : 'sequential',
+                  )
+                "
+                class="p-2 text-text-main/50 hover:text-primary transition-all hover:scale-110 active:scale-90"
+              >
+                <Icon
+                  v-if="player.playMode === 'sequential'"
+                  :icon="iconRepeatOff"
+                  width="22"
+                  height="22"
+                />
+                <Icon
+                  v-else-if="player.playMode === 'list'"
+                  :icon="iconRepeat"
+                  width="22"
+                  height="22"
+                />
+                <Icon
+                  v-else-if="player.playMode === 'random'"
+                  :icon="iconShuffle"
+                  width="22"
+                  height="22"
+                />
+                <Icon v-else :icon="iconListRestart" width="22" height="22" />
+              </Button>
+            </template>
+          </Tooltip>
 
           <Button
             variant="unstyled"

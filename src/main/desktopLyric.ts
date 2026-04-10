@@ -39,6 +39,7 @@ type DesktopLyricDragSession = {
 };
 
 type DesktopLyricPersistedSettings = DesktopLyricSettings & {
+  fontSize: number;
   windowState: DesktopLyricWindowState;
 };
 
@@ -58,20 +59,18 @@ const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricPersistedSettings = {
   activeFontSize: 40,
   secondaryFontSize: 18,
   lineGap: 14,
-  width: 960,
-  height: 220,
   secondaryMode: 'none',
-  alignment: 'center',
-  fontSize: 30,
+  alignment: 'both',
   doubleLine: true,
   playedColor: '#31cfa1',
   unplayedColor: '#7a7a7a',
   strokeColor: '#f1b8b3',
   strokeEnabled: false,
   bold: false,
+  fontSize: 30,
   windowState: {
-    width: 960,
-    height: 220,
+    width: 800,
+    height: 180,
   },
 };
 
@@ -81,67 +80,13 @@ const settingsStore = new Conf<DesktopLyricPersistedSettings>({
   defaults: DEFAULT_DESKTOP_LYRIC_SETTINGS,
 });
 
-const DESKTOP_LYRIC_MIN_WIDTH = 380;
+const DESKTOP_LYRIC_MIN_WIDTH = 640;
 const DESKTOP_LYRIC_MIN_HEIGHT = 140;
 const DESKTOP_LYRIC_MAX_WIDTH = 1400;
 const DESKTOP_LYRIC_MAX_HEIGHT = 360;
-const DESKTOP_LYRIC_HORIZONTAL_PADDING = 88;
-const DESKTOP_LYRIC_VERTICAL_PADDING = 52;
-const DESKTOP_LYRIC_DOUBLE_LINE_WIDTH_SOFT_CAP = 11.5;
-const DESKTOP_LYRIC_SINGLE_LINE_WIDTH_SOFT_CAP = 8.8;
-const DESKTOP_LYRIC_DOUBLE_LINE_HEIGHT_FACTOR = 2.95;
-const DESKTOP_LYRIC_SINGLE_LINE_HEIGHT_FACTOR = 1.72;
 const DESKTOP_LYRIC_LOCK_PHASE_DURATION_MS = 320;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const snapEven = (value: number) => {
-  const rounded = Math.round(value / 2) * 2;
-  return rounded % 2 === 0 ? rounded : rounded + 1;
-};
-
-const deriveFontSizeFromWindow = (
-  width: number,
-  height: number,
-  doubleLine: boolean,
-  lineGap: number,
-) => {
-  const availableWidth = Math.max(0, width - DESKTOP_LYRIC_HORIZONTAL_PADDING);
-  const availableHeight = Math.max(0, height - DESKTOP_LYRIC_VERTICAL_PADDING);
-  const effectiveGap = clamp(lineGap, 6, 20);
-  const heightBased = doubleLine
-    ? (availableHeight - effectiveGap) / DESKTOP_LYRIC_DOUBLE_LINE_HEIGHT_FACTOR
-    : availableHeight / DESKTOP_LYRIC_SINGLE_LINE_HEIGHT_FACTOR;
-  const widthBased = doubleLine
-    ? availableWidth / DESKTOP_LYRIC_DOUBLE_LINE_WIDTH_SOFT_CAP
-    : availableWidth / DESKTOP_LYRIC_SINGLE_LINE_WIDTH_SOFT_CAP;
-
-  return clamp(snapEven(Math.min(heightBased, widthBased)), 12, 80);
-};
-
-const deriveMinimumWindowSizeFromFont = (
-  fontSize: number,
-  doubleLine: boolean,
-  lineGap: number,
-) => {
-  const effectiveFontSize = clamp(snapEven(fontSize), 12, 80);
-  const effectiveGap = clamp(lineGap, 6, 20);
-  const minHeight = clamp(
-    Math.ceil(
-      DESKTOP_LYRIC_VERTICAL_PADDING +
-        (doubleLine
-          ? effectiveFontSize * DESKTOP_LYRIC_DOUBLE_LINE_HEIGHT_FACTOR + effectiveGap * 0.2
-          : effectiveFontSize * DESKTOP_LYRIC_SINGLE_LINE_HEIGHT_FACTOR),
-    ),
-    DESKTOP_LYRIC_MIN_HEIGHT,
-    DESKTOP_LYRIC_MAX_HEIGHT,
-  );
-
-  return {
-    width: DESKTOP_LYRIC_MIN_WIDTH,
-    height: minHeight,
-  };
-};
 
 function getDesktopLyricSettings(): DesktopLyricSettings {
   const raw = settingsStore.store;
@@ -176,19 +121,8 @@ function getDesktopLyricSettings(): DesktopLyricSettings {
       4,
       28,
     ),
-    width: clamp(
-      Math.round(Number(raw.width) || DEFAULT_DESKTOP_LYRIC_SETTINGS.width),
-      DESKTOP_LYRIC_MIN_WIDTH,
-      DESKTOP_LYRIC_MAX_WIDTH,
-    ),
-    height: clamp(
-      Math.round(Number(raw.height) || DEFAULT_DESKTOP_LYRIC_SETTINGS.height),
-      DESKTOP_LYRIC_MIN_HEIGHT,
-      DESKTOP_LYRIC_MAX_HEIGHT,
-    ),
     secondaryMode: raw.secondaryMode ?? 'none',
-    alignment: raw.alignment ?? 'center',
-    fontSize: clamp(Math.round(Number(raw.fontSize) || 30), 12, 80),
+    alignment: raw.alignment ?? 'both',
     doubleLine: typeof raw.doubleLine === 'boolean' ? raw.doubleLine : true,
     playedColor: String(raw.playedColor || '#31cfa1'),
     unplayedColor: String(raw.unplayedColor || '#7a7a7a'),
@@ -202,12 +136,12 @@ const getWindowState = (): DesktopLyricWindowState => {
   const state = settingsStore.get('windowState', DEFAULT_DESKTOP_LYRIC_SETTINGS.windowState);
   return {
     width: clamp(
-      Math.round(Number(state.width) || DEFAULT_DESKTOP_LYRIC_SETTINGS.width),
+      Math.round(Number(state.width) || DEFAULT_DESKTOP_LYRIC_SETTINGS.windowState.width),
       DESKTOP_LYRIC_MIN_WIDTH,
       DESKTOP_LYRIC_MAX_WIDTH,
     ),
     height: clamp(
-      Math.round(Number(state.height) || DEFAULT_DESKTOP_LYRIC_SETTINGS.height),
+      Math.round(Number(state.height) || DEFAULT_DESKTOP_LYRIC_SETTINGS.windowState.height),
       DESKTOP_LYRIC_MIN_HEIGHT,
       DESKTOP_LYRIC_MAX_HEIGHT,
     ),
@@ -328,8 +262,12 @@ let snapshot: DesktopLyricSnapshot = {
 
 const sendSnapshot = () => {
   BrowserWindow.getAllWindows().forEach((win) => {
-    if (win.isDestroyed()) return;
-    win.webContents.send('desktop-lyric:snapshot', snapshot);
+    try {
+      if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+      win.webContents.send('desktop-lyric:snapshot', snapshot);
+    } catch {
+      // 窗口或渲染帧在发送过程中被销毁，忽略
+    }
   });
 };
 
@@ -523,9 +461,11 @@ const applyResizeBounds = (
 
 const applyDragBounds = (session: DesktopLyricDragSession, screenX: number, screenY: number) => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  const deltaX = screenX - session.startScreenX;
+  const deltaY = screenY - session.startScreenY;
   desktopLyricWindow.setBounds({
-    x: Math.round(screenX),
-    y: Math.round(screenY),
+    x: Math.round(session.startBounds.x + deltaX),
+    y: Math.round(session.startBounds.y + deltaY),
     width: session.startBounds.width,
     height: session.startBounds.height,
   });
@@ -739,36 +679,6 @@ const sanitizeDesktopLyricSettings = (
     ...partial,
   };
 
-  const minSize = deriveMinimumWindowSizeFromFont(
-    Number(mergedBase.fontSize) || current.fontSize,
-    Boolean(mergedBase.doubleLine),
-    Number(mergedBase.lineGap) || current.lineGap,
-  );
-
-  const width = clamp(
-    Math.round(Number(mergedBase.width) || current.width),
-    minSize.width,
-    DESKTOP_LYRIC_MAX_WIDTH,
-  );
-  const height = clamp(
-    Math.round(Number(mergedBase.height) || current.height),
-    minSize.height,
-    DESKTOP_LYRIC_MAX_HEIGHT,
-  );
-
-  const fontSizeFromWindow = deriveFontSizeFromWindow(
-    width,
-    height,
-    Boolean(mergedBase.doubleLine),
-    Number(mergedBase.lineGap) || current.lineGap,
-  );
-  const requestedFontSize = Math.round(Number(mergedBase.fontSize) || current.fontSize);
-  const fontSize = clamp(
-    partial.fontSize === undefined ? fontSizeFromWindow : requestedFontSize,
-    12,
-    80,
-  );
-
   return {
     enabled: Boolean(mergedBase.enabled),
     locked: Boolean(mergedBase.locked),
@@ -796,11 +706,8 @@ const sanitizeDesktopLyricSettings = (
       36,
     ),
     lineGap: clamp(Math.round(Number(mergedBase.lineGap) || current.lineGap), 4, 28),
-    width,
-    height,
     secondaryMode: mergedBase.secondaryMode ?? current.secondaryMode,
     alignment: mergedBase.alignment ?? current.alignment,
-    fontSize,
     doubleLine: Boolean(mergedBase.doubleLine),
     playedColor: String(mergedBase.playedColor || current.playedColor),
     unplayedColor: String(mergedBase.unplayedColor || current.unplayedColor),
@@ -834,11 +741,8 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
     activeFontSize: nextSettings.activeFontSize,
     secondaryFontSize: nextSettings.secondaryFontSize,
     lineGap: nextSettings.lineGap,
-    width: nextSettings.width,
-    height: nextSettings.height,
     secondaryMode: nextSettings.secondaryMode,
     alignment: nextSettings.alignment,
-    fontSize: nextSettings.fontSize,
     doubleLine: nextSettings.doubleLine,
     playedColor: nextSettings.playedColor,
     unplayedColor: nextSettings.unplayedColor,
@@ -848,31 +752,20 @@ export const updateDesktopLyricSettings = async (partial: Partial<DesktopLyricSe
   });
 
   const storedWindowState = getWindowState();
+  // 用当前窗口实际 bounds，不用 settings 中的 width/height 覆盖
+  const currentBounds =
+    desktopLyricWindow && !desktopLyricWindow.isDestroyed() ? desktopLyricWindow.getBounds() : null;
   const nextWindowState = constrainBoundsToDisplay({
-    width: nextSettings.width,
-    height: nextSettings.height,
-    x: storedWindowState.x,
-    y: storedWindowState.y,
+    width: currentBounds?.width ?? storedWindowState.width,
+    height: currentBounds?.height ?? storedWindowState.height,
+    x: currentBounds?.x ?? storedWindowState.x,
+    y: currentBounds?.y ?? storedWindowState.y,
   });
   settingsStore.set('windowState', nextWindowState);
 
   if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
     desktopLyricWindow.setMinimumSize(DESKTOP_LYRIC_MIN_WIDTH, DESKTOP_LYRIC_MIN_HEIGHT);
     desktopLyricWindow.setMaximumSize(DESKTOP_LYRIC_MAX_WIDTH, DESKTOP_LYRIC_MAX_HEIGHT);
-    const bounds = desktopLyricWindow.getBounds();
-    const shouldResize =
-      bounds.width !== nextWindowState.width ||
-      bounds.height !== nextWindowState.height ||
-      bounds.x !== (nextWindowState.x ?? bounds.x) ||
-      bounds.y !== (nextWindowState.y ?? bounds.y);
-    if (shouldResize) {
-      desktopLyricWindow.setBounds({
-        x: nextWindowState.x ?? bounds.x,
-        y: nextWindowState.y ?? bounds.y,
-        width: nextWindowState.width,
-        height: nextWindowState.height,
-      });
-    }
     syncWindowPresentation();
 
     if (nextSettings.enabled) {
