@@ -1,5 +1,11 @@
 import { defineStore } from 'pinia';
-import { claimDayVip, getServerNow, getUserDetail, getUserVipDetail, upgradeDayVip } from '@/api/user';
+import {
+  claimDayVip,
+  getServerNow,
+  getUserDetail,
+  getUserVipDetail,
+  upgradeDayVip,
+} from '@/api/user';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';

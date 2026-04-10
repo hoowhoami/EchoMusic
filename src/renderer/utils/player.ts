@@ -1,4 +1,3 @@
-import { Howl } from 'howler';
 import logger from './logger';
 
 export interface PlayerEngineEvents {
@@ -29,7 +28,10 @@ const clamp = (value: number, min: number, max: number): number => {
 };
 
 export class PlayerEngine {
-  private howl: Howl | null;
+  private audio: HTMLAudioElement | null;
+  private audioCtx: AudioContext | null;
+  private gainNode: GainNode | null;
+  private sourceNode: MediaElementAudioSourceNode | null;
   private events: PlayerEngineEvents;
   private sourceUrl: string;
   private volumeValue: number;
@@ -43,7 +45,10 @@ export class PlayerEngine {
   private fadeSeq: number;
 
   constructor() {
-    this.howl = null;
+    this.audio = null;
+    this.audioCtx = null;
+    this.gainNode = null;
+    this.sourceNode = null;
     this.events = {};
     this.sourceUrl = '';
     this.volumeValue = 1;
@@ -55,6 +60,35 @@ export class PlayerEngine {
     this.fadeTimer = null;
     this.pendingFadeResolve = null;
     this.fadeSeq = 0;
+  }
+
+  // 初始化 Web Audio API 上下文和 GainNode
+  private ensureAudioContext(): void {
+    if (this.audioCtx) return;
+    this.audioCtx = new AudioContext();
+    this.gainNode = this.audioCtx.createGain();
+    this.gainNode.gain.value = this.volumeValue;
+    this.gainNode.connect(this.audioCtx.destination);
+  }
+
+  // 将 audio 元素连接到 Web Audio API
+  private connectAudioNode(): void {
+    if (!this.audio || !this.audioCtx || !this.gainNode) return;
+    // 断开旧连接
+    if (this.sourceNode) {
+      try {
+        this.sourceNode.disconnect();
+      } catch {
+        // 忽略
+      }
+      this.sourceNode = null;
+    }
+    try {
+      this.sourceNode = this.audioCtx.createMediaElementSource(this.audio);
+      this.sourceNode.connect(this.gainNode);
+    } catch (e) {
+      logger.warn('PlayerEngine', '连接 AudioContext 失败', e);
+    }
   }
 
   private emitDurationChange(): void {
@@ -97,44 +131,22 @@ export class PlayerEngine {
     this.events.error?.(errorEvent);
   }
 
-  private getAudioNode(): HTMLAudioElement | null {
-    const sound = (this.howl as unknown as { _sounds?: Array<{ _node?: HTMLAudioElement }> } | null)
-      ?._sounds?.[0];
-    const node = sound?._node;
-    return node instanceof HTMLAudioElement ? node : null;
-  }
-
-  private async applySinkId(node?: HTMLAudioElement | null): Promise<boolean> {
-    const targetNode = node ?? this.getAudioNode();
-    if (!targetNode) {
-      logger.debug('PlayerEngine', 'Skip applySinkId because audio node is not ready yet', {
-        preferredSinkId: this.preferredSinkId,
-      });
-      return true;
-    }
-
+  private async applySinkId(): Promise<boolean> {
+    if (!this.audio) return true;
     const nextSinkId = this.preferredSinkId || 'default';
-    const mediaNode = targetNode as HTMLAudioElement & {
+    const mediaNode = this.audio as HTMLAudioElement & {
       setSinkId?: (sinkId: string) => Promise<void>;
     };
     if (typeof mediaNode.setSinkId !== 'function') {
-      logger.warn('PlayerEngine', 'setSinkId is not supported by current media element', {
-        requestedDeviceId: nextSinkId,
-      });
+      logger.warn('PlayerEngine', 'setSinkId 不支持', { requestedDeviceId: nextSinkId });
       return nextSinkId === 'default';
     }
-
     try {
       await mediaNode.setSinkId(nextSinkId);
-      logger.info('PlayerEngine', 'setSinkId applied successfully', {
-        requestedDeviceId: nextSinkId,
-      });
+      logger.info('PlayerEngine', 'setSinkId 成功', { requestedDeviceId: nextSinkId });
       return true;
     } catch (error) {
-      logger.warn('PlayerEngine', 'setSinkId failed', {
-        requestedDeviceId: nextSinkId,
-        error,
-      });
+      logger.warn('PlayerEngine', 'setSinkId 失败', { requestedDeviceId: nextSinkId, error });
       return false;
     }
   }
@@ -144,6 +156,15 @@ export class PlayerEngine {
       window.clearTimeout(this.fadeTimer);
       this.fadeTimer = null;
     }
+    // 取消 GainNode 上的调度
+    if (this.gainNode && this.audioCtx) {
+      try {
+        this.gainNode.gain.cancelScheduledValues(this.audioCtx.currentTime);
+        this.gainNode.gain.value = this.volumeValue;
+      } catch {
+        // 忽略
+      }
+    }
     if (this.pendingFadeResolve) {
       const resolve = this.pendingFadeResolve;
       this.pendingFadeResolve = null;
@@ -151,52 +172,68 @@ export class PlayerEngine {
     }
   }
 
-  private cleanupHowl(): void {
+  private cleanup(): void {
     this.stopTimeUpdates();
     this.cancelPendingFade();
-    if (!this.howl) return;
-    const currentHowl = this.howl;
-    this.howl = null;
-    currentHowl.stop();
-    currentHowl.off();
-    currentHowl.unload();
+    if (!this.audio) return;
+    const el = this.audio;
+    this.audio = null;
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
+    // 断开 Web Audio 连接
+    if (this.sourceNode) {
+      try {
+        this.sourceNode.disconnect();
+      } catch {
+        /* 忽略 */
+      }
+      this.sourceNode = null;
+    }
   }
 
-  private buildHowl(url: string): void {
-    this.cleanupHowl();
-    this.howl = new Howl({
-      src: [url],
-      html5: true,
-      volume: this.volumeValue,
-      rate: this.playbackRateValue,
-      onload: () => {
-        this.emitDurationChange();
-        void this.applySinkId();
-      },
-      onplay: () => {
-        void this.applySinkId();
-        this.events.play?.();
-        this.startTimeUpdates();
-      },
-      onpause: () => {
-        this.events.pause?.();
-        this.stopTimeUpdates();
-      },
-      onstop: () => {
-        this.events.pause?.();
-        this.stopTimeUpdates();
-      },
-      onend: () => {
-        this.stopTimeUpdates();
-        this.events.ended?.();
-      },
-      onloaderror: (_id, error) => {
-        this.handleError(error);
-      },
-      onplayerror: (_id, error) => {
-        this.handleError(error);
-      },
+  private buildAudio(url: string): void {
+    this.cleanup();
+    this.ensureAudioContext();
+
+    const el = new Audio();
+    el.crossOrigin = 'anonymous';
+    el.preload = 'auto';
+    el.volume = 1; // 音量由 GainNode 控制
+    this.audio = el;
+
+    // 连接到 Web Audio API
+    this.connectAudioNode();
+
+    el.addEventListener('loadedmetadata', () => {
+      this.emitDurationChange();
+      void this.applySinkId();
     });
+    el.addEventListener('canplay', () => {
+      this.emitDurationChange();
+    });
+    el.addEventListener('play', () => {
+      // 确保 AudioContext 处于运行状态
+      if (this.audioCtx?.state === 'suspended') {
+        void this.audioCtx.resume();
+      }
+      this.events.play?.();
+      this.startTimeUpdates();
+    });
+    el.addEventListener('pause', () => {
+      this.events.pause?.();
+      this.stopTimeUpdates();
+    });
+    el.addEventListener('ended', () => {
+      this.stopTimeUpdates();
+      this.events.ended?.();
+    });
+    el.addEventListener('error', () => {
+      this.handleError(el.error);
+    });
+
+    el.src = url;
+    el.load();
   }
 
   setEvents(events: PlayerEngineEvents): void {
@@ -206,39 +243,59 @@ export class PlayerEngine {
   setVolume(value: number): number {
     const next = clamp(value, 0, 1);
     this.volumeValue = next;
-    this.howl?.volume(next);
+    if (this.gainNode) {
+      this.gainNode.gain.value = next;
+    }
     return next;
+  }
+
+  // 参考 SPlayer：Web Audio API 原生淡入淡出
+  private applyFadeTo(targetValue: number, durationSec: number): void {
+    if (!this.gainNode || !this.audioCtx) return;
+    const currentTime = this.audioCtx.currentTime;
+    const currentValue = this.gainNode.gain.value;
+    this.gainNode.gain.cancelScheduledValues(currentTime);
+    this.gainNode.gain.setValueAtTime(currentValue, currentTime);
+    if (durationSec <= 0) {
+      const safeTime = currentTime + 0.02;
+      this.gainNode.gain.linearRampToValueAtTime(targetValue, safeTime);
+      return;
+    }
+    const safeStart = currentTime + 0.02;
+    this.gainNode.gain.setValueAtTime(currentValue, safeStart);
+    this.gainNode.gain.linearRampToValueAtTime(targetValue, safeStart + durationSec);
   }
 
   fadeTo(value: number, durationMs = 0): Promise<void> {
     const next = clamp(value, 0, 1);
     this.cancelPendingFade();
-    if (!this.howl || durationMs <= 0) {
+    if (!this.gainNode || !this.audioCtx || durationMs <= 0) {
       this.setVolume(next);
       return Promise.resolve();
     }
 
-    const from = this.volumeValue;
     const fadeSeq = ++this.fadeSeq;
-    this.howl.fade(from, next, durationMs);
+    this.applyFadeTo(next, durationMs / 1000);
+    this.volumeValue = next;
 
     return new Promise((resolve) => {
       this.pendingFadeResolve = resolve;
       this.fadeTimer = window.setTimeout(() => {
-        if (fadeSeq === this.fadeSeq) {
-          this.volumeValue = next;
+        if (fadeSeq === this.fadeSeq && this.gainNode) {
+          this.gainNode.gain.cancelScheduledValues(0);
+          this.gainNode.gain.value = next;
         }
         this.fadeTimer = null;
         this.pendingFadeResolve = null;
         resolve();
-      }, durationMs);
+      }, durationMs + 50);
     });
   }
 
   setPlaybackRate(rate: number): number {
     const next = clamp(rate, 0.5, 2);
     this.playbackRateValue = next;
-    this.howl?.rate(next);
+    if (this.audio) this.audio.playbackRate = next;
     return next;
   }
 
@@ -253,7 +310,7 @@ export class PlayerEngine {
         artwork: meta.artwork ?? [],
       });
     } catch {
-      // ignore MediaMetadata errors
+      // 忽略
     }
   }
 
@@ -269,7 +326,7 @@ export class PlayerEngine {
           position: state.currentTime || 0,
         });
       } catch {
-        // ignore unsupported browsers
+        // 忽略
       }
     }
   }
@@ -309,39 +366,61 @@ export class PlayerEngine {
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
-    this.buildHowl(url);
+    this.buildAudio(url);
   }
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
     this.preferredSinkId = deviceId || 'default';
-    logger.info('PlayerEngine', 'Set preferred output device', {
-      requestedDeviceId: this.preferredSinkId,
-    });
+    logger.info('PlayerEngine', '设置输出设备', { requestedDeviceId: this.preferredSinkId });
     return this.applySinkId();
   }
 
-  async play(): Promise<void> {
-    if (!this.howl) return;
+  async play(options?: { fadeIn?: boolean; fadeDurationMs?: number }): Promise<void> {
+    if (!this.audio) return;
+    if (this.audioCtx?.state === 'suspended') {
+      await this.audioCtx.resume();
+    }
+    const durationSec = options?.fadeIn ? (options.fadeDurationMs ?? 500) / 1000 : 0;
+    // 淡入：先静音
+    if (durationSec > 0 && this.gainNode && this.audioCtx) {
+      this.gainNode.gain.cancelScheduledValues(0);
+      this.gainNode.gain.value = 0;
+    }
     try {
-      this.howl.play();
+      await this.audio.play();
+      // 播放开始后再设置淡入 ramp
+      if (durationSec > 0) {
+        this.applyFadeTo(this.volumeValue, durationSec);
+      }
     } catch (error) {
       this.handleError(error);
       throw error;
     }
   }
 
-  pause(): void {
-    this.howl?.pause();
+  async pause(options?: { fadeOut?: boolean; fadeDurationMs?: number }): Promise<void> {
+    if (!this.audio) return;
+    const durationMs = options?.fadeOut ? (options.fadeDurationMs ?? 500) : 0;
+    if (durationMs > 0 && this.gainNode && this.audioCtx) {
+      this.applyFadeTo(0, durationMs / 1000);
+      await new Promise((resolve) => setTimeout(resolve, durationMs));
+    }
+    this.audio.pause();
+    // 恢复 gain 值
+    if (this.gainNode) {
+      this.gainNode.gain.cancelScheduledValues(0);
+      this.gainNode.gain.value = this.volumeValue;
+    }
   }
 
   seek(time: number): void {
-    if (!this.howl) return;
-    this.howl.seek(time);
+    if (!this.audio) return;
+    this.audio.currentTime = time;
     this.emitTimeUpdate();
   }
 
   reset(): void {
-    this.cleanupHowl();
+    this.cleanup();
     this.sourceUrl = '';
     this.durationValue = 0;
     this.lastTimeValue = -1;
@@ -354,14 +433,14 @@ export class PlayerEngine {
   }
 
   get currentTime(): number {
-    if (!this.howl) return 0;
-    const value = this.howl.seek();
-    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    if (!this.audio) return 0;
+    const value = this.audio.currentTime;
+    return Number.isFinite(value) ? value : 0;
   }
 
   get duration(): number {
-    if (!this.howl) return 0;
-    const value = this.howl.duration();
+    if (!this.audio) return 0;
+    const value = this.audio.duration;
     return Number.isFinite(value) ? value : 0;
   }
 

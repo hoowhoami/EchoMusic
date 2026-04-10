@@ -92,7 +92,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
-        run: pnpm exec vue-tsc --noEmit && pnpm exec vite build && pnpm exec electron-builder --publish never
+        run: |
+          pnpm exec vue-tsc --noEmit && pnpm exec vite build
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            pnpm exec electron-builder --mac --x64 --arm64 --publish never
+          else
+            pnpm exec electron-builder --publish never
+          fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

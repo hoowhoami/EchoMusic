@@ -707,7 +707,7 @@ onBeforeUnmount(() => {
   pointer-events: auto;
 }
 .menu-btn.lock-btn svg {
-  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8));
+  filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
 }
 .menu-btn:hover {
   background-color: rgba(255, 255, 255, 0.3);
@@ -860,6 +860,7 @@ onBeforeUnmount(() => {
 }
 .desktop-lyric.locked.hovered .lock-btn {
   opacity: 1;
+  background-color: rgba(0, 0, 0, 0.45);
 }
 </style>
 

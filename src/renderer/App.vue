@@ -80,8 +80,10 @@ onMounted(() => {
   }
   updateTheme();
   settings.syncTheme();
-  settings.syncCloseBehavior();
-  settings.syncRememberWindowSize();
+  if (!isDesktopLyricWindow()) {
+    settings.syncCloseBehavior();
+    settings.syncRememberWindowSize();
+  }
   if (!isDesktopLyricWindow()) {
     settings.syncPreventSleep(player.isPlaying);
   }

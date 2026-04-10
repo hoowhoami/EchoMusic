@@ -250,6 +250,12 @@ let desktopLyricForwardRestoreTimer: NodeJS.Timeout | null = null;
 
 app.on('before-quit', () => {
   desktopLyricAppIsQuitting = true;
+  // 确保桌面歌词窗口被销毁
+  if (desktopLyricWindow && !desktopLyricWindow.isDestroyed()) {
+    const win = desktopLyricWindow;
+    desktopLyricWindow = null;
+    win.destroy();
+  }
 });
 
 let snapshot: DesktopLyricSnapshot = {
@@ -670,6 +676,18 @@ export const closeDesktopLyricWindow = () => {
   desktopLyricWindow.close();
 };
 
+export const destroyDesktopLyricWindow = () => {
+  if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
+  clearDesktopLyricDisplayMetricsTimer();
+  clearDesktopLyricLockPhaseTimer();
+  unbindMainWindowEvents();
+  desktopLyricResizeSession = null;
+  desktopLyricDragSession = null;
+  const win = desktopLyricWindow;
+  desktopLyricWindow = null;
+  win.destroy();
+};
+
 const sanitizeDesktopLyricSettings = (
   partial: Partial<DesktopLyricSettings>,
   current: DesktopLyricSettings,
@@ -851,7 +869,6 @@ export const registerDesktopLyricHandlers = () => {
       desktopLyricWindow.setIgnoreMouseEvents(false);
     }
   });
-
 
   ipcMain.on(
     'desktop-lyric:set-option',

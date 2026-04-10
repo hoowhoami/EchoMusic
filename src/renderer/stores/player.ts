@@ -782,7 +782,7 @@ export const usePlayerStore = defineStore('player', {
       }
 
       if (this.isPlaying) {
-        engine.pause();
+        await engine.pause();
         return;
       }
 
@@ -941,8 +941,8 @@ export const usePlayerStore = defineStore('player', {
       const wasPlaying = autoPlay ? this.isPlaying : false;
 
       if (wasPlaying && settingStore.volumeFade) {
-        const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1000);
-        await this.fadeVolume(0, { durationMs: fadeMs, respectUserVolume: true });
+        const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
+        await engine.pause({ fadeOut: true, fadeDurationMs: fadeMs });
       }
 
       if (requestSeq !== this.playbackRequestSeq) {
@@ -955,7 +955,6 @@ export const usePlayerStore = defineStore('player', {
       }
 
       engine.reset();
-      engine.setVolume(this.volume);
       engine.setPlaybackRate(this.playbackRate);
 
       this.currentTrackId = resolvedId;
@@ -1047,7 +1046,12 @@ export const usePlayerStore = defineStore('player', {
 
       try {
         if (autoPlay) {
-          await engine.play();
+          if (settingStore.volumeFade) {
+            const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
+            await engine.play({ fadeIn: true, fadeDurationMs: fadeMs });
+          } else {
+            await engine.play();
+          }
         }
         if (requestSeq !== this.playbackRequestSeq) {
           logger.info('PlayerStore', 'Ignore stale playTrack after engine.play', {
@@ -1067,9 +1071,8 @@ export const usePlayerStore = defineStore('player', {
         this.autoNextAttempts = 0;
         this.autoNextSourceTrackId = String(track.id);
         this.clearAutoNextTimer();
-        if (autoPlay && settingStore.volumeFade) {
-          this.fadeIn();
-        } else {
+        // 非淡入模式才直接设音量（淡入时由 engine 内部处理）
+        if (!autoPlay || !settingStore.volumeFade) {
           engine.setVolume(this.volume);
         }
         if (!autoPlay) {
@@ -1101,8 +1104,6 @@ export const usePlayerStore = defineStore('player', {
         this.applyFailedPlaybackState({ keepResolvedSource: true });
 
         if (settingStore.volumeFade) {
-          engine.setVolume(this.volume);
-        } else {
           engine.setVolume(this.volume);
         }
 
@@ -2012,29 +2013,6 @@ export const usePlayerStore = defineStore('player', {
         }
         logger.warn('PlayerStore', 'Fetch climax marks failed:', error);
       }
-    },
-
-    prepareFadeOut() {
-      if (!this.isPlaying) return;
-      const settingStore = useSettingStore();
-      if (!settingStore.volumeFade) return;
-      const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1000);
-      logger.debug('PlayerStore', 'Prepare fade out before stop or switch', {
-        currentTrackId: this.currentTrackId,
-        durationMs: fadeMs,
-      });
-      void this.fadeVolume(0, { durationMs: fadeMs, respectUserVolume: true });
-    },
-
-    fadeIn() {
-      const settingStore = useSettingStore();
-      if (!settingStore.volumeFade) return;
-      const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1200);
-      logger.debug('PlayerStore', 'Fade in playback volume', {
-        targetVolume: this.volume,
-        durationMs: fadeMs,
-      });
-      void this.fadeVolume(this.volume, { durationMs: fadeMs, respectUserVolume: false });
     },
 
     fadeVolume(

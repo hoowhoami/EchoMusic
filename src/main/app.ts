@@ -1,9 +1,10 @@
-import { app, globalShortcut } from 'electron';
+import { app, BrowserWindow, globalShortcut } from 'electron';
 import { initLogger } from './logger';
 import { startApiServer, stopApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
+import { getDesktopLyricWindow } from './desktopLyric';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -78,9 +79,26 @@ if (!gotTheLock) {
     }
   });
 
-  app.on('before-quit', () => {
+  let isExiting = false;
+
+  app.on('before-quit', (event) => {
+    if (isExiting) return;
+    isExiting = true;
+    event.preventDefault();
     globalShortcut.unregisterAll();
     destroyTray();
     stopApiServer();
+    // 销毁桌面歌词窗口
+    try {
+      const lyricWin = getDesktopLyricWindow();
+      if (lyricWin && !lyricWin.isDestroyed()) lyricWin.destroy();
+    } catch {
+      // 忽略
+    }
+    // 销毁所有剩余窗口
+    BrowserWindow.getAllWindows().forEach((w) => {
+      if (!w.isDestroyed()) w.destroy();
+    });
+    app.exit(0);
   });
 }
