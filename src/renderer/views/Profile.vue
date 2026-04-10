@@ -119,11 +119,11 @@ const handleClaimTvip = async () => {
   if (userStore.isTvipClaimedToday) return;
   isLoading.value = true;
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = await userStore.getServerToday();
     const res = (await claimDayVip(today)) as VipActionResponse;
     if (res.status === 1) {
       userStore.setClaimStatus(true, userStore.isSvipClaimedToday);
-      await loadData(); // 刷新
+      await loadData();
     }
   } catch (e) {
     logger.error('Profile', 'Claim TVIP error:', e);

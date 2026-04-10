@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { claimDayVip, getUserDetail, getUserVipDetail, upgradeDayVip } from '@/api/user';
+import { claimDayVip, getServerNow, getUserDetail, getUserVipDetail, upgradeDayVip } from '@/api/user';
 import type { User, UserExtendsInfo } from '@/models/user';
 import { mapUser } from '@/utils/mappers';
 import logger from '@/utils/logger';
@@ -190,7 +190,8 @@ export const useUserStore = defineStore('user', {
       this.isAutoClaimingVip = true;
 
       try {
-        const today = new Date().toISOString().split('T')[0];
+        // 使用服务器时间获取日期，避免本地时区导致日期不一致
+        const today = await this.getServerToday();
 
         // 尝试领取
         try {
@@ -232,6 +233,44 @@ export const useUserStore = defineStore('user', {
       this.isTvipClaimedToday = false;
       this.isSvipClaimedToday = false;
       this.isAutoClaimingVip = false;
+    },
+
+    async getServerToday(): Promise<string> {
+      try {
+        const res = await getServerNow();
+        if (res && typeof res === 'object') {
+          const record = res as Record<string, unknown>;
+          const source = (
+            record.data && typeof record.data === 'object' ? record.data : record
+          ) as Record<string, unknown>;
+          const candidates = [
+            source.now,
+            source.time,
+            source.timestamp,
+            source.server_time,
+            source.serverTime,
+          ];
+          for (const candidate of candidates) {
+            const value = Number(candidate);
+            if (Number.isFinite(value) && value > 0) {
+              // 服务器返回的是秒级或毫秒级时间戳
+              const ms = value > 1e12 ? value : value * 1000;
+              // 使用北京时间（UTC+8）格式化日期
+              const date = new Date(ms);
+              const offset = 8 * 60;
+              const local = new Date(date.getTime() + offset * 60 * 1000);
+              return local.toISOString().split('T')[0];
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn('UserStore', 'Failed to get server time, using local time', e);
+      }
+      // 兜底：使用本地时间（北京时间）
+      const now = new Date();
+      const offset = 8 * 60;
+      const local = new Date(now.getTime() + offset * 60 * 1000);
+      return local.toISOString().split('T')[0];
     },
   },
   persist: {
