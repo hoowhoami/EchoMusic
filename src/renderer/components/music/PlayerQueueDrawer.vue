@@ -494,10 +494,10 @@ const handleClear = () => {
 .queue-leading {
   position: relative;
   width: 40px;
-  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .queue-index {
@@ -509,11 +509,14 @@ const handleClear = () => {
 
 .queue-play {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 6px;
   background: transparent;
   color: var(--color-text-main);
   opacity: 0;
@@ -533,7 +536,7 @@ const handleClear = () => {
 }
 
 .queue-play:hover {
-  transform: scale(1.1);
+  transform: translate(-50%, -50%) scale(1.1);
   color: var(--color-primary);
 }
 
