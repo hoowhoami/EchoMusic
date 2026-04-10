@@ -348,14 +348,24 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     async fetchUserPlaylists() {
       try {
-        const res = await getUserPlaylists();
-        if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+        const PAGE_SIZE = 30;
+        let page = 1;
+        let allPlaylists: PlaylistMeta[] = [];
+        // 分页获取所有歌单
+        while (true) {
+          const res = await getUserPlaylists(page, PAGE_SIZE);
+          if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) break;
           const data = 'data' in res ? (res as { data?: { info?: unknown } }).data : undefined;
           const info = 'info' in res ? (res as { info?: unknown }).info : undefined;
           const raw = data?.info ?? info ?? [];
-          this.userPlaylists = Array.isArray(raw) ? raw.map((item) => mapPlaylistMeta(item)) : [];
-          await this.fetchLikedPlaylistSongs();
+          if (!Array.isArray(raw) || raw.length === 0) break;
+          allPlaylists = allPlaylists.concat(raw.map((item) => mapPlaylistMeta(item)));
+          // 不足一页说明已经是最后一页
+          if (raw.length < PAGE_SIZE) break;
+          page++;
         }
+        this.userPlaylists = allPlaylists;
+        await this.fetchLikedPlaylistSongs();
       } catch (e) {
         logger.error('PlaylistStore', 'Fetch user playlists error:', e);
       }
