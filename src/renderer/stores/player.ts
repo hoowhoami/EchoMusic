@@ -942,8 +942,7 @@ export const usePlayerStore = defineStore('player', {
 
       if (wasPlaying && settingStore.volumeFade) {
         const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1000);
-        const transitionFadeMs = Math.min(fadeMs, 220);
-        await this.fadeVolume(0, { durationMs: transitionFadeMs, respectUserVolume: true });
+        await this.fadeVolume(0, { durationMs: fadeMs, respectUserVolume: true });
       }
 
       if (requestSeq !== this.playbackRequestSeq) {
@@ -2031,12 +2030,11 @@ export const usePlayerStore = defineStore('player', {
       const settingStore = useSettingStore();
       if (!settingStore.volumeFade) return;
       const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 120, 1200);
-      const transitionFadeMs = Math.min(fadeMs, 220);
       logger.debug('PlayerStore', 'Fade in playback volume', {
         targetVolume: this.volume,
-        durationMs: transitionFadeMs,
+        durationMs: fadeMs,
       });
-      void this.fadeVolume(this.volume, { durationMs: transitionFadeMs, respectUserVolume: false });
+      void this.fadeVolume(this.volume, { durationMs: fadeMs, respectUserVolume: false });
     },
 
     fadeVolume(

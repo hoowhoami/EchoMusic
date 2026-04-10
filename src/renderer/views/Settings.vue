@@ -571,7 +571,7 @@ onUnmounted(() => {
           <Slider
             class="w-48"
             :model-value="settingStore.volumeFadeTime"
-            :min="100"
+            :min="500"
             :max="3000"
             :step="100"
             show-value
