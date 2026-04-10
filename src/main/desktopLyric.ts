@@ -237,7 +237,7 @@ const resolveInitialBounds = () => {
 const getBackgroundColor = () => '#00000000';
 
 let desktopLyricWindow: BrowserWindow | null = null;
-// 独立的锁定状态（复刻 SPlayer，不与 clickThrough 耦合）
+// 独立的锁定状态
 let desktopLyricIsLocked = false;
 let desktopLyricResizeSession: DesktopLyricResizeSession | null = null;
 let desktopLyricDragSession: DesktopLyricDragSession | null = null;
@@ -293,7 +293,7 @@ const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = f
   }, DESKTOP_LYRIC_LOCK_PHASE_DURATION_MS);
 };
 
-// 保存窗口位置（复刻 SPlayer：只保存，不算字体，不广播）
+// 保存窗口位置
 const persistWindowBounds = () => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   const bounds = desktopLyricWindow.getBounds();
@@ -830,7 +830,6 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  // SPlayer 风格：单向推送，不等待返回
   ipcMain.on('desktop-lyric:sync-snapshot', (_event, payload: DesktopLyricSnapshotPatch) => {
     if (!payload) return;
     // 只更新内存中的 snapshot，不走 updateDesktopLyricSettings
@@ -853,7 +852,7 @@ export const registerDesktopLyricHandlers = () => {
     }
   });
 
-  // 复刻 SPlayer 的 desktop-lyric:set-option：只保存配置，不动窗口
+
   ipcMain.on(
     'desktop-lyric:set-option',
     (_event, option: Record<string, any>, callback?: boolean) => {
@@ -874,14 +873,13 @@ export const registerDesktopLyricHandlers = () => {
     },
   );
 
-  // SPlayer 风格的锁定/解锁（支持 temp 临时切换）
   ipcMain.on(
     'desktop-lyric:toggle-lock-sync',
     (_event, payload: { lock: boolean; temp?: boolean }) => {
       if (!payload) return;
       const { lock, temp } = payload;
 
-      // 更新锁定状态（非临时时才更新）
+      // 更新锁定状态
       if (!temp) desktopLyricIsLocked = lock;
 
       // 设置穿透
@@ -894,7 +892,6 @@ export const registerDesktopLyricHandlers = () => {
       }
 
       if (temp) return;
-      // 只更新 snapshot 和持久化，不动窗口（复刻 SPlayer）
       snapshot = { ...snapshot, settings: { ...snapshot.settings, locked: lock } };
       settingsStore.set('locked', lock);
       sendSnapshot();

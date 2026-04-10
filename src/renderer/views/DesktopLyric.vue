@@ -125,8 +125,6 @@ const getLineTop = (index: number) => {
   return `${localFontSize.value * 1.9}px`;
 };
 
-// ── 渲染行（复刻 SPlayer 的 renderLyricLines） ──
-
 const renderLyricLines = computed<RenderLine[]>(() => {
   if (!snapshot.value) return [];
   const lines = lyrics.value;
@@ -134,7 +132,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   // 无歌词
   if (!lines.length) {
     if (!songName.value) return placeholder('EchoMusic Desktop Lyric');
-    return placeholder('纯音乐，请欣赏');
+    return placeholder('EchoMusic - 听你想听');
   }
   // 索引小于 0，显示歌曲名称
   if (idx < 0) {
@@ -149,7 +147,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     ? (next.characters?.[0]?.startTime ?? next.time * 1000)
     : (current.characters?.[current.characters.length - 1]?.endTime ?? 0);
 
-  // 翻译模式：原文 + 副行（翻译/音译合并显示，复刻 SPlayer）
+  // 翻译模式
   if (secondaryEnabled.value) {
     const tran = current.translated?.trim() ?? '';
     const roman = current.romanized?.trim() ?? '';
@@ -194,7 +192,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   return [{ line: current, index: idx, key: `${idx}-orig`, active: true }];
 });
 
-// ── 逐字歌词样式（复刻 SPlayer 的 getYrcStyle） ──
+// 逐字歌词样式
 
 const getYrcStyle = (char: LyricCharacterPayload, lineIndex: number) => {
   const line = lyrics.value[lineIndex];
@@ -215,7 +213,7 @@ const getYrcStyle = (char: LyricCharacterPayload, lineIndex: number) => {
 // 判断行是否有逐字数据
 const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 1;
 
-// ── 歌词行滚动（复刻 SPlayer 的 getScrollStyle） ──
+// 歌词行滚动
 
 const lineRefs = new Map<string, HTMLElement>();
 const contentRefs = new Map<string, HTMLElement>();
@@ -248,14 +246,14 @@ const getScrollStyle = (line: RenderLine) => {
   return { transform: `translateX(-${Math.round(overflow * ratio)}px)`, willChange: 'transform' };
 };
 
-// ── 拖拽（复刻 SPlayer 原样） ──
+// 拖拽
 
 // EchoMusic 的 preload send 只接受 (channel, data)，多参数包装成数组
 const sendToMain = (channel: string, ...args: any[]) => {
   window.electron?.ipcRenderer?.send(channel, ...args);
 };
 
-// 缓存窗口和屏幕边界（复刻 SPlayer）
+// 缓存窗口和屏幕边界
 const cachedBounds = reactive({
   x: 0,
   y: 0,
@@ -345,7 +343,7 @@ const onDocPointerUp = () => {
   });
 };
 
-// ── 字体大小随窗口变化（复刻 SPlayer） ──
+// 字体大小随窗口变化
 
 const { height: winHeight, width: winWidth } = useWindowSize();
 
@@ -356,7 +354,7 @@ watch([winWidth, winHeight], ([w, h]) => {
   }
 });
 
-// 本地字体大小（复刻 SPlayer 的 lyricConfig.fontSize，不依赖 snapshot 避免循环）
+// 本地字体大小
 const localFontSize = ref(30);
 
 const computedFontSize = computed(() => {
@@ -371,7 +369,6 @@ const computedFontSize = computed(() => {
 });
 
 const debouncedSaveConfig = useDebounceFn((size: number) => {
-  // 复刻 SPlayer：只保存配置，不动窗口位置
   sendToMain('desktop-lyric:set-option', { fontSize: size }, true);
 }, 500);
 
@@ -400,7 +397,7 @@ watch(computedFontSize, (size) => {
   }
 });
 
-// ── 锁定/解锁（复刻 SPlayer） ──
+// 锁定/解锁
 
 const toggleLyricLock = () => {
   sendToMain('desktop-lyric:toggle-lock-sync', { lock: !isLocked.value });
@@ -792,7 +789,7 @@ onBeforeUnmount(() => {
   margin-right: 0;
 }
 
-/* 对齐方式（复刻 SPlayer） */
+/* 对齐方式 */
 .lyric-container.center .lyric-line {
   text-align: center;
   transform-origin: center center;
@@ -849,7 +846,7 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-/* 锁定状态（复刻 SPlayer：lock-btn 始终 pointer-events: auto） */
+/* 锁定状态 */
 .desktop-lyric.locked {
   cursor: default;
 }

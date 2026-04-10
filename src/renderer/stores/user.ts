@@ -239,7 +239,7 @@ export const useUserStore = defineStore('user', {
       try {
         const res = await getServerNow();
         if (res && typeof res === 'object') {
-          const record = res as Record<string, unknown>;
+          const record = res as unknown as Record<string, unknown>;
           const source = (
             record.data && typeof record.data === 'object' ? record.data : record
           ) as Record<string, unknown>;
