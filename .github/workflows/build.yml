@@ -154,12 +154,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-          merge-multiple: true
-
       - name: Build changelog
         shell: bash
         run: |
@@ -186,22 +180,23 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_ENV"
 
-      - name: Build artifact links
+      - name: Build artifact links from release
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
 
-          mapfile -t FILES < <(find release-artifacts -maxdepth 2 -type f | sort)
-          if [ ${#FILES[@]} -eq 0 ]; then
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq '.assets[].name' 2>/dev/null || true)
+          if [ -z "$ASSETS" ]; then
             echo "ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
             exit 0
           fi
 
           LINKS=""
-          for filepath in "${FILES[@]}"; do
-            filename=$(basename "$filepath")
+          while IFS= read -r filename; do
             escaped_name=$(printf '%s' "$filename" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
             link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
             if [ -z "$LINKS" ]; then
@@ -209,7 +204,7 @@ jobs:
             else
               LINKS="${LINKS}\n• <a href=\"${link}\">${escaped_name}</a>"
             fi
-          done
+          done <<< "$ASSETS"
 
           {
             echo "ARTIFACT_LINKS<<EOF"
