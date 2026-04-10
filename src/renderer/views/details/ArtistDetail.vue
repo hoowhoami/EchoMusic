@@ -245,7 +245,7 @@ const toggleArtistFollow = async () => {
         isFollowed: !previousFollowed,
       };
       if (previousFollowed) {
-        toastStore.actionCompleted('取消关注');
+        toastStore.actionCompleted('已取消关注');
       } else {
         toastStore.actionSucceeded('关注');
       }

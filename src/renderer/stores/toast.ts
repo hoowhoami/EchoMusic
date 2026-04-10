@@ -51,7 +51,7 @@ export const useToastStore = defineStore('toast', {
       return this.success(`${action}成功`, duration);
     },
     actionCompleted(action = '操作', duration?: number) {
-      return this.success(`已${action}`, duration);
+      return this.success(`${action}`, duration);
     },
     success(message: string, duration?: number) {
       return this.show(message, 'success', duration);

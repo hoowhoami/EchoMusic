@@ -204,7 +204,7 @@ const toggleFavoriteAlbum = async () => {
       const res = await unfavoriteAlbumApi(listId);
       if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
         await playlistStore.fetchUserPlaylists();
-        toastStore.actionCompleted('取消收藏专辑');
+        toastStore.actionCompleted('已取消收藏专辑');
       } else {
         toastStore.actionFailed('取消收藏专辑');
       }

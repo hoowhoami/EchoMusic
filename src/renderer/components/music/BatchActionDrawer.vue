@@ -12,10 +12,10 @@ import { useUserStore } from '@/stores/user';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
 import { useVirtualList } from '@vueuse/core';
-import { iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
-import { isPlayableSong } from '@/utils/song';
+import { isPlayableSong, isSameSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
+import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
 
 interface Props {
   open?: boolean;
@@ -158,16 +158,35 @@ const handleAddToPlaylist = async () => {
   }
 };
 
+const handleAddToQueue = () => {
+  if (selectedSongs.value.length === 0) return;
+  const currentList = playlistStore.defaultList;
+  let addedCount = 0;
+  for (const song of selectedSongs.value) {
+    if (!currentList.some((item) => isSameSong(item, song))) {
+      currentList.push(song);
+      addedCount++;
+    }
+  }
+  if (addedCount > 0) {
+    toastStore.actionCompleted(`已添加 ${addedCount} 首到播放列表`);
+  } else {
+    toastStore.actionCompleted('所选歌曲已在播放列表中');
+  }
+  showPlaylistDialog.value = false;
+  open.value = false;
+};
+
 const handleSelectPlaylist = async (listId: string | number) => {
   try {
     for (const song of selectedSongs.value) {
       await playlistStore.addToPlaylist(String(listId), song);
     }
-    toastStore.actionCompleted('添加到歌单');
+    toastStore.actionCompleted('已添加到歌单');
     showPlaylistDialog.value = false;
     open.value = false;
   } catch {
-    toastStore.actionFailed('添加到歌单');
+    toastStore.actionFailed('已添加到歌单');
   }
 };
 
@@ -177,7 +196,7 @@ const handleRemoveFromPlaylist = async () => {
     for (const song of selectedSongs.value) {
       await playlistStore.removeFromPlaylist(String(props.sourceId), song);
     }
-    toastStore.actionCompleted('从歌单移除');
+    toastStore.actionCompleted('已从歌单移除');
     open.value = false;
   } catch {
     toastStore.actionFailed('从歌单移除');
@@ -313,12 +332,28 @@ const handleRemoveFromPlaylist = async () => {
 
   <Dialog
     v-model:open="showPlaylistDialog"
-    title="添加到歌单"
+    title="添加到"
     overlayClass="batch-playlist-overlay"
     contentClass="batch-playlist-dialog max-w-[420px]"
     showClose
   >
     <div class="batch-playlist-body">
+      <Button
+        type="button"
+        class="playlist-picker-item playlist-picker-queue"
+        variant="ghost"
+        size="sm"
+        @click="handleAddToQueue"
+      >
+        <span class="batch-playlist-name">
+          <Icon :icon="iconList" width="16" height="16" />
+          播放列表
+        </span>
+        <span class="batch-playlist-count">{{ playlistStore.defaultList.length }} 首</span>
+      </Button>
+      <div class="batch-playlist-divider">
+        <span>歌单</span>
+      </div>
       <div v-if="isPlaylistLoading" class="batch-playlist-status">加载歌单中...</div>
       <div v-else-if="createdPlaylists.length === 0" class="batch-playlist-status">
         暂无可用歌单
@@ -646,5 +681,22 @@ const handleRemoveFromPlaylist = async () => {
 .playlist-picker-item:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+.playlist-picker-queue {
+  border-style: dashed;
+}
+
+.playlist-picker-queue .batch-playlist-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.batch-playlist-divider {
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 </style>

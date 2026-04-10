@@ -335,9 +335,9 @@ const handleRemovePlaylist = async () => {
       }
     }
     if (isOwned) {
-      toastStore.actionCompleted('删除歌单');
+      toastStore.actionCompleted('已删除歌单');
     } else {
-      toastStore.actionCompleted('取消收藏');
+      toastStore.actionCompleted('已取消收藏');
     }
   } catch {
     toastStore.actionFailed(isOwned ? '删除歌单' : '取消收藏');

@@ -345,6 +345,7 @@ export const usePlayerStore = defineStore('player', {
     playbackNotice: null as PlaybackNotice | null,
     shuffleQueue: null as number[] | null,
     shuffleQueueLength: 0,
+    shufflePlayed: new Set<number>(),
     seekTargetTime: null as number | null,
     seekTimestamp: 0,
   }),
@@ -870,6 +871,7 @@ export const usePlayerStore = defineStore('player', {
       // 切换模式时重置随机队列
       this.shuffleQueue = null;
       this.shuffleQueueLength = 0;
+      this.shufflePlayed = new Set();
       logger.info('PlayerStore', 'Play mode updated', {
         mode,
       });
@@ -2059,24 +2061,60 @@ export const usePlayerStore = defineStore('player', {
     pickRandomIndex(length: number, currentIndex: number) {
       if (length <= 1) return currentIndex;
 
-      // Lazily build or rebuild the shuffle queue when needed
-      if (
-        !this.shuffleQueue ||
-        this.shuffleQueue.length === 0 ||
-        this.shuffleQueueLength !== length
-      ) {
-        this.shuffleQueue = this.buildShuffleQueue(length, currentIndex);
+      // 标记当前歌曲为已播放
+      this.shufflePlayed.add(currentIndex);
+
+      if (!this.shuffleQueue || this.shuffleQueueLength !== length) {
+        if (this.shuffleQueue && this.shuffleQueueLength !== length) {
+          // 列表长度变化：保留剩余队列中仍有效的索引，追加新增索引
+          const remaining = new Set(this.shuffleQueue.filter((i) => i < length));
+          const newIndices: number[] = [];
+          for (let i = 0; i < length; i++) {
+            if (i !== currentIndex && !this.shufflePlayed.has(i) && !remaining.has(i)) {
+              newIndices.push(i);
+            }
+          }
+          // 清理已播放集合中超出范围的索引
+          for (const idx of this.shufflePlayed) {
+            if (idx >= length) this.shufflePlayed.delete(idx);
+          }
+          // 洗牌新增索引并追加到剩余队列末尾
+          this.shuffleInsert(newIndices);
+          const validRemaining = this.shuffleQueue.filter((i) => i < length && i !== currentIndex);
+          this.shuffleQueue = [...validRemaining, ...newIndices];
+        } else {
+          // 首次构建
+          this.shufflePlayed = new Set([currentIndex]);
+          this.shuffleQueue = this.buildShuffleQueue(length, currentIndex);
+        }
         this.shuffleQueueLength = length;
       }
 
+      // 队列耗尽：所有歌曲都播放过，开始新一轮
+      if (this.shuffleQueue.length === 0) {
+        this.shufflePlayed = new Set([currentIndex]);
+        this.shuffleQueue = this.buildShuffleQueue(length, currentIndex);
+      }
+
       const nextIndex = this.shuffleQueue.shift()!;
+      this.shufflePlayed.add(nextIndex);
+
       logger.debug('PlayerStore', 'Picking random next index (shuffle)', {
         length,
         currentIndex,
         nextIndex,
         remaining: this.shuffleQueue.length,
+        played: this.shufflePlayed.size,
       });
       return nextIndex;
+    },
+
+    // 原地 Fisher-Yates 洗牌
+    shuffleInsert(arr: number[]) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
     },
 
     buildShuffleQueue(length: number, excludeIndex: number): number[] {
