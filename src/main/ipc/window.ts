@@ -1,9 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { hideMainWindow, quitApplication, requestMainWindowClose, showMainWindow } from '../window';
-
-interface IpcContext {
-  getMainWindow: () => BrowserWindow | null;
-}
+import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
   ipcMain.on('window-control', (event, action: 'minimize' | 'maximize' | 'close') => {

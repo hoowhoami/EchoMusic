@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { RouterView, useRoute } from 'vue-router';
+import { RouterView } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -8,29 +8,18 @@ import Button from '@/components/ui/Button.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
-import { initDesktopLyricSync } from '@/utils/desktopLyric';
+import { initDesktopLyricSync } from '@/desktopLyric/sync';
+import type { UpdateCheckResult } from '../shared/app';
 
 const player = usePlayerStore();
 const settings = useSettingStore();
-const route = useRoute();
-const isDesktopLyricWindow = () =>
-  route.name === 'desktop-lyric' || window.location.hash.includes('desktop-lyric');
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 
 const showStartupUpdateDialog = ref(false);
-const startupUpdateResult = ref<{
-  status: 'available' | 'latest' | 'error';
-  currentVersion: string;
-  latestVersion?: string;
-  releaseName?: string;
-  releaseUrl?: string;
-  body?: string;
-  message?: string;
-  silent?: boolean;
-} | null>(null);
+const startupUpdateResult = ref<UpdateCheckResult | null>(null);
 
 const updateTheme = () => {
   const isDark =
@@ -40,7 +29,6 @@ const updateTheme = () => {
 };
 
 const syncTrayPlayback = () => {
-  if (isDesktopLyricWindow()) return;
   window.electron?.tray?.syncPlayback({
     isPlaying: player.isPlaying,
     playMode: player.playMode,
@@ -72,34 +60,25 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
 };
 
 onMounted(() => {
-  if (!isDesktopLyricWindow()) {
-    player.init();
-    void settings.hydrateDesktopLyric();
-    void initDesktopLyricSync().then((dispose) => {
-      disposeDesktopLyricSync = dispose;
-    });
-  }
+  player.init();
+  void initDesktopLyricSync().then((dispose) => {
+    disposeDesktopLyricSync = dispose;
+  });
   updateTheme();
   settings.syncTheme();
-  if (!isDesktopLyricWindow()) {
-    settings.syncCloseBehavior();
-    settings.syncRememberWindowSize();
-  }
-  if (!isDesktopLyricWindow()) {
-    settings.syncPreventSleep(player.isPlaying);
-  }
-  if (!isDesktopLyricWindow()) {
-    disposeShortcuts = initShortcutSync();
-    disposeTrayPlayModeSync =
-      window.electron?.tray?.onSetPlayMode((playMode) => {
-        player.setPlayMode(playMode);
-      }) ?? null;
-    syncTrayPlayback();
-    window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
-    silentUpdateCheckTimer = window.setTimeout(() => {
-      settings.checkForUpdates(true);
-    }, 4000);
-  }
+  settings.syncCloseBehavior();
+  settings.syncRememberWindowSize();
+  settings.syncPreventSleep(player.isPlaying);
+  disposeShortcuts = initShortcutSync();
+  disposeTrayPlayModeSync =
+    window.electron?.tray?.onSetPlayMode((playMode) => {
+      player.setPlayMode(playMode);
+    }) ?? null;
+  syncTrayPlayback();
+  window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
+  silentUpdateCheckTimer = window.setTimeout(() => {
+    settings.checkForUpdates(true);
+  }, 4000);
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
 });
 
@@ -121,21 +100,18 @@ watch(() => settings.theme, updateTheme);
 watch(
   () => settings.rememberWindowSize,
   () => {
-    if (isDesktopLyricWindow()) return;
     settings.syncRememberWindowSize();
   },
 );
 watch(
   () => settings.preventSleep,
   () => {
-    if (isDesktopLyricWindow()) return;
     settings.syncPreventSleep(player.isPlaying);
   },
 );
 watch(
   () => player.isPlaying,
   (isPlaying) => {
-    if (isDesktopLyricWindow()) return;
     settings.syncPreventSleep(isPlaying);
     syncTrayPlayback();
   },
@@ -149,7 +125,6 @@ watch(
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
   () => {
-    if (isDesktopLyricWindow()) return;
     syncGlobalShortcuts();
   },
   { deep: true },

@@ -9,9 +9,7 @@ import {
 } from 'electron';
 import Conf from 'conf';
 import { join } from 'path';
-
-type CloseBehavior = 'tray' | 'exit';
-type ThemeMode = 'light' | 'dark' | 'system';
+import type { CloseBehavior, ThemeMode } from '../shared/app';
 
 type WindowState = {
   width: number;

@@ -6,6 +6,14 @@ import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        desktopLyric: resolve(__dirname, 'desktop-lyric.html'),
+      },
+    },
+  },
   plugins: [
     vue(),
     tailwindcss(),

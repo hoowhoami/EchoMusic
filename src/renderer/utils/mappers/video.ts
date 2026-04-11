@@ -1,12 +1,6 @@
 import type { VideoAuthor, VideoMeta, VideoSource, VideoTag } from '@/models/video';
 import { getCoverUrl } from '@/utils/cover';
-
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const toRecord = (value: unknown): UnknownRecord => (isRecord(value) ? value : {});
+import { isRecord, toRecord, type UnknownRecord } from '../../../shared/object';
 
 const readString = (value: unknown, fallback = ''): string => {
   if (value === undefined || value === null) return fallback;

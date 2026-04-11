@@ -253,6 +253,11 @@ const sendToMain = (channel: string, ...args: any[]) => {
   window.electron?.ipcRenderer?.send(channel, ...args);
 };
 
+const updateDesktopLyricSettings = async (partial: Record<string, unknown>) => {
+  if (!window.electron?.desktopLyric) return;
+  snapshot.value = await window.electron.desktopLyric.updateSettings(partial);
+};
+
 // 缓存窗口和屏幕边界
 const cachedBounds = reactive({
   x: 0,
@@ -369,7 +374,8 @@ const computedFontSize = computed(() => {
 });
 
 const debouncedSaveConfig = useDebounceFn((size: number) => {
-  sendToMain('desktop-lyric:set-option', { fontSize: size }, true);
+  const nextHeight = fontSizeToHeight(size);
+  if (nextHeight) pushWindowHeight(nextHeight);
 }, 500);
 
 const fontSizeToHeight = (size: number) => {
@@ -400,7 +406,7 @@ watch(computedFontSize, (size) => {
 // 锁定/解锁
 
 const toggleLyricLock = () => {
-  sendToMain('desktop-lyric:toggle-lock-sync', { lock: !isLocked.value });
+  void window.electron?.desktopLyric?.toggleLock();
 };
 
 const tempToggleLyricLock = (lock: boolean) => {
@@ -413,8 +419,7 @@ const tempToggleLyricLock = (lock: boolean) => {
 
 const toggleSecondary = () => {
   const next = !secondaryEnabled.value;
-  // 只更新配置，不触发窗口大小重算
-  sendToMain('desktop-lyric:set-option', { secondaryEnabled: next }, true);
+  void updateDesktopLyricSettings({ secondaryEnabled: next });
 };
 
 const closeWindow = async () => {

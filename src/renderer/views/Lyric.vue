@@ -41,7 +41,7 @@ import {
   iconVolume1,
   iconVolumeX,
 } from '@/icons';
-import type { PlayMode } from '@/stores/player';
+import type { PlayMode } from '@/types';
 
 const router = useRouter();
 const route = useRoute();

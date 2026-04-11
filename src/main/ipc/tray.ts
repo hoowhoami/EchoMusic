@@ -1,12 +1,6 @@
 import { ipcMain } from 'electron';
 import { updateTrayPlaybackState } from '../tray';
-
-type PlayMode = 'list' | 'random' | 'single';
-
-interface TrayPlaybackPayload {
-  isPlaying?: boolean;
-  playMode?: PlayMode;
-}
+import type { TrayPlaybackPayload } from '../../shared/tray';
 
 export const registerTrayHandlers = () => {
   ipcMain.on('tray:sync-playback', (_event, payload: TrayPlaybackPayload | null) => {

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { usePlayerStore, type AudioEffectValue, type AudioQualityValue } from '@/stores/player';
+import { usePlayerStore } from '@/stores/player';
+import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song, SongArtist } from '@/models/song';
+import type { AudioEffectValue, AudioQualityValue } from '@/types';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -49,6 +51,7 @@ const router = useRouter();
 const player = usePlayerStore();
 const playlist = usePlaylistStore();
 const settingStore = useSettingStore();
+const desktopLyricStore = useDesktopLyricStore();
 
 const currentTrack = computed(() => {
   return (
@@ -224,7 +227,7 @@ const openQueue = () => {
 };
 
 const toggleDesktopLyric = async () => {
-  await settingStore.setDesktopLyricEnabled(!settingStore.desktopLyric.enabled);
+  await desktopLyricStore.setEnabled(!desktopLyricStore.settings.enabled);
 };
 
 const lastVolume = ref(0.8);
@@ -1019,11 +1022,11 @@ onUnmounted(() => {
           size="none"
           class="p-2 transition-colors"
           :class="
-            settingStore.desktopLyric.enabled
+            desktopLyricStore.settings.enabled
               ? 'text-primary'
               : 'text-text-main/50 hover:text-primary'
           "
-          :title="settingStore.desktopLyric.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
+          :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
           @click="toggleDesktopLyric"
         >
           <Icon :icon="iconTypography" width="20" height="20" />

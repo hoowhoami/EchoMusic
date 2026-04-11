@@ -1,26 +1,11 @@
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useSettingStore } from '@/stores/setting';
+import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useLyricStore } from '@/stores/lyric';
 import router from '@/router';
 import { closeTransientView } from '@/utils/navigation';
-
-type ShortcutCommand =
-  | 'togglePlayback'
-  | 'previousTrack'
-  | 'nextTrack'
-  | 'toggleMainLyric'
-  | 'toggleDesktopLyric'
-  | 'toggleLyricsMode'
-  | 'cycleLyricsMode'
-  | 'volumeUp'
-  | 'volumeDown'
-  | 'toggleMute'
-  | 'toggleFavorite'
-  | 'togglePlayMode'
-  | 'toggleWindow';
-
-type ShortcutMap = Record<ShortcutCommand, string>;
+import type { ShortcutCommand, ShortcutMap } from '../../shared/shortcuts';
 
 const normalizeKey = (key: string): string => {
   if (!key) return '';
@@ -137,6 +122,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
   const settingStore = useSettingStore();
+  const desktopLyricStore = useDesktopLyricStore();
 
   if (command === 'togglePlayback') {
     playerStore.togglePlay();
@@ -155,7 +141,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
       query: { from: currentRoute.fullPath },
     });
   } else if (command === 'toggleDesktopLyric') {
-    void settingStore.setDesktopLyricEnabled(!settingStore.desktopLyric.enabled);
+    void desktopLyricStore.setEnabled(!desktopLyricStore.settings.enabled);
   } else if (command === 'toggleLyricsMode') {
     lyricStore.toggleSecondaryEnabled();
   } else if (command === 'cycleLyricsMode') {

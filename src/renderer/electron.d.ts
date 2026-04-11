@@ -1,4 +1,7 @@
 import type { ApiServerStatus } from '../shared/api-server';
+import type { AppInfoResult } from '../shared/app';
+import type { PlayMode } from '../shared/playback';
+import type { ShortcutMap } from '../shared/shortcuts';
 import type {
   DesktopLyricSettings,
   DesktopLyricSnapshot,
@@ -14,12 +17,12 @@ export interface IElectronAPI {
     off: (channel: string, func: (...args: unknown[]) => void) => void;
   };
   shortcuts: {
-    register: (payload: { enabled: boolean; shortcutMap: Record<string, string> }) => void;
+    register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) => void;
     onTrigger: (func: (command: string) => void) => () => void;
   };
   windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
   appInfo: {
-    get: () => Promise<{ version: string; isPrerelease: boolean }>;
+    get: () => Promise<AppInfoResult>;
   };
   apiServer: {
     start: () => Promise<{ success: boolean; port?: number; error?: string }>;
@@ -31,11 +34,9 @@ export interface IElectronAPI {
   tray: {
     syncPlayback: (payload: {
       isPlaying?: boolean;
-      playMode?: 'sequential' | 'list' | 'random' | 'single';
+      playMode?: PlayMode;
     }) => void;
-    onSetPlayMode: (
-      func: (playMode: 'sequential' | 'list' | 'random' | 'single') => void,
-    ) => () => void;
+    onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
   desktopLyric: {
     getSnapshot: () => Promise<DesktopLyricSnapshot>;
@@ -46,12 +47,6 @@ export interface IElectronAPI {
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
-    startDrag: (screenX: number, screenY: number) => void;
-    updateDrag: (screenX: number, screenY: number) => void;
-    endDrag: () => void;
-    startResize: (direction: string, screenX: number, screenY: number) => void;
-    updateResize: (screenX: number, screenY: number) => void;
-    endResize: () => void;
     command: (
       command:
         | 'togglePlayback'

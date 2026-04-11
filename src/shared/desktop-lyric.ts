@@ -32,7 +32,6 @@ export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
 export type DesktopLyricSettings = {
   enabled: boolean;
   locked: boolean;
-  clickThrough: boolean;
   autoShow: boolean;
   alwaysOnTop: boolean;
   secondaryEnabled: boolean;
@@ -52,6 +51,31 @@ export type DesktopLyricSettings = {
   strokeColor: string;
   strokeEnabled: boolean;
   bold: boolean;
+};
+
+export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
+  enabled: false,
+  locked: false,
+  autoShow: true,
+  alwaysOnTop: true,
+  secondaryEnabled: false,
+  theme: 'system',
+  opacity: 0.92,
+  scale: 1,
+  fontFamily:
+    'SF Pro Display, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Inter, system-ui, sans-serif',
+  inactiveFontSize: 26,
+  activeFontSize: 40,
+  secondaryFontSize: 18,
+  lineGap: 14,
+  secondaryMode: 'none',
+  alignment: 'both',
+  doubleLine: true,
+  playedColor: '#31cfa1',
+  unplayedColor: '#7a7a7a',
+  strokeColor: '#f1b8b3',
+  strokeEnabled: false,
+  bold: false,
 };
 
 export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';

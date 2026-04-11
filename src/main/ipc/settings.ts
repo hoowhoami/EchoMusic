@@ -3,10 +3,8 @@ import Conf from 'conf';
 import log from 'electron-log';
 import { dirname } from 'path';
 import { compare, prerelease, valid } from 'semver';
-
-interface IpcContext {
-  getMainWindow: () => BrowserWindow | null;
-}
+import type { AppInfoResult, UpdateCheckResult } from '../../shared/app';
+import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
   const logFile = log.transports.file.getFile();
@@ -18,22 +16,6 @@ const openLogDirectory = async () => {
 const appSettingsStore = new Conf<Record<string, unknown>>({
   projectName: app.getName(),
 });
-
-type UpdateCheckResult = {
-  status: 'available' | 'latest' | 'error';
-  currentVersion: string;
-  latestVersion?: string;
-  releaseName?: string;
-  releaseUrl?: string;
-  body?: string;
-  message?: string;
-  silent?: boolean;
-};
-
-type AppInfoResult = {
-  version: string;
-  isPrerelease: boolean;
-};
 
 const RELEASES_API = 'https://api.github.com/repos/hoowhoami/EchoMusic/releases';
 

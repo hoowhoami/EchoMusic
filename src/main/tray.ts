@@ -8,19 +8,15 @@ import {
 } from 'electron';
 import { quitApplication } from './window';
 import { join } from 'path';
-
-type TrayCommand = 'togglePlayback' | 'previousTrack' | 'nextTrack';
-type PlayMode = 'sequential' | 'list' | 'random' | 'single';
+import type { PlayMode } from '../shared/playback';
+import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
   restoreWindow: () => void;
 }
 
-interface TrayPlaybackState {
-  isPlaying: boolean;
-  playMode: PlayMode;
-}
+type TrayPlaybackState = Required<TrayPlaybackPayload>;
 
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;

@@ -41,14 +41,7 @@ import {
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
-
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord => {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-};
-
-const toRecord = (value: unknown): UnknownRecord => (isRecord(value) ? value : {});
+import { isRecord, toRecord } from '../../../shared/object';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;

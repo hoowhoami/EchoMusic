@@ -1,14 +1,11 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import { registerApiServerHandlers } from './server';
 import { registerWindowHandlers } from './window';
 import { registerSettingsHandlers } from './settings';
 import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
-
-interface IpcContext {
-  getMainWindow: () => BrowserWindow | null;
-}
+import type { IpcContext } from './types';
 
 let registered = false;
 
@@ -37,18 +34,10 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('open-disclaimer');
   ipcMain.removeAllListeners('clear-app-data');
   ipcMain.removeAllListeners('desktop-lyric:set-ignore-mouse-events');
-  ipcMain.removeAllListeners('desktop-lyric:set-option');
-  ipcMain.removeAllListeners('desktop-lyric:toggle-lock-sync');
   ipcMain.removeAllListeners('desktop-lyric:move');
   ipcMain.removeAllListeners('desktop-lyric:resize');
   ipcMain.removeAllListeners('desktop-lyric:set-height');
   ipcMain.removeAllListeners('desktop-lyric:toggle-fixed-size');
-  ipcMain.removeAllListeners('desktop-lyric:drag-start');
-  ipcMain.removeAllListeners('desktop-lyric:drag-update');
-  ipcMain.removeAllListeners('desktop-lyric:drag-end');
-  ipcMain.removeAllListeners('desktop-lyric:resize-start');
-  ipcMain.removeAllListeners('desktop-lyric:resize-update');
-  ipcMain.removeAllListeners('desktop-lyric:resize-end');
   ipcMain.removeAllListeners('desktop-lyric:command');
   ipcMain.removeHandler('api-server:start');
   ipcMain.removeHandler('api-server:status');

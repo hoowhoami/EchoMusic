@@ -2,7 +2,7 @@ import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore } from '@/stores/lyric';
-import { useSettingStore } from '@/stores/setting';
+import { useDesktopLyricStore } from './store';
 import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared/desktop-lyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
@@ -43,16 +43,16 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
 };
 
 export const initDesktopLyricSync = async () => {
-  const settingStore = useSettingStore();
+  const desktopLyricStore = useDesktopLyricStore();
   const playerStore = usePlayerStore();
   const lyricStore = useLyricStore();
   if (!window.electron?.desktopLyric) return () => {};
 
-  await settingStore.hydrateDesktopLyric();
+  await desktopLyricStore.hydrate();
 
-  if (settingStore.desktopLyric.enabled) {
+  if (desktopLyricStore.settings.enabled) {
     const snapshot = await window.electron.desktopLyric.show();
-    settingStore.setDesktopLyricLocal(snapshot.settings);
+    desktopLyricStore.setLocal(snapshot.settings);
   }
 
   const stops: WatchStopHandle[] = [];
@@ -61,10 +61,9 @@ export const initDesktopLyricSync = async () => {
   const { lines, currentIndex, lyricsMode, secondaryEnabled, preferredMode } =
     storeToRefs(lyricStore);
 
-  const buildSyncedSettings = (settings = settingStore.desktopLyric) => {
-    const { locked: _locked, clickThrough: _clickThrough, ...desktopLyricSettings } = settings;
+  const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
     return {
-      ...desktopLyricSettings,
+      ...settings,
       secondaryEnabled: secondaryEnabled.value,
       secondaryMode: secondaryEnabled.value ? lyricsMode.value : preferredMode.value,
     };
@@ -128,7 +127,7 @@ export const initDesktopLyricSync = async () => {
   };
 
   const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((nextSnapshot) => {
-    settingStore.setDesktopLyricLocal(nextSnapshot.settings);
+    desktopLyricStore.setLocal(nextSnapshot.settings);
     lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings(nextSnapshot.settings));
     lastSyncedPlaybackKey = JSON.stringify({
       playback: nextSnapshot.playback,
@@ -171,7 +170,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [() => settingStore.desktopLyric, lyricsMode, secondaryEnabled, preferredMode],
+      [() => desktopLyricStore.settings, lyricsMode, secondaryEnabled, preferredMode],
       () => {
         void syncSettingsSnapshot();
       },

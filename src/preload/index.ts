@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
+import type { AppInfoResult } from '../shared/app';
+import type { PlayMode } from '../shared/playback';
+import type { ShortcutCommand, ShortcutMap } from '../shared/shortcuts';
 import type {
   DesktopLyricSettings,
   DesktopLyricSnapshot,
@@ -44,7 +47,7 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
   shortcuts: {
-    register: (payload: { enabled: boolean; shortcutMap: Record<string, string> }) =>
+    register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
       ipcRenderer.send('shortcuts:register', payload),
     onTrigger: (func: (command: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: string) => func(command);
@@ -55,8 +58,7 @@ contextBridge.exposeInMainWorld('electron', {
   windowControl: (action: 'minimize' | 'maximize' | 'close') =>
     ipcRenderer.send('window-control', action),
   appInfo: {
-    get: () =>
-      ipcRenderer.invoke('app:get-info') as Promise<{ version: string; isPrerelease: boolean }>,
+    get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
   },
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
@@ -72,12 +74,12 @@ contextBridge.exposeInMainWorld('electron', {
   tray: {
     syncPlayback: (payload: {
       isPlaying?: boolean;
-      playMode?: 'sequential' | 'list' | 'random' | 'single';
+      playMode?: PlayMode;
     }) => ipcRenderer.send('tray:sync-playback', payload),
-    onSetPlayMode: (func: (playMode: 'sequential' | 'list' | 'random' | 'single') => void) => {
+    onSetPlayMode: (func: (playMode: PlayMode) => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        playMode: 'sequential' | 'list' | 'random' | 'single',
+        playMode: PlayMode,
       ) => func(playMode);
       ipcRenderer.on('tray:set-play-mode', listener);
       return () => ipcRenderer.removeListener('tray:set-play-mode', listener);
@@ -102,23 +104,11 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setIgnoreMouseEvents: (ignore: boolean) =>
       ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),
-    startDrag: (screenX: number, screenY: number) =>
-      ipcRenderer.send('desktop-lyric:drag-start', { screenX, screenY }),
-    updateDrag: (screenX: number, screenY: number) =>
-      ipcRenderer.send('desktop-lyric:drag-update', { screenX, screenY }),
-    endDrag: () => ipcRenderer.send('desktop-lyric:drag-end'),
-    startResize: (direction: string, screenX: number, screenY: number) =>
-      ipcRenderer.send('desktop-lyric:resize-start', { direction, screenX, screenY }),
-    updateResize: (screenX: number, screenY: number) =>
-      ipcRenderer.send('desktop-lyric:resize-update', { screenX, screenY }),
-    endResize: () => ipcRenderer.send('desktop-lyric:resize-end'),
     command: (
-      command:
-        | 'togglePlayback'
-        | 'previousTrack'
-        | 'nextTrack'
-        | 'toggleLyricsMode'
-        | 'cycleLyricsMode',
+      command: Extract<
+        ShortcutCommand,
+        'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode' | 'cycleLyricsMode'
+      >,
     ) => ipcRenderer.send('desktop-lyric:command', command),
   },
   log: log.functions,

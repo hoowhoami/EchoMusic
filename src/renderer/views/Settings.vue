@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
+import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
-import type { OutputDeviceDisconnectBehavior } from '@/stores/setting';
+import type {
+  AudioQualityValue,
+  OutputDeviceDisconnectBehavior,
+  ShortcutItem,
+  ShortcutRecordingState,
+  ShortcutScope,
+} from '@/types';
+import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
+import type { CloseBehavior, ThemeMode, UpdateCheckResult } from '../../shared/app';
+import type { ShortcutCommand } from '../../shared/shortcuts';
 import Select from '@/components/ui/Select.vue';
 import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
@@ -25,6 +35,7 @@ import {
 } from '@/icons';
 
 const settingStore = useSettingStore();
+const desktopLyricStore = useDesktopLyricStore();
 const playerStore = usePlayerStore();
 const showDisclaimer = ref(false);
 const isRequestingOutputPermission = ref(false);
@@ -47,7 +58,7 @@ const desktopLyricColorPresets = [
 
 const activeDesktopLyricColorValue = computed(() => {
   if (!activeDesktopLyricColorField.value) return '#31cfa1';
-  return settingStore.desktopLyric[activeDesktopLyricColorField.value];
+  return desktopLyricStore.settings[activeDesktopLyricColorField.value];
 });
 
 const openDesktopLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
@@ -69,14 +80,8 @@ onMounted(() => {
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
   void settingStore.hydrateAppInfo();
-  void settingStore.hydrateDesktopLyric();
+  void desktopLyricStore.hydrate();
 });
-
-const desktopLyricThemeOptions = [
-  { label: '跟随系统', value: 'system' },
-  { label: '浅色', value: 'light' },
-  { label: '深色', value: 'dark' },
-];
 
 const desktopLyricAlignOptions = [
   { label: '左对齐', value: 'left' },
@@ -85,33 +90,9 @@ const desktopLyricAlignOptions = [
   { label: '交替', value: 'both' },
 ];
 
-const commitDesktopLyricSettings = async (partial?: Partial<typeof settingStore.desktopLyric>) => {
-  await settingStore.syncDesktopLyricSettings(partial);
+const commitDesktopLyricSettings = async (partial?: Partial<DesktopLyricSettings>) => {
+  await desktopLyricStore.syncSettings(partial);
 };
-
-type ThemeMode = 'light' | 'dark' | 'system';
-type CloseBehavior = 'tray' | 'exit';
-type AudioQuality = '128' | '320' | 'flac' | 'high';
-type ShortcutCommand =
-  | 'togglePlayback'
-  | 'previousTrack'
-  | 'nextTrack'
-  | 'toggleMainLyric'
-  | 'toggleDesktopLyric'
-  | 'volumeUp'
-  | 'volumeDown'
-  | 'toggleMute'
-  | 'toggleFavorite'
-  | 'togglePlayMode'
-  | 'toggleWindow';
-
-type ShortcutScope = 'local' | 'global';
-
-interface ShortcutItem {
-  command: ShortcutCommand;
-  title: string;
-  desc: string;
-}
 
 const shortcutItems: ShortcutItem[] = [
   { command: 'togglePlayback', title: '播放 / 暂停', desc: '切换当前歌曲的播放状态' },
@@ -140,7 +121,7 @@ const themeOptions = [
 const shortcutBindings = computed(() => settingStore.shortcutBindings ?? {});
 const globalShortcutBindings = computed(() => settingStore.globalShortcutBindings ?? {});
 const isMac = computed(() => window.electron?.platform === 'darwin');
-const recording = ref<{ scope: ShortcutScope; command: ShortcutCommand } | null>(null);
+const recording = ref<ShortcutRecordingState | null>(null);
 let removeRecorder: (() => void) | null = null;
 let removeOutside: (() => void) | null = null;
 
@@ -309,16 +290,7 @@ const resetAllShortcuts = () => {
 const showConfirmClear = ref(false);
 const showUpdateResult = ref(false);
 const isCheckingUpdate = ref(false);
-const updateResult = ref<{
-  status: 'available' | 'latest' | 'error';
-  currentVersion: string;
-  latestVersion?: string;
-  releaseName?: string;
-  releaseUrl?: string;
-  body?: string;
-  message?: string;
-  silent?: boolean;
-} | null>(null);
+const updateResult = ref<UpdateCheckResult | null>(null);
 
 const audioQualityOptions = [
   { label: '标准品质', value: '128' },
@@ -656,7 +628,7 @@ onUnmounted(() => {
             class="min-w-[180px]"
             :model-value="settingStore.defaultAudioQuality"
             :options="audioQualityOptions"
-            @update:model-value="settingStore.defaultAudioQuality = $event as AudioQuality"
+            @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
           />
         </div>
         <div class="settings-divider"></div>
@@ -684,7 +656,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
           </div>
           <Switch
-            :model-value="settingStore.desktopLyric.doubleLine"
+            :model-value="desktopLyricStore.settings.doubleLine"
             @update:model-value="commitDesktopLyricSettings({ doubleLine: Boolean($event) })"
           />
         </div>
@@ -695,7 +667,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">有翻译时优先显示翻译而非下一行</p>
           </div>
           <Switch
-            :model-value="settingStore.desktopLyric.secondaryEnabled"
+            :model-value="desktopLyricStore.settings.secondaryEnabled"
             @update:model-value="commitDesktopLyricSettings({ secondaryEnabled: Boolean($event) })"
           />
         </div>
@@ -707,7 +679,7 @@ onUnmounted(() => {
           </div>
           <Select
             class="min-w-[120px]"
-            :model-value="settingStore.desktopLyric.alignment"
+            :model-value="desktopLyricStore.settings.alignment"
             :options="desktopLyricAlignOptions"
             @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
           />
@@ -719,7 +691,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">歌词使用更高字重显示</p>
           </div>
           <Switch
-            :model-value="settingStore.desktopLyric.bold"
+            :model-value="desktopLyricStore.settings.bold"
             @update:model-value="commitDesktopLyricSettings({ bold: Boolean($event) })"
           />
         </div>
@@ -735,7 +707,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="settings-color-swatch"
-                :style="{ backgroundColor: settingStore.desktopLyric.playedColor }"
+                :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
                 @click="openDesktopLyricColorPicker('playedColor')"
               ></button>
             </div>
@@ -744,7 +716,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="settings-color-swatch"
-                :style="{ backgroundColor: settingStore.desktopLyric.unplayedColor }"
+                :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
                 @click="openDesktopLyricColorPicker('unplayedColor')"
               ></button>
             </div>

@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import { usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
-import type { OutputDeviceDisconnectBehavior } from './setting';
 import logger from '@/utils/logger';
 import { getCloudSongUrl, getSongClimax, getSongPrivilegeLite, getSongUrl } from '@/api/music';
 import { getServerNow, uploadPlayHistory } from '@/api/user';
@@ -21,21 +20,12 @@ import {
   isPlayableSong,
   resolveEffectiveSongQuality,
 } from '@/utils/song';
-
-export type AudioQualityValue = '128' | '320' | 'flac' | 'high';
-export type AudioEffectValue =
-  | 'none'
-  | 'piano'
-  | 'acappella'
-  | 'subwoofer'
-  | 'ancient'
-  | 'surnay'
-  | 'dj'
-  | 'viper_tape'
-  | 'viper_atmos'
-  | 'viper_clear';
-
-const QUALITY_PRIORITY: AudioQualityValue[] = ['high', 'flac', '320', '128'];
+import type {
+  AudioEffectValue,
+  AudioQualityValue,
+  OutputDeviceDisconnectBehavior,
+  PlayMode,
+} from '../types';
 
 const normalizeQuality = (value: string | undefined): AudioQualityValue => {
   if (value === '128' || value === '320' || value === 'flac' || value === 'high') return value;
@@ -183,15 +173,13 @@ type ResolvedAudioSource = {
 
 type ClimaxMark = { start: number; end: number };
 
-export type PlaybackNotice = {
+type PlaybackNotice = {
   code: string;
   title: string;
   reason: string;
   detail: string;
   trackId: string | null;
 };
-
-export type PlayMode = 'sequential' | 'list' | 'single' | 'random';
 
 // 保持一个全局 PlayerEngine 实例
 const engine = new PlayerEngine();
@@ -1418,10 +1406,6 @@ export const usePlayerStore = defineStore('player', {
         const outputs = devices.filter((device) => device.kind === 'audiooutput');
         const nextSignature = buildAudioOutputDeviceSignature(devices);
         const previousSignature = this.lastAudioOutputDeviceSignature;
-        const hasDeviceSignatureChanged =
-          previousSignature !== null &&
-          nextSignature !== null &&
-          nextSignature !== previousSignature;
         this.lastAudioOutputDeviceSignature = nextSignature;
 
         const outputOptions = outputs
@@ -1828,7 +1812,6 @@ export const usePlayerStore = defineStore('player', {
         return;
       }
       const playlistStore = usePlaylistStore();
-      const settingStore = useSettingStore();
       const requestSeq = ++this.playbackRequestSeq;
       const track = findTrackById(this.currentTrackId, this.currentPlaylist, playlistStore);
       if (!track) {

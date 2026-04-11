@@ -1,24 +1,7 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
 import { hideMainWindow, showMainWindow } from '../window';
-
-type ShortcutCommand =
-  | 'togglePlayback'
-  | 'previousTrack'
-  | 'nextTrack'
-  | 'toggleMainLyric'
-  | 'toggleDesktopLyric'
-  | 'volumeUp'
-  | 'volumeDown'
-  | 'toggleMute'
-  | 'toggleFavorite'
-  | 'togglePlayMode'
-  | 'toggleWindow';
-
-type ShortcutMap = Record<ShortcutCommand, string>;
-
-interface IpcContext {
-  getMainWindow: () => BrowserWindow | null;
-}
+import type { ShortcutCommand, ShortcutMap } from '../../shared/shortcuts';
+import type { IpcContext } from './types';
 
 let registeredShortcuts: ShortcutMap | null = null;
 

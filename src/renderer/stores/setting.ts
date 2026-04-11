@@ -1,42 +1,11 @@
 import { defineStore } from 'pinia';
-import { useToastStore } from './toast';
-import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
-
-type OutputDeviceOption = {
-  label: string;
-  value: string;
-  disabled?: boolean;
-};
-
-export type OutputDeviceDisconnectBehavior = 'pause' | 'fallback';
-
-type OutputDeviceStatus = 'idle' | 'ready' | 'unsupported' | 'permission' | 'fallback' | 'error';
-
-const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
-  enabled: false,
-  locked: false,
-  clickThrough: true,
-  autoShow: true,
-  alwaysOnTop: true,
-  secondaryEnabled: false,
-  theme: 'system',
-  opacity: 0.92,
-  scale: 1,
-  fontFamily:
-    'SF Pro Display, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Inter, system-ui, sans-serif',
-  inactiveFontSize: 26,
-  activeFontSize: 40,
-  secondaryFontSize: 18,
-  lineGap: 14,
-  secondaryMode: 'none',
-  alignment: 'both',
-  doubleLine: true,
-  playedColor: '#31cfa1',
-  unplayedColor: '#7a7a7a',
-  strokeColor: '#f1b8b3',
-  strokeEnabled: false,
-  bold: false,
-};
+import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import type {
+  AudioQualityValue,
+  OutputDeviceDisconnectBehavior,
+  OutputDeviceOption,
+  OutputDeviceStatus,
+} from '../types';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘Space',
@@ -68,13 +37,13 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
 
 export const useSettingStore = defineStore('setting', {
   state: () => ({
-    theme: 'system' as 'light' | 'dark' | 'system',
+    theme: 'system' as ThemeMode,
     language: 'zh-CN',
     shortcutEnabled: true,
     autoPlay: true,
     rememberWindowSize: true,
     showPlaylistCount: true,
-    closeBehavior: 'tray' as 'tray' | 'exit',
+    closeBehavior: 'tray' as CloseBehavior,
     replacePlaylist: false,
     volumeFade: true,
     volumeFadeTime: 1000,
@@ -82,7 +51,7 @@ export const useSettingStore = defineStore('setting', {
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,
     preventSleep: true,
-    defaultAudioQuality: 'high' as '128' | '320' | 'flac' | 'high',
+    defaultAudioQuality: 'high' as AudioQualityValue,
     compatibilityMode: true,
     globalShortcutsEnabled: false,
     shortcutBindings: {} as Record<string, string>,
@@ -101,10 +70,9 @@ export const useSettingStore = defineStore('setting', {
     isPrerelease: false,
     searchHistory: [] as string[],
     userAgreementAccepted: false,
-    desktopLyric: { ...DEFAULT_DESKTOP_LYRIC_SETTINGS } as DesktopLyricSettings,
   }),
   actions: {
-    setTheme(theme: 'light' | 'dark' | 'system') {
+    setTheme(theme: ThemeMode) {
       this.theme = theme;
       this.syncTheme();
     },
@@ -181,61 +149,6 @@ export const useSettingStore = defineStore('setting', {
           isPlaying,
         });
       }
-    },
-    async hydrateDesktopLyric() {
-      if (!window.electron?.desktopLyric) return;
-      const toastStore = useToastStore();
-      try {
-        const snapshot = await window.electron.desktopLyric.getSnapshot();
-        this.desktopLyric = {
-          ...DEFAULT_DESKTOP_LYRIC_SETTINGS,
-          ...snapshot.settings,
-        };
-      } catch {
-        toastStore.actionFailed('同步桌面歌词状态');
-      }
-    },
-    async syncDesktopLyricSettings(partial?: Partial<DesktopLyricSettings>) {
-      if (!window.electron?.desktopLyric) return;
-      const toastStore = useToastStore();
-      const payload = {
-        ...this.desktopLyric,
-        ...(partial ?? {}),
-      };
-      try {
-        const snapshot = await window.electron.desktopLyric.updateSettings(payload);
-        this.desktopLyric = {
-          ...DEFAULT_DESKTOP_LYRIC_SETTINGS,
-          ...snapshot.settings,
-        };
-      } catch {
-        toastStore.actionFailed('同步桌面歌词设置');
-      }
-    },
-    async setDesktopLyricEnabled(enabled: boolean) {
-      this.desktopLyric = {
-        ...this.desktopLyric,
-        enabled,
-      };
-      if (!window.electron?.desktopLyric) return;
-      const toastStore = useToastStore();
-      try {
-        const snapshot = enabled
-          ? await window.electron.desktopLyric.show()
-          : await window.electron.desktopLyric.hide();
-        this.desktopLyric = {
-          ...DEFAULT_DESKTOP_LYRIC_SETTINGS,
-          ...snapshot.settings,
-        };
-      } catch {
-        toastStore.actionFailed(enabled ? '开启桌面歌词' : '关闭桌面歌词');
-      }
-    },
-    setDesktopLyricLocal(partial: Partial<DesktopLyricSettings>) {
-      this.desktopLyric = {
-        ...this.desktopLyric,
-        ...partial,
-      };
     },
     setOutputDeviceStatus(status: OutputDeviceStatus, message = '') {
       this.outputDeviceStatus = status;

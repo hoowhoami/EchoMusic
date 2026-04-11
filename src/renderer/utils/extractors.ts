@@ -1,7 +1,4 @@
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+import { isRecord, type UnknownRecord } from '../../shared/object';
 
 const readList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
