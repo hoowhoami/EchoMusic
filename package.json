@@ -25,6 +25,7 @@
     "axios": "^1.13.6",
     "conf": "^15.1.0",
     "electron-log": "^5.4.3",
+    "howler": "^2.2.4",
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.2.0",
     "reka-ui": "^2.9.2",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
+    "@types/howler": "^2.2.12",
     "@types/node": "^22.13.9",
     "@types/semver": "^7.7.1",
     "@types/sortablejs": "^1.15.9",
@@ -90,8 +92,7 @@
       "icon": "icons/icon.icns",
       "category": "public.app-category.music",
       "target": [
-        "dmg",
-        "zip"
+        "dmg"
       ]
     },
     "win": {
@@ -99,13 +100,6 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "portable",
           "arch": [
             "x64",
             "arm64"

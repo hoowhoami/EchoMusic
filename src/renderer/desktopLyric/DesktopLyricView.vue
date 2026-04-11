@@ -299,6 +299,8 @@ const dragState = reactive({
   winHeight: 0,
 });
 
+const isResizing = ref(false);
+
 const onDocPointerDown = (event: PointerEvent) => {
   if (isLocked.value || event.button !== 0) return;
   const target = event.target as HTMLElement | null;
@@ -328,7 +330,7 @@ const onDocPointerMove = useThrottleFn((event: PointerEvent) => {
   const newX = Math.round(dragState.startWinX + (event.screenX - dragState.startX));
   const newY = Math.round(dragState.startWinY + (event.screenY - dragState.startY));
   sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
-}, 16);
+}, 16, true, false);
 
 const onDocPointerUp = () => {
   if (!dragState.isDragging) return;
@@ -352,10 +354,21 @@ const onDocPointerUp = () => {
 
 const { height: winHeight, width: winWidth } = useWindowSize();
 
-watch([winWidth, winHeight], ([w, h]) => {
+// 检测窗口大小变化（调整大小）
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+watch([winWidth, winHeight], ([w, h], [oldW, oldH]) => {
   if (!dragState.isDragging) {
     cachedBounds.width = w;
     cachedBounds.height = h;
+
+    // 检测是否在调整大小
+    if (oldW !== undefined && oldH !== undefined && (w !== oldW || h !== oldH)) {
+      isResizing.value = true;
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        isResizing.value = false;
+      }, 300);
+    }
   }
 });
 
@@ -513,7 +526,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div :class="['desktop-lyric', { locked: isLocked, hovered: isHovered }]">
+  <div :class="['desktop-lyric', { locked: isLocked, hovered: isHovered, dragging: dragState.isDragging, resizing: isResizing }]">
     <!-- 顶部工具栏 -->
     <div class="header">
       <div class="header-left" @pointerdown.stop>
@@ -848,6 +861,20 @@ onBeforeUnmount(() => {
 }
 .desktop-lyric.hovered:not(.locked) .song-name,
 .desktop-lyric.hovered:not(.locked) .menu-btn {
+  opacity: 1;
+}
+
+/* 拖动和调整大小状态 */
+.desktop-lyric.dragging:not(.locked),
+.desktop-lyric.resizing:not(.locked) {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.desktop-lyric.dragging:not(.locked) .song-name,
+.desktop-lyric.dragging:not(.locked) .menu-btn,
+.desktop-lyric.resizing:not(.locked) .song-name,
+.desktop-lyric.resizing:not(.locked) .menu-btn {
   opacity: 1;
 }
 

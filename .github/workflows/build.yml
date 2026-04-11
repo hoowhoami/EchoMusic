@@ -28,7 +28,6 @@ jobs:
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               dist/EchoMusic-*.dmg
-              dist/EchoMusic-*.zip
           - os: macos-14
             server_pkg_script: pkgmacos
             server_pkg_cmd: ""
@@ -36,7 +35,6 @@ jobs:
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               dist/EchoMusic-*.dmg
-              dist/EchoMusic-*.zip
           - os: ubuntu-22.04
             server_pkg_script: pkglinux
             server_pkg_cmd: ""
@@ -54,7 +52,6 @@ jobs:
             artifact_name: EchoMusic-Windows
             artifact_glob: |
               dist/EchoMusic-*-Windows-Setup-*.exe
-              dist/EchoMusic-*.exe
 
     steps:
       - name: Checkout code
