@@ -63,10 +63,10 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="title-bar drag flex items-center px-6 shrink-0 select-none transition-colors duration-300 z-[100] bg-transparent"
+    class="title-bar drag flex items-center shrink-0 select-none transition-colors duration-300 z-[100] bg-transparent"
   >
     <!-- 1. 左侧：导航按钮 (no-drag) -->
-    <div class="flex items-center gap-1 no-drag">
+    <div class="flex items-center gap-1 no-drag pl-6">
       <Button
         variant="unstyled"
         size="none"
@@ -77,8 +77,8 @@ onUnmounted(() => {
       >
         <Icon
           :icon="iconChevronLeft"
-          width="20"
-          height="20"
+          width="22"
+          height="22"
           :class="[
             'text-text-main transition-opacity',
             canGoBack ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
@@ -95,8 +95,8 @@ onUnmounted(() => {
       >
         <Icon
           :icon="iconChevronRight"
-          width="20"
-          height="20"
+          width="22"
+          height="22"
           :class="[
             'text-text-main transition-opacity',
             canGoForward ? 'opacity-60 group-hover:opacity-100' : 'opacity-40',
@@ -105,8 +105,8 @@ onUnmounted(() => {
       </Button>
       <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" title="刷新">
         <RefreshIcon
-          width="16"
-          height="16"
+          width="18"
+          height="18"
           class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
         />
       </Button>
@@ -116,22 +116,12 @@ onUnmounted(() => {
     <div class="flex-1 h-full"></div>
 
     <!-- 3. 右侧：窗口控制 (no-drag) -->
-    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full ml-4">
-      <Button
-        variant="unstyled"
-        size="none"
-        @click="handleControl('minimize')"
-        class="control-btn hover:bg-text-main/5"
-      >
-        <Icon :icon="iconMinus" width="10" height="10" />
+    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full">
+      <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn">
+        <Icon :icon="iconMinus" width="14" height="14" />
       </Button>
-      <Button
-        variant="unstyled"
-        size="none"
-        @click="handleControl('maximize')"
-        class="control-btn hover:bg-text-main/5"
-      >
-        <Icon :icon="iconSquare" width="9" height="9" />
+      <Button variant="unstyled" size="none" @click="handleControl('maximize')" class="control-btn">
+        <Icon :icon="iconSquare" width="13" height="13" />
       </Button>
       <Button
         variant="unstyled"
@@ -139,7 +129,7 @@ onUnmounted(() => {
         @click="handleControl('close')"
         class="control-btn hover:bg-red-500 hover:text-white"
       >
-        <Icon :icon="iconX" width="10" height="10" />
+        <Icon :icon="iconX" width="14" height="14" />
       </Button>
     </div>
   </header>
@@ -147,7 +137,7 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
-  height: 52px;
+  height: 38px;
 }
 
 .nav-btn {
@@ -156,7 +146,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: all 0.2s;
   background: transparent;
   border: none;
@@ -179,6 +169,19 @@ onUnmounted(() => {
   color: var(--color-text-main);
   background: transparent;
   border: none;
+  transition: all 0.2s;
+}
+
+.control-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .control-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.control-btn:hover.hover\:bg-red-500 {
+  background-color: #ff3b30 !important;
 }
 
 .nav-btn:disabled {

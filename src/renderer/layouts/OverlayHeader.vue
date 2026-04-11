@@ -36,28 +36,28 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
           variant="unstyled"
           size="none"
           @click="handleControl('minimize')"
-          class="w-11 h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.1]"
+          class="w-[46px] h-full flex items-center justify-center text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-white/10"
           title="最小化"
         >
-          <Icon :icon="iconMinus" width="10" height="10" />
+          <Icon :icon="iconMinus" width="14" height="14" />
         </Button>
         <Button
           variant="unstyled"
           size="none"
           @click="handleControl('maximize')"
-          class="w-11 h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.1]"
+          class="w-[46px] h-full flex items-center justify-center text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-white/10"
           title="最大化"
         >
-          <Icon :icon="iconSquare" width="9" height="9" />
+          <Icon :icon="iconSquare" width="13" height="13" />
         </Button>
         <Button
           variant="unstyled"
           size="none"
           @click="handleControl('close')"
-          class="w-11 h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-red-500 hover:text-white"
+          class="w-[46px] h-full flex items-center justify-center text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-[#ff3b30] hover:text-white"
           title="关闭"
         >
-          <Icon :icon="iconX" width="10" height="10" />
+          <Icon :icon="iconX" width="14" height="14" />
         </Button>
       </div>
     </template>
