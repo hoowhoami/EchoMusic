@@ -325,12 +325,17 @@ const onDocPointerDown = (event: PointerEvent) => {
   event.preventDefault();
 };
 
-const onDocPointerMove = useThrottleFn((event: PointerEvent) => {
-  if (!dragState.isDragging || isLocked.value) return;
-  const newX = Math.round(dragState.startWinX + (event.screenX - dragState.startX));
-  const newY = Math.round(dragState.startWinY + (event.screenY - dragState.startY));
-  sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
-}, 16, true, false);
+const onDocPointerMove = useThrottleFn(
+  (event: PointerEvent) => {
+    if (!dragState.isDragging || isLocked.value) return;
+    const newX = Math.round(dragState.startWinX + (event.screenX - dragState.startX));
+    const newY = Math.round(dragState.startWinY + (event.screenY - dragState.startY));
+    sendToMain('desktop-lyric:move', newX, newY, dragState.winWidth, dragState.winHeight);
+  },
+  16,
+  true,
+  false,
+);
 
 const onDocPointerUp = () => {
   if (!dragState.isDragging) return;
@@ -526,7 +531,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div :class="['desktop-lyric', { locked: isLocked, hovered: isHovered, dragging: dragState.isDragging, resizing: isResizing }]">
+  <div
+    :class="[
+      'desktop-lyric',
+      {
+        locked: isLocked,
+        hovered: isHovered,
+        dragging: dragState.isDragging,
+        resizing: isResizing,
+      },
+    ]"
+  >
     <!-- 顶部工具栏 -->
     <div class="header">
       <div class="header-left" @pointerdown.stop>

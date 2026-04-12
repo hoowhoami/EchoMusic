@@ -59,5 +59,6 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src/renderer'),
     },
+    extensions: ['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs', '.json', '.vue'],
   },
 });

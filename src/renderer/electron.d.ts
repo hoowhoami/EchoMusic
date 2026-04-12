@@ -32,10 +32,7 @@ export interface IElectronAPI {
     stop: () => void;
   };
   tray: {
-    syncPlayback: (payload: {
-      isPlaying?: boolean;
-      playMode?: PlayMode;
-    }) => void;
+    syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode }) => void;
     onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
   desktopLyric: {

@@ -59,7 +59,9 @@ const singerPortraitCache = new Map<string, string[]>();
 const singerPortraitPending = new Map<string, Promise<string[]>>();
 
 const normalizeRemoteImageUrl = (url: string | undefined): string => {
-  return String(url ?? '').trim().replace(/^http:\/\//, 'https://');
+  return String(url ?? '')
+    .trim()
+    .replace(/^http:\/\//, 'https://');
 };
 
 const resolvePortraitsFromAuthors = (authors: unknown): string[] => {
@@ -1055,7 +1057,13 @@ onUnmounted(() => {
   opacity: 0.3;
   filter: blur(1px) saturate(0.88);
   transform: scale(1.04);
-  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.15) 18%, black 42%, black 100%);
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.15) 18%,
+    black 42%,
+    black 100%
+  );
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent 0%,
@@ -1516,5 +1524,4 @@ onUnmounted(() => {
     object-position: center top;
   }
 }
-
 </style>

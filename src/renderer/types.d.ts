@@ -1,4 +1,3 @@
-
 declare module '@iconify/vue' {
   import type { DefineComponent } from 'vue';
   import type { IconifyIcon } from '@iconify/types';

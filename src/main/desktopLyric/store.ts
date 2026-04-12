@@ -46,7 +46,11 @@ export function getDesktopLyricSettings(): DesktopLyricSettings {
     alwaysOnTop: Boolean(raw.alwaysOnTop),
     secondaryEnabled: Boolean(raw.secondaryEnabled),
     theme: raw.theme ?? 'system',
-    opacity: clamp(Number(raw.opacity) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.opacity, 0.25, 1),
+    opacity: clamp(
+      Number(raw.opacity) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.opacity,
+      0.25,
+      1,
+    ),
     scale: clamp(Number(raw.scale) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.scale, 0.75, 1.5),
     fontFamily: String(raw.fontFamily || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.fontFamily),
     inactiveFontSize: clamp(
@@ -167,7 +171,10 @@ export function setDesktopLyricLockedFlag(locked: boolean) {
 }
 
 export function getDesktopLyricWindowState(): DesktopLyricWindowState {
-  const state = settingsStore.get('windowState', DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState);
+  const state = settingsStore.get(
+    'windowState',
+    DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState,
+  );
   return {
     width: clamp(
       Math.round(Number(state.width) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState.width),

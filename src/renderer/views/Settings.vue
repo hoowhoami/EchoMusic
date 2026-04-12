@@ -662,6 +662,19 @@ onUnmounted(() => {
       <div class="settings-card">
         <div class="settings-item">
           <div class="space-y-1">
+            <h3 class="font-semibold">置顶显示</h3>
+            <p class="text-sm text-text-secondary">
+              关闭后桌面歌词不会固定显示在其他窗口或全屏应用之上
+            </p>
+          </div>
+          <Switch
+            :model-value="desktopLyricStore.settings.alwaysOnTop"
+            @update:model-value="commitDesktopLyricSettings({ alwaysOnTop: Boolean($event) })"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
             <h3 class="font-semibold">双行显示</h3>
             <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
           </div>
