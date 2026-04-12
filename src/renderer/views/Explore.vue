@@ -224,7 +224,7 @@ const loadPlaylistCategories = async () => {
       playlistCategoryId.value = first.id;
       playlistCategoryLabel.value = first.group ? `${first.group} - ${first.name}` : first.name;
     }
-  } catch (error) {
+  } catch {
     playlistCategories.value = [];
     toastStore.loadFailed('歌单分类');
   }
@@ -236,7 +236,7 @@ const loadRecommendedPlaylists = async () => {
     const res = await getPlaylistByCategory(playlistCategoryId.value || '0', 0, 1);
     const list = extractList(res).map((item) => mapPlaylistMeta(item));
     recommendedPlaylists.value = list;
-  } catch (error) {
+  } catch {
     recommendedPlaylists.value = [];
   } finally {
     loadingPlaylists.value = false;
@@ -249,7 +249,7 @@ const loadNewSongs = async () => {
     const res = await getNewSongs();
     const list = extractList(res);
     newSongs.value = list.map((item) => mapTopSong(item));
-  } catch (error) {
+  } catch {
     newSongs.value = [];
   } finally {
     loadingNewSongs.value = false;
@@ -266,7 +266,7 @@ const loadRanks = async () => {
       rankLabel.value = list[0].name;
       await loadRankSongs(list[0].id);
     }
-  } catch (error) {
+  } catch {
     try {
       const fallback = await getRankTop();
       const list = extractList(fallback).map((item) => mapRankMeta(item));
@@ -276,7 +276,7 @@ const loadRanks = async () => {
         rankLabel.value = list[0].name;
         await loadRankSongs(list[0].id);
       }
-    } catch (_error) {
+    } catch {
       ranks.value = [];
     }
   }
@@ -291,7 +291,7 @@ const loadRankSongs = async (targetId: number) => {
     rankSortField.value = null;
     rankSortOrder.value = null;
     rankSearchQuery.value = '';
-  } catch (error) {
+  } catch {
     rankSongs.value = [];
   } finally {
     loadingRankSongs.value = false;
@@ -304,7 +304,7 @@ const loadAlbums = async () => {
     const res = await getAlbumTop();
     albumPayload.value = extractAlbumGroups(res);
     albumFallbackList.value = extractList(res);
-  } catch (error) {
+  } catch {
     albumPayload.value = {};
     albumFallbackList.value = [];
   } finally {

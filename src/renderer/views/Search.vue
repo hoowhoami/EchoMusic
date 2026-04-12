@@ -155,12 +155,12 @@ const extractSearchLists = (payload: unknown): unknown[] => {
   return Array.isArray(lists) ? lists : [];
 };
 
-const extractSearchDefaultKeyword = (payload: unknown): string => {
-  const record = toRecord(payload);
-  const data = toRecord(record?.data);
-  const raw = data?.keyword ?? data?.show_keyword ?? data?.fallback ?? '';
-  return typeof raw === 'string' ? raw : String(raw);
-};
+// const extractSearchDefaultKeyword = (payload: unknown): string => {
+//   const record = toRecord(payload);
+//   const data = toRecord(record?.data);
+//   const raw = data?.keyword ?? data?.show_keyword ?? data?.fallback ?? '';
+//   return typeof raw === 'string' ? raw : String(raw);
+// };
 
 const extractHotCategories = (payload: unknown): SearchHotCategory[] => {
   const record = toRecord(payload);
@@ -252,7 +252,7 @@ const loadHotSearches = async () => {
     if (selectedHotCategoryIndex.value >= hotSearchCategories.value.length) {
       selectedHotCategoryIndex.value = 0;
     }
-  } catch (_error) {
+  } catch {
     hotSearchCategories.value = [];
     defaultKeyword.value = '';
   } finally {
@@ -318,7 +318,7 @@ const fetchSuggestions = async (keywords: string) => {
     if (document.activeElement === searchInputRef.value) {
       showSuggestions.value = true;
     }
-  } catch (_error) {
+  } catch {
     suggestionCategories.value = [];
     isLoadingSuggestions.value = false;
   }
@@ -388,7 +388,7 @@ const runSearch = async (keyword?: string) => {
     albumResults.value = extractSearchLists(albumRes).map((item) => mapAlbumMeta(item));
     artistResults.value = extractSearchLists(artistRes).map((item) => mapArtistMeta(item));
     playlistResults.value = extractSearchLists(playlistRes).map((item) => mapPlaylistMeta(item));
-  } catch (_error) {
+  } catch {
     songResults.value = [];
     albumResults.value = [];
     artistResults.value = [];

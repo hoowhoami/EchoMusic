@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, shell, app, session } from 'electron';
+import { ipcMain, shell, app, session } from 'electron';
 import Conf from 'conf';
 import log from 'electron-log';
 import { dirname } from 'path';

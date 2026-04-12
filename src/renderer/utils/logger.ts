@@ -1,4 +1,4 @@
-/// <reference path="../electron.d.ts" />
+import type {} from '../electron.d.ts';
 
 /**
  * 接入 electron-log 的日志工具，支持开发环境回退到 console
@@ -17,7 +17,7 @@ const getElectronLog = (): LoggerFunctions | undefined => {
   try {
     const electron = (window as any).electron;
     return electron?.log;
-  } catch (e) {
+  } catch {
     return undefined;
   }
 };
@@ -30,7 +30,7 @@ const formatArgs = (args: any[]) => {
       if (typeof arg === 'object') {
         try {
           return JSON.stringify(arg);
-        } catch (e) {
+        } catch {
           return arg;
         }
       }

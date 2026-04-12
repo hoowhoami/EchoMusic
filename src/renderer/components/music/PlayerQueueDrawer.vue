@@ -46,7 +46,7 @@ const queueEntries = computed(() =>
 const currentTrackId = computed(() => playerStore.currentTrackId);
 
 const itemHeight = 56;
-const { list, containerProps, wrapperProps, scrollTo } = useVirtualList(queueEntries, {
+const { list, containerProps, wrapperProps } = useVirtualList(queueEntries, {
   itemHeight,
 });
 

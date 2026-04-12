@@ -115,7 +115,7 @@ const fetchRecommendSongs = async () => {
   try {
     const res = await getEverydayRecommend();
     songs.value = extractList(res).map((item) => mapTopSong(item));
-  } catch (error) {
+  } catch {
     songs.value = [];
   } finally {
     loading.value = false;

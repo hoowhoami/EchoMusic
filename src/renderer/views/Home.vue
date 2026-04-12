@@ -58,7 +58,7 @@ const loadRecommendPlaylists = async () => {
     const res = await getPlaylistByCategory('0', 0, 1);
     const list = extractPlaylistList(res).map((item) => mapPlaylistMeta(item));
     recommendedPlaylists.value = list;
-  } catch (error) {
+  } catch {
     recommendState.value = { loading: false, error: '推荐歌单加载失败' };
     return;
   }
@@ -79,7 +79,7 @@ const loadTopIp = async () => {
       })
       .map((item) => mapPlaylistMeta(item));
     topIpPlaylists.value = list;
-  } catch (error) {
+  } catch {
     topIpState.value = { loading: false, error: '编辑精选加载失败' };
     return;
   }

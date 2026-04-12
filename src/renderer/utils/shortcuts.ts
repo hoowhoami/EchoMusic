@@ -121,7 +121,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   const playerStore = usePlayerStore();
   const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
-  const settingStore = useSettingStore();
+  // const settingStore = useSettingStore();
   const desktopLyricStore = useDesktopLyricStore();
 
   if (command === 'togglePlayback') {

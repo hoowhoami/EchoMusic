@@ -44,11 +44,11 @@ type LyricDetailEnvelope = LyricDetailResponse & {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-const parsePreference = (value: unknown): Exclude<LyricsMode, 'none'> => {
-  if (value === 'romanization') return 'romanization';
-  if (value === 'both') return 'both';
-  return 'translation';
-};
+// const parsePreference = (value: unknown): Exclude<LyricsMode, 'none'> => {
+//   if (value === 'romanization') return 'romanization';
+//   if (value === 'both') return 'both';
+//   return 'translation';
+// };
 
 const normalizeDetailPayload = (payload: unknown): LyricDetailResponse | null => {
   if (!payload || typeof payload !== 'object') return null;
@@ -144,14 +144,14 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
   return '';
 };
 
-const getPreferredSecondaryMode = (
-  hasRomanization: boolean,
-  hasTranslation: boolean,
-): LyricsMode => {
-  if (hasRomanization) return 'romanization';
-  if (hasTranslation) return 'translation';
-  return 'none';
-};
+// const getPreferredSecondaryMode = (
+//   hasRomanization: boolean,
+//   hasTranslation: boolean,
+// ): LyricsMode => {
+//   if (hasRomanization) return 'romanization';
+//   if (hasTranslation) return 'translation';
+//   return 'none';
+// };
 
 export const useLyricStore = defineStore('lyric', {
   state: () => ({

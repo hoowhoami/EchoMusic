@@ -48,12 +48,12 @@ const authorLine = computed(() => {
 });
 const tagList = computed(() => meta.value?.tags?.map((item) => item.name).filter(Boolean) ?? []);
 const sourceList = computed(() => meta.value?.sources ?? []);
-const selectedSource = computed(
-  () =>
-    sourceList.value.find((item) => item.hash === currentSourceHash.value) ??
-    sourceList.value[0] ??
-    null,
-);
+// const selectedSource = computed(
+//   () =>
+//     sourceList.value.find((item) => item.hash === currentSourceHash.value) ??
+//     sourceList.value[0] ??
+//     null,
+// );
 const hasPrevVersion = computed(() => currentVersionIndex.value > 0);
 const hasNextVersion = computed(() => currentVersionIndex.value < mvVersions.value.length - 1);
 const authorList = computed(() => meta.value?.authors ?? []);

@@ -45,7 +45,7 @@ const type = route.query.type as 'music' | 'playlist' | 'album';
 const songTitle = computed(() => String(route.query.title ?? ''));
 const songArtist = computed(() => String(route.query.artist ?? ''));
 const songAlbum = computed(() => String(route.query.album ?? ''));
-const songCover = computed(() => String(route.query.cover ?? ''));
+// const songCover = computed(() => String(route.query.cover ?? ''));
 const songHash = computed(() => String(route.query.hash ?? ''));
 const songArtistIdFromQuery = computed(() => String(route.query.artistId ?? ''));
 const songAlbumId = computed(() => String(route.query.albumId ?? ''));
@@ -53,12 +53,12 @@ const songMixSongId = computed(() => String(route.query.mixSongId ?? id));
 
 const isMusicType = computed(() => type === 'music');
 const resourceTitle = computed(() => songTitle.value || String(route.query.title ?? ''));
-const resourceSubtitle = computed(() => {
-  if (type === 'music') {
-    return [songArtist.value, songAlbum.value].filter(Boolean).join(' • ');
-  }
-  return String(route.query.artist ?? route.query.subtitle ?? '');
-});
+// const resourceSubtitle = computed(() => {
+//   if (type === 'music') {
+//     return [songArtist.value, songAlbum.value].filter(Boolean).join(' • ');
+//   }
+//   return String(route.query.artist ?? route.query.subtitle ?? '');
+// });
 const resourceCover = computed(() => String(route.query.cover ?? ''));
 const headerTypeLabel = computed(() => {
   switch (type) {
@@ -233,7 +233,7 @@ const openAlbumDetail = () => {
   });
 };
 
-const totalLabel = computed(() => (total.value > 0 ? `(${total.value})` : ''));
+// const totalLabel = computed(() => (total.value > 0 ? `(${total.value})` : ''));
 const showCommentsEnd = computed(
   () => !hasMore.value && !isLoadingComments.value && comments.value.length > 0,
 );

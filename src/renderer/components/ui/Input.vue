@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVModel } from '@vueuse/core';
-import { Primitive, type PrimitiveProps } from 'reka-ui';
+import { type PrimitiveProps } from 'reka-ui';
 import Button from '@/components/ui/Button.vue';
 import { iconX } from '@/icons';
 

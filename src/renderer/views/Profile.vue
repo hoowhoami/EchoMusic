@@ -90,7 +90,7 @@ const getVipExpireText = (vipData: any) => {
     if (days > 30) return `${Math.floor(days / 30)}个月后到期`;
     if (days > 0) return `${days}天后到期`;
     return '即将到期';
-  } catch (e) {
+  } catch {
     return null;
   }
 };

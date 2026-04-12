@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
-import { usePlaylistStore } from '@/stores/playlist';
 import {
   getLoginQrKey,
   createLoginQr,
@@ -169,7 +168,7 @@ const handleSendCode = async () => {
     } else {
       smsData.error = res.error || '发送验证码失败，请稍后重试';
     }
-  } catch (e) {
+  } catch {
     smsData.error = '发送验证码失败，请稍后重试';
   } finally {
     smsData.isSending = false;
@@ -189,7 +188,7 @@ const handleSmsLogin = async () => {
     } else {
       smsData.error = res.error || '登录失败，请稍后重试';
     }
-  } catch (e) {
+  } catch {
     smsData.error = '登录失败，请稍后重试';
   } finally {
     smsData.isSending = false;

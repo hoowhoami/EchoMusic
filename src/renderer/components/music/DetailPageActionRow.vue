@@ -16,7 +16,7 @@ interface Props {
   secondaryActions?: Action[];
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   playLabel: '播放',
   secondaryActions: () => [],
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
 import { getPlaylistComments, getFloorComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
@@ -41,7 +41,7 @@ import {
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
-import { isRecord, toRecord } from '../../../shared/object';
+import { toRecord } from '../../../shared/object';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -51,7 +51,7 @@ const parseIntSafe = (value: unknown): number => {
 };
 
 const route = useRoute();
-const router = useRouter();
+// const router = useRouter();
 const getPlaylistId = () => route.params.id as string;
 
 const loading = ref(true);

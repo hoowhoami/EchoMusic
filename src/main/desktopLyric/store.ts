@@ -193,19 +193,19 @@ export function getDesktopLyricWindowState(): DesktopLyricWindowState {
   };
 }
 
-const hasVisibleArea = (bounds: DesktopLyricWindowState) => {
-  return screen.getAllDisplays().some((display) => {
-    const area = display.workArea;
-    const x = bounds.x ?? area.x;
-    const y = bounds.y ?? area.y;
-    return (
-      x < area.x + area.width &&
-      x + bounds.width > area.x &&
-      y < area.y + area.height &&
-      y + bounds.height > area.y
-    );
-  });
-};
+// const hasVisibleArea = (bounds: DesktopLyricWindowState) => {
+//   return screen.getAllDisplays().some((display) => {
+//     const area = display.workArea;
+//     const x = bounds.x ?? area.x;
+//     const y = bounds.y ?? area.y;
+//     return (
+//       x < area.x + area.width &&
+//       x + bounds.width > area.x &&
+//       y < area.y + area.height &&
+//       y + bounds.height > area.y
+//     );
+//   });
+// };
 
 const getBestDisplayForBounds = (bounds: DesktopLyricWindowState) => {
   const displays = screen.getAllDisplays();

@@ -46,9 +46,9 @@ const props = withDefaults(defineProps<Props>(), {
   active: true,
 });
 
-const emit = defineEmits<{
-  (e: 'more', song: Song): void;
-}>();
+// const emit = defineEmits<{
+//   (e: 'more', song: Song): void;
+// }>();
 
 const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();

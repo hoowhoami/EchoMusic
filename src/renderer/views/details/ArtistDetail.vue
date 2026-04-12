@@ -252,7 +252,7 @@ const toggleArtistFollow = async () => {
     } else {
       toastStore.actionFailed(previousFollowed ? '取消关注' : '关注');
     }
-  } catch (error) {
+  } catch {
     toastStore.actionFailed(previousFollowed ? '取消关注' : '关注');
   } finally {
     togglingFollow.value = false;

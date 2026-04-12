@@ -14,7 +14,6 @@ import { formatDuration } from '@/utils/format';
 import type { Song, SongArtist, SongRelateGood } from '@/models/song';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
-import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
@@ -83,7 +82,7 @@ const router = useRouter();
 const route = useRoute();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
-const settingStore = useSettingStore();
+// const settingStore = useSettingStore();
 const userStore = useUserStore();
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
@@ -120,12 +119,12 @@ const songState = computed<Song>(() => ({
 }));
 
 const derivedState = computed(() => getSongDerivedState(songState.value));
-const isVip = computed(() => derivedState.value.isVip);
-const isPaid = computed(() => derivedState.value.isPaid);
-const isNoCopyright = computed(() => derivedState.value.isNoCopyright);
-const isUnavailable = computed(() => derivedState.value.isUnavailable);
+// const isVip = computed(() => derivedState.value.isVip);
+// const isPaid = computed(() => derivedState.value.isPaid);
+// const isNoCopyright = computed(() => derivedState.value.isNoCopyright);
+// const isUnavailable = computed(() => derivedState.value.isUnavailable);
 const isPlayable = computed(() => derivedState.value.isPlayable);
-const unavailableMessage = computed(() => derivedState.value.unavailableMessage);
+// const unavailableMessage = computed(() => derivedState.value.unavailableMessage);
 const contentOpacity = computed(() => {
   if (props.variant === 'list') return 1;
   return isPlayable.value ? 1 : 0.45;

@@ -1,14 +1,5 @@
 <script setup lang="ts">
-import {
-  TabsRoot,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  type TabsRootProps,
-  type TabsRootEmits,
-  useForwardPropsEmits,
-} from 'reka-ui';
-import { computed } from 'vue';
+import { TabsRoot, type TabsRootProps, type TabsRootEmits, useForwardPropsEmits } from 'reka-ui';
 
 const props = defineProps<TabsRootProps & { class?: string }>();
 const emits = defineEmits<TabsRootEmits>();
