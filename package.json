@@ -65,7 +65,7 @@
     "appId": "com.hoowhoami.echomusic",
     "productName": "EchoMusic",
     "directories": {
-      "output": "dist",
+      "output": "release",
       "buildResources": "build"
     },
     "files": [
@@ -79,24 +79,29 @@
         "filter": [
           "**/*"
         ]
-      },
-      {
-        "from": "server/bin",
-        "to": "server",
-        "filter": [
-          "**/*"
-        ]
       }
     ],
     "mac": {
       "icon": "icons/icon.icns",
       "category": "public.app-category.music",
+      "extraResources": [
+        {
+          "from": "server/bin/app_macos",
+          "to": "server/app_macos"
+        }
+      ],
       "target": [
         "dmg"
       ]
     },
     "win": {
       "icon": "icons/icon.ico",
+      "extraResources": [
+        {
+          "from": "server/bin/app_win.exe",
+          "to": "server/app_win.exe"
+        }
+      ],
       "target": [
         {
           "target": "nsis",
@@ -109,6 +114,12 @@
     },
     "linux": {
       "icon": "build/icons/linux_256x256.png",
+      "extraResources": [
+        {
+          "from": "server/bin/app_linux",
+          "to": "server/app_linux"
+        }
+      ],
       "target": [
         "AppImage",
         "deb",

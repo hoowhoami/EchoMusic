@@ -26,6 +26,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/main', // 明确主进程输出目录
+            emptyOutDir: true,
             rollupOptions: {
               external: ['electron'],
             },
@@ -40,6 +41,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/preload', // 明确预加载脚本输出目录
+            emptyOutDir: true,
           },
         },
       },

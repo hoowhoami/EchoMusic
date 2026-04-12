@@ -27,31 +27,31 @@ jobs:
             electron_builder_args: ""
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
-              dist/EchoMusic-*.dmg
+              release/EchoMusic-*.dmg
           - os: macos-14
             server_pkg_script: pkgmacos
             server_pkg_cmd: ""
             electron_builder_args: "--mac --x64"
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
-              dist/EchoMusic-*.dmg
+              release/EchoMusic-*.dmg
           - os: ubuntu-22.04
             server_pkg_script: pkglinux
             server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Linux
             artifact_glob: |
-              dist/EchoMusic-*.AppImage
-              dist/EchoMusic-*.deb
-              dist/EchoMusic-*.rpm
-              dist/EchoMusic-*.tar.gz
+              release/EchoMusic-*.AppImage
+              release/EchoMusic-*.deb
+              release/EchoMusic-*.rpm
+              release/EchoMusic-*.tar.gz
           - os: windows-latest
             server_pkg_script: pkgwin
             server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Windows
             artifact_glob: |
-              dist/EchoMusic-*-Windows-Setup-*.exe
+              release/EchoMusic-*-Windows-Setup-*.exe
 
     steps:
       - name: Checkout code
@@ -94,6 +94,11 @@ jobs:
         working-directory: server
         shell: bash
         run: find module -name '*.test.js' -delete
+
+      - name: Clean server bin
+        working-directory: server
+        shell: bash
+        run: rm -rf bin && mkdir -p bin
 
       - name: Build server executable
         working-directory: server
