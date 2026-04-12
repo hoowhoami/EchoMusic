@@ -160,14 +160,7 @@ const handleAddToPlaylist = async () => {
 
 const handleAddToQueue = () => {
   if (selectedSongs.value.length === 0) return;
-  const currentList = playlistStore.defaultList;
-  let addedCount = 0;
-  for (const song of selectedSongs.value) {
-    if (!currentList.some((item) => isSameSong(item, song))) {
-      currentList.push(song);
-      addedCount++;
-    }
-  }
+  const addedCount = playlistStore.appendToPlaybackQueue?.(selectedSongs.value) ?? 0;
   if (addedCount > 0) {
     toastStore.actionCompleted(`已添加 ${addedCount} 首到播放列表`);
   } else {
@@ -349,7 +342,12 @@ const handleRemoveFromPlaylist = async () => {
           <Icon :icon="iconList" width="16" height="16" />
           播放列表
         </span>
-        <span class="batch-playlist-count">{{ playlistStore.defaultList.length }} 首</span>
+        <span class="batch-playlist-count"
+          >{{
+            playlistStore.activeQueue?.songs.length ?? playlistStore.defaultList.length
+          }}
+          首</span
+        >
       </Button>
       <div class="batch-playlist-divider">
         <span>歌单</span>

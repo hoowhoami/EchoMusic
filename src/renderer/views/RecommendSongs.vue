@@ -95,12 +95,24 @@ const sortedSongs = computed(() => {
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    queueId: 'queue:daily-recommend',
+    title: '每日推荐',
+    subtitle: '为你量身定制',
+    type: 'daily-recommend',
+    dynamic: false,
+  });
 };
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    queueId: 'queue:daily-recommend',
+    title: '每日推荐',
+    subtitle: '为你量身定制',
+    type: 'daily-recommend',
+    dynamic: false,
+  });
 };
 
 const openBatchDrawer = () => {

@@ -56,6 +56,7 @@ const desktopLyricStore = useDesktopLyricStore();
 const currentTrack = computed(() => {
   return (
     player.currentTrackSnapshot ||
+    (playlist.activeQueue?.songs ?? []).find((s: Song) => s.id === player.currentTrackId) ||
     playlist.defaultList.find((s: Song) => s.id === player.currentTrackId) ||
     playlist.favorites.find((s: Song) => s.id === player.currentTrackId)
   );
@@ -69,7 +70,9 @@ const isFavorite = computed(() => {
     : false;
 });
 
-const queueCount = computed(() => playlist.defaultList.length);
+const queueCount = computed(
+  () => playlist.activeQueue?.songs.length ?? playlist.defaultList.length,
+);
 const playbackNotice = computed(() => player.playbackNotice);
 
 const playbackRates = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];

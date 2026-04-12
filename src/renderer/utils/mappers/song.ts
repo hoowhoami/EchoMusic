@@ -59,6 +59,7 @@ export const mapTopSong = (json: unknown): Song => {
     id: readString(
       pickValue(record.mixsongid, record.audio_id, record.album_audio_id, record.hash, ''),
     ),
+    songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
     title: title || '未知歌曲',
     name: title || '未知歌曲',
     artist: normalizeText(
@@ -179,6 +180,7 @@ export const mapPlaylistSong = (json: unknown): Song => {
 
   return {
     id: readString(pickValue(record.mixsongid, record.audio_id, audioInfo.audio_id, hash)),
+    songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
     title: title || '未知歌曲',
     name: title || '未知歌曲',
     artist: normalizeText(singerName || '未知歌手'),
@@ -229,6 +231,7 @@ export const mapArtistSong = (artistId: string | number, json: unknown): Song =>
 
   return {
     id: readString(pickValue(record.mixsongid, record.album_audio_id, hash)),
+    songId: readString(pickValue(record.songid, record.song_id, record.audio_id, '')),
     title: readString(record.audio_name, '未知歌曲'),
     name: readString(record.audio_name, '未知歌曲'),
     artist: fallbackArtistName || '未知歌手',

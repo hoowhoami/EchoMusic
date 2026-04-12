@@ -11,6 +11,7 @@ export interface SongArtist {
 
 export interface Song {
   id: string;
+  songId?: string | number;
   title: string;
   name?: string;
   artist: string;

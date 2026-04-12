@@ -280,12 +280,22 @@ const secondaryActions = computed(() => {
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
+    title: artist.value?.name || '歌手',
+    subtitle: '',
+    type: 'artist',
+  });
 };
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
+    title: artist.value?.name || '歌手',
+    subtitle: '',
+    type: 'artist',
+  });
 };
 const openBatchDrawer = () => {
   if (songs.value.length === 0) return;

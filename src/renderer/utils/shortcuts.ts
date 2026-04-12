@@ -155,6 +155,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.setVolume(next);
   } else if (command === 'toggleFavorite') {
     const track =
+      (playlistStore.activeQueue?.songs ?? []).find((s) => s.id === playerStore.currentTrackId) ||
       playlistStore.defaultList.find((s) => s.id === playerStore.currentTrackId) ||
       playlistStore.favorites.find((s) => s.id === playerStore.currentTrackId) ||
       playerStore.currentTrackSnapshot;

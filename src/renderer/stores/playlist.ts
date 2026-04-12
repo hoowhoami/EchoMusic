@@ -7,15 +7,63 @@ import {
   addPlaylist,
   deletePlaylist,
 } from '@/api/playlist';
+import { getPersonalFm, type PersonalFmParams } from '@/api/music';
 import logger from '@/utils/logger';
-import { mapPlaylistMeta } from '@/utils/mappers';
+import { mapPlaylistMeta, mapTopSong } from '@/utils/mappers';
 import { parsePlaylistTracks } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
+import { extractList } from '@/utils/extractors';
 
 export type { Song, SongRelateGood, SongArtist } from '@/models/song';
 export type { PlaylistInfo } from '@/models/playlist';
+export type PlaybackQueueType =
+  | 'default'
+  | 'daily-recommend'
+  | 'playlist'
+  | 'ranking'
+  | 'album'
+  | 'artist'
+  | 'search'
+  | 'history'
+  | 'cloud'
+  | 'fm'
+  | 'manual';
+
+export interface PlaybackQueueMetaValueMap {
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+export interface PlaybackQueueState {
+  id: string;
+  title: string;
+  subtitle: string;
+  coverUrl: string;
+  type: PlaybackQueueType;
+  songs: Song[];
+  filteredInvalidCount: number;
+  queuedNextTrackIds: string[];
+  currentTrackId: string | null;
+  createdAt: number;
+  updatedAt: number;
+  dynamic: boolean;
+  meta: PlaybackQueueMetaValueMap;
+}
+
+export interface SetPlaybackQueueOptions {
+  queueId?: string;
+  title?: string;
+  subtitle?: string;
+  coverUrl?: string;
+  type?: PlaybackQueueType;
+  dynamic?: boolean;
+  meta?: PlaybackQueueMetaValueMap;
+  activate?: boolean;
+}
+
+export const DEFAULT_PLAYBACK_QUEUE_ID = 'queue:default';
+export const PERSONAL_FM_QUEUE_ID = 'queue:personal-fm';
 
 const normalizePlaylistName = (value: string | undefined): string => String(value ?? '').trim();
 
@@ -74,6 +122,68 @@ const includesPlaylistIdentity = (playlist: PlaylistMeta, id: string): boolean =
 };
 
 const FAVORITES_PAGE_SIZE = 200;
+const MAX_PLAYBACK_QUEUE_COUNT = 4;
+const PERSONAL_FM_MODE = 'normal';
+
+const buildPlaybackQueueState = (
+  options: SetPlaybackQueueOptions = {},
+  songs: Song[] = [],
+  filteredInvalidCount = 0,
+): PlaybackQueueState => {
+  const now = Date.now();
+  return {
+    id: String(options.queueId ?? DEFAULT_PLAYBACK_QUEUE_ID),
+    title: options.title?.trim() || '播放列表',
+    subtitle: options.subtitle?.trim() || '',
+    coverUrl: options.coverUrl?.trim() || '',
+    type: options.type ?? 'default',
+    songs: songs.slice(),
+    filteredInvalidCount: Math.max(0, filteredInvalidCount),
+    queuedNextTrackIds: [],
+    currentTrackId: null,
+    createdAt: now,
+    updatedAt: now,
+    dynamic: options.dynamic ?? false,
+    meta: { ...(options.meta ?? {}) },
+  };
+};
+
+const resolveSongQueueKey = (song: Song): string => {
+  if (String(song.mixSongId ?? '0') !== '0') return `mx:${String(song.mixSongId)}`;
+  if (song.hash) return `hash:${song.hash.toLowerCase()}`;
+  return `id:${String(song.id)}`;
+};
+
+const resolveSongNumericId = (song: Song | null | undefined): string => {
+  if (!song) return '';
+  const candidates = [song.songId, song.mixSongId, song.fileId, song.id];
+  for (const candidate of candidates) {
+    const parsed = Number.parseInt(String(candidate ?? ''), 10);
+    if (Number.isFinite(parsed) && parsed > 0) return String(parsed);
+  }
+  return String(song.id ?? '');
+};
+
+const mergeQueueSongs = (existing: Song[], incoming: Song[]): Song[] => {
+  if (incoming.length === 0) return existing.slice();
+  const seen = new Set(existing.map((song) => resolveSongQueueKey(song)));
+  const next = existing.slice();
+  incoming.forEach((song) => {
+    const key = resolveSongQueueKey(song);
+    if (seen.has(key)) return;
+    seen.add(key);
+    next.push(song);
+  });
+  return next;
+};
+
+const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean => {
+  const key = resolveSongQueueKey(song);
+  const exists = queue.songs.some((item) => resolveSongQueueKey(item) === key);
+  if (exists) return false;
+  queue.songs.push(song);
+  return true;
+};
 
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
@@ -82,10 +192,31 @@ export const usePlaylistStore = defineStore('playlist', {
     userPlaylists: [] as PlaylistMeta[],
     queueFilteredInvalidCount: 0,
     queuedNextTrackIds: [] as string[],
+    playbackQueues: [] as PlaybackQueueState[],
+    activeQueueId: DEFAULT_PLAYBACK_QUEUE_ID,
+    personalFmBuffer: [] as Song[],
   }),
   getters: {
     likedPlaylist(state) {
       return findLikedPlaylist(state.userPlaylists);
+    },
+    activeQueue(state): PlaybackQueueState | null {
+      return state.playbackQueues.find((queue) => queue.id === state.activeQueueId) ?? null;
+    },
+    playbackQueueList(state): PlaybackQueueState[] {
+      return state.playbackQueues
+        .slice()
+        .sort(
+          (left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt,
+        );
+    },
+    historyPlaybackQueues(): PlaybackQueueState[] {
+      return this.playbackQueueList.filter(
+        (queue) =>
+          queue.id !== this.activeQueueId &&
+          queue.id !== PERSONAL_FM_QUEUE_ID &&
+          queue.songs.length > 0,
+      );
     },
     likedPlaylistQueryId(): string | number | null {
       const playlist = this.likedPlaylist;
@@ -101,6 +232,276 @@ export const usePlaylistStore = defineStore('playlist', {
     },
   },
   actions: {
+    syncLegacyPlaybackState() {
+      const activeQueue =
+        this.playbackQueues.find((queue) => queue.id === this.activeQueueId) ??
+        this.playbackQueues[0] ??
+        null;
+
+      if (!activeQueue) {
+        this.defaultList = [];
+        this.queueFilteredInvalidCount = 0;
+        this.queuedNextTrackIds = [];
+        return;
+      }
+
+      this.defaultList = activeQueue.songs.slice();
+      this.queueFilteredInvalidCount = Math.max(0, activeQueue.filteredInvalidCount);
+      this.queuedNextTrackIds = activeQueue.queuedNextTrackIds.slice();
+    },
+    trimPlaybackQueues(limit = MAX_PLAYBACK_QUEUE_COUNT) {
+      if (this.playbackQueues.length <= limit) return;
+      const protectedIds = new Set<string>([this.activeQueueId, DEFAULT_PLAYBACK_QUEUE_ID]);
+      const removable = this.playbackQueues
+        .filter((queue) => !protectedIds.has(queue.id))
+        .sort(
+          (left, right) => left.createdAt - right.createdAt || left.updatedAt - right.updatedAt,
+        );
+
+      const nextQueues = this.playbackQueues.slice();
+      while (nextQueues.length > limit && removable.length > 0) {
+        const target = removable.shift();
+        if (!target) break;
+        const index = nextQueues.findIndex((queue) => queue.id === target.id);
+        if (index >= 0) nextQueues.splice(index, 1);
+      }
+
+      this.playbackQueues = nextQueues;
+    },
+    hydratePlaybackQueues() {
+      if (this.playbackQueues.length > 0) {
+        if (!this.playbackQueues.some((queue) => queue.id === this.activeQueueId)) {
+          this.activeQueueId = this.playbackQueues[0]?.id ?? DEFAULT_PLAYBACK_QUEUE_ID;
+        }
+        this.syncLegacyPlaybackState();
+        return;
+      }
+
+      if (
+        this.defaultList.length === 0 &&
+        this.queueFilteredInvalidCount === 0 &&
+        this.queuedNextTrackIds.length === 0
+      ) {
+        return;
+      }
+
+      this.playbackQueues = [
+        {
+          ...buildPlaybackQueueState(
+            {
+              queueId: this.activeQueueId || DEFAULT_PLAYBACK_QUEUE_ID,
+              title: '播放列表',
+              type: 'default',
+            },
+            this.defaultList,
+            this.queueFilteredInvalidCount,
+          ),
+          queuedNextTrackIds: this.queuedNextTrackIds.slice(),
+        },
+      ];
+      this.activeQueueId = this.playbackQueues[0].id;
+      this.syncLegacyPlaybackState();
+    },
+    ensurePlaybackQueue(queueId?: string, options: SetPlaybackQueueOptions = {}) {
+      this.hydratePlaybackQueues();
+      const resolvedId = String(
+        queueId ?? options.queueId ?? this.activeQueueId ?? DEFAULT_PLAYBACK_QUEUE_ID,
+      );
+      const matched = this.playbackQueues.find((queue) => queue.id === resolvedId);
+      if (matched) return matched;
+
+      const created = buildPlaybackQueueState({
+        queueId: resolvedId,
+        title: options.title,
+        subtitle: options.subtitle,
+        coverUrl: options.coverUrl,
+        type: options.type,
+        dynamic: options.dynamic,
+        meta: options.meta,
+      });
+      this.playbackQueues.unshift(created);
+      this.trimPlaybackQueues();
+      return created;
+    },
+    setActiveQueue(queueId: string | number) {
+      const matched = this.ensurePlaybackQueue(String(queueId));
+      this.activeQueueId = matched.id;
+      matched.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
+    },
+    updateQueueCurrentTrack(songId: string | number | null | undefined, queueId?: string) {
+      const targetQueue = this.ensurePlaybackQueue(queueId);
+      targetQueue.currentTrackId =
+        songId === undefined || songId === null || String(songId) === '' ? null : String(songId);
+      targetQueue.updatedAt = Date.now();
+      if (targetQueue.id === this.activeQueueId) {
+        this.syncLegacyPlaybackState();
+      }
+    },
+    getQueueRemainingSongCount(queueId?: string, trackId?: string | null) {
+      const targetQueue = this.ensurePlaybackQueue(queueId);
+      const currentTrackId = String(trackId ?? targetQueue.currentTrackId ?? '');
+      if (!currentTrackId) return targetQueue.songs.length;
+      const currentIndex = targetQueue.songs.findIndex(
+        (song) => String(song.id) === currentTrackId,
+      );
+      if (currentIndex === -1) return targetQueue.songs.length;
+      return Math.max(0, targetQueue.songs.length - currentIndex - 1);
+    },
+    getPersonalFmPreviewTrack() {
+      const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+      const currentTrack =
+        queue?.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ?? null;
+      if (currentTrack) return currentTrack;
+      if (queue && queue.songs.length > 0) return queue.songs[queue.songs.length - 1];
+      return this.personalFmBuffer[0] ?? null;
+    },
+    getPersonalFmDisplayTracks(limit = 5) {
+      const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+      const currentId = String(queue?.currentTrackId ?? '');
+      const source = [
+        ...this.personalFmBuffer,
+        ...(queue?.songs.filter((song) => String(song.id) !== currentId).reverse() ?? []),
+      ];
+      const seen = new Set<string>();
+      const result: Song[] = [];
+
+      for (const song of source) {
+        const key = resolveSongQueueKey(song);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(song);
+        if (result.length >= limit) break;
+      }
+
+      return result;
+    },
+    async fetchPersonalFmSongs(params: PersonalFmParams = {}) {
+      const response = await getPersonalFm(params);
+      return extractList(response).map((item) => mapTopSong(item));
+    },
+    async startPersonalFm(options?: { fresh?: boolean }) {
+      const queue = this.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
+        queueId: PERSONAL_FM_QUEUE_ID,
+        title: '红心 Radio',
+        subtitle: '猜你喜欢',
+        type: 'fm',
+        dynamic: true,
+        meta: {
+          mode: PERSONAL_FM_MODE,
+          song_pool_id: 0,
+        },
+      });
+      if (options?.fresh) {
+        queue.songs = [];
+        queue.queuedNextTrackIds = [];
+        queue.currentTrackId = null;
+        queue.filteredInvalidCount = 0;
+        queue.createdAt = Date.now();
+        queue.updatedAt = queue.createdAt;
+        this.personalFmBuffer = [];
+      }
+      if (queue.songs.length > 0 || this.personalFmBuffer.length > 0) {
+        this.activeQueueId = queue.id;
+        this.syncLegacyPlaybackState();
+        return true;
+      }
+      const songs = await this.fetchPersonalFmSongs();
+      if (songs.length === 0) return false;
+      queue.songs = [];
+      queue.currentTrackId = null;
+      queue.updatedAt = Date.now();
+      this.personalFmBuffer = dedupeSongs(songs);
+      this.activeQueueId = queue.id;
+      this.syncLegacyPlaybackState();
+      return true;
+    },
+    async ensurePersonalFmQueue(options?: {
+      track?: Song | null;
+      playtime?: number;
+      action?: 'play' | 'garbage';
+      isOverplay?: boolean;
+    }) {
+      const queue = this.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
+        queueId: PERSONAL_FM_QUEUE_ID,
+        title: '红心 Radio',
+        subtitle: '猜你喜欢',
+        type: 'fm',
+        dynamic: true,
+        meta: {
+          mode: PERSONAL_FM_MODE,
+          song_pool_id: 0,
+        },
+      });
+      const track =
+        options?.track ??
+        queue.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
+        null;
+      const remainSongcnt = this.personalFmBuffer.length;
+      if (remainSongcnt > 4) return 0;
+
+      const params: PersonalFmParams = {
+        mode: String(queue.meta.mode ?? PERSONAL_FM_MODE),
+        action: options?.action ?? 'play',
+        song_pool_id: Number(queue.meta.song_pool_id ?? 0),
+        remain_songcnt: remainSongcnt,
+      };
+
+      if (track) {
+        if (track.hash) params.hash = track.hash;
+        const songid = resolveSongNumericId(track);
+        if (songid) params.songid = songid;
+        if (options?.playtime !== undefined) {
+          params.playtime = Math.max(0, Math.floor(options.playtime));
+        }
+        if (options?.isOverplay !== undefined) {
+          params.is_overplay = options.isOverplay ? 1 : 0;
+        }
+      }
+
+      try {
+        const nextSongs = await this.fetchPersonalFmSongs(params);
+        if (nextSongs.length === 0) return 0;
+        this.personalFmBuffer = mergeQueueSongs(this.personalFmBuffer, nextSongs);
+        return nextSongs.length;
+      } catch (error) {
+        logger.warn('PlaylistStore', 'Fetch personal fm songs failed:', error);
+        return 0;
+      }
+    },
+    async consumeNextPersonalFmTrack(options?: {
+      track?: Song | null;
+      playtime?: number;
+      action?: 'play' | 'garbage';
+      isOverplay?: boolean;
+    }) {
+      const queue = this.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
+        queueId: PERSONAL_FM_QUEUE_ID,
+        title: '红心 Radio',
+        subtitle: '猜你喜欢',
+        type: 'fm',
+        dynamic: true,
+        meta: {
+          mode: PERSONAL_FM_MODE,
+          song_pool_id: 0,
+        },
+      });
+
+      if (this.personalFmBuffer.length === 0) {
+        await this.ensurePersonalFmQueue(options);
+      }
+
+      while (this.personalFmBuffer.length > 0) {
+        const nextSong = this.personalFmBuffer.shift();
+        if (!nextSong) break;
+        appendQueueSong(queue, nextSong);
+        queue.updatedAt = Date.now();
+        this.syncLegacyPlaybackState();
+        return nextSong;
+      }
+
+      return null;
+    },
     async ensureLikedPlaylistReady() {
       if (this.likedPlaylistQueryId || this.likedPlaylistListId) {
         return {
@@ -196,50 +597,146 @@ export const usePlaylistStore = defineStore('playlist', {
       return songs.length > 0;
     },
     setPlaybackQueue(songs: Song[], filteredInvalidCount = 0) {
-      this.defaultList = songs.slice();
-      this.queueFilteredInvalidCount = Math.max(0, filteredInvalidCount);
-      this.queuedNextTrackIds = [];
+      this.setPlaybackQueueWithOptions(songs, filteredInvalidCount);
+    },
+    setPlaybackQueueWithOptions(
+      songs: Song[],
+      filteredInvalidCount = 0,
+      options: SetPlaybackQueueOptions = {},
+    ) {
+      const targetQueue = this.ensurePlaybackQueue(options.queueId, options);
+      targetQueue.songs = songs.slice();
+      targetQueue.filteredInvalidCount = Math.max(0, filteredInvalidCount);
+      targetQueue.queuedNextTrackIds = [];
+      targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
+      targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
+      targetQueue.coverUrl = options.coverUrl?.trim() ?? targetQueue.coverUrl;
+      targetQueue.type = options.type ?? targetQueue.type;
+      targetQueue.dynamic = options.dynamic ?? targetQueue.dynamic;
+      targetQueue.meta = options.meta ? { ...targetQueue.meta, ...options.meta } : targetQueue.meta;
+      if (
+        targetQueue.currentTrackId &&
+        !targetQueue.songs.some((song) => String(song.id) === String(targetQueue.currentTrackId))
+      ) {
+        targetQueue.currentTrackId = null;
+      }
+      targetQueue.updatedAt = Date.now();
+      if (options.activate !== false) {
+        this.activeQueueId = targetQueue.id;
+      }
+      this.trimPlaybackQueues();
+      this.syncLegacyPlaybackState();
     },
     clearPlaybackQueue() {
-      this.defaultList = [];
-      this.queueFilteredInvalidCount = 0;
-      this.queuedNextTrackIds = [];
+      const targetQueue = this.ensurePlaybackQueue();
+      targetQueue.songs = [];
+      targetQueue.filteredInvalidCount = 0;
+      targetQueue.queuedNextTrackIds = [];
+      targetQueue.currentTrackId = null;
+      if (targetQueue.id === PERSONAL_FM_QUEUE_ID) {
+        this.personalFmBuffer = [];
+      }
+      targetQueue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
+    },
+    appendToPlaybackQueue(songs: Song[], options: SetPlaybackQueueOptions = {}) {
+      if (songs.length === 0) return 0;
+      const targetQueue = this.ensurePlaybackQueue(options.queueId, options);
+      const nextList = targetQueue.songs.slice();
+      let addedCount = 0;
+      songs.forEach((song) => {
+        if (
+          nextList.some((item) => isSameSong(item, song) || String(item.id) === String(song.id))
+        ) {
+          return;
+        }
+        nextList.push(song);
+        addedCount += 1;
+      });
+      if (addedCount === 0) return 0;
+      targetQueue.songs = nextList;
+      targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
+      targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
+      targetQueue.coverUrl = options.coverUrl?.trim() ?? targetQueue.coverUrl;
+      targetQueue.type = options.type ?? targetQueue.type;
+      targetQueue.dynamic = options.dynamic ?? targetQueue.dynamic;
+      targetQueue.meta = options.meta ? { ...targetQueue.meta, ...options.meta } : targetQueue.meta;
+      targetQueue.updatedAt = Date.now();
+      if (options.activate !== false) {
+        this.activeQueueId = targetQueue.id;
+      }
+      this.trimPlaybackQueues();
+      this.syncLegacyPlaybackState();
+      return addedCount;
+    },
+    removePlaybackQueue(queueId: string | number) {
+      this.hydratePlaybackQueues();
+      const targetId = String(queueId ?? '');
+      if (!targetId) return;
+      const nextQueues = this.playbackQueues.filter((queue) => queue.id !== targetId);
+      if (nextQueues.length === this.playbackQueues.length) return;
+      this.playbackQueues = nextQueues;
+      if (this.activeQueueId === targetId) {
+        this.activeQueueId = nextQueues[0]?.id ?? DEFAULT_PLAYBACK_QUEUE_ID;
+      }
+      this.syncLegacyPlaybackState();
     },
     enqueuePlayNext(songId: string | number) {
       const id = String(songId ?? '');
       if (!id) return;
-      this.queuedNextTrackIds = this.queuedNextTrackIds.filter((item) => item !== id);
-      this.queuedNextTrackIds.unshift(id);
+      const targetQueue = this.ensurePlaybackQueue();
+      targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+      targetQueue.queuedNextTrackIds.unshift(id);
+      targetQueue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
     },
     consumeQueuedNextTrackId(songId: string | number) {
       const id = String(songId ?? '');
-      if (!id || this.queuedNextTrackIds.length === 0) return;
-      this.queuedNextTrackIds = this.queuedNextTrackIds.filter((item) => item !== id);
+      const targetQueue = this.ensurePlaybackQueue();
+      if (!id || targetQueue.queuedNextTrackIds.length === 0) return;
+      targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
+      targetQueue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
     },
     peekQueuedNextTrackId(): string | null {
-      return this.queuedNextTrackIds[0] ?? null;
+      const targetQueue = this.ensurePlaybackQueue();
+      return targetQueue.queuedNextTrackIds[0] ?? null;
     },
     syncQueuedNextTrackIds() {
-      if (this.queuedNextTrackIds.length === 0) return;
-      const validIds = new Set(this.defaultList.map((song) => String(song.id)));
-      this.queuedNextTrackIds = this.queuedNextTrackIds.filter((id) => validIds.has(id));
+      const targetQueue = this.ensurePlaybackQueue();
+      if (targetQueue.queuedNextTrackIds.length === 0) return;
+      const validIds = new Set(targetQueue.songs.map((song) => String(song.id)));
+      targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((id) =>
+        validIds.has(id),
+      );
+      targetQueue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
     },
     removeFromQueue(songId: string | number) {
       const id = String(songId ?? '');
-      this.defaultList = this.defaultList.filter((song) => String(song.id) !== id);
+      const targetQueue = this.ensurePlaybackQueue();
+      targetQueue.songs = targetQueue.songs.filter((song) => String(song.id) !== id);
+      if (targetQueue.currentTrackId === id) {
+        targetQueue.currentTrackId = null;
+      }
+      targetQueue.updatedAt = Date.now();
       this.consumeQueuedNextTrackId(id);
+      this.syncLegacyPlaybackState();
     },
     reorderPlaybackQueue(fromIndex: number, toIndex: number) {
       if (fromIndex === toIndex) return;
-      if (fromIndex < 0 || fromIndex >= this.defaultList.length) return;
+      const targetQueue = this.ensurePlaybackQueue();
+      if (fromIndex < 0 || fromIndex >= targetQueue.songs.length) return;
 
-      const nextList = this.defaultList.slice();
+      const nextList = targetQueue.songs.slice();
       const [movedSong] = nextList.splice(fromIndex, 1);
       if (!movedSong) return;
 
       const normalizedTarget = Math.max(0, Math.min(toIndex, nextList.length));
       nextList.splice(normalizedTarget, 0, movedSong);
-      this.defaultList = nextList;
+      targetQueue.songs = nextList;
+      targetQueue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
     },
     async addToPlaylist(listId: string | number, song: Song) {
       const targetId = String(listId ?? '');

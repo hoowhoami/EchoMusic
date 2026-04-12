@@ -234,11 +234,23 @@ const loadCloud = async () => {
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    queueId: 'queue:cloud',
+    title: '云盘音乐',
+    subtitle: '你的云盘收藏',
+    type: 'cloud',
+    dynamic: false,
+  });
 };
 
 const handlePlayAll = async () => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    queueId: 'queue:cloud',
+    title: '云盘音乐',
+    subtitle: '你的云盘收藏',
+    type: 'cloud',
+    dynamic: false,
+  });
 };
 
 const openBatchDrawer = () => {

@@ -346,7 +346,7 @@ const handleRemovePlaylist = async () => {
   }
 };
 
-const isMenuItemDisabled = () => false;
+const isMenuItemDisabled = (_item?: { path: string; action?: string }) => false;
 
 const handleMenuClick = (item: { path: string; action?: string }) => {
   if (isMenuItemDisabled(item)) return;

@@ -1,8 +1,15 @@
 import type { Song } from '@/models/song';
+import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
 
 export interface PlaybackQueueStoreLike {
   setPlaybackQueue: (songs: Song[], filteredInvalidCount?: number) => void;
+  setPlaybackQueueWithOptions?: (
+    songs: Song[],
+    filteredInvalidCount?: number,
+    options?: SetPlaybackQueueOptions,
+  ) => void;
+  appendToPlaybackQueue?: (songs: Song[], options?: SetPlaybackQueueOptions) => number;
   defaultList?: Song[];
   enqueuePlayNext?: (songId: string | number) => void;
   syncQueuedNextTrackIds?: () => void;
@@ -65,10 +72,19 @@ export const replaceQueueAndPlay = async (
   songs: Song[],
   filteredInvalidCount = 0,
   requestedSong?: Song,
+  options?: SetPlaybackQueueOptions,
 ): Promise<boolean> => {
   const resolved = resolvePlayableQueue(songs, filteredInvalidCount, requestedSong);
   if (!resolved.firstPlayable) return false;
-  playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
+  if (playlistStore.setPlaybackQueueWithOptions) {
+    playlistStore.setPlaybackQueueWithOptions(
+      resolved.queue,
+      resolved.filteredInvalidCount,
+      options,
+    );
+  } else {
+    playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
+  }
   await playerStore.playTrack(String(resolved.firstPlayable.id), resolved.queue);
   return true;
 };
@@ -77,6 +93,7 @@ export const queueAndPlaySong = async (
   playlistStore: PlaybackQueueStoreLike,
   playerStore: PlaybackPlayerLike,
   song: Song,
+  options?: SetPlaybackQueueOptions,
 ): Promise<boolean> => {
   const activeList = playlistStore.defaultList ?? [];
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
@@ -94,7 +111,11 @@ export const queueAndPlaySong = async (
   const exists = nextList.some((item) => isSameSong(item, resolvedSong));
   if (!exists) {
     nextList.push(resolvedSong);
-    playlistStore.setPlaybackQueue(nextList, 0);
+    if (playlistStore.setPlaybackQueueWithOptions) {
+      playlistStore.setPlaybackQueueWithOptions(nextList, 0, options);
+    } else {
+      playlistStore.setPlaybackQueue(nextList, 0);
+    }
   }
 
   await playerStore.playTrack(String(resolvedSong.id), playlistStore.defaultList ?? nextList);
@@ -105,6 +126,7 @@ export const addSongToPlayNext = (
   playlistStore: PlaybackQueueStoreLike,
   playerStore: PlaybackPlayerLike,
   song: Song,
+  options?: SetPlaybackQueueOptions,
 ): boolean => {
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
@@ -130,7 +152,11 @@ export const addSongToPlayNext = (
   if (insertIndex > list.length) insertIndex = list.length;
 
   list.splice(insertIndex, 0, item);
-  playlistStore.setPlaybackQueue(list, 0);
+  if (playlistStore.setPlaybackQueueWithOptions) {
+    playlistStore.setPlaybackQueueWithOptions(list, 0, options);
+  } else {
+    playlistStore.setPlaybackQueue(list, 0);
+  }
   playlistStore.enqueuePlayNext?.(item.id);
   playlistStore.syncQueuedNextTrackIds?.();
   return true;

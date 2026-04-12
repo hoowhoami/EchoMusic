@@ -340,11 +340,23 @@ const handleSongSort = (field: SortField) => {
 
 const playSearchSongs = async () => {
   if (songResults.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, undefined, {
+    queueId: `queue:search:${searchInput.value.trim() || 'default'}`,
+    title: '搜索结果',
+    subtitle: searchInput.value.trim() || '歌曲搜索',
+    type: 'search',
+    dynamic: false,
+  });
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, song, {
+    queueId: `queue:search:${searchInput.value.trim() || 'default'}`,
+    title: '搜索结果',
+    subtitle: searchInput.value.trim() || '歌曲搜索',
+    type: 'search',
+    dynamic: false,
+  });
 };
 
 const openSongBatchDrawer = () => {

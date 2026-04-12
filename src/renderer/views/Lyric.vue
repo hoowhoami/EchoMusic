@@ -180,6 +180,7 @@ const currentTrack = computed<Song | undefined>(() => {
   const currentId = String(playerStore.currentTrackId ?? '');
   if (!currentId) return undefined;
   return (
+    (playlistStore.activeQueue?.songs ?? []).find((song) => String(song.id) === currentId) ||
     playlistStore.defaultList.find((song) => String(song.id) === currentId) ||
     playlistStore.favorites.find((song) => String(song.id) === currentId) ||
     playerStore.currentTrackSnapshot ||

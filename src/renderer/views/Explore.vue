@@ -314,11 +314,21 @@ const loadAlbums = async () => {
 
 const playRankSongs = async () => {
   if (rankSongs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, rankSongs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, rankSongs.value, 0, undefined, {
+    queueId: `queue:explore:rank:${rankId.value ?? 'default'}`,
+    title: rankLabel.value || '排行榜',
+    subtitle: '榜单歌曲',
+    type: 'ranking',
+  });
 };
 
 const handleRankSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, rankSongs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, rankSongs.value, 0, song, {
+    queueId: `queue:explore:rank:${rankId.value ?? 'default'}`,
+    title: rankLabel.value || '排行榜',
+    subtitle: '榜单歌曲',
+    type: 'ranking',
+  });
 };
 
 const openRankBatchDrawer = () => {
@@ -328,11 +338,21 @@ const openRankBatchDrawer = () => {
 
 const playNewSongs = async () => {
   if (newSongs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, newSongs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, newSongs.value, 0, undefined, {
+    queueId: 'queue:explore:new-songs',
+    title: '新歌速递',
+    subtitle: '发现新鲜声音',
+    type: 'ranking',
+  });
 };
 
 const handleNewSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, newSongs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, newSongs.value, 0, song, {
+    queueId: 'queue:explore:new-songs',
+    title: '新歌速递',
+    subtitle: '发现新鲜声音',
+    type: 'ranking',
+  });
 };
 
 const openNewSongBatchDrawer = () => {

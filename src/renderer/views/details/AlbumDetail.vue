@@ -444,12 +444,22 @@ const secondaryActions = computed(() => {
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    queueId: `queue:album:${album.value?.id ?? getAlbumId()}`,
+    title: album.value?.name || '专辑',
+    subtitle: album.value?.singerName || '',
+    type: 'album',
+  });
 };
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    queueId: `queue:album:${album.value?.id ?? getAlbumId()}`,
+    title: album.value?.name || '专辑',
+    subtitle: album.value?.singerName || '',
+    type: 'album',
+  });
 };
 const openBatchDrawer = () => {
   if (songs.value.length === 0) return;

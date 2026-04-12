@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { usePlaylistStore } from './playlist';
+import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
 import logger from '@/utils/logger';
@@ -115,7 +115,12 @@ const findTrackById = (
 ): Song | undefined => {
   if (!id) return undefined;
   const targetId = String(id);
-  const pool = [list ?? [], playlistStore.defaultList, playlistStore.favorites];
+  const pool = [
+    list ?? [],
+    playlistStore.activeQueue?.songs ?? [],
+    playlistStore.defaultList,
+    playlistStore.favorites,
+  ];
   for (const group of pool) {
     const found = group.find((song) => String(song.id) === targetId);
     if (found) return found;
@@ -514,8 +519,8 @@ export const usePlayerStore = defineStore('player', {
       if (!settingStore.autoNext || !this.currentTrackId) return;
 
       const list =
-        playlistStore.defaultList.length > 0
-          ? playlistStore.defaultList
+        (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+          ? (playlistStore.activeQueue?.songs ?? [])
           : (this.currentPlaylist ?? []);
       if (list.length <= 1) return;
 
@@ -543,9 +548,19 @@ export const usePlayerStore = defineStore('player', {
     skipToNextAfterFailure() {
       const playlistStore = usePlaylistStore();
       playlistStore.syncQueuedNextTrackIds();
+      if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+        const currentTrack =
+          findTrackById(this.currentTrackId, this.currentPlaylist, playlistStore) ??
+          this.currentTrackSnapshot;
+        void playlistStore.ensurePersonalFmQueue({
+          track: currentTrack,
+          playtime: this.currentTime,
+          isOverplay: false,
+        });
+      }
       const list =
-        playlistStore.defaultList.length > 0
-          ? playlistStore.defaultList
+        (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+          ? (playlistStore.activeQueue?.songs ?? [])
           : (this.currentPlaylist ?? []);
       if (list.length === 0 || !this.currentTrackId) return;
 
@@ -759,12 +774,13 @@ export const usePlayerStore = defineStore('player', {
       });
       if (!this.currentTrackId) {
         const playlist = usePlaylistStore();
-        if (playlist.defaultList.length > 0) {
+        if ((playlist.activeQueue?.songs.length ?? playlist.defaultList.length) > 0) {
+          const activeSongs = playlist.activeQueue?.songs ?? playlist.defaultList;
           logger.info('PlayerStore', 'No active track, playing first item from default list', {
-            firstTrackId: playlist.defaultList[0]?.id,
-            listLength: playlist.defaultList.length,
+            firstTrackId: activeSongs[0]?.id,
+            listLength: activeSongs.length,
           });
-          this.playTrack(playlist.defaultList[0].id);
+          this.playTrack(activeSongs[0].id, activeSongs);
         }
         return;
       }
@@ -882,7 +898,7 @@ export const usePlayerStore = defineStore('player', {
       const lyricStore = useLyricStore();
       const settingStore = useSettingStore();
       const requestSeq = ++this.playbackRequestSeq;
-      const sourceList = playlist ?? playlistStore.defaultList;
+      const sourceList = playlist ?? playlistStore.activeQueue?.songs ?? playlistStore.defaultList;
       logger.info('PlayerStore', 'Play track requested', {
         requestedTrackId: String(id),
         sourceListLength: sourceList.length,
@@ -949,6 +965,7 @@ export const usePlayerStore = defineStore('player', {
       this.currentTrackSnapshot = track;
       this.resetHistoryUploadState(track);
       this.currentPlaylist = sourceList;
+      playlistStore.updateQueueCurrentTrack(resolvedId);
       this.currentAudioUrl = '';
       this.currentResolvedAudioQuality = null;
       this.currentResolvedAudioEffect = 'none';
@@ -1231,7 +1248,8 @@ export const usePlayerStore = defineStore('player', {
       this.climaxRequestSeq += 1;
       this.isLoading = false;
       this.outputDeviceWatcherRegistered = false;
-      playlistStore.queuedNextTrackIds = [];
+      playlistStore.clearPlaybackQueue();
+      playlistStore.updateQueueCurrentTrack(null);
       useLyricStore().clear('', '暂无歌词');
       engine.updateMediaPlaybackState(
         buildMediaState({
@@ -1243,7 +1261,7 @@ export const usePlayerStore = defineStore('player', {
       );
     },
 
-    next() {
+    async next() {
       const playlistStore = usePlaylistStore();
       playlistStore.syncQueuedNextTrackIds();
       logger.info('PlayerStore', 'Skip to next requested', {
@@ -1251,8 +1269,8 @@ export const usePlayerStore = defineStore('player', {
         playMode: this.playMode,
       });
       const list =
-        playlistStore.defaultList.length > 0
-          ? playlistStore.defaultList
+        (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+          ? (playlistStore.activeQueue?.songs ?? [])
           : (this.currentPlaylist ?? []);
       if (list.length === 0) return;
 
@@ -1274,6 +1292,35 @@ export const usePlayerStore = defineStore('player', {
 
       let nextIndex = 0;
       const currentIndex = list.findIndex((s) => String(s.id) === String(this.currentTrackId));
+
+      if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+        void playlistStore.ensurePersonalFmQueue({
+          track:
+            list[currentIndex] ??
+            findTrackById(this.currentTrackId, this.currentPlaylist, playlistStore) ??
+            this.currentTrackSnapshot,
+          playtime: this.currentTime,
+          isOverplay:
+            this.duration > 0 ? this.currentTime >= Math.max(0, this.duration - 2) : false,
+        });
+        const fmNextSong =
+          currentIndex >= 0 && currentIndex < list.length - 1
+            ? list[currentIndex + 1]
+            : await playlistStore.consumeNextPersonalFmTrack({
+                track:
+                  list[currentIndex] ??
+                  findTrackById(this.currentTrackId, this.currentPlaylist, playlistStore) ??
+                  this.currentTrackSnapshot,
+                playtime: this.currentTime,
+                isOverplay:
+                  this.duration > 0 ? this.currentTime >= Math.max(0, this.duration - 2) : false,
+              });
+        if (fmNextSong) {
+          const fmList = playlistStore.activeQueue?.songs ?? list;
+          await this.playTrack(String(fmNextSong.id), fmList);
+        }
+        return;
+      }
 
       if (this.playMode === 'random') {
         nextIndex = this.pickRandomIndex(list.length, currentIndex);
@@ -1321,14 +1368,14 @@ export const usePlayerStore = defineStore('player', {
         nextIndex,
         track: summarizeSong(nextSong),
       });
-      void this.playTrack(String(nextSong.id), list);
+      await this.playTrack(String(nextSong.id), list);
     },
 
     prev() {
       const playlistStore = usePlaylistStore();
       const list =
-        playlistStore.defaultList.length > 0
-          ? playlistStore.defaultList
+        (playlistStore.activeQueue?.songs?.length ?? 0) > 0
+          ? (playlistStore.activeQueue?.songs ?? [])
           : (this.currentPlaylist ?? []);
       logger.info('PlayerStore', 'Skip to previous requested', {
         currentTrackId: this.currentTrackId,
@@ -1353,7 +1400,7 @@ export const usePlayerStore = defineStore('player', {
         track: summarizeSong(prevSong),
       });
       this.clearAutoNextTimer();
-      this.playTrack(prevSong.id, list);
+      void this.playTrack(prevSong.id, list);
     },
 
     registerOutputDeviceWatcher(settingStore: ReturnType<typeof useSettingStore>) {
@@ -1915,6 +1962,17 @@ export const usePlayerStore = defineStore('player', {
         currentTrackId: this.currentTrackId,
         playMode: this.playMode,
       });
+      const playlistStore = usePlaylistStore();
+      if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
+        const currentTrack =
+          findTrackById(this.currentTrackId, this.currentPlaylist, playlistStore) ??
+          this.currentTrackSnapshot;
+        void playlistStore.ensurePersonalFmQueue({
+          track: currentTrack,
+          playtime: this.duration,
+          isOverplay: true,
+        });
+      }
       if (this.playMode === 'single') {
         logger.info('PlayerStore', 'Single repeat mode active, replay current track');
         this.seek(0);

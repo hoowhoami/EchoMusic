@@ -403,6 +403,12 @@ const handleSongDoubleTapPlay = async (song: Song) => {
     songs.value,
     playlistFilteredInvalidCount.value,
     song,
+    {
+      queueId: `queue:playlist:${playlist.value?.id ?? getPlaylistId()}`,
+      title: playlist.value?.name || '歌单',
+      subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
+      type: 'playlist',
+    },
   );
 };
 
@@ -413,6 +419,13 @@ const handlePlayAll = async () => {
     playerStore,
     songs.value,
     playlistFilteredInvalidCount.value,
+    undefined,
+    {
+      queueId: `queue:playlist:${playlist.value?.id ?? getPlaylistId()}`,
+      title: playlist.value?.name || '歌单',
+      subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
+      type: 'playlist',
+    },
   );
 };
 const openBatchDrawer = () => {

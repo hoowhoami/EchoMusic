@@ -1,22 +1,23 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch, onMounted } from 'vue';
-import { useVModel, useVirtualList } from '@vueuse/core';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
+import { useVModel } from '@vueuse/core';
+import Sortable from 'sortablejs';
 import Drawer from '@/components/ui/Drawer.vue';
-import { usePlaylistStore } from '@/stores/playlist';
-import type { Song } from '@/models/song';
-import { usePlayerStore } from '@/stores/player';
 import SongCard from '@/components/music/SongCard.vue';
 import Button from '@/components/ui/Button.vue';
-import Sortable from 'sortablejs';
+import { usePlaylistStore } from '@/stores/playlist';
+import { usePlayerStore } from '@/stores/player';
+import type { Song } from '@/models/song';
 import { isPlayableSong } from '@/utils/song';
 import {
-  iconArrowUp,
-  iconCurrentLocation,
   iconTrash,
   iconX,
   iconPlay,
   iconPause,
   iconList,
+  iconArrowUp,
+  iconCurrentLocation,
 } from '@/icons';
 
 interface Props {
@@ -35,156 +36,265 @@ const open = useVModel(props, 'open', emit, { defaultValue: false });
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 
-const queueTracks = computed(() => playlistStore.defaultList);
-const queueEntries = computed(() =>
-  queueTracks.value.map((track, index) => ({
-    track,
-    queueIndex: index,
-    queueRenderKey: `${track.historyKey ?? track.id}:${track.hash ?? ''}:${index}`,
-  })),
-);
-const currentTrackId = computed(() => playerStore.currentTrackId);
+type QueueLike = NonNullable<ReturnType<typeof usePlaylistStore>['activeQueue']>;
 
 const itemHeight = 56;
-const { list, containerProps, wrapperProps } = useVirtualList(queueEntries, {
-  itemHeight,
-});
+const slidesRef = ref<HTMLElement | null>(null);
+const queueListRefs = ref<Record<string, HTMLElement | null>>({});
+const previewQueueId = ref<string | null>(null);
+const isSyncingPreviewByScroll = ref(false);
 
-const sortableContainerRef = ref<HTMLElement | null>(null);
+const dragPointerId = ref<number | null>(null);
+const dragStartX = ref(0);
+const dragStartScrollLeft = ref(0);
+const dragMoved = ref(false);
+
 let sortableInstance: Sortable | null = null;
 
-const initSortable = () => {
-  if (sortableInstance) {
-    sortableInstance.destroy();
-    sortableInstance = null;
-  }
+const activeQueue = computed(() => playlistStore.activeQueue);
 
-  const el = sortableContainerRef.value;
+const queueOptions = computed(() => {
+  const list: QueueLike[] = [];
+  if (activeQueue.value) list.push(activeQueue.value);
+  playlistStore.historyPlaybackQueues.forEach((queue) => {
+    if (list.some((item) => item.id === queue.id)) return;
+    list.push(queue);
+  });
+  return list;
+});
+
+const previewQueue = computed(() => {
+  const queueId = previewQueueId.value;
+  if (!queueId) return activeQueue.value;
+  return queueOptions.value.find((queue) => queue.id === queueId) ?? activeQueue.value;
+});
+
+const previewIndex = computed(() => {
+  const targetId = previewQueue.value?.id ?? '';
+  const index = queueOptions.value.findIndex((queue) => queue.id === targetId);
+  return index >= 0 ? index : 0;
+});
+
+const isPreviewReadonly = computed(
+  () => !!previewQueue.value && previewQueue.value.id !== activeQueue.value?.id,
+);
+
+const previewTracks = computed(() => previewQueue.value?.songs ?? []);
+
+const currentTrackId = computed(() => {
+  if (!previewQueue.value) return null;
+  if (previewQueue.value.id === activeQueue.value?.id) return playerStore.currentTrackId;
+  return previewQueue.value.currentTrackId ?? null;
+});
+
+const headerTitle = computed(() => (previewIndex.value === 0 ? '播放队列' : '历史队列'));
+const headerSubtitle = computed(() => {
+  const queue = previewQueue.value;
+  if (!queue) return '播放列表';
+  if (queue.id === activeQueue.value?.id) return resolveQueueTypeLabel(queue);
+  return queue.title || resolveQueueTypeLabel(queue);
+});
+const headerMeta = computed(() => {
+  const count = previewQueue.value?.songs.length ?? 0;
+  return `${count} 首`;
+});
+
+const previewResumeTrack = computed(() => {
+  const queue = previewQueue.value;
+  if (!queue) return null;
+  return (
+    queue.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
+    queue.songs[0] ??
+    null
+  );
+});
+
+const setQueueListRef = (queueId: string) => (target: Element | ComponentPublicInstance | null) => {
+  queueListRefs.value[queueId] = target instanceof HTMLElement ? target : null;
+};
+
+const resolveQueueTypeLabel = (
+  queue: { type?: string; title?: string; subtitle?: string } | null | undefined,
+) => {
+  if (!queue) return '播放列表';
+  if (queue.type === 'fm') return '红心 Radio';
+  if (queue.type === 'daily-recommend') return '每日推荐';
+  if (queue.type === 'ranking') return '排行榜';
+  if (queue.type === 'search') return '搜索结果';
+  if (queue.type === 'history') return '播放历史';
+  if (queue.type === 'cloud') return '云盘音乐';
+  if (queue.type === 'album') return '专辑';
+  if (queue.type === 'artist') return '歌手';
+  if (queue.type === 'playlist') return '歌单';
+  return queue.subtitle || queue.title || '播放列表';
+};
+
+const destroySortable = () => {
+  if (!sortableInstance) return;
+  sortableInstance.destroy();
+  sortableInstance = null;
+};
+
+const initSortable = async () => {
+  destroySortable();
+  if (!open.value || isPreviewReadonly.value) return;
+  const queue = previewQueue.value;
+  if (!queue) return;
+  await nextTick();
+  const el = queueListRefs.value[queue.id];
   if (!el) return;
 
   sortableInstance = new Sortable(el, {
-    animation: 150,
+    animation: 160,
     handle: '.queue-card',
     ghostClass: 'queue-sortable-ghost',
     dragClass: 'queue-sortable-drag',
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt;
-      if (oldIndex !== undefined && newIndex !== undefined && oldIndex !== newIndex) {
-        // Need to account for virtual list offset
-        const actualOldIndex = list.value[oldIndex].index;
-        const actualNewIndex = list.value[newIndex].index;
-        playlistStore.reorderPlaybackQueue(actualOldIndex, actualNewIndex);
-      }
+      if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+      playlistStore.reorderPlaybackQueue(oldIndex, newIndex);
     },
   });
 };
 
-const scrollToTop = () => {
-  containerProps.ref.value?.scrollTo({ top: 0, behavior: 'smooth' });
+const scrollPreviewToTop = () => {
+  const queue = previewQueue.value;
+  if (!queue) return;
+  queueListRefs.value[queue.id]?.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 const isCurrentVisible = (): boolean => {
-  const targetId = currentTrackId.value ? String(currentTrackId.value) : '';
-  const scrollerEl = containerProps.ref.value;
-  if (!targetId || !scrollerEl) return false;
-  const row = scrollerEl.querySelector<HTMLElement>(`[data-queue-row][data-song-id="${targetId}"]`);
+  const queue = previewQueue.value;
+  const targetId = String(currentTrackId.value ?? '');
+  if (!queue || !targetId) return false;
+  const scroller = queueListRefs.value[queue.id];
+  if (!scroller) return false;
+  const row = scroller.querySelector<HTMLElement>(`[data-queue-row][data-song-id="${targetId}"]`);
   if (!row) return false;
-  const scrollerRect = scrollerEl.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
   const rowRect = row.getBoundingClientRect();
-  const topLimit = scrollerRect.top + 8;
-  const bottomLimit = scrollerRect.bottom - 8;
-  return rowRect.top >= topLimit && rowRect.bottom <= bottomLimit;
-};
-
-const scrollRetryTimer = ref<number | null>(null);
-
-const clearScrollRetryTimer = () => {
-  if (scrollRetryTimer.value === null) return;
-  window.clearTimeout(scrollRetryTimer.value);
-  scrollRetryTimer.value = null;
+  return rowRect.top >= scrollerRect.top + 8 && rowRect.bottom <= scrollerRect.bottom - 8;
 };
 
 const scrollToCurrent = (force = true) => {
-  const targetId = currentTrackId.value ? String(currentTrackId.value) : '';
-  if (!targetId) return;
+  const queue = previewQueue.value;
+  const targetId = String(currentTrackId.value ?? '');
+  if (!queue || !targetId) return;
   if (!force && isCurrentVisible()) return;
-  const index = queueTracks.value.findIndex((song) => String(song.id) === targetId);
+
+  const scroller = queueListRefs.value[queue.id];
+  if (!scroller) return;
+  const row = scroller.querySelector<HTMLElement>(`[data-queue-row][data-song-id="${targetId}"]`);
+  if (row) {
+    scroller.scrollTo({ top: Math.max(0, row.offsetTop - 8), behavior: 'smooth' });
+    return;
+  }
+
+  const index = queue.songs.findIndex((song) => String(song.id) === targetId);
   if (index < 0) return;
-
-  const targetScrollTop = index * itemHeight;
-  containerProps.ref.value?.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+  scroller.scrollTo({ top: Math.max(0, index * itemHeight - 8), behavior: 'smooth' });
 };
 
-const scheduleAutoScrollToCurrent = async () => {
+const scrollToPreviewQueue = async (index: number, behavior: ScrollBehavior = 'smooth') => {
   await nextTick();
-  requestAnimationFrame(() => {
-    scrollToCurrent(false);
-    clearScrollRetryTimer();
-    scrollRetryTimer.value = window.setTimeout(() => {
-      scrollToCurrent(false);
-      scrollRetryTimer.value = null;
-    }, 240);
-  });
+  const el = slidesRef.value;
+  if (!el) return;
+  const width = el.clientWidth;
+  if (width <= 0) return;
+  isSyncingPreviewByScroll.value = true;
+  el.scrollTo({ left: width * index, behavior });
+  window.setTimeout(
+    () => {
+      isSyncingPreviewByScroll.value = false;
+    },
+    behavior === 'smooth' ? 260 : 0,
+  );
 };
 
-watch(
-  () => open.value,
-  async (isOpen) => {
-    if (isOpen) {
-      await nextTick();
-      initSortable();
-      void scheduleAutoScrollToCurrent();
-    } else {
-      clearScrollRetryTimer();
-      if (sortableInstance) {
-        sortableInstance.destroy();
-        sortableInstance = null;
-      }
-    }
-  },
-);
-
-onMounted(() => {
-  if (open.value) {
-    void nextTick(() => {
-      initSortable();
-    });
+const syncPreviewQueueByScroll = () => {
+  const el = slidesRef.value;
+  if (!el || queueOptions.value.length === 0) return;
+  const width = el.clientWidth;
+  if (width <= 0) return;
+  const index = Math.round(el.scrollLeft / width);
+  const targetQueue = queueOptions.value[index];
+  if (!targetQueue) return;
+  if (targetQueue.id !== previewQueueId.value) {
+    previewQueueId.value = targetQueue.id;
   }
-});
+};
 
-watch(
-  () => list.value,
-  () => {
-    // Re-init sortable when virtual list data changes to ensure correct indices
-    if (open.value) {
-      initSortable();
-    }
-  },
-  { deep: false },
-);
+const handleSlidesScroll = () => {
+  syncPreviewQueueByScroll();
+};
 
-onBeforeUnmount(() => {
-  clearScrollRetryTimer();
-  if (sortableInstance) {
-    sortableInstance.destroy();
+const handleSwitchQueue = (queueId: string) => {
+  previewQueueId.value = queueId;
+  const index = queueOptions.value.findIndex((queue) => queue.id === queueId);
+  if (index >= 0) {
+    void scrollToPreviewQueue(index);
   }
-});
+};
+
+const handlePointerDown = (event: PointerEvent) => {
+  if (!(event.target instanceof HTMLElement)) return;
+  if (event.target.closest('button, a, input, [role="button"]')) return;
+  const el = slidesRef.value;
+  if (!el) return;
+  dragPointerId.value = event.pointerId;
+  dragStartX.value = event.clientX;
+  dragStartScrollLeft.value = el.scrollLeft;
+  dragMoved.value = false;
+  el.setPointerCapture(event.pointerId);
+};
+
+const handlePointerMove = (event: PointerEvent) => {
+  const el = slidesRef.value;
+  if (!el || dragPointerId.value !== event.pointerId) return;
+  const deltaX = event.clientX - dragStartX.value;
+  if (Math.abs(deltaX) > 6) {
+    dragMoved.value = true;
+  }
+  el.scrollLeft = dragStartScrollLeft.value - deltaX;
+};
+
+const handlePointerEnd = async (event: PointerEvent) => {
+  const el = slidesRef.value;
+  if (!el || dragPointerId.value !== event.pointerId) return;
+  try {
+    el.releasePointerCapture(event.pointerId);
+  } catch {
+    // ignore stale pointer capture state
+  }
+  dragPointerId.value = null;
+  const width = el.clientWidth;
+  const index = width > 0 ? Math.round(el.scrollLeft / width) : previewIndex.value;
+  const safeIndex = Math.max(0, Math.min(index, queueOptions.value.length - 1));
+  previewQueueId.value = queueOptions.value[safeIndex]?.id ?? previewQueueId.value;
+  await scrollToPreviewQueue(safeIndex);
+};
 
 const isSongPlayable = (song: Song) => isPlayableSong(song);
 
-const handlePlay = (song: Song) => {
+const handlePlay = async (song: Song) => {
+  if (isPreviewReadonly.value) {
+    await handleResumePreviewQueue(song);
+    return;
+  }
   if (String(song.id) === String(playerStore.currentTrackId)) {
     playerStore.togglePlay();
     return;
   }
-  playerStore.playTrack(String(song.id));
+  await playerStore.playTrack(String(song.id), previewQueue.value?.songs ?? []);
 };
 
-const handleRemove = (song: Song) => {
+const handleRemove = async (song: Song) => {
+  if (isPreviewReadonly.value) return;
   const targetId = String(song.id);
-  const list = playlistStore.defaultList;
+  const list = previewTracks.value;
   const index = list.findIndex((item) => String(item.id) === targetId);
   if (index === -1) return;
+
   const wasPlaying = playerStore.isPlaying;
   const nextList = list.filter((item) => String(item.id) !== targetId);
   playlistStore.removeFromQueue(targetId);
@@ -197,16 +307,102 @@ const handleRemove = (song: Song) => {
   }
 
   const nextIndex = Math.min(index, nextList.length - 1);
-  void playerStore.playTrack(String(nextList[nextIndex].id), nextList, {
+  await playerStore.playTrack(String(nextList[nextIndex].id), nextList, {
     autoPlay: wasPlaying,
   });
 };
 
 const handleClear = () => {
-  if (playlistStore.defaultList.length === 0) return;
+  const queue = previewQueue.value;
+  if (!queue) return;
+
+  if (queue.id !== activeQueue.value?.id) {
+    playlistStore.removePlaybackQueue(queue.id);
+    previewQueueId.value = activeQueue.value?.id ?? null;
+    void scrollToPreviewQueue(0, 'auto');
+    return;
+  }
+
   playlistStore.clearPlaybackQueue();
   playerStore.stop();
 };
+
+const handleResumePreviewQueue = async (song?: Song | null) => {
+  const queue = previewQueue.value;
+  if (!queue || queue.id === activeQueue.value?.id) return;
+  const resumeTrackId = song?.id ?? queue.currentTrackId ?? queue.songs[0]?.id ?? null;
+  if (!resumeTrackId) return;
+  playlistStore.setActiveQueue(queue.id);
+  await playerStore.playTrack(String(resumeTrackId), queue.songs, { autoPlay: true });
+};
+
+watch(
+  () => open.value,
+  async (isOpen) => {
+    if (!isOpen) {
+      destroySortable();
+      return;
+    }
+
+    previewQueueId.value = activeQueue.value?.id ?? queueOptions.value[0]?.id ?? null;
+    await nextTick();
+    await scrollToPreviewQueue(previewIndex.value, 'auto');
+    await initSortable();
+  },
+);
+
+watch(
+  () => previewQueueId.value,
+  async () => {
+    if (!open.value || isSyncingPreviewByScroll.value) return;
+    await initSortable();
+    await nextTick();
+    scrollToCurrent(false);
+  },
+);
+
+watch(
+  () => queueOptions.value.map((queue) => queue.id).join('|'),
+  async () => {
+    if (queueOptions.value.length === 0) {
+      previewQueueId.value = null;
+      destroySortable();
+      return;
+    }
+    if (!previewQueue.value) {
+      previewQueueId.value = queueOptions.value[0]?.id ?? null;
+    }
+    if (open.value) {
+      await nextTick();
+      await scrollToPreviewQueue(previewIndex.value, 'auto');
+      await initSortable();
+      scrollToCurrent(false);
+    }
+  },
+);
+
+watch(
+  () => previewTracks.value.length,
+  async () => {
+    if (open.value) {
+      await initSortable();
+    }
+  },
+);
+
+onMounted(() => {
+  if (open.value) {
+    previewQueueId.value = activeQueue.value?.id ?? queueOptions.value[0]?.id ?? null;
+    void nextTick(async () => {
+      await scrollToPreviewQueue(previewIndex.value, 'auto');
+      await initSortable();
+    });
+  }
+});
+
+onBeforeUnmount(() => {
+  destroySortable();
+});
 </script>
 
 <template>
@@ -217,40 +413,59 @@ const handleClear = () => {
     panelClass="queue-drawer"
   >
     <div class="queue-header">
-      <div>
-        <div class="queue-title">播放列表</div>
-        <div class="queue-subtitle">共 {{ queueTracks.length }} 首歌曲</div>
+      <div class="queue-heading">
+        <div class="queue-title-row">
+          <div class="queue-title">{{ headerTitle }}</div>
+          <div v-if="headerSubtitle" class="queue-title-subtitle">
+            {{ headerSubtitle }}
+          </div>
+        </div>
+        <div class="queue-meta-row">
+          <div class="queue-title-meta">{{ headerMeta }}</div>
+          <div v-if="queueOptions.length > 1" class="queue-dots queue-dots-header">
+            <button
+              v-for="(queue, index) in queueOptions"
+              :key="queue.id"
+              type="button"
+              class="queue-dot"
+              :class="{ 'is-active': index === previewIndex }"
+              :title="index === 0 ? `播放队列 · ${resolveQueueTypeLabel(queue)}` : queue.title"
+              @click="handleSwitchQueue(queue.id)"
+            />
+          </div>
+        </div>
       </div>
+
       <div class="queue-actions">
         <Button
           type="button"
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="滚动到顶部"
-          @click="scrollToTop"
+          title="回到顶部"
+          @click="scrollPreviewToTop"
         >
-          <Icon :icon="iconArrowUp" width="22" height="22" />
+          <Icon :icon="iconArrowUp" width="18" height="18" />
         </Button>
         <Button
           type="button"
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="滚动到当前播放"
+          title="定位当前歌曲"
           @click="scrollToCurrent(false)"
         >
-          <Icon :icon="iconCurrentLocation" width="22" height="22" />
+          <Icon :icon="iconCurrentLocation" width="18" height="18" />
         </Button>
         <Button
           type="button"
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
-          title="清空列表"
+          :title="previewQueue?.id === activeQueue?.id ? '清空当前队列' : '删除历史队列'"
           @click="handleClear"
         >
-          <Icon :icon="iconTrash" width="22" height="22" />
+          <Icon :icon="iconTrash" width="18" height="18" />
         </Button>
         <Button
           type="button"
@@ -260,110 +475,130 @@ const handleClear = () => {
           title="关闭"
           @click="open = false"
         >
-          <Icon :icon="iconX" width="22" height="22" />
+          <Icon :icon="iconX" width="18" height="18" />
         </Button>
       </div>
     </div>
 
-    <div class="queue-divider"></div>
+    <div v-if="previewQueue && isPreviewReadonly" class="queue-resume-bar">
+      <Button
+        type="button"
+        class="queue-resume-btn"
+        variant="secondary"
+        size="xs"
+        @click="handleResumePreviewQueue(previewResumeTrack)"
+      >
+        继续播放 {{ previewResumeTrack?.title || '这首歌' }}
+      </Button>
+    </div>
 
-    <div v-bind="containerProps" class="queue-list">
-      <div v-bind="wrapperProps" ref="sortableContainerRef" class="queue-list-inner">
-        <div
-          v-for="entry in list"
-          :key="entry.data.queueRenderKey"
-          class="queue-row"
-          :data-queue-row="true"
-          :data-song-id="String(entry.data.track.id)"
-          :data-queue-index="entry.data.queueIndex"
-          :class="{
-            'is-current': String(entry.data.track.id) === String(currentTrackId),
-          }"
-          :style="{ height: `${itemHeight}px` }"
-        >
-          <div class="queue-leading">
-            <span class="queue-index">{{ entry.data.queueIndex + 1 }}</span>
-            <Button
-              type="button"
-              class="queue-play"
-              variant="ghost"
-              size="xs"
-              @click="handlePlay(entry.data.track)"
+    <div
+      ref="slidesRef"
+      class="queue-slides"
+      @scroll.passive="handleSlidesScroll"
+      @pointerdown="handlePointerDown"
+      @pointermove="handlePointerMove"
+      @pointerup="handlePointerEnd"
+      @pointercancel="handlePointerEnd"
+    >
+      <section v-for="queue in queueOptions" :key="queue.id" class="queue-slide">
+        <div :ref="setQueueListRef(queue.id)" class="queue-list">
+          <div
+            v-for="(track, index) in queue.songs"
+            :key="`${track.historyKey ?? track.id}:${track.hash ?? ''}:${index}`"
+            class="queue-row"
+            :data-queue-row="true"
+            :data-song-id="String(track.id)"
+            :class="{
+              'is-current':
+                queue.id === previewQueue?.id && String(track.id) === String(currentTrackId ?? ''),
+            }"
+            :style="{ height: `${itemHeight}px` }"
+          >
+            <div class="queue-leading">
+              <span class="queue-index">{{ index + 1 }}</span>
+              <Button
+                type="button"
+                class="queue-play"
+                variant="ghost"
+                size="xs"
+                @click="handlePlay(track)"
+              >
+                <Icon
+                  v-if="
+                    String(track.id) !== String(currentTrackId ?? '') ||
+                    queue.id !== activeQueue?.id ||
+                    !playerStore.isPlaying
+                  "
+                  :icon="iconPlay"
+                  width="14"
+                  height="14"
+                />
+                <Icon v-else :icon="iconPause" width="14" height="14" />
+              </Button>
+            </div>
+
+            <div
+              class="queue-card"
+              :class="{ 'is-readonly': queue.id !== activeQueue?.id }"
+              :style="{ opacity: isSongPlayable(track) ? 1 : 0.45 }"
+              :title="queue.id === activeQueue?.id ? '拖动排序' : ''"
             >
-              <Icon
-                v-if="
-                  String(entry.data.track.id) !== String(currentTrackId) || !playerStore.isPlaying
+              <SongCard
+                :id="track.id"
+                :hash="track.hash"
+                :title="track.title"
+                :artist="track.artist"
+                :artists="track.artists"
+                :album="track.album"
+                :albumId="track.albumId"
+                :coverUrl="track.coverUrl"
+                :duration="track.duration"
+                :audioUrl="track.audioUrl"
+                :source="track.source"
+                :mvHash="track.mvHash"
+                :mixSongId="track.mixSongId"
+                :fileId="track.fileId"
+                :privilege="track.privilege"
+                :payType="track.payType"
+                :oldCpy="track.oldCpy"
+                :relateGoods="track.relateGoods"
+                :queueContext="queue.songs"
+                :showCover="true"
+                :showAlbum="false"
+                :showDuration="false"
+                :showQuality="false"
+                :active="
+                  queue.id === previewQueue?.id && String(track.id) === String(currentTrackId ?? '')
                 "
-                :icon="iconPlay"
-                width="14"
-                height="14"
+                :showMore="false"
+                variant="list"
               />
-              <Icon v-else :icon="iconPause" width="14" height="14" />
+            </div>
+
+            <Button
+              v-if="queue.id === activeQueue?.id"
+              type="button"
+              class="queue-remove"
+              variant="unstyled"
+              size="none"
+              title="从队列移除"
+              @click="handleRemove(track)"
+            >
+              <Icon :icon="iconTrash" width="14" height="14" />
             </Button>
           </div>
 
-          <div
-            class="queue-card"
-            :style="{ opacity: isSongPlayable(entry.data.track) ? 1 : 0.45 }"
-            title="拖动排序"
-          >
-            <SongCard
-              :id="entry.data.track.id"
-              :hash="entry.data.track.hash"
-              :title="entry.data.track.title"
-              :artist="entry.data.track.artist"
-              :artists="entry.data.track.artists"
-              :album="entry.data.track.album"
-              :albumId="entry.data.track.albumId"
-              :coverUrl="entry.data.track.coverUrl"
-              :duration="entry.data.track.duration"
-              :audioUrl="entry.data.track.audioUrl"
-              :source="entry.data.track.source"
-              :mvHash="entry.data.track.mvHash"
-              :mixSongId="entry.data.track.mixSongId"
-              :fileId="entry.data.track.fileId"
-              :privilege="entry.data.track.privilege"
-              :payType="entry.data.track.payType"
-              :oldCpy="entry.data.track.oldCpy"
-              :relateGoods="entry.data.track.relateGoods"
-              :queueContext="queueTracks"
-              :showCover="true"
-              :showAlbum="false"
-              :showDuration="false"
-              :showQuality="false"
-              :active="String(entry.data.track.id) === String(currentTrackId)"
-              :showMore="false"
-              variant="list"
-            />
+          <div v-if="queue.songs.length === 0" class="queue-empty-container">
+            <div class="queue-empty">
+              <div class="queue-empty-icon">
+                <Icon :icon="iconList" width="36" height="36" />
+              </div>
+              <div>列表为空</div>
+            </div>
           </div>
-
-          <Button
-            type="button"
-            class="queue-remove"
-            variant="unstyled"
-            size="none"
-            :title="
-              String(entry.data.track.id) === String(currentTrackId)
-                ? playerStore.isPlaying
-                  ? '移出队列并播放下一首'
-                  : '移出队列并切换到下一首'
-                : '从队列移除'
-            "
-            @click="handleRemove(entry.data.track)"
-          >
-            <Icon :icon="iconTrash" width="14" height="14" />
-          </Button>
         </div>
-      </div>
-
-      <div v-if="queueTracks?.length === 0" class="queue-empty-container">
-        <div class="queue-empty">
-          <div class="queue-empty-icon">
-            <Icon :icon="iconList" width="40" height="40" />
-          </div>
-          <div>列表为空，快去发现好音乐吧</div>
-        </div>
-      </div>
+      </section>
     </div>
   </Drawer>
 </template>
@@ -381,82 +616,124 @@ const handleClear = () => {
 }
 
 .queue-header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 16px 12px 20px;
+  padding: 14px 16px 5px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.queue-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 182px;
+}
+
+.queue-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .queue-title {
   font-size: 16px;
   font-weight: 700;
+  line-height: 1;
   color: var(--color-text-main);
 }
 
-.queue-subtitle {
-  margin-top: 4px;
+.queue-title-subtitle {
   font-size: 12px;
-  font-weight: 600;
+  line-height: 1;
   color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.queue-title-meta {
+  width: 62px;
+  flex: 0 0 62px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  opacity: 0.86;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.queue-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 16px;
+}
+
+.queue-dots-header {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0;
+  min-height: 16px;
 }
 
 .queue-actions {
+  position: absolute;
+  top: 50%;
+  right: 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px;
+  transform: translateY(-50%);
 }
 
 .queue-icon-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 13px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   color: var(--color-text-secondary);
-  transition: all 0.2s ease;
 }
 
-.queue-icon-btn:hover {
-  color: var(--color-primary);
-  transform: scale(1.06);
+.queue-resume-bar {
+  padding: 12px 16px 12px;
 }
 
-.queue-divider {
-  height: 1px;
-  margin: 0 18px;
-  background: var(--color-border-light);
-}
-
-.queue-empty-container {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
+.queue-resume-btn {
+  width: 100%;
   justify-content: center;
-  pointer-events: none;
+  border-radius: 12px;
 }
 
-.queue-empty {
+.queue-slides {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: pan-y;
 }
 
-.queue-empty-icon {
-  opacity: 0.35;
+.queue-slides::-webkit-scrollbar {
+  display: none;
+}
+
+.queue-slide {
+  flex: 0 0 100%;
+  min-width: 100%;
+  scroll-snap-align: start;
+  display: flex;
+  min-height: 0;
 }
 
 .queue-list {
-  flex: 1;
-  padding: 10px 12px 14px 14px;
-  overflow: auto;
   position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 10px 14px;
 }
 
 .queue-row {
@@ -466,27 +743,15 @@ const handleClear = () => {
   gap: 10px;
   padding: 0 8px 0 0;
   border-radius: 10px;
-  transition:
-    background-color 0.22s ease,
-    color 0.22s ease,
-    opacity 0.22s ease,
-    box-shadow 0.22s ease,
-    filter 0.22s ease;
-  cursor: default;
+  transition: background-color 0.2s ease;
 }
 
-.queue-row.is-current {
-  background: var(--color-bg-card);
-}
-
-.dark .queue-row.is-current {
-  background: color-mix(in srgb, #ffffff 4%, transparent);
-}
-
+.queue-row.is-current,
 .queue-row:hover {
   background: var(--color-bg-card);
 }
 
+.dark .queue-row.is-current,
 .dark .queue-row:hover {
   background: color-mix(in srgb, #ffffff 4%, transparent);
 }
@@ -494,10 +759,10 @@ const handleClear = () => {
 .queue-leading {
   position: relative;
   width: 40px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 
 .queue-index {
@@ -513,11 +778,7 @@ const handleClear = () => {
   left: 50%;
   transform: translate(-50%, -50%);
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 6px;
-  background: transparent;
   color: var(--color-text-main);
   opacity: 0;
   transition:
@@ -535,37 +796,24 @@ const handleClear = () => {
   opacity: 0;
 }
 
-.queue-play:hover {
-  transform: translate(-50%, -50%) scale(1.1);
-  color: var(--color-primary);
-}
-
 .queue-card {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  cursor: grab;
   border-radius: 10px;
-  transition:
-    transform 0.2s ease,
-    opacity 0.2s ease,
-    filter 0.2s ease;
+  cursor: grab;
 }
 
-.queue-card:hover {
-  transform: translateX(1px);
+.queue-card.is-readonly {
+  cursor: default;
 }
 
-.queue-card:active {
-  cursor: grabbing;
-}
-
-.queue-card :deep(.song-actions) {
+.queue-card :deep(.song-actions),
+.queue-card :deep(.song-tag) {
   display: none;
 }
 
 .queue-card :deep(.song-title) {
-  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -575,19 +823,12 @@ const handleClear = () => {
   flex-wrap: nowrap;
 }
 
-.queue-card :deep(.song-tag) {
-  margin-left: 0;
-  flex-shrink: 0;
-}
-
 .queue-remove {
   width: 28px;
   height: 28px;
   min-width: 28px;
   border-radius: 999px;
-  display: inline-flex;
   margin-left: auto;
-  flex-shrink: 0;
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
@@ -603,15 +844,51 @@ const handleClear = () => {
   pointer-events: auto;
 }
 
-.queue-remove.is-hidden {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-
 .queue-remove:hover {
   color: #ef4444;
   background: rgba(239, 68, 68, 0.12);
-  transform: scale(1.05);
+}
+
+.queue-empty-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.queue-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.queue-empty-icon {
+  opacity: 0.35;
+}
+
+.queue-dots {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.queue-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+  transition: all 0.2s ease;
+}
+
+.queue-dot.is-active {
+  width: 18px;
+  background: color-mix(in srgb, var(--color-primary) 80%, white 0%);
 }
 
 .queue-sortable-ghost {
@@ -623,11 +900,5 @@ const handleClear = () => {
   opacity: 0.9;
   background: var(--color-bg-card) !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-
-@media (max-width: 720px) {
-  .queue-row {
-    gap: 10px;
-  }
 }
 </style>

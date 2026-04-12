@@ -20,6 +20,17 @@ export interface AudioImageAuthor {
   imgs?: Record<string, AudioImagePortrait[] | undefined>;
 }
 
+export interface PersonalFmParams {
+  hash?: string;
+  songid?: string | number;
+  playtime?: string | number;
+  mode?: 'normal' | 'small' | 'peak' | string;
+  action?: 'play' | 'garbage' | string;
+  song_pool_id?: string | number;
+  is_overplay?: string | number;
+  remain_songcnt?: string | number;
+}
+
 /**
  * 获取歌曲播放地址
  */
@@ -100,6 +111,12 @@ export function getAlbumTop(type = '') {
  */
 export function getEverydayRecommend() {
   return request.get('/everyday/recommend');
+}
+
+export function getPersonalFm(params: PersonalFmParams = {}) {
+  return request.get('/personal/fm', {
+    params,
+  });
 }
 
 /**

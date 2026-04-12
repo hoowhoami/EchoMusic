@@ -193,11 +193,23 @@ const loadHistory = async (append = false) => {
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    queueId: 'queue:history',
+    title: '播放历史',
+    subtitle: '最近播放',
+    type: 'history',
+    dynamic: false,
+  });
 };
 
 const handlePlayAll = async () => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value);
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    queueId: 'queue:history',
+    title: '播放历史',
+    subtitle: '最近播放',
+    type: 'history',
+    dynamic: false,
+  });
 };
 
 const openBatchDrawer = () => {
