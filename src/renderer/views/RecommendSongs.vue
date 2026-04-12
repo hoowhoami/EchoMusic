@@ -43,7 +43,7 @@ const recommendCoverUrl = computed(() => {
         </linearGradient>
       </defs>
       <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <text x="50%" y="54%" text-anchor="middle" fill="#FFFFFF" font-size="160" font-weight="700" font-family="SF Pro Display, PingFang SC, Arial">
+      <text x="50%" y="62%" text-anchor="middle" fill="#FFFFFF" font-size="160" font-weight="700" font-family="SF Pro Display, PingFang SC, Arial">
         ${dayText}
       </text>
     </svg>

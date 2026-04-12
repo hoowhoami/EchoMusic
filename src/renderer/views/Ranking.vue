@@ -73,20 +73,19 @@ const activeGroupRanks = computed(() => {
 });
 
 const todayRankCover = computed(() => {
+  const dayText = 'TOP';
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
       <defs>
         <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#5AC8FA" />
-          <stop offset="100%" stop-color="#0071E3" />
+          <stop offset="0%" stop-color="#0071E3" />
+          <stop offset="100%" stop-color="#5AC8FA" />
         </linearGradient>
       </defs>
       <rect width="400" height="400" rx="60" fill="url(#g)" />
-      <g fill="#FFFFFF" opacity="0.92">
-        <path d="M140 110h40v180a70 70 0 1 1-40-58V110z" />
-        <rect x="200" y="110" width="40" height="180" rx="20" />
-        <path d="M260 110h40v140a70 70 0 1 1-40-58V110z" />
-      </g>
+      <text x="50%" y="62%" text-anchor="middle" fill="#FFFFFF" font-size="160" font-weight="700" font-family="SF Pro Display, PingFang SC, Arial">
+        ${dayText}
+      </text>
     </svg>
   `;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
