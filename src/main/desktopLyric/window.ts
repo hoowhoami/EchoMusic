@@ -125,7 +125,11 @@ export const updateWindowHeight = (height: number) => {
   });
 };
 
-export const setDesktopLyricFixedSize = (options: { width: number; height: number; fixed: boolean }) => {
+export const setDesktopLyricFixedSize = (options: {
+  width: number;
+  height: number;
+  fixed: boolean;
+}) => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   if (options.fixed) {
     desktopLyricWindow.setMaximumSize(options.width, options.height);

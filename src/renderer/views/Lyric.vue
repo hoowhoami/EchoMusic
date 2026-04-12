@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
+import { useSettingStore } from '@/stores/setting';
 import type { Song } from '@/models/song';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import {
@@ -25,7 +27,10 @@ import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import {
   iconChevronDown,
+  iconChevronLeft,
+  iconChevronRight,
   iconCopy,
+  iconImage,
   iconLanguage,
   iconChevronUpDown,
   iconPause,
@@ -48,6 +53,29 @@ const route = useRoute();
 const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();
 const lyricStore = useLyricStore();
+const settingStore = useSettingStore();
+
+const singerPortraitCache = new Map<string, string[]>();
+const singerPortraitPending = new Map<string, Promise<string[]>>();
+
+const normalizeRemoteImageUrl = (url: string | undefined): string => {
+  return String(url ?? '').trim().replace(/^http:\/\//, 'https://');
+};
+
+const resolvePortraitsFromAuthors = (authors: unknown): string[] => {
+  if (!Array.isArray(authors)) return [];
+  const portraitSet = new Set<string>();
+  for (const author of authors as AudioImageAuthor[]) {
+    const portraits = Array.isArray(author?.imgs?.['3'])
+      ? (author.imgs?.['3'] as AudioImagePortrait[])
+      : [];
+    for (const portrait of portraits) {
+      const url = normalizeRemoteImageUrl(portrait?.sizable_portrait);
+      if (url) portraitSet.add(url);
+    }
+  }
+  return [...portraitSet];
+};
 
 const lyricListRef = ref<HTMLElement | null>(null);
 const progressValue = ref(0);
@@ -55,7 +83,10 @@ const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const copyFeedback = ref(false);
 const isUserScrollingLyrics = ref(false);
+const artistPortraitUrls = ref<string[]>([]);
+const activePortraitIndex = ref(0);
 let userScrollResumeTimer: number | null = null;
+let artistBackdropRequestId = 0;
 
 const playModeLabel = computed(() => {
   const labels: Record<PlayMode, string> = {
@@ -154,7 +185,17 @@ const currentTrack = computed<Song | undefined>(() => {
   );
 });
 
-const backgroundUrl = computed(() => getCoverUrl(currentTrack.value?.coverUrl, 900));
+const coverBackgroundUrl = computed(() => getCoverUrl(currentTrack.value?.coverUrl, 900));
+const activePortraitUrl = computed(() => {
+  return artistPortraitUrls.value[activePortraitIndex.value] || '';
+});
+const hasPortraitGallery = computed(
+  () => settingStore.lyricArtistBackdrop && artistPortraitUrls.value.length > 0,
+);
+const portraitCounterLabel = computed(() => {
+  if (!hasPortraitGallery.value) return '';
+  return `${activePortraitIndex.value + 1} / ${artistPortraitUrls.value.length}`;
+});
 const currentTrackLyricHash = computed(() =>
   String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
 );
@@ -302,6 +343,91 @@ const ensureLyricsForCurrentTrack = () => {
   });
 };
 
+const syncPortraitIndex = (nextIndex = 0) => {
+  if (artistPortraitUrls.value.length === 0) {
+    activePortraitIndex.value = 0;
+    return;
+  }
+  const max = artistPortraitUrls.value.length - 1;
+  activePortraitIndex.value = Math.min(Math.max(nextIndex, 0), max);
+};
+
+const showPreviousPortrait = () => {
+  if (artistPortraitUrls.value.length <= 1) return;
+  const total = artistPortraitUrls.value.length;
+  activePortraitIndex.value = (activePortraitIndex.value - 1 + total) % total;
+};
+
+const showNextPortrait = () => {
+  if (artistPortraitUrls.value.length <= 1) return;
+  const total = artistPortraitUrls.value.length;
+  activePortraitIndex.value = (activePortraitIndex.value + 1) % total;
+};
+
+const clearArtistBackdrop = () => {
+  artistPortraitUrls.value = [];
+  activePortraitIndex.value = 0;
+};
+
+const ensureArtistBackdropForCurrentTrack = async () => {
+  const requestId = ++artistBackdropRequestId;
+  const track = currentTrack.value;
+  const lyricHash = currentTrackLyricHash.value;
+
+  if (!settingStore.lyricArtistBackdrop || !track || !lyricHash) {
+    clearArtistBackdrop();
+    return;
+  }
+
+  if (singerPortraitCache.has(lyricHash)) {
+    artistPortraitUrls.value = singerPortraitCache.get(lyricHash) ?? [];
+    syncPortraitIndex();
+    return;
+  }
+
+  try {
+    const pendingRequest =
+      singerPortraitPending.get(lyricHash) ??
+      (async () => {
+        try {
+          const res = await getAudioImages({
+            hash: lyricHash,
+            audioId: track.fileId,
+            albumAudioId: track.mixSongId,
+            filename: track.name ?? track.title,
+            count: 5,
+          });
+          const data = Array.isArray((res as { data?: unknown[] })?.data)
+            ? ((res as { data?: unknown[] }).data ?? [])
+            : [];
+          const matchedGroups = data.filter((group) => Array.isArray(group));
+          const portraitSet = new Set<string>();
+          for (const group of matchedGroups) {
+            for (const portraitUrl of resolvePortraitsFromAuthors(group)) {
+              portraitSet.add(portraitUrl);
+            }
+          }
+          const portraitUrls = [...portraitSet].slice(0, 5);
+
+          singerPortraitCache.set(lyricHash, portraitUrls);
+          return portraitUrls;
+        } finally {
+          singerPortraitPending.delete(lyricHash);
+        }
+      })();
+
+    singerPortraitPending.set(lyricHash, pendingRequest);
+    const portraitUrls = (await pendingRequest) ?? [];
+    if (requestId !== artistBackdropRequestId) return;
+    artistPortraitUrls.value = portraitUrls;
+    syncPortraitIndex();
+  } catch {
+    singerPortraitCache.set(lyricHash, []);
+    if (requestId !== artistBackdropRequestId) return;
+    clearArtistBackdrop();
+  }
+};
+
 watch(
   () => lyricStore.currentIndex,
   async (index, previous) => {
@@ -324,12 +450,21 @@ watch(
   () => [currentTrack.value?.id, playerStore.isPlaying],
   async ([id]) => {
     ensureLyricsForCurrentTrack();
+    void ensureArtistBackdropForCurrentTrack();
     if (id) {
       isUserScrollingLyrics.value = false;
       clearUserScrollResumeTimer();
       await nextTick();
       scrollToCurrentLine(false);
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => settingStore.lyricArtistBackdrop,
+  () => {
+    void ensureArtistBackdropForCurrentTrack();
   },
   { immediate: true },
 );
@@ -362,12 +497,14 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 onMounted(() => {
   ensureLyricsForCurrentTrack();
+  void ensureArtistBackdropForCurrentTrack();
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
   document.addEventListener('click', handleVolumeClickOutside);
 });
 
 onUnmounted(() => {
+  artistBackdropRequestId += 1;
   clearUserScrollResumeTimer();
   window.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('click', handleVolumeClickOutside);
@@ -380,13 +517,25 @@ onUnmounted(() => {
     class="lyric-view relative h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
   >
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div v-if="hasPortraitGallery" class="lyric-portrait-backdrop-wrap absolute inset-0">
+        <img
+          :src="activePortraitUrl"
+          :alt="`${currentTrack?.artist || '歌手'}写真`"
+          class="lyric-portrait-backdrop"
+        />
+      </div>
       <div
-        class="absolute inset-[-6%] scale-[1.06] bg-cover bg-center opacity-[0.18] blur-[2px] transition-all duration-500 dark:opacity-[0.22]"
-        :style="{ backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined }"
+        v-else
+        class="lyric-ambient-photo absolute inset-y-[-8%] right-[-10%] w-[52vw] min-w-[360px] bg-cover bg-[center_top] transition-all duration-500"
+        :style="{ backgroundImage: coverBackgroundUrl ? `url(${coverBackgroundUrl})` : undefined }"
       ></div>
+      <div v-if="hasPortraitGallery" class="lyric-portrait-halo absolute inset-0"></div>
       <div class="lyric-atmosphere absolute inset-0"></div>
       <div
-        class="absolute inset-0 bg-gradient-to-b from-white/72 via-white/48 to-white/84 transition-colors duration-500 dark:from-black/88 dark:via-black/72 dark:to-black/92"
+        class="absolute inset-0 bg-gradient-to-r from-white/88 via-white/56 to-white/22 transition-colors duration-500 dark:from-[#04070b]/84 dark:via-[#060a10]/46 dark:to-[#050910]/18"
+      ></div>
+      <div
+        class="absolute inset-0 bg-gradient-to-b from-white/14 via-transparent to-white/22 transition-colors duration-500 dark:from-black/12 dark:via-transparent dark:to-black/18"
       ></div>
     </div>
 
@@ -407,6 +556,34 @@ onUnmounted(() => {
           </Button>
 
           <div class="ml-auto flex items-center gap-2">
+            <div
+              v-if="hasPortraitGallery && artistPortraitUrls.length > 1"
+              class="lyric-tool-group"
+              title="切换歌手写真"
+            >
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="lyric-tool-chip-main"
+                @click="showPreviousPortrait"
+              >
+                <Icon :icon="iconChevronLeft" width="14" height="14" />
+              </Button>
+              <div class="lyric-photo-chip">
+                <Icon :icon="iconImage" width="14" height="14" />
+                <span>{{ portraitCounterLabel }}</span>
+              </div>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="lyric-tool-chip-main"
+                @click="showNextPortrait"
+              >
+                <Icon :icon="iconChevronRight" width="14" height="14" />
+              </Button>
+            </div>
             <PopoverRoot>
               <PopoverTrigger as-child>
                 <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
@@ -505,7 +682,7 @@ onUnmounted(() => {
           >
             <div class="lyric-info-card lyric-info-panel">
               <div class="lyric-cover-shell">
-                <div class="lyric-cover-frame">
+                <div class="lyric-cover-frame" :class="{ 'is-subdued': hasPortraitGallery }">
                   <Cover
                     :url="currentTrack?.coverUrl"
                     :size="800"
@@ -842,16 +1019,69 @@ onUnmounted(() => {
 <style>
 .lyric-atmosphere {
   background:
-    radial-gradient(44% 34% at 18% 24%, rgba(255, 255, 255, 0.76), transparent 72%),
-    radial-gradient(28% 24% at 82% 18%, rgba(0, 113, 227, 0.1), transparent 74%),
-    radial-gradient(48% 42% at 50% 100%, rgba(255, 255, 255, 0.36), transparent 78%);
+    radial-gradient(36% 28% at 16% 22%, rgba(255, 255, 255, 0.72), transparent 74%),
+    radial-gradient(28% 22% at 78% 18%, rgba(0, 113, 227, 0.08), transparent 74%),
+    radial-gradient(44% 34% at 82% 72%, rgba(148, 163, 184, 0.12), transparent 76%);
 }
 
 .dark .lyric-atmosphere {
   background:
-    radial-gradient(40% 34% at 16% 22%, rgba(37, 99, 235, 0.12), transparent 72%),
-    radial-gradient(34% 28% at 84% 18%, rgba(255, 255, 255, 0.03), transparent 75%),
-    radial-gradient(52% 48% at 50% 100%, rgba(0, 0, 0, 0.58), transparent 78%);
+    radial-gradient(36% 28% at 16% 22%, rgba(37, 99, 235, 0.12), transparent 74%),
+    radial-gradient(30% 24% at 80% 16%, rgba(255, 255, 255, 0.03), transparent 76%),
+    radial-gradient(50% 44% at 86% 78%, rgba(0, 0, 0, 0.4), transparent 80%);
+}
+
+.lyric-portrait-backdrop-wrap {
+  overflow: hidden;
+}
+
+.lyric-portrait-backdrop {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center center;
+  opacity: 0.94;
+  filter: saturate(0.96) contrast(1.02);
+  user-select: none;
+}
+
+.dark .lyric-portrait-backdrop {
+  opacity: 0.88;
+  filter: saturate(0.88) brightness(0.86) contrast(1.06);
+}
+
+.lyric-ambient-photo {
+  opacity: 0.3;
+  filter: blur(1px) saturate(0.88);
+  transform: scale(1.04);
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.15) 18%, black 42%, black 100%);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.15) 18%,
+    black 42%,
+    black 100%
+  );
+}
+
+.dark .lyric-ambient-photo {
+  opacity: 0.26;
+  filter: blur(2px) saturate(0.74) brightness(0.78);
+}
+
+.lyric-portrait-halo {
+  background:
+    radial-gradient(34% 42% at 64% 50%, rgba(255, 255, 255, 0.16), transparent 66%),
+    radial-gradient(24% 28% at 64% 18%, rgba(255, 255, 255, 0.16), transparent 72%);
+  opacity: 0.86;
+}
+
+.dark .lyric-portrait-halo {
+  background:
+    radial-gradient(34% 42% at 64% 50%, rgba(96, 165, 250, 0.06), transparent 66%),
+    radial-gradient(24% 28% at 64% 18%, rgba(255, 255, 255, 0.04), transparent 72%);
+  opacity: 0.72;
 }
 
 .lyric-icon-btn {
@@ -922,6 +1152,18 @@ onUnmounted(() => {
   color: rgba(15, 23, 42, 0.88);
 }
 
+.lyric-photo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 88px;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.84);
+}
+
 .lyric-tool-chip.is-active {
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 10px 24px rgba(148, 163, 184, 0.14);
@@ -976,6 +1218,10 @@ onUnmounted(() => {
   color: rgba(255, 255, 255, 0.9);
 }
 
+.dark .lyric-photo-chip {
+  color: rgba(255, 255, 255, 0.84);
+}
+
 .dark .lyric-tool-chip-inline:hover {
   background: rgba(40, 54, 78, 0.96);
 }
@@ -1025,20 +1271,8 @@ onUnmounted(() => {
   padding: 18px 8px 12px;
 }
 
-.dark .lyric-info-card {
-}
-
-.lyric-panel-surface {
-}
-
-.dark .lyric-panel-surface {
-}
-
 .lyric-controls-surface {
   padding: 16px 12px 10px;
-}
-
-.dark .lyric-controls-surface {
 }
 
 .lyric-main-play-btn {
@@ -1072,10 +1306,28 @@ onUnmounted(() => {
   overflow: hidden;
   border-radius: 28px;
   box-shadow: 0 22px 56px rgba(15, 23, 42, 0.14);
+  transition:
+    opacity 0.3s ease,
+    filter 0.3s ease,
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
+}
+
+.lyric-cover-frame.is-subdued {
+  opacity: 0.42;
+  filter: saturate(0.72) brightness(0.92) contrast(0.92) grayscale(0.18);
+  transform: scale(0.96);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
 }
 
 .dark .lyric-cover-frame {
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.45);
+}
+
+.dark .lyric-cover-frame.is-subdued {
+  opacity: 0.34;
+  filter: saturate(0.56) brightness(0.72) contrast(0.9) grayscale(0.26);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
 }
 
 .lyric-stage {
@@ -1258,4 +1510,11 @@ onUnmounted(() => {
   opacity: 0;
   transform: translate(-50%, 6px);
 }
+
+@media (max-width: 960px) {
+  .lyric-portrait-backdrop {
+    object-position: center top;
+  }
+}
+
 </style>

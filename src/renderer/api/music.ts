@@ -1,5 +1,25 @@
 import request from '@/utils/request';
 
+export interface AudioImagePortrait {
+  id?: number;
+  file_hash?: string;
+  sizable_portrait?: string;
+  filename?: string;
+  publish_time?: string;
+  source?: number;
+}
+
+export interface AudioImageAuthor {
+  author_id?: number;
+  author_name?: string;
+  is_publish?: number;
+  res_hash?: string;
+  avatar?: string;
+  sizable_avatar?: string;
+  audio_publish_date?: string;
+  imgs?: Record<string, AudioImagePortrait[] | undefined>;
+}
+
 /**
  * 获取歌曲播放地址
  */
@@ -106,5 +126,26 @@ export function getSongRanking(albumAudioId: string | number) {
 export function getSongRankingFilter(albumAudioId: string | number, page = 1, pagesize = 30) {
   return request.get('/song/ranking/filter', {
     params: { album_audio_id: albumAudioId, page, pagesize },
+  });
+}
+
+/**
+ * 获取歌曲关联歌手图片
+ */
+export function getAudioImages(params: {
+  hash: string;
+  audioId?: string | number;
+  albumAudioId?: string | number;
+  filename?: string;
+  count?: number;
+}) {
+  return request.get('/images/audio', {
+    params: {
+      hash: params.hash,
+      audio_id: params.audioId,
+      album_audio_id: params.albumAudioId,
+      filename: params.filename,
+      count: params.count ?? 5,
+    },
   });
 }

@@ -606,6 +606,16 @@ onUnmounted(() => {
           </div>
           <Switch v-model="settingStore.preventSleep" />
         </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词页歌手写真背景</h3>
+            <p class="text-sm text-text-secondary">
+              歌词页优先使用歌手写真作为背景，获取失败时回退到专辑封面
+            </p>
+          </div>
+          <Switch v-model="settingStore.lyricArtistBackdrop" />
+        </div>
       </div>
     </section>
 

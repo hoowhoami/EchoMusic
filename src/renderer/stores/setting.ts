@@ -47,6 +47,7 @@ export const useSettingStore = defineStore('setting', {
     replacePlaylist: false,
     volumeFade: true,
     volumeFadeTime: 1000,
+    lyricArtistBackdrop: true,
     autoNext: false,
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,
