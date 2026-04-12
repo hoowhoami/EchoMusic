@@ -108,7 +108,7 @@
       ]
     },
     "linux": {
-      "icon": "build/icons/linux",
+      "icon": "build/icons/linux_256x256.png",
       "target": [
         "AppImage",
         "deb",
