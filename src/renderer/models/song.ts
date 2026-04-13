@@ -15,6 +15,7 @@ export interface Song {
   title: string;
   name?: string;
   artist: string;
+  language?: string;
   albumName?: string;
   artists?: SongArtist[];
   singers?: SongArtist[];
@@ -34,6 +35,8 @@ export interface Song {
   payType?: number;
   oldCpy?: number;
   relateGoods?: SongRelateGood[];
+  recDesc?: string;
+  similarDesc?: string;
   playCount?: number;
   lastPlayedAt?: number;
   historyKey?: string;

@@ -160,7 +160,7 @@ onMounted(() => loadData());
   <div class="profile-page h-full overflow-y-auto px-8 py-5 select-none bg-bg-main">
     <div
       v-if="userStore.isLoggedIn && userInfo"
-      class="max-w-[860px] mx-auto animate-in slide-in-from-bottom-4 duration-500"
+      class="w-full animate-in slide-in-from-bottom-4 duration-500"
     >
       <!-- 1. Header -->
       <header class="flex items-center justify-between mb-6">

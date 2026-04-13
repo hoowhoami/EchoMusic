@@ -32,7 +32,7 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
   toggleMute: '⌘⇧M',
   toggleFavorite: '⌘⇧L',
   togglePlayMode: '⌘⇧P',
-  toggleWindow: '⌘⇧W',
+  toggleWindow: '⌥⌘S',
 };
 
 export const useSettingStore = defineStore('setting', {

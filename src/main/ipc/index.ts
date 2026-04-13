@@ -24,8 +24,8 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('window-control');
   ipcMain.removeAllListeners('window-toggle');
   ipcMain.removeAllListeners('quit-app');
-  ipcMain.removeAllListeners('shortcuts:register');
-  ipcMain.removeAllListeners('shortcuts:refresh');
+  ipcMain.removeHandler('shortcuts:register');
+  ipcMain.removeHandler('shortcuts:refresh');
   ipcMain.removeAllListeners('tray:sync-playback');
   ipcMain.removeAllListeners('api-server:stop');
   ipcMain.removeAllListeners('open-log-directory');

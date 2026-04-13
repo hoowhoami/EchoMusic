@@ -125,7 +125,7 @@ watch(
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
   () => {
-    syncGlobalShortcuts();
+    void syncGlobalShortcuts();
   },
   { deep: true },
 );

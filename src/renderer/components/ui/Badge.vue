@@ -11,7 +11,7 @@ const props = defineProps<Props>();
   <span
     v-if="count !== undefined"
     :class="[
-      'badge absolute -top-1.5 -right-5 min-w-[16px] h-4 px-1 rounded-full text-[9px] leading-4 font-bold bg-primary text-white shadow-sm select-none pointer-events-none',
+      'badge absolute -top-1.5 -right-5 inline-flex min-w-[16px] h-4 items-center justify-center px-1 rounded-full text-[9px] font-bold bg-primary text-white shadow-sm select-none pointer-events-none tabular-nums',
       props.class,
     ]"
   >

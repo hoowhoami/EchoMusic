@@ -32,6 +32,7 @@ const cleanupAudioExtension = (value: string): string => {
 export const mapTopSong = (json: unknown): Song => {
   const record = toRecord(json);
   const transParam = getRecord(record, 'trans_param') ?? EMPTY_RECORD;
+  const recSongInfo = getRecord(record, 'rec_song_info') ?? EMPTY_RECORD;
 
   let singerName = readString(pickValue(record.author_name, record.singername, record.singer), '');
   let title = processSongTitle(
@@ -65,6 +66,7 @@ export const mapTopSong = (json: unknown): Song => {
     artist: normalizeText(
       singerName || (singers.length > 0 ? singers.map((item) => item.name).join(', ') : '未知歌手'),
     ),
+    language: normalizeText(readString(pickValue(record.language, transParam.language, ''))),
     artists: singers,
     singers,
     album: albumName,
@@ -84,6 +86,10 @@ export const mapTopSong = (json: unknown): Song => {
     payType: parseOptionalInt(pickValue(record.pay_type, undefined)),
     oldCpy: parseOptionalInt(pickValue(record.old_cpy, record.media_old_cpy, undefined)),
     relateGoods,
+    recDesc: normalizeText(readString(pickValue(recSongInfo.rec_desc, recSongInfo.recDesc, ''))),
+    similarDesc: normalizeText(
+      readString(pickValue(recSongInfo.similar_desc, recSongInfo.similarDesc, '')),
+    ),
   };
 };
 

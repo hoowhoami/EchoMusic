@@ -3,6 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
+import { useToastStore } from '@/stores/toast';
 import type {
   AudioQualityValue,
   OutputDeviceDisconnectBehavior,
@@ -20,6 +21,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
+import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
 import {
   iconPalette,
   iconPlayerPlay,
@@ -37,6 +39,7 @@ import {
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const playerStore = usePlayerStore();
+const toastStore = useToastStore();
 const showDisclaimer = ref(false);
 const isRequestingOutputPermission = ref(false);
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
@@ -196,14 +199,15 @@ const resolveLabel = (
 
 const getShortcutValue = (command: ShortcutCommand, scope: ShortcutScope) => {
   if (isRecording(command, scope)) return '';
-  if (scope === 'global') {
-    return resolveLabel(
-      globalShortcutBindings.value,
-      settingStore.defaultGlobalShortcutLabels,
-      command,
-    );
-  }
-  return resolveLabel(shortcutBindings.value, settingStore.defaultShortcutLabels, command);
+  const rawValue =
+    scope === 'global'
+      ? resolveLabel(
+          globalShortcutBindings.value,
+          settingStore.defaultGlobalShortcutLabels,
+          command,
+        )
+      : resolveLabel(shortcutBindings.value, settingStore.defaultShortcutLabels, command);
+  return formatShortcutLabelForDisplay(rawValue, window.electron?.platform);
 };
 
 const getShortcutPlaceholder = (command: ShortcutCommand, scope: ShortcutScope) => {
@@ -211,6 +215,12 @@ const getShortcutPlaceholder = (command: ShortcutCommand, scope: ShortcutScope) 
   if (scope === 'global' && !settingStore.globalShortcutsEnabled) return '开启后可录制';
   return '点击录制';
 };
+
+const getBindingState = (scope: ShortcutScope) =>
+  scope === 'global' ? globalShortcutBindings.value : shortcutBindings.value;
+
+const getShortcutCommandTitle = (command: ShortcutCommand) =>
+  shortcutItems.find((item) => item.command === command)?.title || command;
 
 const stopRecording = () => {
   recording.value = null;
@@ -242,7 +252,21 @@ const startRecording = (command: ShortcutCommand, scope: ShortcutScope) => {
     const label = buildShortcutLabel(event);
     if (!label) return;
     const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
-    if (!hasModifier) return;
+    if (!hasModifier) {
+      toastStore.warning('快捷键至少需要包含一个修饰键');
+      return;
+    }
+    const currentScope = recording.value.scope;
+    const currentBindings = getBindingState(currentScope);
+    const conflictEntry = Object.entries(currentBindings).find(
+      ([existingCommand, existingLabel]) =>
+        areShortcutLabelsEquivalent(existingLabel, label) &&
+        existingCommand !== recording.value?.command,
+    );
+    if (conflictEntry) {
+      toastStore.warning(`该快捷键已分配给“${getShortcutCommandTitle(conflictEntry[0] as ShortcutCommand)}”`);
+      return;
+    }
     if (recording.value.scope === 'global') {
       settingStore.globalShortcutBindings = {
         ...globalShortcutBindings.value,

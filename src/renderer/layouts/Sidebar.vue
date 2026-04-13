@@ -13,6 +13,7 @@ import {
   iconCloud,
   iconCompass,
   iconHeart,
+  iconPulse,
   iconPlus,
   iconSearch,
   iconSettings,
@@ -64,15 +65,17 @@ const menuGroups = [
   {
     title: '我的乐库',
     items: [
-      { name: '播放历史', path: '/main/history', icon: 'clock' },
-      { name: '我的云盘', path: '/main/cloud', icon: 'cloud' },
       { name: '我最喜爱', path: '/main/liked', icon: 'heart', action: 'liked-playlist' },
+      { name: '私人 FM', path: '/main/personal-fm', icon: 'pulse' },
+      { name: '我的云盘', path: '/main/cloud', icon: 'cloud' },
+      { name: '播放历史', path: '/main/history', icon: 'clock' },
     ],
   },
 ] as const;
 
 const iconMap = {
   sparkles: iconSparkles,
+  pulse: iconPulse,
   compass: iconCompass,
   search: iconSearch,
   clock: iconClock,

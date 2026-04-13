@@ -11,6 +11,8 @@ export interface PlaybackQueueStoreLike {
   ) => void;
   appendToPlaybackQueue?: (songs: Song[], options?: SetPlaybackQueueOptions) => number;
   defaultList?: Song[];
+  getPreferredManualQueueOptions?: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
+  getPlaybackQueueSongs?: (queueId?: string | number | null) => Song[];
   enqueuePlayNext?: (songId: string | number) => void;
   syncQueuedNextTrackIds?: () => void;
 }
@@ -95,7 +97,10 @@ export const queueAndPlaySong = async (
   song: Song,
   options?: SetPlaybackQueueOptions,
 ): Promise<boolean> => {
-  const activeList = playlistStore.defaultList ?? [];
+  const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
+  const queueId = manualQueueOptions?.queueId;
+  const preferredList = queueId ? playlistStore.getPlaybackQueueSongs?.(queueId) ?? [] : [];
+  const activeList = preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? []);
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
 
@@ -112,13 +117,14 @@ export const queueAndPlaySong = async (
   if (!exists) {
     nextList.push(resolvedSong);
     if (playlistStore.setPlaybackQueueWithOptions) {
-      playlistStore.setPlaybackQueueWithOptions(nextList, 0, options);
+      playlistStore.setPlaybackQueueWithOptions(nextList, 0, manualQueueOptions);
     } else {
       playlistStore.setPlaybackQueue(nextList, 0);
     }
   }
 
-  await playerStore.playTrack(String(resolvedSong.id), playlistStore.defaultList ?? nextList);
+  const sourceList = exists ? activeList : nextList;
+  await playerStore.playTrack(String(resolvedSong.id), sourceList);
   return true;
 };
 
@@ -128,10 +134,13 @@ export const addSongToPlayNext = (
   song: Song,
   options?: SetPlaybackQueueOptions,
 ): boolean => {
+  const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
 
-  const list = (playlistStore.defaultList ?? []).slice();
+  const queueId = manualQueueOptions?.queueId;
+  const preferredList = queueId ? playlistStore.getPlaybackQueueSongs?.(queueId) ?? [] : [];
+  const list = (preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? [])).slice();
   const currentTrackId = String(playerStore.currentTrackId ?? '');
   const currentIndex = list.findIndex((item) => String(item.id) === currentTrackId);
   const currentSong = currentIndex >= 0 ? list[currentIndex] : null;
@@ -153,7 +162,7 @@ export const addSongToPlayNext = (
 
   list.splice(insertIndex, 0, item);
   if (playlistStore.setPlaybackQueueWithOptions) {
-    playlistStore.setPlaybackQueueWithOptions(list, 0, options);
+    playlistStore.setPlaybackQueueWithOptions(list, 0, manualQueueOptions);
   } else {
     playlistStore.setPlaybackQueue(list, 0);
   }

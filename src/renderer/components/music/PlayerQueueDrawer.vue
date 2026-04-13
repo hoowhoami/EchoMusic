@@ -50,6 +50,7 @@ const dragStartScrollLeft = ref(0);
 const dragMoved = ref(false);
 
 let sortableInstance: Sortable | null = null;
+let sortableInitToken = 0;
 
 const activeQueue = computed(() => playlistStore.activeQueue);
 
@@ -117,7 +118,7 @@ const resolveQueueTypeLabel = (
   queue: { type?: string; title?: string; subtitle?: string } | null | undefined,
 ) => {
   if (!queue) return '播放列表';
-  if (queue.type === 'fm') return '红心 Radio';
+  if (queue.type === 'fm') return queue.title || '私人 FM';
   if (queue.type === 'daily-recommend') return '每日推荐';
   if (queue.type === 'ranking') return '排行榜';
   if (queue.type === 'search') return '搜索结果';
@@ -131,18 +132,30 @@ const resolveQueueTypeLabel = (
 
 const destroySortable = () => {
   if (!sortableInstance) return;
-  sortableInstance.destroy();
+  try {
+    sortableInstance.option('disabled', true);
+  } catch {
+    // ignore stale sortable instance state
+  }
+  try {
+    sortableInstance.destroy();
+  } catch {
+    // sortable may already be detached while queue switches quickly
+  }
   sortableInstance = null;
 };
 
 const initSortable = async () => {
+  const initToken = ++sortableInitToken;
   destroySortable();
   if (!open.value || isPreviewReadonly.value) return;
   const queue = previewQueue.value;
   if (!queue) return;
   await nextTick();
+  if (initToken !== sortableInitToken) return;
   const el = queueListRefs.value[queue.id];
   if (!el) return;
+  if (!el.isConnected) return;
 
   sortableInstance = new Sortable(el, {
     animation: 160,
@@ -340,6 +353,7 @@ watch(
   () => open.value,
   async (isOpen) => {
     if (!isOpen) {
+      sortableInitToken += 1;
       destroySortable();
       return;
     }
@@ -366,6 +380,7 @@ watch(
   async () => {
     if (queueOptions.value.length === 0) {
       previewQueueId.value = null;
+      sortableInitToken += 1;
       destroySortable();
       return;
     }
@@ -401,6 +416,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  sortableInitToken += 1;
   destroySortable();
 });
 </script>
@@ -637,20 +653,28 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .queue-title {
+  flex: 0 0 auto;
   font-size: 16px;
   font-weight: 700;
   line-height: 1;
   color: var(--color-text-main);
+  white-space: nowrap;
 }
 
 .queue-title-subtitle {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
   line-height: 1;
   color: var(--color-text-secondary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .queue-title-meta {

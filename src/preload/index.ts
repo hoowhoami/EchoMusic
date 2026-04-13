@@ -3,7 +3,7 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { ShortcutCommand, ShortcutMap } from '../shared/shortcuts';
+import type { ShortcutCommand, ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
   DesktopLyricSettings,
   DesktopLyricSnapshot,
@@ -48,7 +48,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   shortcuts: {
     register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
-      ipcRenderer.send('shortcuts:register', payload),
+      ipcRenderer.invoke('shortcuts:register', payload) as Promise<ShortcutRegistrationResult>,
+    refresh: () =>
+      ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
     onTrigger: (func: (command: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: string) => func(command);
       ipcRenderer.on('shortcut-trigger', listener);

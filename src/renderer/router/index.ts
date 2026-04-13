@@ -34,6 +34,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Home.vue'),
       },
       {
+        path: 'personal-fm',
+        name: 'personal-fm',
+        component: () => import('@/views/PersonalFm.vue'),
+        meta: { title: '私人 FM', keepAlive: true },
+      },
+      {
         path: 'recommend',
         name: 'recommend-songs',
         component: () => import('@/views/RecommendSongs.vue'),

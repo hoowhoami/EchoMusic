@@ -1,9 +1,14 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
 import { hideMainWindow, showMainWindow } from '../window';
-import type { ShortcutCommand, ShortcutMap } from '../../shared/shortcuts';
+import type {
+  ShortcutCommand,
+  ShortcutMap,
+  ShortcutRegistrationFailure,
+  ShortcutRegistrationResult,
+} from '../../shared/shortcuts';
 import type { IpcContext } from './types';
 
-let registeredShortcuts: ShortcutMap | null = null;
+let requestedShortcuts: ShortcutMap | null = null;
 
 const forwardToRenderer = (command: ShortcutCommand, getMainWindow: () => BrowserWindow | null) => {
   const win = getMainWindow();
@@ -14,15 +19,20 @@ const forwardToRenderer = (command: ShortcutCommand, getMainWindow: () => Browse
   win.webContents.send('shortcut-trigger', command);
 };
 
-const registerShortcuts = (shortcutMap: ShortcutMap, getMainWindow: () => BrowserWindow | null) => {
+const registerShortcuts = (
+  shortcutMap: ShortcutMap,
+  getMainWindow: () => BrowserWindow | null,
+): ShortcutRegistrationResult => {
   globalShortcut.unregisterAll();
-  registeredShortcuts = shortcutMap;
+  const registered = {} as ShortcutMap;
+  const failures: ShortcutRegistrationFailure[] = [];
+  requestedShortcuts = shortcutMap;
 
   (Object.entries(shortcutMap) as Array<[ShortcutCommand, string]>).forEach(
     ([command, accelerator]) => {
       if (!accelerator) return;
       try {
-        globalShortcut.register(accelerator, () => {
+        const didRegister = globalShortcut.register(accelerator, () => {
           if (command === 'toggleWindow') {
             const win = getMainWindow();
             if (!win) return;
@@ -32,28 +42,44 @@ const registerShortcuts = (shortcutMap: ShortcutMap, getMainWindow: () => Browse
           }
           forwardToRenderer(command, getMainWindow);
         });
+        if (didRegister && globalShortcut.isRegistered(accelerator)) {
+          registered[command] = accelerator;
+        } else {
+          failures.push({
+            command,
+            accelerator,
+            reason: 'conflict',
+          });
+        }
       } catch {
-        // ignore invalid accelerator
+        failures.push({
+          command,
+          accelerator,
+          reason: 'invalid',
+        });
       }
     },
   );
+  return { registered, failures };
 };
 
 export const registerShortcutHandlers = ({ getMainWindow }: IpcContext) => {
-  ipcMain.on(
+  ipcMain.handle(
     'shortcuts:register',
     (_event, payload: { enabled: boolean; shortcutMap: ShortcutMap }) => {
       if (!payload?.enabled) {
         globalShortcut.unregisterAll();
-        registeredShortcuts = null;
-        return;
+        requestedShortcuts = null;
+        return { registered: {} as ShortcutMap, failures: [] };
       }
-      registerShortcuts(payload.shortcutMap, getMainWindow);
+      return registerShortcuts(payload.shortcutMap, getMainWindow);
     },
   );
 
-  ipcMain.on('shortcuts:refresh', () => {
-    if (!registeredShortcuts) return;
-    registerShortcuts(registeredShortcuts, getMainWindow);
+  ipcMain.handle('shortcuts:refresh', () => {
+    if (!requestedShortcuts) {
+      return { registered: {} as ShortcutMap, failures: [] };
+    }
+    return registerShortcuts(requestedShortcuts, getMainWindow);
   });
 };

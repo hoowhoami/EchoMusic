@@ -1,7 +1,7 @@
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { ShortcutMap } from '../shared/shortcuts';
+import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
   DesktopLyricSettings,
   DesktopLyricSnapshot,
@@ -17,7 +17,11 @@ export interface IElectronAPI {
     off: (channel: string, func: (...args: unknown[]) => void) => void;
   };
   shortcuts: {
-    register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) => void;
+    register: (payload: {
+      enabled: boolean;
+      shortcutMap: ShortcutMap;
+    }) => Promise<ShortcutRegistrationResult>;
+    refresh: () => Promise<ShortcutRegistrationResult>;
     onTrigger: (func: (command: string) => void) => () => void;
   };
   windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
