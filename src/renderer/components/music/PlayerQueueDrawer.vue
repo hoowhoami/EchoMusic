@@ -18,6 +18,7 @@ import {
   iconList,
   iconArrowUp,
   iconCurrentLocation,
+  iconChevronUpDown,
 } from '@/icons';
 
 interface Props {
@@ -48,6 +49,8 @@ const dragPointerId = ref<number | null>(null);
 const dragStartX = ref(0);
 const dragStartScrollLeft = ref(0);
 const dragMoved = ref(false);
+const dragPointerType = ref<string | null>(null);
+const sortQueueId = ref<string | null>(null);
 
 let sortableInstance: Sortable | null = null;
 let sortableInitToken = 0;
@@ -99,16 +102,18 @@ const headerMeta = computed(() => {
   const count = previewQueue.value?.songs.length ?? 0;
   return `${count} 首`;
 });
+const isSortMode = computed(() => !!sortQueueId.value);
+const canSortQueue = (queue: QueueLike | null | undefined) => (queue?.songs.length ?? 0) > 1;
+const isQueueSorting = (queueId: string) => sortQueueId.value === queueId;
 
-const previewResumeTrack = computed(() => {
-  const queue = previewQueue.value;
+const resolveResumeTrack = (queue: QueueLike | null | undefined) => {
   if (!queue) return null;
   return (
     queue.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ??
     queue.songs[0] ??
     null
   );
-});
+};
 
 const setQueueListRef = (queueId: string) => (target: Element | ComponentPublicInstance | null) => {
   queueListRefs.value[queueId] = target instanceof HTMLElement ? target : null;
@@ -148,8 +153,12 @@ const destroySortable = () => {
 const initSortable = async () => {
   const initToken = ++sortableInitToken;
   destroySortable();
-  if (!open.value || isPreviewReadonly.value) return;
-  const queue = previewQueue.value;
+  if (!open.value || !sortQueueId.value) return;
+  const queue = queueOptions.value.find((item) => item.id === sortQueueId.value) ?? null;
+  if (!canSortQueue(queue)) {
+    sortQueueId.value = null;
+    return;
+  }
   if (!queue) return;
   await nextTick();
   if (initToken !== sortableInitToken) return;
@@ -159,13 +168,17 @@ const initSortable = async () => {
 
   sortableInstance = new Sortable(el, {
     animation: 160,
-    handle: '.queue-card',
+    handle: '.queue-card.is-sorting',
+    delay: 180,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 8,
+    fallbackTolerance: 6,
     ghostClass: 'queue-sortable-ghost',
     dragClass: 'queue-sortable-drag',
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt;
       if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-      playlistStore.reorderPlaybackQueue(oldIndex, newIndex);
+      playlistStore.reorderPlaybackQueue(oldIndex, newIndex, queue.id);
     },
   });
 };
@@ -238,10 +251,12 @@ const syncPreviewQueueByScroll = () => {
 };
 
 const handleSlidesScroll = () => {
+  if (isSortMode.value) return;
   syncPreviewQueueByScroll();
 };
 
 const handleSwitchQueue = (queueId: string) => {
+  if (isSortMode.value) return;
   previewQueueId.value = queueId;
   const index = queueOptions.value.findIndex((queue) => queue.id === queueId);
   if (index >= 0) {
@@ -250,11 +265,14 @@ const handleSwitchQueue = (queueId: string) => {
 };
 
 const handlePointerDown = (event: PointerEvent) => {
+  if (isSortMode.value) return;
+  if (event.pointerType === 'mouse') return;
   if (!(event.target instanceof HTMLElement)) return;
   if (event.target.closest('button, a, input, [role="button"]')) return;
   const el = slidesRef.value;
   if (!el) return;
   dragPointerId.value = event.pointerId;
+  dragPointerType.value = event.pointerType;
   dragStartX.value = event.clientX;
   dragStartScrollLeft.value = el.scrollLeft;
   dragMoved.value = false;
@@ -264,6 +282,7 @@ const handlePointerDown = (event: PointerEvent) => {
 const handlePointerMove = (event: PointerEvent) => {
   const el = slidesRef.value;
   if (!el || dragPointerId.value !== event.pointerId) return;
+  if (dragPointerType.value === 'mouse') return;
   const deltaX = event.clientX - dragStartX.value;
   if (Math.abs(deltaX) > 6) {
     dragMoved.value = true;
@@ -280,11 +299,18 @@ const handlePointerEnd = async (event: PointerEvent) => {
     // ignore stale pointer capture state
   }
   dragPointerId.value = null;
+  dragPointerType.value = null;
   const width = el.clientWidth;
   const index = width > 0 ? Math.round(el.scrollLeft / width) : previewIndex.value;
   const safeIndex = Math.max(0, Math.min(index, queueOptions.value.length - 1));
   previewQueueId.value = queueOptions.value[safeIndex]?.id ?? previewQueueId.value;
   await scrollToPreviewQueue(safeIndex);
+};
+
+const handleSlidesWheel = (event: WheelEvent) => {
+  if (!isSortMode.value) return;
+  if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+  event.preventDefault();
 };
 
 const isSongPlayable = (song: Song) => isPlayableSong(song);
@@ -302,17 +328,18 @@ const handlePlay = async (song: Song) => {
 };
 
 const handleRemove = async (song: Song) => {
-  if (isPreviewReadonly.value) return;
+  const queue = previewQueue.value;
+  if (!queue) return;
   const targetId = String(song.id);
-  const list = previewTracks.value;
+  const list = queue.songs;
   const index = list.findIndex((item) => String(item.id) === targetId);
   if (index === -1) return;
 
   const wasPlaying = playerStore.isPlaying;
   const nextList = list.filter((item) => String(item.id) !== targetId);
-  playlistStore.removeFromQueue(targetId);
+  playlistStore.removeFromQueue(targetId, queue.id);
 
-  if (String(playerStore.currentTrackId) !== targetId) return;
+  if (queue.id !== activeQueue.value?.id || String(playerStore.currentTrackId) !== targetId) return;
 
   if (nextList.length === 0) {
     playerStore.stop();
@@ -340,6 +367,14 @@ const handleClear = () => {
   playerStore.stop();
 };
 
+const toggleSortMode = async (queueId: string) => {
+  const queue = queueOptions.value.find((item) => item.id === queueId) ?? null;
+  if (!canSortQueue(queue)) return;
+  sortQueueId.value = sortQueueId.value === queueId ? null : queueId;
+  previewQueueId.value = queueId;
+  await initSortable();
+};
+
 const handleResumePreviewQueue = async (song?: Song | null) => {
   const queue = previewQueue.value;
   if (!queue || queue.id === activeQueue.value?.id) return;
@@ -353,6 +388,7 @@ watch(
   () => open.value,
   async (isOpen) => {
     if (!isOpen) {
+      sortQueueId.value = null;
       sortableInitToken += 1;
       destroySortable();
       return;
@@ -380,9 +416,13 @@ watch(
   async () => {
     if (queueOptions.value.length === 0) {
       previewQueueId.value = null;
+      sortQueueId.value = null;
       sortableInitToken += 1;
       destroySortable();
       return;
+    }
+    if (sortQueueId.value && !queueOptions.value.some((queue) => queue.id === sortQueueId.value)) {
+      sortQueueId.value = null;
     }
     if (!previewQueue.value) {
       previewQueueId.value = queueOptions.value[0]?.id ?? null;
@@ -400,6 +440,13 @@ watch(
   () => previewTracks.value.length,
   async () => {
     if (open.value) {
+      if (sortQueueId.value) {
+        const sortingQueue =
+          queueOptions.value.find((queue) => queue.id === sortQueueId.value) ?? null;
+        if (!canSortQueue(sortingQueue)) {
+          sortQueueId.value = null;
+        }
+      }
       await initSortable();
     }
   },
@@ -461,7 +508,7 @@ onBeforeUnmount(() => {
           title="回到顶部"
           @click="scrollPreviewToTop"
         >
-          <Icon :icon="iconArrowUp" width="18" height="18" />
+          <Icon :icon="iconArrowUp" width="20" height="20" />
         </Button>
         <Button
           type="button"
@@ -471,7 +518,7 @@ onBeforeUnmount(() => {
           title="定位当前歌曲"
           @click="scrollToCurrent(false)"
         >
-          <Icon :icon="iconCurrentLocation" width="18" height="18" />
+          <Icon :icon="iconCurrentLocation" width="20" height="20" />
         </Button>
         <Button
           type="button"
@@ -481,7 +528,7 @@ onBeforeUnmount(() => {
           :title="previewQueue?.id === activeQueue?.id ? '清空当前队列' : '删除历史队列'"
           @click="handleClear"
         >
-          <Icon :icon="iconTrash" width="18" height="18" />
+          <Icon :icon="iconTrash" width="20" height="20" />
         </Button>
         <Button
           type="button"
@@ -491,33 +538,56 @@ onBeforeUnmount(() => {
           title="关闭"
           @click="open = false"
         >
-          <Icon :icon="iconX" width="18" height="18" />
+          <Icon :icon="iconX" width="20" height="20" />
         </Button>
       </div>
-    </div>
-
-    <div v-if="previewQueue && isPreviewReadonly" class="queue-resume-bar">
-      <Button
-        type="button"
-        class="queue-resume-btn"
-        variant="secondary"
-        size="xs"
-        @click="handleResumePreviewQueue(previewResumeTrack)"
-      >
-        继续播放 {{ previewResumeTrack?.title || '这首歌' }}
-      </Button>
     </div>
 
     <div
       ref="slidesRef"
       class="queue-slides"
+      :class="{ 'is-sorting': isSortMode }"
       @scroll.passive="handleSlidesScroll"
+      @wheel="handleSlidesWheel"
       @pointerdown="handlePointerDown"
       @pointermove="handlePointerMove"
       @pointerup="handlePointerEnd"
       @pointercancel="handlePointerEnd"
     >
       <section v-for="queue in queueOptions" :key="queue.id" class="queue-slide">
+        <div
+          class="queue-panel-toolbar"
+          :class="{ 'has-resume': queue.id === previewQueue?.id && isPreviewReadonly }"
+        >
+          <Button
+            v-if="queue.id === previewQueue?.id && isPreviewReadonly"
+            type="button"
+            class="queue-inline-resume"
+            variant="secondary"
+            size="xs"
+            :title="`继续播放 ${resolveResumeTrack(queue)?.title || '这首歌'}`"
+            @click="handleResumePreviewQueue(resolveResumeTrack(queue))"
+          >
+            <Icon :icon="iconPlay" width="14" height="14" class="queue-inline-resume-icon" />
+            <span class="queue-inline-resume-label">继续播放</span>
+            <span class="queue-inline-resume-text">
+              {{ resolveResumeTrack(queue)?.title || '这首歌' }}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            class="queue-sort-toggle"
+            :class="{ 'is-active': isQueueSorting(queue.id) }"
+            variant="ghost"
+            size="xs"
+            :disabled="!canSortQueue(queue)"
+            :title="isQueueSorting(queue.id) ? '完成排序' : '排序'"
+            @click="toggleSortMode(queue.id)"
+          >
+            <Icon :icon="iconChevronUpDown" width="16" height="16" />
+            {{ isQueueSorting(queue.id) ? '完成' : '排序' }}
+          </Button>
+        </div>
         <div :ref="setQueueListRef(queue.id)" class="queue-list">
           <div
             v-for="(track, index) in queue.songs"
@@ -556,9 +626,8 @@ onBeforeUnmount(() => {
 
             <div
               class="queue-card"
-              :class="{ 'is-readonly': queue.id !== activeQueue?.id }"
+              :class="{ 'is-sorting': isQueueSorting(queue.id) }"
               :style="{ opacity: isSongPlayable(track) ? 1 : 0.45 }"
-              :title="queue.id === activeQueue?.id ? '拖动排序' : ''"
             >
               <SongCard
                 :id="track.id"
@@ -593,7 +662,7 @@ onBeforeUnmount(() => {
             </div>
 
             <Button
-              v-if="queue.id === activeQueue?.id"
+              v-if="!isSortMode"
               type="button"
               class="queue-remove"
               variant="unstyled"
@@ -632,9 +701,9 @@ onBeforeUnmount(() => {
 }
 
 .queue-header {
-  position: relative;
   display: flex;
   align-items: center;
+  gap: 12px;
   padding: 14px 16px 5px;
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -644,8 +713,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   justify-content: center;
   gap: 4px;
+  flex: 1;
   min-width: 0;
-  padding-right: 182px;
 }
 
 .queue-title-row {
@@ -704,30 +773,19 @@ onBeforeUnmount(() => {
 }
 
 .queue-actions {
-  position: absolute;
-  top: 50%;
-  right: 12px;
   display: flex;
   align-items: center;
-  gap: 2px;
-  transform: translateY(-50%);
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .queue-icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
   border-radius: 12px;
   color: var(--color-text-secondary);
-}
-
-.queue-resume-bar {
-  padding: 12px 16px 12px;
-}
-
-.queue-resume-btn {
-  width: 100%;
-  justify-content: center;
-  border-radius: 12px;
 }
 
 .queue-slides {
@@ -738,6 +796,8 @@ onBeforeUnmount(() => {
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .queue-slides::-webkit-scrollbar {
@@ -749,7 +809,69 @@ onBeforeUnmount(() => {
   min-width: 100%;
   scroll-snap-align: start;
   display: flex;
+  flex-direction: column;
   min-height: 0;
+}
+
+.queue-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 14px 6px;
+}
+
+.queue-panel-toolbar.has-resume {
+  justify-content: space-between;
+}
+
+.queue-inline-resume {
+  max-width: min(70%, 220px);
+  height: 28px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.queue-inline-resume-icon {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.queue-inline-resume-label {
+  color: var(--color-primary);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.queue-inline-resume-text {
+  min-width: 0;
+  color: color-mix(in srgb, var(--color-text-main) 62%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-sort-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.queue-sort-toggle.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
 .queue-list {
@@ -758,6 +880,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 0 10px 10px 14px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .queue-row {
@@ -768,6 +892,8 @@ onBeforeUnmount(() => {
   padding: 0 8px 0 0;
   border-radius: 10px;
   transition: background-color 0.2s ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .queue-row.is-current,
@@ -825,11 +951,22 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow: hidden;
   border-radius: 10px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.queue-card.is-sorting {
   cursor: grab;
 }
 
-.queue-card.is-readonly {
-  cursor: default;
+.queue-card :deep(.song-card),
+.queue-card :deep(.song-content),
+.queue-card :deep(.song-title),
+.queue-card :deep(.song-subline),
+.queue-card :deep(img) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .queue-card :deep(.song-actions),
@@ -847,10 +984,20 @@ onBeforeUnmount(() => {
   flex-wrap: nowrap;
 }
 
+.queue-card.is-sorting:active {
+  cursor: grabbing;
+}
+
+.queue-slides.is-sorting {
+  overflow-x: hidden;
+  scroll-snap-type: none;
+}
+
 .queue-remove {
   width: 28px;
   height: 28px;
   min-width: 28px;
+  display: inline-flex;
   border-radius: 999px;
   margin-left: auto;
   align-items: center;

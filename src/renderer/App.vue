@@ -17,6 +17,7 @@ let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
+let colorSchemeMediaQuery: MediaQueryList | null = null;
 
 const showStartupUpdateDialog = ref(false);
 const startupUpdateResult = ref<UpdateCheckResult | null>(null);
@@ -79,7 +80,8 @@ onMounted(() => {
   silentUpdateCheckTimer = window.setTimeout(() => {
     settings.checkForUpdates(true);
   }, 4000);
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
+  colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  colorSchemeMediaQuery.addEventListener('change', updateTheme);
 });
 
 onUnmounted(() => {
@@ -94,6 +96,8 @@ onUnmounted(() => {
   disposeDesktopLyricSync = null;
   disposeTrayPlayModeSync?.();
   disposeTrayPlayModeSync = null;
+  colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
+  colorSchemeMediaQuery = null;
 });
 
 watch(() => settings.theme, updateTheme);

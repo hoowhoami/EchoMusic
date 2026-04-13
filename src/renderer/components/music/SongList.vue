@@ -494,6 +494,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
 
 .song-list-container {
   user-select: none;
+  -webkit-user-select: none;
   width: 100%;
   /* 确保即使在 display: none 状态下也有基本高度参考（可选，取决于 useVirtualList 实现） */
   min-height: 200px;
@@ -501,10 +502,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
 
 .song-list-row {
   width: 100%;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .song-list-row-inner {
   box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .song-list-row:hover {
@@ -522,8 +527,21 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
 .dark .song-list-row.is-active {
   background: color-mix(in srgb, #ffffff 4%, transparent);
 }
+
+.song-list-row :deep(.song-card),
+.song-list-row :deep(.song-content),
+.song-list-row :deep(.song-title),
+.song-list-row :deep(.song-subline),
+.song-list-row :deep(img) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
 .song-list-meta-link {
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .song-list-meta-link:hover {

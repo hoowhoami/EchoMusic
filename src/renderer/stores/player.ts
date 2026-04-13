@@ -188,6 +188,7 @@ type PlaybackNotice = {
 
 // 保持一个全局 PlayerEngine 实例
 const engine = new PlayerEngine();
+let outputDeviceChangeHandler: ((this: MediaDevices, event: Event) => void) | null = null;
 
 const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null => {
   if (!track) return null;
@@ -493,6 +494,19 @@ export const usePlayerStore = defineStore('player', {
         window.clearTimeout(this.outputDeviceRefreshTimer);
         this.outputDeviceRefreshTimer = null;
       }
+    },
+
+    unregisterOutputDeviceWatcher() {
+      if (
+        outputDeviceChangeHandler &&
+        navigator.mediaDevices?.removeEventListener &&
+        this.outputDeviceWatcherRegistered
+      ) {
+        navigator.mediaDevices.removeEventListener('devicechange', outputDeviceChangeHandler);
+      }
+      outputDeviceChangeHandler = null;
+      this.outputDeviceWatcherRegistered = false;
+      this.clearOutputDeviceRefreshTimer();
     },
 
     applyFailedPlaybackState(options?: { keepResolvedSource?: boolean }) {
@@ -1247,7 +1261,7 @@ export const usePlayerStore = defineStore('player', {
       this.playbackRequestSeq += 1;
       this.climaxRequestSeq += 1;
       this.isLoading = false;
-      this.outputDeviceWatcherRegistered = false;
+      this.unregisterOutputDeviceWatcher();
       playlistStore.clearPlaybackQueue();
       playlistStore.updateQueueCurrentTrack(null);
       useLyricStore().clear('', '暂无歌词');
@@ -1415,7 +1429,7 @@ export const usePlayerStore = defineStore('player', {
       }
 
       logger.info('PlayerStore', 'Output device watcher registered');
-      navigator.mediaDevices.addEventListener('devicechange', () => {
+      outputDeviceChangeHandler = () => {
         logger.info(
           'PlayerStore',
           'Detected media device change, scheduling output device refresh',
@@ -1425,7 +1439,8 @@ export const usePlayerStore = defineStore('player', {
           this.outputDeviceRefreshTimer = null;
           void this.refreshOutputDevices(settingStore);
         }, 800);
-      });
+      };
+      navigator.mediaDevices.addEventListener('devicechange', outputDeviceChangeHandler);
     },
 
     async refreshOutputDevices(settingStore: ReturnType<typeof useSettingStore>) {

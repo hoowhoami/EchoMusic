@@ -12,7 +12,7 @@ import { useUserStore } from '@/stores/user';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
 import { useVirtualList } from '@vueuse/core';
-import { isPlayableSong, isSameSong } from '@/utils/song';
+import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
@@ -393,6 +393,8 @@ const handleRemoveFromPlaylist = async () => {
   align-items: center;
   gap: 12px;
   padding: 16px 18px 12px 20px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .batch-title {
@@ -473,6 +475,8 @@ const handleRemoveFromPlaylist = async () => {
   padding: 0 20px 12px 18px;
   font-size: 12px;
   color: var(--color-text-secondary);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .batch-select {
@@ -493,6 +497,8 @@ const handleRemoveFromPlaylist = async () => {
   flex: 1;
   padding: 0 14px 16px 18px;
   overflow: auto;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .batch-empty {
@@ -513,6 +519,8 @@ const handleRemoveFromPlaylist = async () => {
     background-color 0.2s ease,
     color 0.2s ease;
   cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .batch-row.text-primary {
@@ -593,6 +601,18 @@ const handleRemoveFromPlaylist = async () => {
 .batch-card {
   min-width: 0;
   flex: 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.batch-card :deep(.song-card),
+.batch-card :deep(.song-content),
+.batch-card :deep(.song-title),
+.batch-card :deep(.song-subline),
+.batch-card :deep(img) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .batch-card :deep(.song-actions) {
@@ -610,6 +630,8 @@ const handleRemoveFromPlaylist = async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .batch-duration {
@@ -618,6 +640,8 @@ const handleRemoveFromPlaylist = async () => {
   font-size: 12px;
   opacity: 0.5;
   color: var(--color-text-secondary);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @media (max-width: 720px) {

@@ -82,8 +82,7 @@ export const getPersonalFmSongPoolPresentation = (songPoolId?: number | string) 
     Number(songPoolId) === 1 ? 1 : Number(songPoolId) === 2 ? 2 : 0;
   return {
     songPoolId: resolvedSongPoolId,
-    label:
-      resolvedSongPoolId === 1 ? '根据风格' : resolvedSongPoolId === 2 ? 'Gamma' : '根据口味',
+    label: resolvedSongPoolId === 1 ? '根据风格' : resolvedSongPoolId === 2 ? 'Gamma' : '根据口味',
   };
 };
 
@@ -815,7 +814,10 @@ export const usePlaylistStore = defineStore('playlist', {
         this.activeQueueId = targetQueue.id;
         this.markLastNonFmQueue(targetQueue.id);
       }
-      if (previousActiveQueueId === PERSONAL_FM_QUEUE_ID && targetQueue.id !== PERSONAL_FM_QUEUE_ID) {
+      if (
+        previousActiveQueueId === PERSONAL_FM_QUEUE_ID &&
+        targetQueue.id !== PERSONAL_FM_QUEUE_ID
+      ) {
         this.removePersonalFmQueue();
         return;
       }
@@ -862,7 +864,10 @@ export const usePlaylistStore = defineStore('playlist', {
         this.activeQueueId = targetQueue.id;
         this.markLastNonFmQueue(targetQueue.id);
       }
-      if (previousActiveQueueId === PERSONAL_FM_QUEUE_ID && targetQueue.id !== PERSONAL_FM_QUEUE_ID) {
+      if (
+        previousActiveQueueId === PERSONAL_FM_QUEUE_ID &&
+        targetQueue.id !== PERSONAL_FM_QUEUE_ID
+      ) {
         this.removePersonalFmQueue();
         return addedCount;
       }
@@ -917,20 +922,20 @@ export const usePlaylistStore = defineStore('playlist', {
       targetQueue.updatedAt = Date.now();
       this.syncLegacyPlaybackState();
     },
-    removeFromQueue(songId: string | number) {
+    removeFromQueue(songId: string | number, queueId?: string | number) {
       const id = String(songId ?? '');
-      const targetQueue = this.ensurePlaybackQueue();
+      const targetQueue = this.ensurePlaybackQueue(queueId);
       targetQueue.songs = targetQueue.songs.filter((song) => String(song.id) !== id);
+      targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
       if (targetQueue.currentTrackId === id) {
         targetQueue.currentTrackId = null;
       }
       targetQueue.updatedAt = Date.now();
-      this.consumeQueuedNextTrackId(id);
       this.syncLegacyPlaybackState();
     },
-    reorderPlaybackQueue(fromIndex: number, toIndex: number) {
+    reorderPlaybackQueue(fromIndex: number, toIndex: number, queueId?: string | number) {
       if (fromIndex === toIndex) return;
-      const targetQueue = this.ensurePlaybackQueue();
+      const targetQueue = this.ensurePlaybackQueue(queueId);
       if (fromIndex < 0 || fromIndex >= targetQueue.songs.length) return;
 
       const nextList = targetQueue.songs.slice();
