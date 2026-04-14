@@ -924,7 +924,7 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     removeFromQueue(songId: string | number, queueId?: string | number) {
       const id = String(songId ?? '');
-      const targetQueue = this.ensurePlaybackQueue(queueId);
+      const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
       targetQueue.songs = targetQueue.songs.filter((song) => String(song.id) !== id);
       targetQueue.queuedNextTrackIds = targetQueue.queuedNextTrackIds.filter((item) => item !== id);
       if (targetQueue.currentTrackId === id) {
@@ -935,7 +935,7 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     reorderPlaybackQueue(fromIndex: number, toIndex: number, queueId?: string | number) {
       if (fromIndex === toIndex) return;
-      const targetQueue = this.ensurePlaybackQueue(queueId);
+      const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
       if (fromIndex < 0 || fromIndex >= targetQueue.songs.length) return;
 
       const nextList = targetQueue.songs.slice();
