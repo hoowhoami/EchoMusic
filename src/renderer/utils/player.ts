@@ -241,7 +241,7 @@ export class PlayerEngine {
   }
 
   setPlaybackRate(rate: number): number {
-    const next = clamp(rate, 0.5, 2);
+    const next = clamp(rate, 0.1, 5);
     this.playbackRateValue = next;
     if (this.howl) {
       this.howl.rate(next);

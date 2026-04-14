@@ -75,7 +75,21 @@ const queueCount = computed(
 );
 const playbackNotice = computed(() => player.playbackNotice);
 
-const playbackRates = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+const playbackRateDisplay = computed(() => {
+  const r = player.playbackRate;
+  if (r === Math.floor(r)) return `${r.toFixed(1)}x`;
+  return `${r.toFixed(2).replace(/0$/, '')}x`;
+});
+
+const handlePlaybackRateSlider = (value: number[] | undefined) => {
+  if (!value) return;
+  const rate = Math.round((value[0] ?? 10)) / 10;
+  player.setPlaybackRate(rate);
+};
+
+const resetPlaybackRate = () => {
+  player.setPlaybackRate(1);
+};
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
@@ -760,27 +774,56 @@ onUnmounted(() => {
           </DropdownMenuTrigger>
           <DropdownMenuPortal>
             <DropdownMenuContent
-              class="player-dropdown player-dropdown--narrow"
+              class="player-dropdown player-speed-dropdown"
               align="center"
               side="top"
               :side-offset="4"
               :align-offset="0"
             >
-              <div class="player-dropdown-title">播放倍速</div>
-              <DropdownMenuItem
-                v-for="rate in playbackRates"
-                :key="rate"
-                class="player-dropdown-item"
-                :class="{ 'is-active': player.playbackRate === rate }"
-                @select="setPlaybackRate(rate)"
-              >
-                <span>{{ rate.toFixed(2).replace(/\.00$/, '') }}x</span>
-                <span
-                  class="player-dropdown-check"
-                  :class="{ 'is-visible': player.playbackRate === rate }"
-                  >✓</span
+              <div class="player-speed-header">
+                <span class="player-speed-label">播放倍速</span>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  class="player-speed-reset"
+                  :class="{ 'is-default': player.playbackRate === 1 }"
+                  title="重置为 1x"
+                  @click="resetPlaybackRate"
                 >
-              </DropdownMenuItem>
+                  {{ playbackRateDisplay }}
+                </Button>
+              </div>
+              <div class="player-speed-slider-row">
+                <span class="player-speed-bound">0.1</span>
+                <SliderRoot
+                  class="player-speed-slider"
+                  :model-value="[Math.round(player.playbackRate * 10)]"
+                  :min="1"
+                  :max="50"
+                  :step="1"
+                  orientation="horizontal"
+                  @update:model-value="handlePlaybackRateSlider"
+                >
+                  <SliderTrack class="player-speed-track">
+                    <SliderRange class="player-speed-range" />
+                  </SliderTrack>
+                  <SliderThumb class="player-speed-thumb" />
+                </SliderRoot>
+                <span class="player-speed-bound">5x</span>
+              </div>
+              <div class="player-speed-presets">
+                <Button
+                  v-for="r in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]"
+                  :key="r"
+                  variant="unstyled"
+                  size="none"
+                  class="player-speed-preset"
+                  :class="{ 'is-active': Math.abs(player.playbackRate - r) < 0.01 }"
+                  @click="setPlaybackRate(r)"
+                >
+                  {{ r === Math.floor(r) ? r.toFixed(1) : r }}x
+                </Button>
+              </div>
               <div class="player-dropdown-arrow"></div>
             </DropdownMenuContent>
           </DropdownMenuPortal>
@@ -1390,5 +1433,138 @@ onUnmounted(() => {
   transform: translateX(-50%) rotate(45deg);
   pointer-events: none;
   z-index: -1;
+}
+:deep(.player-speed-dropdown) {
+  min-width: 240px;
+  padding: 12px 14px 10px;
+  gap: 8px;
+}
+
+:deep(.player-speed-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+:deep(.player-speed-label) {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+:deep(.player-speed-reset) {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-primary);
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+:deep(.player-speed-reset:hover) {
+  background: rgba(0, 113, 227, 0.1);
+}
+
+:deep(.player-speed-reset.is-default) {
+  color: var(--color-text-main);
+  opacity: 0.6;
+}
+
+:deep(.player-speed-slider-row) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+:deep(.player-speed-bound) {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+:deep(.player-speed-slider) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 20px;
+  touch-action: none;
+  user-select: none;
+}
+
+:deep(.player-speed-track) {
+  position: relative;
+  flex-grow: 1;
+  height: 3px;
+  border-radius: 999px;
+  background-color: rgba(29, 29, 31, 0.15);
+}
+
+.dark :deep(.player-speed-track) {
+  background-color: rgba(245, 245, 247, 0.1);
+}
+
+:deep(.player-speed-range) {
+  position: absolute;
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--color-primary);
+}
+
+:deep(.player-speed-thumb) {
+  display: block;
+  width: 12px;
+  height: 12px;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  outline: none;
+}
+
+:deep(.player-speed-thumb:focus-visible) {
+  box-shadow: none;
+}
+
+:deep(.player-speed-presets) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+:deep(.player-speed-preset) {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 3px 6px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+:deep(.player-speed-preset:hover) {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-main);
+}
+
+.dark :deep(.player-speed-preset:hover) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:deep(.player-speed-preset.is-active) {
+  background: rgba(0, 113, 227, 0.12);
+  color: var(--color-primary);
+}
+
+.dark :deep(.player-speed-preset.is-active) {
+  background: rgba(0, 113, 227, 0.2);
 }
 </style>
