@@ -16,6 +16,7 @@ import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
+import { PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
 
 interface Props {
   open?: boolean;
@@ -120,6 +121,12 @@ const { list, containerProps, wrapperProps } = useVirtualList(
 
 const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
 
+const addToPlaybackQueues = computed(() =>
+  playlistStore.playbackQueueList.filter(
+    (queue) => queue.id !== PERSONAL_FM_QUEUE_ID && queue.songs.length > 0,
+  ),
+);
+
 const canPlaySelected = computed(() => selectedSongs.value.some((song) => isPlayableSong(song)));
 const canAddSelected = computed(() => userStore.isLoggedIn && selectedSongs.value.length > 0);
 const canRemoveSelected = computed(
@@ -158,9 +165,10 @@ const handleAddToPlaylist = async () => {
   }
 };
 
-const handleAddToQueue = () => {
+const handleAddToQueue = (queueId?: string) => {
   if (selectedSongs.value.length === 0) return;
-  const addedCount = playlistStore.appendToPlaybackQueue?.(selectedSongs.value) ?? 0;
+  const options = queueId ? { queueId } : {};
+  const addedCount = playlistStore.appendToPlaybackQueue?.(selectedSongs.value, options) ?? 0;
   if (addedCount > 0) {
     toastStore.actionCompleted(`已添加 ${addedCount} 首到播放列表`);
   } else {
@@ -331,23 +339,22 @@ const handleRemoveFromPlaylist = async () => {
     showClose
   >
     <div class="batch-playlist-body">
+      <div class="batch-playlist-divider"><span>播放列表</span></div>
+      <div v-if="addToPlaybackQueues.length === 0" class="batch-playlist-status">暂无播放列表</div>
       <Button
+        v-for="queue in addToPlaybackQueues"
+        :key="queue.id"
         type="button"
         class="playlist-picker-item playlist-picker-queue"
         variant="ghost"
         size="sm"
-        @click="handleAddToQueue"
+        @click="handleAddToQueue(queue.id)"
       >
         <span class="batch-playlist-name">
           <Icon :icon="iconList" width="16" height="16" />
-          播放列表
+          {{ queue.title || '播放列表' }}
         </span>
-        <span class="batch-playlist-count"
-          >{{
-            playlistStore.activeQueue?.songs.length ?? playlistStore.defaultList.length
-          }}
-          首</span
-        >
+        <span class="batch-playlist-count">{{ queue.songs.length }} 首</span>
       </Button>
       <div class="batch-playlist-divider">
         <span>歌单</span>

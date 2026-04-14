@@ -10,6 +10,7 @@ import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import {
   DropdownMenuRoot,
   DropdownMenuTrigger,
@@ -39,8 +40,9 @@ import {
   iconList,
   iconSpeedometer,
   iconTypography,
+  iconPlaylistAdd,
 } from '@/icons';
-import { usePlayerControls } from '@/composables/usePlayerControls';
+import { usePlayerControls } from '@/utils/usePlayerControls';
 
 const router = useRouter();
 
@@ -77,6 +79,14 @@ const {
   queueCount,
   isQueueDrawerOpen,
   openQueue,
+  showAddToPlaylistDialog,
+  isPlaylistLoading,
+  canAddToPlaylist,
+  createdPlaylists,
+  addToPlaybackQueues,
+  handleOpenAddToPlaylist,
+  handleAddToQueue,
+  handleSelectPlaylist,
 } = usePlayerControls();
 
 const playbackNotice = computed(() => player.playbackNotice);
@@ -379,6 +389,17 @@ onUnmounted(() => {
               title="播放 MV"
             >
               <MvIcon class="w-5 h-5" />
+            </Button>
+
+            <Button
+              v-if="canAddToPlaylist"
+              variant="unstyled"
+              size="none"
+              @click="handleOpenAddToPlaylist"
+              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              title="添加到"
+            >
+              <Icon :icon="iconPlaylistAdd" width="20" height="20" />
             </Button>
 
             <div v-if="currentTrack?.source === 'cloud'" class="text-primary/60" title="云盘歌曲">
@@ -964,6 +985,48 @@ onUnmounted(() => {
   </div>
 
   <PlayerQueueDrawer v-model:open="isQueueDrawerOpen" />
+
+  <Dialog
+    v-model:open="showAddToPlaylistDialog"
+    title="添加到"
+    contentClass="max-w-[420px]"
+    showClose
+  >
+    <div class="add-to-playlist-body">
+      <div class="add-to-playlist-divider"><span>播放列表</span></div>
+      <div v-if="addToPlaybackQueues.length === 0" class="add-to-playlist-status">暂无播放列表</div>
+      <Button
+        v-for="queue in addToPlaybackQueues"
+        :key="queue.id"
+        type="button"
+        class="add-to-playlist-item add-to-playlist-queue"
+        variant="ghost"
+        size="sm"
+        @click="handleAddToQueue(queue.id)"
+      >
+        <span class="add-to-playlist-name">
+          <Icon :icon="iconList" width="16" height="16" />
+          {{ queue.title || '播放列表' }}
+        </span>
+        <span class="add-to-playlist-count">{{ queue.songs.length }} 首</span>
+      </Button>
+      <div class="add-to-playlist-divider"><span>歌单</span></div>
+      <div v-if="isPlaylistLoading" class="add-to-playlist-status">加载歌单中...</div>
+      <div v-else-if="createdPlaylists.length === 0" class="add-to-playlist-status">暂无可用歌单</div>
+      <Button
+        v-for="entry in createdPlaylists"
+        :key="entry.listid ?? entry.id"
+        type="button"
+        class="add-to-playlist-item"
+        variant="ghost"
+        size="sm"
+        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
+      >
+        <span class="add-to-playlist-name">{{ entry.name }}</span>
+        <span class="add-to-playlist-count">{{ entry.count ?? 0 }} 首</span>
+      </Button>
+    </div>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -1434,5 +1497,66 @@ onUnmounted(() => {
 
 .dark :deep(.player-speed-preset.is-active) {
   background: rgba(0, 113, 227, 0.2);
+}
+
+.add-to-playlist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.add-to-playlist-status {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.add-to-playlist-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.add-to-playlist-count {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.add-to-playlist-item {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-card);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-main);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.add-to-playlist-item:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.add-to-playlist-queue {
+  border-style: dashed;
+}
+
+.add-to-playlist-queue .add-to-playlist-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-to-playlist-divider {
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 </style>

@@ -640,6 +640,23 @@ onUnmounted(() => {
           </div>
           <Switch v-model="settingStore.lyricArtistBackdrop" />
         </div>
+        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">写真背景透明度</h3>
+            <p class="text-sm text-text-secondary">调节歌词页写真模式下的背景透明度</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="settingStore.lyricBackdropOpacity"
+            :min="10"
+            :max="100"
+            :step="5"
+            show-value
+            :value-suffix="'%'"
+            @update:model-value="settingStore.lyricBackdropOpacity = $event"
+            @value-commit="settingStore.lyricBackdropOpacity = $event"
+          />
+        </div>
       </div>
     </section>
 

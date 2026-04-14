@@ -1,9 +1,11 @@
 import { computed, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore } from '@/stores/playlist';
+import { usePlaylistStore, PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
+import { useUserStore } from '@/stores/user';
+import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
 import { hasSongQuality, isSameSong, resolveEffectiveSongQuality } from '@/utils/song';
@@ -24,6 +26,8 @@ export function usePlayerControls() {
   const playlist = usePlaylistStore();
   const settingStore = useSettingStore();
   const desktopLyricStore = useDesktopLyricStore();
+  const userStore = useUserStore();
+  const toastStore = useToastStore();
 
   const isQueueDrawerOpen = ref(false);
   const lastVolume = ref(0.8);
@@ -250,6 +254,59 @@ export function usePlayerControls() {
     isQueueDrawerOpen.value = true;
   };
 
+  // ── 添加到歌单 ──
+  const showAddToPlaylistDialog = ref(false);
+  const isPlaylistLoading = ref(false);
+
+  const canAddToPlaylist = computed(() => userStore.isLoggedIn && !!currentTrack.value);
+
+  const createdPlaylists = computed(() =>
+    playlist.getCreatedPlaylists(userStore.info?.userid),
+  );
+
+  const addToPlaybackQueues = computed(() =>
+    playlist.playbackQueueList.filter(
+      (queue) => queue.id !== PERSONAL_FM_QUEUE_ID && queue.songs.length > 0,
+    ),
+  );
+
+  const handleOpenAddToPlaylist = async () => {
+    if (!canAddToPlaylist.value) return;
+    showAddToPlaylistDialog.value = true;
+    if (playlist.userPlaylists.length === 0) {
+      isPlaylistLoading.value = true;
+      try {
+        await playlist.fetchUserPlaylists();
+      } catch {
+        toastStore.loadFailed('歌单');
+      }
+      isPlaylistLoading.value = false;
+    }
+  };
+
+  const handleAddToQueue = (queueId?: string) => {
+    if (!currentTrack.value) return;
+    const options = queueId ? { queueId } : {};
+    const addedCount = playlist.appendToPlaybackQueue?.([currentTrack.value], options) ?? 0;
+    if (addedCount > 0) {
+      toastStore.actionCompleted('已添加到播放列表');
+    } else {
+      toastStore.actionCompleted('歌曲已在播放列表中');
+    }
+    showAddToPlaylistDialog.value = false;
+  };
+
+  const handleSelectPlaylist = async (listId: string | number) => {
+    if (!currentTrack.value) return;
+    try {
+      await playlist.addToPlaylist(String(listId), currentTrack.value);
+      toastStore.actionCompleted('已添加到歌单');
+      showAddToPlaylistDialog.value = false;
+    } catch {
+      toastStore.actionFailed('添加到歌单');
+    }
+  };
+
   return {
     player,
     playlist,
@@ -291,5 +348,14 @@ export function usePlayerControls() {
     queueCount,
     isQueueDrawerOpen,
     openQueue,
+    // 添加到歌单
+    showAddToPlaylistDialog,
+    isPlaylistLoading,
+    canAddToPlaylist,
+    createdPlaylists,
+    addToPlaybackQueues,
+    handleOpenAddToPlaylist,
+    handleAddToQueue,
+    handleSelectPlaylist,
   };
 }

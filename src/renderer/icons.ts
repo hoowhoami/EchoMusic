@@ -68,6 +68,7 @@ import currentLocation from '@iconify/icons-tabler/current-location';
 import typography from '@iconify/icons-tabler/typography';
 import lock from '@iconify/icons-tabler/lock';
 import lockOpen from '@iconify/icons-tabler/lock-open';
+import playlistAdd from '@iconify/icons-tabler/playlist-add';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -141,3 +142,4 @@ export const iconCurrentLocation = currentLocation as IconifyIcon;
 export const iconTypography = typography as IconifyIcon;
 export const iconLock = lock as IconifyIcon;
 export const iconLockOpen = lockOpen as IconifyIcon;
+export const iconPlaylistAdd = playlistAdd as IconifyIcon;

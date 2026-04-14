@@ -22,6 +22,7 @@ import { formatDuration } from '@/utils/format';
 import { closeTransientView } from '@/utils/navigation';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -44,8 +45,9 @@ import {
   iconSpeedometer,
   iconTypography,
   iconList,
+  iconPlaylistAdd,
 } from '@/icons';
-import { usePlayerControls } from '@/composables/usePlayerControls';
+import { usePlayerControls } from '@/utils/usePlayerControls';
 
 const router = useRouter();
 const route = useRoute();
@@ -80,6 +82,15 @@ const {
   goToComments,
   goToMv,
   isQueueDrawerOpen,
+  showAddToPlaylistDialog,
+  isPlaylistLoading,
+  canAddToPlaylist,
+  createdPlaylists,
+  addToPlaybackQueues,
+  handleOpenAddToPlaylist,
+  handleAddToQueue,
+  handleSelectPlaylist,
+  queueCount,
 } = usePlayerControls();
 const singerPortraitCache = new Map<string, string[]>();
 const singerPortraitPending = new Map<string, Promise<string[]>>();
@@ -159,6 +170,10 @@ const activePortraitUrl = computed(() => {
 const hasPortraitGallery = computed(
   () => settingStore.lyricArtistBackdrop && artistPortraitUrls.value.length > 0,
 );
+const backdropOpacityStyle = computed(() => ({
+  opacity: settingStore.lyricBackdropOpacity / 100,
+}));
+const backdropOpacityLabel = computed(() => `${settingStore.lyricBackdropOpacity}%`);
 const portraitCounterLabel = computed(() => {
   if (!hasPortraitGallery.value) return '';
   return `${activePortraitIndex.value + 1} / ${artistPortraitUrls.value.length}`;
@@ -484,7 +499,7 @@ onUnmounted(() => {
     class="lyric-view relative h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
   >
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div v-if="hasPortraitGallery" class="lyric-portrait-backdrop-wrap absolute inset-0">
+      <div v-if="hasPortraitGallery" class="lyric-portrait-backdrop-wrap absolute inset-0" :style="backdropOpacityStyle">
         <img
           :src="activePortraitUrl"
           :alt="`${currentTrack?.artist || '歌手'}写真`"
@@ -551,6 +566,39 @@ onUnmounted(() => {
                 <Icon :icon="iconChevronRight" width="14" height="14" />
               </Button>
             </div>
+            <PopoverRoot v-if="hasPortraitGallery">
+              <PopoverTrigger as-child>
+                <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip" title="背景透明度">
+                  <Icon :icon="iconImage" width="14" height="14" />
+                  <span>{{ backdropOpacityLabel }}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverPortal>
+                <PopoverContent
+                  class="z-[100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-6 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  :side-offset="8"
+                  align="end"
+                >
+                  <div class="space-y-2 text-black dark:text-white">
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">背景透明度</span>
+                      <span class="font-mono">{{ backdropOpacityLabel }}</span>
+                    </div>
+                    <Slider
+                      :model-value="settingStore.lyricBackdropOpacity"
+                      :min="10"
+                      :max="100"
+                      :step="5"
+                      @update:model-value="(v) => settingStore.lyricBackdropOpacity = v"
+                      class="h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
+                    />
+                  </div>
+                </PopoverContent>
+              </PopoverPortal>
+            </PopoverRoot>
             <PopoverRoot>
               <PopoverTrigger as-child>
                 <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
@@ -645,11 +693,12 @@ onUnmounted(() => {
       <div class="flex-1 min-h-0 px-6 pb-2 no-drag">
         <div class="mx-auto flex h-full max-w-[1560px] gap-7">
           <section
+            v-if="!hasPortraitGallery"
             class="hidden min-w-[250px] max-w-[420px] flex-[5] items-center justify-center md:flex"
           >
             <div class="lyric-info-card lyric-info-panel">
               <div class="lyric-cover-shell">
-                <div class="lyric-cover-frame" :class="{ 'is-subdued': hasPortraitGallery }">
+                <div class="lyric-cover-frame">
                   <Cover
                     :url="currentTrack?.coverUrl"
                     :size="800"
@@ -672,8 +721,25 @@ onUnmounted(() => {
           </section>
 
           <section
-            class="lyric-panel-surface relative flex min-w-0 flex-[7] flex-col justify-center self-stretch"
+            class="lyric-panel-surface relative flex min-w-0 flex-col justify-center self-stretch"
+            :class="hasPortraitGallery ? 'flex-1' : 'flex-[7]'"
           >
+            <!-- 写真模式：歌曲信息浮层 -->
+            <div v-if="hasPortraitGallery && currentTrack" class="lyric-photo-song-info">
+              <div class="lyric-photo-song-cover">
+                <Cover
+                  :url="currentTrack?.coverUrl"
+                  :size="120"
+                  :borderRadius="10"
+                  class="h-full w-full"
+                />
+              </div>
+              <div class="lyric-photo-song-meta">
+                <span class="lyric-photo-song-title">{{ currentTrack?.title || '未在播放' }}</span>
+                <span class="lyric-photo-song-artist">{{ currentTrack?.artist || '' }}</span>
+              </div>
+            </div>
+
             <div class="lyric-stage absolute inset-0">
               <div
                 ref="lyricListRef"
@@ -851,6 +917,13 @@ onUnmounted(() => {
                   </Button>
                 </template>
               </Tooltip>
+              <Tooltip v-if="canAddToPlaylist" content="添加到" side="top">
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white" @click="handleOpenAddToPlaylist">
+                    <Icon :icon="iconPlaylistAdd" width="20" height="20" />
+                  </Button>
+                </template>
+              </Tooltip>
             </div>
 
             <!-- 中列：进度条 -->
@@ -974,6 +1047,48 @@ onUnmounted(() => {
     </div>
 
     <PlayerQueueDrawer v-model:open="isQueueDrawerOpen" />
+
+    <Dialog
+      v-model:open="showAddToPlaylistDialog"
+      title="添加到"
+      contentClass="max-w-[420px]"
+      showClose
+    >
+      <div class="lyric-add-playlist-body">
+        <div class="lyric-add-playlist-divider"><span>播放列表</span></div>
+        <div v-if="addToPlaybackQueues.length === 0" class="lyric-add-playlist-status">暂无播放列表</div>
+        <Button
+          v-for="queue in addToPlaybackQueues"
+          :key="queue.id"
+          type="button"
+          class="lyric-add-playlist-item lyric-add-playlist-queue"
+          variant="ghost"
+          size="sm"
+          @click="handleAddToQueue(queue.id)"
+        >
+          <span class="lyric-add-playlist-name">
+            <Icon :icon="iconList" width="16" height="16" />
+            {{ queue.title || '播放列表' }}
+          </span>
+          <span class="lyric-add-playlist-count">{{ queue.songs.length }} 首</span>
+        </Button>
+        <div class="lyric-add-playlist-divider"><span>歌单</span></div>
+        <div v-if="isPlaylistLoading" class="lyric-add-playlist-status">加载歌单中...</div>
+        <div v-else-if="createdPlaylists.length === 0" class="lyric-add-playlist-status">暂无可用歌单</div>
+        <Button
+          v-for="entry in createdPlaylists"
+          :key="entry.listid ?? entry.id"
+          type="button"
+          class="lyric-add-playlist-item"
+          variant="ghost"
+          size="sm"
+          @click="handleSelectPlaylist(entry.listid ?? entry.id)"
+        >
+          <span class="lyric-add-playlist-name">{{ entry.name }}</span>
+          <span class="lyric-add-playlist-count">{{ entry.count ?? 0 }} 首</span>
+        </Button>
+      </div>
+    </Dialog>
   </div>
 </template>
 
@@ -1376,21 +1491,71 @@ onUnmounted(() => {
     transform 0.3s ease;
 }
 
-.lyric-cover-frame.is-subdued {
-  opacity: 0.42;
-  filter: saturate(0.72) brightness(0.92) contrast(0.92) grayscale(0.18);
-  transform: scale(0.96);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
-}
-
 .dark .lyric-cover-frame {
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.45);
 }
 
-.dark .lyric-cover-frame.is-subdued {
-  opacity: 0.34;
-  filter: saturate(0.56) brightness(0.72) contrast(0.9) grayscale(0.26);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+/* 写真模式歌曲信息浮层 */
+.lyric-photo-song-info {
+  position: absolute;
+  left: 24px;
+  bottom: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px 8px 8px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.32);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  max-width: 360px;
+}
+
+.dark .lyric-photo-song-info {
+  background: rgba(10, 14, 20, 0.52);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.lyric-photo-song-cover {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.lyric-photo-song-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lyric-photo-song-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dark .lyric-photo-song-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.lyric-photo-song-artist {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(15, 23, 42, 0.56);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dark .lyric-photo-song-artist {
+  color: rgba(255, 255, 255, 0.56);
 }
 
 .lyric-stage {
@@ -1578,5 +1743,79 @@ onUnmounted(() => {
   .lyric-portrait-backdrop {
     object-position: center top;
   }
+}
+
+.lyric-add-playlist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lyric-add-playlist-status {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.dark .lyric-add-playlist-status {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lyric-add-playlist-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lyric-add-playlist-count {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.lyric-add-playlist-item {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.5);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(15, 23, 42, 0.88);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.dark .lyric-add-playlist-item {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.lyric-add-playlist-item:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.lyric-add-playlist-queue {
+  border-style: dashed;
+}
+
+.lyric-add-playlist-queue .lyric-add-playlist-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lyric-add-playlist-divider {
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.5);
+}
+
+.dark .lyric-add-playlist-divider {
+  color: rgba(255, 255, 255, 0.5);
 }
 </style>
