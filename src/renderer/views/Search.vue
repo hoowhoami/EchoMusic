@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { getSearchHot, getSearchSuggest, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -55,6 +56,7 @@ interface SearchSuggestionCategory {
 const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
+const route = useRoute();
 
 const searchInput = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
@@ -422,6 +424,12 @@ const resolvePlaylistRouteId = (entry: PlaylistMeta) => {
 onMounted(async () => {
   await loadHotSearches();
   await attachScrollTarget();
+
+  // 从标题栏搜索跳转过来时，自动执行搜索
+  const queryKeyword = route.query.q;
+  if (typeof queryKeyword === 'string' && queryKeyword.trim()) {
+    await runSearch(queryKeyword.trim());
+  }
 });
 
 watch(

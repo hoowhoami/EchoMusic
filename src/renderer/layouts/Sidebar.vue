@@ -59,7 +59,6 @@ const menuGroups = [
     items: [
       { name: '为您推荐', path: '/main/home', icon: 'sparkles' },
       { name: '探索发现', path: '/main/explore', icon: 'compass' },
-      { name: '全网搜索', path: '/main/search', icon: 'search' },
     ],
   },
   {
