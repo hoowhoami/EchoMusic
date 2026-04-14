@@ -85,6 +85,71 @@ const isPreviewReadonly = computed(
 
 const previewTracks = computed(() => previewQueue.value?.songs ?? []);
 
+// 虚拟滚动状态（仅用于当前预览队列的非排序模式）
+const virtualOverscan = 10;
+const virtualStart = ref(0);
+const virtualEnd = ref(0);
+let virtualMeasureFrame = 0;
+
+const previewTotalHeight = computed(() => previewTracks.value.length * itemHeight);
+
+const virtualItems = computed(() => {
+  const queue = previewQueue.value;
+  if (!queue) return null;
+  return previewTracks.value.slice(virtualStart.value, virtualEnd.value).map((data, i) => ({
+    data,
+    index: virtualStart.value + i,
+  }));
+});
+
+const virtualWrapperStyle = computed(() => ({
+  height: `${previewTotalHeight.value}px`,
+  position: 'relative' as const,
+}));
+
+const virtualOffsetStyle = computed(() => ({
+  transform: `translateY(${virtualStart.value * itemHeight}px)`,
+}));
+
+const updateVirtualRange = () => {
+  const queue = previewQueue.value;
+  if (!queue) {
+    virtualStart.value = 0;
+    virtualEnd.value = 0;
+    return;
+  }
+  const scroller = queueListRefs.value[queue.id];
+  if (!scroller) {
+    virtualStart.value = 0;
+    virtualEnd.value = Math.min(previewTracks.value.length, virtualOverscan * 4);
+    return;
+  }
+  const totalCount = previewTracks.value.length;
+  if (totalCount === 0) {
+    virtualStart.value = 0;
+    virtualEnd.value = 0;
+    return;
+  }
+  const scrollTop = scroller.scrollTop;
+  const clientHeight = scroller.clientHeight;
+  const nextStart = Math.max(0, Math.floor(scrollTop / itemHeight) - virtualOverscan);
+  const nextEnd = Math.min(totalCount, Math.ceil((scrollTop + clientHeight) / itemHeight) + virtualOverscan);
+  virtualStart.value = nextStart;
+  virtualEnd.value = Math.max(nextStart, nextEnd);
+};
+
+const scheduleVirtualMeasure = () => {
+  if (virtualMeasureFrame) cancelAnimationFrame(virtualMeasureFrame);
+  virtualMeasureFrame = requestAnimationFrame(() => {
+    virtualMeasureFrame = 0;
+    updateVirtualRange();
+  });
+};
+
+const handleQueueListScroll = () => {
+  scheduleVirtualMeasure();
+};
+
 const currentTrackId = computed(() => {
   if (!previewQueue.value) return null;
   if (previewQueue.value.id === activeQueue.value?.id) return playerStore.currentTrackId;
@@ -162,8 +227,10 @@ const initSortable = async () => {
   if (!queue) return;
   await nextTick();
   if (initToken !== sortableInitToken) return;
-  const el = queueListRefs.value[queue.id];
-  if (!el) return;
+  const listEl = queueListRefs.value[queue.id];
+  if (!listEl || !listEl.isConnected) return;
+  // sortable 挂载到虚拟滚动的内层偏移 div（包含实际行元素的容器）
+  const el = listEl.querySelector<HTMLElement>('.queue-virtual-offset') ?? listEl;
   if (!el.isConnected) return;
 
   sortableInstance = new Sortable(el, {
@@ -178,7 +245,10 @@ const initSortable = async () => {
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt;
       if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-      playlistStore.reorderPlaybackQueue(oldIndex, newIndex, queue.id);
+      // 局部索引转全局索引
+      const globalOld = oldIndex + virtualStart.value;
+      const globalNew = newIndex + virtualStart.value;
+      playlistStore.reorderPlaybackQueue(globalOld, globalNew, queue.id);
     },
   });
 };
@@ -187,6 +257,7 @@ const scrollPreviewToTop = () => {
   const queue = previewQueue.value;
   if (!queue) return;
   queueListRefs.value[queue.id]?.scrollTo({ top: 0, behavior: 'smooth' });
+  scheduleVirtualMeasure();
 };
 
 const isCurrentVisible = (): boolean => {
@@ -210,15 +281,11 @@ const scrollToCurrent = (force = true) => {
 
   const scroller = queueListRefs.value[queue.id];
   if (!scroller) return;
-  const row = scroller.querySelector<HTMLElement>(`[data-queue-row][data-song-id="${targetId}"]`);
-  if (row) {
-    scroller.scrollTo({ top: Math.max(0, row.offsetTop - 8), behavior: 'smooth' });
-    return;
-  }
 
   const index = queue.songs.findIndex((song) => String(song.id) === targetId);
   if (index < 0) return;
   scroller.scrollTo({ top: Math.max(0, index * itemHeight - 8), behavior: 'smooth' });
+  scheduleVirtualMeasure();
 };
 
 const scrollToPreviewQueue = async (index: number, behavior: ScrollBehavior = 'smooth') => {
@@ -398,6 +465,7 @@ watch(
     await nextTick();
     await scrollToPreviewQueue(previewIndex.value, 'auto');
     await initSortable();
+    scheduleVirtualMeasure();
   },
 );
 
@@ -407,6 +475,7 @@ watch(
     if (!open.value || isSyncingPreviewByScroll.value) return;
     await initSortable();
     await nextTick();
+    scheduleVirtualMeasure();
     scrollToCurrent(false);
   },
 );
@@ -448,9 +517,15 @@ watch(
         }
       }
       await initSortable();
+      scheduleVirtualMeasure();
     }
   },
 );
+
+// 切换排序模式时重新计算虚拟范围
+watch(sortQueueId, () => {
+  scheduleVirtualMeasure();
+});
 
 onMounted(() => {
   if (open.value) {
@@ -465,6 +540,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   sortableInitToken += 1;
   destroySortable();
+  if (virtualMeasureFrame) cancelAnimationFrame(virtualMeasureFrame);
 });
 </script>
 
@@ -588,91 +664,147 @@ onBeforeUnmount(() => {
             {{ isQueueSorting(queue.id) ? '完成' : '排序' }}
           </Button>
         </div>
-        <div :ref="setQueueListRef(queue.id)" class="queue-list">
-          <div
-            v-for="(track, index) in queue.songs"
-            :key="`${track.historyKey ?? track.id}:${track.hash ?? ''}:${index}`"
-            class="queue-row"
-            :data-queue-row="true"
-            :data-song-id="String(track.id)"
-            :class="{
-              'is-current':
-                queue.id === previewQueue?.id && String(track.id) === String(currentTrackId ?? ''),
-            }"
-            :style="{ height: `${itemHeight}px` }"
-          >
-            <div class="queue-leading">
-              <span class="queue-index">{{ index + 1 }}</span>
-              <Button
-                type="button"
-                class="queue-play"
-                variant="ghost"
-                size="xs"
-                @click="handlePlay(track)"
-              >
-                <Icon
-                  v-if="
-                    String(track.id) !== String(currentTrackId ?? '') ||
-                    queue.id !== activeQueue?.id ||
-                    !playerStore.isPlaying
-                  "
-                  :icon="iconPlay"
-                  width="14"
-                  height="14"
-                />
-                <Icon v-else :icon="iconPause" width="14" height="14" />
-              </Button>
-            </div>
+        <div :ref="setQueueListRef(queue.id)" class="queue-list" @scroll.passive="handleQueueListScroll">
+          <!-- 虚拟滚动（当前预览队列） -->
+          <template v-if="queue.id === previewQueue?.id && virtualItems">
+            <div :style="virtualWrapperStyle">
+              <div :style="virtualOffsetStyle" class="queue-virtual-offset">
+                <div
+                  v-for="entry in virtualItems"
+                  :key="`${entry.data.historyKey ?? entry.data.id}:${entry.data.hash ?? ''}:${entry.index}`"
+                  class="queue-row"
+                  :data-queue-row="true"
+                  :data-song-id="String(entry.data.id)"
+                  :class="{
+                    'is-current':
+                      queue.id === previewQueue?.id && String(entry.data.id) === String(currentTrackId ?? ''),
+                  }"
+                  :style="{ height: `${itemHeight}px` }"
+                >
+                  <div class="queue-leading">
+                    <span class="queue-index">{{ entry.index + 1 }}</span>
+                    <Button
+                      type="button"
+                      class="queue-play"
+                      variant="ghost"
+                      size="xs"
+                      @click="handlePlay(entry.data)"
+                    >
+                      <Icon
+                        v-if="
+                          String(entry.data.id) !== String(currentTrackId ?? '') ||
+                          queue.id !== activeQueue?.id ||
+                          !playerStore.isPlaying
+                        "
+                        :icon="iconPlay"
+                        width="14"
+                        height="14"
+                      />
+                      <Icon v-else :icon="iconPause" width="14" height="14" />
+                    </Button>
+                  </div>
 
+                  <div
+                    class="queue-card"
+                    :class="{ 'is-sorting': isQueueSorting(queue.id) }"
+                    :style="{ opacity: isSongPlayable(entry.data) ? 1 : 0.45 }"
+                  >
+                    <SongCard
+                      :id="entry.data.id"
+                      :hash="entry.data.hash"
+                      :title="entry.data.title"
+                      :artist="entry.data.artist"
+                      :artists="entry.data.artists"
+                      :album="entry.data.album"
+                      :albumId="entry.data.albumId"
+                      :coverUrl="entry.data.coverUrl"
+                      :duration="entry.data.duration"
+                      :audioUrl="entry.data.audioUrl"
+                      :source="entry.data.source"
+                      :mvHash="entry.data.mvHash"
+                      :mixSongId="entry.data.mixSongId"
+                      :fileId="entry.data.fileId"
+                      :privilege="entry.data.privilege"
+                      :payType="entry.data.payType"
+                      :oldCpy="entry.data.oldCpy"
+                      :relateGoods="entry.data.relateGoods"
+                      :queueContext="queue.songs"
+                      :showCover="true"
+                      :showAlbum="false"
+                      :showDuration="false"
+                      :showQuality="false"
+                      :active="
+                        queue.id === previewQueue?.id && String(entry.data.id) === String(currentTrackId ?? '')
+                      "
+                      :showMore="false"
+                      variant="list"
+                    />
+                  </div>
+
+                  <Button
+                    v-if="!isSortMode"
+                    type="button"
+                    class="queue-remove"
+                    variant="unstyled"
+                    size="none"
+                    title="从队列移除"
+                    @click="handleRemove(entry.data)"
+                  >
+                    <Icon :icon="iconTrash" width="14" height="14" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 非预览队列：全量渲染 -->
+          <template v-else>
             <div
-              class="queue-card"
-              :class="{ 'is-sorting': isQueueSorting(queue.id) }"
-              :style="{ opacity: isSongPlayable(track) ? 1 : 0.45 }"
+              v-for="(track, index) in queue.songs"
+              :key="`${track.historyKey ?? track.id}:${track.hash ?? ''}:${index}`"
+              class="queue-row"
+              :data-queue-row="true"
+              :data-song-id="String(track.id)"
+              :style="{ height: `${itemHeight}px` }"
             >
-              <SongCard
-                :id="track.id"
-                :hash="track.hash"
-                :title="track.title"
-                :artist="track.artist"
-                :artists="track.artists"
-                :album="track.album"
-                :albumId="track.albumId"
-                :coverUrl="track.coverUrl"
-                :duration="track.duration"
-                :audioUrl="track.audioUrl"
-                :source="track.source"
-                :mvHash="track.mvHash"
-                :mixSongId="track.mixSongId"
-                :fileId="track.fileId"
-                :privilege="track.privilege"
-                :payType="track.payType"
-                :oldCpy="track.oldCpy"
-                :relateGoods="track.relateGoods"
-                :queueContext="queue.songs"
-                :showCover="true"
-                :showAlbum="false"
-                :showDuration="false"
-                :showQuality="false"
-                :active="
-                  queue.id === previewQueue?.id && String(track.id) === String(currentTrackId ?? '')
-                "
-                :showMore="false"
-                variant="list"
-              />
+              <div class="queue-leading">
+                <span class="queue-index">{{ index + 1 }}</span>
+              </div>
+              <div
+                class="queue-card"
+                :style="{ opacity: isSongPlayable(track) ? 1 : 0.45 }"
+              >
+                <SongCard
+                  :id="track.id"
+                  :hash="track.hash"
+                  :title="track.title"
+                  :artist="track.artist"
+                  :artists="track.artists"
+                  :album="track.album"
+                  :albumId="track.albumId"
+                  :coverUrl="track.coverUrl"
+                  :duration="track.duration"
+                  :audioUrl="track.audioUrl"
+                  :source="track.source"
+                  :mvHash="track.mvHash"
+                  :mixSongId="track.mixSongId"
+                  :fileId="track.fileId"
+                  :privilege="track.privilege"
+                  :payType="track.payType"
+                  :oldCpy="track.oldCpy"
+                  :relateGoods="track.relateGoods"
+                  :queueContext="queue.songs"
+                  :showCover="true"
+                  :showAlbum="false"
+                  :showDuration="false"
+                  :showQuality="false"
+                  :active="false"
+                  :showMore="false"
+                  variant="list"
+                />
+              </div>
             </div>
-
-            <Button
-              v-if="!isSortMode"
-              type="button"
-              class="queue-remove"
-              variant="unstyled"
-              size="none"
-              title="从队列移除"
-              @click="handleRemove(track)"
-            >
-              <Icon :icon="iconTrash" width="14" height="14" />
-            </Button>
-          </div>
+          </template>
 
           <div v-if="queue.songs.length === 0" class="queue-empty-container">
             <div class="queue-empty">

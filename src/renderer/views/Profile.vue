@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -39,6 +40,7 @@ interface DetailState {
 
 const router = useRouter();
 const userStore = useUserStore();
+const settingStore = useSettingStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
@@ -112,6 +114,15 @@ const loadData = async () => {
     logger.error('Profile', 'Load Data Error:', e);
   } finally {
     isLoading.value = false;
+  }
+
+  // 如果开启了自动领取 VIP，尝试领取一次
+  if (settingStore.autoReceiveVip && userStore.isLoggedIn) {
+    try {
+      await userStore.autoReceiveVipIfNeeded();
+    } catch (e) {
+      logger.warn('Profile', 'Auto receive VIP skipped:', e);
+    }
   }
 };
 
