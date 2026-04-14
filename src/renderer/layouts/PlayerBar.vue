@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { usePlayerStore } from '@/stores/player';
-import { useDesktopLyricStore } from '@/desktopLyric/store';
-import { useSettingStore } from '@/stores/setting';
-import { usePlaylistStore } from '@/stores/playlist';
-import type { Song, SongArtist } from '@/models/song';
-import type { AudioEffectValue, AudioQualityValue } from '@/types';
+import type { SongArtist } from '@/models/song';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -45,51 +40,46 @@ import {
   iconSpeedometer,
   iconTypography,
 } from '@/icons';
-import { hasSongQuality, isSameSong, resolveEffectiveSongQuality } from '@/utils/song';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const router = useRouter();
-const player = usePlayerStore();
-const playlist = usePlaylistStore();
-const settingStore = useSettingStore();
-const desktopLyricStore = useDesktopLyricStore();
 
-const currentTrack = computed(() => {
-  return (
-    player.currentTrackSnapshot ||
-    (playlist.activeQueue?.songs ?? []).find((s: Song) => s.id === player.currentTrackId) ||
-    playlist.defaultList.find((s: Song) => s.id === player.currentTrackId) ||
-    playlist.favorites.find((s: Song) => s.id === player.currentTrackId)
-  );
-});
+const {
+  player,
+  playlist,
+  settingStore,
+  desktopLyricStore,
+  currentTrack,
+  isFavorite,
+  toggleFavorite,
+  playModeLabel,
+  playModeIcon,
+  cyclePlayMode,
+  volumeIcon,
+  lastVolume,
+  handleVolumeChange,
+  toggleMute,
+  playbackRateDisplay,
+  handlePlaybackRateSlider,
+  resetPlaybackRate,
+  setPlaybackRate,
+  effectiveAudioQuality,
+  isAudioQualityDisabled,
+  audioQualityButtonBadge,
+  currentAudioQualityBadgeColor,
+  getAudioQualityTagColor,
+  setAudioQuality,
+  setAudioEffect,
+  toggleDesktopLyric,
+  resolveNumericId,
+  goToComments,
+  goToMv,
+  queueCount,
+  isQueueDrawerOpen,
+  openQueue,
+} = usePlayerControls();
 
-const isFavorite = computed(() => {
-  return currentTrack.value
-    ? playlist.favorites.some(
-        (s) => isSameSong(s, currentTrack.value as Song) || s.id === currentTrack.value?.id,
-      )
-    : false;
-});
-
-const queueCount = computed(
-  () => playlist.activeQueue?.songs.length ?? playlist.defaultList.length,
-);
 const playbackNotice = computed(() => player.playbackNotice);
-
-const playbackRateDisplay = computed(() => {
-  const r = player.playbackRate;
-  if (r === Math.floor(r)) return `${r.toFixed(1)}x`;
-  return `${r.toFixed(2).replace(/0$/, '')}x`;
-});
-
-const handlePlaybackRateSlider = (value: number[] | undefined) => {
-  if (!value) return;
-  const rate = Math.round((value[0] ?? 10)) / 10;
-  player.setPlaybackRate(rate);
-};
-
-const resetPlaybackRate = () => {
-  player.setPlaybackRate(1);
-};
 
 const artistList = computed(() => {
   if (!currentTrack.value) return [];
@@ -118,13 +108,6 @@ const navigateToLyric = () => {
   });
 };
 
-const resolveNumericId = (value: unknown) => {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = Number.parseInt(String(value), 10);
-  if (Number.isNaN(parsed) || parsed <= 0) return null;
-  return parsed;
-};
-
 const isArtistClickable = (artist: SongArtist) => {
   const artistId = resolveNumericId(artist.id);
   if (!artistId) return false;
@@ -142,116 +125,9 @@ const goToArtist = (artist: SongArtist) => {
   router.push({ name: 'artist-detail', params: { id: String(artistId) } });
 };
 
-const goToComments = () => {
-  if (!currentTrack.value) return;
-  const track = currentTrack.value;
-  router.push({
-    name: 'comment',
-    params: { id: track.mixSongId ? String(track.mixSongId) : String(track.id) },
-    query: {
-      mainTab: 'detail',
-      type: 'music',
-      title: track.title,
-      artist: track.artist,
-      artistId: track.artists?.[0]?.id ?? '',
-      album: track.album ?? '',
-      cover: track.coverUrl ?? '',
-      albumId: track.albumId ?? '',
-      hash: track.hash ?? '',
-      mixSongId: track.mixSongId ?? '',
-    },
-  });
-};
-
-const goToMv = async () => {
-  const track = currentTrack.value;
-  const mvHash = String(track?.mvHash ?? '').trim();
-  if (!track || !mvHash) return;
-  if (player.isPlaying) {
-    await player.togglePlay();
-  }
-  router.push({
-    name: 'mv-detail',
-    params: { id: mvHash },
-    query: {
-      hash: mvHash,
-      albumAudioId: track.mixSongId ?? track.id,
-      title: track.title,
-      artist: track.artist,
-      cover: track.coverUrl ?? '',
-      album: track.album ?? '',
-      songId: track.id,
-      mixSongId: track.mixSongId ?? '',
-      from: router.currentRoute.value.fullPath,
-    },
-  });
-};
-
-const setPlaybackRate = (rate: number) => {
-  if (player.playbackRate === rate) return;
-  player.setPlaybackRate(rate);
-};
-
-const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality(settingStore));
-const effectiveAudioQuality = computed(() => {
-  if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
-  if (!currentTrack.value) return requestedAudioQuality.value;
-  return resolveEffectiveSongQuality(
-    currentTrack.value,
-    requestedAudioQuality.value,
-    settingStore.compatibilityMode ?? true,
-  );
-});
-const isAudioQualityDisabled = (quality: AudioQualityValue) => {
-  if (quality === effectiveAudioQuality.value) return false;
-  if (!currentTrack.value) return quality !== '128';
-  return !hasSongQuality(currentTrack.value, quality);
-};
-const audioQualityButtonBadge = computed(() => {
-  if (player.currentResolvedAudioEffect !== 'none') return 'FX';
-  if (effectiveAudioQuality.value === '128') return 'SD';
-  if (effectiveAudioQuality.value === '320') return 'HQ';
-  if (effectiveAudioQuality.value === 'flac') return 'SQ';
-  return 'HR';
-});
-const currentAudioQualityBadgeColor = computed(() =>
-  player.currentResolvedAudioEffect !== 'none'
-    ? '#10B981'
-    : getAudioQualityTagColor(effectiveAudioQuality.value),
-);
-
-const getAudioQualityTagColor = (quality: AudioQualityValue) => {
-  if (quality === '128') return '#64748B';
-  if (quality === '320') return '#8B5CF6';
-  if (quality === 'flac') return '#2563EB';
-  return '#F59E0B';
-};
-
-const setAudioQuality = (quality: AudioQualityValue) => {
-  if (player.currentAudioQualityOverride === null && effectiveAudioQuality.value === quality)
-    return;
-  if (player.currentAudioQualityOverride === quality) return;
-  player.setCurrentAudioQualityOverride(quality);
-};
-
-const setAudioEffect = (effect: AudioEffectValue) => {
-  if (player.audioEffect === effect) return;
-  player.setAudioEffect(effect);
-};
-
-const openQueue = () => {
-  isQueueDrawerOpen.value = true;
-};
-
-const toggleDesktopLyric = async () => {
-  await desktopLyricStore.setEnabled(!desktopLyricStore.settings.enabled);
-};
-
-const lastVolume = ref(0.8);
 const isHoveringProgress = ref(false);
 const isVolumeVisible = ref(false);
 const volumeContainerRef = ref<HTMLElement | null>(null);
-const isQueueDrawerOpen = ref(false);
 const isQualityMenuOpen = ref(false);
 
 watch(isQualityMenuOpen, (open) => {
@@ -301,20 +177,13 @@ const toggleVolume = (e: Event) => {
   isVolumeVisible.value = !isVolumeVisible.value;
 };
 
-const handleVolumeChange = (value: number[] | undefined) => {
-  if (value && value.length > 0) {
-    player.setVolume(value[0] / 100);
-  }
+const handleVolumeChangePB = (value: number[] | undefined) => {
+  handleVolumeChange(value);
 };
 
-const toggleMute = (e: Event) => {
+const toggleMutePB = (e: Event) => {
   e.stopPropagation();
-  if (player.volume > 0) {
-    lastVolume.value = player.volume;
-    player.setVolume(0);
-  } else {
-    player.setVolume(lastVolume.value || 0.8);
-  }
+  toggleMute();
 };
 
 const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
@@ -349,14 +218,9 @@ const handleClickOutside = (e: MouseEvent) => {
   }
 };
 
-const toggleFavorite = (e: Event) => {
+const toggleFavoritePB = (e: Event) => {
   e.stopPropagation();
-  if (!currentTrack.value) return;
-  if (isFavorite.value) {
-    playlist.removeFavoriteSong(currentTrack.value);
-  } else {
-    playlist.addToFavorites(currentTrack.value);
-  }
+  toggleFavorite();
 };
 
 const updateDrawerWidth = () => {
@@ -489,7 +353,7 @@ onUnmounted(() => {
             <Button
               variant="unstyled"
               size="none"
-              @click="toggleFavorite"
+              @click="toggleFavoritePB"
               class="p-0.5 text-red-500 transition-all hover:scale-110 active:scale-90"
               title="收藏"
             >
@@ -659,7 +523,7 @@ onUnmounted(() => {
                     :max="100"
                     orientation="vertical"
                     class="relative flex flex-col items-center select-none touch-none w-5 h-full"
-                    @update:model-value="handleVolumeChange"
+                    @update:model-value="handleVolumeChangePB"
                   >
                     <SliderTrack class="player-volume-track relative grow rounded-full w-[3px]">
                       <SliderRange class="absolute bg-primary rounded-full w-full" />
@@ -672,7 +536,7 @@ onUnmounted(() => {
                   <Button
                     variant="unstyled"
                     size="none"
-                    @click="toggleMute"
+                    @click="toggleMutePB"
                     class="mt-2 p-1 text-text-main/60 hover:text-primary transition-colors"
                   >
                     <Icon v-if="player.volume > 0.5" :icon="iconVolume2" width="20" height="20" />
@@ -1264,6 +1128,8 @@ onUnmounted(() => {
   gap: 4px;
   z-index: 1200;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 :deep(.player-dropdown--narrow) {
@@ -1435,9 +1301,11 @@ onUnmounted(() => {
   z-index: -1;
 }
 :deep(.player-speed-dropdown) {
-  min-width: 240px;
+  min-width: 300px;
   padding: 12px 14px 10px;
   gap: 8px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 :deep(.player-speed-header) {

@@ -2,10 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
-import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
-import { useSettingStore } from '@/stores/setting';
 import type { Song } from '@/models/song';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import {
@@ -20,11 +17,15 @@ import {
 } from 'reka-ui';
 import Cover from '@/components/ui/Cover.vue';
 import Slider from '@/components/ui/Slider.vue';
+import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
 import { formatDuration } from '@/utils/format';
 import { closeTransientView } from '@/utils/navigation';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
+import Tag from '@/components/ui/Tag.vue';
+import Badge from '@/components/ui/Badge.vue';
+import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -37,24 +38,49 @@ import {
   iconPlay,
   iconSkipBack,
   iconSkipForward,
+  iconHeart,
+  iconHeartFilled,
+  iconMessageCircle,
+  iconSpeedometer,
   iconTypography,
-  iconRepeat,
-  iconRepeatOff,
-  iconShuffle,
-  iconListRestart,
-  iconVolume2,
-  iconVolume1,
-  iconVolumeX,
+  iconList,
 } from '@/icons';
-import type { PlayMode } from '@/types';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const router = useRouter();
 const route = useRoute();
-const playerStore = usePlayerStore();
-const playlistStore = usePlaylistStore();
 const lyricStore = useLyricStore();
-const settingStore = useSettingStore();
 
+const {
+  player: playerStore,
+  settingStore,
+  desktopLyricStore,
+  currentTrack,
+  isFavorite,
+  toggleFavorite,
+  playModeLabel,
+  playModeIcon,
+  cyclePlayMode,
+  volumeIcon,
+  lastVolume,
+  handleVolumeChange,
+  toggleMute,
+  playbackRateDisplay,
+  handlePlaybackRateSlider,
+  resetPlaybackRate,
+  setPlaybackRate,
+  effectiveAudioQuality,
+  isAudioQualityDisabled,
+  audioQualityButtonBadge,
+  currentAudioQualityBadgeColor,
+  getAudioQualityTagColor,
+  setAudioQuality,
+  setAudioEffect,
+  toggleDesktopLyric,
+  goToComments,
+  goToMv,
+  isQueueDrawerOpen,
+} = usePlayerControls();
 const singerPortraitCache = new Map<string, string[]>();
 const singerPortraitPending = new Map<string, Promise<string[]>>();
 
@@ -90,59 +116,9 @@ const activePortraitIndex = ref(0);
 let userScrollResumeTimer: number | null = null;
 let artistBackdropRequestId = 0;
 
-const playModeLabel = computed(() => {
-  const labels: Record<PlayMode, string> = {
-    sequential: '顺序播放',
-    list: '列表循环',
-    random: '随机播放',
-    single: '单曲循环',
-  };
-  return labels[playerStore.playMode] ?? '顺序播放';
-});
-
-const playModeIcon = computed(() => {
-  if (playerStore.playMode === 'sequential') return iconRepeatOff;
-  if (playerStore.playMode === 'list') return iconRepeat;
-  if (playerStore.playMode === 'random') return iconShuffle;
-  return iconListRestart;
-});
-
-const volumeIcon = computed(() => {
-  if (playerStore.volume > 0.5) return iconVolume2;
-  if (playerStore.volume > 0) return iconVolume1;
-  return iconVolumeX;
-});
-
-const lastVolume = ref(0.8);
 const isVolumeVisible = ref(false);
 const volumeContainerRef = ref<HTMLElement | null>(null);
 let volumeWheelTimer: ReturnType<typeof setTimeout> | null = null;
-
-const cyclePlayMode = () => {
-  const next: PlayMode =
-    playerStore.playMode === 'sequential'
-      ? 'list'
-      : playerStore.playMode === 'list'
-        ? 'random'
-        : playerStore.playMode === 'random'
-          ? 'single'
-          : 'sequential';
-  playerStore.setPlayMode(next);
-};
-
-const handleVolumeChange = (value: number[] | undefined) => {
-  if (!value?.length) return;
-  playerStore.setVolume(value[0] / 100);
-};
-
-const toggleMute = () => {
-  if (playerStore.volume > 0) {
-    lastVolume.value = playerStore.volume;
-    playerStore.setVolume(0);
-  } else {
-    playerStore.setVolume(lastVolume.value || 0.8);
-  }
-};
 
 const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
 
@@ -175,18 +151,6 @@ const handleVolumeClickOutside = (e: MouseEvent) => {
     isVolumeVisible.value = false;
   }
 };
-
-const currentTrack = computed<Song | undefined>(() => {
-  const currentId = String(playerStore.currentTrackId ?? '');
-  if (!currentId) return undefined;
-  return (
-    (playlistStore.activeQueue?.songs ?? []).find((song) => String(song.id) === currentId) ||
-    playlistStore.defaultList.find((song) => String(song.id) === currentId) ||
-    playlistStore.favorites.find((song) => String(song.id) === currentId) ||
-    playerStore.currentTrackSnapshot ||
-    undefined
-  );
-});
 
 const coverBackgroundUrl = computed(() => getCoverUrl(currentTrack.value?.coverUrl, 900));
 const activePortraitUrl = computed(() => {
@@ -830,196 +794,286 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="px-6 pb-6 pt-2 no-drag">
-        <div class="lyric-controls-surface mx-auto flex w-full max-w-[560px] flex-col items-center">
-          <div class="flex items-center justify-center gap-8">
-            <!-- 播放模式 -->
-            <Tooltip :content="playModeLabel" side="top">
-              <template #trigger>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-                  @click="cyclePlayMode"
-                >
-                  <Icon
-                    :icon="playModeIcon"
-                    width="22"
-                    height="22"
-                    class="text-black/60 dark:text-white/60"
-                  />
-                </Button>
-              </template>
-            </Tooltip>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-              title="上一曲"
-              @click="playerStore.prev()"
-            >
-              <Icon
-                :icon="iconSkipBack"
-                width="24"
-                height="24"
-                class="text-black/80 dark:text-white/80"
-              />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="lyric-main-play-btn flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95"
-              :title="playerStore.isPlaying ? '暂停' : '播放'"
-              @click="playerStore.togglePlay()"
-            >
-              <Icon
-                :icon="playerStore.isPlaying ? iconPause : iconPlay"
-                width="24"
-                height="24"
-                class="text-black dark:text-white"
-              />
-            </Button>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-              title="下一曲"
-              @click="playerStore.next()"
-            >
-              <Icon
-                :icon="iconSkipForward"
-                width="24"
-                height="24"
-                class="text-black/80 dark:text-white/80"
-              />
-            </Button>
-            <!-- 音量 -->
-            <div
-              ref="volumeContainerRef"
-              class="relative flex items-center"
-              @wheel.prevent="handleVolumeWheel"
-            >
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-                @click="toggleVolume"
-              >
-                <Icon
-                  :icon="volumeIcon"
-                  width="22"
-                  height="22"
-                  class="text-black/60 dark:text-white/60"
-                />
+      <div class="px-6 pb-4 pt-1 no-drag">
+        <div class="lyric-controls-surface mx-auto flex w-full max-w-[820px] flex-col">
+          <!-- 核心播放控制行 -->
+          <div class="flex items-center justify-center gap-6 self-center">
+              <Tooltip :content="playModeLabel" side="top">
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95" @click="cyclePlayMode">
+                    <Icon :icon="playModeIcon" width="21" height="21" class="text-black/55 dark:text-white/55" />
+                  </Button>
+                </template>
+              </Tooltip>
+              <Button variant="unstyled" size="none" type="button" class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95" title="上一曲" @click="playerStore.prev()">
+                <Icon :icon="iconSkipBack" width="24" height="24" class="text-black/80 dark:text-white/80" />
               </Button>
-              <Transition name="volume-pop">
-                <div
-                  v-show="isVolumeVisible"
-                  class="absolute bottom-[100%] left-1/2 -translate-x-1/2 pb-2 z-[100]"
-                  @click.stop
-                >
-                  <div
-                    class="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
-                  >
-                    <div class="flex h-36 flex-col items-center gap-2">
-                      <SliderRoot
-                        :model-value="[playerStore.volume * 100]"
-                        :max="100"
-                        orientation="vertical"
-                        class="relative flex flex-col items-center select-none touch-none w-5 h-full"
-                        @update:model-value="handleVolumeChange"
-                      >
-                        <SliderTrack
-                          class="relative grow rounded-full w-[3px] bg-black/15 dark:bg-white/30"
-                        >
-                          <SliderRange
-                            class="absolute bg-black dark:bg-white rounded-full w-full"
-                          />
-                        </SliderTrack>
-                        <SliderThumb
-                          class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
-                        />
-                      </SliderRoot>
-                      <Button
-                        variant="unstyled"
-                        size="none"
-                        type="button"
-                        class="p-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors"
-                        @click="toggleMute"
-                      >
-                        <Icon :icon="volumeIcon" width="18" height="18" />
-                      </Button>
-                      <span
-                        class="text-[10px] font-semibold text-black/50 dark:text-white/50 tabular-nums"
-                        >{{ Math.round(playerStore.volume * 100) }}</span
-                      >
+              <Button variant="unstyled" size="none" type="button" class="lyric-main-play-btn flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95" :title="playerStore.isPlaying ? '暂停' : '播放'" @click="playerStore.togglePlay()">
+                <Icon :icon="playerStore.isPlaying ? iconPause : iconPlay" width="24" height="24" class="text-black dark:text-white" />
+              </Button>
+              <Button variant="unstyled" size="none" type="button" class="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95" title="下一曲" @click="playerStore.next()">
+                <Icon :icon="iconSkipForward" width="24" height="24" class="text-black/80 dark:text-white/80" />
+              </Button>
+              <!-- 音量 -->
+              <div ref="volumeContainerRef" class="relative flex items-center" @wheel.prevent="handleVolumeWheel">
+                <Button variant="unstyled" size="none" type="button" class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95" @click="toggleVolume">
+                  <Icon :icon="volumeIcon" width="21" height="21" class="text-black/55 dark:text-white/55" />
+                </Button>
+                <Transition name="volume-pop">
+                  <div v-show="isVolumeVisible" class="absolute bottom-[100%] left-1/2 -translate-x-1/2 pb-2 z-[100]" @click.stop>
+                    <div class="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60">
+                      <div class="flex h-36 flex-col items-center gap-2">
+                        <SliderRoot :model-value="[playerStore.volume * 100]" :max="100" orientation="vertical" class="relative flex flex-col items-center select-none touch-none w-5 h-full" @update:model-value="handleVolumeChange">
+                          <SliderTrack class="relative grow rounded-full w-[3px] bg-black/15 dark:bg-white/30">
+                            <SliderRange class="absolute bg-black dark:bg-white rounded-full w-full" />
+                          </SliderTrack>
+                          <SliderThumb class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none" />
+                        </SliderRoot>
+                        <Button variant="unstyled" size="none" type="button" class="p-1 text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white transition-colors" @click="toggleMute">
+                          <Icon :icon="volumeIcon" width="18" height="18" />
+                        </Button>
+                        <span class="text-[10px] font-semibold text-black/50 dark:text-white/50 tabular-nums">{{ Math.round(playerStore.volume * 100) }}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Transition>
-            </div>
+                </Transition>
+              </div>
           </div>
 
-          <div class="mt-4 flex w-[420px] max-w-full items-center gap-3">
-            <span
-              class="w-[42px] text-right font-mono text-[11px] font-semibold text-black/40 dark:text-white/40"
-            >
-              {{ formatDuration(isProgressDragging ? progressValue : playerStore.currentTime) }}
-            </span>
-            <SliderRoot
-              :model-value="[isProgressDragging ? progressValue : playerStore.currentTime]"
-              :min="0"
-              :max="Math.max(playerStore.duration, 1)"
-              :step="1"
-              class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 group/progress"
-              @update:model-value="handleProgressInput"
-              @value-commit="handleProgressCommit"
-              @pointerdown="handleProgressPointerDown"
-              @mouseenter="isHoveringProgress = true"
-              @mouseleave="isHoveringProgress = false"
-            >
-              <SliderTrack class="bg-black/10 dark:bg-white/10 relative grow rounded-full h-[3px]">
-                <div class="climax-mark-layer">
-                  <template
-                    v-for="(mark, index) in playerStore.climaxMarks"
-                    :key="`${mark.start}-${index}`"
-                  >
-                    <span
-                      class="climax-tick"
-                      :style="{ left: `calc(${(mark.start * 100).toFixed(3)}% - 1px)` }"
-                    ></span>
-                    <span
-                      v-if="mark.end > mark.start"
-                      class="climax-tick"
-                      :style="{ left: `calc(${(mark.end * 100).toFixed(3)}% - 1px)` }"
-                    ></span>
-                  </template>
-                </div>
-                <SliderRange class="absolute bg-black dark:bg-white rounded-full h-full" />
-              </SliderTrack>
-              <SliderThumb
-                class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none transition-all duration-200"
-                :class="[isHoveringProgress ? 'opacity-100 scale-110' : 'opacity-0 scale-50']"
-              />
-            </SliderRoot>
-            <span
-              class="w-[42px] text-left font-mono text-[11px] font-semibold text-black/40 dark:text-white/40"
-            >
-              {{ formatDuration(playerStore.duration) }}
-            </span>
+          <!-- 进度条行 -->
+          <div class="mt-2 w-full" style="display: grid; grid-template-columns: 1fr minmax(0, 420px) 1fr; align-items: center; gap: 4px;">
+            <!-- 左列 -->
+            <div class="flex items-center justify-start">
+              <Tooltip :content="isFavorite ? '取消收藏' : '收藏'" side="top">
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-all hover:scale-110 active:scale-90" @click="toggleFavorite">
+                    <Icon :icon="isFavorite ? iconHeartFilled : iconHeart" width="20" height="20" :class="isFavorite ? 'text-red-500' : 'text-black/40 dark:text-white/40'" />
+                  </Button>
+                </template>
+              </Tooltip>
+            </div>
+
+            <!-- 中列：进度条 -->
+            <div class="min-w-0 flex items-center gap-2">
+              <span class="w-[38px] text-right font-mono text-[11px] font-semibold text-black/40 dark:text-white/40 shrink-0">
+                {{ formatDuration(isProgressDragging ? progressValue : playerStore.currentTime) }}
+              </span>
+              <SliderRoot
+                :model-value="[isProgressDragging ? progressValue : playerStore.currentTime]"
+                :min="0"
+                :max="Math.max(playerStore.duration, 1)"
+                :step="1"
+                class="relative flex items-center select-none touch-none flex-1 min-w-0 h-4 group/progress"
+                @update:model-value="handleProgressInput"
+                @value-commit="handleProgressCommit"
+                @pointerdown="handleProgressPointerDown"
+                @mouseenter="isHoveringProgress = true"
+                @mouseleave="isHoveringProgress = false"
+              >
+                <SliderTrack class="bg-black/10 dark:bg-white/10 relative grow rounded-full h-[3px]">
+                  <div class="climax-mark-layer">
+                    <template v-for="(mark, index) in playerStore.climaxMarks" :key="`${mark.start}-${index}`">
+                      <span class="climax-tick" :style="{ left: `calc(${(mark.start * 100).toFixed(3)}% - 1px)` }"></span>
+                      <span v-if="mark.end > mark.start" class="climax-tick" :style="{ left: `calc(${(mark.end * 100).toFixed(3)}% - 1px)` }"></span>
+                    </template>
+                  </div>
+                  <SliderRange class="absolute bg-black dark:bg-white rounded-full h-full" />
+                </SliderTrack>
+                <SliderThumb
+                  class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none transition-all duration-200"
+                  :class="[isHoveringProgress ? 'opacity-100 scale-110' : 'opacity-0 scale-50']"
+                />
+              </SliderRoot>
+              <span class="w-[38px] text-left font-mono text-[11px] font-semibold text-black/40 dark:text-white/40 shrink-0">
+                {{ formatDuration(playerStore.duration) }}
+              </span>
+            </div>
+
+            <!-- 右列 -->
+            <div class="flex items-center justify-end gap-1 select-none">
+              <!-- 倍速 -->
+              <PopoverRoot>
+                <PopoverTrigger as-child>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-colors" :class="playerStore.playbackRate !== 1 ? 'text-black dark:text-white' : 'text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70'" title="播放倍速">
+                    <Icon :icon="iconSpeedometer" width="20" height="20" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverPortal>
+                  <PopoverContent class="lyric-popover lyric-popover--speed" :side-offset="8" align="end" side="top">
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-bold opacity-50">播放倍速</span>
+                        <Button variant="unstyled" size="none" class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-md transition-colors" :class="playerStore.playbackRate === 1 ? 'opacity-40' : 'hover:bg-black/5 dark:hover:bg-white/10'" @click="resetPlaybackRate">{{ playbackRateDisplay }}</Button>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-semibold opacity-40 shrink-0">0.1</span>
+                        <SliderRoot class="relative flex items-center select-none touch-none flex-1 h-5" :model-value="[Math.round(playerStore.playbackRate * 10)]" :min="1" :max="50" :step="1" orientation="horizontal" @update:model-value="handlePlaybackRateSlider">
+                          <SliderTrack class="relative grow rounded-full h-[3px] bg-black/12 dark:bg-white/15">
+                            <SliderRange class="absolute h-full rounded-full bg-black dark:bg-white" />
+                          </SliderTrack>
+                          <SliderThumb class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none" />
+                        </SliderRoot>
+                        <span class="text-[10px] font-semibold opacity-40 shrink-0">5x</span>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <Button v-for="r in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]" :key="r" variant="unstyled" size="none" class="text-[11px] font-semibold px-2 py-1 rounded-md transition-colors" :class="Math.abs(playerStore.playbackRate - r) < 0.01 ? 'bg-black/10 dark:bg-white/15' : 'opacity-50 hover:bg-black/5 dark:hover:bg-white/8 hover:opacity-100'" @click="setPlaybackRate(r)">{{ r === Math.floor(r) ? r.toFixed(1) : r }}x</Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </PopoverPortal>
+              </PopoverRoot>
+              <!-- 音质 -->
+              <PopoverRoot>
+                <PopoverTrigger as-child>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-colors" :class="playerStore.currentAudioQualityOverride !== null || playerStore.audioEffect !== 'none' ? 'text-black dark:text-white' : 'text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70'" title="音质">
+                    <span class="relative inline-flex w-5 h-5 items-center justify-center">
+                      <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
+                      <Badge v-if="currentTrack" :count="audioQualityButtonBadge" class="absolute -top-2" :style="{ right: '-12px', color: '#FFF', backgroundColor: currentAudioQualityBadgeColor }" />
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverPortal>
+                  <PopoverContent class="lyric-popover lyric-popover--quality" :side-offset="8" align="end" side="top">
+                    <div class="space-y-1">
+                      <div class="text-[11px] font-bold opacity-50 px-2 pb-1">音质选择</div>
+                      <button v-for="q in (['128', '320', 'flac', 'high'] as const)" :key="q" type="button" class="lyric-quality-item" :class="{ 'is-active': effectiveAudioQuality === q, 'is-disabled': isAudioQualityDisabled(q) && effectiveAudioQuality !== q }" :disabled="isAudioQualityDisabled(q) && effectiveAudioQuality !== q" @click="setAudioQuality(q)">
+                        <span class="lyric-quality-label">{{ q === '128' ? '标准' : q === '320' ? '高品质' : q === 'flac' ? '无损' : 'Hi-Res' }}</span>
+                        <Tag class="lyric-quality-tag" :color="getAudioQualityTagColor(q)">{{ q === '128' ? 'SD' : q === '320' ? 'HQ' : q === 'flac' ? 'SQ' : 'HR' }}</Tag>
+                        <span class="lyric-quality-check" :class="{ 'is-visible': effectiveAudioQuality === q }">✓</span>
+                      </button>
+                      <div class="h-px bg-current opacity-8 my-1"></div>
+                      <div class="text-[11px] font-bold opacity-50 px-2 pb-1">音效</div>
+                      <button v-for="fx in (['none', 'piano', 'acappella', 'subwoofer', 'ancient'] as const)" :key="fx" type="button" class="lyric-quality-item" :class="{ 'is-active': playerStore.audioEffect === fx }" @click="setAudioEffect(fx)">
+                        <span class="lyric-quality-label">{{ fx === 'none' ? '原声' : fx === 'piano' ? '钢琴' : fx === 'acappella' ? '人声' : fx === 'subwoofer' ? '骨笛' : '尤克里里' }}</span>
+                        <span class="lyric-quality-check" :class="{ 'is-visible': playerStore.audioEffect === fx }">✓</span>
+                      </button>
+                    </div>
+                  </PopoverContent>
+                </PopoverPortal>
+              </PopoverRoot>
+              <!-- 桌面歌词 -->
+              <Tooltip :content="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'" side="top">
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-colors" :class="desktopLyricStore.settings.enabled ? 'text-black dark:text-white' : 'text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70'" @click="toggleDesktopLyric">
+                    <Icon :icon="iconTypography" width="20" height="20" />
+                  </Button>
+                </template>
+              </Tooltip>
+              <!-- 播放列表 -->
+              <Tooltip content="播放列表" side="top">
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="p-2 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70" @click="isQueueDrawerOpen = true">
+                    <Icon :icon="iconList" width="22" height="22" />
+                  </Button>
+                </template>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
+    <PlayerQueueDrawer v-model:open="isQueueDrawerOpen" />
   </div>
 </template>
 
 <style>
+/* 歌词页弹出层通用 */
+.lyric-popover {
+  z-index: 100;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  color: black;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dark .lyric-popover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+}
+
+.lyric-popover--speed {
+  width: 320px;
+  padding: 14px 16px 12px;
+}
+
+.lyric-popover--quality {
+  width: 190px;
+  padding: 10px 6px;
+}
+
+/* 音质列表项 */
+.lyric-quality-item {
+  display: flex;
+  align-items: center;
+  width: calc(100% - 8px);
+  margin: 0 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;
+  opacity: 0.7;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.lyric-quality-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  opacity: 1;
+}
+
+.dark .lyric-quality-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lyric-quality-item.is-active {
+  background: rgba(0, 113, 227, 0.1);
+  opacity: 1;
+}
+
+.dark .lyric-quality-item.is-active {
+  background: rgba(0, 113, 227, 0.2);
+}
+
+.lyric-quality-item.is-disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.lyric-quality-item.is-disabled:hover {
+  background: transparent;
+}
+
+.lyric-quality-label {
+  flex: 1;
+  text-align: left;
+}
+
+.lyric-quality-tag {
+  font-size: 9px;
+  padding: 0 4px;
+  margin-right: 6px;
+}
+
+.lyric-quality-check {
+  width: 14px;
+  text-align: right;
+  font-size: 12px;
+  opacity: 0;
+}
+
+.lyric-quality-check.is-visible {
+  opacity: 1;
+}
+
 .lyric-atmosphere {
   background:
     radial-gradient(36% 28% at 16% 22%, rgba(255, 255, 255, 0.72), transparent 74%),
@@ -1281,7 +1335,7 @@ onUnmounted(() => {
 }
 
 .lyric-controls-surface {
-  padding: 16px 12px 10px;
+  padding: 8px 12px 6px;
 }
 
 .lyric-main-play-btn {
