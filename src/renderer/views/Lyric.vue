@@ -23,6 +23,7 @@ import { closeTransientView } from '@/utils/navigation';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -210,6 +211,41 @@ const secondaryFontSize = computed(
 );
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
+
+const lyricColorPresets = [
+  '#31cfa1', '#0071e3', '#8b5cf6', '#ef476f',
+  '#f59e0b', '#22c55e', '#60a5fa', '#f97316',
+  '#e11d48', '#14b8a6', '#a855f7', '#ffffff',
+];
+
+const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+
+const activeLyricColorValue = computed(() => {
+  if (!activeLyricColorField.value) return '#31cfa1';
+  return lyricStore[activeLyricColorField.value] || '#31cfa1';
+});
+
+const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
+  activeLyricColorField.value = field;
+};
+
+const closeLyricColorPicker = () => {
+  activeLyricColorField.value = null;
+};
+
+const applyLyricColor = (value: string) => {
+  if (!activeLyricColorField.value) return;
+  lyricStore[activeLyricColorField.value] = value;
+  closeLyricColorPicker();
+};
+
+const resetLyricColors = () => {
+  lyricStore.playedColor = '';
+  lyricStore.unplayedColor = '';
+};
+
+const effectivePlayedColor = computed(() => lyricStore.playedColor || '');
+const effectiveUnplayedColor = computed(() => lyricStore.unplayedColor || '');
 
 const clearUserScrollResumeTimer = () => {
   if (userScrollResumeTimer === null) return;
@@ -508,16 +544,17 @@ onUnmounted(() => {
       </div>
       <div
         v-else
-        class="lyric-ambient-photo absolute inset-y-[-8%] right-[-10%] w-[52vw] min-w-[360px] bg-cover bg-[center_top] transition-all duration-500"
+        class="lyric-ambient-photo absolute inset-[-20px] bg-cover bg-center transition-all duration-500"
         :style="{ backgroundImage: coverBackgroundUrl ? `url(${coverBackgroundUrl})` : undefined }"
       ></div>
-      <div v-if="hasPortraitGallery" class="lyric-portrait-halo absolute inset-0"></div>
-      <div class="lyric-atmosphere absolute inset-0"></div>
+      <div v-if="!hasPortraitGallery" class="lyric-atmosphere absolute inset-0"></div>
       <div
-        class="absolute inset-0 bg-gradient-to-r from-white/88 via-white/56 to-white/22 transition-colors duration-500 dark:from-[#04070b]/84 dark:via-[#060a10]/46 dark:to-[#050910]/18"
+        v-if="hasPortraitGallery"
+        class="lyric-portrait-overlay absolute inset-0 transition-colors duration-500"
       ></div>
       <div
-        class="absolute inset-0 bg-gradient-to-b from-white/14 via-transparent to-white/22 transition-colors duration-500 dark:from-black/12 dark:via-transparent dark:to-black/18"
+        v-if="!hasPortraitGallery"
+        class="absolute inset-0 bg-white/40 transition-colors duration-500 dark:bg-[#04070b]/50"
       ></div>
     </div>
 
@@ -599,6 +636,18 @@ onUnmounted(() => {
                 </PopoverContent>
               </PopoverPortal>
             </PopoverRoot>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="lyric-tool-chip"
+              :class="{ 'is-active': settingStore.lyricArtistBackdrop }"
+              title="写真模式"
+              @click="settingStore.lyricArtistBackdrop = !settingStore.lyricArtistBackdrop"
+            >
+              <Icon :icon="iconImage" width="14" height="14" />
+              <span>写真</span>
+            </Button>
             <PopoverRoot>
               <PopoverTrigger as-child>
                 <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
@@ -646,6 +695,37 @@ onUnmounted(() => {
                         range-class="bg-black dark:bg-white"
                         thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
                       />
+                    </div>
+                    <div>
+                      <div class="mb-3 flex items-center justify-between text-[13px] font-semibold">
+                        <span class="text-black/60 dark:text-white/60">歌词颜色</span>
+                        <button
+                          v-if="lyricStore.playedColor || lyricStore.unplayedColor"
+                          type="button"
+                          class="text-[11px] font-semibold text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
+                          @click="resetLyricColors"
+                        >重置</button>
+                      </div>
+                      <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2">
+                          <span class="text-[12px] font-semibold text-black/50 dark:text-white/50">已播</span>
+                          <button
+                            type="button"
+                            class="lyric-color-swatch"
+                            :style="{ backgroundColor: effectivePlayedColor || 'var(--color-primary)' }"
+                            @click="openLyricColorPicker('playedColor')"
+                          ></button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-[12px] font-semibold text-black/50 dark:text-white/50">未播</span>
+                          <button
+                            type="button"
+                            class="lyric-color-swatch"
+                            :style="{ backgroundColor: effectiveUnplayedColor || 'rgba(15,23,42,0.84)' }"
+                            @click="openLyricColorPicker('unplayedColor')"
+                          ></button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </PopoverContent>
@@ -784,11 +864,13 @@ onUnmounted(() => {
                               :key="`${char.startTime}`"
                               class="lyric-character"
                               :class="char.highlighted ? 'is-highlighted' : ''"
+                              :style="char.highlighted && effectivePlayedColor ? { color: effectivePlayedColor } : (!char.highlighted && effectiveUnplayedColor ? { color: effectiveUnplayedColor } : undefined)"
                               >{{ char.text }}</span
                             >
                           </template>
                           <template v-else>
-                            {{ line.text }}
+                            <span v-if="currentIndex === index && effectiveUnplayedColor" :style="{ color: effectiveUnplayedColor }">{{ line.text }}</span>
+                            <template v-else>{{ line.text }}</template>
                           </template>
                         </span>
                         <!-- both 模式：翻译和音译分行显示 -->
@@ -1089,6 +1171,15 @@ onUnmounted(() => {
         </Button>
       </div>
     </Dialog>
+
+    <ColorPickerDialog
+      :open="activeLyricColorField !== null"
+      :title="activeLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
+      :value="activeLyricColorValue"
+      :presets="lyricColorPresets"
+      @update:open="(open) => !open && closeLyricColorPicker()"
+      @confirm="applyLyricColor"
+    />
   </div>
 </template>
 
@@ -1224,42 +1315,34 @@ onUnmounted(() => {
 }
 
 .lyric-ambient-photo {
-  opacity: 0.3;
-  filter: blur(1px) saturate(0.88);
-  transform: scale(1.04);
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 0, 0, 0.15) 18%,
-    black 42%,
-    black 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(0, 0, 0, 0.15) 18%,
-    black 42%,
-    black 100%
-  );
+  opacity: 0.55;
+  filter: blur(60px) saturate(1.2) brightness(1.1);
+  transform: scale(1.1);
 }
 
 .dark .lyric-ambient-photo {
-  opacity: 0.26;
-  filter: blur(2px) saturate(0.74) brightness(0.78);
+  opacity: 0.45;
+  filter: blur(60px) saturate(0.9) brightness(0.7);
 }
 
-.lyric-portrait-halo {
-  background:
-    radial-gradient(34% 42% at 64% 50%, rgba(255, 255, 255, 0.16), transparent 66%),
-    radial-gradient(24% 28% at 64% 18%, rgba(255, 255, 255, 0.16), transparent 72%);
-  opacity: 0.86;
+.lyric-portrait-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.15) 0%,
+    rgba(0, 0, 0, 0.05) 40%,
+    rgba(0, 0, 0, 0.05) 60%,
+    rgba(0, 0, 0, 0.25) 100%
+  );
 }
 
-.dark .lyric-portrait-halo {
-  background:
-    radial-gradient(34% 42% at 64% 50%, rgba(96, 165, 250, 0.06), transparent 66%),
-    radial-gradient(24% 28% at 64% 18%, rgba(255, 255, 255, 0.04), transparent 72%);
-  opacity: 0.72;
+.dark .lyric-portrait-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.3) 0%,
+    rgba(0, 0, 0, 0.12) 40%,
+    rgba(0, 0, 0, 0.12) 60%,
+    rgba(0, 0, 0, 0.4) 100%
+  );
 }
 
 .lyric-icon-btn {
@@ -1434,6 +1517,24 @@ onUnmounted(() => {
 
 .dark .lyric-weight-label {
   color: rgba(255, 255, 255, 0.84);
+}
+
+.lyric-color-swatch {
+  width: 32px;
+  height: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+  transition: transform 0.15s ease;
+}
+
+.lyric-color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.dark .lyric-color-swatch {
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .lyric-info-panel {

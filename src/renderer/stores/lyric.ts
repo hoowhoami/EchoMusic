@@ -168,6 +168,8 @@ export const useLyricStore = defineStore('lyric', {
     hasRomanization: false,
     fontScale: 1,
     fontWeightIndex: 8,
+    playedColor: '',
+    unplayedColor: '',
     requestSerial: 0,
     detailResolved: false,
   }),
@@ -600,6 +602,6 @@ export const useLyricStore = defineStore('lyric', {
     },
   },
   persist: {
-    pick: ['secondaryEnabled', 'preferredMode', 'fontScale', 'fontWeightIndex'],
+    pick: ['secondaryEnabled', 'preferredMode', 'fontScale', 'fontWeightIndex', 'playedColor', 'unplayedColor'],
   },
 });
