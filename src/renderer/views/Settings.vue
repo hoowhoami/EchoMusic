@@ -93,6 +93,12 @@ const desktopLyricAlignOptions = [
   { label: '交替', value: 'both' },
 ];
 
+const desktopLyricSecondaryModeOptions = [
+  { label: '翻译', value: 'translation' },
+  { label: '音译', value: 'romanization' },
+  { label: '译+音', value: 'both' },
+];
+
 const commitDesktopLyricSettings = async (partial?: Partial<DesktopLyricSettings>) => {
   await desktopLyricStore.syncSettings(partial);
 };
@@ -727,12 +733,24 @@ onUnmounted(() => {
         <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
-            <h3 class="font-semibold">显示翻译</h3>
-            <p class="text-sm text-text-secondary">有翻译时优先显示翻译而非下一行</p>
+            <h3 class="font-semibold">显示翻译/音译</h3>
+            <p class="text-sm text-text-secondary">有翻译或音译时显示副歌词行</p>
           </div>
           <Switch
             :model-value="desktopLyricStore.settings.secondaryEnabled"
             @update:model-value="commitDesktopLyricSettings({ secondaryEnabled: Boolean($event) })"
+          />
+        </div>
+        <div v-if="desktopLyricStore.settings.secondaryEnabled" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">副歌词模式</h3>
+            <p class="text-sm text-text-secondary">选择显示翻译、音译或同时显示</p>
+          </div>
+          <Select
+            class="min-w-[120px]"
+            :model-value="desktopLyricStore.settings.secondaryMode || 'translation'"
+            :options="desktopLyricSecondaryModeOptions"
+            @update:model-value="commitDesktopLyricSettings({ secondaryMode: $event as any })"
           />
         </div>
         <div class="settings-divider"></div>

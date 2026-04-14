@@ -17,6 +17,7 @@ import {
   iconPlayerPlay,
   iconStepBack,
   iconStepForward,
+  iconChevronUpDown,
   iconX,
 } from '@/icons';
 import type {
@@ -72,10 +73,23 @@ const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
 const doubleLine = computed(() => settings.value?.doubleLine ?? true);
 const secondaryEnabled = computed(() => settings.value?.secondaryEnabled ?? false);
+const secondaryMode = computed(() => settings.value?.secondaryMode ?? 'none');
 // 当前歌词是否有翻译或音译数据
-const hasSecondary = computed(() =>
-  lyrics.value.some((l) => l.translated?.trim() || l.romanized?.trim()),
+const hasTranslation = computed(() =>
+  lyrics.value.some((l) => l.translated?.trim()),
 );
+const hasRomanization = computed(() =>
+  lyrics.value.some((l) => l.romanized?.trim()),
+);
+const hasSecondary = computed(() => hasTranslation.value || hasRomanization.value);
+const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
+const secondaryDisplayLabel = computed(() => {
+  if (!secondaryEnabled.value || !hasSecondary.value) return '原词';
+  if (secondaryMode.value === 'both') return '译+音';
+  if (secondaryMode.value === 'romanization') return '音译';
+  if (secondaryMode.value === 'translation') return '翻译';
+  return '原词';
+});
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
 const shadowColor = computed(() =>
@@ -148,11 +162,20 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     : (current.characters?.[current.characters.length - 1]?.endTime ?? 0);
 
   // 翻译模式
-  if (secondaryEnabled.value) {
+  if (secondaryEnabled.value && hasSecondary.value) {
     const tran = current.translated?.trim() ?? '';
     const roman = current.romanized?.trim() ?? '';
-    // 合并翻译和音译到一行
-    const secondaryText = [tran, roman].filter(Boolean).join(' / ');
+    const mode = secondaryMode.value;
+    let secondaryText = '';
+    if (mode === 'both') {
+      secondaryText = [tran, roman].filter(Boolean).join(' / ');
+    } else if (mode === 'translation') {
+      secondaryText = tran;
+    } else if (mode === 'romanization') {
+      secondaryText = roman;
+    } else {
+      secondaryText = [tran, roman].filter(Boolean).join(' / ');
+    }
     if (secondaryText) {
       return [
         {
@@ -437,7 +460,30 @@ const tempToggleLyricLock = (lock: boolean) => {
 
 const toggleSecondary = () => {
   const next = !secondaryEnabled.value;
-  void updateDesktopLyricSettings({ secondaryEnabled: next });
+  if (next) {
+    // 开启时，如果没有设置过 mode，默认选一个合适的
+    let mode = secondaryMode.value;
+    if (mode === 'none' || !mode) {
+      mode = hasTranslation.value ? 'translation' : hasRomanization.value ? 'romanization' : 'translation';
+    }
+    void updateDesktopLyricSettings({ secondaryEnabled: true, secondaryMode: mode });
+  } else {
+    void updateDesktopLyricSettings({ secondaryEnabled: false });
+  }
+};
+
+const cycleSecondaryMode = () => {
+  if (!hasSecondary.value) return;
+  const mode = secondaryMode.value;
+  let nextMode: string;
+  if (hasTranslation.value && hasRomanization.value) {
+    if (mode === 'translation') nextMode = 'romanization';
+    else if (mode === 'romanization') nextMode = 'both';
+    else nextMode = 'translation';
+  } else {
+    nextMode = hasRomanization.value ? 'romanization' : 'translation';
+  }
+  void updateDesktopLyricSettings({ secondaryEnabled: true, secondaryMode: nextMode });
 };
 
 const closeWindow = async () => {
@@ -559,14 +605,25 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="header-right" @pointerdown.stop>
-        <button
-          class="menu-btn tran-btn"
-          :class="{ 'is-active': secondaryEnabled && hasSecondary }"
-          title="翻译"
-          @click.stop="toggleSecondary"
-        >
-          <Icon :icon="iconLanguage" width="20" height="20" />
-        </button>
+        <div class="tran-group">
+          <button
+            class="menu-btn tran-btn"
+            :class="{ 'is-active': secondaryEnabled && hasSecondary }"
+            :title="secondaryDisplayLabel"
+            @click.stop="toggleSecondary"
+          >
+            <Icon :icon="iconLanguage" width="20" height="20" />
+            <span class="tran-label">{{ secondaryDisplayLabel }}</span>
+          </button>
+          <button
+            class="menu-btn cycle-btn"
+            :class="{ 'is-disabled': !canCycleSecondaryMode || !secondaryEnabled }"
+            title="切换翻译模式"
+            @click.stop="cycleSecondaryMode"
+          >
+            <Icon :icon="iconChevronUpDown" width="18" height="18" />
+          </button>
+        </div>
         <button
           class="menu-btn lock-btn"
           @mouseenter.stop="tempToggleLyricLock(false)"
@@ -750,6 +807,56 @@ onBeforeUnmount(() => {
 }
 .menu-btn.tran-btn.is-active svg {
   color: #31cfa1;
+}
+
+.tran-group {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  gap: 0;
+  opacity: 0;
+  transition: opacity 0.3s, background-color 0.3s;
+}
+
+.desktop-lyric.hovered:not(.locked) .tran-group,
+.desktop-lyric.dragging:not(.locked) .tran-group,
+.desktop-lyric.resizing:not(.locked) .tran-group {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tran-group .menu-btn {
+  border-radius: 0;
+  margin: 0;
+  opacity: 1;
+}
+
+.tran-group .menu-btn.tran-btn {
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px 0 0 8px;
+}
+
+.tran-group .menu-btn.cycle-btn {
+  padding: 6px 5px;
+  border-radius: 0 8px 8px 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tran-group .menu-btn.cycle-btn.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.tran-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1;
+  min-width: 2em;
+  text-align: center;
 }
 
 /* 默认隐藏工具栏 */
