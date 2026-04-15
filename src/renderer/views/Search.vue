@@ -23,6 +23,7 @@ import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import {
   iconChevronRight,
   iconClock,
@@ -508,33 +509,35 @@ onUnmounted(() => {
           <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
             暂无建议
           </div>
-          <div v-else class="search-suggestions-list">
-            <div
-              v-for="category in suggestionCategories"
-              :key="category.label"
-              class="search-suggestion-group"
-            >
-              <div class="search-suggestion-title">{{ category.label }}</div>
-              <Button
-                variant="unstyled"
-                size="none"
-                v-for="record in category.records"
-                :key="`${category.label}-${record.text}`"
-                type="button"
-                class="search-suggestion-item"
-                @mousedown.prevent
-                @click="runSearch(record.text)"
+          <Scrollbar v-else class="search-suggestions-list">
+            <div class="search-suggestions-list-inner">
+              <div
+                v-for="category in suggestionCategories"
+                :key="category.label"
+                class="search-suggestion-group"
               >
-                <span class="search-suggestion-leading">
-                  <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
-                </span>
-                <span class="search-suggestion-text truncate">{{ record.text }}</span>
-                <span class="search-suggestion-trailing">
-                  <Icon :icon="iconChevronRight" width="13" height="13" />
-                </span>
-              </Button>
+                <div class="search-suggestion-title">{{ category.label }}</div>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  v-for="record in category.records"
+                  :key="`${category.label}-${record.text}`"
+                  type="button"
+                  class="search-suggestion-item"
+                  @mousedown.prevent
+                  @click="runSearch(record.text)"
+                >
+                  <span class="search-suggestion-leading">
+                    <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
+                  </span>
+                  <span class="search-suggestion-text truncate">{{ record.text }}</span>
+                  <span class="search-suggestion-trailing">
+                    <Icon :icon="iconChevronRight" width="13" height="13" />
+                  </span>
+                </Button>
+              </div>
             </div>
-          </div>
+          </Scrollbar>
         </div>
       </div>
 
@@ -640,7 +643,7 @@ onUnmounted(() => {
               <div class="text-[15px] font-semibold text-text-main leading-none">热门单曲</div>
             </div>
             <div class="search-song-toolbar-actions">
-              <div class="overflow-x-auto no-scrollbar">
+              <div class="overflow-x-auto">
                 <ActionRow @play="playSearchSongs" @batch="openSongBatchDrawer" />
               </div>
             </div>
@@ -708,6 +711,13 @@ onUnmounted(() => {
             :searchQuery="songSearchQuery"
             :activeId="activeSongId"
             :showCover="true"
+            :queueOptions="{
+              queueId: `queue:search:${searchInput.trim() || 'default'}`,
+              title: '搜索结果',
+              subtitle: searchInput.trim() || '歌曲搜索',
+              type: 'search',
+              dynamic: false,
+            }"
             :enableDefaultDoubleTapPlay="true"
             :onSongDoubleTapPlay="
               settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
@@ -879,7 +889,10 @@ onUnmounted(() => {
 
 .search-suggestions-list {
   max-height: 400px;
-  overflow-y: auto;
+  min-height: 0;
+}
+
+.search-suggestions-list-inner {
   padding: 8px 0 10px;
 }
 

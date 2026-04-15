@@ -309,6 +309,7 @@ export const usePlayerStore = defineStore('player', {
     playbackRate: 1,
     playMode: 'list' as PlayMode,
     currentTrackId: null as string | null,
+    currentSourceQueueId: null as string | null,
     isLoading: false,
     lastError: '' as string | null,
     currentPlaylist: null as Song[] | null,
@@ -595,7 +596,10 @@ export const usePlayerStore = defineStore('player', {
       const nextSong = nextIndex >= 0 ? list[nextIndex] : null;
       if (!nextSong) return;
 
-      return this.playTrack(String(nextSong.id), list, { preserveFailureChain: true });
+      return this.playTrack(String(nextSong.id), list, {
+        preserveFailureChain: true,
+        sourceQueueId: this.currentSourceQueueId,
+      });
     },
 
     init() {
@@ -906,7 +910,11 @@ export const usePlayerStore = defineStore('player', {
     async playTrack(
       id: string,
       playlist?: Song[],
-      options?: { preserveFailureChain?: boolean; autoPlay?: boolean },
+      options?: {
+        preserveFailureChain?: boolean;
+        autoPlay?: boolean;
+        sourceQueueId?: string | null;
+      },
     ) {
       const playlistStore = usePlaylistStore();
       const lyricStore = useLyricStore();
@@ -976,6 +984,11 @@ export const usePlayerStore = defineStore('player', {
       engine.setPlaybackRate(this.playbackRate);
 
       this.currentTrackId = resolvedId;
+      this.currentSourceQueueId =
+        options?.sourceQueueId ??
+        playlistStore.activeQueue?.id ??
+        playlistStore.activeQueueId ??
+        null;
       this.currentTrackSnapshot = track;
       this.resetHistoryUploadState(track);
       this.currentPlaylist = sourceList;
@@ -1253,6 +1266,7 @@ export const usePlayerStore = defineStore('player', {
       this.duration = 0;
       this.isPlaying = false;
       this.currentTrackId = null;
+      this.currentSourceQueueId = null;
       this.currentAudioUrl = '';
       this.currentResolvedAudioQuality = null;
       this.currentResolvedAudioEffect = 'none';
@@ -1262,7 +1276,6 @@ export const usePlayerStore = defineStore('player', {
       this.climaxRequestSeq += 1;
       this.isLoading = false;
       this.unregisterOutputDeviceWatcher();
-      playlistStore.clearPlaybackQueue();
       playlistStore.updateQueueCurrentTrack(null);
       useLyricStore().clear('', '暂无歌词');
       engine.updateMediaPlaybackState(
@@ -1298,7 +1311,9 @@ export const usePlayerStore = defineStore('player', {
         const queuedSong = list.find((song) => String(song.id) === queuedNextId);
         if (queuedSong && isPlayableSong(queuedSong)) {
           playlistStore.consumeQueuedNextTrackId(queuedNextId);
-          void this.playTrack(String(queuedSong.id), list);
+          void this.playTrack(String(queuedSong.id), list, {
+            sourceQueueId: this.currentSourceQueueId,
+          });
           return;
         }
         playlistStore.consumeQueuedNextTrackId(queuedNextId);
@@ -1331,7 +1346,9 @@ export const usePlayerStore = defineStore('player', {
               });
         if (fmNextSong) {
           const fmList = playlistStore.activeQueue?.songs ?? list;
-          await this.playTrack(String(fmNextSong.id), fmList);
+          await this.playTrack(String(fmNextSong.id), fmList, {
+            sourceQueueId: PERSONAL_FM_QUEUE_ID,
+          });
         }
         return;
       }
@@ -1382,7 +1399,9 @@ export const usePlayerStore = defineStore('player', {
         nextIndex,
         track: summarizeSong(nextSong),
       });
-      await this.playTrack(String(nextSong.id), list);
+      await this.playTrack(String(nextSong.id), list, {
+        sourceQueueId: this.currentSourceQueueId,
+      });
     },
 
     prev() {
@@ -1414,7 +1433,9 @@ export const usePlayerStore = defineStore('player', {
         track: summarizeSong(prevSong),
       });
       this.clearAutoNextTimer();
-      void this.playTrack(prevSong.id, list);
+      void this.playTrack(prevSong.id, list, {
+        sourceQueueId: this.currentSourceQueueId,
+      });
     },
 
     registerOutputDeviceWatcher(settingStore: ReturnType<typeof useSettingStore>) {

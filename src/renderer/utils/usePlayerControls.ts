@@ -1,7 +1,11 @@
 import { computed, ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore, PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
+import {
+  usePlaylistStore,
+  PERSONAL_FM_QUEUE_ID,
+  MANUAL_PLAYBACK_QUEUE_ID,
+} from '@/stores/playlist';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { useUserStore } from '@/stores/user';
@@ -31,6 +35,13 @@ export function usePlayerControls() {
 
   const isQueueDrawerOpen = ref(false);
   const lastVolume = ref(0.8);
+  const currentPlaybackQueue = computed(
+    () =>
+      playlist.getQueueById(player.currentSourceQueueId) ??
+      playlist.activeQueue ??
+      playlist.customPlaybackQueue ??
+      null,
+  );
 
   // ── 当前曲目 ──
   const currentTrack = computed<Song | undefined>(() => {
@@ -38,7 +49,7 @@ export function usePlayerControls() {
     if (!currentId) return undefined;
     return (
       player.currentTrackSnapshot ||
-      (playlist.activeQueue?.songs ?? []).find((s) => String(s.id) === currentId) ||
+      (currentPlaybackQueue.value?.songs ?? []).find((s) => String(s.id) === currentId) ||
       playlist.defaultList.find((s) => String(s.id) === currentId) ||
       playlist.favorites.find((s) => String(s.id) === currentId) ||
       undefined
@@ -123,7 +134,7 @@ export function usePlayerControls() {
 
   const handlePlaybackRateSlider = (value: number[] | undefined) => {
     if (!value) return;
-    const rate = Math.round((value[0] ?? 10)) / 10;
+    const rate = Math.round(value[0] ?? 10) / 10;
     player.setPlaybackRate(rate);
   };
 
@@ -246,9 +257,7 @@ export function usePlayerControls() {
   };
 
   // ── 队列 ──
-  const queueCount = computed(
-    () => playlist.activeQueue?.songs.length ?? playlist.defaultList.length,
-  );
+  const queueCount = computed(() => currentPlaybackQueue.value?.songs.length ?? 0);
 
   const openQueue = () => {
     isQueueDrawerOpen.value = true;
@@ -260,9 +269,7 @@ export function usePlayerControls() {
 
   const canAddToPlaylist = computed(() => userStore.isLoggedIn && !!currentTrack.value);
 
-  const createdPlaylists = computed(() =>
-    playlist.getCreatedPlaylists(userStore.info?.userid),
-  );
+  const createdPlaylists = computed(() => playlist.getCreatedPlaylists(userStore.info?.userid));
 
   const addToPlaybackQueues = computed(() =>
     playlist.playbackQueueList.filter(
@@ -289,9 +296,13 @@ export function usePlayerControls() {
     const options = queueId ? { queueId } : {};
     const addedCount = playlist.appendToPlaybackQueue?.([currentTrack.value], options) ?? 0;
     if (addedCount > 0) {
-      toastStore.actionCompleted('已添加到播放列表');
+      toastStore.actionCompleted(
+        queueId === MANUAL_PLAYBACK_QUEUE_ID ? '已添加到我的队列' : '已添加到队列',
+      );
     } else {
-      toastStore.actionCompleted('歌曲已在播放列表中');
+      toastStore.actionCompleted(
+        queueId === MANUAL_PLAYBACK_QUEUE_ID ? '歌曲已在我的队列中' : '歌曲已在队列中',
+      );
     }
     showAddToPlaylistDialog.value = false;
   };

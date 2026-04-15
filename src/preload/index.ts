@@ -49,8 +49,7 @@ contextBridge.exposeInMainWorld('electron', {
   shortcuts: {
     register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
       ipcRenderer.invoke('shortcuts:register', payload) as Promise<ShortcutRegistrationResult>,
-    refresh: () =>
-      ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
+    refresh: () => ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
     onTrigger: (func: (command: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: string) => func(command);
       ipcRenderer.on('shortcut-trigger', listener);

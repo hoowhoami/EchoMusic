@@ -64,6 +64,7 @@ export interface SetPlaybackQueueOptions {
 }
 
 export const DEFAULT_PLAYBACK_QUEUE_ID = 'queue:default';
+export const MANUAL_PLAYBACK_QUEUE_ID = 'queue:manual';
 export const PERSONAL_FM_QUEUE_ID = 'queue:personal-fm';
 export type PersonalFmSongPoolId = 0 | 1 | 2;
 
@@ -145,6 +146,7 @@ const includesPlaylistIdentity = (playlist: PlaylistMeta, id: string): boolean =
 const FAVORITES_PAGE_SIZE = 200;
 const MAX_PLAYBACK_QUEUE_COUNT = 4;
 const PERSONAL_FM_MODE = 'normal';
+let personalFmSessionResetPending = true;
 
 const buildPlaybackQueueState = (
   options: SetPlaybackQueueOptions = {},
@@ -238,8 +240,25 @@ export const usePlaylistStore = defineStore('playlist', {
       return this.playbackQueueList.filter(
         (queue) =>
           queue.id !== this.activeQueueId &&
+          queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
           queue.id !== PERSONAL_FM_QUEUE_ID &&
           queue.songs.length > 0,
+      );
+    },
+    recentPlaybackQueues(): PlaybackQueueState[] {
+      return this.playbackQueueList.filter(
+        (queue) =>
+          queue.id !== this.activeQueueId &&
+          queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
+          queue.id !== PERSONAL_FM_QUEUE_ID &&
+          queue.songs.length > 0,
+      );
+    },
+    customPlaybackQueue(): PlaybackQueueState | null {
+      return (
+        this.playbackQueues.find(
+          (queue) => queue.id === MANUAL_PLAYBACK_QUEUE_ID && queue.songs.length > 0,
+        ) ?? null
       );
     },
     likedPlaylistQueryId(): string | number | null {
@@ -258,7 +277,12 @@ export const usePlaylistStore = defineStore('playlist', {
   actions: {
     markLastNonFmQueue(queueId: string | number | null | undefined) {
       const resolvedId = String(queueId ?? '');
-      if (!resolvedId || resolvedId === PERSONAL_FM_QUEUE_ID) return;
+      if (
+        !resolvedId ||
+        resolvedId === PERSONAL_FM_QUEUE_ID ||
+        resolvedId === MANUAL_PLAYBACK_QUEUE_ID
+      )
+        return;
       this.lastNonFmQueueId = resolvedId;
     },
     getPreferredManualQueueOptions(options: SetPlaybackQueueOptions = {}) {
@@ -409,11 +433,26 @@ export const usePlaylistStore = defineStore('playlist', {
       }
       this.syncLegacyPlaybackState();
     },
-    removePersonalFmQueue() {
+    removePersonalFmQueue(options?: { preserveBuffer?: boolean }) {
       const nextQueues = this.playbackQueues.filter((queue) => queue.id !== PERSONAL_FM_QUEUE_ID);
       this.playbackQueues = nextQueues;
-      this.personalFmBuffer = [];
+      if (this.activeQueueId === PERSONAL_FM_QUEUE_ID) {
+        const fallbackQueue =
+          nextQueues.find((queue) => queue.id === this.lastNonFmQueueId) ??
+          nextQueues.find((queue) => queue.id !== PERSONAL_FM_QUEUE_ID) ??
+          nextQueues[0] ??
+          null;
+        this.activeQueueId = fallbackQueue?.id ?? DEFAULT_PLAYBACK_QUEUE_ID;
+      }
+      if (!options?.preserveBuffer) {
+        this.personalFmBuffer = [];
+      }
       this.syncLegacyPlaybackState();
+    },
+    getQueueById(queueId?: string | number | null) {
+      const resolvedId = String(queueId ?? '');
+      if (!resolvedId) return null;
+      return this.playbackQueues.find((item) => item.id === resolvedId) ?? null;
     },
     updateQueueCurrentTrack(songId: string | number | null | undefined, queueId?: string) {
       const targetQueue = this.ensurePlaybackQueue(queueId);
@@ -436,6 +475,9 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     getPersonalFmPreviewTrack() {
       const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+      if (personalFmSessionResetPending && this.personalFmBuffer.length > 0) {
+        return this.personalFmBuffer[0] ?? null;
+      }
       const currentTrack =
         queue?.songs.find((song) => String(song.id) === String(queue.currentTrackId ?? '')) ?? null;
       if (currentTrack) return currentTrack;
@@ -444,6 +486,9 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     getPersonalFmDisplayTracks(limit = 5) {
       const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+      if (personalFmSessionResetPending && this.personalFmBuffer.length > 0) {
+        return dedupeSongs(this.personalFmBuffer).slice(0, limit);
+      }
       const currentId = String(queue?.currentTrackId ?? '');
       const source = [
         ...this.personalFmBuffer,
@@ -488,9 +533,13 @@ export const usePlaylistStore = defineStore('playlist', {
         queue.updatedAt = Date.now();
       }
     },
+    isPersonalFmSessionResetPending() {
+      return personalFmSessionResetPending;
+    },
     async resetPersonalFmPreview(options?: {
       mode?: PersonalFmMode;
       songPoolId?: PersonalFmSongPoolId | number;
+      preserveQueue?: boolean;
     }) {
       const presentation = getPersonalFmModePresentation(options?.mode ?? this.personalFmMode);
       const songPoolPresentation = getPersonalFmSongPoolPresentation(
@@ -500,7 +549,7 @@ export const usePlaylistStore = defineStore('playlist', {
       this.personalFmSongPoolId = songPoolPresentation.songPoolId;
 
       const queue = this.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID) ?? null;
-      if (queue) {
+      if (queue && !options?.preserveQueue) {
         queue.title = presentation.title;
         queue.subtitle = presentation.subtitle;
         queue.songs = [];
@@ -525,6 +574,9 @@ export const usePlaylistStore = defineStore('playlist', {
           song_pool_id: songPoolPresentation.songPoolId,
         });
         this.personalFmBuffer = dedupeSongs(songs);
+        if (!options?.preserveQueue) {
+          personalFmSessionResetPending = false;
+        }
         if (queue && this.activeQueueId === queue.id) {
           this.syncLegacyPlaybackState();
         }
@@ -558,10 +610,18 @@ export const usePlaylistStore = defineStore('playlist', {
       const response = await getPersonalFm(params);
       return extractList(response).map((item) => mapTopSong(item));
     },
-    async startPersonalFm(options?: { fresh?: boolean; mode?: PersonalFmMode }) {
+    async startPersonalFm(options?: {
+      fresh?: boolean;
+      mode?: PersonalFmMode;
+      recreate?: boolean;
+      retainBuffer?: boolean;
+    }) {
       const presentation = getPersonalFmModePresentation(options?.mode ?? this.personalFmMode);
       const songPoolPresentation = getPersonalFmSongPoolPresentation(this.personalFmSongPoolId);
       this.updatePersonalFmMode(presentation.mode);
+      if (options?.recreate) {
+        this.removePersonalFmQueue({ preserveBuffer: options.retainBuffer });
+      }
       const queue = this.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
         queueId: PERSONAL_FM_QUEUE_ID,
         title: presentation.title,
@@ -580,11 +640,14 @@ export const usePlaylistStore = defineStore('playlist', {
         queue.filteredInvalidCount = 0;
         queue.createdAt = Date.now();
         queue.updatedAt = queue.createdAt;
-        this.personalFmBuffer = [];
+        if (!options.retainBuffer) {
+          this.personalFmBuffer = [];
+        }
       }
       if (queue.songs.length > 0 || this.personalFmBuffer.length > 0) {
         this.activeQueueId = queue.id;
         this.syncLegacyPlaybackState();
+        personalFmSessionResetPending = false;
         return true;
       }
       const songs = await this.fetchPersonalFmSongs({
@@ -598,7 +661,34 @@ export const usePlaylistStore = defineStore('playlist', {
       this.personalFmBuffer = dedupeSongs(songs);
       this.activeQueueId = queue.id;
       this.syncLegacyPlaybackState();
+      personalFmSessionResetPending = false;
       return true;
+    },
+    activatePersonalFmTrack(song: Song) {
+      const presentation = getPersonalFmModePresentation(this.personalFmMode);
+      const songPoolPresentation = getPersonalFmSongPoolPresentation(this.personalFmSongPoolId);
+      const queue = this.ensurePlaybackQueue(PERSONAL_FM_QUEUE_ID, {
+        queueId: PERSONAL_FM_QUEUE_ID,
+        title: presentation.title,
+        subtitle: presentation.subtitle,
+        type: 'fm',
+        dynamic: true,
+        meta: {
+          mode: presentation.mode,
+          song_pool_id: songPoolPresentation.songPoolId,
+        },
+      });
+      const targetKey = resolveSongQueueKey(song);
+      this.personalFmBuffer = this.personalFmBuffer.filter(
+        (item) => resolveSongQueueKey(item) !== targetKey,
+      );
+      if (!queue.songs.some((item) => resolveSongQueueKey(item) === targetKey)) {
+        queue.songs.push(song);
+      }
+      this.activeQueueId = queue.id;
+      queue.updatedAt = Date.now();
+      this.syncLegacyPlaybackState();
+      return queue.songs.slice();
     },
     async ensurePersonalFmQueue(options?: {
       track?: Song | null;
@@ -879,6 +969,7 @@ export const usePlaylistStore = defineStore('playlist', {
       this.hydratePlaybackQueues();
       const targetId = String(queueId ?? '');
       if (!targetId) return;
+      if (targetId === MANUAL_PLAYBACK_QUEUE_ID) return;
       const nextQueues = this.playbackQueues.filter((queue) => queue.id !== targetId);
       if (nextQueues.length === this.playbackQueues.length) return;
       this.playbackQueues = nextQueues;

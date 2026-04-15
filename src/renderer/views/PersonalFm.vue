@@ -39,23 +39,35 @@ const personalFmQueue = computed(
 const isLoggedIn = computed(() => userStore.isLoggedIn);
 const personalFmCurrentTrack = computed(() => playlistStore.getPersonalFmPreviewTrack());
 const isPersonalFmActive = computed(() => playlistStore.activeQueueId === PERSONAL_FM_QUEUE_ID);
+const personalFmQueueCurrentTrackId = computed(() =>
+  String(personalFmQueue.value?.currentTrackId ?? ''),
+);
+const isPersonalFmCurrentTrackActive = computed(() => {
+  const queueTrackId = personalFmQueueCurrentTrackId.value;
+  if (!queueTrackId) return false;
+  return (
+    playerStore.currentSourceQueueId === PERSONAL_FM_QUEUE_ID &&
+    String(playerStore.currentTrackId ?? '') === queueTrackId
+  );
+});
 const isPersonalFmPlaying = computed(
-  () => isPersonalFmActive.value && playerStore.isPlaying && !!playerStore.currentTrackId,
+  () => isPersonalFmCurrentTrackActive.value && playerStore.isPlaying,
 );
 const personalFmDisplayTracks = computed(() => playlistStore.getPersonalFmDisplayTracks(5));
 const personalFmNowPlayingTrack = computed(() => {
   const queue = personalFmQueue.value;
-  const currentTrackId = String(playerStore.currentTrackId ?? '');
-  if (isPersonalFmActive.value && queue && currentTrackId) {
+  const queueCurrentTrackId = String(queue?.currentTrackId ?? '');
+  if (queue && queueCurrentTrackId) {
     return (
-      queue.songs.find((song) => String(song.id) === currentTrackId) ??
-      playerStore.currentTrackSnapshot ??
+      queue.songs.find((song) => String(song.id) === queueCurrentTrackId) ??
       personalFmCurrentTrack.value
     );
   }
   return personalFmCurrentTrack.value;
 });
-const personalFmCurrentDisc = computed(() => personalFmNowPlayingTrack.value ?? personalFmCurrentTrack.value);
+const personalFmCurrentDisc = computed(
+  () => personalFmNowPlayingTrack.value ?? personalFmCurrentTrack.value,
+);
 const personalFmSideTracks = computed(() => {
   const currentId = String(personalFmCurrentDisc.value?.id ?? '');
   return personalFmDisplayTracks.value
@@ -64,9 +76,6 @@ const personalFmSideTracks = computed(() => {
 });
 const personalFmVisibleSideTracks = computed(() =>
   personalFmSideTracks.value.slice(0, personalFmVisibleSideCount.value),
-);
-const personalFmPlaceholderSlots = computed(() =>
-  Array.from({ length: Math.max(1, personalFmVisibleSideCount.value) }, (_, index) => index + 1),
 );
 const selectedPersonalFmMode = computed(() => playlistStore.personalFmMode);
 const selectedPersonalFmSongPoolId = computed(() => playlistStore.personalFmSongPoolId);
@@ -158,20 +167,83 @@ const playCurrentPersonalFm = async () => {
   void playlistStore.ensurePersonalFmQueue({ track: targetSong, playtime: 0, isOverplay: false });
 };
 
+const resumeCurrentPersonalFm = async () => {
+  const targetTrack = personalFmCurrentDisc.value ?? personalFmCurrentTrack.value;
+  if (!targetTrack) return false;
+
+  const queueSongs = playlistStore.activatePersonalFmTrack(targetTrack);
+  await playerStore.playTrack(String(targetTrack.id), queueSongs, {
+    sourceQueueId: PERSONAL_FM_QUEUE_ID,
+  });
+  void playlistStore.ensurePersonalFmQueue({
+    track: targetTrack,
+    playtime: 0,
+    isOverplay: false,
+  });
+  return true;
+};
+
 const handlePlayPersonalFm = async () => {
-  if (isPersonalFmActive.value && playerStore.currentTrackId && personalFmQueue.value?.songs.length) {
+  const resetPending = playlistStore.isPersonalFmSessionResetPending();
+  if (
+    isPersonalFmCurrentTrackActive.value &&
+    personalFmQueue.value?.songs.length &&
+    !resetPending
+  ) {
     await playerStore.togglePlay();
     return;
   }
   if (personalFmLoading.value) return;
   personalFmLoading.value = true;
   try {
+    if (!resetPending) {
+      const resumed = await resumeCurrentPersonalFm();
+      if (resumed) return;
+    }
+
     const ready = await playlistStore.startPersonalFm({
       fresh: true,
       mode: selectedPersonalFmMode.value,
+      recreate: resetPending,
+      retainBuffer: resetPending,
     });
     if (!ready) return;
     await playCurrentPersonalFm();
+  } finally {
+    personalFmLoading.value = false;
+  }
+};
+
+const handleSelectPersonalFmTrack = async (track: Song) => {
+  if (personalFmLoading.value) return;
+
+  const targetId = String(track.id ?? '');
+  if (!targetId) return;
+
+  if (isPersonalFmActive.value && String(playerStore.currentTrackId ?? '') === targetId) {
+    if (!playerStore.isPlaying) {
+      await playerStore.togglePlay();
+    }
+    return;
+  }
+
+  personalFmLoading.value = true;
+  try {
+    if (playlistStore.isPersonalFmSessionResetPending()) {
+      const ready = await playlistStore.startPersonalFm({
+        fresh: true,
+        mode: selectedPersonalFmMode.value,
+        recreate: true,
+      });
+      if (!ready) return;
+      await playCurrentPersonalFm();
+      return;
+    }
+    const queueSongs = playlistStore.activatePersonalFmTrack(track);
+    await playerStore.playTrack(targetId, queueSongs, {
+      sourceQueueId: PERSONAL_FM_QUEUE_ID,
+    });
+    void playlistStore.ensurePersonalFmQueue({ track, playtime: 0, isOverplay: false });
   } finally {
     personalFmLoading.value = false;
   }
@@ -240,12 +312,16 @@ const handleDislikePersonalFm = async () => {
 onMounted(() => {
   if (!isLoggedIn.value) return;
 
-  if (!personalFmCurrentTrack.value && !personalFmLoading.value) {
+  const shouldFetchPreview =
+    playlistStore.isPersonalFmSessionResetPending() || !personalFmCurrentTrack.value;
+
+  if (shouldFetchPreview && !personalFmLoading.value) {
     personalFmLoading.value = true;
     void playlistStore
       .resetPersonalFmPreview({
         mode: selectedPersonalFmMode.value,
         songPoolId: selectedPersonalFmSongPoolId.value,
+        preserveQueue: true,
       })
       .finally(() => {
         personalFmLoading.value = false;
@@ -330,8 +406,8 @@ onBeforeUnmount(() => {
           <div class="radio-title">{{ personalFmPresentation.title }}</div>
           <div class="radio-subtitle">
             {{
-              personalFmCurrentTrack
-                ? `${personalFmCurrentTrack.title} · ${personalFmCurrentTrack.artist}`
+              personalFmCurrentDisc
+                ? `${personalFmCurrentDisc.title} · ${personalFmCurrentDisc.artist}`
                 : `${personalFmPresentation.subtitle} · ${personalFmSongPoolPresentation.label}`
             }}
           </div>
@@ -344,7 +420,7 @@ onBeforeUnmount(() => {
                 variant="unstyled"
                 size="none"
                 class="radio-dislike"
-                :disabled="personalFmLoading || !personalFmCurrentTrack"
+                :disabled="personalFmLoading || !personalFmCurrentDisc"
                 @click="handleDislikePersonalFm"
               >
                 <Icon :icon="iconHeartOff" width="16" height="16" />
@@ -353,16 +429,28 @@ onBeforeUnmount(() => {
                 variant="unstyled"
                 size="none"
                 class="radio-play"
-                :disabled="personalFmLoading"
+                :class="{ 'is-loading': personalFmLoading }"
+                :aria-busy="personalFmLoading"
                 @click="handlePlayPersonalFm"
               >
-                <Icon :icon="isPersonalFmPlaying ? iconPause : iconPlay" width="18" height="18" />
+                <span v-if="personalFmLoading" class="radio-play-spinner" aria-hidden="true"></span>
+                <Icon
+                  v-else
+                  :icon="isPersonalFmPlaying ? iconPause : iconPlay"
+                  width="18"
+                  height="18"
+                />
               </Button>
             </div>
           </div>
         </div>
-        <div v-if="personalFmCurrentDisc" class="radio-current-disc" aria-hidden="true">
-          <div class="radio-vinyl radio-vinyl-current">
+        <div v-if="personalFmCurrentDisc" class="radio-current-disc">
+          <button
+            type="button"
+            class="radio-vinyl radio-vinyl-current"
+            :title="`${isPersonalFmPlaying ? '暂停' : '播放'} ${personalFmCurrentDisc.title}`"
+            @click="handlePlayPersonalFm"
+          >
             <div class="radio-vinyl-core" :class="{ 'is-spinning': isPersonalFmPlaying }">
               <Cover
                 :url="personalFmCurrentDisc.coverUrl"
@@ -371,25 +459,20 @@ onBeforeUnmount(() => {
                 class="w-full h-full"
               />
             </div>
-          </div>
+          </button>
         </div>
-        <div ref="personalFmVinylsRef" class="radio-vinyls" aria-hidden="true">
-          <div
+        <div ref="personalFmVinylsRef" class="radio-vinyls">
+          <button
             v-for="(track, index) in personalFmVisibleSideTracks"
             :key="`${track.id}:${track.hash ?? ''}:${index}`"
+            type="button"
             class="radio-vinyl"
             :class="[`radio-vinyl-${index + 1}`]"
+            :title="`播放 ${track.title} · ${track.artist}`"
+            @click="handleSelectPersonalFmTrack(track)"
           >
             <Cover :url="track.coverUrl" :size="320" :borderRadius="'50%'" class="w-full h-full" />
-          </div>
-          <div v-if="personalFmVisibleSideTracks.length === 0" class="radio-vinyls-placeholder">
-            <div
-              v-for="slot in personalFmPlaceholderSlots"
-              :key="slot"
-              class="radio-vinyl"
-              :class="`radio-vinyl-${slot}`"
-            ></div>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -427,7 +510,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <div v-else class="fm-panel-empty">当前还没有可用推荐，稍后会自动补充。</div>
+        <div v-else class="fm-panel-empty">
+          {{ personalFmLoading ? '正在获取推荐内容...' : '暂时没有可展示的推荐内容。' }}
+        </div>
       </section>
     </section>
   </div>
@@ -471,7 +556,11 @@ onBeforeUnmount(() => {
   padding: 14px 16px;
   border-radius: 20px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-text-main) 2.5%, transparent), transparent),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-text-main) 2.5%, transparent),
+      transparent
+    ),
     var(--color-bg-main);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
@@ -585,7 +674,11 @@ onBeforeUnmount(() => {
 
 .radio-strategy-switch.outside {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-text-main) 1.8%, transparent), transparent),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-text-main) 1.8%, transparent),
+      transparent
+    ),
     var(--color-bg-sidebar);
   border: 1px solid color-mix(in srgb, var(--color-text-main) 8%, transparent);
   box-shadow:
@@ -662,16 +755,36 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.4);
 }
 
-.radio-bars span:nth-child(1) { height: 11px; }
-.radio-bars span:nth-child(2) { height: 17px; }
-.radio-bars span:nth-child(3) { height: 8px; }
-.radio-bars span:nth-child(4) { height: 19px; }
-.radio-bars span:nth-child(5) { height: 13px; }
-.radio-bars span:nth-child(6) { height: 18px; }
-.radio-bars span:nth-child(7) { height: 9px; }
-.radio-bars span:nth-child(8) { height: 14px; }
-.radio-bars span:nth-child(9) { height: 8px; }
-.radio-bars span:nth-child(10) { height: 15px; }
+.radio-bars span:nth-child(1) {
+  height: 11px;
+}
+.radio-bars span:nth-child(2) {
+  height: 17px;
+}
+.radio-bars span:nth-child(3) {
+  height: 8px;
+}
+.radio-bars span:nth-child(4) {
+  height: 19px;
+}
+.radio-bars span:nth-child(5) {
+  height: 13px;
+}
+.radio-bars span:nth-child(6) {
+  height: 18px;
+}
+.radio-bars span:nth-child(7) {
+  height: 9px;
+}
+.radio-bars span:nth-child(8) {
+  height: 14px;
+}
+.radio-bars span:nth-child(9) {
+  height: 8px;
+}
+.radio-bars span:nth-child(10) {
+  height: 15px;
+}
 
 .radio-play {
   width: 52px;
@@ -686,6 +799,19 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 14px 30px rgba(2, 118, 198, 0.35);
+}
+
+.radio-play.is-loading {
+  cursor: default;
+}
+
+.radio-play-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: rgba(255, 255, 255, 0.98);
+  animation: radio-play-spin 0.75s linear infinite;
 }
 
 .radio-vinyls {
@@ -706,7 +832,6 @@ onBeforeUnmount(() => {
   height: var(--radio-current-size);
   transform: translateY(-50%);
   z-index: 1;
-  pointer-events: none;
 }
 
 .radio-vinyl {
@@ -714,13 +839,29 @@ onBeforeUnmount(() => {
   width: 176px;
   height: 176px;
   flex: 0 0 auto;
+  padding: 0;
+  border: 0;
   border-radius: 999px;
   overflow: hidden;
   box-shadow: 0 26px 40px rgba(5, 12, 20, 0.32);
   background:
-    radial-gradient(circle at center, rgba(0, 0, 0, 0.26) 0 14%, rgba(255, 255, 255, 0.05) 15%, transparent 16%),
+    radial-gradient(
+      circle at center,
+      rgba(0, 0, 0, 0.26) 0 14%,
+      rgba(255, 255, 255, 0.05) 15%,
+      transparent 16%
+    ),
     linear-gradient(135deg, rgba(255, 179, 122, 0.68), rgba(51, 21, 39, 0.96));
   z-index: 1;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.radio-vinyl:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 30px 44px rgba(5, 12, 20, 0.38);
 }
 
 .radio-vinyl :deep(.cover-container),
@@ -758,18 +899,15 @@ onBeforeUnmount(() => {
   animation: radio-vinyl-spin 8s linear infinite;
 }
 
-.radio-vinyls-placeholder {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  width: 100%;
-}
-
 .fm-panel {
   border-radius: 24px;
   border: 1px solid color-mix(in srgb, var(--color-text-main) 7%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-text-main) 2.2%, transparent), transparent),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-text-main) 2.2%, transparent),
+      transparent
+    ),
     var(--color-bg-main);
   padding: 22px;
   margin-top: 28px;
@@ -897,8 +1035,21 @@ onBeforeUnmount(() => {
 }
 
 @keyframes radio-vinyl-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes radio-play-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes fade-in {

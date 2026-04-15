@@ -237,6 +237,13 @@ onMounted(() => {
         :searchQuery="searchQuery"
         :activeId="activeSongId"
         :showCover="true"
+        :queueOptions="{
+          queueId: 'queue:daily-recommend',
+          title: '每日推荐',
+          subtitle: '为你量身定制',
+          type: 'daily-recommend',
+          dynamic: false,
+        }"
         :enableDefaultDoubleTapPlay="true"
         :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
       />

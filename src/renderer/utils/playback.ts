@@ -1,5 +1,6 @@
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
+import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
 
 export interface PlaybackQueueStoreLike {
@@ -9,6 +10,7 @@ export interface PlaybackQueueStoreLike {
     filteredInvalidCount?: number,
     options?: SetPlaybackQueueOptions,
   ) => void;
+  setActiveQueue?: (queueId: string | number) => void;
   appendToPlaybackQueue?: (songs: Song[], options?: SetPlaybackQueueOptions) => number;
   defaultList?: Song[];
   getPreferredManualQueueOptions?: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
@@ -18,8 +20,14 @@ export interface PlaybackQueueStoreLike {
 }
 
 export interface PlaybackPlayerLike {
-  playTrack: (id: string, playlist?: Song[]) => Promise<void> | void;
+  playTrack: (
+    id: string,
+    playlist?: Song[],
+    options?: { autoPlay?: boolean; sourceQueueId?: string | null },
+  ) => Promise<void> | void;
   currentTrackId?: string | null;
+  currentSourceQueueId?: string | null;
+  currentPlaylist?: Song[] | null;
   isPlaying?: boolean;
   togglePlay?: () => void;
 }
@@ -87,8 +95,30 @@ export const replaceQueueAndPlay = async (
   } else {
     playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
   }
-  await playerStore.playTrack(String(resolved.firstPlayable.id), resolved.queue);
+  await playerStore.playTrack(String(resolved.firstPlayable.id), resolved.queue, {
+    sourceQueueId: options?.queueId ? String(options.queueId) : null,
+  });
   return true;
+};
+
+export const playSongInContext = async (
+  playlistStore: PlaybackQueueStoreLike,
+  playerStore: PlaybackPlayerLike,
+  song: Song,
+  _contextSongs: Song[],
+  _filteredInvalidCount = 0,
+  _options?: SetPlaybackQueueOptions,
+): Promise<boolean> => {
+  void _contextSongs;
+  void _filteredInvalidCount;
+  void _options;
+  return queueAndPlaySong(playlistStore, playerStore, song, {
+    queueId: MANUAL_PLAYBACK_QUEUE_ID,
+    title: '我的队列',
+    subtitle: '手动点播与整理',
+    type: 'manual',
+    dynamic: true,
+  });
 };
 
 export const queueAndPlaySong = async (
@@ -99,32 +129,48 @@ export const queueAndPlaySong = async (
 ): Promise<boolean> => {
   const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
   const queueId = manualQueueOptions?.queueId;
-  const preferredList = queueId ? playlistStore.getPlaybackQueueSongs?.(queueId) ?? [] : [];
+  const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
   const activeList = preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? []);
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
+  const nextList = activeList.slice();
+  const exists = nextList.some((item) => isSameSong(item, resolvedSong));
+  const sourceList = exists ? activeList : [...nextList, resolvedSong];
 
   const isCurrentSong = String(playerStore.currentTrackId ?? '') === String(resolvedSong.id);
   if (isCurrentSong) {
+    if (!exists) {
+      if (playlistStore.setPlaybackQueueWithOptions) {
+        playlistStore.setPlaybackQueueWithOptions(sourceList, 0, manualQueueOptions);
+      } else {
+        playlistStore.setPlaybackQueue(sourceList, 0);
+      }
+    } else if (queueId) {
+      playlistStore.setActiveQueue?.(queueId);
+    }
+
+    if (queueId) {
+      playerStore.currentSourceQueueId = String(queueId);
+    }
+    playerStore.currentPlaylist = sourceList;
+
     if (!playerStore.isPlaying) {
       await playerStore.togglePlay?.();
     }
     return true;
   }
 
-  const nextList = activeList.slice();
-  const exists = nextList.some((item) => isSameSong(item, resolvedSong));
   if (!exists) {
-    nextList.push(resolvedSong);
     if (playlistStore.setPlaybackQueueWithOptions) {
-      playlistStore.setPlaybackQueueWithOptions(nextList, 0, manualQueueOptions);
+      playlistStore.setPlaybackQueueWithOptions(sourceList, 0, manualQueueOptions);
     } else {
-      playlistStore.setPlaybackQueue(nextList, 0);
+      playlistStore.setPlaybackQueue(sourceList, 0);
     }
   }
 
-  const sourceList = exists ? activeList : nextList;
-  await playerStore.playTrack(String(resolvedSong.id), sourceList);
+  await playerStore.playTrack(String(resolvedSong.id), sourceList, {
+    sourceQueueId: queueId ? String(queueId) : null,
+  });
   return true;
 };
 
@@ -139,8 +185,10 @@ export const addSongToPlayNext = (
   if (!resolvedSong) return false;
 
   const queueId = manualQueueOptions?.queueId;
-  const preferredList = queueId ? playlistStore.getPlaybackQueueSongs?.(queueId) ?? [] : [];
-  const list = (preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? [])).slice();
+  const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
+  const list = (
+    preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? [])
+  ).slice();
   const currentTrackId = String(playerStore.currentTrackId ?? '');
   const currentIndex = list.findIndex((item) => String(item.id) === currentTrackId);
   const currentSong = currentIndex >= 0 ? list[currentIndex] : null;

@@ -1,16 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import type { StyleValue } from 'vue';
 import { useVModel } from '@vueuse/core';
-import {
-  DialogRoot,
-  DialogOverlay,
-  DialogContent,
-  DialogPortal,
-  DialogTitle,
-  DialogDescription,
-  VisuallyHidden,
-} from 'reka-ui';
 
 interface Props {
   open?: boolean;
@@ -36,26 +27,46 @@ const open = useVModel(props, 'open', emit, { defaultValue: false });
 
 const overlayClass = computed(() => ['drawer-overlay', props.overlayClass]);
 const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props.panelClass]);
+
+const close = () => {
+  open.value = false;
+};
+
+const handleKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && open.value) {
+    e.stopPropagation();
+    close();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown);
+});
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
-    <DialogPortal>
-      <DialogOverlay as-child>
-        <div :class="overlayClass" :style="overlayStyle" />
-      </DialogOverlay>
-
-      <DialogContent as-child>
-        <div :class="panelClass" :style="panelStyle">
-          <VisuallyHidden>
-            <DialogTitle>侧边栏</DialogTitle>
-            <DialogDescription>侧边栏内容</DialogDescription>
-          </VisuallyHidden>
-          <slot />
-        </div>
-      </DialogContent>
-    </DialogPortal>
-  </DialogRoot>
+  <Teleport to="body">
+    <div
+      :class="overlayClass"
+      :data-state="open ? 'open' : 'closed'"
+      :style="overlayStyle"
+      @click="close"
+    />
+    <div
+      :class="panelClass"
+      :data-state="open ? 'open' : 'closed'"
+      :style="panelStyle"
+      role="dialog"
+      :aria-hidden="!open"
+      :inert="!open || undefined"
+    >
+      <slot />
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -68,11 +79,13 @@ const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props
   backdrop-filter: blur(1px);
   z-index: 1400;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s ease;
 }
 
 :global(.drawer-overlay[data-state='open']) {
   opacity: 1;
+  pointer-events: auto;
 }
 
 :global(.drawer-panel) {
@@ -81,16 +94,18 @@ const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props
   border: 1px solid var(--color-border-light);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
   opacity: 0;
+  pointer-events: none;
   z-index: 1410;
   transition:
-    opacity 0.2s ease,
-    transform 0.2s ease;
+    opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
 }
 
 :global(.drawer-panel[data-state='open']) {
   opacity: 1;
+  pointer-events: auto;
   transform: translate(0, 0);
 }
 
@@ -100,7 +115,7 @@ const panelClass = computed(() => ['drawer-panel', `drawer-${props.side}`, props
   bottom: var(--drawer-bottom-offset, 96px);
   width: min(380px, 88vw);
   border-radius: 18px 0 0 18px;
-  transform: translateX(12px);
+  transform: translateX(24px);
   box-shadow: none;
 }
 

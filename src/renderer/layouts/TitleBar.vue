@@ -3,6 +3,7 @@ import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest } from '@/api/search';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
 import {
   iconChevronLeft,
@@ -175,7 +176,7 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="title-bar drag flex items-center shrink-0 select-none transition-colors duration-300 z-[100] bg-transparent"
+    class="title-bar drag flex items-center shrink-0 select-none transition-colors duration-300 z-[200] bg-transparent"
   >
     <!-- 1. 左侧：导航按钮 -->
     <div class="flex items-center gap-1 no-drag pl-6">
@@ -272,27 +273,25 @@ onUnmounted(() => {
           </div>
 
           <!-- 搜索建议下拉 -->
-          <div v-if="showSuggestions" class="tb-suggestions">
-            <div
-              v-for="category in suggestions"
-              :key="category.label"
-              class="tb-suggest-group"
-            >
-              <div class="tb-suggest-title">{{ category.label }}</div>
-              <Button
-                v-for="record in category.records"
-                :key="`${category.label}-${record.text}`"
-                variant="unstyled"
-                size="none"
-                class="tb-suggest-item"
-                @mousedown.prevent
-                @click="submitSearch(record.text)"
-              >
-                <Icon :icon="iconSearch" width="13" height="13" class="tb-suggest-item-icon" />
-                <span class="truncate">{{ record.text }}</span>
-              </Button>
+          <Scrollbar v-if="showSuggestions" class="tb-suggestions">
+            <div class="tb-suggestions-inner">
+              <div v-for="category in suggestions" :key="category.label" class="tb-suggest-group">
+                <div class="tb-suggest-title">{{ category.label }}</div>
+                <Button
+                  v-for="record in category.records"
+                  :key="`${category.label}-${record.text}`"
+                  variant="unstyled"
+                  size="none"
+                  class="tb-suggest-item"
+                  @mousedown.prevent
+                  @click="submitSearch(record.text)"
+                >
+                  <Icon :icon="iconSearch" width="13" height="13" class="tb-suggest-item-icon" />
+                  <span class="truncate">{{ record.text }}</span>
+                </Button>
+              </div>
             </div>
-          </div>
+          </Scrollbar>
         </div>
       </div>
     </div>
@@ -322,12 +321,12 @@ onUnmounted(() => {
 
 <style scoped>
 .title-bar {
-  height: 38px;
+  height: 46px;
 }
 
 .nav-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -355,7 +354,7 @@ onUnmounted(() => {
 }
 
 .control-btn {
-  width: 46px;
+  width: 48px;
   height: 100%;
   display: flex;
   align-items: center;
@@ -387,7 +386,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  height: 30px;
   padding: 0 12px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.05);
@@ -417,12 +416,24 @@ onUnmounted(() => {
 .tb-search-expanded {
   position: relative;
   width: 320px;
+  animation: tb-search-expand 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes tb-search-expand {
+  from {
+    width: 80px;
+    opacity: 0.6;
+  }
+  to {
+    width: 320px;
+    opacity: 1;
+  }
 }
 
 .tb-search-input-wrap {
   display: flex;
   align-items: center;
-  height: 30px;
+  height: 34px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.06);
   padding: 0 4px 0 10px;
@@ -491,7 +502,6 @@ onUnmounted(() => {
   left: 0;
   width: 100%;
   max-height: 360px;
-  overflow-y: auto;
   border-radius: 12px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-light);
@@ -500,6 +510,10 @@ onUnmounted(() => {
     0 2px 6px rgba(0, 0, 0, 0.06);
   padding: 6px 0;
   z-index: 500;
+}
+
+.tb-suggestions-inner {
+  padding: 6px 0;
 }
 
 .tb-suggest-group + .tb-suggest-group {

@@ -75,12 +75,8 @@ const doubleLine = computed(() => settings.value?.doubleLine ?? true);
 const secondaryEnabled = computed(() => settings.value?.secondaryEnabled ?? false);
 const secondaryMode = computed(() => settings.value?.secondaryMode ?? 'none');
 // 当前歌词是否有翻译或音译数据
-const hasTranslation = computed(() =>
-  lyrics.value.some((l) => l.translated?.trim()),
-);
-const hasRomanization = computed(() =>
-  lyrics.value.some((l) => l.romanized?.trim()),
-);
+const hasTranslation = computed(() => lyrics.value.some((l) => l.translated?.trim()));
+const hasRomanization = computed(() => lyrics.value.some((l) => l.romanized?.trim()));
 const hasSecondary = computed(() => hasTranslation.value || hasRomanization.value);
 const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
 const secondaryDisplayLabel = computed(() => {
@@ -464,7 +460,11 @@ const toggleSecondary = () => {
     // 开启时，如果没有设置过 mode，默认选一个合适的
     let mode = secondaryMode.value;
     if (mode === 'none' || !mode) {
-      mode = hasTranslation.value ? 'translation' : hasRomanization.value ? 'romanization' : 'translation';
+      mode = hasTranslation.value
+        ? 'translation'
+        : hasRomanization.value
+          ? 'romanization'
+          : 'translation';
     }
     void updateDesktopLyricSettings({ secondaryEnabled: true, secondaryMode: mode });
   } else {
@@ -817,7 +817,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   gap: 0;
   opacity: 0;
-  transition: opacity 0.3s, background-color 0.3s;
+  transition:
+    opacity 0.3s,
+    background-color 0.3s;
 }
 
 .desktop-lyric.hovered:not(.locked) .tran-group,

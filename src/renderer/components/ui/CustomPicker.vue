@@ -4,6 +4,7 @@ import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 
 export interface PickerOption {
   id: string;
@@ -83,20 +84,22 @@ watch(
     <div v-if="hasTabs" class="custom-picker-tabs">
       <CustomTabBar v-model="activeTabIndex" :tabs="tabs" />
     </div>
-    <div class="custom-picker-options">
-      <Button
-        v-for="opt in activeOptions"
-        :key="opt.id"
-        type="button"
-        class="custom-picker-option"
-        :class="{ active: opt.id === props.selectedId }"
-        variant="ghost"
-        size="xs"
-        @click="handleSelect(opt)"
-      >
-        {{ opt.name }}
-      </Button>
-    </div>
+    <Scrollbar class="custom-picker-options">
+      <div class="custom-picker-options-inner">
+        <Button
+          v-for="opt in activeOptions"
+          :key="opt.id"
+          type="button"
+          class="custom-picker-option"
+          :class="{ active: opt.id === props.selectedId }"
+          variant="ghost"
+          size="xs"
+          @click="handleSelect(opt)"
+        >
+          {{ opt.name }}
+        </Button>
+      </div>
+    </Scrollbar>
   </Dialog>
 </template>
 
@@ -114,12 +117,15 @@ watch(
 }
 
 .custom-picker-options {
+  max-height: 320px;
+  min-height: 0;
+}
+
+.custom-picker-options-inner {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   padding: 0 14px 14px;
-  max-height: 320px;
-  overflow-y: auto;
 }
 
 .custom-picker-option {

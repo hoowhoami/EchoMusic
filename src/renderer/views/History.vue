@@ -377,6 +377,13 @@ onMounted(() => {
           :searchQuery="searchQuery"
           :activeId="activeSongId"
           :showCover="true"
+          :queueOptions="{
+            queueId: 'queue:history',
+            title: '播放历史',
+            subtitle: '最近播放记录',
+            type: 'history',
+            dynamic: false,
+          }"
           :enableDefaultDoubleTapPlay="true"
           :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
         />

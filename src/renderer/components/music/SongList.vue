@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import { useResizeObserver } from '@vueuse/core';
 import type { Song } from '@/models/song';
+import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
 import SongCard from './SongCard.vue';
 import { iconPlay, iconPause } from '@/icons';
@@ -10,7 +11,7 @@ import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
-import { queueAndPlaySong } from '@/utils/playback';
+import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 
 interface Props {
@@ -26,9 +27,12 @@ interface Props {
   parentPlaylistId?: string | number;
   enableRemoveFromPlaylist?: boolean;
   onSongDoubleTapPlay?: (song: Song) => void | Promise<void>;
+  onRemovedFromPlaylist?: (song: Song) => void;
   enableDefaultDoubleTapPlay?: boolean;
   itemKeyField?: 'id' | 'historyKey';
   active?: boolean;
+  queueOptions?: SetPlaybackQueueOptions;
+  queueFilteredInvalidCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,6 +48,7 @@ const props = withDefaults(defineProps<Props>(), {
   enableDefaultDoubleTapPlay: false,
   itemKeyField: 'id',
   active: true,
+  queueFilteredInvalidCount: 0,
 });
 
 // const emit = defineEmits<{
@@ -148,7 +153,18 @@ const handleTogglePlay = async (song: Song) => {
   }
 
   const target = props.songs.find((item) => String(item.id) === String(song.id)) ?? song;
-  await queueAndPlaySong(playlistStore, playerStore, target);
+  if ((props.songs?.length ?? 0) > 0 && props.queueOptions?.queueId) {
+    await playSongInContext(
+      playlistStore,
+      playerStore,
+      target,
+      props.songs,
+      props.queueFilteredInvalidCount ?? 0,
+      props.queueOptions,
+    );
+    return;
+  }
+  await queueAndPlaySong(playlistStore, playerStore, target, props.queueOptions);
 };
 
 const getScrollContainer = (): HTMLElement | null =>
@@ -436,12 +452,15 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
                 :relateGoods="entry.data.relateGoods"
                 :parentPlaylistId="props.parentPlaylistId"
                 :enableRemoveFromPlaylist="props.enableRemoveFromPlaylist"
+                :onRemovedFromPlaylist="props.onRemovedFromPlaylist"
                 :showCover="showCover"
                 :showAlbum="false"
                 :showDuration="false"
                 :showMore="true"
                 :active="isActiveSong(entry.data)"
                 :queueContext="props.songs"
+                :queueOptions="props.queueOptions"
+                :queueFilteredInvalidCount="props.queueFilteredInvalidCount"
                 :onDoubleTapPlay="props.onSongDoubleTapPlay"
                 :enableDefaultDoubleTapPlay="props.enableDefaultDoubleTapPlay"
                 variant="list"

@@ -12,6 +12,7 @@ import {
 } from 'reka-ui';
 import { formatDuration } from '@/utils/format';
 import type { Song, SongArtist, SongRelateGood } from '@/models/song';
+import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
@@ -20,7 +21,7 @@ import Button from '@/components/ui/Button.vue';
 import { iconMessageCircle, iconHeart, iconHeartFilled } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import { isSameSong } from '@/utils/song';
-import { addSongToPlayNext, queueAndPlaySong } from '@/utils/playback';
+import { addSongToPlayNext, playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
 interface Props {
@@ -54,7 +55,10 @@ interface Props {
   enableRemoveFromPlaylist?: boolean;
   disableLinks?: boolean;
   queueContext?: Song[];
+  queueOptions?: SetPlaybackQueueOptions;
+  queueFilteredInvalidCount?: number;
   onDoubleTapPlay?: (song: Song) => void | Promise<void>;
+  onRemovedFromPlaylist?: (song: Song) => void;
   enableDefaultDoubleTapPlay?: boolean;
 }
 
@@ -76,6 +80,7 @@ const props = withDefaults(defineProps<Props>(), {
   variant: 'card',
   disableLinks: false,
   enableDefaultDoubleTapPlay: false,
+  queueFilteredInvalidCount: 0,
 });
 
 const router = useRouter();
@@ -284,7 +289,17 @@ const buildSongPayload = (): Song => ({
 const handleQueueAndPlayCurrentSong = async () => {
   if (!isPlayable.value) return false;
   const payload = buildSongPayload();
-  return queueAndPlaySong(playlistStore, playerStore, payload);
+  if ((props.queueContext?.length ?? 0) > 0 && props.queueOptions?.queueId) {
+    return playSongInContext(
+      playlistStore,
+      playerStore,
+      payload,
+      props.queueContext ?? [],
+      props.queueFilteredInvalidCount ?? 0,
+      props.queueOptions,
+    );
+  }
+  return queueAndPlaySong(playlistStore, playerStore, payload, props.queueOptions);
 };
 
 const handlePlayNow = async () => {
@@ -327,10 +342,14 @@ const handleSelectPlaylist = async (listId: string | number) => {
   showPlaylistDialog.value = false;
 };
 
-const handleRemoveFromPlaylist = () => {
+const handleRemoveFromPlaylist = async () => {
   if (!props.parentPlaylistId) return;
   if (!playlistStore.isOwnedPlaylist(props.parentPlaylistId, userStore.info?.userid)) return;
-  void playlistStore.removeFromPlaylist(String(props.parentPlaylistId), buildSongPayload());
+  const song = buildSongPayload();
+  const success = await playlistStore.removeFromPlaylist(String(props.parentPlaylistId), song);
+  if (success) {
+    props.onRemovedFromPlaylist?.(song);
+  }
 };
 
 const handleFavorite = () => {
@@ -469,7 +488,7 @@ const handleFavorite = () => {
           立即播放
         </ContextMenuItem>
         <ContextMenuItem class="song-context-item" @select="handlePlayNext">
-          添加下一首播放
+          下一首播放
         </ContextMenuItem>
         <ContextMenuItem class="song-context-item" @select="handleAddToPlaylist">
           添加到歌单

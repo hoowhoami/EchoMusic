@@ -6,6 +6,7 @@ import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
@@ -44,21 +45,17 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 
+import { preloadLyricComponent } from '@/utils/preloadLyric';
+
 const router = useRouter();
 
 const {
   player,
-  playlist,
   settingStore,
   desktopLyricStore,
   currentTrack,
   isFavorite,
   toggleFavorite,
-  playModeLabel,
-  playModeIcon,
-  cyclePlayMode,
-  volumeIcon,
-  lastVolume,
   handleVolumeChange,
   toggleMute,
   playbackRateDisplay,
@@ -111,10 +108,13 @@ const formatTime = (seconds: number) => {
 };
 
 const navigateToLyric = () => {
-  const currentPath = router.currentRoute.value.fullPath;
-  router.push({
-    name: 'lyric',
-    query: { from: currentPath },
+  // 确保组件已预加载
+  preloadLyricComponent().then(() => {
+    const currentPath = router.currentRoute.value.fullPath;
+    router.push({
+      name: 'lyric',
+      query: { from: currentPath },
+    });
   });
 };
 
@@ -298,7 +298,7 @@ onUnmounted(() => {
 <template>
   <div class="player-bar-container w-full px-2 pb-[5px] z-[1000]">
     <footer
-      class="player-bar w-full h-[84px] bg-bg-card/80 backdrop-blur-md border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-4 py-1 gap-8 select-none no-drag transition-all duration-300"
+      class="player-bar w-full h-[84px] bg-bg-card/80 backdrop-blur-md border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-[120px] max-w-[320px] overflow-hidden">
@@ -371,6 +371,17 @@ onUnmounted(() => {
             </Button>
 
             <Button
+              v-if="canAddToPlaylist"
+              variant="unstyled"
+              size="none"
+              @click="handleOpenAddToPlaylist"
+              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
+              title="添加到"
+            >
+              <Icon :icon="iconPlaylistAdd" width="20" height="20" />
+            </Button>
+
+            <Button
               variant="unstyled"
               size="none"
               @click="goToComments"
@@ -389,17 +400,6 @@ onUnmounted(() => {
               title="播放 MV"
             >
               <MvIcon class="w-5 h-5" />
-            </Button>
-
-            <Button
-              v-if="canAddToPlaylist"
-              variant="unstyled"
-              size="none"
-              @click="handleOpenAddToPlaylist"
-              class="p-0.5 text-text-main/25 hover:text-primary transition-all hover:scale-110"
-              title="添加到"
-            >
-              <Icon :icon="iconPlaylistAdd" width="20" height="20" />
             </Button>
 
             <div v-if="currentTrack?.source === 'cloud'" class="text-primary/60" title="云盘歌曲">
@@ -821,7 +821,10 @@ onUnmounted(() => {
               </DropdownMenuItem>
               <div class="player-dropdown-divider"></div>
               <div class="player-dropdown-title">音效</div>
-              <div class="player-dropdown-scroll">
+              <Scrollbar
+                class="player-dropdown-scroll"
+                :content-props="{ class: 'player-dropdown-scroll-wrap' }"
+              >
                 <DropdownMenuItem
                   class="player-dropdown-item"
                   :class="{ 'is-active': player.audioEffect === 'none' }"
@@ -846,6 +849,7 @@ onUnmounted(() => {
                     >✓</span
                   >
                 </DropdownMenuItem>
+                <!-- 暂时隐藏人声（伴奏）选项
                 <DropdownMenuItem
                   class="player-dropdown-item"
                   :class="{ 'is-active': player.audioEffect === 'acappella' }"
@@ -858,6 +862,7 @@ onUnmounted(() => {
                     >✓</span
                   >
                 </DropdownMenuItem>
+                -->
                 <DropdownMenuItem
                   class="player-dropdown-item"
                   :class="{ 'is-active': player.audioEffect === 'subwoofer' }"
@@ -942,7 +947,7 @@ onUnmounted(() => {
                     >✓</span
                   >
                 </DropdownMenuItem>
-              </div>
+              </Scrollbar>
               <div class="player-dropdown-arrow"></div>
             </DropdownMenuContent>
           </DropdownMenuPortal>
@@ -993,8 +998,8 @@ onUnmounted(() => {
     showClose
   >
     <div class="add-to-playlist-body">
-      <div class="add-to-playlist-divider"><span>播放列表</span></div>
-      <div v-if="addToPlaybackQueues.length === 0" class="add-to-playlist-status">暂无播放列表</div>
+      <div class="add-to-playlist-divider"><span>播放队列</span></div>
+      <div v-if="addToPlaybackQueues.length === 0" class="add-to-playlist-status">暂无播放队列</div>
       <Button
         v-for="queue in addToPlaybackQueues"
         :key="queue.id"
@@ -1006,13 +1011,15 @@ onUnmounted(() => {
       >
         <span class="add-to-playlist-name">
           <Icon :icon="iconList" width="16" height="16" />
-          {{ queue.title || '播放列表' }}
+          {{ queue.title || '播放队列' }}
         </span>
         <span class="add-to-playlist-count">{{ queue.songs.length }} 首</span>
       </Button>
       <div class="add-to-playlist-divider"><span>歌单</span></div>
       <div v-if="isPlaylistLoading" class="add-to-playlist-status">加载歌单中...</div>
-      <div v-else-if="createdPlaylists.length === 0" class="add-to-playlist-status">暂无可用歌单</div>
+      <div v-else-if="createdPlaylists.length === 0" class="add-to-playlist-status">
+        暂无可用歌单
+      </div>
       <Button
         v-for="entry in createdPlaylists"
         :key="entry.listid ?? entry.id"
@@ -1346,7 +1353,10 @@ onUnmounted(() => {
 
 :deep(.player-dropdown-scroll) {
   max-height: 168px;
-  overflow-y: auto;
+  min-height: 0;
+}
+
+:deep(.player-dropdown-scroll-wrap) {
   padding-right: 1px;
 }
 
@@ -1535,7 +1545,9 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   color: var(--color-text-main);
-  transition: color 0.2s ease, border-color 0.2s ease;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .add-to-playlist-item:hover {

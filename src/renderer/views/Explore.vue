@@ -495,7 +495,7 @@ const handleSelectAlbumType = (option: PickerOption) => {
         <div class="rank-toolbar-inner">
           <CustomSelector :label="rankLabel" @click="showRankPicker = true" />
           <div class="rank-toolbar-actions">
-            <div class="rank-action-scroll no-scrollbar">
+            <div class="rank-action-scroll">
               <ActionRow @play="playRankSongs" @batch="openRankBatchDrawer" />
             </div>
           </div>
@@ -564,6 +564,13 @@ const handleSelectAlbumType = (option: PickerOption) => {
           :searchQuery="rankSearchQuery"
           :activeId="activeSongId"
           :showCover="true"
+          :queueOptions="{
+            queueId: `queue:explore:rank:${rankId ?? 'default'}`,
+            title: activeRank?.name || '排行榜',
+            subtitle: activeRank?.rankTypeName || '实时热门趋势',
+            type: 'ranking',
+            dynamic: false,
+          }"
           :enableDefaultDoubleTapPlay="true"
           :onSongDoubleTapPlay="
             settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined
@@ -614,7 +621,7 @@ const handleSelectAlbumType = (option: PickerOption) => {
             </div>
           </div>
           <div class="new-song-toolbar-actions">
-            <div class="rank-action-scroll no-scrollbar">
+            <div class="rank-action-scroll">
               <ActionRow @play="playNewSongs" @batch="openNewSongBatchDrawer" />
             </div>
           </div>
@@ -687,6 +694,13 @@ const handleSelectAlbumType = (option: PickerOption) => {
           :searchQuery="newSongSearchQuery"
           :activeId="activeSongId"
           :showCover="true"
+          :queueOptions="{
+            queueId: 'queue:explore:new-songs',
+            title: '新歌速递',
+            subtitle: albumTypeLabel,
+            type: 'default',
+            dynamic: false,
+          }"
           :enableDefaultDoubleTapPlay="true"
           :onSongDoubleTapPlay="
             settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined

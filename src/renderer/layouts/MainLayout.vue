@@ -5,6 +5,7 @@ import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 
 const route = useRoute();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
@@ -24,13 +25,18 @@ const keepAliveRouteNames = ['personal-fm'];
       <main class="main-content flex-1 flex flex-col min-h-0 overflow-hidden">
         <TitleBar />
         <!-- 滚动容器 -->
-        <div class="view-port flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden">
-          <router-view v-slot="{ Component }">
-            <KeepAlive :include="keepAliveRouteNames">
-              <component :is="Component" :key="routeViewKey" />
-            </KeepAlive>
-          </router-view>
-        </div>
+        <Scrollbar
+          class="view-port-scroll flex-1 min-h-0 min-w-0"
+          :content-props="{ class: 'view-port' }"
+        >
+          <div>
+            <router-view v-slot="{ Component }">
+              <KeepAlive :include="keepAliveRouteNames">
+                <component :is="Component" :key="routeViewKey" />
+              </KeepAlive>
+            </router-view>
+          </div>
+        </Scrollbar>
       </main>
 
       <!-- 2.2 底部悬浮播放控制栏 (相对于右侧容器居中) -->

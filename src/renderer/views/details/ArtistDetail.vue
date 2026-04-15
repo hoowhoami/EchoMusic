@@ -448,6 +448,12 @@ onMounted(() => {
               :loading="loadingSongs"
               :active="activeTab === 'songs'"
               :showCover="true"
+              :queueOptions="{
+                queueId: `queue:artist:${artist?.id ?? getArtistId()}`,
+                title: artist?.name || '歌手',
+                subtitle: '热门歌曲',
+                type: 'artist',
+              }"
               :enableDefaultDoubleTapPlay="true"
               :onSongDoubleTapPlay="
                 settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
@@ -482,7 +488,7 @@ onMounted(() => {
         v-model:open="showIntroDialog"
         title="歌手介绍"
         :description="artist.intro"
-        contentClass="max-w-[720px]"
+        contentClass="detail-intro-dialog max-w-[720px]"
         descriptionClass="text-[13px]"
         showClose
       />

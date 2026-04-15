@@ -4,6 +4,7 @@ import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { CheckboxIndicator, CheckboxRoot } from 'reka-ui';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
@@ -16,7 +17,7 @@ import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
-import { PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
+import { MANUAL_PLAYBACK_QUEUE_ID, PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
 
 interface Props {
   open?: boolean;
@@ -170,9 +171,15 @@ const handleAddToQueue = (queueId?: string) => {
   const options = queueId ? { queueId } : {};
   const addedCount = playlistStore.appendToPlaybackQueue?.(selectedSongs.value, options) ?? 0;
   if (addedCount > 0) {
-    toastStore.actionCompleted(`已添加 ${addedCount} 首到播放列表`);
+    toastStore.actionCompleted(
+      queueId === MANUAL_PLAYBACK_QUEUE_ID
+        ? `已添加 ${addedCount} 首到我的队列`
+        : `已添加 ${addedCount} 首到队列`,
+    );
   } else {
-    toastStore.actionCompleted('所选歌曲已在播放列表中');
+    toastStore.actionCompleted(
+      queueId === MANUAL_PLAYBACK_QUEUE_ID ? '所选歌曲已在我的队列中' : '所选歌曲已在队列中',
+    );
   }
   showPlaylistDialog.value = false;
   open.value = false;
@@ -271,63 +278,65 @@ const handleRemoveFromPlaylist = async () => {
       <div class="batch-count">已选 {{ selectedKeys.size }} / {{ songs.length }}</div>
     </div>
 
-    <div v-bind="containerProps" class="batch-list scroll-smooth">
-      <div v-bind="wrapperProps" class="batch-list-inner">
-        <div
-          v-for="entry in list"
-          :key="entry.data.id"
-          class="batch-row"
-          :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
-          :style="{ height: `${itemHeight}px` }"
-          @click="toggleSong(entry.data)"
-        >
-          <div class="batch-leading" @click.stop>
-            <CheckboxRoot
-              class="batch-checkbox"
-              :model-value="selectedKeys.has(String(entry.data.id))"
-              @update:model-value="setSongChecked(entry.data, $event)"
-            >
-              <CheckboxIndicator as-child>
-                <span class="batch-checkbox-indicator"></span>
-              </CheckboxIndicator>
-            </CheckboxRoot>
+    <div class="batch-list">
+      <Scrollbar class="flex-1 min-h-0" :scrollbar-inset="4" :content-props="containerProps">
+        <div v-bind="wrapperProps" class="batch-list-inner">
+          <div
+            v-for="entry in list"
+            :key="entry.data.id"
+            class="batch-row"
+            :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
+            :style="{ height: `${itemHeight}px` }"
+            @click="toggleSong(entry.data)"
+          >
+            <div class="batch-leading" @click.stop>
+              <CheckboxRoot
+                class="batch-checkbox"
+                :model-value="selectedKeys.has(String(entry.data.id))"
+                @update:model-value="setSongChecked(entry.data, $event)"
+              >
+                <CheckboxIndicator as-child>
+                  <span class="batch-checkbox-indicator"></span>
+                </CheckboxIndicator>
+              </CheckboxRoot>
+            </div>
+            <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
+              <SongCard
+                :id="entry.data.id"
+                :hash="entry.data.hash"
+                :title="entry.data.title"
+                :artist="entry.data.artist"
+                :artists="entry.data.artists"
+                :album="entry.data.album"
+                :albumId="entry.data.albumId"
+                :coverUrl="entry.data.coverUrl"
+                :duration="entry.data.duration"
+                :audioUrl="entry.data.audioUrl"
+                :source="entry.data.source"
+                :mvHash="entry.data.mvHash"
+                :mixSongId="entry.data.mixSongId"
+                :fileId="entry.data.fileId"
+                :privilege="entry.data.privilege"
+                :payType="entry.data.payType"
+                :oldCpy="entry.data.oldCpy"
+                :relateGoods="entry.data.relateGoods"
+                :queueContext="props.songs"
+                :showCover="true"
+                :showAlbum="false"
+                :showDuration="false"
+                :active="false"
+                :showMore="false"
+                :disableLinks="true"
+                variant="list"
+              />
+            </div>
+            <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
+            <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
           </div>
-          <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
-            <SongCard
-              :id="entry.data.id"
-              :hash="entry.data.hash"
-              :title="entry.data.title"
-              :artist="entry.data.artist"
-              :artists="entry.data.artists"
-              :album="entry.data.album"
-              :albumId="entry.data.albumId"
-              :coverUrl="entry.data.coverUrl"
-              :duration="entry.data.duration"
-              :audioUrl="entry.data.audioUrl"
-              :source="entry.data.source"
-              :mvHash="entry.data.mvHash"
-              :mixSongId="entry.data.mixSongId"
-              :fileId="entry.data.fileId"
-              :privilege="entry.data.privilege"
-              :payType="entry.data.payType"
-              :oldCpy="entry.data.oldCpy"
-              :relateGoods="entry.data.relateGoods"
-              :queueContext="props.songs"
-              :showCover="true"
-              :showAlbum="false"
-              :showDuration="false"
-              :active="false"
-              :showMore="false"
-              :disableLinks="true"
-              variant="list"
-            />
-          </div>
-          <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
-          <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
         </div>
-      </div>
 
-      <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
+        <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
+      </Scrollbar>
     </div>
   </Drawer>
 
@@ -339,8 +348,8 @@ const handleRemoveFromPlaylist = async () => {
     showClose
   >
     <div class="batch-playlist-body">
-      <div class="batch-playlist-divider"><span>播放列表</span></div>
-      <div v-if="addToPlaybackQueues.length === 0" class="batch-playlist-status">暂无播放列表</div>
+      <div class="batch-playlist-divider"><span>播放队列</span></div>
+      <div v-if="addToPlaybackQueues.length === 0" class="batch-playlist-status">暂无播放队列</div>
       <Button
         v-for="queue in addToPlaybackQueues"
         :key="queue.id"
@@ -352,7 +361,7 @@ const handleRemoveFromPlaylist = async () => {
       >
         <span class="batch-playlist-name">
           <Icon :icon="iconList" width="16" height="16" />
-          {{ queue.title || '播放列表' }}
+          {{ queue.title || '播放队列' }}
         </span>
         <span class="batch-playlist-count">{{ queue.songs.length }} 首</span>
       </Button>
@@ -391,7 +400,7 @@ const handleRemoveFromPlaylist = async () => {
   box-shadow: none;
   width: min(600px, 96vw);
   top: 0;
-  bottom: var(--drawer-bottom-offset, 96px);
+  bottom: calc(var(--drawer-bottom-offset, 96px) - 8px);
 }
 
 .batch-header {
@@ -502,10 +511,16 @@ const handleRemoveFromPlaylist = async () => {
 
 .batch-list {
   flex: 1;
-  padding: 0 14px 16px 18px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 0 16px 18px;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.batch-list-inner {
+  padding-right: 14px;
 }
 
 .batch-empty {
@@ -653,7 +668,7 @@ const handleRemoveFromPlaylist = async () => {
 
 @media (max-width: 720px) {
   :global(.batch-drawer) {
-    bottom: 10px;
+    bottom: calc(var(--drawer-bottom-offset, 96px) - 8px);
     width: 94vw;
   }
 }

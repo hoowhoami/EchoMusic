@@ -436,6 +436,13 @@ onMounted(() => {
           :searchQuery="searchQuery"
           :activeId="activeSongId"
           :showCover="true"
+          :queueOptions="{
+            queueId: 'queue:cloud',
+            title: '云盘音乐',
+            subtitle: '你的云盘收藏',
+            type: 'cloud',
+            dynamic: false,
+          }"
           :enableDefaultDoubleTapPlay="true"
           :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
         />

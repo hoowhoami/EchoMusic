@@ -602,6 +602,13 @@ export const useLyricStore = defineStore('lyric', {
     },
   },
   persist: {
-    pick: ['secondaryEnabled', 'preferredMode', 'fontScale', 'fontWeightIndex', 'playedColor', 'unplayedColor'],
+    pick: [
+      'secondaryEnabled',
+      'preferredMode',
+      'fontScale',
+      'fontWeightIndex',
+      'playedColor',
+      'unplayedColor',
+    ],
   },
 });

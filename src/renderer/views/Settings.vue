@@ -19,6 +19,7 @@ import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
@@ -270,7 +271,9 @@ const startRecording = (command: ShortcutCommand, scope: ShortcutScope) => {
         existingCommand !== recording.value?.command,
     );
     if (conflictEntry) {
-      toastStore.warning(`该快捷键已分配给“${getShortcutCommandTitle(conflictEntry[0] as ShortcutCommand)}”`);
+      toastStore.warning(
+        `该快捷键已分配给“${getShortcutCommandTitle(conflictEntry[0] as ShortcutCommand)}”`,
+      );
       return;
     }
     if (recording.value.scope === 'global') {
@@ -1104,9 +1107,13 @@ onUnmounted(() => {
       contentClass="settings-update-dialog"
       bodyClass="settings-update-body"
     >
-      <div v-if="updateResultBody" class="settings-update-changelog">
+      <Scrollbar
+        v-if="updateResultBody"
+        class="settings-update-changelog"
+        :content-props="{ class: 'px-4 py-3' }"
+      >
         {{ updateResultBody }}
-      </div>
+      </Scrollbar>
       <template #footer>
         <Button variant="ghost" size="sm" @click="showUpdateResult = false">关闭</Button>
         <Button
@@ -1301,7 +1308,7 @@ onUnmounted(() => {
 }
 
 .settings-update-changelog {
-  @apply max-h-72 overflow-y-auto whitespace-pre-wrap text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04] px-4 py-3;
+  @apply max-h-72 whitespace-pre-wrap text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04];
 }
 
 :global(.settings-update-dialog) {

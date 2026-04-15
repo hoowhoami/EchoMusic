@@ -75,8 +75,4 @@ const emit = defineEmits<{
 :global(.legal-dialog-body) {
   @apply pr-4 pb-1;
 }
-
-:global(.legal-dialog .dialog-scroll-area) {
-  @apply overflow-y-auto min-h-0;
-}
 </style>

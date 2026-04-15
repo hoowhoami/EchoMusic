@@ -32,17 +32,7 @@ const parseShortcutLabelParts = (label: string): string[] => {
 
   const parts: string[] = [];
   let rest = normalized;
-  const leadingTokens = [
-    '⌘',
-    '⇧',
-    '⌥',
-    '⌃',
-    '←',
-    '→',
-    '↑',
-    '↓',
-    'Space',
-  ];
+  const leadingTokens = ['⌘', '⇧', '⌥', '⌃', '←', '→', '↑', '↓', 'Space'];
 
   while (rest.length > 0) {
     const matched = leadingTokens.find((token) => rest.startsWith(token));

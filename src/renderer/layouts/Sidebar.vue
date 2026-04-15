@@ -7,6 +7,7 @@ import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
 import {
   iconClock,
@@ -348,7 +349,10 @@ const handleRemovePlaylist = async () => {
   }
 };
 
-const isMenuItemDisabled = (_item?: { path: string; action?: string }) => false;
+const isMenuItemDisabled = (item?: { path: string; action?: string }) => {
+  void item;
+  return false;
+};
 
 const handleMenuClick = (item: { path: string; action?: string }) => {
   if (isMenuItemDisabled(item)) return;
@@ -416,7 +420,7 @@ watch(
   <aside
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative"
   >
-    <div :class="['drag w-full shrink-0', isMac ? 'h-14' : 'h-10']"></div>
+    <div :class="['drag w-full shrink-0', isMac ? 'h-16' : 'h-12']"></div>
 
     <div :class="['px-4 pb-3 shrink-0 no-drag', isMac ? 'mt-2' : 'mt-0']">
       <div
@@ -561,8 +565,12 @@ watch(
       </div>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-4 pb-6 no-drag sidebar-scroll">
-      <nav v-if="isLoggedIn" class="space-y-0.5">
+    <Scrollbar
+      class="flex-1 min-h-0 no-drag"
+      :scrollbar-inset="3"
+      :content-props="{ class: 'sidebar-scroll' }"
+    >
+      <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
         <template v-if="activePlaylistTab === 0">
           <div
             v-for="playlist in createdPlaylists"
@@ -713,12 +721,12 @@ watch(
         </template>
       </nav>
 
-      <div v-else class="px-3.5 py-8 text-center">
+      <div v-else class="sidebar-scroll-empty px-3.5 py-8 text-center">
         <span class="text-[12px] font-normal text-text-main opacity-50 italic"
           >登录同步云端歌单</span
         >
       </div>
-    </div>
+    </Scrollbar>
   </aside>
 
   <Dialog
@@ -801,6 +809,15 @@ watch(
 
 .sidebar {
   width: 230px;
+}
+
+:deep(.sidebar-scroll) {
+  min-height: 0;
+}
+
+.sidebar-scroll-inner,
+.sidebar-scroll-empty {
+  padding: 0 16px 24px;
 }
 
 .sidebar-playlist-tab {

@@ -19,6 +19,7 @@ import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -700,6 +701,12 @@ const fetchFloorReplies = async (reset = false) => {
               :searchQuery="searchQuery"
               :activeId="activeSongId"
               :showCover="true"
+              :queueOptions="{
+                queueId: `queue:album:${album?.id ?? getAlbumId()}`,
+                title: album?.albumname || '专辑',
+                subtitle: album?.singer || '',
+                type: 'album',
+              }"
               :enableDefaultDoubleTapPlay="true"
               :onSongDoubleTapPlay="
                 settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
@@ -750,7 +757,7 @@ const fetchFloorReplies = async (reset = false) => {
         v-model:open="showIntroDialog"
         title="专辑介绍"
         :description="album.intro"
-        contentClass="max-w-[720px]"
+        contentClass="detail-intro-dialog max-w-[720px]"
         descriptionClass="text-[13px]"
         showClose
       />
@@ -765,46 +772,52 @@ const fetchFloorReplies = async (reset = false) => {
             <Icon :icon="iconX" width="20" height="20" />
           </Button>
         </div>
-        <div class="comment-floor-body" ref="floorBodyRef" @scroll="handleFloorScroll">
-          <div class="comment-floor-section">原评论</div>
-          <CommentList
-            v-if="activeFloorComment"
-            :comments="[activeFloorComment]"
-            :showDivider="false"
-            :loading="false"
-            compact
-          />
-          <div class="comment-floor-section">
-            回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
-          </div>
-          <CommentList
-            :comments="floorReplies"
-            :loading="floorLoading"
-            :showDivider="true"
-            compact
-          />
-          <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
-            {{ floorMessage || '暂无回复' }}
-          </div>
-          <div
-            v-if="floorHasMore || floorLoading || floorReplies.length > 0"
-            class="comment-load-more comment-load-more-floor"
-          >
-            <div v-if="floorLoading" class="comment-loading-inline">
-              <div class="comment-loading-spinner"></div>
-              <span>加载中...</span>
+        <Scrollbar
+          class="comment-floor-body flex-1 min-h-0"
+          :content-props="{ ref: floorBodyRef }"
+          @scroll="handleFloorScroll"
+        >
+          <div class="comment-floor-body-inner">
+            <div class="comment-floor-section">原评论</div>
+            <CommentList
+              v-if="activeFloorComment"
+              :comments="[activeFloorComment]"
+              :showDivider="false"
+              :loading="false"
+              compact
+            />
+            <div class="comment-floor-section">
+              回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
             </div>
-            <Button
-              v-else-if="floorHasMore"
-              variant="outline"
-              size="xs"
-              @click="fetchFloorReplies()"
+            <CommentList
+              :comments="floorReplies"
+              :loading="floorLoading"
+              :showDivider="true"
+              compact
+            />
+            <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
+              {{ floorMessage || '暂无回复' }}
+            </div>
+            <div
+              v-if="floorHasMore || floorLoading || floorReplies.length > 0"
+              class="comment-load-more comment-load-more-floor"
             >
-              {{ floorLoadMoreMessage || '加载更多' }}
-            </Button>
-            <div v-else class="comment-end-hint">已加载全部评论</div>
+              <div v-if="floorLoading" class="comment-loading-inline">
+                <div class="comment-loading-spinner"></div>
+                <span>加载中...</span>
+              </div>
+              <Button
+                v-else-if="floorHasMore"
+                variant="outline"
+                size="xs"
+                @click="fetchFloorReplies()"
+              >
+                {{ floorLoadMoreMessage || '加载更多' }}
+              </Button>
+              <div v-else class="comment-end-hint">已加载全部评论</div>
+            </div>
           </div>
-        </div>
+        </Scrollbar>
       </Dialog>
     </template>
   </div>
@@ -857,9 +870,11 @@ const fetchFloorReplies = async (reset = false) => {
 }
 
 :global(.comment-floor-dialog) {
-  width: min(620px, calc(100vw - 40px));
-  max-width: calc(100vw - 40px);
-  max-height: min(720px, calc(100vh - 24px));
+  left: calc(var(--drawer-content-left, 0px) + (var(--drawer-content-width, 100vw) / 2));
+  top: calc(var(--drawer-content-top, 0px) + (var(--drawer-content-height, 100vh) / 2));
+  width: min(620px, calc(var(--drawer-content-width, 100vw) - 40px));
+  max-width: calc(var(--drawer-content-width, 100vw) - 40px);
+  max-height: min(720px, calc(var(--drawer-content-height, 100vh) - 24px));
   padding: 24px 2px 24px 24px;
   border-radius: 24px;
   overflow: hidden;
@@ -867,12 +882,11 @@ const fetchFloorReplies = async (reset = false) => {
 
 :global(.comment-floor-dialog .dialog-scroll-area) {
   margin-top: 0;
-  overflow-y: auto;
   min-height: 0;
 }
 
 :global(.comment-floor-dialog .comment-floor-dialog-body) {
-  padding-right: 16px;
+  padding-right: 0;
   margin-top: 0;
 }
 
@@ -894,9 +908,12 @@ const fetchFloorReplies = async (reset = false) => {
 }
 
 .comment-floor-body {
-  max-height: min(580px, calc(100vh - 180px));
-  overflow-y: auto;
-  padding-right: 8px;
+  max-height: min(580px, calc(var(--drawer-content-height, 100vh) - 180px));
+  min-height: 0;
+}
+
+.comment-floor-body-inner {
+  padding-right: 12px;
 }
 
 .comment-floor-section {

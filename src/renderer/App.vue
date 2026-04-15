@@ -5,6 +5,7 @@ import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
@@ -151,12 +152,13 @@ watch(
     @update:open="showStartupUpdateDialog = $event"
   >
     <div class="space-y-4">
-      <div
+      <Scrollbar
         v-if="startupUpdateBody"
-        class="max-h-[280px] overflow-y-auto rounded-2xl bg-black/5 px-4 py-3 text-sm leading-6 text-text-secondary dark:bg-white/5"
+        class="max-h-[280px] rounded-2xl bg-black/5 text-sm leading-6 text-text-secondary dark:bg-white/5"
+        :content-props="{ class: 'px-4 py-3' }"
       >
         <pre class="whitespace-pre-wrap break-words font-inherit">{{ startupUpdateBody }}</pre>
-      </div>
+      </Scrollbar>
     </div>
     <template #footer>
       <Button variant="ghost" size="sm" @click="showStartupUpdateDialog = false">稍后</Button>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue';
 import Button from '@/components/ui/Button.vue';
+import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { useVModel } from '@vueuse/core';
 import { iconX } from '@/icons';
 import {
@@ -104,7 +105,7 @@ const handleInteractOutside = (event: Event) => {
           </VisuallyHidden>
 
           <!-- 可滚动区域：描述 + 内容 -->
-          <div class="dialog-scroll-area flex-1 overflow-y-auto min-h-0 mt-2">
+          <Scrollbar class="flex-1 min-h-0 mt-2" :content-props="{ class: 'dialog-scroll-area' }">
             <template v-if="hasDescription">
               <DialogDescription as-child>
                 <p :class="computedDescriptionClass">
@@ -119,7 +120,7 @@ const handleInteractOutside = (event: Event) => {
             <div v-if="hasBody" :class="computedBodyClass">
               <slot />
             </div>
-          </div>
+          </Scrollbar>
 
           <!-- 固定底部：页脚 -->
           <div v-if="hasFooter" class="dialog-footer shrink-0">
@@ -169,6 +170,14 @@ const handleInteractOutside = (event: Event) => {
 :global(.dialog-content[data-state='closed']) {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.98);
+}
+
+:global(.dialog-content.detail-intro-dialog) {
+  left: calc(var(--drawer-content-left, 0px) + (var(--drawer-content-width, 100vw) / 2));
+  top: calc(var(--drawer-content-top, 0px) + (var(--drawer-content-height, 100vh) / 2));
+  width: min(720px, calc(var(--drawer-content-width, 100vw) - 40px));
+  max-width: calc(var(--drawer-content-width, 100vw) - 40px);
+  max-height: min(760px, calc(var(--drawer-content-height, 100vh) - 24px));
 }
 
 .dialog-header {

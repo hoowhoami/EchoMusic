@@ -391,6 +391,13 @@ watch(
           :searchQuery="searchQuery"
           :activeId="activeSongId"
           :showCover="true"
+          :queueOptions="{
+            queueId: `queue:ranking:${selectedRank?.id ?? 'default'}`,
+            title: selectedRank?.name || '排行榜',
+            subtitle: selectedRank?.rankTypeName || '实时热门趋势',
+            type: 'ranking',
+            dynamic: false,
+          }"
           :enableDefaultDoubleTapPlay="true"
           :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
         />
