@@ -140,7 +140,7 @@ const handleRejectAgreement = () => {
 </script>
 
 <template>
-  <div class="home-view px-10 pt-6 pb-10">
+  <div class="home-view px-10 pt-4 pb-10">
     <div class="home-header">
       <div class="text-[22px] font-semibold tracking-tight text-text-main">{{ greeting }}</div>
       <div class="text-[12px] text-text-secondary/80 mt-1">由此开启好心情 ~</div>

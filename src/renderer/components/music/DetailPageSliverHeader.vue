@@ -57,6 +57,18 @@ const titleScale = computed(() => 1 - progress.value * (1 - 17.5 / props.titleFo
 const detailsOpacity = computed(() => Math.max(0, 1 - progress.value * 3.5));
 const detailsTranslateY = computed(() => -progress.value * 30);
 
+// 吸顶时封面垂直居中：paddingTop 从展开时的 10px 过渡到 (collapsedHeight - targetCoverSize) / 2
+const expandedPaddingTop = 10;
+const collapsedPaddingTop = (props.collapsedHeight - targetCoverSize) / 2;
+const contentPaddingTop = computed(
+  () => expandedPaddingTop + (collapsedPaddingTop - expandedPaddingTop) * progress.value,
+);
+
+// 右侧内容区高度：展开时与封面等高以实现上下对齐
+const rightColumnHeight = computed(() => {
+  return coverSize * coverScale.value;
+});
+
 defineExpose({ currentHeight });
 
 const handleScroll = (e: Event) => {
@@ -102,7 +114,7 @@ onUnmounted(() => {
         paddingLeft: `${props.contentPaddingX}px`,
         paddingRight: `${props.contentPaddingX}px`,
         gap: `${props.contentGap}px`,
-        paddingTop: '10px',
+        paddingTop: `${contentPaddingTop}px`,
       }"
     >
       <!-- 封面图 -->
@@ -125,8 +137,12 @@ onUnmounted(() => {
       </div>
 
       <!-- 标题和详情 -->
-      <div class="flex-1 flex flex-col min-w-0 relative z-10 pt-0.5 pointer-events-auto">
-        <div class="flex items-center justify-between gap-3">
+      <div
+        class="flex-1 flex flex-col min-w-0 relative z-10 pointer-events-auto"
+        :style="{ height: `${rightColumnHeight}px` }"
+      >
+        <!-- 标题行 -->
+        <div class="flex items-center justify-between gap-3 shrink-0">
           <h1
             class="flex-1 min-w-0 font-bold text-text-main leading-tight truncate origin-left transition-all duration-75"
             :style="{ fontSize: `${props.titleFontSize}px`, transform: `scale(${titleScale})` }"
@@ -141,21 +157,30 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- 详情插槽 -->
+        <!-- 详情插槽：flex-1 占据中间剩余空间，上下 padding 让内容居中 -->
         <div
-          class="flex flex-col transition-all duration-75"
+          class="flex flex-col flex-1 min-h-0 justify-center transition-all duration-75"
           :style="{
             opacity: detailsOpacity,
             transform: `translateY(${detailsTranslateY}px)`,
             pointerEvents: progress > 0.4 ? 'none' : 'auto',
-            gap: `${props.detailsGap}px`,
-            marginTop: `${props.detailsMarginTop}px`,
+            paddingTop: `${props.detailsMarginTop}px`,
+            paddingBottom: `${props.detailsMarginTop}px`,
           }"
         >
           <slot name="details" />
-          <div class="mt-2.5">
-            <slot name="actions" />
-          </div>
+        </div>
+
+        <!-- 操作按钮行：贴底 -->
+        <div
+          class="shrink-0 transition-all duration-75"
+          :style="{
+            opacity: detailsOpacity,
+            transform: `translateY(${detailsTranslateY}px)`,
+            pointerEvents: progress > 0.4 ? 'none' : 'auto',
+          }"
+        >
+          <slot name="actions" />
         </div>
       </div>
     </div>

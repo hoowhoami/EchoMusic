@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   PERSONAL_FM_QUEUE_ID,
   getPersonalFmModePresentation,
@@ -344,10 +344,17 @@ onBeforeUnmount(() => {
   personalFmVinylsObserver?.disconnect();
   personalFmVinylsObserver = null;
 });
+
+onActivated(() => {
+  const scrollContainer = document.querySelector('.view-port');
+  if (scrollContainer) {
+    scrollContainer.scrollTop = 0;
+  }
+});
 </script>
 
 <template>
-  <div class="personal-fm-view px-10 pt-6 pb-10">
+  <div class="personal-fm-view px-10 pt-4 pb-10">
     <div class="fm-header">
       <div class="fm-page-title">私人 FM</div>
       <div class="fm-page-subtitle">实时推荐会根据你的反馈持续更新</div>
@@ -527,11 +534,11 @@ onBeforeUnmount(() => {
 }
 
 .fm-header {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 
 .fm-page-title {
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.04em;
   color: var(--color-text-main);
@@ -546,6 +553,7 @@ onBeforeUnmount(() => {
 
 .fm-shell {
   margin-top: 8px;
+  overflow-anchor: none;
 }
 
 .fm-toolbar {

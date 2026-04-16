@@ -746,8 +746,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-show="!showPinnedTabs" class="px-10 pt-5">
-      <div class="text-[24px] font-semibold text-text-main tracking-tight">搜索</div>
+    <div v-show="!showPinnedTabs" class="px-10 pt-4">
+      <div class="text-[22px] font-semibold text-text-main tracking-tight">搜索</div>
 
       <div class="search-input-shell mt-6" :class="{ 'has-suggestions': showSuggestions }">
         <div class="search-input-wrap">
@@ -835,7 +835,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="!hasSearched" class="px-10 pt-6">
+    <div v-if="!hasSearched" class="px-10 pt-4">
       <div v-if="isLoadingHot" class="search-placeholder">加载中...</div>
       <template v-else>
         <div v-if="searchHistory.length > 0" class="search-section">

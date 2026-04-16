@@ -169,15 +169,13 @@ onMounted(() => loadData());
 </script>
 
 <template>
-  <div
-    class="profile-page select-none bg-bg-main"
-  >
+  <div class="profile-page select-none bg-bg-main">
     <template v-if="userStore.isLoggedIn && userInfo">
-      <div class="px-8 py-5">
+      <div class="px-8 py-4">
         <div class="w-full animate-in slide-in-from-bottom-4 duration-500">
           <!-- 1. Header -->
           <header class="flex items-center justify-between mb-6">
-            <h1 class="text-[24px] font-black tracking-tight">个人中心</h1>
+            <h1 class="text-[22px] font-black tracking-tight">个人中心</h1>
             <Button
               variant="unstyled"
               size="none"

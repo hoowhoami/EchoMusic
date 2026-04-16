@@ -490,7 +490,7 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
 
 <template>
   <div
-    class="explore-view px-10 pt-5 pb-10"
+    class="explore-view px-10 pt-4 pb-10"
     :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
   >
     <div class="explore-header">
@@ -600,8 +600,7 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
           :queueOptions="{
             queueId: `queue:explore:rank:${rankId ?? 'default'}`,
             title: ranks.find((r: RankMeta) => r.id === rankId)?.name || '排行榜',
-            subtitle:
-              ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
+            subtitle: ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
             type: 'ranking',
             dynamic: false,
           }"

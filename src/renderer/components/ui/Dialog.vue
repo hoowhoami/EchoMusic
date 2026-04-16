@@ -107,7 +107,11 @@ const handleInteractOutside = (event: Event) => {
           </VisuallyHidden>
 
           <!-- 可滚动区域：描述 + 内容 -->
-          <Scrollbar v-if="!props.noScroll" class="flex-1 min-h-0 mt-2" :content-props="{ class: 'dialog-scroll-area' }">
+          <Scrollbar
+            v-if="!props.noScroll"
+            class="flex-1 min-h-0 mt-2"
+            :content-props="{ class: 'dialog-scroll-area' }"
+          >
             <template v-if="hasDescription">
               <DialogDescription as-child>
                 <p :class="computedDescriptionClass">

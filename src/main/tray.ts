@@ -1,10 +1,4 @@
-import {
-  Menu,
-  Tray,
-  app,
-  nativeImage,
-  type MenuItemConstructorOptions,
-} from 'electron';
+import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'electron';
 import { quitApplication } from './window';
 import { join } from 'path';
 import type { PlayMode } from '../shared/playback';
