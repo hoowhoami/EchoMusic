@@ -599,8 +599,9 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
           :showCover="true"
           :queueOptions="{
             queueId: `queue:explore:rank:${rankId ?? 'default'}`,
-            title: activeRank?.name || '排行榜',
-            subtitle: activeRank?.rankTypeName || '实时热门趋势',
+            title: ranks.find((r: RankMeta) => r.id === rankId)?.name || '排行榜',
+            subtitle:
+              ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
             type: 'ranking',
             dynamic: false,
           }"

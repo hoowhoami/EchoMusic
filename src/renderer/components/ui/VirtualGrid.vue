@@ -1,4 +1,4 @@
-<script setup lang="ts" generic="T extends Record<string, unknown>">
+<script setup lang="ts" generic="T extends Record<string, any>">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 interface Props {

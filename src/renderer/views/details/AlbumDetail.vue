@@ -704,7 +704,7 @@ const fetchFloorReplies = async (reset = false) => {
               :queueOptions="{
                 queueId: `queue:album:${album?.id ?? getAlbumId()}`,
                 title: album?.albumname || '专辑',
-                subtitle: album?.singer || '',
+                subtitle: album?.singerName || '',
                 type: 'album',
               }"
               :enableDefaultDoubleTapPlay="true"

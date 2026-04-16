@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
+
 import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
 import logger from '@/utils/logger';
@@ -169,9 +169,8 @@ onMounted(() => loadData());
 </script>
 
 <template>
-  <Scrollbar
-    class="profile-page h-full select-none bg-bg-main"
-    :content-props="{ class: 'profile-page-content' }"
+  <div
+    class="profile-page select-none bg-bg-main"
   >
     <template v-if="userStore.isLoggedIn && userInfo">
       <div class="px-8 py-5">
@@ -403,7 +402,7 @@ onMounted(() => loadData());
         >立即登录</Button
       >
     </div>
-  </Scrollbar>
+  </div>
 </template>
 
 <style scoped>

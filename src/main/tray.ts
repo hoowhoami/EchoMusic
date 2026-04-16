@@ -3,7 +3,6 @@ import {
   Tray,
   app,
   nativeImage,
-  nativeTheme,
   type MenuItemConstructorOptions,
 } from 'electron';
 import { quitApplication } from './window';
@@ -20,7 +19,6 @@ type TrayPlaybackState = Required<TrayPlaybackPayload>;
 
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;
-let currentTrayIconPath: string | null = null;
 let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
@@ -35,18 +33,11 @@ const playModeLabelMap: Record<PlayMode, string> = {
 };
 
 const resolveTrayIconPath = () => {
-  const isDarkTaskbar =
-    process.platform === 'win32'
-      ? (nativeTheme.shouldUseDarkColorsForSystemIntegratedUI ?? nativeTheme.shouldUseDarkColors)
-      : nativeTheme.shouldUseDarkColors;
-
   const iconName =
     process.platform === 'darwin'
       ? 'IconTemplate.png'
       : process.platform === 'win32'
-        ? isDarkTaskbar
-          ? 'win_tray_icon_dark.ico'
-          : 'win_tray_icon_light.ico'
+        ? 'win_tray_icon.ico'
         : 'linux_tray_icon.png';
 
   if (app.isPackaged) {
@@ -75,12 +66,6 @@ const createTrayImage = () => {
     console.error('[Tray] Failed to create tray image:', e);
     return nativeImage.createEmpty();
   }
-};
-
-const syncTrayImage = () => {
-  const iconPath = resolveTrayIconPath();
-  currentTrayIconPath = iconPath;
-  return createTrayImage();
 };
 
 const forwardCommandToRenderer = (command: TrayCommand) => {
@@ -158,7 +143,7 @@ export const createDockMenu = () => Menu.buildFromTemplate(createPlaybackMenuIte
 
 const rebuildTrayMenu = () => {
   if (appTray) {
-    appTray.setImage(syncTrayImage());
+    appTray.setImage(createTrayImage());
     appTray.setToolTip('EchoMusic');
     if (process.platform === 'linux') {
       appTray.setContextMenu(createTrayMenu());
@@ -170,16 +155,6 @@ const rebuildTrayMenu = () => {
   }
 };
 
-const handleWindowsThemeUpdated = () => {
-  const nextTrayIconPath = resolveTrayIconPath();
-  if (nextTrayIconPath === currentTrayIconPath) {
-    rebuildTrayMenu();
-    return;
-  }
-
-  refreshTray();
-};
-
 export const initTray = (context: TrayContext) => {
   trayContext = context;
   if (appTray) {
@@ -187,7 +162,7 @@ export const initTray = (context: TrayContext) => {
     return appTray;
   }
 
-  const trayImage = syncTrayImage();
+  const trayImage = createTrayImage();
   appTray = new Tray(trayImage);
   appTray.setToolTip('EchoMusic');
 
@@ -203,10 +178,6 @@ export const initTray = (context: TrayContext) => {
     });
   }
 
-  if (process.platform === 'win32') {
-    nativeTheme.on('updated', handleWindowsThemeUpdated);
-  }
-
   return appTray;
 };
 
@@ -219,13 +190,9 @@ export const refreshTray = () => {
 };
 
 export const destroyTray = () => {
-  if (process.platform === 'win32') {
-    nativeTheme.removeListener('updated', handleWindowsThemeUpdated);
-  }
   if (!appTray) return;
   appTray.destroy();
   appTray = null;
-  currentTrayIconPath = null;
 };
 
 export const updateTrayPlaybackState = (nextState: Partial<TrayPlaybackState>) => {

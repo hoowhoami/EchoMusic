@@ -14,6 +14,7 @@ import Cover from '@/components/ui/Cover.vue';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { getSongQualityTags } from '@/utils/song';
 import type { PersonalFmMode, PersonalFmSongPoolId } from '@/stores/playlist';
+import type { Song } from '@/models/song';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
