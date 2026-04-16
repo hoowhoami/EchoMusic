@@ -20,9 +20,11 @@ type TrayPlaybackState = Required<TrayPlaybackPayload>;
 
 let appTray: Tray | null = null;
 let trayContext: TrayContext | null = null;
+let currentTrayIconPath: string | null = null;
 let playbackState: TrayPlaybackState = {
   isPlaying: false,
   playMode: 'list',
+  volume: 0.8,
 };
 
 const playModeLabelMap: Record<PlayMode, string> = {
@@ -75,6 +77,12 @@ const createTrayImage = () => {
   }
 };
 
+const syncTrayImage = () => {
+  const iconPath = resolveTrayIconPath();
+  currentTrayIconPath = iconPath;
+  return createTrayImage();
+};
+
 const forwardCommandToRenderer = (command: TrayCommand) => {
   const mainWindow = trayContext?.getMainWindow();
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -111,6 +119,23 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
       click: () => setPlayModeFromTray(mode),
     })),
   },
+  { type: 'separator' },
+  {
+    label: `音量 ${Math.round(playbackState.volume * 100)}%`,
+    enabled: false,
+  },
+  {
+    label: '增大音量',
+    click: () => forwardCommandToRenderer('volumeUp'),
+  },
+  {
+    label: '减小音量',
+    click: () => forwardCommandToRenderer('volumeDown'),
+  },
+  {
+    label: '静音 / 取消静音',
+    click: () => forwardCommandToRenderer('toggleMute'),
+  },
 ];
 
 const createTrayMenu = () => {
@@ -133,7 +158,7 @@ export const createDockMenu = () => Menu.buildFromTemplate(createPlaybackMenuIte
 
 const rebuildTrayMenu = () => {
   if (appTray) {
-    appTray.setImage(createTrayImage());
+    appTray.setImage(syncTrayImage());
     appTray.setToolTip('EchoMusic');
     if (process.platform === 'linux') {
       appTray.setContextMenu(createTrayMenu());
@@ -145,6 +170,16 @@ const rebuildTrayMenu = () => {
   }
 };
 
+const handleWindowsThemeUpdated = () => {
+  const nextTrayIconPath = resolveTrayIconPath();
+  if (nextTrayIconPath === currentTrayIconPath) {
+    rebuildTrayMenu();
+    return;
+  }
+
+  refreshTray();
+};
+
 export const initTray = (context: TrayContext) => {
   trayContext = context;
   if (appTray) {
@@ -152,7 +187,7 @@ export const initTray = (context: TrayContext) => {
     return appTray;
   }
 
-  const trayImage = createTrayImage();
+  const trayImage = syncTrayImage();
   appTray = new Tray(trayImage);
   appTray.setToolTip('EchoMusic');
 
@@ -169,7 +204,7 @@ export const initTray = (context: TrayContext) => {
   }
 
   if (process.platform === 'win32') {
-    nativeTheme.on('updated', rebuildTrayMenu);
+    nativeTheme.on('updated', handleWindowsThemeUpdated);
   }
 
   return appTray;
@@ -185,11 +220,12 @@ export const refreshTray = () => {
 
 export const destroyTray = () => {
   if (process.platform === 'win32') {
-    nativeTheme.removeListener('updated', rebuildTrayMenu);
+    nativeTheme.removeListener('updated', handleWindowsThemeUpdated);
   }
   if (!appTray) return;
   appTray.destroy();
   appTray = null;
+  currentTrayIconPath = null;
 };
 
 export const updateTrayPlaybackState = (nextState: Partial<TrayPlaybackState>) => {

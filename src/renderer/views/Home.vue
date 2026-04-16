@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import { getPlaylistByCategory, getTopIP } from '@/api/playlist';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
+import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import { mapPlaylistMeta } from '@/utils/mappers';
 import { extractList } from '@/utils/extractors';
 import type { PlaylistMeta } from '@/models/playlist';
@@ -15,6 +16,14 @@ import UserAgreementDialog from '@/components/app/UserAgreementDialog.vue';
 interface RecommendSectionState {
   loading: boolean;
   error: string;
+}
+
+interface PlaylistCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  creator?: string;
+  songCount?: number;
 }
 
 const router = useRouter();
@@ -94,6 +103,24 @@ const openRanking = () => {
 const resolvePlaylistRouteId = (entry: PlaylistMeta) =>
   entry.listCreateGid || entry.globalCollectionId || entry.listCreateListid || entry.id;
 
+const getPlaylistCardProps = (entry: PlaylistMeta): PlaylistCardProps => {
+  return {
+    id: resolvePlaylistRouteId(entry),
+    name: entry.name,
+    coverUrl: entry.pic,
+    creator: entry.nickname,
+    songCount: entry.count,
+  };
+};
+
+const recommendedPlaylistCards = computed(() =>
+  recommendedPlaylists.value.map((entry) => getPlaylistCardProps(entry)),
+);
+
+const topIpPlaylistCards = computed(() =>
+  topIpPlaylists.value.map((entry) => getPlaylistCardProps(entry)),
+);
+
 onMounted(() => {
   showUserAgreement.value = !settingStore.userAgreementAccepted;
   if (userStore.isLoggedIn) {
@@ -150,18 +177,21 @@ const handleRejectAgreement = () => {
       <div v-else-if="recommendState.error" class="section-placeholder">
         {{ recommendState.error }}
       </div>
-      <div v-else class="playlist-grid">
-        <PlaylistCard
-          v-for="entry in recommendedPlaylists"
-          :key="String(entry.id)"
-          :id="resolvePlaylistRouteId(entry)"
-          :name="entry.name"
-          :coverUrl="entry.pic"
-          :creator="entry.nickname"
-          :songCount="entry.count"
-          layout="grid"
-        />
-      </div>
+      <VirtualGrid
+        v-else
+        class="playlist-grid"
+        :items="recommendedPlaylistCards"
+        :itemMinWidth="180"
+        :itemAspectRatio="1"
+        :itemChromeHeight="66"
+        :gap="20"
+        :overscan="3"
+        keyField="id"
+      >
+        <template #default="{ item }">
+          <PlaylistCard v-bind="item" layout="grid" />
+        </template>
+      </VirtualGrid>
     </section>
 
     <section class="home-section">
@@ -170,18 +200,21 @@ const handleRejectAgreement = () => {
       </div>
       <div v-if="topIpState.loading" class="section-placeholder">加载中...</div>
       <div v-else-if="topIpState.error" class="section-placeholder">{{ topIpState.error }}</div>
-      <div v-else class="playlist-grid">
-        <PlaylistCard
-          v-for="entry in topIpPlaylists"
-          :key="`ip-${String(entry.id)}`"
-          :id="resolvePlaylistRouteId(entry)"
-          :name="entry.name"
-          :coverUrl="entry.pic"
-          :creator="entry.nickname"
-          :songCount="entry.count"
-          layout="grid"
-        />
-      </div>
+      <VirtualGrid
+        v-else
+        class="playlist-grid"
+        :items="topIpPlaylistCards"
+        :itemMinWidth="180"
+        :itemAspectRatio="1"
+        :itemChromeHeight="66"
+        :gap="20"
+        :overscan="3"
+        keyField="id"
+      >
+        <template #default="{ item }">
+          <PlaylistCard v-bind="item" layout="grid" />
+        </template>
+      </VirtualGrid>
     </section>
   </div>
 
@@ -307,12 +340,6 @@ const handleRejectAgreement = () => {
   justify-content: center;
   font-size: 12px;
   color: color-mix(in srgb, var(--color-text-main) 60%, transparent);
-}
-
-.playlist-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
 @keyframes fade-in {

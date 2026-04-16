@@ -17,6 +17,7 @@ import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
 import TabsContent from '@/components/ui/TabsContent.vue';
+import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
@@ -39,6 +40,14 @@ import {
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
+
+interface ArtistAlbumCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  artist?: string;
+  publishTime?: string;
+}
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -303,6 +312,18 @@ const openBatchDrawer = () => {
 };
 const handleLocate = () => songListRef.value?.scrollToActive?.();
 
+const getAlbumCardProps = (album: ReturnType<typeof mapAlbumMeta>): ArtistAlbumCardProps => {
+  return {
+    id: album.id,
+    name: album.name,
+    coverUrl: album.pic,
+    artist: album.singerName,
+    publishTime: album.publishTime,
+  };
+};
+
+const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(entry)));
+
 onMounted(() => {
   void fetchData();
 });
@@ -462,25 +483,21 @@ onMounted(() => {
           </TabsContent>
 
           <TabsContent value="albums" class="mt-4 px-6">
-            <div
-              v-if="loadingAlbums && albums.length === 0"
-              class="flex items-center justify-center py-20"
+            <VirtualGrid
+              class="px-2"
+              :items="albumCards"
+              :loading="loadingAlbums && albums.length === 0"
+              :active="activeTab === 'albums'"
+              :itemMinWidth="180"
+              :itemHeight="230"
+              :gap="20"
+              :overscan="3"
+              keyField="id"
             >
-              <div
-                class="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"
-              ></div>
-            </div>
-            <div v-else class="artist-album-grid px-2">
-              <AlbumCard
-                v-for="albumItem in albums"
-                :key="albumItem.id"
-                :id="albumItem.id"
-                :name="albumItem.name"
-                :coverUrl="albumItem.pic"
-                :artist="albumItem.singerName"
-                :publishTime="albumItem.publishTime"
-              />
-            </div>
+              <template #default="{ item }">
+                <AlbumCard v-bind="item" />
+              </template>
+            </VirtualGrid>
           </TabsContent>
         </div>
       </Tabs>
@@ -512,19 +529,5 @@ onMounted(() => {
 
 :deep(.song-list) {
   @apply px-0;
-}
-.artist-album-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-
-.artist-album-grid :deep(.card-container) {
-  height: 230px;
-}
-
-.artist-album-grid :deep(.cover-wrapper) {
-  height: 170px;
-  aspect-ratio: auto;
 }
 </style>

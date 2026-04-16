@@ -34,6 +34,7 @@ const syncTrayPlayback = () => {
   window.electron?.tray?.syncPlayback({
     isPlaying: player.isPlaying,
     playMode: player.playMode,
+    volume: player.volume,
   });
 };
 
@@ -123,6 +124,12 @@ watch(
 );
 watch(
   () => player.playMode,
+  () => {
+    syncTrayPlayback();
+  },
+);
+watch(
+  () => player.volume,
   () => {
     syncTrayPlayback();
   },

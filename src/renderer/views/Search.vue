@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { getSearchHot, getSearchSuggest, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
@@ -24,6 +24,7 @@ import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import {
   iconChevronRight,
   iconClock,
@@ -34,6 +35,7 @@ import {
   iconX,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import Badge from '@/components/ui/Badge.vue';
 
 interface SearchHotKeyword {
   keyword: string;
@@ -54,12 +56,46 @@ interface SearchSuggestionCategory {
   records: SearchSuggestionRecord[];
 }
 
+interface SearchPaginationState {
+  page: number;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loading: boolean;
+  loaded: boolean;
+  total: number | null;
+}
+
+interface SearchPlaylistCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  creator?: string;
+  songCount?: number;
+}
+
+interface SearchAlbumCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  artist?: string;
+  subtitle?: string;
+}
+
+interface SearchArtistCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  songCount?: number;
+  albumCount?: number;
+}
+
 const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const route = useRoute();
 
 const searchInput = ref('');
+const currentSearchKeyword = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const isLoading = ref(false);
 const isLoadingHot = ref(true);
@@ -78,6 +114,26 @@ const songResults = ref<Song[]>([]);
 const playlistResults = ref<PlaylistMeta[]>([]);
 const albumResults = ref<AlbumMeta[]>([]);
 const artistResults = ref<ArtistMeta[]>([]);
+
+const SEARCH_PAGE_SIZE = 30;
+const SEARCH_LOAD_MORE_THRESHOLD = 240;
+const TAB_SEARCH_TYPES = ['song', 'special', 'album', 'author'] as const;
+
+const createSearchPaginationState = (): SearchPaginationState => ({
+  page: 1,
+  hasMore: false,
+  loadingMore: false,
+  loading: false,
+  loaded: false,
+  total: null,
+});
+
+const paginationState = reactive<Record<(typeof TAB_SEARCH_TYPES)[number], SearchPaginationState>>({
+  song: createSearchPaginationState(),
+  special: createSearchPaginationState(),
+  album: createSearchPaginationState(),
+  author: createSearchPaginationState(),
+});
 
 const songSearchQuery = ref('');
 const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -98,6 +154,9 @@ const searchHistory = computed(() => settingStore.searchHistory ?? []);
 const currentHotKeywords = computed(
   () => hotSearchCategories.value[selectedHotCategoryIndex.value]?.keywords ?? [],
 );
+const activeSearchType = computed(() => TAB_SEARCH_TYPES[activeTabIndex.value] ?? 'song');
+const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim() || '歌曲搜索');
+const activePagination = computed(() => paginationState[activeSearchType.value]);
 
 const sortedSongResults = computed(() => {
   const base = songResults.value.slice();
@@ -156,6 +215,33 @@ const extractSearchLists = (payload: unknown): unknown[] => {
   const data = toRecord(record?.data);
   const lists = data?.lists ?? data?.list ?? record?.lists ?? record?.list;
   return Array.isArray(lists) ? lists : [];
+};
+
+const extractSearchTotal = (payload: unknown): number | null => {
+  const record = toRecord(payload);
+  const data = toRecord(record?.data);
+  const candidates = [
+    data?.total,
+    data?.totalCount,
+    data?.count,
+    data?.counts,
+    record?.total,
+    record?.totalCount,
+    record?.count,
+    record?.counts,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+
+  return null;
 };
 
 // const extractSearchDefaultKeyword = (payload: unknown): string => {
@@ -228,6 +314,13 @@ const extractSuggestionCategories = (payload: unknown): SearchSuggestionCategory
 const handleScroll = () => {
   const scrollTop = scrollTarget?.scrollTop ?? 0;
   showPinnedTabs.value = hasSearched.value && activeTabIndex.value !== 0 && scrollTop > 80;
+  if (!scrollTarget || isLoading.value || !hasSearched.value) return;
+  if (!activePagination.value.loaded || activePagination.value.loading) return;
+  const distanceToBottom =
+    scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight;
+  if (distanceToBottom < SEARCH_LOAD_MORE_THRESHOLD) {
+    void loadMoreActiveResults();
+  }
 };
 
 const attachScrollTarget = async () => {
@@ -344,9 +437,9 @@ const handleSongSort = (field: SortField) => {
 const playSearchSongs = async () => {
   if (songResults.value.length === 0) return;
   await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, undefined, {
-    queueId: `queue:search:${searchInput.value.trim() || 'default'}`,
+    queueId: `queue:search:${currentSearchKeyword.value.trim() || 'default'}`,
     title: '搜索结果',
-    subtitle: searchInput.value.trim() || '歌曲搜索',
+    subtitle: currentSearchSubtitle.value,
     type: 'search',
     dynamic: false,
   });
@@ -354,9 +447,9 @@ const playSearchSongs = async () => {
 
 const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, song, {
-    queueId: `queue:search:${searchInput.value.trim() || 'default'}`,
+    queueId: `queue:search:${currentSearchKeyword.value.trim() || 'default'}`,
     title: '搜索结果',
-    subtitle: searchInput.value.trim() || '歌曲搜索',
+    subtitle: currentSearchSubtitle.value,
     type: 'search',
     dynamic: false,
   });
@@ -368,6 +461,156 @@ const openSongBatchDrawer = () => {
 };
 
 const handleSongLocate = () => songListRef.value?.scrollToActive?.();
+
+const resetPaginationState = () => {
+  TAB_SEARCH_TYPES.forEach((type) => {
+    paginationState[type].page = 1;
+    paginationState[type].hasMore = false;
+    paginationState[type].loadingMore = false;
+    paginationState[type].loading = false;
+    paginationState[type].loaded = false;
+    paginationState[type].total = null;
+  });
+};
+
+const applyPaginationState = (
+  type: (typeof TAB_SEARCH_TYPES)[number],
+  page: number,
+  listLength: number,
+  total: number | null,
+) => {
+  paginationState[type].page = page;
+  paginationState[type].total = total;
+  paginationState[type].loaded = true;
+  paginationState[type].hasMore =
+    total !== null ? page * SEARCH_PAGE_SIZE < total : listLength >= SEARCH_PAGE_SIZE;
+};
+
+const fetchSearchPage = async (
+  keywords: string,
+  type: (typeof TAB_SEARCH_TYPES)[number],
+  page = 1,
+) => {
+  const response = await search(keywords, type, page, SEARCH_PAGE_SIZE);
+  const lists = extractSearchLists(response);
+  const total = extractSearchTotal(response);
+  return { lists, total };
+};
+
+let latestSearchToken = 0;
+
+const clearSearchResults = () => {
+  songResults.value = [];
+  playlistResults.value = [];
+  albumResults.value = [];
+  artistResults.value = [];
+};
+
+const replaceResultsByType = (type: (typeof TAB_SEARCH_TYPES)[number], lists: unknown[]) => {
+  if (type === 'song') {
+    songResults.value = lists.map((item) => mapSearchSong(item));
+    return;
+  }
+  if (type === 'special') {
+    playlistResults.value = lists.map((item) => mapPlaylistMeta(item));
+    return;
+  }
+  if (type === 'album') {
+    albumResults.value = lists.map((item) => mapAlbumMeta(item));
+    return;
+  }
+  artistResults.value = lists.map((item) => mapArtistMeta(item));
+};
+
+const appendResultsByType = (type: (typeof TAB_SEARCH_TYPES)[number], lists: unknown[]) => {
+  if (type === 'song') {
+    songResults.value = songResults.value.concat(lists.map((item) => mapSearchSong(item)));
+    return;
+  }
+  if (type === 'special') {
+    playlistResults.value = playlistResults.value.concat(
+      lists.map((item) => mapPlaylistMeta(item)),
+    );
+    return;
+  }
+  if (type === 'album') {
+    albumResults.value = albumResults.value.concat(lists.map((item) => mapAlbumMeta(item)));
+    return;
+  }
+  artistResults.value = artistResults.value.concat(lists.map((item) => mapArtistMeta(item)));
+};
+
+const loadSearchResults = async (
+  type: (typeof TAB_SEARCH_TYPES)[number],
+  options?: {
+    token?: number;
+    keywords?: string;
+    useGlobalLoading?: boolean;
+  },
+) => {
+  const state = paginationState[type];
+  const token = options?.token ?? latestSearchToken;
+  const keywords = (options?.keywords ?? currentSearchKeyword.value).trim();
+
+  if (!keywords || state.loading) return;
+
+  state.loading = true;
+  if (options?.useGlobalLoading) {
+    isLoading.value = true;
+  }
+
+  try {
+    const { lists, total } = await fetchSearchPage(keywords, type, 1);
+    if (token !== latestSearchToken) return;
+
+    replaceResultsByType(type, lists);
+    applyPaginationState(type, 1, lists.length, total);
+  } catch {
+    if (token !== latestSearchToken) return;
+    replaceResultsByType(type, []);
+    state.page = 1;
+    state.total = null;
+    state.hasMore = false;
+    state.loaded = true;
+  } finally {
+    if (token === latestSearchToken) {
+      state.loading = false;
+      if (options?.useGlobalLoading) {
+        isLoading.value = false;
+      }
+      await nextTick();
+      handleScroll();
+    }
+  }
+};
+
+const loadMoreActiveResults = async () => {
+  const type = activeSearchType.value;
+  const keywords = currentSearchKeyword.value.trim();
+  const state = paginationState[type];
+
+  if (!keywords || !state.loaded || state.loading || !state.hasMore || state.loadingMore) return;
+
+  state.loadingMore = true;
+  const token = latestSearchToken;
+  const nextPage = state.page + 1;
+
+  try {
+    const { lists, total } = await fetchSearchPage(keywords, type, nextPage);
+    if (token !== latestSearchToken) return;
+
+    appendResultsByType(type, lists);
+    applyPaginationState(type, nextPage, lists.length, total);
+  } catch {
+    paginationState[type].hasMore = false;
+  } finally {
+    if (token === latestSearchToken) {
+      paginationState[type].loadingMore = false;
+      await nextTick();
+      handleScroll();
+    }
+  }
+};
 
 const runSearch = async (keyword?: string) => {
   const keywords = (keyword ?? searchInput.value).trim();
@@ -382,45 +625,83 @@ const runSearch = async (keyword?: string) => {
     searchInput.value = keyword;
   }
 
+  currentSearchKeyword.value = keywords;
+  latestSearchToken += 1;
+  const searchToken = latestSearchToken;
   isLoading.value = true;
   hasSearched.value = true;
   showSuggestions.value = false;
   songSortField.value = null;
   songSortOrder.value = null;
   songSearchQuery.value = '';
+  clearSearchResults();
+  resetPaginationState();
   searchInputRef.value?.blur();
   settingStore.addToSearchHistory(keywords);
 
   try {
-    const [songRes, albumRes, artistRes, playlistRes] = await Promise.all([
-      search(keywords, 'song'),
-      search(keywords, 'album'),
-      search(keywords, 'author'),
-      search(keywords, 'special'),
-    ]);
-
-    songResults.value = extractSearchLists(songRes).map((item) => mapSearchSong(item));
-    albumResults.value = extractSearchLists(albumRes).map((item) => mapAlbumMeta(item));
-    artistResults.value = extractSearchLists(artistRes).map((item) => mapArtistMeta(item));
-    playlistResults.value = extractSearchLists(playlistRes).map((item) => mapPlaylistMeta(item));
+    await loadSearchResults(activeSearchType.value, {
+      token: searchToken,
+      keywords,
+      useGlobalLoading: true,
+    });
   } catch {
-    songResults.value = [];
-    albumResults.value = [];
-    artistResults.value = [];
-    playlistResults.value = [];
+    clearSearchResults();
+    resetPaginationState();
   } finally {
-    isLoading.value = false;
-    window.setTimeout(() => {
-      isIgnoringChanges.value = false;
-    }, 100);
-    await nextTick();
-    handleScroll();
+    if (searchToken === latestSearchToken) {
+      window.setTimeout(() => {
+        if (searchToken === latestSearchToken) {
+          isIgnoringChanges.value = false;
+        }
+      }, 100);
+      await nextTick();
+      handleScroll();
+    }
   }
 };
 
 const resolvePlaylistRouteId = (entry: PlaylistMeta) => {
   return entry.listCreateGid || entry.globalCollectionId || entry.listCreateListid || entry.id;
 };
+
+const getPlaylistCardProps = (entry: PlaylistMeta): SearchPlaylistCardProps => {
+  return {
+    id: resolvePlaylistRouteId(entry),
+    name: entry.name,
+    coverUrl: entry.pic,
+    creator: entry.nickname,
+    songCount: entry.count,
+  };
+};
+
+const getAlbumCardProps = (album: AlbumMeta): SearchAlbumCardProps => {
+  return {
+    id: album.id,
+    name: album.name,
+    coverUrl: album.pic,
+    artist: album.singerName,
+    subtitle: [album.singerName, album.songCount ? `${album.songCount} 首歌曲` : '']
+      .filter(Boolean)
+      .join(' • '),
+  };
+};
+
+const getArtistCardProps = (artist: ArtistMeta): SearchArtistCardProps => {
+  return {
+    id: artist.id,
+    name: artist.name,
+    coverUrl: artist.pic,
+    songCount: artist.songCount,
+    albumCount: artist.albumCount,
+  };
+};
+
+const playlistCards = computed(() =>
+  playlistResults.value.map((entry) => getPlaylistCardProps(entry)),
+);
+const albumCards = computed(() => albumResults.value.map((entry) => getAlbumCardProps(entry)));
+const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
 
 onMounted(async () => {
   await loadHotSearches();
@@ -436,7 +717,15 @@ onMounted(async () => {
 watch(
   () => activeTabIndex.value,
   () => {
-    handleScroll();
+    nextTick(() => {
+      handleScroll();
+    });
+    if (!hasSearched.value) return;
+    const type = activeSearchType.value;
+    const state = paginationState[type];
+    if (!state.loaded && !state.loading) {
+      void loadSearchResults(type);
+    }
   },
 );
 
@@ -663,8 +952,7 @@ onUnmounted(() => {
           <div class="border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <div class="rank-song-tab">
-                <span class="rank-song-label">歌曲</span>
-                <span class="rank-song-badge">{{ songCountLabel }}</span>
+                <span class="rank-song-label relative">歌曲 <Badge :count="songCountLabel" /></span>
               </div>
               <div class="flex items-center gap-2">
                 <div class="relative">
@@ -712,9 +1000,9 @@ onUnmounted(() => {
             :activeId="activeSongId"
             :showCover="true"
             :queueOptions="{
-              queueId: `queue:search:${searchInput.trim() || 'default'}`,
+              queueId: `queue:search:${currentSearchKeyword.trim() || 'default'}`,
               title: '搜索结果',
-              subtitle: searchInput.trim() || '歌曲搜索',
+              subtitle: currentSearchSubtitle,
               type: 'search',
               dynamic: false,
             }"
@@ -724,65 +1012,116 @@ onUnmounted(() => {
             "
             rowPaddingClass="px-0"
           />
-        </div>
-      </div>
-
-      <div v-else-if="activeTabIndex === 1">
-        <div v-if="playlistResults.length === 0" class="search-empty-wrap">
-          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
-          <div class="search-empty-text">暂无搜索结果</div>
-        </div>
-        <div v-else class="search-grid pb-6">
-          <div v-for="entry in playlistResults" :key="String(entry.id)">
-            <PlaylistCard
-              :id="resolvePlaylistRouteId(entry)"
-              :name="entry.name"
-              :coverUrl="entry.pic"
-              :creator="entry.nickname"
-              :songCount="entry.count"
-              layout="grid"
-            />
+          <div
+            v-if="activePagination.loadingMore || activePagination.hasMore"
+            class="search-load-more-status"
+          >
+            {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+          </div>
+          <div
+            v-else-if="songResults.length > 0"
+            class="search-load-more-status search-load-more-status--end"
+          >
+            没有更多结果了
           </div>
         </div>
       </div>
 
-      <div v-else-if="activeTabIndex === 2">
-        <div v-if="albumResults.length === 0" class="search-empty-wrap">
-          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
-          <div class="search-empty-text">暂无搜索结果</div>
+      <div v-else-if="activeTabIndex === 1">
+        <VirtualGrid
+          class="pb-6"
+          :items="playlistCards"
+          :loading="paginationState.special.loading && !paginationState.special.loaded"
+          :active="activeTabIndex === 1"
+          :itemMinWidth="180"
+          :itemAspectRatio="1"
+          :itemChromeHeight="66"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="320"
+          emptyText="暂无搜索结果"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <PlaylistCard v-bind="item" layout="grid" />
+          </template>
+        </VirtualGrid>
+        <div
+          v-if="activePagination.loadingMore || activePagination.hasMore"
+          class="search-load-more-status"
+        >
+          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
         </div>
-        <div v-else class="search-grid pb-6">
-          <AlbumCard
-            v-for="album in albumResults"
-            :key="String(album.id)"
-            :id="album.id"
-            :name="album.name"
-            :coverUrl="album.pic"
-            :artist="album.singerName"
-            :subtitle="
-              [album.singerName, album.songCount ? `${album.songCount} 首歌曲` : '']
-                .filter(Boolean)
-                .join(' • ')
-            "
-          />
+        <div
+          v-else-if="playlistResults.length > 0"
+          class="search-load-more-status search-load-more-status--end"
+        >
+          没有更多结果了
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 2">
+        <VirtualGrid
+          class="pb-6"
+          :items="albumCards"
+          :loading="paginationState.album.loading && !paginationState.album.loaded"
+          :active="activeTabIndex === 2"
+          :itemMinWidth="180"
+          :itemAspectRatio="1"
+          :itemChromeHeight="66"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="320"
+          emptyText="暂无搜索结果"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <AlbumCard v-bind="item" />
+          </template>
+        </VirtualGrid>
+        <div
+          v-if="activePagination.loadingMore || activePagination.hasMore"
+          class="search-load-more-status"
+        >
+          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+        </div>
+        <div
+          v-else-if="albumResults.length > 0"
+          class="search-load-more-status search-load-more-status--end"
+        >
+          没有更多结果了
         </div>
       </div>
 
       <div v-else>
-        <div v-if="artistResults.length === 0" class="search-empty-wrap">
-          <Icon :icon="iconSearch" width="64" height="64" class="search-empty-icon" />
-          <div class="search-empty-text">暂无搜索结果</div>
+        <VirtualGrid
+          class="pb-6"
+          :items="artistCards"
+          :loading="paginationState.author.loading && !paginationState.author.loaded"
+          :active="activeTabIndex === 3"
+          :itemMinWidth="180"
+          :itemHeight="218"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="320"
+          emptyText="暂无搜索结果"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <ArtistCard v-bind="item" />
+          </template>
+        </VirtualGrid>
+        <div
+          v-if="activePagination.loadingMore || activePagination.hasMore"
+          class="search-load-more-status"
+        >
+          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
         </div>
-        <div v-else class="search-grid pb-6">
-          <ArtistCard
-            v-for="artist in artistResults"
-            :key="String(artist.id)"
-            :id="artist.id"
-            :name="artist.name"
-            :coverUrl="artist.pic"
-            :songCount="artist.songCount"
-            :albumCount="artist.albumCount"
-          />
+        <div
+          v-else-if="artistResults.length > 0"
+          class="search-load-more-status search-load-more-status--end"
+        >
+          没有更多结果了
         </div>
       </div>
     </div>
@@ -1104,8 +1443,7 @@ onUnmounted(() => {
 }
 
 .search-loading-wrap,
-.search-placeholder,
-.search-empty-wrap {
+.search-placeholder {
   min-height: 320px;
   display: flex;
   align-items: center;
@@ -1114,21 +1452,10 @@ onUnmounted(() => {
   gap: 16px;
 }
 
-.search-empty-icon {
-  color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-}
-
-.search-empty-text,
 .search-placeholder {
   font-size: 14px;
   font-weight: 500;
   color: color-mix(in srgb, var(--color-text-main) 45%, transparent);
-}
-
-.search-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 }
 
 .search-song-list {
@@ -1181,6 +1508,18 @@ onUnmounted(() => {
   justify-content: flex-end;
 }
 
+.search-load-more-status {
+  padding: 8px 0 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-text-main) 48%, transparent);
+}
+
+.search-load-more-status--end {
+  color: color-mix(in srgb, var(--color-text-main) 38%, transparent);
+}
+
 .rank-song-tab {
   position: relative;
   display: inline-flex;
@@ -1205,18 +1544,5 @@ onUnmounted(() => {
   height: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 70%, transparent);
-}
-
-.rank-song-badge {
-  margin-left: -4px;
-  transform: translateY(-8px);
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #ffffff;
-  background: var(--color-primary);
-  border: 1.5px solid var(--color-bg-main);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 </style>

@@ -19,6 +19,7 @@ import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue
 import { iconPlay, iconList, iconChevronDown, iconCurrentLocation, iconSearch } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
+import Badge from '@/components/ui/Badge.vue';
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
@@ -337,9 +338,8 @@ watch(
       <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: '56px' }">
         <div class="px-6 border-b border-border-light/10">
           <div class="flex items-center justify-between h-14">
-            <div class="text-[14px] font-semibold text-text-main">
-              榜单歌曲
-              <span class="ml-1 text-[12px] text-text-secondary/70">{{ songs.length }}</span>
+            <div class="text-[14px] font-semibold text-text-main relative">
+              榜单歌曲 <Badge :count="songs.length" />
             </div>
             <div class="flex items-center gap-2">
               <div class="relative">

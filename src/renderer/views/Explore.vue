@@ -29,15 +29,33 @@ import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import Badge from '@/components/ui/Badge.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import CustomSelector from '@/components/ui/CustomSelector.vue';
 import CustomPicker, { type PickerOption } from '@/components/ui/CustomPicker.vue';
+import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import { getAlbumTop } from '@/api/music';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
+
+interface ExplorePlaylistCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  creator?: string;
+  songCount?: number;
+}
+
+interface ExploreAlbumCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  artist?: string;
+  publishTime?: string;
+}
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -158,8 +176,6 @@ const albums = computed<AlbumMeta[]>(() => {
   }
   return rawList.map((item) => mapAlbumMeta(item));
 });
-
-const hasAlbums = computed(() => albums.value.length > 0);
 
 const rankFilteredCount = computed(() => {
   const query = rankSearchQuery.value.trim().toLowerCase();
@@ -444,6 +460,32 @@ const handleSelectAlbumType = (option: PickerOption) => {
   albumTypeLabel.value = option.name;
   showAlbumPicker.value = false;
 };
+
+const getPlaylistCardProps = (entry: PlaylistMeta): ExplorePlaylistCardProps => {
+  return {
+    id: entry.listCreateGid || entry.globalCollectionId || entry.listCreateListid || entry.id,
+    name: entry.name,
+    coverUrl: entry.pic,
+    creator: entry.nickname,
+    songCount: entry.count,
+  };
+};
+
+const getAlbumCardProps = (album: AlbumMeta): ExploreAlbumCardProps => {
+  return {
+    id: album.id,
+    name: album.name,
+    coverUrl: album.pic,
+    artist: album.singerName,
+    publishTime: album.publishTime,
+  };
+};
+
+const recommendedPlaylistCards = computed(() =>
+  recommendedPlaylists.value.map((entry) => getPlaylistCardProps(entry)),
+);
+
+const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(entry)));
 </script>
 
 <template>
@@ -462,32 +504,22 @@ const handleSelectAlbumType = (option: PickerOption) => {
       <div class="explore-toolbar">
         <CustomSelector :label="playlistCategoryLabel" @click="showPlaylistPicker = true" />
       </div>
-      <div
-        v-if="loadingPlaylists"
-        class="h-[220px] flex items-center justify-center text-[12px] text-text-secondary/70"
+      <VirtualGrid
+        class="mt-1"
+        :items="recommendedPlaylistCards"
+        :loading="loadingPlaylists"
+        :active="activeTabIndex === 0"
+        :itemMinWidth="180"
+        :itemHeight="230"
+        :gap="20"
+        :overscan="3"
+        :stateMinHeight="220"
+        keyField="id"
       >
-        加载中...
-      </div>
-      <div v-else class="playlist-grid mt-1">
-        <div
-          v-for="entry in recommendedPlaylists"
-          :key="String(entry.id)"
-          class="playlist-grid-item"
-        >
-          <PlaylistCard
-            :id="
-              entry.listCreateGid || entry.globalCollectionId || entry.listCreateListid || entry.id
-            "
-            :name="entry.name"
-            :coverUrl="entry.pic"
-            :creator="entry.nickname"
-            :songCount="entry.count"
-            :coverRadius="14"
-            :showShadow="true"
-            layout="grid"
-          />
-        </div>
-      </div>
+        <template #default="{ item }">
+          <PlaylistCard v-bind="item" :coverRadius="14" :showShadow="true" layout="grid" />
+        </template>
+      </VirtualGrid>
     </div>
 
     <div v-else-if="activeTabIndex === 1" class="mt-0">
@@ -511,8 +543,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
         <div class="border-b border-border-light/10">
           <div class="flex items-center justify-between h-14">
             <div class="rank-song-tab">
-              <span class="rank-song-label">歌曲</span>
-              <span class="rank-song-badge">{{ rankSongCountLabel }}</span>
+              <span class="rank-song-label relative"
+                >歌曲 <Badge :count="rankSongCountLabel"
+              /></span>
             </div>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -584,29 +617,22 @@ const handleSelectAlbumType = (option: PickerOption) => {
       <div class="explore-toolbar">
         <CustomSelector :label="albumTypeLabel" @click="showAlbumPicker = true" />
       </div>
-      <div
-        v-if="loadingAlbums"
-        class="h-[230px] flex items-center justify-center text-[12px] text-text-secondary/70"
+      <VirtualGrid
+        :items="albumCards"
+        :loading="loadingAlbums"
+        :active="activeTabIndex === 2"
+        :itemMinWidth="180"
+        :itemHeight="230"
+        :gap="20"
+        :overscan="3"
+        :stateMinHeight="230"
+        emptyText="暂无专辑"
+        keyField="id"
       >
-        加载中...
-      </div>
-      <div
-        v-else-if="!hasAlbums"
-        class="h-[230px] flex items-center justify-center text-[12px] text-text-secondary/70"
-      >
-        暂无专辑
-      </div>
-      <div v-else class="album-grid">
-        <AlbumCard
-          v-for="album in albums"
-          :key="String(album.id)"
-          :id="album.id"
-          :name="album.name"
-          :coverUrl="album.pic"
-          :artist="album.singerName"
-          :publishTime="album.publishTime"
-        />
-      </div>
+        <template #default="{ item }">
+          <AlbumCard v-bind="item" />
+        </template>
+      </VirtualGrid>
     </div>
 
     <div v-else class="mt-0">
@@ -641,8 +667,9 @@ const handleSelectAlbumType = (option: PickerOption) => {
         <div class="border-b border-border-light/10">
           <div class="flex items-center justify-between h-14">
             <div class="rank-song-tab">
-              <span class="rank-song-label">歌曲</span>
-              <span class="rank-song-badge">{{ newSongCountLabel }}</span>
+              <span class="rank-song-label relative"
+                >歌曲 <Badge :count="newSongCountLabel"
+              /></span>
             </div>
             <div class="flex items-center gap-2">
               <div class="relative">
@@ -756,21 +783,6 @@ const handleSelectAlbumType = (option: PickerOption) => {
   padding: 0 0 6px 0;
 }
 
-.playlist-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-
-.playlist-grid-item :deep(.card-container) {
-  height: 230px;
-}
-
-.playlist-grid-item :deep(.cover-wrapper) {
-  height: 170px;
-  aspect-ratio: auto;
-}
-
 .rank-toolbar {
   top: var(--explore-header-height);
 }
@@ -864,33 +876,5 @@ const handleSelectAlbumType = (option: PickerOption) => {
   height: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 70%, transparent);
-}
-
-.rank-song-badge {
-  margin-left: -4px;
-  transform: translateY(-8px);
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #ffffff;
-  background: var(--color-primary);
-  border: 1.5px solid var(--color-bg-main);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-}
-
-.album-grid {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-}
-
-.album-grid :deep(.card-container) {
-  height: 230px;
-}
-
-.album-grid :deep(.cover-wrapper) {
-  height: 170px;
-  aspect-ratio: auto;
 }
 </style>

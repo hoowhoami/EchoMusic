@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, useAttrs, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
@@ -26,8 +26,13 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 
+defineOptions({
+  inheritAttrs: false,
+});
+
 const router = useRouter();
 const route = useRoute();
+const attrs = useAttrs();
 const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
 const toastStore = useToastStore();
@@ -418,6 +423,7 @@ watch(
 
 <template>
   <aside
+    v-bind="attrs"
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative"
   >
     <div :class="['drag w-full shrink-0', isMac ? 'h-16' : 'h-12']"></div>

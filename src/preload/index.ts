@@ -73,7 +73,7 @@ contextBridge.exposeInMainWorld('electron', {
     stop: () => ipcRenderer.send('api-server:stop'),
   },
   tray: {
-    syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode }) =>
+    syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>
       ipcRenderer.send('tray:sync-playback', payload),
     onSetPlayMode: (func: (playMode: PlayMode) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, playMode: PlayMode) => func(playMode);

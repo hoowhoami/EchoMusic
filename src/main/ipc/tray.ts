@@ -8,6 +8,7 @@ export const registerTrayHandlers = () => {
     updateTrayPlaybackState({
       ...(typeof payload.isPlaying === 'boolean' ? { isPlaying: payload.isPlaying } : {}),
       ...(payload.playMode ? { playMode: payload.playMode } : {}),
+      ...(typeof payload.volume === 'number' ? { volume: payload.volume } : {}),
     });
   });
 };
