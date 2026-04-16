@@ -1041,6 +1041,9 @@ onActivated(() => {
   font-size: 13px;
   line-height: 1.6;
   color: color-mix(in srgb, var(--color-text-main) 58%, transparent);
+  min-height: 180px;
+  display: flex;
+  align-items: center;
 }
 
 @keyframes radio-vinyl-spin {
