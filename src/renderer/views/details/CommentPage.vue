@@ -78,8 +78,8 @@ const headerTitle = computed(() => resourceTitle.value || title.value);
 
 const mainTab = ref<'detail' | 'comment'>('detail');
 
-const activeCommentTab = ref('hot');
-const commentTabValues = ['hot', 'all', 'classify', 'hotword'] as const;
+const activeCommentTab = ref('all');
+const commentTabValues = ['all', 'classify', 'hotword'] as const;
 const activeCommentTabIndex = computed({
   get: () =>
     Math.max(
@@ -87,7 +87,7 @@ const activeCommentTabIndex = computed({
       commentTabValues.indexOf(activeCommentTab.value as (typeof commentTabValues)[number]),
     ),
   set: (value: number) => {
-    handleCommentTabChange(commentTabValues[value] ?? 'hot');
+    handleCommentTabChange(commentTabValues[value] ?? 'all');
   },
 });
 
@@ -836,6 +836,8 @@ watch(total, (value) => {
               <span class="comment-song-meta-label">专辑</span>
               <span class="comment-song-meta-value">{{ songAlbum || '单曲' }}</span>
             </Button>
+          </div>
+          <div v-if="isMusicType" class="comment-song-meta-row">
             <div class="comment-song-meta">
               <span class="comment-song-meta-label">语言</span>
               <span class="comment-song-meta-value">{{ songLanguage }}</span>
@@ -908,36 +910,22 @@ watch(total, (value) => {
                 <CustomTabBar
                   v-model="activeCommentTabIndex"
                   class="comment-sub-tabbar"
-                  :tabs="['精彩评论', '全部评论', '分类评论', '热词评论']"
+                  :tabs="['全部评论', '分类评论', '热词评论']"
                 />
               </div>
 
-              <template v-if="activeCommentTab === 'hot'">
+              <template v-if="activeCommentTab === 'all'">
                 <div class="comment-list-wrap">
                   <div v-if="singerComments.length" class="comment-section-title">歌手说</div>
                   <CommentList
+                    v-if="singerComments.length"
                     :comments="singerComments"
-                    :loading="isLoadingComments"
+                    :loading="false"
                     :onTapReplies="openFloor"
                     compact
                     hide-empty
                   />
-                  <div v-if="popularComments.length" class="comment-section-title">热门评论</div>
-                  <CommentList
-                    :comments="popularComments"
-                    :loading="isLoadingComments"
-                    :onTapReplies="openFloor"
-                    compact
-                    hide-empty
-                  />
-                  <div v-if="!isLoadingComments && !hasFeaturedComments" class="comment-only-empty">
-                    暂无评论
-                  </div>
-                </div>
-              </template>
-
-              <template v-else-if="activeCommentTab === 'all'">
-                <div class="comment-list-wrap">
+                  <div v-if="singerComments.length" class="comment-singer-divider"></div>
                   <CommentList
                     :comments="comments"
                     :loading="isLoadingComments"
@@ -1057,6 +1045,7 @@ watch(total, (value) => {
       v-model:open="showFloor"
       contentClass="comment-floor-dialog"
       bodyClass="comment-floor-dialog-body"
+      noScroll
     >
       <div class="comment-floor-header">
         <div class="comment-floor-title">楼层评论</div>
@@ -1150,7 +1139,7 @@ watch(total, (value) => {
 }
 
 .comment-main-tab-trigger {
-  @apply !h-auto !pb-2 text-[18px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
+  @apply !h-auto !pb-2 text-[15px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
 }
 
 .comment-song-header {
@@ -1287,6 +1276,12 @@ watch(total, (value) => {
   font-size: 13px;
   font-weight: 700;
   color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
+}
+
+.comment-singer-divider {
+  margin: 16px 12px;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-border-light) 50%, transparent);
 }
 
 .comment-load-more {
@@ -1455,7 +1450,6 @@ watch(total, (value) => {
   max-height: min(720px, calc(var(--drawer-content-height, 100vh) - 24px));
   padding: 24px 2px 24px 24px;
   border-radius: 24px;
-  overflow: hidden;
   box-shadow: 0 18px 48px color-mix(in srgb, black 18%, transparent);
   transform: translate(-50%, -50%) scale(0.98);
 }
@@ -1468,14 +1462,13 @@ watch(total, (value) => {
   transform: translate(-50%, -50%) scale(0.98);
 }
 
-:global(.comment-floor-dialog .dialog-scroll-area) {
-  margin-top: 0;
-  min-height: 0;
-}
-
 :global(.comment-floor-dialog .comment-floor-dialog-body) {
   padding-right: 0;
   margin-top: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .comment-floor-header {

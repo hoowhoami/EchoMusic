@@ -28,6 +28,7 @@ interface Props {
   contentStyle?: Record<string, string | number>;
   descriptionClass?: string;
   bodyClass?: string;
+  noScroll?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -36,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   modal: true,
   closeOnEscape: true,
   closeOnInteractOutside: true,
+  noScroll: false,
 });
 
 const emit = defineEmits<{
@@ -105,7 +107,7 @@ const handleInteractOutside = (event: Event) => {
           </VisuallyHidden>
 
           <!-- 可滚动区域：描述 + 内容 -->
-          <Scrollbar class="flex-1 min-h-0 mt-2" :content-props="{ class: 'dialog-scroll-area' }">
+          <Scrollbar v-if="!props.noScroll" class="flex-1 min-h-0 mt-2" :content-props="{ class: 'dialog-scroll-area' }">
             <template v-if="hasDescription">
               <DialogDescription as-child>
                 <p :class="computedDescriptionClass">
@@ -121,6 +123,16 @@ const handleInteractOutside = (event: Event) => {
               <slot />
             </div>
           </Scrollbar>
+
+          <!-- noScroll 模式：不包裹 Scrollbar，由内容自行管理滚动 -->
+          <template v-else>
+            <VisuallyHidden>
+              <DialogDescription>对话框内容</DialogDescription>
+            </VisuallyHidden>
+            <div v-if="hasBody" :class="[computedBodyClass, 'flex-1 min-h-0']">
+              <slot />
+            </div>
+          </template>
 
           <!-- 固定底部：页脚 -->
           <div v-if="hasFooter" class="dialog-footer shrink-0">

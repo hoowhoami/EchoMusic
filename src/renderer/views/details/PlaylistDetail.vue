@@ -794,6 +794,7 @@ const sortedSongs = computed(() => {
         v-model:open="showFloor"
         contentClass="comment-floor-dialog"
         bodyClass="comment-floor-dialog-body"
+        noScroll
       >
         <div class="comment-floor-header">
           <div class="comment-floor-title">楼层评论</div>
@@ -914,17 +915,15 @@ const sortedSongs = computed(() => {
   max-height: min(720px, calc(var(--drawer-content-height, 100vh) - 24px));
   padding: 24px 2px 24px 24px;
   border-radius: 24px;
-  overflow: hidden;
-}
-
-:global(.comment-floor-dialog .dialog-scroll-area) {
-  margin-top: 0;
-  min-height: 0;
 }
 
 :global(.comment-floor-dialog .comment-floor-dialog-body) {
   padding-right: 0;
   margin-top: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .comment-floor-header {

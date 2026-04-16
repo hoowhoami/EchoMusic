@@ -53,7 +53,7 @@ const formatLike = (value: number) => {
               <div class="comment-userline">
                 <span class="comment-name">{{ comment.userName }}</span>
                 <span v-if="comment.isHot" class="comment-badge">热门</span>
-                <span v-if="comment.isStar" class="comment-badge comment-badge-star">歌手说</span>
+                <span v-if="comment.isStar" class="comment-badge comment-badge-star">歌手</span>
               </div>
               <div class="comment-time">{{ comment.time }}</div>
             </div>
