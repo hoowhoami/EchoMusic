@@ -51,6 +51,7 @@ interface Props {
   fileId?: string | number;
   source?: string;
   mvHash?: string;
+  isOriginal?: boolean;
   parentPlaylistId?: string | number;
   enableRemoveFromPlaylist?: boolean;
   disableLinks?: boolean;
@@ -69,6 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
   fileId: '',
   source: '',
   mvHash: '',
+  isOriginal: false,
   parentPlaylistId: '',
   enableRemoveFromPlaylist: false,
   showAlbum: true,
@@ -393,6 +395,7 @@ const handleFavorite = () => {
             <Tag v-if="qualityTag && showQuality" class="song-tag" color="#06B6D4">
               {{ qualityTag }}
             </Tag>
+            <Tag v-if="isOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
           </div>
           <div
             class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap text-text-secondary"

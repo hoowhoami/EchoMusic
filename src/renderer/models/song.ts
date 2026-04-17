@@ -35,6 +35,7 @@ export interface Song {
   payType?: number;
   oldCpy?: number;
   relateGoods?: SongRelateGood[];
+  isOriginal?: boolean;
   recDesc?: string;
   similarDesc?: string;
   playCount?: number;

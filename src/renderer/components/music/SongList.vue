@@ -444,6 +444,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
                 :audioUrl="entry.data.audioUrl"
                 :source="entry.data.source"
                 :mvHash="entry.data.mvHash"
+                :isOriginal="entry.data.isOriginal"
                 :mixSongId="entry.data.mixSongId"
                 :fileId="entry.data.fileId"
                 :privilege="entry.data.privilege"

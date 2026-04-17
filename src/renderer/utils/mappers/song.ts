@@ -469,6 +469,7 @@ export const mapSearchSong = (json: unknown): Song => {
     relateGoods,
     oldCpy: parseOptionalInt(pickValue(record.OldCpy, undefined)),
     payType: parseOptionalInt(pickValue(record.PayType, undefined)),
+    isOriginal: parseIntSafe(pickValue(record.IsOriginal, 0)) === 1,
   };
 };
 
