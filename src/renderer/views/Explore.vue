@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { extractAlbumGroups, extractList } from '@/utils/extractors';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
@@ -19,9 +19,11 @@ import {
   mapAlbumMeta,
   mapRankMeta,
   mapRankSong,
+  mapArtistMeta,
 } from '@/utils/mappers';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { AlbumMeta } from '@/models/album';
+import type { ArtistMeta } from '@/models/artist';
 import type { RankMeta } from '@/models/rank';
 import type { Song } from '@/models/song';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
@@ -35,7 +37,9 @@ import CustomSelector from '@/components/ui/CustomSelector.vue';
 import CustomPicker, { type PickerOption } from '@/components/ui/CustomPicker.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
+import ArtistCard from '@/components/music/ArtistCard.vue';
 import { getAlbumTop } from '@/api/music';
+import { getArtistList } from '@/api/artist';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
@@ -57,6 +61,15 @@ interface ExploreAlbumCardProps {
   publishTime?: string;
 }
 
+interface ExploreArtistCardProps {
+  id: string | number;
+  name: string;
+  coverUrl: string;
+  songCount?: number;
+  albumCount?: number;
+  fansCount?: number;
+}
+
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
@@ -64,11 +77,30 @@ const toastStore = useToastStore();
 const recommendedPlaylists = ref<PlaylistMeta[]>([]);
 const newSongs = ref<Song[]>([]);
 const loadingPlaylists = ref(true);
-const loadingNewSongs = ref(true);
+const loadingNewSongs = ref(false);
 const activeTabIndex = ref(0);
 const showPlaylistPicker = ref(false);
 const showRankPicker = ref(false);
 const showAlbumPicker = ref(false);
+
+interface ArtistGroup {
+  title: string;
+  artists: ExploreArtistCardProps[];
+}
+
+const artistResults = ref<ArtistMeta[]>([]);
+const artistGroups = ref<ArtistGroup[]>([]);
+const artistLetters = ref<string[]>([]);
+const activeArtistLetter = ref('');
+const loadingArtists = ref(false);
+const showArtistSexPicker = ref(false);
+const showArtistTypePicker = ref(false);
+const artistSexTypes = ref<PickerOption[]>([]);
+const artistTypes = ref<PickerOption[]>([]);
+const artistSexId = ref('0');
+const artistSexLabel = ref('全部');
+const artistTypeId = ref('0:0');
+const artistTypeLabel = ref('全部');
 
 const playlistCategories = ref<PickerOption[]>([]);
 const playlistCategoryLabel = ref('全部');
@@ -78,7 +110,7 @@ const ranks = ref<RankMeta[]>([]);
 const rankLabel = ref('排行榜');
 const rankId = ref<number | null>(null);
 const rankSongs = ref<Song[]>([]);
-const loadingRankSongs = ref(true);
+const loadingRankSongs = ref(false);
 const rankSearchQuery = ref('');
 const rankSongListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const showRankBatchDrawer = ref(false);
@@ -97,7 +129,8 @@ const albumTypeId = ref('all');
 const albumTypeLabel = ref('全部');
 const albumPayload = ref<Record<string, unknown>>({});
 const albumFallbackList = ref<unknown[]>([]);
-const loadingAlbums = ref(true);
+const loadingAlbums = ref(false);
+const tabLoaded = reactive({ rank: false, album: false, newSong: false, artist: false });
 const exploreHeaderHeight = 102;
 const rankToolbarOffset = exploreHeaderHeight + 46;
 const newSongToolbarOffset = exploreHeaderHeight + 46;
@@ -328,6 +361,77 @@ const loadAlbums = async () => {
   }
 };
 
+const loadArtists = async () => {
+  loadingArtists.value = true;
+  try {
+    const res = await getArtistList({
+      sextypes: Number(artistSexId.value),
+      type: Number(artistTypeId.value.split(':')[0] ?? 0),
+      musician: Number(artistTypeId.value.split(':')[1] ?? 0),
+    });
+    const record =
+      res && typeof res === 'object' ? (res as Record<string, unknown>) : undefined;
+    const data =
+      record?.data && typeof record.data === 'object'
+        ? (record.data as Record<string, unknown>)
+        : record;
+
+    // 解析歌手列表（保留分组结构）
+    const infoList = Array.isArray(data?.info) ? data.info : [];
+    const groups: ArtistGroup[] = [];
+    const letters: string[] = [];
+    const allArtists: ArtistMeta[] = [];
+
+    for (const group of infoList) {
+      const g = group as Record<string, unknown>;
+      const title = String(g.title ?? '');
+      const singers = Array.isArray(g.singer) ? g.singer : [];
+      if (singers.length === 0) continue;
+      const mapped = singers.map((item) => mapArtistMeta(item));
+      allArtists.push(...mapped);
+      letters.push(title);
+      groups.push({
+        title,
+        artists: mapped.map((a) => getArtistCardProps(a)),
+      });
+    }
+
+    artistResults.value = allArtists;
+    artistGroups.value = groups;
+    artistLetters.value = letters;
+    // 默认选中热门分组（非字母的第一个分组）
+    const hotGroup = letters.find((l) => !/^[A-Z#]$/.test(l));
+    activeArtistLetter.value = hotGroup ?? letters[0] ?? '全部';
+
+    // 首次加载时从 enu_list 构建筛选选项
+    if (artistSexTypes.value.length === 0 || artistTypes.value.length === 0) {
+      const enuList =
+        data?.enu_list && typeof data.enu_list === 'object'
+          ? (data.enu_list as Record<string, unknown>)
+          : undefined;
+      if (enuList) {
+        const rawSex = Array.isArray(enuList.sextypes) ? enuList.sextypes : [];
+        artistSexTypes.value = rawSex.map((item: unknown) => {
+          const r = item as Record<string, unknown>;
+          return { id: String(r.key ?? 0), name: String(r.value ?? '') };
+        });
+        const rawTypes = Array.isArray(enuList.types) ? enuList.types : [];
+        artistTypes.value = rawTypes.map((item: unknown) => {
+          const r = item as Record<string, unknown>;
+          return {
+            id: `${r.key ?? 0}:${r.musician ?? 0}`,
+            name: String(r.value ?? ''),
+          };
+        });
+      }
+    }
+  } catch {
+    artistResults.value = [];
+  } finally {
+    loadingArtists.value = false;
+  }
+};
+
 const playRankSongs = async () => {
   if (rankSongs.value.length === 0) return;
   await replaceQueueAndPlay(playlistStore, playerStore, rankSongs.value, 0, undefined, {
@@ -411,9 +515,6 @@ const handleNewSongSort = (field: SortField) => {
 onMounted(() => {
   void loadPlaylistCategories();
   void loadRecommendedPlaylists();
-  void loadNewSongs();
-  void loadRanks();
-  void loadAlbums();
 });
 
 watch(
@@ -434,8 +535,21 @@ watch(
 watch(
   () => activeTabIndex.value,
   (tab) => {
-    if (tab === 2 && !loadingAlbums.value && albums.value.length === 0) {
+    if (tab === 1 && !tabLoaded.rank) {
+      tabLoaded.rank = true;
+      void loadRanks();
+    }
+    if (tab === 2 && !tabLoaded.album) {
+      tabLoaded.album = true;
       void loadAlbums();
+    }
+    if (tab === 3 && !tabLoaded.newSong) {
+      tabLoaded.newSong = true;
+      void loadNewSongs();
+    }
+    if (tab === 4 && !tabLoaded.artist) {
+      tabLoaded.artist = true;
+      void loadArtists();
     }
   },
 );
@@ -459,6 +573,20 @@ const handleSelectAlbumType = (option: PickerOption) => {
   albumTypeId.value = option.id;
   albumTypeLabel.value = option.name;
   showAlbumPicker.value = false;
+};
+
+const handleSelectArtistSex = (option: PickerOption) => {
+  artistSexId.value = option.id;
+  artistSexLabel.value = option.name;
+  showArtistSexPicker.value = false;
+  void loadArtists();
+};
+
+const handleSelectArtistType = (option: PickerOption) => {
+  artistTypeId.value = option.id;
+  artistTypeLabel.value = option.name;
+  showArtistTypePicker.value = false;
+  void loadArtists();
 };
 
 const getPlaylistCardProps = (entry: PlaylistMeta): ExplorePlaylistCardProps => {
@@ -486,6 +614,35 @@ const recommendedPlaylistCards = computed(() =>
 );
 
 const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(entry)));
+
+const getArtistCardProps = (artist: ArtistMeta): ExploreArtistCardProps => {
+  return {
+    id: artist.id,
+    name: artist.name,
+    coverUrl: artist.pic,
+    songCount: artist.songCount,
+    albumCount: artist.albumCount,
+    fansCount: artist.fansCount,
+  };
+};
+
+const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
+
+const scrollToArtistGroup = (letter: string) => {
+  activeArtistLetter.value = letter;
+};
+
+const filteredArtistCards = computed(() => {
+  const isHotGroup = (title: string) => !/^[A-Z#]$/.test(title);
+  if (activeArtistLetter.value === '全部') {
+    // 全部模式：排除热门分组，只展示字母分组
+    return artistGroups.value
+      .filter((g) => !isHotGroup(g.title))
+      .flatMap((g) => g.artists);
+  }
+  const group = artistGroups.value.find((g) => g.title === activeArtistLetter.value);
+  return group ? group.artists : [];
+});
 </script>
 
 <template>
@@ -494,9 +651,9 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
     :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
   >
     <div class="explore-header">
-      <div class="text-[24px] font-semibold text-text-main tracking-tight">发现音乐</div>
+      <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
       <div class="mt-4">
-        <CustomTabBar v-model="activeTabIndex" :tabs="['歌单', '排行榜', '新碟上架', '新歌速递']" />
+        <CustomTabBar v-model="activeTabIndex" :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']" />
       </div>
     </div>
 
@@ -635,7 +792,7 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
       </VirtualGrid>
     </div>
 
-    <div v-else class="mt-0">
+    <div v-else-if="activeTabIndex === 3" class="mt-0">
       <div class="new-song-toolbar sticky z-[120] bg-bg-main">
         <div class="new-song-toolbar-inner">
           <div class="new-song-title-wrap">
@@ -736,6 +893,70 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
         />
       </div>
     </div>
+
+    <div v-else-if="activeTabIndex === 4" class="mt-0">
+      <div class="explore-toolbar">
+        <div class="flex items-center gap-2">
+          <CustomSelector :label="`性别: ${artistSexLabel}`" @click="showArtistSexPicker = true" />
+          <CustomSelector :label="`类型: ${artistTypeLabel}`" @click="showArtistTypePicker = true" />
+        </div>
+      </div>
+
+      <div v-if="loadingArtists" class="flex items-center justify-center py-20">
+        <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+
+      <template v-else-if="filteredArtistCards.length > 0">
+        <div class="artist-letter-bar">
+          <span
+            :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
+            @click="scrollToArtistGroup('全部')"
+          >全部</span>
+          <span
+            v-for="letter in artistLetters"
+            :key="letter"
+            :class="['artist-letter-item', activeArtistLetter === letter ? 'is-active' : '']"
+            @click="scrollToArtistGroup(letter)"
+          >{{ letter }}</span>
+        </div>
+
+        <VirtualGrid
+          :items="filteredArtistCards"
+          :loading="false"
+          :active="activeTabIndex === 4"
+          :itemMinWidth="180"
+          :itemHeight="230"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="220"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <ArtistCard v-bind="item" />
+          </template>
+        </VirtualGrid>
+      </template>
+
+      <div v-else class="py-20 text-center opacity-50 text-[14px] italic">暂无歌手</div>
+    </div>
+
+    <CustomPicker
+      v-model:open="showArtistSexPicker"
+      title="性别筛选"
+      :options="artistSexTypes"
+      :selectedId="artistSexId"
+      @select="handleSelectArtistSex"
+      :maxWidth="360"
+    />
+
+    <CustomPicker
+      v-model:open="showArtistTypePicker"
+      title="类型筛选"
+      :options="artistTypes"
+      :selectedId="artistTypeId"
+      @select="handleSelectArtistType"
+      :maxWidth="360"
+    />
 
     <CustomPicker
       v-model:open="showPlaylistPicker"
@@ -876,5 +1097,41 @@ const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(
   height: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-primary) 70%, transparent);
+}
+
+.artist-letter-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 4px 0 10px;
+  overflow-x: auto;
+}
+
+.artist-letter-item {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.artist-letter-item:hover {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.artist-letter-item.is-active {
+  color: #fff;
+  background: var(--color-primary);
 }
 </style>

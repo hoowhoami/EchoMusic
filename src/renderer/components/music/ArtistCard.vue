@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import Cover from '@/components/ui/Cover.vue';
 
@@ -8,10 +9,25 @@ interface Props {
   coverUrl: string;
   songCount?: number;
   albumCount?: number;
+  fansCount?: number;
 }
 
 const props = defineProps<Props>();
 const router = useRouter();
+
+const formatFans = (count: number): string => {
+  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`;
+  return String(count);
+};
+
+const subtitle = computed(() => {
+  const parts: string[] = [];
+  if (props.songCount) parts.push(`${props.songCount} 歌曲`);
+  if (props.albumCount) parts.push(`${props.albumCount} 专辑`);
+  if (parts.length > 0) return parts.join(' • ');
+  if (props.fansCount) return `${formatFans(props.fansCount)} 粉丝`;
+  return '';
+});
 
 const handleClick = () => {
   router.push({ name: 'artist-detail', params: { id: props.id } });
@@ -28,10 +44,7 @@ const handleClick = () => {
       </div>
       <div class="info-wrapper w-full">
         <h3 class="title">{{ name }}</h3>
-        <p class="subtitle">
-          {{ songCount || 0 }} 歌曲 <span class="mx-0.5 opacity-60">•</span>
-          {{ albumCount || 0 }} 专辑
-        </p>
+        <p v-if="subtitle" class="subtitle">{{ subtitle }}</p>
       </div>
     </div>
   </div>

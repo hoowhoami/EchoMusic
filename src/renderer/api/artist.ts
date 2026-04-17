@@ -44,3 +44,22 @@ export function followArtist(id: string | number) {
 export function unfollowArtist(id: string | number) {
   return request.get('/artist/unfollow', { params: { id } });
 }
+
+/**
+ * 获取歌手列表
+ */
+export function getArtistList(options?: {
+  sextypes?: number;
+  type?: number;
+  musician?: number;
+  hotsize?: number;
+}) {
+  return request.get('/artist/lists', {
+    params: {
+      sextypes: options?.sextypes ?? 0,
+      type: options?.type ?? 0,
+      musician: options?.musician ?? 0,
+      hotsize: options?.hotsize ?? 100,
+    },
+  });
+}
