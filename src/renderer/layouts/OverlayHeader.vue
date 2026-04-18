@@ -12,7 +12,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
 
 <template>
   <header
-    class="overlay-header fixed top-0 left-0 right-0 z-[9999] h-12 select-none"
+    class="overlay-header fixed top-0 left-0 right-0 z-50 h-12 select-none"
     style="pointer-events: none; -webkit-app-region: drag"
   >
     <div
