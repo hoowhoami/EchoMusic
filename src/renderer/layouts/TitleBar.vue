@@ -13,10 +13,14 @@ import {
   iconX,
   iconSearch,
 } from '@/icons';
+import { useWindowDrag } from '@/utils/useWindowDrag';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
+const titleBarRef = ref<HTMLElement | null>(null);
+
+useWindowDrag(titleBarRef);
 
 const canGoBack = ref(false);
 const canGoForward = ref(false);
@@ -176,7 +180,8 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="title-bar drag flex items-center shrink-0 select-none transition-colors duration-300 z-[200] bg-transparent"
+    ref="titleBarRef"
+    class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-[200] bg-transparent relative"
   >
     <!-- 1. 左侧：导航按钮 -->
     <div class="flex items-center gap-1 no-drag pl-6">

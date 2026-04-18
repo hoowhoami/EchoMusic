@@ -22,12 +22,12 @@ export const registerIpcHandlers = (context: IpcContext) => {
 
 export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('window-control');
+  ipcMain.removeAllListeners('window-drag:move');
   ipcMain.removeAllListeners('window-toggle');
   ipcMain.removeAllListeners('quit-app');
   ipcMain.removeHandler('shortcuts:register');
   ipcMain.removeHandler('shortcuts:refresh');
   ipcMain.removeAllListeners('tray:sync-playback');
-  ipcMain.removeAllListeners('api-server:stop');
   ipcMain.removeAllListeners('open-log-directory');
   ipcMain.removeAllListeners('check-for-updates');
   ipcMain.removeAllListeners('open-external');
@@ -41,6 +41,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('desktop-lyric:command');
   ipcMain.removeHandler('api-server:start');
   ipcMain.removeHandler('api-server:status');
+  ipcMain.removeHandler('api:request');
   ipcMain.removeHandler('app:get-info');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
   ipcMain.removeHandler('desktop-lyric:get-bounds');

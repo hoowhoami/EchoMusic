@@ -369,8 +369,7 @@ const loadArtists = async () => {
       type: Number(artistTypeId.value.split(':')[0] ?? 0),
       musician: Number(artistTypeId.value.split(':')[1] ?? 0),
     });
-    const record =
-      res && typeof res === 'object' ? (res as Record<string, unknown>) : undefined;
+    const record = res && typeof res === 'object' ? (res as Record<string, unknown>) : undefined;
     const data =
       record?.data && typeof record.data === 'object'
         ? (record.data as Record<string, unknown>)
@@ -636,9 +635,7 @@ const filteredArtistCards = computed(() => {
   const isHotGroup = (title: string) => !/^[A-Z#]$/.test(title);
   if (activeArtistLetter.value === '全部') {
     // 全部模式：排除热门分组，只展示字母分组
-    return artistGroups.value
-      .filter((g) => !isHotGroup(g.title))
-      .flatMap((g) => g.artists);
+    return artistGroups.value.filter((g) => !isHotGroup(g.title)).flatMap((g) => g.artists);
   }
   const group = artistGroups.value.find((g) => g.title === activeArtistLetter.value);
   return group ? group.artists : [];
@@ -653,7 +650,10 @@ const filteredArtistCards = computed(() => {
     <div class="explore-header">
       <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
       <div class="mt-4">
-        <CustomTabBar v-model="activeTabIndex" :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']" />
+        <CustomTabBar
+          v-model="activeTabIndex"
+          :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']"
+        />
       </div>
     </div>
 
@@ -898,12 +898,17 @@ const filteredArtistCards = computed(() => {
       <div class="explore-toolbar">
         <div class="flex items-center gap-2">
           <CustomSelector :label="`性别: ${artistSexLabel}`" @click="showArtistSexPicker = true" />
-          <CustomSelector :label="`类型: ${artistTypeLabel}`" @click="showArtistTypePicker = true" />
+          <CustomSelector
+            :label="`类型: ${artistTypeLabel}`"
+            @click="showArtistTypePicker = true"
+          />
         </div>
       </div>
 
       <div v-if="loadingArtists" class="flex items-center justify-center py-20">
-        <div class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        <div
+          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+        ></div>
       </div>
 
       <template v-else-if="filteredArtistCards.length > 0">
@@ -911,13 +916,15 @@ const filteredArtistCards = computed(() => {
           <span
             :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
             @click="scrollToArtistGroup('全部')"
-          >全部</span>
+            >全部</span
+          >
           <span
             v-for="letter in artistLetters"
             :key="letter"
             :class="['artist-letter-item', activeArtistLetter === letter ? 'is-active' : '']"
             @click="scrollToArtistGroup(letter)"
-          >{{ letter }}</span>
+            >{{ letter }}</span
+          >
         </div>
 
         <VirtualGrid

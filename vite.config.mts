@@ -25,7 +25,7 @@ export default defineConfig({
         },
         vite: {
           build: {
-            outDir: 'dist-electron/main', // 明确主进程输出目录
+            outDir: 'dist-electron/main',
             emptyOutDir: true,
             rollupOptions: {
               external: ['electron'],
@@ -49,13 +49,7 @@ export default defineConfig({
     renderer(),
   ],
   server: {
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:6609',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-    },
+    // dev 模式下 API 请求通过 IPC 直连 main 进程，不再需要 HTTP proxy
   },
   resolve: {
     alias: {

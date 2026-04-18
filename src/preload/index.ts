@@ -64,13 +64,15 @@ contextBridge.exposeInMainWorld('electron', {
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),
     status: () => ipcRenderer.invoke('api-server:status') as Promise<ApiServerStatus>,
-    port: () => ipcRenderer.invoke('api-server:port') as Promise<number>,
-    onStatusChanged: (func: (status: ApiServerStatus) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, status: ApiServerStatus) => func(status);
-      ipcRenderer.on('api-server:status-changed', listener);
-      return () => ipcRenderer.removeListener('api-server:status-changed', listener);
-    },
-    stop: () => ipcRenderer.send('api-server:stop'),
+  },
+  api: {
+    request: (config: {
+      method: string;
+      url: string;
+      params?: Record<string, any>;
+      data?: any;
+      headers?: Record<string, string>;
+    }) => ipcRenderer.invoke('api:request', config),
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>

@@ -21,7 +21,6 @@ const statusMessage = ref('正在初始化音乐引擎...');
 const hasError = ref(false);
 const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
-let disposeStatusListener: (() => void) | undefined;
 let isNavigating = false;
 
 const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
@@ -108,7 +107,7 @@ const completeStartup = async () => {
 };
 
 const applyStatus = async (status: ApiServerStatus) => {
-  logger.info('Loading', 'API status changed', status);
+  logger.info('Loading', 'API status', status);
 
   if (status.state === 'ready') {
     hasError.value = false;
@@ -123,20 +122,27 @@ const applyStatus = async (status: ApiServerStatus) => {
     return;
   }
 
-  if (status.state === 'failed') {
-    statusMessage.value = status.error || '服务启动失败';
-    hasError.value = true;
-    return;
-  }
-
-  hasError.value = false;
-  statusMessage.value =
-    status.state === 'starting' ? '正在初始化音乐引擎...' : '正在等待音乐引擎启动...';
+  // idle 或 failed 都视为需要启动
+  statusMessage.value = status.error || '服务未就绪';
+  hasError.value = true;
 };
 
 const initStatus = async () => {
   try {
-    const status = await window.electron.apiServer.status();
+    let status = await window.electron.apiServer.status();
+
+    // 如果还没就绪，主动触发初始化
+    if (status.state !== 'ready') {
+      statusMessage.value = '正在初始化音乐引擎...';
+      const result = await window.electron.apiServer.start();
+      if (!result?.success) {
+        statusMessage.value = result?.error || '服务启动失败';
+        hasError.value = true;
+        return;
+      }
+      status = await window.electron.apiServer.status();
+    }
+
     await applyStatus(status);
   } catch (error) {
     logger.error('Loading', 'Status init failed:', error);
@@ -150,9 +156,18 @@ const retryStart = async () => {
   hasError.value = false;
   statusMessage.value = '正在重新启动音乐引擎...';
 
-  const result = await window.electron.apiServer.start();
-  if (!result?.success) {
-    statusMessage.value = result?.error || '服务启动失败';
+  try {
+    const result = await window.electron.apiServer.start();
+    if (!result?.success) {
+      statusMessage.value = result?.error || '服务启动失败';
+      hasError.value = true;
+      return;
+    }
+    const status = await window.electron.apiServer.status();
+    await applyStatus(status);
+  } catch (error) {
+    logger.error('Loading', 'Retry failed:', error);
+    statusMessage.value = error instanceof Error ? error.message : String(error);
     hasError.value = true;
   }
 };
@@ -162,15 +177,11 @@ const closeWindow = () => {
 };
 
 onMounted(async () => {
-  disposeStatusListener = window.electron.apiServer.onStatusChanged((status) => {
-    void applyStatus(status);
-  });
-
   await initStatus();
 });
 
 onUnmounted(() => {
-  disposeStatusListener?.();
+  // 清理（保留钩子以备将来扩展）
 });
 </script>
 

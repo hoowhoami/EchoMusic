@@ -22,22 +22,16 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            server_pkg_script: ""
-            server_pkg_cmd: "npx pkg . -t node14-macos-arm64 -C GZip -o bin/app_macos --no-bytecode"
             electron_builder_args: ""
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: macos-14
-            server_pkg_script: pkgmacos
-            server_pkg_cmd: ""
             electron_builder_args: "--mac --x64"
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
-            server_pkg_script: pkglinux
-            server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Linux
             artifact_glob: |
@@ -46,8 +40,6 @@ jobs:
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
           - os: windows-latest
-            server_pkg_script: pkgwin
-            server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Windows
             artifact_glob: |
@@ -80,37 +72,20 @@ jobs:
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install server dependencies
+      - name: Install server runtime dependencies
         working-directory: server
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
+            npm ci --omit=dev --no-audit --no-fund
           else
-            npm install --no-audit --no-fund
+            npm install --omit=dev --no-audit --no-fund
           fi
 
-      - name: Remove server test files before packaging
+      - name: Remove server test files
         working-directory: server
         shell: bash
         run: find module -name '*.test.js' -delete
-
-      - name: Clean server bin
-        working-directory: server
-        shell: bash
-        run: rm -rf bin && mkdir -p bin
-
-      - name: Build server executable
-        working-directory: server
-        shell: bash
-        run: |
-          CMD="${{ matrix.server_pkg_cmd }}"
-          SCRIPT="${{ matrix.server_pkg_script }}"
-          if [ -n "$CMD" ]; then
-            eval "$CMD"
-          else
-            npm run "$SCRIPT"
-          fi
 
       - name: Build desktop app
         shell: bash
@@ -140,6 +115,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -149,10 +127,37 @@ jobs:
       - name: List downloaded artifacts
         run: find release-artifacts -maxdepth 2 -type f | sort
 
+      - name: Extract changelog for current version
+        id: changelog
+        shell: bash
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          # 提取 CHANGELOG.md 中对应版本的内容（两个 ## 之间的部分）
+          BODY=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) found=1
+              next
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$BODY" ]; then
+            BODY="详见 CHANGELOG.md"
+          fi
+
+          {
+            echo "BODY<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/**
+          body: ${{ steps.changelog.outputs.BODY }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
@@ -173,27 +178,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Build changelog
         shell: bash
         run: |
           set -e
-          git fetch --tags --force
-          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_SHA}^" 2>/dev/null || true)
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="$PREV_TAG..${GITHUB_SHA}"
-          else
-            RANGE="${GITHUB_SHA}"
-          fi
-
-          CHANGELOG=$(git log "$RANGE" --pretty=format:"• %s" \
+          VERSION="${GITHUB_REF_NAME#v}"
+          CHANGELOG=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) found=1
+              next
+            }
+            found && NF { print }
+          ' CHANGELOG.md \
+            | sed 's/^### /\n📌 /' \
+            | sed 's/^- /• /' \
             | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' \
             | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
 
           if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="无"
+            CHANGELOG="详见 CHANGELOG.md"
           fi
 
           {
