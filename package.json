@@ -10,9 +10,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
-    "build:win": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkgwin && cd .. && vue-tsc --noEmit && vite build && electron-builder --win --x64",
-    "build:mac": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkgmacos && cd .. && vue-tsc --noEmit && vite build && electron-builder --mac",
-    "build:linux": "cd server && npm install && find module -name '*.test.js' -delete && npm run pkglinux && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
+    "build:win": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --win --x64",
+    "build:mac": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --mac",
+    "build:linux": "cd server && npm install --omit=dev && cd .. && vue-tsc --noEmit && vite build && electron-builder --linux",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json}\" \"vite.config.mts\" \"tsconfig*.json\""
@@ -79,29 +79,31 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "server/module",
+        "to": "server/module",
+        "filter": ["**/*.js"]
+      },
+      {
+        "from": "server/util",
+        "to": "server/util",
+        "filter": ["**/*.js", "**/*.json"]
+      },
+      {
+        "from": "server/node_modules",
+        "to": "server/node_modules"
       }
     ],
     "mac": {
       "icon": "icons/icon.icns",
       "category": "public.app-category.music",
-      "extraResources": [
-        {
-          "from": "server/bin/app_macos",
-          "to": "server/app_macos"
-        }
-      ],
       "target": [
         "dmg"
       ]
     },
     "win": {
       "icon": "icons/icon.ico",
-      "extraResources": [
-        {
-          "from": "server/bin/app_win.exe",
-          "to": "server/app_win.exe"
-        }
-      ],
       "target": [
         {
           "target": "nsis",
@@ -114,12 +116,6 @@
     },
     "linux": {
       "icon": "build/icons/linux_256x256.png",
-      "extraResources": [
-        {
-          "from": "server/bin/app_linux",
-          "to": "server/app_linux"
-        }
-      ],
       "target": [
         "AppImage",
         "deb",

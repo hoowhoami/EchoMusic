@@ -321,7 +321,7 @@ export class PlayerEngine {
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
     this.preferredSinkId = deviceId || 'default';
-    logger.info('PlayerEngine', '设置输出设备', { requestedDeviceId: this.preferredSinkId });
+    logger.info('PlayerEngine', 'Set output device', { requestedDeviceId: this.preferredSinkId });
     return this.applySinkId();
   }
 

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, globalShortcut } from 'electron';
 import { initLogger } from './logger';
-import { startApiServer, stopApiServer } from './server';
+import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
@@ -45,6 +45,10 @@ if (!gotTheLock) {
       restoreWindow,
     };
 
+    await initApiServer().catch((err) => {
+      console.error('[Main] Failed to init API server:', err);
+    });
+
     await createWindow();
     try {
       initTray(trayContext);
@@ -52,10 +56,6 @@ if (!gotTheLock) {
       console.error('[Main] Failed to init tray:', err);
     }
     installWindowsTrayRecovery();
-
-    void startApiServer().catch((err) => {
-      console.error('[Main] Failed to start API server:', err);
-    });
 
     if (process.platform === 'darwin') {
       app.dock?.setMenu(createDockMenu());
@@ -88,7 +88,6 @@ if (!gotTheLock) {
     console.log('[Main] before-quit: cleaning up and exiting...');
     globalShortcut.unregisterAll();
     destroyTray();
-    stopApiServer();
     // 销毁桌面歌词窗口
     try {
       const lyricWin = getDesktopLyricWindow();

@@ -1,93 +1,75 @@
-import axios from 'axios';
 import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
 import { logger } from './logger';
 
-const isDev = import.meta.env.DEV;
-const API_BASE_URL = isDev ? '/api' : 'http://127.0.0.1:6609';
+// --- 类型定义 ---
 
-const request = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  withCredentials: true,
-});
+interface ApiRequestConfig {
+  method: string;
+  url: string;
+  params?: Record<string, any>;
+  data?: any;
+  headers?: Record<string, string>;
+}
+
+interface ApiResponse {
+  status: number;
+  body: any;
+  cookie?: string[];
+  headers?: Record<string, string>;
+}
+
+interface RequestConfig {
+  params?: Record<string, any>;
+  data?: any;
+  headers?: Record<string, string>;
+}
+
+// --- 拦截器逻辑（从原 axios 版本保留） ---
 
 let isAuthExpiredNotified = false;
 
-// 请求拦截器
-request.interceptors.request.use(
-  (config) => {
-    const skipAuth = config.headers?.['X-Skip-Auth'] === '1';
+/**
+ * 构建 Authorization header（复现原请求拦截器逻辑）
+ */
+const buildAuthHeader = (skipAuth: boolean): string => {
+  if (skipAuth) return '';
 
-    if (config.headers?.['X-Skip-Auth']) {
-      delete config.headers['X-Skip-Auth'];
-    }
+  const authParts: string[] = [];
+  const userStore = useUserStore();
+  const deviceStore = useDeviceStore();
 
-    const authParts: string[] = [];
+  // 注入用户信息
+  if (userStore.info) {
+    if (userStore.info.token) authParts.push(`token=${userStore.info.token}`);
+    if (userStore.info.userid) authParts.push(`userid=${userStore.info.userid}`);
+    if (userStore.info.t1) authParts.push(`t1=${userStore.info.t1}`);
+  }
 
-    // 从 Pinia Store 中获取信息
-    const userStore = useUserStore();
-    const deviceStore = useDeviceStore();
+  // 注入设备信息
+  if (deviceStore.info) {
+    const device = deviceStore.info;
+    if (device.dfid) authParts.push(`dfid=${device.dfid}`);
+    if (device.mid) authParts.push(`KUGOU_API_MID=${device.mid}`);
+    if (device.uuid) authParts.push(`uuid=${device.uuid}`);
+    if (device.guid) authParts.push(`KUGOU_API_GUID=${device.guid}`);
+    if (device.serverDev) authParts.push(`KUGOU_API_DEV=${device.serverDev}`);
+    if (device.mac) authParts.push(`KUGOU_API_MAC=${device.mac}`);
+  }
 
-    if (!skipAuth) {
-      // 1. 注入用户信息
-      if (userStore.info) {
-        if (userStore.info.token) authParts.push(`token=${userStore.info.token}`);
-        if (userStore.info.userid) authParts.push(`userid=${userStore.info.userid}`);
-        if (userStore.info.t1) authParts.push(`t1=${userStore.info.t1}`);
-      }
-
-      // 2. 注入设备信息
-      if (deviceStore.info) {
-        const device = deviceStore.info;
-        if (device.dfid) authParts.push(`dfid=${device.dfid}`);
-        if (device.mid) authParts.push(`KUGOU_API_MID=${device.mid}`);
-        if (device.uuid) authParts.push(`uuid=${device.uuid}`);
-        if (device.guid) authParts.push(`KUGOU_API_GUID=${device.guid}`);
-        if (device.serverDev) authParts.push(`KUGOU_API_DEV=${device.serverDev}`);
-        if (device.mac) authParts.push(`KUGOU_API_MAC=${device.mac}`);
-      }
-    }
-
-    const auth = authParts.join(';');
-    if (authParts.length > 0) {
-      config.headers['Authorization'] = auth;
-    }
-
-    config.params = {
-      ...config.params,
-      t: Date.now(),
-    };
-
-    // 打印请求日志
-    const fullUrl = axios.getUri(config);
-    logger.info(
-      'API',
-      `Request: [${config.method?.toUpperCase()}] ${fullUrl}`,
-      auth ? `Auth: ${auth}` : '',
-    );
-
-    return config;
-  },
-  (error) => {
-    logger.error('API', 'Request Error:', error);
-    return Promise.reject(error);
-  },
-);
+  return authParts.join(';');
+};
 
 /**
- * 检查身份是否过期
+ * 检查身份是否过期（复现原响应拦截器逻辑）
  */
-const checkAuthExpiration = (path: string, data: any) => {
+const checkAuthExpiration = (path: string, data: any): boolean => {
   if (!data || typeof data !== 'object') return false;
 
   const rules = [
-    // 规则 1: 全局错误码 20018 表示 token 过期
     () => data.error_code === 20018,
-    // 规则 2: VIP 详情接口返回 status 为 0 通常表示 token 失效
     () => path.includes('/user/vip/detail') && data.status === 0,
-    // 规则 3: 响应消息包含 "登录已过期"
     () => data.msg && typeof data.msg === 'string' && data.msg.includes('登录已过期'),
   ];
 
@@ -102,7 +84,7 @@ const handleAuthExpired = (path: string, data: unknown) => {
   }
 
   isAuthExpiredNotified = true;
-  logger.warn('API', `检测到身份过期 (Path: ${path})`);
+  logger.warn('API', `Auth expired (Path: ${path})`);
   userStore.logout();
   useAuthStore().showSessionExpiredDialog();
 
@@ -111,43 +93,113 @@ const handleAuthExpired = (path: string, data: unknown) => {
   }, 5000);
 };
 
-// 响应拦截器
-request.interceptors.response.use(
-  (response) => {
-    const data = response.data;
-    const path = response.config.url || '';
+/**
+ * 通过 IPC 发送 API 请求
+ */
+const ipcRequest = async (method: string, url: string, config?: RequestConfig): Promise<any> => {
+  const skipAuth = config?.headers?.['X-Skip-Auth'] === '1';
+  const headers: Record<string, string> = { ...(config?.headers || {}) };
+  delete headers['X-Skip-Auth'];
 
-    // 打印响应日志
-    let resStr = typeof data === 'object' ? JSON.stringify(data) : String(data);
-    if (resStr.length > 2000) {
-      resStr = resStr.substring(0, 2000) + '... (truncated)';
+  // 请求拦截：注入 Authorization
+  const auth = buildAuthHeader(skipAuth);
+  if (auth) {
+    headers['Authorization'] = auth;
+  }
+
+  // 加时间戳
+  const params = {
+    ...(config?.params || {}),
+    t: Date.now(),
+  };
+
+  const ipcConfig: ApiRequestConfig = {
+    method,
+    url,
+    params,
+    headers,
+  };
+
+  if (config?.data) {
+    ipcConfig.data = config.data;
+  }
+
+  const startTime = performance.now();
+  let response: ApiResponse;
+  let error: any = null;
+
+  try {
+    response = await window.electron.api.request(ipcConfig);
+  } catch (e) {
+    error = e;
+    response = { status: 0, body: null };
+  }
+
+  const elapsed = (performance.now() - startTime).toFixed(1);
+
+  // 格式化日志：请求 + 响应放一起
+  const paramStr = Object.keys(params).length
+    ? Object.entries(params)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('&')
+    : '';
+  const fullUrl = paramStr ? `${url}?${paramStr}` : url;
+
+  if (error) {
+    logger.error(
+      'API',
+      `[${method}] ${fullUrl}\n  ← ERROR (${elapsed}ms): ${error.message || error}`,
+    );
+    throw error;
+  }
+
+  let bodyPreview = '';
+  if (response.body != null) {
+    bodyPreview =
+      typeof response.body === 'object' ? JSON.stringify(response.body) : String(response.body);
+    if (bodyPreview.length > 2000) {
+      bodyPreview = bodyPreview.substring(0, 2000) + '... (truncated)';
     }
-    logger.info('API', `Response: ${path} ->`, resStr);
+  }
 
-    handleAuthExpired(path, data);
+  const statusTag = response.status >= 400 ? '✗' : '✓';
+  const headerEntries = Object.entries(headers).filter(([k]) => k !== 'Authorization');
 
-    return data;
-  },
-  (error) => {
-    const config = error.config;
+  const lines = [
+    `${statusTag} [${method}] ${fullUrl}`,
+    `  ├─ Auth: ${auth || '(none)'}`,
+    ...(headerEntries.length
+      ? [`  ├─ Headers: ${headerEntries.map(([k, v]) => `${k}: ${v}`).join(', ')}`]
+      : []),
+    ...(config?.data ? [`  ├─ Body: ${JSON.stringify(config.data)}`] : []),
+    `  ├─ Status: ${response.status} | Time: ${elapsed}ms`,
+    `  └─ Response: ${bodyPreview}`,
+  ];
 
-    if (error.response) {
-      const { status, data } = error.response;
-      const path = config?.url || '';
-      logger.error('API', `Response Error [${status}]: ${path} ->`, data);
+  logger.info('API', lines.join('\n'));
 
-      // 处理 502 错误
-      if (status === 502) {
-        logger.error('API', '服务器网关错误 (502)');
-      }
+  // 响应拦截：auth 过期检测
+  handleAuthExpired(url, response.body);
 
-      handleAuthExpired(path, data);
-    } else {
-      logger.error('API', `Network Error: ${config?.url} ->`, error.message);
+  // 处理错误状态
+  if (response.status >= 400) {
+    if (response.status === 502) {
+      logger.error('API', 'Bad gateway (502)');
     }
+    const err = new Error(`API Error: ${response.status}`);
+    (err as any).response = response;
+    throw err;
+  }
 
-    return Promise.reject(error);
-  },
-);
+  return response.body;
+};
+
+// --- 对外暴露的接口（与原 axios 版本保持一致） ---
+
+const request = {
+  get: (url: string, config?: RequestConfig) => ipcRequest('GET', url, config),
+  post: (url: string, data?: any, config?: RequestConfig) =>
+    ipcRequest('POST', url, { ...config, data }),
+};
 
 export default request;

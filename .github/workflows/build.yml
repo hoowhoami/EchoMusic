@@ -22,22 +22,16 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            server_pkg_script: ""
-            server_pkg_cmd: "npx pkg . -t node14-macos-arm64 -C GZip -o bin/app_macos --no-bytecode"
             electron_builder_args: ""
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: macos-14
-            server_pkg_script: pkgmacos
-            server_pkg_cmd: ""
             electron_builder_args: "--mac --x64"
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
-            server_pkg_script: pkglinux
-            server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Linux
             artifact_glob: |
@@ -46,8 +40,6 @@ jobs:
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
           - os: windows-latest
-            server_pkg_script: pkgwin
-            server_pkg_cmd: ""
             electron_builder_args: ""
             artifact_name: EchoMusic-Windows
             artifact_glob: |
@@ -80,37 +72,20 @@ jobs:
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install server dependencies
+      - name: Install server runtime dependencies
         working-directory: server
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
+            npm ci --omit=dev --no-audit --no-fund
           else
-            npm install --no-audit --no-fund
+            npm install --omit=dev --no-audit --no-fund
           fi
 
-      - name: Remove server test files before packaging
+      - name: Remove server test files
         working-directory: server
         shell: bash
         run: find module -name '*.test.js' -delete
-
-      - name: Clean server bin
-        working-directory: server
-        shell: bash
-        run: rm -rf bin && mkdir -p bin
-
-      - name: Build server executable
-        working-directory: server
-        shell: bash
-        run: |
-          CMD="${{ matrix.server_pkg_cmd }}"
-          SCRIPT="${{ matrix.server_pkg_script }}"
-          if [ -n "$CMD" ]; then
-            eval "$CMD"
-          else
-            npm run "$SCRIPT"
-          fi
 
       - name: Build desktop app
         shell: bash

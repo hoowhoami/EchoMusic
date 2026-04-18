@@ -1,320 +1,255 @@
-import { ChildProcess, execSync, spawn } from 'child_process';
-import { BrowserWindow, app } from 'electron';
+/* eslint-disable @typescript-eslint/no-require-imports */
 import fs from 'fs';
-import net from 'net';
 import path from 'path';
+import { app, ipcMain } from 'electron';
 import log from 'electron-log';
-import type { ApiServerState, ApiServerStatus } from '../shared/api-server';
 
-let apiProcess: ChildProcess | null = null;
-let apiStartPromise: Promise<void> | null = null;
+// --- 类型定义 ---
+
+interface ModuleDefinition {
+  identifier: string;
+  route: string;
+  module: (params: any, useAxios: any) => Promise<any>;
+}
+
+interface ApiRequest {
+  method: string;
+  url: string;
+  params?: Record<string, any>;
+  data?: any;
+  headers?: Record<string, string>;
+}
+
+interface ApiResponse {
+  status: number;
+  body: any;
+  cookie?: string[];
+  headers?: Record<string, string>;
+}
+
+// --- 状态 ---
 
 const isDev = !app.isPackaged;
-const API_PORT = 6609;
-const API_HOST = '127.0.0.1';
-const API_START_TIMEOUT_MS = 15000;
-const API_POLL_INTERVAL_MS = 300;
+let moduleMap: Map<string, ModuleDefinition> = new Map();
+let serverReady = false;
+let createRequestFn: ((config: any) => Promise<any>) | null = null;
 
-let apiStatus: ApiServerStatus = {
-  state: 'idle',
-  updatedAt: Date.now(),
-};
+// server 内部使用的全局标识
+let guid = '';
+let serverDev = '';
+let mid = '';
 
-const broadcastApiStatus = () => {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed()) continue;
-    window.webContents.send('api-server:status-changed', apiStatus);
+/**
+ * 解析 server 目录路径
+ */
+const resolveServerPath = (): string => {
+  if (isDev) {
+    return path.join(process.cwd(), 'server');
   }
+  return path.join(process.resourcesPath, 'server');
 };
 
-const setApiStatus = (state: ApiServerState, error?: string) => {
-  apiStatus = {
-    state,
-    ...(error ? { error } : {}),
-    updatedAt: Date.now(),
+/**
+ * 扫描并加载所有 server module
+ * 复现 server/server.js 中 getModulesDefinitions 的逻辑
+ */
+const loadModules = (serverPath: string): ModuleDefinition[] => {
+  const modulesPath = path.join(serverPath, 'module');
+  const files = fs.readdirSync(modulesPath);
+
+  return files
+    .reverse()
+    .filter((fileName) => fileName.endsWith('.js') && !fileName.startsWith('_'))
+    .map((fileName) => {
+      const identifier = fileName.split('.').shift() || fileName;
+      const route = '/' + fileName.replace(/\.js$/i, '').replace(/_/g, '/');
+      const modulePath = path.resolve(modulesPath, fileName);
+      const mod = require(modulePath);
+      return { identifier, route, module: mod };
+    });
+};
+
+/**
+ * 初始化 server 环境
+ * 复现 server/server.js 中的全局变量初始化和环境变量设置
+ */
+export async function initApiServer(): Promise<void> {
+  if (serverReady) return;
+
+  const serverPath = resolveServerPath();
+
+  // 设置环境变量，与 spawn 方式保持一致
+  process.env.platform = 'lite';
+
+  // 加载 .env（如果存在）
+  const envPath = path.join(serverPath, '.env');
+  if (fs.existsSync(envPath)) {
+    try {
+      const dotenv = require(path.join(serverPath, 'node_modules', 'dotenv'));
+      dotenv.config({ path: envPath, quiet: true });
+    } catch {
+      // dotenv 不是必须的
+    }
+  }
+
+  // 初始化 server 内部工具
+  const utilPath = path.join(serverPath, 'util');
+  const { cryptoMd5 } = require(path.join(utilPath, 'crypto'));
+  const { getGuid, randomString, calculateMid } = require(path.join(utilPath, 'util'));
+  const { createRequest } = require(path.join(utilPath, 'request'));
+  const { applyCliOverrides } = require(path.join(utilPath, 'runtime'));
+
+  // 应用 CLI 覆盖（设置 platform 等）
+  applyCliOverrides(['--platform=lite']);
+
+  // 生成全局标识（与 server/server.js 一致）
+  guid = process.env.KUGOU_API_GUID || cryptoMd5(getGuid());
+  serverDev = (process.env.KUGOU_API_DEV || randomString(10)).toUpperCase();
+  mid = calculateMid(guid);
+
+  createRequestFn = createRequest;
+
+  // 加载所有 module
+  const modules = loadModules(serverPath);
+  moduleMap = new Map();
+  for (const mod of modules) {
+    moduleMap.set(mod.route, mod);
+    log.info(`[IPC-Server] Route registered: ${mod.route}`);
+  }
+
+  serverReady = true;
+  log.info(`[IPC-Server] Initialized, ${moduleMap.size} modules loaded`);
+}
+
+/**
+ * 根据请求 URL 匹配 module
+ * URL 格式如 /song/url → 匹配 route "/song/url"
+ */
+const matchModule = (url: string): ModuleDefinition | null => {
+  // 去掉查询参数
+  const pathname = url.split('?')[0];
+  // 精确匹配
+  if (moduleMap.has(pathname)) {
+    return moduleMap.get(pathname)!;
+  }
+  // 尝试去掉尾部斜杠
+  const normalized = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  if (moduleMap.has(normalized)) {
+    return moduleMap.get(normalized)!;
+  }
+  return null;
+};
+
+/**
+ * 从 Authorization header 解析 cookie 对象
+ * 复现 server/server.js 中 authHeader → cookieToJson 的逻辑
+ */
+const parseAuthCookie = (authHeader?: string): Record<string, string> => {
+  if (!authHeader) return {};
+  const result: Record<string, string> = {};
+  authHeader.split(';').forEach((pair) => {
+    const eqIndex = pair.indexOf('=');
+    if (eqIndex < 1) return;
+    const key = pair.slice(0, eqIndex).trim();
+    const value = pair.slice(eqIndex + 1).trim();
+    if (key && value) result[key] = value;
+  });
+  return result;
+};
+
+/**
+ * 构建默认 cookie（复现 Express 中间件的 ensureCookie 逻辑）
+ */
+const buildDefaultCookies = (): Record<string, string> => {
+  return {
+    KUGOU_API_PLATFORM: process.env.platform || 'lite',
+    KUGOU_API_MID: mid,
+    KUGOU_API_GUID: guid,
+    KUGOU_API_DEV: serverDev,
+    KUGOU_API_MAC: (process.env.KUGOU_API_MAC || '02:00:00:00:00:00').toUpperCase(),
   };
-  broadcastApiStatus();
 };
 
-export const getApiServerStatus = (): ApiServerStatus => apiStatus;
-
-export const getActiveApiPort = (): number => API_PORT;
-
-const resolvePackagedServerEntry = (cwd: string) => {
-  const platformBinaryName =
-    process.platform === 'win32'
-      ? 'app_win.exe'
-      : process.platform === 'darwin'
-        ? 'app_macos'
-        : process.platform === 'linux'
-          ? 'app_linux'
-          : '';
-
-  if (!platformBinaryName) return '';
-
-  const candidates = [
-    path.join(cwd, platformBinaryName),
-    path.join(cwd, 'bin', platformBinaryName),
-  ];
-
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
-};
-
-const ensureExecutable = (filePath: string) => {
-  if (process.platform === 'win32' || !fs.existsSync(filePath)) return;
-  try {
-    fs.chmodSync(filePath, 0o755);
-  } catch (err) {
-    log.warn(`[Server] Failed to chmod ${filePath}:`, err);
+/**
+ * 处理 API 请求（核心路由分发逻辑）
+ * 复现 server/server.js 中 Express 路由处理器的逻辑
+ */
+const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
+  if (!serverReady || !createRequestFn) {
+    return { status: 503, body: { code: 503, msg: 'Service not ready' } };
   }
-};
 
-const isChildProcessAlive = (child: ChildProcess | null) => {
-  if (!child?.pid) return false;
-  try {
-    process.kill(child.pid, 0);
-    return true;
-  } catch {
-    return false;
+  const mod = matchModule(request.url);
+  if (!mod) {
+    return { status: 404, body: { code: 404, data: null, msg: 'Not Found' } };
   }
-};
 
-const isPortReachable = (port: number, host: string) => {
-  return new Promise<boolean>((resolve) => {
-    const socket = net.connect({ port, host });
-    const finalize = (result: boolean) => {
-      socket.removeAllListeners();
-      if (!socket.destroyed) socket.destroy();
-      resolve(result);
-    };
-    socket.setTimeout(1000);
-    socket.once('connect', () => finalize(true));
-    socket.once('timeout', () => finalize(false));
-    socket.once('error', () => finalize(false));
-  });
-};
+  // 构建 cookie：默认值 + Authorization header 中的值
+  const defaultCookies = buildDefaultCookies();
+  const authCookies = parseAuthCookie(
+    request.headers?.['Authorization'] || request.headers?.['authorization'],
+  );
+  const mergedCookies = { ...defaultCookies, ...authCookies };
 
-const waitForApiReady = (port: number, host: string, timeoutMs: number) => {
-  return new Promise<void>((resolve, reject) => {
-    const startedAt = Date.now();
-    let finished = false;
-    const finish = (cb: () => void) => {
-      if (finished) return;
-      finished = true;
-      cb();
-    };
-    const poll = async () => {
-      if (finished) return;
-      if (Date.now() - startedAt >= timeoutMs) {
-        finish(() => reject(new Error('API start timeout')));
-        return;
-      }
-      if (await isPortReachable(port, host)) {
-        finish(() => resolve());
-        return;
-      }
-      if (apiProcess && !isChildProcessAlive(apiProcess)) {
-        finish(() => reject(new Error('API process exited before becoming ready')));
-        return;
-      }
-      setTimeout(() => void poll(), API_POLL_INTERVAL_MS);
-    };
-    void poll();
-  });
-};
+  // 构建 query 参数（复现 Express 路由处理器的逻辑）
+  const { cookie: paramCookie, ...restParams } = request.params || {};
 
-/** 获取占用指定端口的进程 PID */
-const getPortOccupantPid = (port: number): number | null => {
+  // 合并 cookie：默认 cookie → param 中的 cookie → auth header 中的 cookie
+  const cookieFromParams =
+    typeof paramCookie === 'string' ? parseAuthCookie(paramCookie) : paramCookie || {};
+  const finalCookie = { ...mergedCookies, ...cookieFromParams };
+
+  const query: any = {
+    cookie: finalCookie,
+    ...restParams,
+  };
+
+  // 如果有 body 数据
+  if (request.data) {
+    query.body = request.data;
+  }
+
   try {
-    if (process.platform === 'win32') {
-      const output = execSync(`netstat -aon | findstr :${port} | findstr LISTENING`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
-      const match = output.split('\n')[0]?.trim().split(/\s+/).pop();
-      return match ? parseInt(match, 10) || null : null;
-    } else {
-      const output = execSync(`lsof -ti :${port} -sTCP:LISTEN`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
-      return parseInt(output.split('\n')[0], 10) || null;
+    const moduleResponse = await mod.module(query, (config: any) => {
+      // IPC 模式下没有真实 IP，传空即可
+      config.ip = '';
+      return createRequestFn!(config);
+    });
+
+    return {
+      status: moduleResponse.status || 200,
+      body: moduleResponse.body,
+      cookie: moduleResponse.cookie,
+      headers: moduleResponse.headers,
+    };
+  } catch (e: any) {
+    const moduleResponse = e;
+
+    if (!moduleResponse?.body) {
+      return { status: 404, body: { code: 404, data: null, msg: 'Not Found' } };
     }
-  } catch {
-    return null;
-  }
-};
 
-/** 检查 PID 是否是我们自己的 server 二进制 */
-const isOwnServerProcess = (pid: number): boolean => {
-  const ownNames = ['app_win.exe', 'app_macos', 'app_linux'];
-  try {
-    if (process.platform === 'win32') {
-      const output = execSync(
-        `wmic process where ProcessId=${pid} get ExecutablePath /format:list`,
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
-      );
-      return ownNames.some((n) => output.toLowerCase().includes(n.toLowerCase()));
-    } else {
-      const output = execSync(`ps -p ${pid} -o comm=`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
-      return ownNames.some((n) => output.includes(n));
-    }
-  } catch {
-    return false;
+    return {
+      status: moduleResponse.status || 502,
+      body: moduleResponse.body,
+      cookie: moduleResponse.cookie,
+      headers: moduleResponse.headers,
+    };
   }
 };
 
 /**
- * 清理端口上残留的自己的 server 进程。
- * 只杀确认是自己二进制的进程，不动别人的。
+ * 注册 IPC handler
  */
-const cleanupOwnStaleServer = () => {
-  const pid = getPortOccupantPid(API_PORT);
-  if (!pid) return;
-  if (!isOwnServerProcess(pid)) {
-    log.info(
-      `[Server] Port ${API_PORT} occupied by foreign process (PID ${pid}), skipping cleanup`,
-    );
-    return;
-  }
-  log.info(`[Server] Killing stale own server on port ${API_PORT} (PID ${pid})`);
-  try {
-    if (process.platform === 'win32') {
-      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore' });
-    } else {
-      process.kill(pid, 'SIGKILL');
-    }
-  } catch {
-    // 进程可能已退出
-  }
-};
-
-export function startApiServer() {
-  if (apiStatus.state === 'ready' && isChildProcessAlive(apiProcess)) {
-    return Promise.resolve();
-  }
-
-  if (apiStartPromise) {
-    return apiStartPromise;
-  }
-
-  setApiStatus('starting');
-
-  apiStartPromise = (async () => {
-    // 端口已有服务在监听，可能是上次残留的实例，直接复用
-    if (await isPortReachable(API_PORT, API_HOST)) {
-      log.info(`[Server] API already reachable at http://${API_HOST}:${API_PORT}`);
-      setApiStatus('ready');
-      return;
-    }
-
-    // 清理自己的残留进程（崩溃/强退后可能残留）
-    cleanupOwnStaleServer();
-
-    let apiPath = '';
-    let cwd = '';
-    let args: string[] = [];
-
-    if (isDev) {
-      cwd = path.join(process.cwd(), 'server');
-      const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-
-      log.info(`[Server] Dev mode: Running npm install in ${cwd}...`);
-      try {
-        execSync(`${npmCmd} install`, { cwd, stdio: 'inherit' });
-        log.info('[Server] npm install finished');
-      } catch (error) {
-        log.error('[Server] npm install failed:', error);
-      }
-
-      log.info('[Server] Dev mode: Starting API server...');
-      apiPath = npmCmd;
-      args = ['run', 'dev', '--', `--port=${API_PORT}`, '--platform=lite', `--host=${API_HOST}`];
-    } else {
-      cwd = path.join(process.resourcesPath, 'server');
-      apiPath = resolvePackagedServerEntry(cwd);
-      if (!apiPath) {
-        throw new Error(`Unsupported platform: ${process.platform}`);
-      }
-      ensureExecutable(apiPath);
-      args = [`--port=${API_PORT}`, '--platform=lite', `--host=${API_HOST}`];
-    }
-
-    log.info(`[Server] Launching API: ${apiPath} ${args.join(' ')} (cwd: ${cwd})`);
-
-    apiProcess = spawn(apiPath, args, {
-      cwd,
-      windowsHide: true,
-      detached: process.platform !== 'win32',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        HOST: API_HOST,
-        PORT: String(API_PORT),
-        platform: 'lite',
-      },
-    });
-
-    apiProcess.stdout?.on('data', (data) => {
-      const output = data.toString().trim();
-      if (!output || output.includes('[OK]') || output.includes('[ERR]')) return;
-      log.info(`[Server] ${output}`);
-    });
-
-    apiProcess.stderr?.on('data', (data) => {
-      const output = data.toString().trim();
-      if (output) log.warn(`[Server] API Warning: ${output}`);
-    });
-
-    apiProcess.once('error', (error) => {
-      log.error('[Server] Failed to start API:', error);
-    });
-
-    apiProcess.once('close', (code, signal) => {
-      log.info(`[Server] API Process exited with code: ${code}, signal: ${signal ?? 'none'}`);
-      apiProcess = null;
-      if (apiStatus.state !== 'failed') setApiStatus('idle');
-    });
-
-    try {
-      await waitForApiReady(API_PORT, API_HOST, API_START_TIMEOUT_MS);
-      log.info(`[Server] API Server is ready at http://${API_HOST}:${API_PORT}`);
-      setApiStatus('ready');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setApiStatus('failed', message);
-      stopApiServer(false);
-      throw error;
-    }
-  })().finally(() => {
-    apiStartPromise = null;
+export function registerApiIpcHandler(): void {
+  ipcMain.handle('api:request', async (_event, request: ApiRequest): Promise<ApiResponse> => {
+    return handleApiRequest(request);
   });
-
-  return apiStartPromise;
 }
 
-export function stopApiServer(updateStatus = true) {
-  apiStartPromise = null;
-
-  if (apiProcess && apiProcess.pid) {
-    try {
-      process.kill(apiProcess.pid, 0);
-      if (process.platform === 'win32') {
-        execSync(`taskkill /F /T /PID ${apiProcess.pid}`, { stdio: 'ignore' });
-      } else {
-        process.kill(-apiProcess.pid, 'SIGKILL');
-      }
-    } catch (error) {
-      log.warn(`[Server] Stop API failed or process not found: ${error}`);
-    } finally {
-      apiProcess = null;
-    }
-  }
-
-  if (updateStatus) {
-    setApiStatus('idle');
-  }
+/**
+ * 获取 server 就绪状态
+ */
+export function isApiServerReady(): boolean {
+  return serverReady;
 }

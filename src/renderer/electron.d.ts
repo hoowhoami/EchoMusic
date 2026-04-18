@@ -29,11 +29,22 @@ export interface IElectronAPI {
     get: () => Promise<AppInfoResult>;
   };
   apiServer: {
-    start: () => Promise<{ success: boolean; port?: number; error?: string }>;
-    status: () => Promise<ApiServerStatus & { port?: number }>;
-    port: () => Promise<number>;
-    onStatusChanged: (func: (status: ApiServerStatus) => void) => () => void;
-    stop: () => void;
+    start: () => Promise<{ success: boolean; error?: string }>;
+    status: () => Promise<ApiServerStatus>;
+  };
+  api: {
+    request: (config: {
+      method: string;
+      url: string;
+      params?: Record<string, any>;
+      data?: any;
+      headers?: Record<string, string>;
+    }) => Promise<{
+      status: number;
+      body: any;
+      cookie?: string[];
+      headers?: Record<string, string>;
+    }>;
   };
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) => void;
