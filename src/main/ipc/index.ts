@@ -30,6 +30,8 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('tray:sync-playback');
   ipcMain.removeAllListeners('open-log-directory');
   ipcMain.removeAllListeners('check-for-updates');
+  ipcMain.removeAllListeners('update:download');
+  ipcMain.removeAllListeners('update:install');
   ipcMain.removeAllListeners('open-external');
   ipcMain.removeAllListeners('open-disclaimer');
   ipcMain.removeAllListeners('clear-app-data');
@@ -43,6 +45,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('api-server:status');
   ipcMain.removeHandler('api:request');
   ipcMain.removeHandler('app:get-info');
+  ipcMain.removeHandler('app:get-changelog');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
   ipcMain.removeHandler('desktop-lyric:get-bounds');
   ipcMain.removeHandler('desktop-lyric:get-virtual-screen-bounds');

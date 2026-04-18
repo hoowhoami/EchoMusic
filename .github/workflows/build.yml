@@ -26,6 +26,7 @@ jobs:
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.dmg
+              release/latest-mac.yml
           - os: macos-14
             electron_builder_args: "--mac --x64"
             artifact_name: EchoMusic-macOS-x64
@@ -39,11 +40,13 @@ jobs:
               release/EchoMusic-*.deb
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
+              release/latest-linux.yml
           - os: windows-latest
             electron_builder_args: ""
             artifact_name: EchoMusic-Windows
             artifact_glob: |
               release/EchoMusic-*-Windows-Setup-*.exe
+              release/latest.yml
 
     steps:
       - name: Checkout code

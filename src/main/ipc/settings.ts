@@ -1,9 +1,10 @@
 import { ipcMain, shell, app, session } from 'electron';
 import Conf from 'conf';
 import log from 'electron-log';
-import { dirname } from 'path';
-import { compare, prerelease, valid } from 'semver';
-import type { AppInfoResult, UpdateCheckResult } from '../../shared/app';
+import fs from 'fs';
+import { dirname, join } from 'path';
+import { autoUpdater } from 'electron-updater';
+import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
 import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
@@ -17,41 +18,96 @@ const appSettingsStore = new Conf<Record<string, unknown>>({
   projectName: app.getName(),
 });
 
-const RELEASES_API = 'https://api.github.com/repos/hoowhoami/EchoMusic/releases';
-
-const normalizeVersion = (value: string) => valid(value.trim()) ?? value.replace(/^v/i, '').trim();
 const getAppInfo = (): AppInfoResult => {
   const version = app.getVersion();
-  return {
-    version,
-    isPrerelease: Array.isArray(prerelease(normalizeVersion(version))),
-  };
-};
-
-const compareVersions = (left: string, right: string) =>
-  compare(normalizeVersion(left), normalizeVersion(right));
-
-const fetchLatestRelease = async (includePrerelease: boolean) => {
-  const response = await fetch(RELEASES_API, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'EchoMusic',
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`GitHub API ${response.status}`);
-  }
-
-  const releases = (await response.json()) as Array<Record<string, unknown>>;
-  return releases.find((release) => {
-    if (release.draft === true) return false;
-    if (!includePrerelease && release.prerelease === true) return false;
-    return typeof release.tag_name === 'string';
-  });
+  return { version, isPrerelease: version.includes('-') };
 };
 
 export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = log;
+
+  const isDev = !app.isPackaged;
+
+  const sendToRenderer = (channel: string, data: unknown) => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) win.webContents.send(channel, data);
+  };
+
+  // --- autoUpdater 事件 ---
+  autoUpdater.on('update-available', (info) => {
+    const { version: currentVersion } = getAppInfo();
+    const silent = (autoUpdater as any)._echoSilent ?? false;
+    const result: UpdateCheckResult = {
+      status: 'available',
+      currentVersion,
+      latestVersion: info.version,
+      releaseName: info.releaseName || `v${info.version}`,
+      releaseUrl: `https://github.com/hoowhoami/EchoMusic/releases/tag/v${info.version}`,
+      body: typeof info.releaseNotes === 'string' ? info.releaseNotes.slice(0, 2000) : '',
+      silent,
+    };
+    sendToRenderer('update-check-result', result);
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    const { version: currentVersion } = getAppInfo();
+    const silent = (autoUpdater as any)._echoSilent ?? false;
+    sendToRenderer('update-check-result', {
+      status: 'latest',
+      currentVersion,
+      latestVersion: info.version,
+      releaseName: info.releaseName || `v${info.version}`,
+      releaseUrl: `https://github.com/hoowhoami/EchoMusic/releases/tag/v${info.version}`,
+      silent,
+    } satisfies UpdateCheckResult);
+  });
+
+  autoUpdater.on('error', (error) => {
+    log.error('[Updater] Error:', error);
+    sendToRenderer('update-check-result', {
+      status: 'error',
+      currentVersion: getAppInfo().version,
+      message: error?.message || '更新检查失败，请稍后重试。',
+    } satisfies UpdateCheckResult);
+    sendToRenderer('update-download-status', {
+      status: 'error',
+      error: error?.message || '下载失败',
+    } satisfies UpdateDownloadResult);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendToRenderer('update-download-status', {
+      status: 'downloading',
+      progress: {
+        percent: progress.percent,
+        bytesPerSecond: progress.bytesPerSecond,
+        transferred: progress.transferred,
+        total: progress.total,
+      },
+    } satisfies UpdateDownloadResult);
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    sendToRenderer('update-download-status', {
+      status: 'downloaded',
+    } satisfies UpdateDownloadResult);
+  });
+
+  // --- IPC handlers ---
   ipcMain.handle('app:get-info', () => getAppInfo());
+
+  ipcMain.handle('app:get-changelog', () => {
+    const changelogPath = isDev
+      ? join(process.cwd(), 'CHANGELOG.md')
+      : join(process.resourcesPath, 'CHANGELOG.md');
+    try {
+      return fs.readFileSync(changelogPath, 'utf-8');
+    } catch {
+      return '';
+    }
+  });
 
   ipcMain.on('open-log-directory', async () => {
     await openLogDirectory();
@@ -59,65 +115,48 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
 
   ipcMain.on(
     'check-for-updates',
-    async (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
-      const win = getMainWindow();
-      if (!win) return;
-
-      const { version: currentVersion } = getAppInfo();
+    (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
       const silent = Boolean(payload?.silent);
+      const prerelease = Boolean(payload?.prerelease);
 
-      try {
-        const release = await fetchLatestRelease(Boolean(payload?.prerelease));
-        if (!release || typeof release.tag_name !== 'string') {
-          const result: UpdateCheckResult = {
-            status: 'error',
-            currentVersion,
-            message: '未获取到有效的版本信息，请稍后再试。',
-            silent,
-          };
-          win.webContents.send('update-check-result', result);
-          return;
-        }
-
-        const latestVersion = String(release.tag_name);
-        const result: UpdateCheckResult =
-          compareVersions(latestVersion, currentVersion) > 0
-            ? {
-                status: 'available',
-                currentVersion,
-                latestVersion,
-                releaseName: typeof release.name === 'string' ? release.name : latestVersion,
-                releaseUrl:
-                  typeof release.html_url === 'string'
-                    ? release.html_url
-                    : 'https://github.com/hoowhoami/EchoMusic/releases',
-                body: typeof release.body === 'string' ? release.body.slice(0, 1200) : '',
-                silent,
-              }
-            : {
-                status: 'latest',
-                currentVersion,
-                latestVersion,
-                releaseName: typeof release.name === 'string' ? release.name : latestVersion,
-                releaseUrl:
-                  typeof release.html_url === 'string'
-                    ? release.html_url
-                    : 'https://github.com/hoowhoami/EchoMusic/releases',
-                silent,
-              };
-
-        win.webContents.send('update-check-result', result);
-      } catch (error) {
-        const result: UpdateCheckResult = {
-          status: 'error',
-          currentVersion,
-          message: error instanceof Error ? error.message : '更新检查失败，请稍后重试。',
+      if (isDev) {
+        sendToRenderer('update-check-result', {
+          status: 'latest',
+          currentVersion: getAppInfo().version,
+          message: '开发模式下不支持在线更新。',
           silent,
-        };
-        win.webContents.send('update-check-result', result);
+        } satisfies UpdateCheckResult);
+        return;
       }
+
+      autoUpdater.allowPrerelease = prerelease;
+      (autoUpdater as any)._echoSilent = silent;
+
+      autoUpdater.checkForUpdates().catch((error) => {
+        log.error('[Updater] Check failed:', error);
+        sendToRenderer('update-check-result', {
+          status: 'error',
+          currentVersion: getAppInfo().version,
+          message: error?.message || '更新检查失败，请稍后重试。',
+          silent,
+        } satisfies UpdateCheckResult);
+      });
     },
   );
+
+  ipcMain.on('update:download', () => {
+    autoUpdater.downloadUpdate().catch((error) => {
+      log.error('[Updater] Download failed:', error);
+      sendToRenderer('update-download-status', {
+        status: 'error',
+        error: error?.message || '下载失败',
+      } satisfies UpdateDownloadResult);
+    });
+  });
+
+  ipcMain.on('update:install', () => {
+    autoUpdater.quitAndInstall(false, true);
+  });
 
   ipcMain.on('open-external', async (_event, url: string) => {
     if (typeof url !== 'string' || !url.startsWith('http')) return;

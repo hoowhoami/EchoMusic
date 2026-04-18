@@ -25,7 +25,9 @@
     "axios": "^1.13.6",
     "conf": "^15.1.0",
     "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "howler": "^2.2.4",
+    "marked": "^18.0.2",
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.2.0",
     "reka-ui": "^2.9.2",
@@ -64,6 +66,13 @@
   "build": {
     "appId": "com.hoowhoami.echomusic",
     "productName": "EchoMusic",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hoowhoami",
+        "repo": "EchoMusic"
+      }
+    ],
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -81,14 +90,23 @@
         ]
       },
       {
+        "from": "CHANGELOG.md",
+        "to": "CHANGELOG.md"
+      },
+      {
         "from": "server/module",
         "to": "server/module",
-        "filter": ["**/*.js"]
+        "filter": [
+          "**/*.js"
+        ]
       },
       {
         "from": "server/util",
         "to": "server/util",
-        "filter": ["**/*.js", "**/*.json"]
+        "filter": [
+          "**/*.js",
+          "**/*.json"
+        ]
       },
       {
         "from": "server/node_modules",

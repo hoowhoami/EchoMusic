@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
-import type { AppInfoResult } from '../shared/app';
+import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
 import type { ShortcutCommand, ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
@@ -60,6 +60,17 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.send('window-control', action),
   appInfo: {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
+    getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
+  },
+  updater: {
+    download: () => ipcRenderer.send('update:download'),
+    install: () => ipcRenderer.send('update:install'),
+    onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, result: UpdateDownloadResult) =>
+        func(result);
+      ipcRenderer.on('update-download-status', listener);
+      return () => ipcRenderer.removeListener('update-download-status', listener);
+    },
   },
   apiServer: {
     start: () => ipcRenderer.invoke('api-server:start'),

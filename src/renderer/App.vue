@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { RouterView } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
-import Dialog from '@/components/ui/Dialog.vue';
-import Button from '@/components/ui/Button.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
+import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
@@ -36,21 +34,6 @@ const syncTrayPlayback = () => {
     playMode: player.playMode,
     volume: player.volume,
   });
-};
-
-const startupUpdateDescription = computed(() => {
-  if (!startupUpdateResult.value) return '';
-  const nextVersion =
-    startupUpdateResult.value.releaseName || startupUpdateResult.value.latestVersion || '新版本';
-  return `当前版本 v${startupUpdateResult.value.currentVersion}，发现新版本 ${nextVersion}`;
-});
-
-const startupUpdateBody = computed(() => startupUpdateResult.value?.body?.trim() || '');
-
-const handleOpenStartupUpdateRelease = () => {
-  const url = startupUpdateResult.value?.releaseUrl;
-  if (!url) return;
-  window.electron?.ipcRenderer?.send('open-external', url);
 };
 
 const handleSilentUpdateCheckResult = (payload: unknown) => {
@@ -105,15 +88,11 @@ onUnmounted(() => {
 watch(() => settings.theme, updateTheme);
 watch(
   () => settings.rememberWindowSize,
-  () => {
-    settings.syncRememberWindowSize();
-  },
+  () => settings.syncRememberWindowSize(),
 );
 watch(
   () => settings.preventSleep,
-  () => {
-    settings.syncPreventSleep(player.isPlaying);
-  },
+  () => settings.syncPreventSleep(player.isPlaying),
 );
 watch(
   () => player.isPlaying,
@@ -122,23 +101,11 @@ watch(
     syncTrayPlayback();
   },
 );
-watch(
-  () => player.playMode,
-  () => {
-    syncTrayPlayback();
-  },
-);
-watch(
-  () => player.volume,
-  () => {
-    syncTrayPlayback();
-  },
-);
+watch(() => player.playMode, syncTrayPlayback);
+watch(() => player.volume, syncTrayPlayback);
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
-  () => {
-    void syncGlobalShortcuts();
-  },
+  () => void syncGlobalShortcuts(),
   { deep: true },
 );
 </script>
@@ -151,32 +118,14 @@ watch(
   </RouterView>
   <AuthExpiredDialog />
   <ToastViewport />
-  <Dialog
-    :open="showStartupUpdateDialog"
-    title="发现新版本"
-    :description="startupUpdateDescription"
-    show-close
-    @update:open="showStartupUpdateDialog = $event"
-  >
-    <div class="space-y-4">
-      <Scrollbar
-        v-if="startupUpdateBody"
-        class="max-h-[280px] rounded-2xl bg-black/5 text-sm leading-6 text-text-secondary dark:bg-white/5"
-        :content-props="{ class: 'px-4 py-3' }"
-      >
-        <pre class="whitespace-pre-wrap break-words font-inherit">{{ startupUpdateBody }}</pre>
-      </Scrollbar>
-    </div>
-    <template #footer>
-      <Button variant="ghost" size="sm" @click="showStartupUpdateDialog = false">稍后</Button>
-      <Button variant="primary" size="sm" @click="handleOpenStartupUpdateRelease">前往下载</Button>
-    </template>
-  </Dialog>
+  <UpdateDialog
+    v-model:open="showStartupUpdateDialog"
+    :result="startupUpdateResult"
+    dismiss-label="稍后"
+  />
 </template>
 
 <style>
-/* 全局样式已在 style.css 中定义 */
-
 .page-enter-active,
 .page-leave-active {
   transition: all 0.3s ease-out;

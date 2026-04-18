@@ -1,5 +1,5 @@
 import type { ApiServerStatus } from '../shared/api-server';
-import type { AppInfoResult } from '../shared/app';
+import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
 import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
@@ -27,6 +27,12 @@ export interface IElectronAPI {
   windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
   appInfo: {
     get: () => Promise<AppInfoResult>;
+    getChangelog: () => Promise<string>;
+  };
+  updater: {
+    download: () => void;
+    install: () => void;
+    onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => () => void;
   };
   apiServer: {
     start: () => Promise<{ success: boolean; error?: string }>;

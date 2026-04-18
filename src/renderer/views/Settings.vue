@@ -22,6 +22,8 @@ import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
+import UpdateDialog from '@/components/app/UpdateDialog.vue';
+import { marked } from 'marked';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
 import {
   iconPalette,
@@ -322,6 +324,8 @@ const resetAllShortcuts = () => {
 
 const showConfirmClear = ref(false);
 const showUpdateResult = ref(false);
+const showChangelog = ref(false);
+const changelogHtml = ref('');
 const isCheckingUpdate = ref(false);
 const updateResult = ref<UpdateCheckResult | null>(null);
 
@@ -387,30 +391,23 @@ const outputDevicePermissionActionLabel = computed(() => {
 
 const versionLabel = computed(() => settingStore.appVersion || '未知');
 const releaseChannelLabel = computed(() => (settingStore.isPrerelease ? 'Prerelease' : 'Release'));
-const updateDialogTitle = computed(() => {
-  if (!updateResult.value) return '检查更新';
-  if (updateResult.value.status === 'available') return '发现新版本';
-  if (updateResult.value.status === 'latest') return '已是最新版本';
-  return '检查更新失败';
-});
-const updateDialogDescription = computed(() => {
-  if (!updateResult.value) return '';
-  if (updateResult.value.status === 'available') {
-    return `当前版本 v${updateResult.value.currentVersion}，发现新版本 ${updateResult.value.releaseName || updateResult.value.latestVersion || ''}`.trim();
-  }
-  if (updateResult.value.status === 'latest') {
-    return `当前版本 v${updateResult.value.currentVersion} 已是最新版本。`;
-  }
-  return updateResult.value.message || '暂时无法获取更新信息，请稍后再试。';
-});
-const updateResultBody = computed(() => {
-  if (!updateResult.value?.body) return '';
-  return updateResult.value.body.trim();
-});
-
 const handleCheckUpdates = () => {
   isCheckingUpdate.value = true;
   settingStore.checkForUpdates();
+};
+
+const handleShowChangelog = async () => {
+  try {
+    const raw = await window.electron.appInfo.getChangelog();
+    if (!raw) {
+      changelogHtml.value = '<p>暂无更新日志</p>';
+    } else {
+      changelogHtml.value = marked.parse(raw, { async: false }) as string;
+    }
+  } catch {
+    changelogHtml.value = '<p>无法读取更新日志</p>';
+  }
+  showChangelog.value = true;
 };
 
 const handleRequestOutputDevicePermission = async () => {
@@ -443,12 +440,6 @@ const handleOutputDeviceChange = async (value: string | number | boolean | null 
   }
 
   settingStore.outputDevice = nextValue;
-};
-
-const handleOpenUpdateRelease = () => {
-  const url = updateResult.value?.releaseUrl;
-  if (!url) return;
-  window.electron?.ipcRenderer?.send('open-external', url);
 };
 
 const handleUpdateCheckResult = (payload: unknown) => {
@@ -1030,7 +1021,14 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">当前版本</h3>
             <p class="text-sm text-text-secondary">
-              Version v{{ versionLabel }} {{ releaseChannelLabel }}
+              <button
+                type="button"
+                class="hover:text-primary transition-colors cursor-pointer"
+                title="查看更新日志"
+                @click="handleShowChangelog"
+              >
+                Version v{{ versionLabel }} {{ releaseChannelLabel }}
+              </button>
             </p>
           </div>
           <Button
@@ -1101,31 +1099,20 @@ onUnmounted(() => {
       </template>
     </Dialog>
 
+    <UpdateDialog v-model:open="showUpdateResult" :result="updateResult" />
+
     <Dialog
-      v-model:open="showUpdateResult"
-      :title="updateDialogTitle"
-      :description="updateDialogDescription"
+      v-model:open="showChangelog"
+      :title="`更新日志`"
       showClose
-      contentClass="settings-update-dialog"
-      bodyClass="settings-update-body"
+      noScroll
+      :content-style="{ width: '520px' }"
     >
-      <Scrollbar
-        v-if="updateResultBody"
-        class="settings-update-changelog"
-        :content-props="{ class: 'px-4 py-3' }"
-      >
-        {{ updateResultBody }}
+      <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
+        <div class="changelog-content" v-html="changelogHtml"></div>
       </Scrollbar>
       <template #footer>
-        <Button variant="ghost" size="sm" @click="showUpdateResult = false">关闭</Button>
-        <Button
-          v-if="updateResult?.status === 'available' && updateResult?.releaseUrl"
-          variant="primary"
-          size="sm"
-          @click="handleOpenUpdateRelease"
-        >
-          前往下载
-        </Button>
+        <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
       </template>
     </Dialog>
 
@@ -1310,7 +1297,37 @@ onUnmounted(() => {
 }
 
 .settings-update-changelog {
-  @apply max-h-72 whitespace-pre-wrap text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04];
+  @apply max-h-[min(288px,40vh)] text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04];
+}
+
+.changelog-content h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin: 12px 0 4px;
+}
+
+.changelog-content h4:first-child {
+  margin-top: 0;
+}
+
+.changelog-content ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.changelog-content li {
+  position: relative;
+  padding-left: 14px;
+  line-height: 1.8;
+}
+
+.changelog-content li::before {
+  content: '·';
+  position: absolute;
+  left: 2px;
+  font-weight: 700;
 }
 
 :global(.settings-update-dialog) {
