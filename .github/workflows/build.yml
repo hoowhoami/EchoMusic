@@ -136,8 +136,10 @@ jobs:
         run: |
           set -e
           VERSION="${GITHUB_REF_NAME#v}"
-          # 提取 CHANGELOG.md 中对应版本的内容（两个 ## 之间的部分）
-          BODY=$(awk -v ver="$VERSION" '
+          # 提取顶部声明（## 之前的内容，去掉标题行）
+          HEADER=$(awk '/^## \[/ { exit } !/^# / { print }' CHANGELOG.md | sed '/^$/d')
+          # 提取对应版本的内容
+          VERSION_BODY=$(awk -v ver="$VERSION" '
             /^## \[/ {
               if (found) exit
               if (index($0, "[" ver "]")) found=1
@@ -146,7 +148,11 @@ jobs:
             found { print }
           ' CHANGELOG.md)
 
-          if [ -z "$BODY" ]; then
+          if [ -n "$HEADER" ] && [ -n "$VERSION_BODY" ]; then
+            BODY=$(printf '%s\n\n%s' "$HEADER" "$VERSION_BODY")
+          elif [ -n "$VERSION_BODY" ]; then
+            BODY="$VERSION_BODY"
+          else
             BODY="详见 CHANGELOG.md"
           fi
 
