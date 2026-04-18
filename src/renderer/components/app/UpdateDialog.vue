@@ -195,39 +195,56 @@ const handleClose = () => {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.changelog-content h3,
-.changelog-content h4 {
+.changelog-content :deep(h2) {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .changelog-content :deep(h2) {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.changelog-content :deep(h2:first-child) {
+  margin-top: 0;
+}
+
+.changelog-content :deep(h3),
+.changelog-content :deep(h4) {
   font-size: 13px;
   font-weight: 700;
   color: var(--color-text-main);
   margin: 12px 0 4px;
 }
 
-.changelog-content h3:first-child,
-.changelog-content h4:first-child {
+.changelog-content :deep(h3:first-child),
+.changelog-content :deep(h4:first-child) {
   margin-top: 0;
 }
 
-.changelog-content ul {
+.changelog-content :deep(ul) {
   list-style: none;
   padding: 0;
   margin: 0 0 4px;
 }
 
-.changelog-content li {
+.changelog-content :deep(li) {
   position: relative;
   padding-left: 14px;
   line-height: 1.8;
 }
 
-.changelog-content li::before {
+.changelog-content :deep(li::before) {
   content: '·';
   position: absolute;
   left: 2px;
   font-weight: 700;
 }
 
-.changelog-content p {
+.changelog-content :deep(p) {
   margin: 4px 0;
 }
 </style>

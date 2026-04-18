@@ -1021,24 +1021,26 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">当前版本</h3>
             <p class="text-sm text-text-secondary">
-              <button
-                type="button"
-                class="hover:text-primary transition-colors cursor-pointer"
-                title="查看更新日志"
-                @click="handleShowChangelog"
-              >
-                Version v{{ versionLabel }} {{ releaseChannelLabel }}
-              </button>
+              Version v{{ versionLabel }} {{ releaseChannelLabel }}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="text-primary text-sm font-semibold"
-            :disabled="isCheckingUpdate"
-            @click="handleCheckUpdates"
-            >{{ isCheckingUpdate ? '检查中...' : '检查更新' }}</Button
-          >
+          <div class="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-text-secondary text-sm font-semibold"
+              @click="handleShowChangelog"
+              >更新日志</Button
+            >
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-primary text-sm font-semibold"
+              :disabled="isCheckingUpdate"
+              @click="handleCheckUpdates"
+              >{{ isCheckingUpdate ? '检查中...' : '检查更新' }}</Button
+            >
+          </div>
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">
@@ -1300,30 +1302,49 @@ onUnmounted(() => {
   @apply max-h-[min(288px,40vh)] text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04];
 }
 
-.changelog-content h4 {
+.changelog-content :deep(h2) {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-text-main);
+  margin: 16px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+:global(.dark) .changelog-content :deep(h2) {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.changelog-content :deep(h2:first-child) {
+  margin-top: 0;
+}
+
+.changelog-content :deep(h3),
+.changelog-content :deep(h4) {
   font-size: 13px;
   font-weight: 700;
   color: var(--color-text-main);
   margin: 12px 0 4px;
 }
 
-.changelog-content h4:first-child {
+.changelog-content :deep(h3:first-child),
+.changelog-content :deep(h4:first-child) {
   margin-top: 0;
 }
 
-.changelog-content ul {
+.changelog-content :deep(ul) {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-.changelog-content li {
+.changelog-content :deep(li) {
   position: relative;
   padding-left: 14px;
   line-height: 1.8;
 }
 
-.changelog-content li::before {
+.changelog-content :deep(li::before) {
   content: '·';
   position: absolute;
   left: 2px;

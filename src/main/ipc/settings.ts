@@ -30,6 +30,29 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
 
   const isDev = !app.isPackaged;
 
+  const readCurrentVersionChangelog = (): string => {
+    const version = app.getVersion();
+    const changelogPath = isDev
+      ? join(process.cwd(), 'CHANGELOG.md')
+      : join(process.resourcesPath, 'CHANGELOG.md');
+    try {
+      const content = fs.readFileSync(changelogPath, 'utf-8');
+      // 提取顶部声明（第一个 ## 之前，去掉 # 标题行）
+      const headerMatch = content.match(/^([\s\S]*?)(?=\n## \[)/);
+      const header = (headerMatch?.[1] || '').replace(/^#\s+.*$/gm, '').trim();
+      // 提取当前版本的内容（包含 ## 标题行）
+      const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const versionMatch = content.match(
+        new RegExp(`(## \\[${escaped}\\][^\\n]*\\n[\\s\\S]*?)(?=\\n## \\[|$)`),
+      );
+      const versionBody = versionMatch?.[1]?.trim() || '';
+      if (!header && !versionBody) return '';
+      return [header, versionBody].filter(Boolean).join('\n\n');
+    } catch {
+      return '';
+    }
+  };
+
   const sendToRenderer = (channel: string, data: unknown) => {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) win.webContents.send(channel, data);
@@ -60,6 +83,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       latestVersion: info.version,
       releaseName: info.releaseName || `v${info.version}`,
       releaseUrl: `https://github.com/hoowhoami/EchoMusic/releases/tag/v${info.version}`,
+      body: readCurrentVersionChangelog(),
       silent,
     } satisfies UpdateCheckResult);
   });
@@ -123,6 +147,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         sendToRenderer('update-check-result', {
           status: 'latest',
           currentVersion: getAppInfo().version,
+          body: readCurrentVersionChangelog(),
           message: '开发模式下不支持在线更新。',
           silent,
         } satisfies UpdateCheckResult);

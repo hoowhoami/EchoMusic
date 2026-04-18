@@ -23,7 +23,13 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
   ipcMain.on('window-drag:move', (event, pos: { x: number; y: number }) => {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
     if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
-    browserWindow.setPosition(Math.round(pos.x), Math.round(pos.y), false);
+    const bounds = browserWindow.getBounds();
+    browserWindow.setBounds({
+      x: Math.round(pos.x),
+      y: Math.round(pos.y),
+      width: bounds.width,
+      height: bounds.height,
+    });
   });
 
   ipcMain.on('window-toggle', () => {
