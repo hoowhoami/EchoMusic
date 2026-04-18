@@ -20,6 +20,12 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
+  ipcMain.on('window-drag:move', (event, pos: { x: number; y: number }) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
+    browserWindow.setPosition(Math.round(pos.x), Math.round(pos.y), false);
+  });
+
   ipcMain.on('window-toggle', () => {
     const browserWindow = getMainWindow();
     if (!browserWindow) return;

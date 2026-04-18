@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { iconMinus, iconSquare, iconX } from '@/icons';
 import Button from '@/components/ui/Button.vue';
+import { useWindowDrag } from '@/utils/useWindowDrag';
 
 const isMac = computed(() => window.electron.platform === 'darwin');
+const headerRef = ref<HTMLElement | null>(null);
+
+useWindowDrag(headerRef);
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
   window.electron.windowControl(action);
@@ -11,57 +15,88 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
 </script>
 
 <template>
-  <header
-    class="overlay-header fixed top-0 left-0 right-0 z-50 h-12 select-none"
-    style="pointer-events: none; -webkit-app-region: drag"
-  >
-    <div
-      v-if="isMac"
-      class="h-full w-full"
-      style="pointer-events: auto; -webkit-app-region: drag"
-    ></div>
-
-    <template v-else>
-      <div
-        class="absolute inset-y-0 left-0 right-[144px]"
-        style="pointer-events: auto; -webkit-app-region: drag"
-      ></div>
-      <div
-        class="window-controls absolute top-0 right-0 flex items-center h-full"
-        style="pointer-events: auto; -webkit-app-region: no-drag"
+  <header ref="headerRef" class="overlay-header">
+    <div v-if="!isMac" class="overlay-header-controls no-drag">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('minimize')"
+        class="overlay-control-btn"
+        title="最小化"
       >
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('minimize')"
-          class="w-[48px] h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-black/5 dark:hover:bg-white/10"
-          title="最小化"
-        >
-          <Icon :icon="iconMinus" width="14" height="14" />
-        </Button>
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('maximize')"
-          class="w-[48px] h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-black/5 dark:hover:bg-white/10"
-          title="最大化"
-        >
-          <Icon :icon="iconSquare" width="13" height="13" />
-        </Button>
-        <Button
-          variant="unstyled"
-          size="none"
-          @click="handleControl('close')"
-          class="w-[48px] h-full flex items-center justify-center text-text-main dark:text-white opacity-60 hover:opacity-100 transition-all duration-200 bg-transparent hover:bg-[#ff3b30] hover:text-white"
-          title="关闭"
-        >
-          <Icon :icon="iconX" width="14" height="14" />
-        </Button>
-      </div>
-    </template>
+        <Icon :icon="iconMinus" width="14" height="14" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('maximize')"
+        class="overlay-control-btn"
+        title="最大化"
+      >
+        <Icon :icon="iconSquare" width="13" height="13" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('close')"
+        class="overlay-control-btn overlay-control-btn--close"
+        title="关闭"
+      >
+        <Icon :icon="iconX" width="14" height="14" />
+      </Button>
+    </div>
   </header>
 </template>
 
 <style scoped>
-/* Removed @apply to avoid Tailwind v4 compilation issues in SFC style blocks */
+.overlay-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  z-index: 50;
+  user-select: none;
+  cursor: default;
+}
+
+.overlay-header-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.overlay-control-btn {
+  width: 48px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-main);
+  opacity: 0.6;
+  transition: all 0.2s;
+  background: transparent;
+}
+
+:global(.dark) .overlay-control-btn {
+  color: white;
+}
+
+.overlay-control-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:global(.dark) .overlay-control-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.overlay-control-btn--close:hover {
+  background: #ff3b30;
+  color: white;
+  opacity: 1;
+}
 </style>

@@ -38,18 +38,14 @@
 }
 
 @layer base {
-  .drag {
-    -webkit-app-region: drag;
-  }
   .no-drag {
-    -webkit-app-region: no-drag;
+    /* 标记不可拖动区域，供 useWindowDrag 识别 */
   }
 
   button,
   [role='button'],
   .cursor-pointer {
     cursor: pointer;
-    -webkit-app-region: no-drag;
   }
 
   a,

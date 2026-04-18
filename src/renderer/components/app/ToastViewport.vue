@@ -14,6 +14,7 @@ const toneClassMap = {
 
 <template>
   <div
+    v-if="toastStore.items.length > 0"
     class="toast-viewport pointer-events-none fixed right-5 top-5 z-[5000] flex w-[min(360px,calc(100vw-24px))] flex-col gap-2"
   >
     <transition-group name="toast-slide">
