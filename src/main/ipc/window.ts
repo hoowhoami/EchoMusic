@@ -20,16 +20,37 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
+  // 窗口拖动：开始时锁定尺寸（规避 Windows 高 DPI 缩放 bug）
+  const dragState = new Map<number, { width: number; height: number }>();
+
+  ipcMain.on('window-drag:start', (event) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
+    const bounds = browserWindow.getBounds();
+    dragState.set(browserWindow.id, { width: bounds.width, height: bounds.height });
+    browserWindow.setMaximumSize(bounds.width, bounds.height);
+  });
+
   ipcMain.on('window-drag:move', (event, pos: { x: number; y: number }) => {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
     if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
+    const locked = dragState.get(browserWindow.id);
     const bounds = browserWindow.getBounds();
     browserWindow.setBounds({
       x: Math.round(pos.x),
       y: Math.round(pos.y),
-      width: bounds.width,
-      height: bounds.height,
+      width: locked?.width ?? bounds.width,
+      height: locked?.height ?? bounds.height,
     });
+  });
+
+  ipcMain.on('window-drag:end', (event) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!browserWindow) return;
+    dragState.delete(browserWindow.id);
+    if (!browserWindow.isDestroyed()) {
+      browserWindow.setMaximumSize(0, 0);
+    }
   });
 
   ipcMain.on('window-toggle', () => {

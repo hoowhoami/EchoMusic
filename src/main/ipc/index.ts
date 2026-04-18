@@ -22,7 +22,9 @@ export const registerIpcHandlers = (context: IpcContext) => {
 
 export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('window-control');
+  ipcMain.removeAllListeners('window-drag:start');
   ipcMain.removeAllListeners('window-drag:move');
+  ipcMain.removeAllListeners('window-drag:end');
   ipcMain.removeAllListeners('window-toggle');
   ipcMain.removeAllListeners('quit-app');
   ipcMain.removeHandler('shortcuts:register');
