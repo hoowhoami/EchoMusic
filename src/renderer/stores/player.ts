@@ -1355,8 +1355,6 @@ export const usePlayerStore = defineStore('player', {
 
       if (this.playMode === 'random') {
         nextIndex = this.pickRandomIndex(list.length, currentIndex);
-      } else if (this.playMode === 'single') {
-        nextIndex = currentIndex;
       } else if (this.playMode === 'sequential') {
         // 顺序播放：到末尾就停止
         if (currentIndex >= list.length - 1) {
