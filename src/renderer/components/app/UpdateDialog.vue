@@ -31,8 +31,6 @@ const downloadPercent = ref(0);
 const downloadError = ref('');
 let disposeListener: (() => void) | null = null;
 
-const canAutoUpdate = computed(() => window.electron.platform !== 'darwin');
-
 const title = computed(() => {
   const r = props.result;
   if (!r) return '检查更新';
@@ -158,26 +156,21 @@ const handleClose = () => {
       <!-- 右侧：按钮 -->
       <Button variant="ghost" size="sm" @click="handleClose">{{ dismissLabel }}</Button>
       <template v-if="result?.status === 'available'">
-        <template v-if="canAutoUpdate">
-          <Button
-            v-if="downloadStatus === 'downloaded'"
-            variant="primary"
-            size="sm"
-            @click="handleInstall"
-          >
-            立即安装
-          </Button>
-          <Button
-            v-else-if="downloadStatus === 'downloading'"
-            variant="secondary"
-            size="sm"
-            disabled
-          >
-            下载中
-          </Button>
-          <Button v-else variant="primary" size="sm" @click="handleDownload"> 立即更新 </Button>
-        </template>
-        <Button v-else variant="primary" size="sm" @click="handleOpenRelease"> 前往下载 </Button>
+        <Button v-if="result?.releaseUrl" variant="ghost" size="sm" @click="handleOpenRelease">
+          前往下载
+        </Button>
+        <Button
+          v-if="downloadStatus === 'downloaded'"
+          variant="primary"
+          size="sm"
+          @click="handleInstall"
+        >
+          立即安装
+        </Button>
+        <Button v-else-if="downloadStatus === 'downloading'" variant="secondary" size="sm" disabled>
+          下载中
+        </Button>
+        <Button v-else variant="primary" size="sm" @click="handleDownload"> 立即更新 </Button>
       </template>
     </template>
   </Dialog>

@@ -149,6 +149,7 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
       "include": "build/installer.nsh",
       "artifactName": "${productName}-${version}-Windows-Setup-${arch}.${ext}"
     },
