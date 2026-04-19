@@ -86,6 +86,7 @@ onUnmounted(() => {
 :global(.drawer-overlay[data-state='open']) {
   opacity: 1;
   pointer-events: auto;
+  -webkit-app-region: no-drag;
 }
 
 :global(.drawer-panel) {
@@ -107,6 +108,7 @@ onUnmounted(() => {
   opacity: 1;
   pointer-events: auto;
   transform: translate(0, 0);
+  -webkit-app-region: no-drag;
 }
 
 :global(.drawer-right) {

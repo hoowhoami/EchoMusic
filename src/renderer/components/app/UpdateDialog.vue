@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import type { UpdateCheckResult } from '@/../shared/app';
 import type { UpdateDownloadStatus } from '@/../shared/app';
+import { useSettingStore } from '@/stores/setting';
 
 interface Props {
   open?: boolean;
@@ -71,7 +72,8 @@ const handleDownload = () => {
 };
 
 const handleInstall = () => {
-  window.electron?.updater?.install();
+  const settingStore = useSettingStore();
+  window.electron?.updater?.install(settingStore.silentUpdate);
 };
 
 const handleOpenRelease = () => {

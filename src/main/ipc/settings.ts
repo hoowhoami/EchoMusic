@@ -179,8 +179,9 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     });
   });
 
-  ipcMain.on('update:install', () => {
-    autoUpdater.quitAndInstall(false, true);
+  ipcMain.on('update:install', (_event, payload?: { silent?: boolean }) => {
+    const isSilent = payload?.silent ?? false;
+    autoUpdater.quitAndInstall(isSilent, true);
   });
 
   ipcMain.on('open-external', async (_event, url: string) => {

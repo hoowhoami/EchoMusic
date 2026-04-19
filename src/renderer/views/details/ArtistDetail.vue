@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   getArtistDetail,
   getArtistSongs,
   getArtistAlbums,
+  getArtistVideos,
   followArtist,
   unfollowArtist,
 } from '@/api/artist';
@@ -13,6 +14,7 @@ import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
 import SongListHeader from '@/components/music/SongListHeader.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
+import MvCard from '@/components/music/MvCard.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -49,6 +51,17 @@ interface ArtistAlbumCardProps {
   publishTime?: string;
 }
 
+interface ArtistMvCardProps {
+  videoId: string | number;
+  hash: string;
+  title: string;
+  coverUrl: string;
+  artist?: string;
+  duration?: number;
+  publishDate?: string;
+  albumAudioId?: string | number;
+}
+
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
@@ -62,12 +75,22 @@ const getArtistId = () =>
 
 const loading = ref(true);
 const loadingSongs = ref(true);
-const loadingAlbums = ref(true);
+const loadingAlbums = ref(false);
+const loadingMvs = ref(false);
 const artist = ref<ReturnType<typeof mapArtistDetailMeta> | null>(null);
 
 // 使用 shallowRef 避免对成千上万个歌曲对象进行深层响应式代理，极大提升性能
 const songs = shallowRef<Song[]>([]);
 const albums = shallowRef<ReturnType<typeof mapAlbumMeta>[]>([]);
+const albumPage = ref(1);
+const albumHasMore = ref(false);
+const albumFetched = ref(false);
+const mvs = shallowRef<ArtistMvCardProps[]>([]);
+const mvTotal = ref(0);
+const mvPage = ref(1);
+const mvHasMore = ref(false);
+const mvFetched = ref(false);
+const mvTag = ref<'all' | 'official' | 'live' | 'fan' | 'artist'>('all');
 
 const activeTab = ref('songs');
 const loadedSongCount = ref(0);
@@ -162,7 +185,6 @@ const fetchData = async () => {
   const artistId = getArtistId();
   loading.value = true;
   loadingSongs.value = true;
-  loadingAlbums.value = true;
 
   // 1. 获取歌手详情
   const detailTask = getArtistDetail(artistId)
@@ -194,18 +216,7 @@ const fetchData = async () => {
       loadingSongs.value = false;
     });
 
-  // 3. 获取专辑列表
-  const albumsTask = getArtistAlbums(artistId, 1, 30, 'hot')
-    .then((res) => {
-      const fetched = extractList(res).map((item) => mapAlbumMeta(item));
-      albums.value = fetched;
-      loadingAlbums.value = false;
-    })
-    .catch(() => {
-      loadingAlbums.value = false;
-    });
-
-  await Promise.allSettled([detailTask, songsTask, albumsTask]);
+  await Promise.allSettled([detailTask, songsTask]);
 };
 
 watch(
@@ -214,6 +225,14 @@ watch(
     artist.value = null;
     songs.value = [];
     albums.value = [];
+    mvs.value = [];
+    mvFetched.value = false;
+    mvTotal.value = 0;
+    mvPage.value = 1;
+    mvHasMore.value = false;
+    albumPage.value = 1;
+    albumHasMore.value = false;
+    albumFetched.value = false;
     loadedSongCount.value = 0;
     searchQuery.value = '';
     sortField.value = null;
@@ -324,8 +343,130 @@ const getAlbumCardProps = (album: ReturnType<typeof mapAlbumMeta>): ArtistAlbumC
 
 const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(entry)));
 
+const mapMvItem = (item: Record<string, unknown>): ArtistMvCardProps => {
+  const hdpic = String(item.hdpic ?? item.cover ?? '').replace('{size}', '400');
+  const cover = String(item.cover ?? '');
+  return {
+    videoId: item.video_id as string | number,
+    hash: String(item.mkv_qhd_hash ?? item.mkv_sd_hash ?? ''),
+    title: String(item.video_name ?? ''),
+    coverUrl: hdpic || cover,
+    artist: String(item.author_name ?? ''),
+    duration: Number(item.timelength ?? 0),
+    publishDate: String(item.publish_date ?? '').split(' ')[0],
+    albumAudioId: item.album_audio_id as string | number | undefined,
+  };
+};
+
+const fetchMvs = async (page = 1) => {
+  const artistId = getArtistId();
+  loadingMvs.value = true;
+  try {
+    const res = await getArtistVideos(artistId, page, 30, mvTag.value);
+    const record = res && typeof res === 'object' ? (res as Record<string, unknown>) : {};
+    const list = Array.isArray(record.data) ? record.data : [];
+    const total = Number(record.total ?? 0);
+    const mapped = list
+      .map((item: unknown) =>
+        item && typeof item === 'object' ? mapMvItem(item as Record<string, unknown>) : null,
+      )
+      .filter((item): item is ArtistMvCardProps => item !== null && !!item.videoId);
+
+    if (page === 1) {
+      mvs.value = mapped;
+    } else {
+      mvs.value = [...mvs.value, ...mapped];
+    }
+    mvTotal.value = total;
+    mvPage.value = page;
+    mvHasMore.value = mvs.value.length < total;
+    mvFetched.value = true;
+  } catch {
+    if (page === 1) mvs.value = [];
+  } finally {
+    loadingMvs.value = false;
+  }
+};
+
+const loadedMvCount = computed(() => (mvFetched.value ? mvTotal.value : 0));
+
+const mvTagOptions = [
+  { value: 'all' as const, label: '全部' },
+  { value: 'official' as const, label: '官方' },
+  { value: 'live' as const, label: '现场' },
+  { value: 'fan' as const, label: '饭制' },
+  { value: 'artist' as const, label: '歌手发布' },
+];
+
+const switchMvTag = (tag: typeof mvTag.value) => {
+  if (tag === mvTag.value) return;
+  mvTag.value = tag;
+  mvs.value = [];
+  mvTotal.value = 0;
+  mvPage.value = 1;
+  mvHasMore.value = false;
+  mvFetched.value = false;
+  void fetchMvs(1);
+};
+
+const fetchMoreAlbums = async () => {
+  if (loadingAlbums.value || (!albumFetched.value ? false : !albumHasMore.value)) return;
+  const artistId = getArtistId();
+  const nextPage = albumFetched.value ? albumPage.value + 1 : 1;
+  loadingAlbums.value = true;
+  try {
+    const res = await getArtistAlbums(artistId, nextPage, 30, 'hot');
+    const fetched = extractList(res).map((item) => mapAlbumMeta(item));
+    if (nextPage === 1) {
+      albums.value = fetched;
+    } else {
+      albums.value = [...albums.value, ...fetched];
+    }
+    albumPage.value = nextPage;
+    albumFetched.value = true;
+    const totalAlbums = artist.value?.albumCount ?? 0;
+    albumHasMore.value = fetched.length >= 30 && albums.value.length < totalAlbums;
+  } catch {
+    // 忽略
+  } finally {
+    loadingAlbums.value = false;
+  }
+};
+
 onMounted(() => {
   void fetchData();
+  const viewport = document.querySelector('.view-port');
+  viewport?.addEventListener('scroll', onViewportScroll);
+});
+
+// 切换到 MV/专辑 tab 时懒加载
+watch(activeTab, (tab) => {
+  if (tab === 'mvs' && !mvFetched.value) {
+    void fetchMvs(1);
+  }
+  if (tab === 'albums' && !albumFetched.value) {
+    void fetchMoreAlbums();
+  }
+});
+
+// 滚动加载更多 MV 和专辑
+const onViewportScroll = () => {
+  const viewport = document.querySelector('.view-port');
+  if (!viewport) return;
+  const { scrollTop, scrollHeight, clientHeight } = viewport;
+  if (scrollHeight - scrollTop - clientHeight > 300) return;
+
+  if (activeTab.value === 'mvs' && mvHasMore.value && !loadingMvs.value) {
+    void fetchMvs(mvPage.value + 1);
+  }
+  if (activeTab.value === 'albums' && albumHasMore.value && !loadingAlbums.value) {
+    void fetchMoreAlbums();
+  }
+};
+
+onUnmounted(() => {
+  const viewport = document.querySelector('.view-port');
+  viewport?.removeEventListener('scroll', onViewportScroll);
 });
 </script>
 
@@ -415,10 +556,19 @@ onMounted(() => {
             <div class="flex items-center justify-between h-14">
               <TabsList class="bg-transparent border-none gap-8">
                 <TabsTrigger value="songs">
-                  <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
+                  <span class="relative"
+                    >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
+                  /></span>
                 </TabsTrigger>
                 <TabsTrigger value="albums">
-                  <span class="relative">专辑 <Badge :count="loadedAlbumCount" /></span>
+                  <span class="relative"
+                    >专辑 <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
+                  /></span>
+                </TabsTrigger>
+                <TabsTrigger value="mvs">
+                  <span class="relative"
+                    >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
+                  /></span>
                 </TabsTrigger>
               </TabsList>
 
@@ -499,6 +649,41 @@ onMounted(() => {
               </template>
             </VirtualGrid>
           </TabsContent>
+
+          <TabsContent value="mvs" class="mt-4 px-6">
+            <div class="flex items-center gap-3 mb-4 px-2">
+              <div class="flex items-center gap-1.5">
+                <Button
+                  v-for="opt in mvTagOptions"
+                  :key="opt.value"
+                  variant="unstyled"
+                  size="none"
+                  :class="['mv-tag-btn', mvTag === opt.value ? 'is-active' : '']"
+                  @click="switchMvTag(opt.value)"
+                >
+                  {{ opt.label }}
+                </Button>
+              </div>
+              <span v-if="mvFetched" class="text-[11px] text-text-secondary/60 ml-auto">
+                共 {{ mvTotal }} 个
+              </span>
+            </div>
+            <VirtualGrid
+              class="px-2"
+              :items="mvs"
+              :loading="loadingMvs && mvs.length === 0"
+              :active="activeTab === 'mvs'"
+              :itemMinWidth="200"
+              :itemHeight="180"
+              :gap="20"
+              :overscan="3"
+              keyField="videoId"
+            >
+              <template #default="{ item }">
+                <MvCard v-bind="item" />
+              </template>
+            </VirtualGrid>
+          </TabsContent>
         </div>
       </Tabs>
       <Dialog
@@ -529,5 +714,20 @@ onMounted(() => {
 
 :deep(.song-list) {
   @apply px-0;
+}
+
+.mv-tag-btn {
+  @apply px-3 py-1.5 rounded-lg text-[12px] font-semibold text-text-secondary/80 transition-all;
+  background: transparent;
+}
+
+.mv-tag-btn:hover {
+  @apply text-text-main;
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.mv-tag-btn.is-active {
+  @apply text-primary;
+  background: var(--color-primary-light);
 }
 </style>

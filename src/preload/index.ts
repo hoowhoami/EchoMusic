@@ -64,7 +64,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   updater: {
     download: () => ipcRenderer.send('update:download'),
-    install: () => ipcRenderer.send('update:install'),
+    install: (silent?: boolean) => ipcRenderer.send('update:install', { silent: !!silent }),
     onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, result: UpdateDownloadResult) =>
         func(result);

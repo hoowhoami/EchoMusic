@@ -730,7 +730,7 @@ onUnmounted(() => {
               <span class="player-quality-button-inner">
                 <AudioWaveIcon class="player-quality-icon" />
                 <Badge
-                  v-if="currentTrack"
+                  v-if="currentTrack && settingStore.showAudioQualityBadge"
                   :count="audioQualityButtonBadge"
                   class="player-quality-badge"
                   :style="{

@@ -46,6 +46,18 @@ export function unfollowArtist(id: string | number) {
 }
 
 /**
+ * 获取歌手 MV
+ */
+export function getArtistVideos(
+  id: string | number,
+  page = 1,
+  pagesize = 30,
+  tag: 'official' | 'live' | 'fan' | 'artist' | 'all' = 'all',
+) {
+  return request.get('/artist/videos', { params: { id, page, pagesize, tag } });
+}
+
+/**
  * 获取歌手列表
  */
 export function getArtistList(options?: {

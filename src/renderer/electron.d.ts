@@ -31,7 +31,7 @@ export interface IElectronAPI {
   };
   updater: {
     download: () => void;
-    install: () => void;
+    install: (silent?: boolean) => void;
     onDownloadStatus: (func: (result: UpdateDownloadResult) => void) => () => void;
   };
   apiServer: {

@@ -159,6 +159,7 @@ const handleInteractOutside = (event: Event) => {
 
 :global(.dialog-overlay[data-state='open']) {
   opacity: 1;
+  -webkit-app-region: no-drag;
 }
 
 :global(.dialog-overlay[data-state='closed']) {
@@ -181,6 +182,7 @@ const handleInteractOutside = (event: Event) => {
 :global(.dialog-content[data-state='open']) {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
+  -webkit-app-region: no-drag;
 }
 
 :global(.dialog-content[data-state='closed']) {

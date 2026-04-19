@@ -514,6 +514,14 @@ onUnmounted(() => {
         <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
+            <h3 class="font-semibold">音质音效徽标</h3>
+            <p class="text-sm text-text-secondary">在播放器音质按钮上显示当前实际音质或音效标识</p>
+          </div>
+          <Switch v-model="settingStore.showAudioQualityBadge" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
             <h3 class="font-semibold">播放列表计数</h3>
             <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
           </div>
@@ -1015,6 +1023,14 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">开启后可收到 Alpha/Beta/RC 版本更新推送</p>
           </div>
           <Switch v-model="settingStore.checkPrerelease" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">静默安装</h3>
+            <p class="text-sm text-text-secondary">更新安装时不弹出安装向导，后台自动完成</p>
+          </div>
+          <Switch v-model="settingStore.silentUpdate" />
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">

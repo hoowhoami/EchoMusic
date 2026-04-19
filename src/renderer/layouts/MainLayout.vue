@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
@@ -10,6 +10,15 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 const route = useRoute();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
 const keepAliveRouteNames = ['personal-fm'];
+
+// 路由切换时重置滚动位置
+watch(
+  () => route.fullPath,
+  () => {
+    const viewport = document.querySelector('.view-port');
+    if (viewport) viewport.scrollTop = 0;
+  },
+);
 </script>
 
 <template>

@@ -67,6 +67,8 @@ export const useSettingStore = defineStore('setting', {
     outputDeviceStatusMessage: '',
     outputDeviceDisconnectBehavior: 'pause' as OutputDeviceDisconnectBehavior,
     autoReceiveVip: false,
+    showAudioQualityBadge: true,
+    silentUpdate: true,
     checkPrerelease: false,
     appVersion: '',
     isPrerelease: false,
