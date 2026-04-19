@@ -58,8 +58,7 @@ export const initDesktopLyricSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
-  const { lines, currentIndex, wantTranslation, wantRomanization } =
-    storeToRefs(lyricStore);
+  const { lines, currentIndex, wantTranslation, wantRomanization } = storeToRefs(lyricStore);
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
     return {

@@ -829,7 +829,9 @@ onUnmounted(() => {
                             :style="{
                               backgroundColor:
                                 effectiveUnplayedColor ||
-                                (hasPortraitGallery ? 'rgba(255,255,255,0.55)' : 'rgba(15,23,42,0.84)'),
+                                (hasPortraitGallery
+                                  ? 'rgba(255,255,255,0.55)'
+                                  : 'rgba(15,23,42,0.84)'),
                             }"
                             @click="openLyricColorPicker('unplayedColor')"
                           ></button>
@@ -842,12 +844,7 @@ onUnmounted(() => {
             </PopoverRoot>
             <PopoverRoot>
               <PopoverTrigger as-child>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="lyric-tool-chip"
-                >
+                <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
                   <Icon :icon="iconLanguage" width="14" height="14" />
                   <span class="lyric-tool-chip-label" v-text="displayLabel"></span>
                 </Button>
