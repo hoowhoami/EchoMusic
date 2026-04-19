@@ -2,12 +2,9 @@
 import { computed, ref } from 'vue';
 import { iconMinus, iconSquare, iconX } from '@/icons';
 import Button from '@/components/ui/Button.vue';
-import { useWindowDrag } from '@/utils/useWindowDrag';
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const headerRef = ref<HTMLElement | null>(null);
-
-useWindowDrag(headerRef);
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
   window.electron.windowControl(action);
@@ -16,7 +13,10 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
 
 <template>
   <header ref="headerRef" class="overlay-header">
-    <div v-if="!isMac" class="overlay-header-controls no-drag">
+    <!-- 拖动层 -->
+    <div class="drag-region"></div>
+
+    <div v-if="!isMac" class="overlay-header-controls no-drag relative z-10">
       <Button
         variant="unstyled"
         size="none"

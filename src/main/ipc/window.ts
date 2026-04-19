@@ -20,33 +20,11 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
-  // 窗口拖动：记录拖动开始时的尺寸，setBounds 时固定 width/height 防止 DPI 缩放问题
-  const dragState = new Map<number, { width: number; height: number }>();
-
-  ipcMain.on('window-drag:start', (event) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
-    const bounds = browserWindow.getBounds();
-    dragState.set(browserWindow.id, { width: bounds.width, height: bounds.height });
-  });
-
-  ipcMain.on('window-drag:move', (event, pos: { x: number; y: number }) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!browserWindow || browserWindow.isMaximized() || browserWindow.isFullScreen()) return;
-    const locked = dragState.get(browserWindow.id);
-    const bounds = browserWindow.getBounds();
-    browserWindow.setBounds({
-      x: Math.round(pos.x),
-      y: Math.round(pos.y),
-      width: locked?.width ?? bounds.width,
-      height: locked?.height ?? bounds.height,
-    });
-  });
-
-  ipcMain.on('window-drag:end', (event) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
-    if (browserWindow) dragState.delete(browserWindow.id);
-  });
+  // 窗口拖动已改为 CSS -webkit-app-region: drag 原生方案，
+  // 保留 IPC 通道兼容旧代码
+  ipcMain.on('window-drag:start', () => {});
+  ipcMain.on('window-drag:move', () => {});
+  ipcMain.on('window-drag:end', () => {});
 
   ipcMain.on('window-toggle', () => {
     const browserWindow = getMainWindow();

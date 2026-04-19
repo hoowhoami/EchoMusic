@@ -426,7 +426,9 @@ watch(
     v-bind="attrs"
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative"
   >
-    <div :class="['drag w-full shrink-0', isMac ? 'h-16' : 'h-12']"></div>
+    <div :class="['w-full shrink-0 relative', isMac ? 'h-16' : 'h-12']">
+      <div class="drag-region"></div>
+    </div>
 
     <div :class="['px-4 pb-3 shrink-0 no-drag', isMac ? 'mt-2' : 'mt-0']">
       <div

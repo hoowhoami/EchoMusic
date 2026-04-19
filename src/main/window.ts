@@ -274,6 +274,12 @@ export async function createWindow() {
     win?.show();
   });
 
+  // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放
+  win.webContents.on('did-finish-load', () => {
+    win?.webContents.setZoomFactor(1.0);
+    win?.webContents.setVisualZoomLevelLimits(1, 1);
+  });
+
   if (url) {
     win.loadURL(url);
   } else {

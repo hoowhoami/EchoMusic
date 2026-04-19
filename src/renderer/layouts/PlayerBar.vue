@@ -298,7 +298,7 @@ onUnmounted(() => {
 <template>
   <div class="player-bar-container w-full px-2 pb-[5px] z-[1000]">
     <footer
-      class="player-bar w-full h-[84px] bg-bg-card/80 backdrop-blur-md border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
+      class="player-bar w-full h-[84px] bg-bg-card border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-[120px] max-w-[320px] overflow-hidden">

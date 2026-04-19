@@ -13,14 +13,11 @@ import {
   iconX,
   iconSearch,
 } from '@/icons';
-import { useWindowDrag } from '@/utils/useWindowDrag';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const titleBarRef = ref<HTMLElement | null>(null);
-
-useWindowDrag(titleBarRef);
 
 const canGoBack = ref(false);
 const canGoForward = ref(false);
@@ -181,10 +178,13 @@ onUnmounted(() => {
 <template>
   <header
     ref="titleBarRef"
-    class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-[200] bg-transparent relative"
+    class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
+    <!-- 拖动层：VS Code 方案，绝对定位铺满标题栏 -->
+    <div class="drag-region"></div>
+
     <!-- 1. 左侧：导航按钮 -->
-    <div class="flex items-center gap-1 no-drag pl-6">
+    <div class="flex items-center gap-1 no-drag pl-6 relative z-10">
       <Button
         variant="unstyled"
         size="none"
@@ -305,7 +305,7 @@ onUnmounted(() => {
     <div class="flex-1 h-full"></div>
 
     <!-- 3. 右侧：窗口控制 -->
-    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full">
+    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full relative z-10">
       <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn">
         <Icon :icon="iconMinus" width="14" height="14" />
       </Button>

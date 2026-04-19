@@ -192,7 +192,19 @@ const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
   const mergedCookies = { ...defaultCookies, ...authCookies };
 
   // 构建 query 参数（复现 Express 路由处理器的逻辑）
-  const { cookie: paramCookie, ...restParams } = request.params || {};
+  // Express 中 query params 全部是 string 类型，IPC 传输保留了原始类型（number 等），
+  // 部分 server module 依赖 .split() 等字符串方法，需要统一转为 string 以保持兼容
+  const rawParams = request.params || {};
+  const stringifiedParams: Record<string, any> = {};
+  for (const [key, value] of Object.entries(rawParams)) {
+    stringifiedParams[key] =
+      value === null || value === undefined
+        ? value
+        : typeof value === 'object'
+          ? value
+          : String(value);
+  }
+  const { cookie: paramCookie, ...restParams } = stringifiedParams;
 
   // 合并 cookie：默认 cookie → param 中的 cookie → auth header 中的 cookie
   const cookieFromParams =
