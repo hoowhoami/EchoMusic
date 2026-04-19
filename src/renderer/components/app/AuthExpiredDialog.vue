@@ -4,9 +4,11 @@ import { useRouter } from 'vue-router';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { useAuthStore } from '@/stores/auth';
+import { useUserStore } from '@/stores/user';
 
 const router = useRouter();
 const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const open = computed({
   get: () => authStore.sessionExpiredDialogOpen,
@@ -17,6 +19,7 @@ const open = computed({
 
 const handleLogin = async () => {
   authStore.hideSessionExpiredDialog();
+  userStore.logout();
   if (router.currentRoute.value.name !== 'login') {
     await router.push({ name: 'login' });
   }

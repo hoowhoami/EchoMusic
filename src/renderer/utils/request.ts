@@ -69,15 +69,18 @@ const checkAuthExpiration = (path: string, data: any): boolean => {
 
   const rules = [
     () => data.error_code === 20018,
-    () => path.includes('/user/vip/detail') && data.status === 0,
     () => data.msg && typeof data.msg === 'string' && data.msg.includes('登录已过期'),
   ];
 
+  void path;
   return rules.some((rule) => rule());
 };
 
-const handleAuthExpired = (path: string, data: unknown) => {
+const handleAuthExpired = (path: string, responseStatus: number, data: unknown) => {
   const userStore = useUserStore();
+
+  // 网络错误或网关错误时跳过过期检测，避免断网误判
+  if (responseStatus === 0 || responseStatus === 502) return;
 
   if (!userStore.isLoggedIn || isAuthExpiredNotified || !checkAuthExpiration(path, data)) {
     return;
@@ -85,7 +88,7 @@ const handleAuthExpired = (path: string, data: unknown) => {
 
   isAuthExpiredNotified = true;
   logger.warn('API', `Auth expired (Path: ${path})`);
-  userStore.logout();
+  // 不立即 logout，只弹窗让用户确认
   useAuthStore().showSessionExpiredDialog();
 
   window.setTimeout(() => {
@@ -179,7 +182,7 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
   logger.info('API', lines.join('\n'));
 
   // 响应拦截：auth 过期检测
-  handleAuthExpired(url, response.body);
+  handleAuthExpired(url, response.status, response.body);
 
   // 处理错误状态
   if (response.status >= 400) {
