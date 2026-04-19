@@ -26,7 +26,6 @@ export type DesktopLyricPlaybackPayload = {
 };
 
 export type DesktopLyricThemeMode = 'light' | 'dark' | 'system';
-export type DesktopLyricSecondaryMode = 'none' | 'translation' | 'romanization' | 'both';
 export type DesktopLyricAlign = 'left' | 'center' | 'right' | 'both';
 
 export type DesktopLyricSettings = {
@@ -34,7 +33,8 @@ export type DesktopLyricSettings = {
   locked: boolean;
   autoShow: boolean;
   alwaysOnTop: boolean;
-  secondaryEnabled: boolean;
+  wantTranslation: boolean;
+  wantRomanization: boolean;
   theme: DesktopLyricThemeMode;
   opacity: number;
   scale: number;
@@ -43,7 +43,6 @@ export type DesktopLyricSettings = {
   activeFontSize: number;
   secondaryFontSize: number;
   lineGap: number;
-  secondaryMode: DesktopLyricSecondaryMode;
   alignment: DesktopLyricAlign;
   doubleLine: boolean;
   playedColor: string;
@@ -58,7 +57,8 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   locked: false,
   autoShow: true,
   alwaysOnTop: true,
-  secondaryEnabled: false,
+  wantTranslation: false,
+  wantRomanization: false,
   theme: 'system',
   opacity: 0.92,
   scale: 1,
@@ -68,7 +68,6 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   activeFontSize: 40,
   secondaryFontSize: 18,
   lineGap: 14,
-  secondaryMode: 'none',
   alignment: 'both',
   doubleLine: true,
   playedColor: '#31cfa1',

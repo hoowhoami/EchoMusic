@@ -11,6 +11,7 @@ interface Props {
   step?: number;
   showValue?: boolean;
   valueSuffix?: string;
+  formatValue?: (value: number) => string;
   disabled?: boolean;
   orientation?: SliderOrientation;
   class?: string;
@@ -55,15 +56,20 @@ const rootClass = computed(() => [
 const trackClass = computed(() => ['slider-track', props.trackClass]);
 const rangeClass = computed(() => ['slider-range', props.rangeClass]);
 const thumbClass = computed(() => ['slider-thumb', props.thumbClass]);
-const valueLabel = computed(() => `${normalizedValue.value}${props.valueSuffix}`);
+const valueLabel = computed(() =>
+  props.formatValue
+    ? props.formatValue(normalizedValue.value)
+    : `${normalizedValue.value}${props.valueSuffix}`,
+);
 </script>
 
 <template>
   <div
     class="slider-wrapper"
-    :class="
-      props.orientation === 'vertical' ? 'slider-wrapper-vertical' : 'slider-wrapper-horizontal'
-    "
+    :class="[
+      props.orientation === 'vertical' ? 'slider-wrapper-vertical' : 'slider-wrapper-horizontal',
+      props.showValue ? 'has-value-label' : '',
+    ]"
   >
     <SliderRoot
       :model-value="[normalizedValue]"
@@ -93,7 +99,11 @@ const valueLabel = computed(() => `${normalizedValue.value}${props.valueSuffix}`
 }
 
 .slider-wrapper-horizontal {
-  @apply relative flex items-center pt-4;
+  @apply relative flex items-center;
+}
+
+.slider-wrapper-horizontal.has-value-label {
+  @apply pt-4;
 }
 
 .slider-wrapper-vertical {

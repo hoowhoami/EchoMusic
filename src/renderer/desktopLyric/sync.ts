@@ -58,14 +58,14 @@ export const initDesktopLyricSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
-  const { lines, currentIndex, lyricsMode, secondaryEnabled, preferredMode } =
+  const { lines, currentIndex, wantTranslation, wantRomanization } =
     storeToRefs(lyricStore);
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
     return {
       ...settings,
-      secondaryEnabled: secondaryEnabled.value,
-      secondaryMode: secondaryEnabled.value ? lyricsMode.value : preferredMode.value,
+      wantTranslation: wantTranslation.value,
+      wantRomanization: wantRomanization.value,
     };
   };
 
@@ -170,7 +170,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [() => desktopLyricStore.settings, lyricsMode, secondaryEnabled, preferredMode],
+      [() => desktopLyricStore.settings, wantTranslation, wantRomanization],
       () => {
         void syncSettingsSnapshot();
       },

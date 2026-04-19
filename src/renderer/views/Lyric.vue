@@ -36,7 +36,6 @@ import {
   iconCopy,
   iconImage,
   iconLanguage,
-  iconChevronUpDown,
   iconPause,
   iconPlay,
   iconSkipBack,
@@ -183,16 +182,8 @@ const currentIndex = computed(() => lyricStore.currentIndex);
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const hasActiveTrack = computed(() => Boolean(currentTrack.value));
 const displayLabel = computed(() => {
-  if (!lyricStore.secondaryEnabled || !lyricStore.canShowSecondary) return '原词';
-  if (lyricStore.lyricsMode === 'both') return '译+音';
-  if (lyricStore.lyricsMode === 'romanization') return '音译';
-  if (lyricStore.lyricsMode === 'translation') return '翻译';
-  return lyricStore.preferredMode === 'romanization' ? '音译' : '翻译';
+  return lyricStore.currentDisplayLabel;
 });
-const canToggleSecondary = computed(() => lyricStore.canShowSecondary);
-const canCycleSecondaryMode = computed(
-  () => lyricStore.hasTranslation && lyricStore.hasRomanization,
-);
 const emptyStateTitle = computed(() => {
   if (!hasActiveTrack.value) return '未在播放';
   if (lyricStore.isLoading) return '歌词加载中…';
@@ -352,18 +343,16 @@ const copyLyrics = async () => {
   }, 1200);
 };
 
-const toggleSecondary = () => {
-  if (!canToggleSecondary.value) return;
-  lyricStore.toggleSecondaryEnabled();
-};
-
-const cycleSecondaryMode = () => {
-  if (!canCycleSecondaryMode.value) return;
-  lyricStore.cycleSecondaryMode();
-};
-
 const handleLyricLineClick = (time: number) => {
   playerStore.seek(time);
+};
+
+const handleTranslationToggle = (enabled: boolean) => {
+  lyricStore.wantTranslation = enabled;
+};
+
+const handleRomanizationToggle = (enabled: boolean) => {
+  lyricStore.wantRomanization = enabled;
 };
 
 const ensureLyricsForCurrentTrack = () => {
@@ -699,11 +688,11 @@ onUnmounted(() => {
               </PopoverTrigger>
               <PopoverPortal>
                 <PopoverContent
-                  class="z-[100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-6 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  class="z-[100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   :side-offset="8"
                   align="end"
                 >
-                  <div class="space-y-2 text-black dark:text-white">
+                  <div class="flex flex-col gap-2 text-black dark:text-white">
                     <div class="flex items-center justify-between text-[13px] font-semibold">
                       <span class="text-black/60 dark:text-white/60">背景透明度</span>
                       <span class="font-mono">{{ backdropOpacityLabel }}</span>
@@ -714,31 +703,32 @@ onUnmounted(() => {
                       :max="100"
                       :step="5"
                       @update:model-value="(v) => (settingStore.lyricBackdropOpacity = v)"
-                      class="h-1 w-full"
+                      class="lyric-popover-slider h-1 w-full"
                       track-class="bg-black/15 dark:bg-white/30"
                       range-class="bg-black dark:bg-white"
-                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
+                      thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
                     />
-                    <div class="flex items-center justify-between text-[13px] font-semibold pt-3">
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
                       <span class="text-black/60 dark:text-white/60">自动轮播</span>
                       <Switch v-model="settingStore.lyricCarouselEnabled" />
                     </div>
-                    <div v-if="settingStore.lyricCarouselEnabled" class="flex items-center justify-between text-[13px] font-semibold">
-                      <span class="text-black/60 dark:text-white/60">轮播间隔</span>
-                      <span class="font-mono">{{ settingStore.lyricCarouselInterval }}s</span>
-                    </div>
-                    <Slider
-                      v-if="settingStore.lyricCarouselEnabled"
-                      :model-value="settingStore.lyricCarouselInterval"
-                      :min="5"
-                      :max="60"
-                      :step="5"
-                      @update:model-value="(v) => (settingStore.lyricCarouselInterval = v)"
-                      class="h-1 w-full"
-                      track-class="bg-black/15 dark:bg-white/30"
-                      range-class="bg-black dark:bg-white"
-                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
-                    />
+                    <template v-if="settingStore.lyricCarouselEnabled">
+                      <div class="flex items-center justify-between text-[13px] font-semibold">
+                        <span class="text-black/60 dark:text-white/60">轮播间隔</span>
+                        <span class="font-mono">{{ settingStore.lyricCarouselInterval }}s</span>
+                      </div>
+                      <Slider
+                        :model-value="settingStore.lyricCarouselInterval"
+                        :min="5"
+                        :max="60"
+                        :step="5"
+                        @update:model-value="(v) => (settingStore.lyricCarouselInterval = v)"
+                        class="lyric-popover-slider h-1 w-full"
+                        track-class="bg-black/15 dark:bg-white/30"
+                        range-class="bg-black dark:bg-white"
+                        thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
+                      />
+                    </template>
                   </div>
                 </PopoverContent>
               </PopoverPortal>
@@ -764,11 +754,11 @@ onUnmounted(() => {
               </PopoverTrigger>
               <PopoverPortal>
                 <PopoverContent
-                  class="z-[100] w-[260px] rounded-[24px] border border-black/10 bg-white/70 p-6 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  class="z-[100] w-[260px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   :side-offset="8"
                   align="end"
                 >
-                  <div class="space-y-6 text-black dark:text-white">
+                  <div class="space-y-4 text-black dark:text-white">
                     <div>
                       <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
                         <span class="text-black/60 dark:text-white/60">字体大小</span>
@@ -850,30 +840,45 @@ onUnmounted(() => {
                 </PopoverContent>
               </PopoverPortal>
             </PopoverRoot>
-            <div class="lyric-tool-group">
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="lyric-tool-chip lyric-tool-chip-main"
-                :class="{ 'is-active': lyricStore.secondaryEnabled && canToggleSecondary }"
-                :disabled="!canToggleSecondary"
-                @click="toggleSecondary"
-              >
-                <Icon :icon="iconLanguage" width="14" height="14" />
-                <span class="lyric-tool-chip-label" v-text="displayLabel"></span>
-              </Button>
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="lyric-tool-chip-inline"
-                :disabled="!canCycleSecondaryMode"
-                @click.stop="cycleSecondaryMode"
-              >
-                <Icon :icon="iconChevronUpDown" width="14" height="14" />
-              </Button>
-            </div>
+            <PopoverRoot>
+              <PopoverTrigger as-child>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="lyric-tool-chip"
+                >
+                  <Icon :icon="iconLanguage" width="14" height="14" />
+                  <span class="lyric-tool-chip-label" v-text="displayLabel"></span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverPortal>
+                <PopoverContent
+                  class="z-[100] w-[220px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  :side-offset="8"
+                  align="end"
+                >
+                  <div class="space-y-3 text-black dark:text-white">
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">翻译</span>
+                      <Switch
+                        :model-value="lyricStore.wantTranslation"
+                        :disabled="!lyricStore.hasTranslation"
+                        @update:model-value="handleTranslationToggle"
+                      />
+                    </div>
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">音译</span>
+                      <Switch
+                        :model-value="lyricStore.wantRomanization"
+                        :disabled="!lyricStore.hasRomanization"
+                        @update:model-value="handleRomanizationToggle"
+                      />
+                    </div>
+                  </div>
+                </PopoverContent>
+              </PopoverPortal>
+            </PopoverRoot>
             <Button
               variant="unstyled"
               size="none"

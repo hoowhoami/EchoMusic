@@ -3,6 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
+import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import type {
   AudioQualityValue,
@@ -37,15 +38,64 @@ import {
   iconExternalLink,
   iconChevronRight,
   iconTypography,
+  iconLanguage,
 } from '@/icons';
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const playerStore = usePlayerStore();
+const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 const showDisclaimer = ref(false);
 const isRequestingOutputPermission = ref(false);
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+
+// ── 页面歌词颜色选择器 ──
+const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
+
+const lyricColorPresets = [
+  '#31cfa1',
+  '#0071e3',
+  '#8b5cf6',
+  '#ef476f',
+  '#f59e0b',
+  '#22c55e',
+  '#60a5fa',
+  '#f97316',
+  '#e11d48',
+  '#14b8a6',
+  '#a855f7',
+  '#ffffff',
+];
+
+const activeLyricColorValue = computed(() => {
+  if (!activeLyricColorField.value) return '#0071e3';
+  const stored = lyricStore[activeLyricColorField.value];
+  if (stored) return stored;
+  return activeLyricColorField.value === 'playedColor' ? '#0071e3' : '#8a8a8a';
+});
+
+const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
+  activeLyricColorField.value = field;
+};
+
+const closeLyricColorPicker = () => {
+  activeLyricColorField.value = null;
+};
+
+const applyLyricColor = (value: string) => {
+  if (!activeLyricColorField.value) return;
+  lyricStore[activeLyricColorField.value] = value;
+  closeLyricColorPicker();
+};
+
+const resetLyricColors = () => {
+  lyricStore.playedColor = '';
+  lyricStore.unplayedColor = '';
+};
+
+const lyricFontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
+const lyricFontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 
 const desktopLyricColorPresets = [
   '#31cfa1',
@@ -96,12 +146,6 @@ const desktopLyricAlignOptions = [
   { label: '交替', value: 'both' },
 ];
 
-const desktopLyricSecondaryModeOptions = [
-  { label: '翻译', value: 'translation' },
-  { label: '音译', value: 'romanization' },
-  { label: '译+音', value: 'both' },
-];
-
 const commitDesktopLyricSettings = async (partial?: Partial<DesktopLyricSettings>) => {
   await desktopLyricStore.syncSettings(partial);
 };
@@ -120,7 +164,7 @@ const shortcutItems: ShortcutItem[] = [
     desc: '在列表循环、单曲循环、随机播放之间切换',
   },
   { command: 'toggleWindow', title: '显示 / 隐藏窗口', desc: '切换主窗口的显示和隐藏状态' },
-  { command: 'toggleMainLyric', title: '主歌词开关', desc: '打开或关闭主歌词页面' },
+  { command: 'toggleMainLyric', title: '页面歌词开关', desc: '打开或关闭页面歌词' },
   { command: 'toggleDesktopLyric', title: '桌面歌词开关', desc: '打开或关闭桌面歌词窗口' },
 ];
 
@@ -640,12 +684,142 @@ onUnmounted(() => {
           </div>
           <Switch v-model="settingStore.preventSleep" />
         </div>
+      </div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <Icon :icon="iconVolume2" width="18" height="18" />
+        </div>
+        <h2 class="text-lg font-bold">播放音质</h2>
+      </div>
+      <div class="settings-card">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">默认音质</h3>
+            <p class="text-sm text-text-secondary">
+              新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
+            </p>
+          </div>
+          <Select
+            class="min-w-[180px]"
+            :model-value="settingStore.defaultAudioQuality"
+            :options="audioQualityOptions"
+            @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
+          />
+        </div>
         <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
-            <h3 class="font-semibold">歌词页歌手写真背景</h3>
+            <h3 class="font-semibold">智能兼容模式</h3>
+            <p class="text-sm text-text-secondary">首选音质不可用时自动尝试备选</p>
+          </div>
+          <Switch v-model="settingStore.compatibilityMode" />
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <Icon :icon="iconLanguage" width="18" height="18" />
+        </div>
+        <h2 class="text-lg font-bold">页面歌词</h2>
+      </div>
+      <div class="settings-card">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">显示翻译</h3>
+            <p class="text-sm text-text-secondary">有翻译时在歌词页面中显示翻译行</p>
+          </div>
+          <Switch v-model="lyricStore.wantTranslation" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">显示音译</h3>
+            <p class="text-sm text-text-secondary">有音译时在歌词页面中显示音译行</p>
+          </div>
+          <Switch v-model="lyricStore.wantRomanization" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">字体大小</h3>
+            <p class="text-sm text-text-secondary">调整歌词页面的文字大小</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="lyricStore.fontScale"
+            :min="0.7"
+            :max="1.4"
+            :step="0.1"
+            show-value
+            :format-value="() => lyricFontSizeLabel"
+            @update:model-value="lyricStore.updateFontScale($event)"
+            @value-commit="lyricStore.updateFontScale($event)"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">字体字重</h3>
+            <p class="text-sm text-text-secondary">调整歌词页面的文字粗细</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="lyricStore.fontWeightIndex"
+            :min="0"
+            :max="8"
+            :step="1"
+            show-value
+            :format-value="() => lyricFontWeightLabel"
+            @update:model-value="lyricStore.updateFontWeight($event)"
+            @value-commit="lyricStore.updateFontWeight($event)"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item items-start">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词颜色</h3>
+            <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
+          </div>
+          <div class="flex items-center gap-5 pt-1">
+            <div class="flex items-center gap-2.5">
+              <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+              <button
+                type="button"
+                class="settings-color-swatch"
+                :style="{ backgroundColor: lyricStore.playedColor || 'var(--color-primary)' }"
+                @click="openLyricColorPicker('playedColor')"
+              ></button>
+            </div>
+            <div class="flex items-center gap-2.5">
+              <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+              <button
+                type="button"
+                class="settings-color-swatch"
+                :style="{ backgroundColor: lyricStore.unplayedColor || 'rgba(15,23,42,0.84)' }"
+                @click="openLyricColorPicker('unplayedColor')"
+              ></button>
+            </div>
+            <button
+              v-if="lyricStore.playedColor || lyricStore.unplayedColor"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors"
+              @click="resetLyricColors"
+            >
+              重置
+            </button>
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌手写真背景</h3>
             <p class="text-sm text-text-secondary">
-              歌词页优先使用歌手写真作为背景，获取失败时回退到专辑封面
+              优先使用歌手写真作为背景，获取失败时回退到专辑封面
             </p>
           </div>
           <Switch v-model="settingStore.lyricArtistBackdrop" />
@@ -701,39 +875,6 @@ onUnmounted(() => {
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconVolume2" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">播放音质</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">默认音质</h3>
-            <p class="text-sm text-text-secondary">
-              新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
-            </p>
-          </div>
-          <Select
-            class="min-w-[180px]"
-            :model-value="settingStore.defaultAudioQuality"
-            :options="audioQualityOptions"
-            @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">智能兼容模式</h3>
-            <p class="text-sm text-text-secondary">首选音质不可用时自动尝试备选</p>
-          </div>
-          <Switch v-model="settingStore.compatibilityMode" />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
           <Icon :icon="iconTypography" width="18" height="18" />
         </div>
         <h2 class="text-lg font-bold">桌面歌词</h2>
@@ -765,24 +906,23 @@ onUnmounted(() => {
         <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
-            <h3 class="font-semibold">显示翻译/音译</h3>
-            <p class="text-sm text-text-secondary">有翻译或音译时显示副歌词行</p>
+            <h3 class="font-semibold">显示翻译</h3>
+            <p class="text-sm text-text-secondary">有翻译时在桌面歌词中显示翻译行</p>
           </div>
           <Switch
-            :model-value="desktopLyricStore.settings.secondaryEnabled"
-            @update:model-value="commitDesktopLyricSettings({ secondaryEnabled: Boolean($event) })"
+            :model-value="desktopLyricStore.settings.wantTranslation"
+            @update:model-value="commitDesktopLyricSettings({ wantTranslation: Boolean($event) })"
           />
         </div>
-        <div v-if="desktopLyricStore.settings.secondaryEnabled" class="settings-item">
+        <div class="settings-divider"></div>
+        <div class="settings-item">
           <div class="space-y-1">
-            <h3 class="font-semibold">副歌词模式</h3>
-            <p class="text-sm text-text-secondary">选择显示翻译、音译或同时显示</p>
+            <h3 class="font-semibold">显示音译</h3>
+            <p class="text-sm text-text-secondary">有音译时在桌面歌词中显示音译行</p>
           </div>
-          <Select
-            class="min-w-[120px]"
-            :model-value="desktopLyricStore.settings.secondaryMode || 'translation'"
-            :options="desktopLyricSecondaryModeOptions"
-            @update:model-value="commitDesktopLyricSettings({ secondaryMode: $event as any })"
+          <Switch
+            :model-value="desktopLyricStore.settings.wantRomanization"
+            @update:model-value="commitDesktopLyricSettings({ wantRomanization: Boolean($event) })"
           />
         </div>
         <div class="settings-divider"></div>
@@ -846,6 +986,15 @@ onUnmounted(() => {
       :presets="desktopLyricColorPresets"
       @update:open="(open) => !open && closeDesktopLyricColorPicker()"
       @confirm="applyDesktopLyricColor"
+    />
+
+    <ColorPickerDialog
+      :open="activeLyricColorField !== null"
+      :title="activeLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
+      :value="activeLyricColorValue"
+      :presets="lyricColorPresets"
+      @update:open="(open) => !open && closeLyricColorPicker()"
+      @confirm="applyLyricColor"
     />
 
     <section class="space-y-6">

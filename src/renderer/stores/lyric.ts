@@ -161,9 +161,10 @@ export const useLyricStore = defineStore('lyric', {
     loadedHash: '',
     tips: '暂无歌词',
     isLoading: false,
-    secondaryEnabled: false,
-    lyricsMode: 'none' as LyricsMode,
-    preferredMode: 'translation' as Exclude<LyricsMode, 'none'>,
+    // 用户意图：是否想看翻译/音译（持久化，切歌不重置）
+    wantTranslation: false,
+    wantRomanization: false,
+    // 当前歌曲数据可用性（每首歌重新检测）
     hasTranslation: false,
     hasRomanization: false,
     fontScale: 1,
@@ -174,42 +175,55 @@ export const useLyricStore = defineStore('lyric', {
     detailResolved: false,
   }),
   getters: {
-    showTranslation: (state) =>
-      state.secondaryEnabled && state.preferredMode === 'translation' && state.hasTranslation,
-    showRomanization: (state) =>
-      state.secondaryEnabled && state.preferredMode === 'romanization' && state.hasRomanization,
+    // 兼容旧代码
+    secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,
     canShowSecondary: (state) => state.hasTranslation || state.hasRomanization,
-    currentDisplayLabel: (state) => {
-      if (!state.secondaryEnabled || (!state.hasTranslation && !state.hasRomanization))
-        return '原词';
-      if (state.lyricsMode === 'both') return '译+音';
-      if (state.lyricsMode === 'romanization') return '音译';
-      if (state.lyricsMode === 'translation') return '翻译';
-      return state.preferredMode === 'romanization' ? '音译' : '翻译';
+    // 实际显示模式：由用户意图 + 数据可用性自动推导
+    lyricsMode: (state): LyricsMode => {
+      const canTrans = state.wantTranslation && state.hasTranslation;
+      const canRoman = state.wantRomanization && state.hasRomanization;
+      if (canTrans && canRoman) return 'both';
+      if (canTrans) return 'translation';
+      if (canRoman) return 'romanization';
+      return 'none';
     },
-    secondaryModeLabel: (state) => {
-      return state.preferredMode === 'romanization' ? '音译' : '翻译';
+    currentDisplayLabel(): string {
+      const mode = this.lyricsMode;
+      if (mode === 'both') return '译+音';
+      if (mode === 'translation') return '翻译';
+      if (mode === 'romanization') return '音译';
+      if (this.wantTranslation || this.wantRomanization) return '原词';
+      return '原词';
+    },
+    showTranslation(): boolean {
+      return this.lyricsMode === 'translation' || this.lyricsMode === 'both';
+    },
+    showRomanization(): boolean {
+      return this.lyricsMode === 'romanization' || this.lyricsMode === 'both';
     },
     currentLine: (state) =>
       state.currentIndex >= 0 ? (state.lines[state.currentIndex] ?? null) : null,
-    activeSecondaryText: (state) => {
-      const line = state.currentIndex >= 0 ? (state.lines[state.currentIndex] ?? null) : null;
-      return state.secondaryEnabled && line ? getSecondaryText(line, state.lyricsMode) : '';
+    activeSecondaryText(): string {
+      const line = this.currentIndex >= 0 ? (this.lines[this.currentIndex] ?? null) : null;
+      if (!line || this.lyricsMode === 'none') return '';
+      return getSecondaryText(line, this.lyricsMode);
     },
-    lineSecondaryText: (state) => (line: LyricLine | null | undefined) => {
-      if (!state.secondaryEnabled || !line) return '';
-      return getSecondaryText(line, state.lyricsMode);
+    lineSecondaryText() {
+      return (line: LyricLine | null | undefined): string => {
+        if (!line || this.lyricsMode === 'none') return '';
+        return getSecondaryText(line, this.lyricsMode);
+      };
     },
     fontWeightValue: (state) => {
       const weights = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
       return weights[clamp(state.fontWeightIndex, 0, 8)] ?? 900;
     },
-    copyableText: (state) => {
-      const mode = state.lyricsMode;
-      return state.lines
-        .map((line) => {
+    copyableText(): string {
+      const mode = this.lyricsMode;
+      return this.lines
+        .map((line: LyricLine) => {
           const primary = line.text.trim();
-          if (!state.secondaryEnabled) return primary;
+          if (mode === 'none') return primary;
           if (mode === 'both') {
             const translated = line.translated?.trim() ?? '';
             const romanized = line.romanized?.trim() ?? '';
@@ -231,7 +245,7 @@ export const useLyricStore = defineStore('lyric', {
       this.loadedHash = payload?.hash ?? '';
       this.tips = payload?.tips ?? '暂无歌词';
       this.isLoading = false;
-      this.lyricsMode = 'none';
+      // 不重置 lyricsMode 和 secondaryEnabled，保留用户的翻译偏好
       this.hasTranslation = false;
       this.hasRomanization = false;
       this.detailResolved = false;
@@ -243,61 +257,6 @@ export const useLyricStore = defineStore('lyric', {
     beginLoading(hash = '') {
       this.resetLyricsState({ hash, tips: '歌词加载中...' });
       this.isLoading = true;
-    },
-    applyPreferredMode() {
-      if (!this.secondaryEnabled || (!this.hasTranslation && !this.hasRomanization)) {
-        this.lyricsMode = 'none';
-        return;
-      }
-
-      // both 模式需要同时有翻译和音译
-      if (this.preferredMode === 'both' && this.hasTranslation && this.hasRomanization) {
-        this.lyricsMode = 'both';
-        return;
-      }
-
-      if (this.preferredMode === 'translation' && this.hasTranslation) {
-        this.lyricsMode = 'translation';
-        return;
-      }
-
-      if (this.preferredMode === 'romanization' && this.hasRomanization) {
-        this.lyricsMode = 'romanization';
-        return;
-      }
-
-      this.lyricsMode = this.hasTranslation
-        ? 'translation'
-        : this.hasRomanization
-          ? 'romanization'
-          : 'none';
-    },
-    toggleSecondaryEnabled() {
-      if (!this.hasTranslation && !this.hasRomanization) {
-        this.secondaryEnabled = false;
-        this.lyricsMode = 'none';
-        return;
-      }
-      this.secondaryEnabled = !this.secondaryEnabled;
-      this.applyPreferredMode();
-    },
-    cycleSecondaryMode() {
-      if (!this.hasTranslation && !this.hasRomanization) return;
-      // 同时有翻译和音译时：翻译 → 音译 → 同时显示 → 翻译
-      if (this.hasTranslation && this.hasRomanization) {
-        if (this.preferredMode === 'translation') {
-          this.preferredMode = 'romanization';
-        } else if (this.preferredMode === 'romanization') {
-          this.preferredMode = 'both' as Exclude<LyricsMode, 'none'>;
-        } else {
-          this.preferredMode = 'translation';
-        }
-      } else {
-        this.preferredMode = this.hasRomanization ? 'romanization' : 'translation';
-      }
-      if (this.secondaryEnabled) {
-        this.lyricsMode = this.preferredMode;
-      }
     },
     updateFontScale(scale: number) {
       this.fontScale = clamp(Number(scale) || 1, 0.7, 1.4);
@@ -470,8 +429,6 @@ export const useLyricStore = defineStore('lyric', {
       });
 
       this.tips = this.lines.length > 0 ? '歌词已加载' : '暂无歌词';
-
-      this.applyPreferredMode();
     },
     updateCurrentIndex(currentTime: number) {
       if (this.lines.length === 0) {
@@ -603,8 +560,8 @@ export const useLyricStore = defineStore('lyric', {
   },
   persist: {
     pick: [
-      'secondaryEnabled',
-      'preferredMode',
+      'wantTranslation',
+      'wantRomanization',
       'fontScale',
       'fontWeightIndex',
       'playedColor',

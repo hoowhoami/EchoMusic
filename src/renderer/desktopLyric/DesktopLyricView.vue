@@ -72,8 +72,19 @@ const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
 const doubleLine = computed(() => settings.value?.doubleLine ?? true);
-const secondaryEnabled = computed(() => settings.value?.secondaryEnabled ?? false);
-const secondaryMode = computed(() => settings.value?.secondaryMode ?? 'none');
+const secondaryEnabled = computed(() => {
+  const s = settings.value;
+  return (s?.wantTranslation ?? false) || (s?.wantRomanization ?? false);
+});
+const lyricsMode = computed(() => {
+  const s = settings.value;
+  const canTrans = (s?.wantTranslation ?? false) && hasTranslation.value;
+  const canRoman = (s?.wantRomanization ?? false) && hasRomanization.value;
+  if (canTrans && canRoman) return 'both';
+  if (canTrans) return 'translation';
+  if (canRoman) return 'romanization';
+  return 'none';
+});
 // 当前歌词是否有翻译或音译数据
 const hasTranslation = computed(() => lyrics.value.some((l) => l.translated?.trim()));
 const hasRomanization = computed(() => lyrics.value.some((l) => l.romanized?.trim()));
@@ -81,9 +92,10 @@ const hasSecondary = computed(() => hasTranslation.value || hasRomanization.valu
 const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
 const secondaryDisplayLabel = computed(() => {
   if (!secondaryEnabled.value || !hasSecondary.value) return '原词';
-  if (secondaryMode.value === 'both') return '译+音';
-  if (secondaryMode.value === 'romanization') return '音译';
-  if (secondaryMode.value === 'translation') return '翻译';
+  const mode = lyricsMode.value;
+  if (mode === 'both') return '译+音';
+  if (mode === 'romanization') return '音译';
+  if (mode === 'translation') return '翻译';
   return '原词';
 });
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
@@ -161,7 +173,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   if (secondaryEnabled.value && hasSecondary.value) {
     const tran = current.translated?.trim() ?? '';
     const roman = current.romanized?.trim() ?? '';
-    const mode = secondaryMode.value;
+    const mode = lyricsMode.value;
     let secondaryText = '';
     if (mode === 'both') {
       secondaryText = [tran, roman].filter(Boolean).join(' / ');
@@ -455,35 +467,39 @@ const tempToggleLyricLock = (lock: boolean) => {
 // ── 操作命令 ──
 
 const toggleSecondary = () => {
-  const next = !secondaryEnabled.value;
-  if (next) {
-    // 开启时，如果没有设置过 mode，默认选一个合适的
-    let mode = secondaryMode.value;
-    if (mode === 'none' || !mode) {
-      mode = hasTranslation.value
-        ? 'translation'
-        : hasRomanization.value
-          ? 'romanization'
-          : 'translation';
-    }
-    void updateDesktopLyricSettings({ secondaryEnabled: true, secondaryMode: mode });
+  // 如果当前有任何翻译开启，则全部关闭；否则智能开启
+  if (secondaryEnabled.value) {
+    void updateDesktopLyricSettings({ wantTranslation: false, wantRomanization: false });
   } else {
-    void updateDesktopLyricSettings({ secondaryEnabled: false });
+    // 开启时，优先翻译，没有翻译则开音译
+    const wantTrans = hasTranslation.value;
+    const wantRoman = !wantTrans && hasRomanization.value;
+    void updateDesktopLyricSettings({ wantTranslation: wantTrans, wantRomanization: wantRoman });
   }
 };
 
 const cycleSecondaryMode = () => {
   if (!hasSecondary.value) return;
-  const mode = secondaryMode.value;
-  let nextMode: string;
+  const s = settings.value;
+  const curTrans = s?.wantTranslation ?? false;
+  const curRoman = s?.wantRomanization ?? false;
+
   if (hasTranslation.value && hasRomanization.value) {
-    if (mode === 'translation') nextMode = 'romanization';
-    else if (mode === 'romanization') nextMode = 'both';
-    else nextMode = 'translation';
+    // 翻译 → 音译 → 译+音 → 翻译
+    if (curTrans && !curRoman) {
+      void updateDesktopLyricSettings({ wantTranslation: false, wantRomanization: true });
+    } else if (!curTrans && curRoman) {
+      void updateDesktopLyricSettings({ wantTranslation: true, wantRomanization: true });
+    } else {
+      void updateDesktopLyricSettings({ wantTranslation: true, wantRomanization: false });
+    }
   } else {
-    nextMode = hasRomanization.value ? 'romanization' : 'translation';
+    // 只有一种，直接开启对应的
+    void updateDesktopLyricSettings({
+      wantTranslation: hasTranslation.value,
+      wantRomanization: hasRomanization.value,
+    });
   }
-  void updateDesktopLyricSettings({ secondaryEnabled: true, secondaryMode: nextMode });
 };
 
 const closeWindow = async () => {

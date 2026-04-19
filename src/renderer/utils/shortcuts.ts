@@ -297,9 +297,21 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   } else if (command === 'toggleDesktopLyric') {
     void desktopLyricStore.setEnabled(!desktopLyricStore.settings.enabled);
   } else if (command === 'toggleLyricsMode') {
-    lyricStore.toggleSecondaryEnabled();
+    // 快捷键切换：翻译开关
+    lyricStore.wantTranslation = !lyricStore.wantTranslation;
   } else if (command === 'cycleLyricsMode') {
-    lyricStore.cycleSecondaryMode();
+    // 快捷键循环：无 → 翻译 → 音译 → 译+音 → 无
+    if (!lyricStore.wantTranslation && !lyricStore.wantRomanization) {
+      lyricStore.wantTranslation = true;
+    } else if (lyricStore.wantTranslation && !lyricStore.wantRomanization) {
+      lyricStore.wantTranslation = false;
+      lyricStore.wantRomanization = true;
+    } else if (!lyricStore.wantTranslation && lyricStore.wantRomanization) {
+      lyricStore.wantTranslation = true;
+    } else {
+      lyricStore.wantTranslation = false;
+      lyricStore.wantRomanization = false;
+    }
   } else if (command === 'volumeUp') {
     playerStore.setVolume(playerStore.volume + 0.05);
   } else if (command === 'volumeDown') {
