@@ -667,6 +667,34 @@ onUnmounted(() => {
             @value-commit="settingStore.lyricBackdropOpacity = $event"
           />
         </div>
+        <div class="settings-divider"></div>
+        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">写真自动轮播</h3>
+            <p class="text-sm text-text-secondary">多张写真时自动切换</p>
+          </div>
+          <Switch v-model="settingStore.lyricCarouselEnabled" />
+        </div>
+        <div
+          v-if="settingStore.lyricArtistBackdrop && settingStore.lyricCarouselEnabled"
+          class="settings-item"
+        >
+          <div class="space-y-1">
+            <h3 class="font-semibold">轮播间隔</h3>
+            <p class="text-sm text-text-secondary">每张写真的展示时间</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="settingStore.lyricCarouselInterval"
+            :min="5"
+            :max="60"
+            :step="5"
+            show-value
+            :value-suffix="'s'"
+            @update:model-value="settingStore.lyricCarouselInterval = $event"
+            @value-commit="settingStore.lyricCarouselInterval = $event"
+          />
+        </div>
       </div>
     </section>
 

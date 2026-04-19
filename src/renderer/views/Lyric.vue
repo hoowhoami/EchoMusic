@@ -27,6 +27,7 @@ import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
+import Switch from '@/components/ui/Switch.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import {
   iconChevronDown,
@@ -78,6 +79,7 @@ const {
   setAudioQuality,
   setAudioEffect,
   toggleDesktopLyric,
+  queueCount,
   isQueueDrawerOpen,
   showAddToPlaylistDialog,
   isPlaylistLoading,
@@ -238,8 +240,10 @@ const audioEffectOptions = [
 const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 const activeLyricColorValue = computed(() => {
-  if (!activeLyricColorField.value) return '#31cfa1';
-  return lyricStore[activeLyricColorField.value] || '#31cfa1';
+  if (!activeLyricColorField.value) return '#0071e3';
+  const stored = lyricStore[activeLyricColorField.value];
+  if (stored) return stored;
+  return activeLyricColorField.value === 'playedColor' ? '#0071e3' : '#8a8a8a';
 });
 
 const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
@@ -398,17 +402,51 @@ const showPreviousPortrait = () => {
   if (artistPortraitUrls.value.length <= 1) return;
   const total = artistPortraitUrls.value.length;
   activePortraitIndex.value = (activePortraitIndex.value - 1 + total) % total;
+  restartPortraitCarousel();
 };
 
 const showNextPortrait = () => {
   if (artistPortraitUrls.value.length <= 1) return;
   const total = artistPortraitUrls.value.length;
   activePortraitIndex.value = (activePortraitIndex.value + 1) % total;
+  restartPortraitCarousel();
 };
 
 const clearArtistBackdrop = () => {
   artistPortraitUrls.value = [];
   activePortraitIndex.value = 0;
+  stopPortraitCarousel();
+};
+
+// 写真轮播
+let portraitCarouselTimer: number | null = null;
+
+const stopPortraitCarousel = () => {
+  if (portraitCarouselTimer) {
+    window.clearInterval(portraitCarouselTimer);
+    portraitCarouselTimer = null;
+  }
+};
+
+const startPortraitCarousel = () => {
+  stopPortraitCarousel();
+  if (!settingStore.lyricCarouselEnabled) return;
+  if (artistPortraitUrls.value.length <= 1) return;
+  const ms = Math.max(settingStore.lyricCarouselInterval || 15, 5) * 1000;
+  portraitCarouselTimer = window.setInterval(() => {
+    const total = artistPortraitUrls.value.length;
+    if (total <= 1) {
+      stopPortraitCarousel();
+      return;
+    }
+    activePortraitIndex.value = (activePortraitIndex.value + 1) % total;
+  }, ms);
+};
+
+const restartPortraitCarousel = () => {
+  if (hasPortraitGallery.value && artistPortraitUrls.value.length > 1) {
+    startPortraitCarousel();
+  }
 };
 
 const ensureArtistBackdropForCurrentTrack = async () => {
@@ -424,6 +462,7 @@ const ensureArtistBackdropForCurrentTrack = async () => {
   if (singerPortraitCache.has(lyricHash)) {
     artistPortraitUrls.value = singerPortraitCache.get(lyricHash) ?? [];
     syncPortraitIndex();
+    restartPortraitCarousel();
     return;
   }
 
@@ -463,6 +502,7 @@ const ensureArtistBackdropForCurrentTrack = async () => {
     if (requestId !== artistBackdropRequestId) return;
     artistPortraitUrls.value = portraitUrls;
     syncPortraitIndex();
+    restartPortraitCarousel();
   } catch {
     singerPortraitCache.set(lyricHash, []);
     if (requestId !== artistBackdropRequestId) return;
@@ -505,10 +545,22 @@ watch(
 
 watch(
   () => settingStore.lyricArtistBackdrop,
-  () => {
+  (enabled) => {
     void ensureArtistBackdropForCurrentTrack();
+    if (!enabled) stopPortraitCarousel();
   },
   { immediate: true },
+);
+
+watch(
+  () => [settingStore.lyricCarouselEnabled, settingStore.lyricCarouselInterval],
+  () => {
+    if (settingStore.lyricCarouselEnabled && hasPortraitGallery.value) {
+      startPortraitCarousel();
+    } else {
+      stopPortraitCarousel();
+    }
+  },
 );
 
 watch(
@@ -548,6 +600,7 @@ onMounted(() => {
 onUnmounted(() => {
   artistBackdropRequestId += 1;
   clearUserScrollResumeTimer();
+  stopPortraitCarousel();
   window.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('click', handleVolumeClickOutside);
   if (volumeWheelTimer) clearTimeout(volumeWheelTimer);
@@ -666,6 +719,26 @@ onUnmounted(() => {
                       range-class="bg-black dark:bg-white"
                       thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
                     />
+                    <div class="flex items-center justify-between text-[13px] font-semibold pt-3">
+                      <span class="text-black/60 dark:text-white/60">自动轮播</span>
+                      <Switch v-model="settingStore.lyricCarouselEnabled" />
+                    </div>
+                    <div v-if="settingStore.lyricCarouselEnabled" class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">轮播间隔</span>
+                      <span class="font-mono">{{ settingStore.lyricCarouselInterval }}s</span>
+                    </div>
+                    <Slider
+                      v-if="settingStore.lyricCarouselEnabled"
+                      :model-value="settingStore.lyricCarouselInterval"
+                      :min="5"
+                      :max="60"
+                      :step="5"
+                      @update:model-value="(v) => (settingStore.lyricCarouselInterval = v)"
+                      class="h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
+                    />
                   </div>
                 </PopoverContent>
               </PopoverPortal>
@@ -680,7 +753,7 @@ onUnmounted(() => {
               @click="settingStore.lyricArtistBackdrop = !settingStore.lyricArtistBackdrop"
             >
               <Icon :icon="iconImage" width="14" height="14" />
-              <span>写真</span>
+              <span>{{ settingStore.lyricArtistBackdrop ? '封面' : '写真' }}</span>
             </Button>
             <PopoverRoot>
               <PopoverTrigger as-child>
@@ -764,7 +837,9 @@ onUnmounted(() => {
                             type="button"
                             class="lyric-color-swatch"
                             :style="{
-                              backgroundColor: effectiveUnplayedColor || 'rgba(15,23,42,0.84)',
+                              backgroundColor:
+                                effectiveUnplayedColor ||
+                                (hasPortraitGallery ? 'rgba(255,255,255,0.55)' : 'rgba(15,23,42,0.84)'),
                             }"
                             @click="openLyricColorPicker('unplayedColor')"
                           ></button>
@@ -846,7 +921,7 @@ onUnmounted(() => {
 
           <section
             class="lyric-panel-surface relative flex min-w-0 flex-col justify-center self-stretch"
-            :class="hasPortraitGallery ? 'flex-1' : 'flex-[7]'"
+            :class="[hasPortraitGallery ? 'flex-1' : 'flex-[7]']"
           >
             <!-- 写真模式：歌曲信息浮层 -->
             <div v-if="hasPortraitGallery && currentTrack" class="lyric-photo-song-info">
@@ -920,7 +995,7 @@ onUnmounted(() => {
                           </template>
                           <template v-else>
                             <span
-                              v-if="currentIndex === index && effectiveUnplayedColor"
+                              v-if="effectiveUnplayedColor"
                               :style="{ color: effectiveUnplayedColor }"
                               >{{ line.text }}</span
                             >
@@ -1334,7 +1409,7 @@ onUnmounted(() => {
                     <span class="relative inline-flex w-5 h-5 items-center justify-center">
                       <AudioWaveIcon class="w-5 h-5" style="transform: translateY(3px)" />
                       <Badge
-                        v-if="currentTrack"
+                        v-if="currentTrack && settingStore.showAudioQualityBadge"
                         :count="audioQualityButtonBadge"
                         class="absolute -top-2"
                         :style="{
@@ -1442,10 +1517,15 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     type="button"
-                    class="p-2 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70"
+                    class="p-2 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 relative"
                     @click="isQueueDrawerOpen = true"
                   >
                     <Icon :icon="iconList" width="22" height="22" />
+                    <Badge
+                      v-if="settingStore.showPlaylistCount"
+                      :count="queueCount > 99 ? '99+' : queueCount"
+                      class="absolute top-0 right-[-3px]"
+                    />
                   </Button>
                 </template>
               </Tooltip>
@@ -1652,11 +1732,6 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.dark .lyric-portrait-backdrop {
-  opacity: 0.88;
-  filter: saturate(0.88) brightness(0.86) contrast(1.06);
-}
-
 .lyric-ambient-photo {
   opacity: 0.55;
   filter: blur(60px) saturate(1.2) brightness(1.1);
@@ -1669,23 +1744,11 @@ onUnmounted(() => {
 }
 
 .lyric-portrait-overlay {
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.15) 0%,
-    rgba(0, 0, 0, 0.05) 40%,
-    rgba(0, 0, 0, 0.05) 60%,
-    rgba(0, 0, 0, 0.25) 100%
-  );
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .dark .lyric-portrait-overlay {
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.12) 40%,
-    rgba(0, 0, 0, 0.12) 60%,
-    rgba(0, 0, 0, 0.4) 100%
-  );
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .lyric-icon-btn {
@@ -1695,16 +1758,16 @@ onUnmounted(() => {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.14);
   box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px);
   transition: all 0.2s ease;
 }
 
 .lyric-icon-btn:hover,
 .lyric-tool-chip:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .lyric-tool-chip {
@@ -1713,9 +1776,9 @@ onUnmounted(() => {
   gap: 10px;
   padding: 10px 18px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.14);
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1730,7 +1793,7 @@ onUnmounted(() => {
   height: 39.5px;
   box-sizing: border-box;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
   backdrop-filter: blur(18px);
 }
@@ -1742,7 +1805,7 @@ onUnmounted(() => {
   min-width: max-content;
   flex-shrink: 0;
   height: 33.5px;
-  padding: 0 16px;
+  padding: 0 10px;
   box-shadow: none;
   background: transparent;
 }
@@ -1759,17 +1822,17 @@ onUnmounted(() => {
 .lyric-photo-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-width: 88px;
+  gap: 5px;
+  min-width: 0;
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 4px;
   font-size: 12px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.84);
 }
 
 .lyric-tool-chip.is-active {
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.14);
   box-shadow: 0 10px 24px rgba(148, 163, 184, 0.14);
 }
 
@@ -1796,13 +1859,14 @@ onUnmounted(() => {
 
 .dark .lyric-tool-chip,
 .dark .lyric-icon-btn {
-  background: rgba(22, 30, 44, 0.82);
+  background: rgba(22, 30, 44, 0.5);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px);
 }
 
 .dark .lyric-tool-group {
-  background: rgba(14, 18, 26, 0.66);
+  background: rgba(14, 18, 26, 0.4);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1814,8 +1878,8 @@ onUnmounted(() => {
 }
 
 .dark .lyric-tool-chip.is-active {
-  background: rgba(40, 54, 78, 0.96);
-  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.2);
+  background: rgba(22, 30, 44, 0.5);
+  box-shadow: none;
 }
 
 .dark .lyric-tool-chip-label {
@@ -2079,16 +2143,16 @@ onUnmounted(() => {
 }
 
 .lyric-line.is-idle {
-  opacity: 0.52;
+  opacity: 0.82;
   transform: scale(0.965) translateY(4px);
 }
 
 .lyric-line.is-idle > span:first-child {
-  color: rgba(15, 23, 42, 0.34);
+  color: rgba(15, 23, 42, 0.52);
 }
 
 .dark .lyric-line.is-idle > span:first-child {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .lyric-line.is-current {
@@ -2137,11 +2201,11 @@ onUnmounted(() => {
 }
 
 .lyric-line.is-idle .lyric-character {
-  color: rgba(15, 23, 42, 0.34);
+  color: rgba(15, 23, 42, 0.52);
 }
 
 .dark .lyric-line.is-idle .lyric-character {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .lyric-line.is-current .lyric-character {
