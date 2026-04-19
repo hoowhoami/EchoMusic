@@ -34,13 +34,22 @@ jobs:
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
             electron_builder_args: ""
-            artifact_name: EchoMusic-Linux
+            artifact_name: EchoMusic-Linux-x64
             artifact_glob: |
               release/EchoMusic-*.AppImage
               release/EchoMusic-*.deb
               release/EchoMusic-*.rpm
               release/EchoMusic-*.tar.gz
               release/latest-linux.yml
+          - os: ubuntu-22.04-arm
+            electron_builder_args: "--linux --arm64"
+            artifact_name: EchoMusic-Linux-arm64
+            artifact_glob: |
+              release/EchoMusic-*.AppImage
+              release/EchoMusic-*.deb
+              release/EchoMusic-*.rpm
+              release/EchoMusic-*.tar.gz
+              release/latest-linux-arm64.yml
           - os: windows-latest
             electron_builder_args: ""
             artifact_name: EchoMusic-Windows
