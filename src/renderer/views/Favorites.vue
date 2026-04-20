@@ -124,7 +124,7 @@ const artistCards = computed(() =>
     songCount: artist.songCount,
     albumCount: artist.albumCount,
     fansCount: artist.fansCount,
-    sourceDesc: (artist as Record<string, unknown>).sourceDesc as string | undefined,
+    sourceDesc: (artist as unknown as Record<string, unknown>).sourceDesc as string | undefined,
   })),
 );
 
@@ -147,7 +147,7 @@ const fetchArtists = async () => {
           pic: record.pic,
         });
         // 附加 source_desc
-        (artist as Record<string, unknown>).sourceDesc =
+        (artist as unknown as Record<string, unknown>).sourceDesc =
           typeof record.source_desc === 'string' ? record.source_desc : '';
         return artist;
       });

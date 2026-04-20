@@ -51,6 +51,7 @@ export interface IElectronAPI {
       cookie?: string[];
       headers?: Record<string, string>;
     }>;
+    clearCache: () => Promise<{ success: boolean }>;
   };
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) => void;
