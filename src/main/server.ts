@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { app, ipcMain } from 'electron';
 import log from 'electron-log';
+import { LRUCache } from './cache';
 
 // --- 类型定义 ---
 
@@ -33,6 +34,51 @@ const isDev = !app.isPackaged;
 let moduleMap: Map<string, ModuleDefinition> = new Map();
 let serverReady = false;
 let createRequestFn: ((config: any) => Promise<any>) | null = null;
+
+// --- 缓存 ---
+// TTL 30 分钟，最大 200 条，LRU 淘汰
+const apiCache = new LRUCache(200, 30 * 60 * 1000);
+
+// 不走缓存的路由（写操作、登录、轮询等）
+const noCacheRoutes: string[] = [
+  // 歌单写操作
+  '/playlist/add',
+  '/playlist/del',
+  '/playlist/tracks/add',
+  '/playlist/tracks/del',
+  // 关注/取消关注
+  '/artist/follow',
+  '/artist/unfollow',
+  // 播放历史上传
+  '/playhistory/upload',
+  // 登录相关
+  '/login/qr/key',
+  '/login/qr/create',
+  '/login/qr/check',
+  '/login/cellphone',
+  '/login/wx/create',
+  '/login/wx/check',
+  '/login/openplat',
+  '/captcha/sent',
+  '/register/dev',
+  // VIP 领取/升级
+  '/youth/day/vip',
+  '/youth/day/vip/upgrade',
+  '/youth/vip',
+];
+
+// 写操作成功后，自动清除关联的读缓存（按路由前缀匹配）
+const invalidationMap: Record<string, string[]> = {
+  '/playlist/add': ['/user/playlist'],
+  '/playlist/del': ['/user/playlist'],
+  '/playlist/tracks/add': ['/playlist/track/all', '/playlist/track/all/new'],
+  '/playlist/tracks/del': ['/playlist/track/all', '/playlist/track/all/new'],
+  '/artist/follow': ['/user/follow'],
+  '/artist/unfollow': ['/user/follow'],
+  '/playhistory/upload': ['/user/history'],
+  '/youth/day/vip': ['/user/vip/detail', '/youth/month/vip/record'],
+  '/youth/day/vip/upgrade': ['/user/vip/detail', '/youth/month/vip/record'],
+};
 
 // server 内部使用的全局标识
 let guid = '';
@@ -171,6 +217,44 @@ const buildDefaultCookies = (): Record<string, string> => {
 };
 
 /**
+ * 生成缓存 key：method + url + 排序后的 params
+ */
+const buildCacheKey = (method: string, url: string, params?: Record<string, any>): string => {
+  const sortedParams = Object.entries(params || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  return `${method}:${url}${sortedParams ? '?' + sortedParams : ''}`;
+};
+
+/**
+ * 检查路由是否在不缓存列表中
+ */
+const isNoCacheRoute = (url: string): boolean => {
+  const pathname = url.split('?')[0];
+  return noCacheRoutes.includes(pathname);
+};
+
+/**
+ * 根据写操作路由，清除关联的读缓存
+ */
+const invalidateRelatedCache = (url: string): void => {
+  const pathname = url.split('?')[0];
+  const relatedRoutes = invalidationMap[pathname];
+  if (!relatedRoutes || relatedRoutes.length === 0) return;
+
+  // 遍历缓存，删除所有匹配关联路由的条目
+  const keysToDelete = apiCache.keys().filter((key) => {
+    return relatedRoutes.some((route) => key.includes(route));
+  });
+
+  for (const key of keysToDelete) {
+    apiCache.delete(key);
+    log.info(`[Cache] AUTO-INVALIDATE: ${key} (triggered by ${pathname})`);
+  }
+};
+
+/**
  * 处理 API 请求（核心路由分发逻辑）
  * 复现 server/server.js 中 Express 路由处理器的逻辑
  */
@@ -182,6 +266,20 @@ const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
   const mod = matchModule(request.url);
   if (!mod) {
     return { status: 404, body: { code: 404, data: null, msg: 'Not Found' } };
+  }
+
+  // --- 缓存逻辑 ---
+  const isGet = request.method === 'GET';
+  const noCache = isNoCacheRoute(request.url);
+  const cacheKey =
+    isGet && !noCache ? buildCacheKey(request.method, request.url, request.params) : '';
+
+  // 仅对 GET 且非 noCache 路由启用缓存
+  if (isGet && !noCache) {
+    const cached = apiCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
   // 构建 cookie：默认值 + Authorization header 中的值
@@ -228,12 +326,23 @@ const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
       return createRequestFn!(config);
     });
 
-    return {
+    const response: ApiResponse = {
       status: moduleResponse.status || 200,
       body: moduleResponse.body,
       cookie: moduleResponse.cookie,
       headers: moduleResponse.headers,
     };
+
+    // 成功的 GET 请求：可缓存路由写入缓存，不可缓存路由触发关联失效
+    if (isGet && response.status < 400) {
+      if (!noCache) {
+        apiCache.set(cacheKey, response);
+      } else {
+        invalidateRelatedCache(request.url);
+      }
+    }
+
+    return response;
   } catch (e: any) {
     const moduleResponse = e;
 
@@ -256,6 +365,14 @@ const handleApiRequest = async (request: ApiRequest): Promise<ApiResponse> => {
 export function registerApiIpcHandler(): void {
   ipcMain.handle('api:request', async (_event, request: ApiRequest): Promise<ApiResponse> => {
     return handleApiRequest(request);
+  });
+
+  // 清空 API 缓存（刷新按钮使用）
+  ipcMain.handle('api:cache-clear', () => {
+    const size = apiCache.size;
+    apiCache.clear();
+    log.info(`[Cache] CLEAR ALL: ${size} entries removed`);
+    return { success: true };
   });
 }
 

@@ -110,10 +110,9 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
     headers['Authorization'] = auth;
   }
 
-  // 加时间戳
+  // 透传调用方的参数，不做任何缓存相关处理
   const params = {
     ...(config?.params || {}),
-    t: Date.now(),
   };
 
   const ipcConfig: ApiRequestConfig = {
