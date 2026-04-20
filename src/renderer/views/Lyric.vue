@@ -258,6 +258,14 @@ const resetLyricColors = () => {
 
 const effectivePlayedColor = computed(() => lyricStore.playedColor || '');
 const effectiveUnplayedColor = computed(() => lyricStore.unplayedColor || '');
+const isDarkMode = computed(
+  () =>
+    settingStore.theme === 'dark' ||
+    (settingStore.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches),
+);
+const defaultUnplayedSwatchColor = computed(() =>
+  isDarkMode.value ? 'rgba(255,255,255,0.66)' : 'rgba(15,23,42,0.58)',
+);
 
 const clearUserScrollResumeTimer = () => {
   if (userScrollResumeTimer === null) return;
@@ -827,11 +835,7 @@ onUnmounted(() => {
                             type="button"
                             class="lyric-color-swatch"
                             :style="{
-                              backgroundColor:
-                                effectiveUnplayedColor ||
-                                (hasPortraitGallery
-                                  ? 'rgba(255,255,255,0.55)'
-                                  : 'rgba(15,23,42,0.84)'),
+                              backgroundColor: effectiveUnplayedColor || defaultUnplayedSwatchColor,
                             }"
                             @click="openLyricColorPicker('unplayedColor')"
                           ></button>
@@ -2145,16 +2149,16 @@ onUnmounted(() => {
 }
 
 .lyric-line.is-idle {
-  opacity: 0.82;
+  opacity: 0.88;
   transform: scale(0.965) translateY(4px);
 }
 
 .lyric-line.is-idle > span:first-child {
-  color: rgba(15, 23, 42, 0.52);
+  color: rgba(15, 23, 42, 0.58);
 }
 
 .dark .lyric-line.is-idle > span:first-child {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.66);
 }
 
 .lyric-line.is-current {
@@ -2203,11 +2207,11 @@ onUnmounted(() => {
 }
 
 .lyric-line.is-idle .lyric-character {
-  color: rgba(15, 23, 42, 0.52);
+  color: rgba(15, 23, 42, 0.58);
 }
 
 .dark .lyric-line.is-idle .lyric-character {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.66);
 }
 
 .lyric-line.is-current .lyric-character {
