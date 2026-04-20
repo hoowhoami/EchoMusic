@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'favorites' });
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';

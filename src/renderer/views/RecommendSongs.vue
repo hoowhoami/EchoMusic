@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'recommend-songs' });
 import { computed, onMounted, ref } from 'vue';
 import { getEverydayRecommend } from '@/api/music';
 import { extractList } from '@/utils/extractors';

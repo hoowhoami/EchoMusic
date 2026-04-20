@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'ranking' });
 import { computed, onMounted, ref, watch } from 'vue';
 import { getRanks, getRankTop, getRankSongs } from '@/api/playlist';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'cloud' });
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { getUserCloud } from '@/api/user';
 import { usePlaylistStore } from '@/stores/playlist';

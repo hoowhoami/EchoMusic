@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import { useSettingStore } from '@/stores/setting';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
@@ -8,8 +9,21 @@ import BackToTop from '@/components/ui/BackToTop.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 
 const route = useRoute();
+const settingStore = useSettingStore();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
-const keepAliveRouteNames = ['personal-fm'];
+
+// 始终 keepAlive 的路由
+const alwaysKeepAlive = ['personal-fm'];
+
+// 根据设置动态计算 keepAlive 列表
+const keepAliveRouteNames = computed(() => {
+  if (!settingStore.keepAliveEnabled) return alwaysKeepAlive;
+  return [...new Set([...alwaysKeepAlive, ...settingStore.keepAliveRoutes])];
+});
+
+const keepAliveMax = computed(() =>
+  settingStore.keepAliveEnabled ? settingStore.keepAliveMax : alwaysKeepAlive.length,
+);
 
 // 路由切换时重置滚动位置
 watch(
@@ -40,7 +54,7 @@ watch(
         >
           <div>
             <router-view v-slot="{ Component }">
-              <KeepAlive :include="keepAliveRouteNames">
+              <KeepAlive :include="keepAliveRouteNames" :max="keepAliveMax">
                 <component :is="Component" :key="routeViewKey" />
               </KeepAlive>
             </router-view>

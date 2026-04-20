@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'history' });
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { getUserHistory } from '@/api/user';
 import { usePlaylistStore } from '@/stores/playlist';

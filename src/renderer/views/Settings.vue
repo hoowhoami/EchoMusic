@@ -16,6 +16,7 @@ import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
 import type { CloseBehavior, ThemeMode, UpdateCheckResult } from '../../shared/app';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 import Select from '@/components/ui/Select.vue';
+import MultiSelect from '@/components/ui/MultiSelect.vue';
 import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -48,6 +49,22 @@ const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 const showDisclaimer = ref(false);
 const isRequestingOutputPermission = ref(false);
+
+// ── 页面缓存候选列表 ──
+const keepAliveOptions = [
+  { label: '为您推荐', value: 'home' },
+  { label: '探索发现', value: 'explore' },
+  { label: '排行榜', value: 'ranking' },
+  { label: '搜索', value: 'search-page' },
+  { label: '每日推荐', value: 'recommend-songs' },
+  { label: '歌单详情', value: 'playlist-detail' },
+  { label: '歌手详情', value: 'artist-detail' },
+  { label: '专辑详情', value: 'album-detail' },
+  { label: '个人资料', value: 'profile' },
+  { label: '播放历史', value: 'history' },
+  { label: '我最喜爱', value: 'favorites' },
+  { label: '我的云盘', value: 'cloud' },
+];
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 // ── 页面歌词颜色选择器 ──
@@ -1145,6 +1162,60 @@ onUnmounted(() => {
           </div>
           <Switch v-model="settingStore.autoReceiveVip" />
         </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">页面缓存</h3>
+            <p class="text-sm text-text-secondary">
+              缓存已访问的页面，返回时无需重新加载，关闭后所有页面不缓存
+            </p>
+          </div>
+          <Switch v-model="settingStore.keepAliveEnabled" />
+        </div>
+        <template v-if="settingStore.keepAliveEnabled">
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">缓存页面</h3>
+              <p class="text-sm text-text-secondary">选择需要缓存的页面</p>
+            </div>
+            <MultiSelect
+              class="min-w-[180px]"
+              :model-value="settingStore.keepAliveRoutes"
+              :options="keepAliveOptions"
+              placeholder="选择页面"
+              @update:model-value="settingStore.keepAliveRoutes = $event"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">最大缓存页面数</h3>
+              <p class="text-sm text-text-secondary">
+                超出后自动释放最早缓存的页面，避免占用过多内存
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <input
+                :value="String(settingStore.keepAliveMax)"
+                type="number"
+                min="3"
+                max="30"
+                step="1"
+                placeholder="20"
+                class="settings-number-input"
+                @change="
+                  (e) => {
+                    const parsed = Number.parseInt((e.target as HTMLInputElement).value, 10);
+                    settingStore.keepAliveMax = Number.isNaN(parsed)
+                      ? 20
+                      : Math.max(3, Math.min(parsed, 30));
+                  }
+                "
+              />
+            </div>
+          </div>
+        </template>
       </div>
     </section>
 

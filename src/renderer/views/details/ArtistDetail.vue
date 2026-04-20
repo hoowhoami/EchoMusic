@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'artist-detail' });
 import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {

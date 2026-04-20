@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'playlist-detail' });
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';

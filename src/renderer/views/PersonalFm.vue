@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'personal-fm' });
 import { computed, onActivated, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   PERSONAL_FM_QUEUE_ID,

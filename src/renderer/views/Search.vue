@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'search-page' });
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { getSearchHot, getSearchSuggest, search } from '@/api/search';

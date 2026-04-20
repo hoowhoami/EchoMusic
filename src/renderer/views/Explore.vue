@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'explore' });
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { extractAlbumGroups, extractList } from '@/utils/extractors';
 import { usePlaylistStore } from '@/stores/playlist';
