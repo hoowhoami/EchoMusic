@@ -10,6 +10,7 @@ interface Props {
   songCount?: number;
   albumCount?: number;
   fansCount?: number;
+  sourceDesc?: string;
 }
 
 const props = defineProps<Props>();
@@ -26,6 +27,7 @@ const subtitle = computed(() => {
   if (props.albumCount) parts.push(`${props.albumCount} 专辑`);
   if (parts.length > 0) return parts.join(' • ');
   if (props.fansCount) return `${formatFans(props.fansCount)} 粉丝`;
+  if (props.sourceDesc) return props.sourceDesc;
   return '';
 });
 

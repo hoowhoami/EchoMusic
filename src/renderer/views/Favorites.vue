@@ -123,6 +123,7 @@ const artistCards = computed(() =>
     songCount: artist.songCount,
     albumCount: artist.albumCount,
     fansCount: artist.fansCount,
+    sourceDesc: (artist as Record<string, unknown>).sourceDesc as string | undefined,
   })),
 );
 
@@ -136,7 +137,7 @@ const fetchArtists = async () => {
       const lists = Array.isArray(data?.lists) ? data.lists : [];
       artists.value = lists.map((item) => {
         const record = item as Record<string, unknown>;
-        return mapArtistMeta({
+        const artist = mapArtistMeta({
           singerid: record.singerid,
           singername: record.nickname,
           imgurl: record.pic,
@@ -144,6 +145,10 @@ const fetchArtists = async () => {
           name: record.nickname,
           pic: record.pic,
         });
+        // 附加 source_desc
+        (artist as Record<string, unknown>).sourceDesc =
+          typeof record.source_desc === 'string' ? record.source_desc : '';
+        return artist;
       });
     }
     artistsLoaded.value = true;
