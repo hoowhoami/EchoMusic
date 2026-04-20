@@ -160,3 +160,19 @@ export function getUserCloud(page = 1, pagesize = 30) {
     params: { page, pagesize },
   });
 }
+
+/**
+ * 获取用户关注歌手
+ */
+export function getUserFollow() {
+  return request.get('/user/follow');
+}
+
+/**
+ * 获取用户收藏的视频
+ */
+export function getUserVideoCollect(page = 1, pagesize = 30) {
+  return request.get('/user/video/collect', {
+    params: { page, pagesize },
+  });
+}
