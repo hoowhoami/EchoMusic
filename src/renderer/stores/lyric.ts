@@ -275,6 +275,9 @@ export const useLyricStore = defineStore('lyric', {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
       const content = String(payload.decodeContent ?? payload.lyric ?? '')
         .replace(/^\uFEFF/, '')
+        .replace(/&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
         .trim();
       this.rawLyric = content;
       this.loadedHash = hash;

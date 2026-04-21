@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useRafFn } from '@vueuse/core';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
 import { useLyricStore } from '@/stores/lyric';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
@@ -586,7 +587,72 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
+// ── 逐字歌词实时进度（毫秒） ──
+const LYRIC_LOOKAHEAD = 150;
+const playSeekMs = ref(0);
+let seekBaseMs = 0;
+let seekAnchorTick = 0;
+
+const { pause: pauseSeekRaf, resume: resumeSeekRaf } = useRafFn(() => {
+  if (playerStore.isPlaying) {
+    playSeekMs.value = seekBaseMs + (performance.now() - seekAnchorTick);
+  }
+});
+
+const syncSeekAnchor = () => {
+  seekBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
+  seekAnchorTick = performance.now();
+  playSeekMs.value = seekBaseMs;
+};
+
+// 已播/未播颜色（用于逐字渐变）
+const yrcPlayedColor = computed(
+  () =>
+    effectivePlayedColor.value ||
+    (isDarkMode.value ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.98)'),
+);
+const yrcUnplayedColor = computed(
+  () =>
+    effectiveUnplayedColor.value ||
+    (isDarkMode.value ? 'rgba(255,255,255,0.66)' : 'rgba(15,23,42,0.58)'),
+);
+
+const getYrcStyle = (char: { startTime: number; endTime: number }, lineIndex: number) => {
+  const line = lyricStore.lines[lineIndex];
+  if (!line?.characters?.length) return { backgroundPositionX: '100%' };
+  const seekMs = playSeekMs.value + LYRIC_LOOKAHEAD;
+  const lineStart = line.characters[0].startTime;
+  const lineEnd = line.characters[line.characters.length - 1].endTime;
+  const isLineActive =
+    (seekMs >= lineStart && seekMs < lineEnd) || currentIndex.value === lineIndex;
+  if (!isLineActive) {
+    return { backgroundPositionX: seekMs >= (char.endTime || 0) ? '0%' : '100%' };
+  }
+  const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
+  const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
+  return { backgroundPositionX: `${100 - progress * 100}%` };
+};
+
+const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
+
+watch(
+  () => playerStore.currentTime,
+  () => syncSeekAnchor(),
+);
+
+watch(
+  () => playerStore.isPlaying,
+  (playing) => {
+    syncSeekAnchor();
+    if (playing) resumeSeekRaf();
+    else pauseSeekRaf();
+  },
+);
+
 onMounted(() => {
+  syncSeekAnchor();
+  if (playerStore.isPlaying) resumeSeekRaf();
+  else pauseSeekRaf();
   ensureLyricsForCurrentTrack();
   void ensureArtistBackdropForCurrentTrack();
   void nextTick(() => scrollToCurrentLine(false));
@@ -595,6 +661,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  pauseSeekRaf();
   artistBackdropRequestId += 1;
   clearUserScrollResumeTimer();
   stopPortraitCarousel();
@@ -983,19 +1050,17 @@ onUnmounted(() => {
                             fontWeight: String(lyricStore.fontWeightValue),
                           }"
                         >
-                          <template v-if="currentIndex === index && line.characters.length > 1">
+                          <template v-if="currentIndex === index && isYrcLine(line)">
                             <span
-                              v-for="char in line.characters"
-                              :key="`${char.startTime}`"
-                              class="lyric-character"
-                              :class="char.highlighted ? 'is-highlighted' : ''"
-                              :style="
-                                char.highlighted && effectivePlayedColor
-                                  ? { color: effectivePlayedColor }
-                                  : !char.highlighted && effectiveUnplayedColor
-                                    ? { color: effectiveUnplayedColor }
-                                    : undefined
-                              "
+                              v-for="(char, ci) in line.characters"
+                              :key="ci"
+                              class="lyric-yrc-char"
+                              :style="[
+                                {
+                                  backgroundImage: `linear-gradient(to right, ${yrcPlayedColor} 50%, ${yrcUnplayedColor} 50%)`,
+                                },
+                                getYrcStyle(char, index),
+                              ]"
                               >{{ char.text }}</span
                             >
                           </template>
@@ -2195,6 +2260,17 @@ onUnmounted(() => {
 
 .dark .lyric-line.is-current .lyric-subline {
   color: rgba(255, 255, 255, 0.62);
+}
+
+.lyric-yrc-char {
+  display: inline;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position-x: 100%;
+  will-change: background-position-x;
 }
 
 .lyric-character {

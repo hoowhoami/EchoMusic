@@ -17,12 +17,16 @@
 
 - 播放引擎从 Howler.js 重构为原生 HTML5 Audio，消除中间层导致的事件丢失和状态不同步问题
 - 通过 Web Audio API（GainNode）实现音量均衡，复用同一音频元素，切歌无需重建处理链路
+- 淡入淡出重构为双 GainNode 架构（fadeGainNode + normGainNode），淡入淡出使用 Web Audio API 原生 linearRampToValueAtTime 调度，不依赖 JS 定时器，窗口最小化时也能正常工作
+- 歌词页面逐字动画升级为渐变填充效果，与桌面歌词一致，基于 rAF 实时插值实现逐字平滑过渡
 - 直接监听原生 audio 的 durationchange 事件，修复流式音频 duration 不准确的问题
 
 ### 修复
 
 - 修复播放中突然卡住、进度条停止且拖动无响应的问题
 - 修复歌曲进度条已到末尾但 ended 事件未触发、延迟切换下一首的问题
+- 修复自动切歌时淡入淡出导致歌曲没声音的问题
+- 修复英文歌词中 HTML 实体未解码的问题（如 `&apos;` 显示为原始文本）
 
 ## [2.1.9] - 2026-04-20
 
