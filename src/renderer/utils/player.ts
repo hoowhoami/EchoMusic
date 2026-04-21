@@ -53,14 +53,16 @@ export class PlayerEngine {
   private timeUpdateTimer: number | null;
   private lastTimeValue: number;
   private preferredSinkId: string;
-  private fadeRafId: number | null;
+  private fadeTargetVolume: number | null;
   private pendingFadeResolve: (() => void) | null;
+  private pendingFadeTimer: number | null;
   private fadeSeq: number;
   private abortController: AbortController;
-  // 音量均衡：Web Audio API 处理链
+  // Web Audio API 处理链：source → fadeGainNode(淡入淡出) → gainNode(音量均衡) → destination
   private audioContext: AudioContext | null;
   private sourceNode: MediaElementAudioSourceNode | null;
-  private gainNode: GainNode | null;
+  private fadeGainNode: GainNode | null;
+  private normGainNode: GainNode | null;
   private normalizationEnabled: boolean;
   /** 当前生效的均衡增益系数（线性值，1.0 = 无调整） */
   private normalizationGain: number;
@@ -81,13 +83,15 @@ export class PlayerEngine {
     this.timeUpdateTimer = null;
     this.lastTimeValue = -1;
     this.preferredSinkId = 'default';
-    this.fadeRafId = null;
+    this.fadeTargetVolume = null;
     this.pendingFadeResolve = null;
+    this.pendingFadeTimer = null;
     this.fadeSeq = 0;
     this.abortController = new AbortController();
     this.audioContext = null;
     this.sourceNode = null;
-    this.gainNode = null;
+    this.fadeGainNode = null;
+    this.normGainNode = null;
     this.normalizationEnabled = false;
     this.normalizationGain = 1.0;
     this.referenceLufs = DEFAULT_REFERENCE_LUFS;
@@ -207,10 +211,24 @@ export class PlayerEngine {
   // ── 淡入淡出 ──
 
   private cancelPendingFade(): void {
-    if (this.fadeRafId !== null) {
-      cancelAnimationFrame(this.fadeRafId);
-      this.fadeRafId = null;
+    if (this.pendingFadeTimer !== null) {
+      clearTimeout(this.pendingFadeTimer);
+      this.pendingFadeTimer = null;
     }
+    // 取消 Web Audio 调度并立即跳到目标音量
+    if (this.fadeGainNode && this.audioContext && this.fadeTargetVolume !== null) {
+      this.fadeGainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.fadeGainNode.gain.setValueAtTime(
+        clamp(this.fadeTargetVolume, 0, 1),
+        this.audioContext.currentTime,
+      );
+      this.volumeValue = this.fadeTargetVolume;
+    } else if (this.fadeTargetVolume !== null) {
+      // 回退：无 Web Audio 时操作 audio.volume
+      this.audio.volume = clamp(this.fadeTargetVolume, 0, 1);
+      this.volumeValue = this.fadeTargetVolume;
+    }
+    this.fadeTargetVolume = null;
     if (this.pendingFadeResolve) {
       const resolve = this.pendingFadeResolve;
       this.pendingFadeResolve = null;
@@ -218,42 +236,96 @@ export class PlayerEngine {
     }
   }
 
-  /** 使用 requestAnimationFrame 实现平滑音量渐变 */
+  /**
+   * 音量渐变：优先使用 Web Audio API 的 linearRampToValueAtTime（音频线程原生调度），
+   * 无 AudioContext 时回退到 setInterval + Date.now()。
+   */
   private animateFade(from: number, to: number, durationMs: number): Promise<void> {
     this.cancelPendingFade();
     if (durationMs <= 0) {
-      this.setVolume(to);
+      this.applyVolumeToOutput(to);
       return Promise.resolve();
     }
 
     const fadeSeq = ++this.fadeSeq;
-    const startTime = performance.now();
+    this.fadeTargetVolume = to;
+
+    // Web Audio 路径：通过 fadeGainNode 原生调度
+    if (this.fadeGainNode && this.audioContext) {
+      const ctx = this.audioContext;
+      const param = this.fadeGainNode.gain;
+      param.cancelScheduledValues(ctx.currentTime);
+      param.setValueAtTime(clamp(from, 0, 1), ctx.currentTime);
+      param.linearRampToValueAtTime(clamp(to, 0, 1), ctx.currentTime + durationMs / 1000);
+
+      return new Promise((resolve) => {
+        this.pendingFadeResolve = resolve;
+        // 定时器在淡入淡出结束后清理状态
+        this.pendingFadeTimer = window.setTimeout(() => {
+          this.pendingFadeTimer = null;
+          if (fadeSeq !== this.fadeSeq) {
+            resolve();
+            return;
+          }
+          this.fadeTargetVolume = null;
+          this.volumeValue = to;
+          this.pendingFadeResolve = null;
+          resolve();
+        }, durationMs + 50); // 多留 50ms 余量确保 ramp 完成
+      });
+    }
+
+    // 回退路径：setInterval + Date.now()（操作 audio.volume）
+    const diff = to - from;
+    const steps = Math.abs(diff / 0.01);
+    const stepLen = Math.max(4, steps > 0 ? durationMs / steps : durationMs);
+    let lastTick = Date.now();
 
     return new Promise((resolve) => {
       this.pendingFadeResolve = resolve;
+      let vol = from;
 
-      const step = () => {
+      this.pendingFadeTimer = window.setInterval(() => {
         if (fadeSeq !== this.fadeSeq) {
           resolve();
           return;
         }
-        const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / durationMs, 1);
-        const current = from + (to - from) * progress;
-        this.audio.volume = clamp(current, 0, 1);
 
-        if (progress < 1) {
-          this.fadeRafId = requestAnimationFrame(step);
+        const now = Date.now();
+        const tick = (now - lastTick) / durationMs;
+        lastTick = now;
+        vol += diff * tick;
+
+        if (diff > 0) {
+          vol = Math.min(to, vol);
         } else {
-          this.fadeRafId = null;
+          vol = Math.max(to, vol);
+        }
+
+        this.audio.volume = clamp(vol, 0, 1);
+
+        if ((diff < 0 && vol <= to) || (diff > 0 && vol >= to) || diff === 0) {
+          clearInterval(this.pendingFadeTimer!);
+          this.pendingFadeTimer = null;
+          this.fadeTargetVolume = null;
           this.volumeValue = to;
           this.pendingFadeResolve = null;
           resolve();
         }
-      };
-
-      this.fadeRafId = requestAnimationFrame(step);
+      }, stepLen) as unknown as number;
     });
+  }
+
+  /** 将音量应用到输出：有 fadeGainNode 时设 gain，否则设 audio.volume */
+  private applyVolumeToOutput(value: number): void {
+    const clamped = clamp(value, 0, 1);
+    this.volumeValue = clamped;
+    if (this.fadeGainNode && this.audioContext) {
+      this.fadeGainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.fadeGainNode.gain.setValueAtTime(clamped, this.audioContext.currentTime);
+    } else {
+      this.audio.volume = clamped;
+    }
   }
 
   // ── 音频资源管理 ──
@@ -328,7 +400,7 @@ export class PlayerEngine {
   // ── 音量均衡（Web Audio API） ──
 
   /**
-   * 构建 Web Audio 处理链：MediaElementSource → GainNode → Destination。
+   * 构建 Web Audio 处理链：MediaElementSource → fadeGainNode(淡入淡出) → GainNode(音量均衡) → Destination。
    * 仅在首次启用音量均衡时调用一次，后续切歌复用同一条链路。
    */
   private initAudioGraph(): boolean {
@@ -337,17 +409,26 @@ export class PlayerEngine {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       this.audioContext = new AudioCtx();
       this.sourceNode = this.audioContext.createMediaElementSource(this.audio);
-      this.gainNode = this.audioContext.createGain();
-      this.sourceNode.connect(this.gainNode);
-      this.gainNode.connect(this.audioContext.destination);
-      this.gainNode.gain.setValueAtTime(this.normalizationGain, this.audioContext.currentTime);
-      logger.info('PlayerEngine', 'Audio processing graph initialized');
+      // 淡入淡出 GainNode：控制播放音量和渐变
+      this.fadeGainNode = this.audioContext.createGain();
+      this.fadeGainNode.gain.setValueAtTime(this.volumeValue, this.audioContext.currentTime);
+      // 音量均衡 GainNode：控制响度补偿
+      this.normGainNode = this.audioContext.createGain();
+      this.normGainNode.gain.setValueAtTime(this.normalizationGain, this.audioContext.currentTime);
+      // 链路：source → fade → normalization → destination
+      this.sourceNode.connect(this.fadeGainNode);
+      this.fadeGainNode.connect(this.normGainNode);
+      this.normGainNode.connect(this.audioContext.destination);
+      // Web Audio 接管音量控制后，audio.volume 固定为 1
+      this.audio.volume = 1;
+      logger.info('PlayerEngine', 'Audio processing graph initialized (dual GainNode)');
       return true;
     } catch (error) {
       logger.error('PlayerEngine', 'Failed to initialize audio processing graph', error);
       this.audioContext = null;
       this.sourceNode = null;
-      this.gainNode = null;
+      this.fadeGainNode = null;
+      this.normGainNode = null;
       return false;
     }
   }
@@ -392,13 +473,13 @@ export class PlayerEngine {
 
   /** 将增益系数应用到 GainNode */
   private applyGain(gain: number): void {
-    if (!this.gainNode || !this.audioContext) {
+    if (!this.normGainNode || !this.audioContext) {
       if (this.normalizationEnabled) {
         logger.warn('PlayerEngine', 'Cannot apply gain: audio graph not initialized');
       }
       return;
     }
-    this.gainNode.gain.setValueAtTime(gain, this.audioContext.currentTime);
+    this.normGainNode.gain.setValueAtTime(gain, this.audioContext.currentTime);
   }
 
   // ── 公开 API ──
@@ -410,7 +491,13 @@ export class PlayerEngine {
   setVolume(value: number): number {
     const next = clamp(value, 0, 1);
     this.volumeValue = next;
-    this.audio.volume = next;
+    if (this.fadeGainNode && this.audioContext) {
+      // Web Audio 接管：通过 fadeGainNode 控制音量，audio.volume 保持为 1
+      this.fadeGainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.fadeGainNode.gain.setValueAtTime(next, this.audioContext.currentTime);
+    } else {
+      this.audio.volume = next;
+    }
     return next;
   }
 
@@ -496,7 +583,14 @@ export class PlayerEngine {
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
-    this.audio.volume = this.volumeValue;
+    // Web Audio 接管时 audio.volume 保持为 1，音量由 fadeGainNode 控制
+    if (this.fadeGainNode && this.audioContext) {
+      this.audio.volume = 1;
+      this.fadeGainNode.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.fadeGainNode.gain.setValueAtTime(this.volumeValue, this.audioContext.currentTime);
+    } else {
+      this.audio.volume = this.volumeValue;
+    }
     this.audio.playbackRate = this.playbackRateValue;
     this.audio.src = url;
   }
@@ -516,7 +610,9 @@ export class PlayerEngine {
 
     if (durationMs > 0) {
       const targetVolume = this.volumeValue;
-      this.audio.volume = 0;
+      // 淡入起始：音量设为 0
+      this.applyVolumeToOutput(0);
+      this.volumeValue = targetVolume; // 保留目标值，applyVolumeToOutput 会覆盖
       await this.audio.play();
       void this.animateFade(0, targetVolume, durationMs);
     } else {
@@ -529,11 +625,11 @@ export class PlayerEngine {
 
     if (durationMs > 0) {
       const savedVolume = this.volumeValue;
-      const currentVolume = this.audio.volume;
+      const currentVolume = this.fadeGainNode ? this.fadeGainNode.gain.value : this.audio.volume;
       await this.animateFade(currentVolume, 0, durationMs);
       this.audio.pause();
-      this.volumeValue = savedVolume;
-      this.audio.volume = savedVolume;
+      // 恢复音量值，下次播放时使用
+      this.applyVolumeToOutput(savedVolume);
     } else {
       this.audio.pause();
     }

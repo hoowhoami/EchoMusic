@@ -57,7 +57,7 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
 });
 
 // 300ms 提前量
-const LYRIC_LOOKAHEAD = 300;
+const LYRIC_LOOKAHEAD = 150;
 const SYNC_THRESHOLD = 300;
 
 // ── 计算属性 ──
@@ -519,15 +519,16 @@ const playNext = () => {
 
 // ── 锚点同步 ──
 
-const syncAnchor = () => {
+const syncAnchor = (force = false) => {
   const state = playback.value;
   if (!state) return;
   const newBaseMs = Math.round((state.currentTime || 0) * 1000);
   const ipcDelay = performance.now() - (state.updatedAt || performance.now());
   const compensated = ipcDelay > 0 && ipcDelay < 1000 ? newBaseMs + ipcDelay : newBaseMs;
-  if (Math.abs(compensated - playSeekMs.value) > SYNC_THRESHOLD) {
+  if (force || Math.abs(compensated - playSeekMs.value) > SYNC_THRESHOLD) {
     baseMs = compensated;
     anchorTick = performance.now();
+    playSeekMs.value = compensated;
   }
   if (!state.isPlaying) {
     baseMs = newBaseMs;
@@ -548,8 +549,10 @@ onMounted(async () => {
 
   disposeSnapshotListener =
     window.electron?.desktopLyric?.onSnapshot((next) => {
+      const prevIndex = snapshot.value?.currentIndex ?? -1;
       snapshot.value = next;
-      syncAnchor();
+      // 歌词行切换时强制同步锚点，避免进度条从中间开始
+      syncAnchor(next.currentIndex !== prevIndex);
       // 按播放状态节能
       if (next.playback?.isPlaying) {
         resumeSeek();
