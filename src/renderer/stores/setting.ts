@@ -70,6 +70,8 @@ export const useSettingStore = defineStore('setting', {
     outputDeviceDisconnectBehavior: 'pause' as OutputDeviceDisconnectBehavior,
     autoReceiveVip: false,
     showAudioQualityBadge: true,
+    volumeNormalization: true,
+    volumeNormalizationLufs: -14,
     keepAliveEnabled: true,
     keepAliveMax: 20,
     keepAliveRoutes: ['playlist-detail', 'artist-detail', 'album-detail', 'favorites'] as string[],

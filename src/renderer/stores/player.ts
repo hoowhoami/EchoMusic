@@ -10,6 +10,7 @@ import {
   type MediaSessionMeta,
   type MediaSessionState,
   type PlayerEngineEvents,
+  type TrackLoudness,
 } from '@/utils/player';
 import { getCoverUrl } from '@/utils/cover';
 import type { Song, SongRelateGood } from '@/models/song';
@@ -88,6 +89,35 @@ const resolveUrlFromResponse = (payload: unknown): string => {
     if ('info' in record) return resolveUrlFromResponse(record.info);
   }
   return '';
+};
+
+/** 从 API 响应中提取曲目响度信息 */
+const resolveTrackLoudness = (payload: unknown): TrackLoudness | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  // 响度字段可能在顶层或 data 层
+  const source =
+    typeof record.volume === 'number'
+      ? record
+      : typeof record.data === 'object' && record.data !== null
+        ? (record.data as Record<string, unknown>)
+        : null;
+  if (!source || typeof source.volume !== 'number') return null;
+  const lufs = source.volume as number;
+  const gain =
+    typeof source.volume_gain === 'number'
+      ? (source.volume_gain as number)
+      : typeof source.volumeGain === 'number'
+        ? (source.volumeGain as number)
+        : 0;
+  const peak =
+    typeof source.volume_peak === 'number'
+      ? (source.volume_peak as number)
+      : typeof source.volumePeak === 'number'
+        ? (source.volumePeak as number)
+        : 0;
+  if (!Number.isFinite(lufs)) return null;
+  return { lufs, gain, peak: Math.max(0, peak) };
 };
 
 const buildAudioOutputDeviceSignature = (devices: MediaDeviceInfo[]): string | null => {
@@ -174,6 +204,7 @@ type ResolvedAudioSource = {
   url: string;
   quality: AudioQualityValue | null;
   effect: AudioEffectValue;
+  loudness: TrackLoudness | null;
 };
 
 type ClimaxMark = { start: number; end: number };
@@ -613,6 +644,9 @@ export const usePlayerStore = defineStore('player', {
       // 恢复持久化的音量与倍速
       engine.setVolume(this.volume);
       engine.setPlaybackRate(this.playbackRate);
+      // 恢复音量均衡设置
+      engine.setVolumeNormalization(settingStore.volumeNormalization);
+      engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       this.registerSettingWatchers(settingStore);
       this.registerOutputDeviceWatcher(settingStore);
       void this.refreshOutputDevices(settingStore);
@@ -907,6 +941,16 @@ export const usePlayerStore = defineStore('player', {
       );
     },
 
+    setVolumeNormalization(enabled: boolean) {
+      engine.setVolumeNormalization(enabled);
+      logger.info('PlayerStore', 'Volume normalization updated', { enabled });
+    },
+
+    setReferenceLufs(lufs: number) {
+      engine.setReferenceLufs(lufs);
+      logger.info('PlayerStore', 'Reference LUFS updated', { lufs });
+    },
+
     async playTrack(
       id: string,
       playlist?: Song[],
@@ -1075,6 +1119,7 @@ export const usePlayerStore = defineStore('player', {
         resolvedEffect: resolved.effect,
       });
       engine.setSource(resolved.url);
+      engine.applyTrackLoudness(resolved.loudness);
 
       try {
         if (autoPlay) {
@@ -1702,7 +1747,7 @@ export const usePlayerStore = defineStore('player', {
           'Resolve audio url skipped because track hash is missing',
           summarizeSong(track),
         );
-        return { url: '', quality: null, effect: 'none' };
+        return { url: '', quality: null, effect: 'none', loudness: null };
       }
       const canReuseCurrentSource =
         !!track.audioUrl &&
@@ -1721,6 +1766,7 @@ export const usePlayerStore = defineStore('player', {
           url: track.audioUrl!,
           quality: this.currentResolvedAudioQuality,
           effect: this.currentResolvedAudioEffect,
+          loudness: null,
         };
       }
 
@@ -1751,7 +1797,7 @@ export const usePlayerStore = defineStore('player', {
             summarizeSong(track),
           );
         }
-        return { url: cloudUrl ?? '', quality: null, effect: 'none' };
+        return { url: cloudUrl ?? '', quality: null, effect: 'none', loudness: null };
       }
 
       const relateGoods = await this.ensureTrackRelateGoods(track, { forceRefresh: true });
@@ -1778,7 +1824,12 @@ export const usePlayerStore = defineStore('player', {
                 audioEffect,
                 hash: effectHash,
               });
-              return { url: effectUrl, quality: audioQuality, effect: audioEffect };
+              return {
+                url: effectUrl,
+                quality: audioQuality,
+                effect: audioEffect,
+                loudness: resolveTrackLoudness(effectRes),
+              };
             }
           } catch (error) {
             logger.warn('PlayerStore', 'Fetch effect url failed:', error, {
@@ -1820,7 +1871,7 @@ export const usePlayerStore = defineStore('player', {
               track: summarizeSong(track),
               quality,
             });
-            return { url, quality, effect: 'none' };
+            return { url, quality, effect: 'none', loudness: resolveTrackLoudness(res) };
           }
         } catch (error) {
           logger.warn('PlayerStore', 'Fetch quality url failed:', error);
@@ -1846,6 +1897,7 @@ export const usePlayerStore = defineStore('player', {
               url,
               quality: this.getResolvedAudioQuality(track, settingStore),
               effect: 'none',
+              loudness: resolveTrackLoudness(res),
             };
           }
         } catch (error) {
@@ -1868,6 +1920,7 @@ export const usePlayerStore = defineStore('player', {
             url,
             quality: this.getResolvedAudioQuality(track, settingStore),
             effect: 'none',
+            loudness: resolveTrackLoudness(res),
           };
         }
       } catch (error) {
@@ -1880,7 +1933,7 @@ export const usePlayerStore = defineStore('player', {
         audioEffect,
         compatibilityMode,
       });
-      return { url: '', quality: null, effect: 'none' };
+      return { url: '', quality: null, effect: 'none', loudness: null };
     },
 
     async refreshCurrentTrack() {
@@ -1950,6 +2003,7 @@ export const usePlayerStore = defineStore('player', {
       this.currentResolvedAudioEffect = resolved.effect;
       track.audioUrl = resolved.url;
       engine.setSource(resolved.url);
+      engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(this.playbackRate);
       void this.fetchClimaxMarks(track);
 

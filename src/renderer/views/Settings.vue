@@ -198,6 +198,16 @@ const recording = ref<ShortcutRecordingState | null>(null);
 let removeRecorder: (() => void) | null = null;
 let removeOutside: (() => void) | null = null;
 
+const handleVolumeNormalizationChange = (enabled: boolean) => {
+  settingStore.volumeNormalization = enabled;
+  playerStore.setVolumeNormalization(enabled);
+};
+
+const handleReferenceLufsSlider = (value: number) => {
+  settingStore.volumeNormalizationLufs = value;
+  playerStore.setReferenceLufs(value);
+};
+
 const autoNextDelayInput = computed({
   get: () => String(settingStore.autoNextDelaySeconds ?? 0),
   set: (value: string | number) => {
@@ -645,6 +655,34 @@ onUnmounted(() => {
             :value-suffix="'ms'"
             @update:model-value="settingStore.volumeFadeTime = $event"
             @value-commit="settingStore.volumeFadeTime = $event"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">音量均衡</h3>
+            <p class="text-sm text-text-secondary">自动调整不同歌曲的音量，使播放响度保持一致</p>
+          </div>
+          <Switch
+            :model-value="settingStore.volumeNormalization"
+            @update:model-value="handleVolumeNormalizationChange"
+          />
+        </div>
+        <div v-if="settingStore.volumeNormalization" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">参考响度</h3>
+            <p class="text-sm text-text-secondary">数值越高整体音量越大，越低越安静</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="settingStore.volumeNormalizationLufs"
+            :min="-20"
+            :max="-8"
+            :step="1"
+            show-value
+            :value-suffix="' LUFS'"
+            @update:model-value="handleReferenceLufsSlider($event)"
+            @value-commit="handleReferenceLufsSlider($event)"
           />
         </div>
         <div class="settings-divider"></div>
