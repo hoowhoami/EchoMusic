@@ -1,4 +1,3 @@
-import { Howl } from 'howler';
 import logger from './logger';
 
 export interface PlayerEngineEvents {
@@ -29,7 +28,7 @@ const clamp = (value: number, min: number, max: number): number => {
 };
 
 export class PlayerEngine {
-  private howl: Howl | null;
+  private audio: HTMLAudioElement | null;
   private events: PlayerEngineEvents;
   private sourceUrl: string;
   private volumeValue: number;
@@ -39,11 +38,14 @@ export class PlayerEngine {
   private lastTimeValue: number;
   private preferredSinkId: string;
   private fadeTimer: number | null;
+  private fadeRafId: number | null;
   private pendingFadeResolve: (() => void) | null;
   private fadeSeq: number;
+  // 用于批量移除 audio 事件监听器
+  private abortController: AbortController | null;
 
   constructor() {
-    this.howl = null;
+    this.audio = null;
     this.events = {};
     this.sourceUrl = '';
     this.volumeValue = 1;
@@ -53,9 +55,13 @@ export class PlayerEngine {
     this.lastTimeValue = -1;
     this.preferredSinkId = 'default';
     this.fadeTimer = null;
+    this.fadeRafId = null;
     this.pendingFadeResolve = null;
     this.fadeSeq = 0;
+    this.abortController = null;
   }
+
+  // ── 内部：时间更新轮询 ──
 
   private emitDurationChange(): void {
     const duration = this.duration;
@@ -89,23 +95,177 @@ export class PlayerEngine {
     }
   }
 
-  private handleError(payload?: unknown): void {
-    const errorEvent = new Event('error');
-    if (payload && typeof payload === 'object') {
-      (errorEvent as Event & { detail?: unknown }).detail = payload;
+  // ── 内部：淡入淡出 ──
+
+  private cancelPendingFade(): void {
+    if (this.fadeTimer !== null) {
+      window.clearTimeout(this.fadeTimer);
+      this.fadeTimer = null;
     }
-    this.events.error?.(errorEvent);
+    if (this.fadeRafId !== null) {
+      cancelAnimationFrame(this.fadeRafId);
+      this.fadeRafId = null;
+    }
+    if (this.pendingFadeResolve) {
+      const resolve = this.pendingFadeResolve;
+      this.pendingFadeResolve = null;
+      resolve();
+    }
   }
 
-  private getAudioNode(): HTMLAudioElement | null {
-    if (!this.howl) return null;
-    const howlInternal = this.howl as any;
-    return howlInternal._sounds?.[0]?._node as HTMLAudioElement | null;
+  // 使用 requestAnimationFrame 实现平滑音量渐变
+  private animateFade(from: number, to: number, durationMs: number): Promise<void> {
+    this.cancelPendingFade();
+    if (!this.audio || durationMs <= 0) {
+      this.setVolume(to);
+      return Promise.resolve();
+    }
+
+    const fadeSeq = ++this.fadeSeq;
+    const startTime = performance.now();
+
+    return new Promise((resolve) => {
+      this.pendingFadeResolve = resolve;
+
+      const step = () => {
+        if (fadeSeq !== this.fadeSeq || !this.audio) {
+          resolve();
+          return;
+        }
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / durationMs, 1);
+        const current = from + (to - from) * progress;
+        this.audio.volume = clamp(current, 0, 1);
+
+        if (progress < 1) {
+          this.fadeRafId = requestAnimationFrame(step);
+        } else {
+          this.fadeRafId = null;
+          this.volumeValue = to;
+          this.pendingFadeResolve = null;
+          resolve();
+        }
+      };
+
+      this.fadeRafId = requestAnimationFrame(step);
+    });
   }
+
+  // ── 内部：音频元素管理 ──
+
+  private cleanup(): void {
+    this.stopTimeUpdates();
+    this.cancelPendingFade();
+    if (!this.audio) return;
+    // 先 abort 移除所有事件监听，避免 pause()/load() 触发残留回调
+    this.abortController?.abort();
+    this.abortController = null;
+    const node = this.audio;
+    this.audio = null;
+    node.pause();
+    node.removeAttribute('src');
+    node.load(); // 释放资源
+  }
+
+  private createAudio(url: string): void {
+    this.cleanup();
+
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.volume = this.volumeValue;
+    audio.playbackRate = this.playbackRateValue;
+    this.audio = audio;
+
+    // 使用 AbortController 统一管理事件监听器的生命周期
+    const ac = new AbortController();
+    this.abortController = ac;
+    const opts = { signal: ac.signal };
+
+    audio.addEventListener(
+      'loadedmetadata',
+      () => {
+        this.emitDurationChange();
+        void this.applySinkId();
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'durationchange',
+      () => {
+        this.emitDurationChange();
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'play',
+      () => {
+        this.events.play?.();
+        this.startTimeUpdates();
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'pause',
+      () => {
+        this.events.pause?.();
+        this.stopTimeUpdates();
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'ended',
+      () => {
+        this.stopTimeUpdates();
+        this.events.ended?.();
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'error',
+      () => {
+        const mediaError = audio.error;
+        logger.error('PlayerEngine', 'Audio error', {
+          code: mediaError?.code,
+          message: mediaError?.message,
+        });
+        const errorEvent = new Event('error');
+        (errorEvent as Event & { detail?: unknown }).detail = {
+          code: mediaError?.code,
+          message: mediaError?.message,
+        };
+        this.events.error?.(errorEvent);
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'stalled',
+      () => {
+        logger.warn('PlayerEngine', 'Audio stalled: network stall detected');
+      },
+      opts,
+    );
+
+    audio.addEventListener(
+      'waiting',
+      () => {
+        logger.warn('PlayerEngine', 'Audio waiting: buffering');
+      },
+      opts,
+    );
+
+    audio.src = url;
+  }
+
+  // ── 内部：输出设备 ──
 
   private async applySinkId(): Promise<boolean> {
-    const audioNode = this.getAudioNode();
-    if (!audioNode) {
+    if (!this.audio) {
       logger.debug('PlayerEngine', 'Skip applySinkId because audio node is not ready yet', {
         preferredSinkId: this.preferredSinkId,
       });
@@ -113,7 +273,7 @@ export class PlayerEngine {
     }
 
     const nextSinkId = this.preferredSinkId || 'default';
-    const mediaNode = audioNode as HTMLAudioElement & {
+    const mediaNode = this.audio as HTMLAudioElement & {
       setSinkId?: (sinkId: string) => Promise<void>;
     };
 
@@ -139,63 +299,7 @@ export class PlayerEngine {
     }
   }
 
-  private cancelPendingFade(): void {
-    if (this.fadeTimer !== null) {
-      window.clearTimeout(this.fadeTimer);
-      this.fadeTimer = null;
-    }
-    if (this.pendingFadeResolve) {
-      const resolve = this.pendingFadeResolve;
-      this.pendingFadeResolve = null;
-      resolve();
-    }
-  }
-
-  private cleanup(): void {
-    this.stopTimeUpdates();
-    this.cancelPendingFade();
-    if (!this.howl) return;
-    const sound = this.howl;
-    this.howl = null;
-    sound.unload();
-  }
-
-  private buildHowl(url: string): void {
-    this.cleanup();
-
-    this.howl = new Howl({
-      src: [url],
-      html5: true, // 使用 HTML5 Audio 以支持流式播放
-      preload: true,
-      volume: this.volumeValue,
-      rate: this.playbackRateValue,
-      onload: () => {
-        this.emitDurationChange();
-        void this.applySinkId();
-      },
-      onplay: () => {
-        void this.applySinkId();
-        this.events.play?.();
-        this.startTimeUpdates();
-      },
-      onpause: () => {
-        this.events.pause?.();
-        this.stopTimeUpdates();
-      },
-      onend: () => {
-        this.stopTimeUpdates();
-        this.events.ended?.();
-      },
-      onloaderror: (_id, error) => {
-        logger.error('PlayerEngine', 'Howl load error', error);
-        this.handleError(error);
-      },
-      onplayerror: (_id, error) => {
-        logger.error('PlayerEngine', 'Howl play error', error);
-        this.handleError(error);
-      },
-    });
-  }
+  // ── 公开 API ──
 
   setEvents(events: PlayerEngineEvents): void {
     this.events = events;
@@ -204,47 +308,24 @@ export class PlayerEngine {
   setVolume(value: number): number {
     const next = clamp(value, 0, 1);
     this.volumeValue = next;
-    if (this.howl) {
-      this.howl.volume(next);
+    if (this.audio) {
+      this.audio.volume = next;
     }
     return next;
   }
 
-  // Howler 原生支持淡入淡出
   fadeTo(value: number, durationMs = 0): Promise<void> {
-    const next = clamp(value, 0, 1);
-    this.cancelPendingFade();
-
-    if (!this.howl || durationMs <= 0) {
-      this.setVolume(next);
-      return Promise.resolve();
-    }
-
-    const fadeSeq = ++this.fadeSeq;
-    this.volumeValue = next;
-
-    return new Promise((resolve) => {
-      this.pendingFadeResolve = resolve;
-
-      // 使用 Howler 的 fade 方法
-      this.howl!.fade(this.howl!.volume(), next, durationMs);
-
-      this.fadeTimer = window.setTimeout(() => {
-        if (fadeSeq === this.fadeSeq) {
-          this.volumeValue = next;
-        }
-        this.fadeTimer = null;
-        this.pendingFadeResolve = null;
-        resolve();
-      }, durationMs + 50);
-    });
+    const from = this.audio ? this.audio.volume : this.volumeValue;
+    const to = clamp(value, 0, 1);
+    this.volumeValue = to;
+    return this.animateFade(from, to, durationMs);
   }
 
   setPlaybackRate(rate: number): number {
     const next = clamp(rate, 0.1, 5);
     this.playbackRateValue = next;
-    if (this.howl) {
-      this.howl.rate(next);
+    if (this.audio) {
+      this.audio.playbackRate = next;
     }
     return next;
   }
@@ -316,7 +397,7 @@ export class PlayerEngine {
     this.durationValue = 0;
     this.lastTimeValue = -1;
     this.events.durationChange?.(0);
-    this.buildHowl(url);
+    this.createAudio(url);
   }
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
@@ -326,48 +407,44 @@ export class PlayerEngine {
   }
 
   async play(options?: { fadeIn?: boolean; fadeDurationMs?: number }): Promise<void> {
-    if (!this.howl) return;
+    if (!this.audio) return;
 
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
 
     if (durationMs > 0) {
-      // 淡入：先设置音量为 0，然后播放，再淡入到目标音量
       const targetVolume = this.volumeValue;
-      this.howl.volume(0);
-      this.howl.play();
-      // 使用 Howler 的 fade 方法实现淡入
-      this.howl.fade(0, targetVolume, durationMs);
+      this.audio.volume = 0;
+      await this.audio.play();
+      void this.animateFade(0, targetVolume, durationMs);
     } else {
-      this.howl.play();
+      await this.audio.play();
     }
   }
 
   async pause(options?: { fadeOut?: boolean; fadeDurationMs?: number }): Promise<void> {
-    if (!this.howl) return;
+    if (!this.audio) return;
 
     const durationMs = options?.fadeOut ? (options.fadeDurationMs ?? 500) : 0;
 
     if (durationMs > 0) {
-      // 淡出：从当前音量淡出到 0，然后暂停
-      const currentVolume = this.howl.volume();
-      this.howl.fade(currentVolume, 0, durationMs);
-
-      // 等待淡出完成后暂停
-      await new Promise((resolve) => setTimeout(resolve, durationMs));
-      this.howl?.pause();
-
-      // 恢复音量
-      if (this.howl) {
-        this.howl.volume(this.volumeValue);
+      // 保存真实音量，淡出会把 volumeValue 设为 0
+      const savedVolume = this.volumeValue;
+      const currentVolume = this.audio.volume;
+      await this.animateFade(currentVolume, 0, durationMs);
+      this.audio?.pause();
+      // 恢复音量值，确保下次播放或新歌曲使用正确音量
+      this.volumeValue = savedVolume;
+      if (this.audio) {
+        this.audio.volume = savedVolume;
       }
     } else {
-      this.howl.pause();
+      this.audio.pause();
     }
   }
 
   seek(time: number): void {
-    if (!this.howl) return;
-    this.howl.seek(time);
+    if (!this.audio) return;
+    this.audio.currentTime = time;
     this.emitTimeUpdate();
   }
 
@@ -385,14 +462,14 @@ export class PlayerEngine {
   }
 
   get currentTime(): number {
-    if (!this.howl) return 0;
-    const value = this.howl.seek() as number;
+    if (!this.audio) return 0;
+    const value = this.audio.currentTime;
     return Number.isFinite(value) ? value : 0;
   }
 
   get duration(): number {
-    if (!this.howl) return 0;
-    const value = this.howl.duration();
+    if (!this.audio) return 0;
+    const value = this.audio.duration;
     return Number.isFinite(value) ? value : 0;
   }
 
