@@ -974,7 +974,7 @@ onUnmounted(() => {
                     >
                       <div
                         :class="['lyric-line', currentIndex === index ? 'is-current' : 'is-idle']"
-                        @click="handleLyricLineClick(line.time)"
+                        @dblclick.prevent.stop="handleLyricLineClick(line.time)"
                       >
                         <span
                           class="block leading-[1.24] tracking-[0.01em]"
