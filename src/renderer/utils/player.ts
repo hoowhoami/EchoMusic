@@ -271,6 +271,34 @@ export class PlayerEngine {
 
   private async applySinkId(): Promise<boolean> {
     const nextSinkId = this.preferredSinkId || 'default';
+
+    // 优先在 AudioContext 上切换（Web Audio 接管后 HTMLAudioElement.setSinkId 无效）
+    if (this.audioContext) {
+      const ctx = this.audioContext as AudioContext & {
+        setSinkId?: (sinkId: string) => Promise<void>;
+      };
+      if (typeof ctx.setSinkId === 'function') {
+        try {
+          await ctx.setSinkId(nextSinkId);
+          logger.info('PlayerEngine', 'AudioContext.setSinkId applied', {
+            requestedDeviceId: nextSinkId,
+          });
+          return true;
+        } catch (error) {
+          logger.warn('PlayerEngine', 'AudioContext.setSinkId failed', {
+            requestedDeviceId: nextSinkId,
+            error,
+          });
+          return false;
+        }
+      }
+      logger.warn(
+        'PlayerEngine',
+        'AudioContext.setSinkId not supported, falling back to audio element',
+      );
+    }
+
+    // 回退：在 HTMLAudioElement 上切换（未启用 Web Audio 时）
     const mediaNode = this.audio as HTMLAudioElement & {
       setSinkId?: (sinkId: string) => Promise<void>;
     };
@@ -284,12 +312,12 @@ export class PlayerEngine {
 
     try {
       await mediaNode.setSinkId(nextSinkId);
-      logger.info('PlayerEngine', 'setSinkId applied successfully', {
+      logger.info('PlayerEngine', 'HTMLAudioElement.setSinkId applied', {
         requestedDeviceId: nextSinkId,
       });
       return true;
     } catch (error) {
-      logger.warn('PlayerEngine', 'setSinkId failed', {
+      logger.warn('PlayerEngine', 'HTMLAudioElement.setSinkId failed', {
         requestedDeviceId: nextSinkId,
         error,
       });
