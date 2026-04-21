@@ -13,6 +13,8 @@ interface Props {
   sortField?: SortField | null;
   sortOrder?: SortOrder;
   paddingClass?: string;
+  albumLabel?: string;
+  lyricColumn?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,6 +24,8 @@ const props = withDefaults(defineProps<Props>(), {
   sortField: null,
   sortOrder: null,
   paddingClass: '',
+  albumLabel: '专辑',
+  lyricColumn: false,
 });
 
 const emit = defineEmits<{
@@ -37,6 +41,7 @@ const gridTemplate = computed(() =>
     showIndex: props.showIndex,
     showAlbum: props.showAlbum,
     showDuration: true,
+    lyricColumn: props.lyricColumn,
   }),
 );
 </script>
@@ -94,7 +99,7 @@ const gridTemplate = computed(() =>
       class="min-w-0 hidden md:flex pr-3 cursor-pointer hover:opacity-100 transition-opacity items-center gap-1 whitespace-nowrap"
       @click="handleSort('album')"
     >
-      <span>专辑</span>
+      <span>{{ albumLabel }}</span>
       <Icon
         v-if="sortField === 'album'"
         class="sort-icon"

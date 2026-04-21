@@ -470,6 +470,7 @@ export const mapSearchSong = (json: unknown): Song => {
     oldCpy: parseOptionalInt(pickValue(record.OldCpy, undefined)),
     payType: parseOptionalInt(pickValue(record.PayType, undefined)),
     isOriginal: parseIntSafe(pickValue(record.IsOriginal, 0)) === 1,
+    lyricSnippet: readString(pickValue(record.Lyric, ''), ''),
   };
 };
 

@@ -33,6 +33,7 @@ interface Props {
   active?: boolean;
   queueOptions?: SetPlaybackQueueOptions;
   queueFilteredInvalidCount?: number;
+  showLyricColumn?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -49,6 +50,7 @@ const props = withDefaults(defineProps<Props>(), {
   itemKeyField: 'id',
   active: true,
   queueFilteredInvalidCount: 0,
+  showLyricColumn: false,
 });
 
 // const emit = defineEmits<{
@@ -104,6 +106,7 @@ const rowGridTemplate = computed(() =>
     showIndex: props.showIndex,
     showAlbum: props.showAlbum,
     showDuration: props.showDuration,
+    lyricColumn: props.showLyricColumn,
   }),
 );
 
@@ -469,7 +472,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
             </div>
 
             <Button
-              v-if="showAlbum"
+              v-if="showAlbum && !showLyricColumn"
               variant="unstyled"
               size="none"
               type="button"
@@ -480,6 +483,13 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
             >
               {{ entry.data.album || '未知专辑' }}
             </Button>
+
+            <div
+              v-if="showLyricColumn && showAlbum"
+              class="min-w-0 hidden md:block pr-3 text-[12px] text-left text-text-main/45 truncate"
+            >
+              {{ entry.data.lyricSnippet || '' }}
+            </div>
 
             <div
               v-if="showDuration"

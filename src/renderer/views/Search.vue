@@ -23,6 +23,7 @@ import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
+import MvCard from '@/components/music/MvCard.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
@@ -90,6 +91,17 @@ interface SearchArtistCardProps {
   albumCount?: number;
 }
 
+interface SearchMvCardProps {
+  videoId: string | number;
+  hash: string;
+  title: string;
+  coverUrl: string;
+  artist?: string;
+  duration?: number;
+  publishDate?: string;
+  albumAudioId?: string | number;
+}
+
 const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -115,10 +127,12 @@ const songResults = ref<Song[]>([]);
 const playlistResults = ref<PlaylistMeta[]>([]);
 const albumResults = ref<AlbumMeta[]>([]);
 const artistResults = ref<ArtistMeta[]>([]);
+const lyricResults = ref<Song[]>([]);
+const mvResults = ref<SearchMvCardProps[]>([]);
 
 const SEARCH_PAGE_SIZE = 30;
 const SEARCH_LOAD_MORE_THRESHOLD = 240;
-const TAB_SEARCH_TYPES = ['song', 'special', 'album', 'author'] as const;
+const TAB_SEARCH_TYPES = ['song', 'special', 'album', 'author', 'lyric', 'mv'] as const;
 
 const createSearchPaginationState = (): SearchPaginationState => ({
   page: 1,
@@ -134,6 +148,8 @@ const paginationState = reactive<Record<(typeof TAB_SEARCH_TYPES)[number], Searc
   special: createSearchPaginationState(),
   album: createSearchPaginationState(),
   author: createSearchPaginationState(),
+  lyric: createSearchPaginationState(),
+  mv: createSearchPaginationState(),
 });
 
 const songSearchQuery = ref('');
@@ -141,6 +157,10 @@ const songListRef = ref<{ scrollToActive?: () => void } | null>(null);
 const showSongBatchDrawer = ref(false);
 const songSortField = ref<SortField | null>(null);
 const songSortOrder = ref<SortOrder>(null);
+
+const showLyricBatchDrawer = ref(false);
+const lyricSortField = ref<SortField | null>(null);
+const lyricSortOrder = ref<SortOrder>(null);
 
 const pinnedTabHeight = 50;
 const songToolbarHeight = 52;
@@ -176,6 +196,33 @@ const sortedSongResults = computed(() => {
         return compareText(a.title, b.title) * direction;
       case 'album':
         return compareText(a.album ?? '', b.album ?? '') * direction;
+      case 'duration':
+        return (a.duration - b.duration) * direction;
+      case 'index':
+        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
+      default:
+        return 0;
+    }
+  });
+});
+
+const sortedLyricResults = computed(() => {
+  const base = lyricResults.value.slice();
+  if (!lyricSortField.value || !lyricSortOrder.value) return base;
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+  const indexMap = new Map<string, number>();
+  lyricResults.value.forEach((song, index) => {
+    indexMap.set(song.id, index);
+  });
+  const direction = lyricSortOrder.value === 'asc' ? 1 : -1;
+
+  return base.sort((a, b) => {
+    switch (lyricSortField.value) {
+      case 'title':
+        return compareText(a.title, b.title) * direction;
+      case 'album':
+        return compareText(a.lyricSnippet ?? '', b.lyricSnippet ?? '') * direction;
       case 'duration':
         return (a.duration - b.duration) * direction;
       case 'index':
@@ -435,6 +482,20 @@ const handleSongSort = (field: SortField) => {
   }
 };
 
+const handleLyricSort = (field: SortField) => {
+  if (lyricSortField.value === field) {
+    if (lyricSortOrder.value === 'asc') {
+      lyricSortOrder.value = 'desc';
+    } else if (lyricSortOrder.value === 'desc') {
+      lyricSortField.value = null;
+      lyricSortOrder.value = null;
+    }
+  } else {
+    lyricSortField.value = field;
+    lyricSortOrder.value = 'asc';
+  }
+};
+
 const playSearchSongs = async () => {
   if (songResults.value.length === 0) return;
   await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, undefined, {
@@ -459,6 +520,22 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 const openSongBatchDrawer = () => {
   if (songResults.value.length === 0) return;
   showSongBatchDrawer.value = true;
+};
+
+const playLyricSearchSongs = async () => {
+  if (lyricResults.value.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, lyricResults.value, 0, undefined, {
+    queueId: `queue:search-lyric:${currentSearchKeyword.value.trim() || 'default'}`,
+    title: '歌词搜索',
+    subtitle: currentSearchSubtitle.value,
+    type: 'search',
+    dynamic: false,
+  });
+};
+
+const openLyricBatchDrawer = () => {
+  if (lyricResults.value.length === 0) return;
+  showLyricBatchDrawer.value = true;
 };
 
 const handleSongLocate = () => songListRef.value?.scrollToActive?.();
@@ -505,6 +582,8 @@ const clearSearchResults = () => {
   playlistResults.value = [];
   albumResults.value = [];
   artistResults.value = [];
+  lyricResults.value = [];
+  mvResults.value = [];
 };
 
 const replaceResultsByType = (type: (typeof TAB_SEARCH_TYPES)[number], lists: unknown[]) => {
@@ -518,6 +597,14 @@ const replaceResultsByType = (type: (typeof TAB_SEARCH_TYPES)[number], lists: un
   }
   if (type === 'album') {
     albumResults.value = lists.map((item) => mapAlbumMeta(item));
+    return;
+  }
+  if (type === 'lyric') {
+    lyricResults.value = lists.map((item) => mapSearchSong(item));
+    return;
+  }
+  if (type === 'mv') {
+    mvResults.value = lists.map((item) => mapMvSearchItem(item));
     return;
   }
   artistResults.value = lists.map((item) => mapArtistMeta(item));
@@ -536,6 +623,14 @@ const appendResultsByType = (type: (typeof TAB_SEARCH_TYPES)[number], lists: unk
   }
   if (type === 'album') {
     albumResults.value = albumResults.value.concat(lists.map((item) => mapAlbumMeta(item)));
+    return;
+  }
+  if (type === 'lyric') {
+    lyricResults.value = lyricResults.value.concat(lists.map((item) => mapSearchSong(item)));
+    return;
+  }
+  if (type === 'mv') {
+    mvResults.value = mvResults.value.concat(lists.map((item) => mapMvSearchItem(item)));
     return;
   }
   artistResults.value = artistResults.value.concat(lists.map((item) => mapArtistMeta(item)));
@@ -634,6 +729,8 @@ const runSearch = async (keyword?: string) => {
   showSuggestions.value = false;
   songSortField.value = null;
   songSortOrder.value = null;
+  lyricSortField.value = null;
+  lyricSortOrder.value = null;
   songSearchQuery.value = '';
   clearSearchResults();
   resetPaginationState();
@@ -698,11 +795,28 @@ const getArtistCardProps = (artist: ArtistMeta): SearchArtistCardProps => {
   };
 };
 
+const mapMvSearchItem = (json: unknown): SearchMvCardProps => {
+  const item = toRecord(json) ?? {};
+  const pic = String(item.Pic ?? '');
+  const coverUrl = pic ? `https://imge.kugou.com/mvhdpic/400/${pic}` : '';
+  return {
+    videoId: (item.MvID as string | number) ?? '',
+    hash: String(item.MvHash ?? ''),
+    title: String(item.MvName ?? ''),
+    coverUrl,
+    artist: String(item.SingerName ?? ''),
+    duration: Number(item.Duration ?? 0) * 1000,
+    publishDate: String(item.PublishDate ?? '').split(' ')[0],
+    albumAudioId: item.AudioID as string | number | undefined,
+  };
+};
+
 const playlistCards = computed(() =>
   playlistResults.value.map((entry) => getPlaylistCardProps(entry)),
 );
 const albumCards = computed(() => albumResults.value.map((entry) => getAlbumCardProps(entry)));
 const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
+const mvCards = computed(() => mvResults.value);
 
 onMounted(async () => {
   await loadHotSearches();
@@ -743,7 +857,10 @@ onUnmounted(() => {
   <div class="search-view relative pb-10">
     <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-[140]">
       <div class="px-10 py-1.5">
-        <CustomTabBar v-model="activeTabIndex" :tabs="['单曲', '歌单', '专辑', '歌手']" />
+        <CustomTabBar
+          v-model="activeTabIndex"
+          :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
+        />
       </div>
     </div>
 
@@ -832,7 +949,10 @@ onUnmounted(() => {
       </div>
 
       <div v-if="hasSearched" class="mt-6">
-        <CustomTabBar v-model="activeTabIndex" :tabs="['单曲', '歌单', '专辑', '歌手']" />
+        <CustomTabBar
+          v-model="activeTabIndex"
+          :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
+        />
       </div>
     </div>
 
@@ -1094,7 +1214,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-else>
+      <div v-else-if="activeTabIndex === 3">
         <VirtualGrid
           class="pb-6"
           :items="artistCards"
@@ -1120,6 +1240,112 @@ onUnmounted(() => {
         </div>
         <div
           v-else-if="artistResults.length > 0"
+          class="search-load-more-status search-load-more-status--end"
+        >
+          没有更多结果了
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 4">
+        <div
+          class="search-song-toolbar sticky z-[120] bg-bg-main"
+          :style="{ top: `${songToolbarOffset}px` }"
+        >
+          <div class="search-song-toolbar-inner">
+            <div class="search-song-title-wrap">
+              <div class="search-song-badge-icon">
+                <Icon :icon="iconSparkles" width="16" height="16" />
+              </div>
+              <div class="text-[15px] font-semibold text-text-main leading-none">歌词搜索</div>
+            </div>
+            <div class="search-song-toolbar-actions">
+              <div class="overflow-x-auto">
+                <ActionRow @play="playLyricSearchSongs" @batch="openLyricBatchDrawer" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <BatchActionDrawer
+          v-model:open="showLyricBatchDrawer"
+          :songs="lyricResults"
+          source-id="search-lyric"
+        />
+
+        <div
+          class="song-list-sticky sticky z-[110] bg-bg-main"
+          :style="{ top: `${songListHeaderOffset}px` }"
+        >
+          <SongListHeader
+            :sortField="lyricSortField"
+            :sortOrder="lyricSortOrder"
+            :showCover="true"
+            :lyricColumn="true"
+            albumLabel="歌词"
+            paddingClass="px-0"
+            @sort="handleLyricSort"
+          />
+        </div>
+
+        <div class="pb-12">
+          <SongList
+            class="search-song-list"
+            :songs="sortedLyricResults"
+            :activeId="activeSongId"
+            :showCover="true"
+            :showLyricColumn="true"
+            :queueOptions="{
+              queueId: `queue:search-lyric:${currentSearchKeyword.trim() || 'default'}`,
+              title: '歌词搜索',
+              subtitle: currentSearchSubtitle,
+              type: 'search',
+              dynamic: false,
+            }"
+            :enableDefaultDoubleTapPlay="true"
+            rowPaddingClass="px-0"
+          />
+          <div
+            v-if="activePagination.loadingMore || activePagination.hasMore"
+            class="search-load-more-status"
+          >
+            {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+          </div>
+          <div
+            v-else-if="lyricResults.length > 0"
+            class="search-load-more-status search-load-more-status--end"
+          >
+            没有更多结果了
+          </div>
+        </div>
+      </div>
+
+      <div v-else>
+        <VirtualGrid
+          class="pb-6"
+          :items="mvCards"
+          :loading="paginationState.mv.loading && !paginationState.mv.loaded"
+          :active="activeTabIndex === 5"
+          :itemMinWidth="220"
+          :itemAspectRatio="1.78"
+          :itemChromeHeight="50"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="320"
+          emptyText="暂无搜索结果"
+          keyField="videoId"
+        >
+          <template #default="{ item }">
+            <MvCard v-bind="item" />
+          </template>
+        </VirtualGrid>
+        <div
+          v-if="activePagination.loadingMore || activePagination.hasMore"
+          class="search-load-more-status"
+        >
+          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+        </div>
+        <div
+          v-else-if="mvResults.length > 0"
           class="search-load-more-status search-load-more-status--end"
         >
           没有更多结果了

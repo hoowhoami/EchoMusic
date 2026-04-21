@@ -277,6 +277,19 @@ onUnmounted(() => {
             >
               <Icon :icon="iconX" width="14" height="14" />
             </Button>
+            <Button
+              v-else
+              variant="unstyled"
+              size="none"
+              class="tb-search-goto"
+              @mousedown.prevent
+              @click="
+                collapseSearch();
+                router.push({ name: 'search' });
+              "
+            >
+              搜索页
+            </Button>
           </div>
 
           <!-- 搜索建议下拉 -->
@@ -500,6 +513,30 @@ onUnmounted(() => {
 
 .dark .tb-search-clear:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.tb-search-goto {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: rgba(0, 113, 227, 0.08);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.tb-search-goto:hover {
+  background: rgba(0, 113, 227, 0.14);
+}
+
+.dark .tb-search-goto {
+  background: rgba(0, 113, 227, 0.12);
+}
+
+.dark .tb-search-goto:hover {
+  background: rgba(0, 113, 227, 0.2);
 }
 
 /* 搜索建议下拉 */

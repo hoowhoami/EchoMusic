@@ -31,6 +31,7 @@ export interface Song {
   fileId?: string | number;
   source?: string;
   lyric?: string;
+  lyricSnippet?: string;
   privilege?: number;
   payType?: number;
   oldCpy?: number;
