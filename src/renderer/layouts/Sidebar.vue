@@ -377,11 +377,11 @@ watch(
     v-bind="attrs"
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative"
   >
-    <div :class="['w-full shrink-0 relative', isMac ? 'h-16' : 'h-12']">
+    <div :class="['w-full shrink-0 relative', isMac ? 'h-12' : 'h-6']">
       <div class="drag-region"></div>
     </div>
 
-    <div :class="['px-4 pb-3 shrink-0 no-drag', isMac ? 'mt-2' : 'mt-0']">
+    <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
       <div
         class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/[0.08] dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
       >
@@ -466,7 +466,7 @@ watch(
       </div>
     </div>
 
-    <div class="pl-7.5 pr-3 mb-2 shrink-0 no-drag mt-2 flex items-center gap-1.5">
+    <div class="pl-7.5 pr-3 mb-2 shrink-0 no-drag -mt-1.5 flex items-center gap-1.5">
       <div class="min-w-0 flex flex-1 items-center gap-1">
         <Button
           variant="unstyled"
