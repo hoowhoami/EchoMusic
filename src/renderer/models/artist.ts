@@ -7,6 +7,7 @@ export interface Artist {
   albumCount: number;
   mvCount: number;
   fansCount: number;
+  birthday?: string;
   isFollowed?: boolean;
 
   singerid?: number;

@@ -74,6 +74,11 @@ const router = useRouter();
 const getArtistId = () =>
   String(Array.isArray(route.params.id) ? (route.params.id[0] ?? '') : (route.params.id ?? ''));
 
+const formatFansCount = (count: number): string => {
+  if (count >= 10000) return `${(count / 10000).toFixed(1).replace(/\.0$/, '')}万`;
+  return String(count);
+};
+
 const loading = ref(true);
 const loadingSongs = ref(true);
 const loadingAlbums = ref(false);
@@ -187,6 +192,9 @@ const fetchData = async () => {
   loading.value = true;
   loadingSongs.value = true;
 
+  // 0. 确保关注列表已加载
+  void userStore.ensureFollowedArtists();
+
   // 1. 获取歌手详情
   const detailTask = getArtistDetail(artistId)
     .then((res) => {
@@ -243,7 +251,7 @@ watch(
   },
 );
 
-const isFollowed = computed(() => artist.value?.isFollowed === true);
+const isFollowed = computed(() => userStore.isArtistFollowed(artist.value?.id ?? ''));
 
 const isRequestSuccessful = (payload: unknown) => {
   if (!payload || typeof payload !== 'object') return false;
@@ -261,7 +269,7 @@ const toggleArtistFollow = async () => {
   }
 
   togglingFollow.value = true;
-  const previousFollowed = artist.value.isFollowed === true;
+  const previousFollowed = isFollowed.value;
 
   try {
     const response = previousFollowed
@@ -269,13 +277,11 @@ const toggleArtistFollow = async () => {
       : await followArtist(artist.value.id);
 
     if (isRequestSuccessful(response)) {
-      artist.value = {
-        ...artist.value,
-        isFollowed: !previousFollowed,
-      };
       if (previousFollowed) {
+        userStore.removeFollowedArtist(artist.value.id);
         toastStore.actionCompleted('已取消关注');
       } else {
+        userStore.addFollowedArtist(artist.value.id);
         toastStore.actionSucceeded('关注');
       }
     } else {
@@ -289,7 +295,7 @@ const toggleArtistFollow = async () => {
 };
 
 const secondaryActions = computed(() => {
-  if (!artist.value) return [];
+  if (!artist.value || !userStore.isLoggedIn) return [];
 
   return [
     {
@@ -485,14 +491,21 @@ onUnmounted(() => {
         typeLabel="ARTIST"
         :title="artist.name"
         :coverUrl="artist.pic"
-        :hasDetails="false"
-        :expandedHeight="176"
+        :hasDetails="true"
+        :expandedHeight="196"
       >
         <template #details>
-          <div class="flex flex-col gap-1 text-text-main/60">
+          <div class="flex flex-col gap-1.5 text-text-main/60">
             <div class="text-[13px] font-semibold text-primary">
               {{ artist.songCount || songs.length }} 歌曲 •
               {{ artist.albumCount || albums.length }} 专辑
+              <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV</template>
+            </div>
+            <div class="flex items-center gap-3 text-[12px] text-text-secondary">
+              <span v-if="artist.fansCount" class="flex items-center gap-1">
+                <span class="font-semibold text-text-main/80">{{ formatFansCount(artist.fansCount) }}</span> 粉丝
+              </span>
+              <span v-if="artist.birthday">🎂 {{ artist.birthday }}</span>
             </div>
           </div>
         </template>
@@ -507,6 +520,7 @@ onUnmounted(() => {
 
         <template #collapsed-actions>
           <Button
+            v-if="userStore.isLoggedIn"
             variant="unstyled"
             size="none"
             @click="toggleArtistFollow"

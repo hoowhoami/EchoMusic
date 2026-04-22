@@ -38,6 +38,7 @@ import {
   iconList,
   iconMusic,
   iconHeart,
+  iconHeartFilled,
   iconInfo,
   iconX,
 } from '@/icons';
@@ -377,7 +378,7 @@ const secondaryActions = computed(() => {
     onTap: () => void | Promise<void>;
   }[];
 
-  if (!isOwnerPlaylist.value) {
+  if (!isOwnerPlaylist.value && userStore.isLoggedIn) {
     actions.push({
       icon: iconHeart,
       label: isFavoritePlaylist.value ? '已收藏' : '收藏',
@@ -576,7 +577,7 @@ const sortedSongs = computed(() => {
                 >{{
                   formatDate(playlist.publishDate || playlist.createTime, 'YYYY-MM-DD')
                 }}
-                创建</span
+                {{ playlist.publishDate ? '发布' : '创建' }}</span
               >
             </div>
             <div class="flex items-center flex-wrap gap-2 text-[11px] font-semibold">
@@ -621,6 +622,28 @@ const sortedSongs = computed(() => {
         </template>
 
         <template #collapsed-actions>
+          <Button
+            v-if="!isOwnerPlaylist && userStore.isLoggedIn"
+            variant="unstyled"
+            size="none"
+            @click="
+              () => {
+                if (!playlist) return;
+                if (isFavoritePlaylist) {
+                  playlistStore.unfavoritePlaylist(playlist, userStore.info?.userid);
+                } else {
+                  playlistStore.favoritePlaylist(playlist, userStore.info?.userid);
+                }
+              }
+            "
+            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
+          >
+            <Icon
+              :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart"
+              width="18"
+              height="18"
+            />
+          </Button>
           <Button
             variant="unstyled"
             size="none"

@@ -32,7 +32,7 @@ import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import { iconCurrentLocation, iconSearch, iconPlay, iconList, iconHeart, iconX } from '@/icons';
+import { iconCurrentLocation, iconSearch, iconPlay, iconList, iconHeart, iconHeartFilled, iconX } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
@@ -559,11 +559,11 @@ const fetchFloorReplies = async (reset = false) => {
         typeLabel="ALBUM"
         :title="album.name"
         :coverUrl="album.pic"
-        :hasDetails="false"
-        :expandedHeight="176"
+        :hasDetails="true"
+        :expandedHeight="196"
       >
         <template #details>
-          <div class="flex flex-col gap-1 text-text-main/60">
+          <div class="flex flex-col gap-1.5 text-text-main/60">
             <div class="album-artist-line">
               <template
                 v-for="(artistItem, index) in albumArtists"
@@ -585,8 +585,16 @@ const fetchFloorReplies = async (reset = false) => {
                 </span>
               </template>
             </div>
-            <div class="text-[11px] font-semibold opacity-60">
+            <div class="text-[11px] font-semibold text-text-secondary">
               {{ album.publishTime }} • {{ albumSongCount }} 首歌曲
+            </div>
+            <div
+              v-if="album.type || album.language"
+              class="text-[11px] font-semibold text-text-secondary"
+            >
+              <span v-if="album.type">{{ album.type }}</span>
+              <span v-if="album.type && album.language"> • </span>
+              <span v-if="album.language">{{ album.language }}</span>
             </div>
           </div>
         </template>
@@ -600,6 +608,15 @@ const fetchFloorReplies = async (reset = false) => {
         </template>
 
         <template #collapsed-actions>
+          <Button
+            v-if="userStore.isLoggedIn"
+            variant="unstyled"
+            size="none"
+            @click="toggleFavoriteAlbum"
+            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
+          >
+            <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
+          </Button>
           <Button
             variant="unstyled"
             size="none"

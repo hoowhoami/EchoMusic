@@ -650,9 +650,19 @@ export const mapArtistDetailMeta = (json: unknown): ArtistMeta => {
       0,
     ),
   );
+  const isFollowedRaw = pickValue(
+    record.is_followed,
+    record.is_follow,
+    record.followed,
+    record.follow,
+    0,
+  );
   const isFollowed =
-    pickValue(record.is_followed, record.is_follow, record.followed, record.follow, 0) === 1 ||
-    pickValue(record.is_followed, record.is_follow, record.followed, record.follow, false) === true;
+    isFollowedRaw === 1 ||
+    isFollowedRaw === true ||
+    isFollowedRaw === '1' ||
+    isFollowedRaw === 'true';
+  const birthday = readString(pickValue(record.birthday, ''), '');
 
   return {
     id,
@@ -673,6 +683,7 @@ export const mapArtistDetailMeta = (json: unknown): ArtistMeta => {
     mvcount: mvCount,
     fansCount,
     fanscount: fansCount,
+    birthday: birthday || undefined,
     isFollowed,
   };
 };

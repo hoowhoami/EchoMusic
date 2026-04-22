@@ -3,6 +3,7 @@ import {
   claimDayVip,
   getServerNow,
   getUserDetail,
+  getUserFollow,
   getUserVipDetail,
   upgradeDayVip,
 } from '@/api/user';
@@ -90,6 +91,8 @@ export const useUserStore = defineStore('user', {
     isTvipClaimedToday: false,
     isSvipClaimedToday: false,
     isAutoClaimingVip: false,
+    followedArtistIds: new Set<string>(),
+    hasFetchedFollowedArtists: false,
   }),
   actions: {
     setUserInfo(info: UserInfo) {
@@ -239,6 +242,48 @@ export const useUserStore = defineStore('user', {
       this.isTvipClaimedToday = false;
       this.isSvipClaimedToday = false;
       this.isAutoClaimingVip = false;
+      this.followedArtistIds = new Set();
+      this.hasFetchedFollowedArtists = false;
+    },
+
+    isArtistFollowed(artistId: string | number): boolean {
+      return this.followedArtistIds.has(String(artistId));
+    },
+
+    addFollowedArtist(artistId: string | number) {
+      this.followedArtistIds = new Set([...this.followedArtistIds, String(artistId)]);
+    },
+
+    removeFollowedArtist(artistId: string | number) {
+      const next = new Set(this.followedArtistIds);
+      next.delete(String(artistId));
+      this.followedArtistIds = next;
+    },
+
+    async fetchFollowedArtists() {
+      if (!this.isLoggedIn) return;
+      try {
+        const res = await getUserFollow();
+        if (res && typeof res === 'object' && 'data' in res) {
+          const data = (res as { data?: { lists?: unknown[] } }).data;
+          const lists = Array.isArray(data?.lists) ? data.lists : [];
+          const ids = new Set<string>();
+          for (const item of lists) {
+            const record = item as Record<string, unknown>;
+            const id = String(record.singerid ?? record.userid ?? record.id ?? '');
+            if (id) ids.add(id);
+          }
+          this.followedArtistIds = ids;
+          this.hasFetchedFollowedArtists = true;
+        }
+      } catch (e) {
+        logger.warn('UserStore', 'Fetch followed artists failed', e);
+      }
+    },
+
+    async ensureFollowedArtists() {
+      if (this.hasFetchedFollowedArtists) return;
+      await this.fetchFollowedArtists();
     },
 
     async getServerToday(): Promise<string> {
@@ -280,6 +325,12 @@ export const useUserStore = defineStore('user', {
     },
   },
   persist: {
-    omit: ['hasFetchedUserInfo', 'isFetchingUserInfo', 'isAutoClaimingVip'],
+    omit: [
+      'hasFetchedUserInfo',
+      'isFetchingUserInfo',
+      'isAutoClaimingVip',
+      'followedArtistIds',
+      'hasFetchedFollowedArtists',
+    ],
   },
 });
