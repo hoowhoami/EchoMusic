@@ -56,17 +56,33 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
   }
 });
 
-// 300ms 提前量
+// 逐字高亮提前量（毫秒）
 const LYRIC_LOOKAHEAD = 150;
+// 锚点同步阈值（毫秒）
 const SYNC_THRESHOLD = 300;
-
 // ── 计算属性 ──
 
 const settings = computed(() => snapshot.value?.settings);
 const playback = computed(() => snapshot.value?.playback);
 const lyrics = computed(() => snapshot.value?.lyrics ?? []);
-const currentIndex = computed(() => snapshot.value?.currentIndex ?? -1);
 const isLocked = computed(() => settings.value?.locked ?? false);
+
+// 本地计算 currentIndex，不再依赖主窗口传来的值
+const currentIndex = computed(() => {
+  const lines = lyrics.value;
+  if (lines.length === 0) return -1;
+  const seekMs = playSeekMs.value;
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const start = lines[i].characters?.[0]?.startTime ?? Math.round(lines[i].time * 1000);
+    if (seekMs >= start) {
+      idx = i;
+    } else {
+      break;
+    }
+  }
+  return idx;
+});
 const isPlaying = computed(() => playback.value?.isPlaying ?? false);
 const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
@@ -219,8 +235,12 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     }
     return result;
   }
-  // 单行模式
-  return [{ line: current, index: idx, key: `${idx}-orig`, active: true }];
+  // 单行模式：也预渲染下一句（视觉隐藏），切换时走 move 动画而非 enter/leave
+  const result: RenderLine[] = [{ line: current, index: idx, key: `${idx}-orig`, active: true }];
+  if (next) {
+    result.push({ line: next, index: idx + 1, key: `${idx + 1}-orig`, active: false });
+  }
+  return result;
 });
 
 // 逐字歌词样式
@@ -549,10 +569,9 @@ onMounted(async () => {
 
   disposeSnapshotListener =
     window.electron?.desktopLyric?.onSnapshot((next) => {
-      const prevIndex = snapshot.value?.currentIndex ?? -1;
       snapshot.value = next;
-      // 歌词行切换时强制同步锚点，避免进度条从中间开始
-      syncAnchor(next.currentIndex !== prevIndex);
+      // 每次收到 snapshot 都同步锚点，保持时间精度
+      syncAnchor();
       // 按播放状态节能
       if (next.playback?.isPlaying) {
         resumeSeek();
@@ -678,6 +697,7 @@ onBeforeUnmount(() => {
             active: line.active,
             'is-yrc': line.active && isYrcLine(line.line),
             'is-next': !line.active && doubleLine,
+            'is-hidden-next': !line.active && !doubleLine,
             'align-left': alignment === 'both' && line.index % 2 === 0,
             'align-right': alignment === 'both' && line.index % 2 !== 0,
           },
@@ -911,6 +931,15 @@ onBeforeUnmount(() => {
     transform 0.6s cubic-bezier(0.55, 0, 0.1, 1);
   will-change: top, font-size, transform;
   transform-origin: left center;
+}
+
+/* 单行模式：隐藏预渲染的下一句，不占视觉空间 */
+.lyric-line.is-hidden-next {
+  opacity: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .scroll-content {
