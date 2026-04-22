@@ -3,7 +3,11 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
-import { useLyricStore } from '@/stores/lyric';
+import {
+  useLyricStore,
+  DEFAULT_LYRIC_PLAYED_COLOR,
+  DEFAULT_LYRIC_UNPLAYED_COLOR,
+} from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import type {
   AudioQualityValue,
@@ -86,10 +90,13 @@ const lyricColorPresets = [
 ];
 
 const activeLyricColorValue = computed(() => {
-  if (!activeLyricColorField.value) return '#0071e3';
-  const stored = lyricStore[activeLyricColorField.value];
-  if (stored) return stored;
-  return activeLyricColorField.value === 'playedColor' ? '#0071e3' : '#8a8a8a';
+  if (!activeLyricColorField.value) return DEFAULT_LYRIC_PLAYED_COLOR;
+  return (
+    lyricStore[activeLyricColorField.value] ||
+    (activeLyricColorField.value === 'playedColor'
+      ? DEFAULT_LYRIC_PLAYED_COLOR
+      : DEFAULT_LYRIC_UNPLAYED_COLOR)
+  );
 });
 
 const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
@@ -846,7 +853,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="settings-color-swatch"
-                :style="{ backgroundColor: lyricStore.playedColor || 'var(--color-primary)' }"
+                :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
                 @click="openLyricColorPicker('playedColor')"
               ></button>
             </div>
@@ -855,7 +862,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="settings-color-swatch"
-                :style="{ backgroundColor: lyricStore.unplayedColor || 'rgba(15,23,42,0.84)' }"
+                :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
                 @click="openLyricColorPicker('unplayedColor')"
               ></button>
             </div>

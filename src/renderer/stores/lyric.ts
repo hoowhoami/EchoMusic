@@ -153,6 +153,10 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 //   return 'none';
 // };
 
+// 页面歌词默认颜色
+export const DEFAULT_LYRIC_PLAYED_COLOR = '#0071e3';
+export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#8a8a8a';
+
 export const useLyricStore = defineStore('lyric', {
   state: () => ({
     lines: [] as LyricLine[],
@@ -175,6 +179,9 @@ export const useLyricStore = defineStore('lyric', {
     detailResolved: false,
   }),
   getters: {
+    // 有效歌词颜色（用户自定义 > 默认值）
+    effectivePlayedColor: (state) => state.playedColor || DEFAULT_LYRIC_PLAYED_COLOR,
+    effectiveUnplayedColor: (state) => state.unplayedColor || DEFAULT_LYRIC_UNPLAYED_COLOR,
     // 兼容旧代码
     secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,
     canShowSecondary: (state) => state.hasTranslation || state.hasRomanization,
