@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, nextTick, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
@@ -9,8 +9,32 @@ import BackToTop from '@/components/ui/BackToTop.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 
 const route = useRoute();
+const router = useRouter();
 const settingStore = useSettingStore();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
+
+// 滚动位置缓存（仅 keepAlive 页面）
+const scrollCache = new Map<string, number>();
+
+// 用 beforeEach 在路由切换前保存滚动位置
+router.beforeEach((to, from) => {
+  const fromName = String(from.name ?? '');
+  if (fromName && keepAliveRouteNames.value.includes(fromName)) {
+    const viewport = document.querySelector('.view-port');
+    if (viewport) scrollCache.set(from.fullPath, viewport.scrollTop);
+  }
+});
+
+watch(
+  () => route.fullPath,
+  (to) => {
+    // 恢复或重置滚动位置
+    void nextTick(() => {
+      const viewport = document.querySelector('.view-port');
+      if (viewport) viewport.scrollTop = scrollCache.get(to) ?? 0;
+    });
+  },
+);
 
 // 始终 keepAlive 的路由
 const alwaysKeepAlive = ['personal-fm'];
@@ -23,15 +47,6 @@ const keepAliveRouteNames = computed(() => {
 
 const keepAliveMax = computed(() =>
   settingStore.keepAliveEnabled ? settingStore.keepAliveMax : alwaysKeepAlive.length,
-);
-
-// 路由切换时重置滚动位置
-watch(
-  () => route.fullPath,
-  () => {
-    const viewport = document.querySelector('.view-port');
-    if (viewport) viewport.scrollTop = 0;
-  },
 );
 </script>
 
