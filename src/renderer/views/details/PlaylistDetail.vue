@@ -574,9 +574,7 @@ const sortedSongs = computed(() => {
                 }}</span>
               </div>
               <span class="text-[11px] font-semibold text-text-main/60"
-                >{{
-                  formatDate(playlist.publishDate || playlist.createTime, 'YYYY-MM-DD')
-                }}
+                >{{ formatDate(playlist.publishDate || playlist.createTime, 'YYYY-MM-DD') }}
                 {{ playlist.publishDate ? '发布' : '创建' }}</span
               >
             </div>
@@ -638,11 +636,7 @@ const sortedSongs = computed(() => {
             "
             class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
           >
-            <Icon
-              :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart"
-              width="18"
-              height="18"
-            />
+            <Icon :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart" width="18" height="18" />
           </Button>
           <Button
             variant="unstyled"

@@ -32,7 +32,15 @@ import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import { iconCurrentLocation, iconSearch, iconPlay, iconList, iconHeart, iconHeartFilled, iconX } from '@/icons';
+import {
+  iconCurrentLocation,
+  iconSearch,
+  iconPlay,
+  iconList,
+  iconHeart,
+  iconHeartFilled,
+  iconX,
+} from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';

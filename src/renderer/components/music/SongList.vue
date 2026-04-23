@@ -34,6 +34,7 @@ interface Props {
   queueOptions?: SetPlaybackQueueOptions;
   queueFilteredInvalidCount?: number;
   showLyricColumn?: boolean;
+  stickySelector?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -51,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
   active: true,
   queueFilteredInvalidCount: 0,
   showLyricColumn: false,
+  stickySelector: '',
 });
 
 // const emit = defineEmits<{
@@ -249,9 +251,9 @@ const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
 
 const getStickyOffset = (scrollContainer: HTMLElement): number => {
   const containerTop = scrollContainer.getBoundingClientRect().top;
-  const stickyNodes = Array.from(
-    scrollContainer.querySelectorAll<HTMLElement>('.sliver-header-root, .song-list-sticky'),
-  );
+  const baseSelector = '.sliver-header-root, .song-list-sticky';
+  const selector = props.stickySelector ? `${baseSelector}, ${props.stickySelector}` : baseSelector;
+  const stickyNodes = Array.from(scrollContainer.querySelectorAll<HTMLElement>(selector));
   if (stickyNodes.length === 0) return 0;
   const bottoms = stickyNodes
     .map((node) => node.getBoundingClientRect().bottom - containerTop)

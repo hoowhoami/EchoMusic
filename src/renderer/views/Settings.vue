@@ -931,6 +931,40 @@ onUnmounted(() => {
             @value-commit="settingStore.lyricCarouselInterval = $event"
           />
         </div>
+        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词自动收起</h3>
+            <p class="text-sm text-text-secondary">写真模式下无操作后歌词自动收起到底部两行</p>
+          </div>
+          <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
+        </div>
+        <div
+          v-if="settingStore.lyricArtistBackdrop && settingStore.lyricAutoCollapseEnabled"
+          class="settings-item"
+        >
+          <div class="space-y-1">
+            <h3 class="font-semibold">收起延迟</h3>
+            <p class="text-sm text-text-secondary">无操作后等待多久自动收起</p>
+          </div>
+          <Slider
+            class="w-48"
+            :model-value="settingStore.lyricAutoCollapseDelay"
+            :min="5"
+            :max="60"
+            :step="1"
+            show-value
+            :value-suffix="'s'"
+            @update:model-value="settingStore.lyricAutoCollapseDelay = $event"
+            @value-commit="settingStore.lyricAutoCollapseDelay = $event"
+          />
+        </div>
+        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">按钮自适应颜色</h3>
+            <p class="text-sm text-text-secondary">根据写真背景自动调整按钮颜色</p>
+          </div>
+          <Switch v-model="settingStore.lyricAdaptiveButtonColor" />
+        </div>
       </div>
     </section>
 

@@ -10,7 +10,6 @@ import { getUserFollow, getUserVideoCollect } from '@/api/user';
 import { mapArtistMeta } from '@/utils/mappers';
 import type { Song } from '@/models/song';
 import type { ArtistMeta } from '@/models/artist';
-import type { PlaylistMeta } from '@/models/playlist';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -347,7 +346,7 @@ watch(isLoggedIn, (value) => {
 
       <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
         <!-- Sticky Tabs -->
-        <div class="favorites-tabs-sticky sticky top-[64px] z-[110] bg-bg-main">
+        <div class="song-list-sticky sticky top-[64px] z-[110] bg-bg-main">
           <div class="px-6 border-b border-border-light/10">
             <div class="flex items-center justify-between h-14">
               <TabsList class="bg-transparent border-none gap-8">

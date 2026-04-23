@@ -337,6 +337,7 @@ const resolvePlaybackNotice = (params: {
 export const usePlayerStore = defineStore('player', {
   state: () => ({
     isPlaying: false,
+    isLyricViewOpen: false,
     volume: 0.8,
     currentTime: 0,
     duration: 0,
@@ -379,6 +380,9 @@ export const usePlayerStore = defineStore('player', {
     seekTimestamp: 0,
   }),
   actions: {
+    toggleLyricView(open?: boolean) {
+      this.isLyricViewOpen = open ?? !this.isLyricViewOpen;
+    },
     showPlaybackNotice(code: string, track?: Song | null) {
       const settingStore = useSettingStore();
       this.playbackNotice = resolvePlaybackNotice({

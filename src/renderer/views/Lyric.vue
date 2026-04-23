@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
 import { useRafFn } from '@vueuse/core';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
 import { useLyricStore } from '@/stores/lyric';
@@ -20,7 +19,6 @@ import Slider from '@/components/ui/Slider.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
 import { formatDuration } from '@/utils/format';
-import { closeTransientView } from '@/utils/navigation';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -50,8 +48,6 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 
-const router = useRouter();
-const route = useRoute();
 const lyricStore = useLyricStore();
 
 const {
@@ -292,7 +288,9 @@ const handleLyricWheel = () => {
 
 const scrollToCurrentLine = (smooth: boolean) => {
   const container = lyricListRef.value;
-  const index = lyricStore.currentIndex;
+  let index = lyricStore.currentIndex;
+  // 收缩状态下即使未播放（index < 0），也需要滚动到下方位置，使用第一行作为锚点
+  if (index < 0 && isLyricCollapsed.value) index = 0;
   if (!container || index < 0 || isUserScrollingLyrics.value) return;
 
   const target = container.querySelector<HTMLElement>(`[data-lyric-index="${index}"]`);
@@ -300,11 +298,32 @@ const scrollToCurrentLine = (smooth: boolean) => {
 
   const containerRect = container.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
+
+  if (isLyricCollapsed.value) {
+    // 收缩时：将当前行和下一行都显示在容器底部
+    const nextTarget = container.querySelector<HTMLElement>(`[data-lyric-index="${index + 1}"]`);
+    // 计算两行的总高度（如果有下一行的话）
+    const twoLineHeight = nextTarget
+      ? nextTarget.getBoundingClientRect().bottom - targetRect.top
+      : targetRect.height;
+    const bottomMargin = 24;
+    const offset =
+      targetRect.top -
+      containerRect.top +
+      container.scrollTop -
+      container.clientHeight +
+      twoLineHeight +
+      bottomMargin;
+    container.scrollTo({ top: Math.max(0, offset), behavior: smooth ? 'smooth' : 'auto' });
+    return;
+  }
+
+  const anchorRatio = 0.5;
   const offset =
     targetRect.top -
     containerRect.top +
     container.scrollTop -
-    container.clientHeight / 2 +
+    container.clientHeight * anchorRatio +
     targetRect.height / 2;
   container.scrollTo({ top: Math.max(0, offset), behavior: smooth ? 'smooth' : 'auto' });
 };
@@ -367,7 +386,7 @@ const handleRomanizationToggle = (enabled: boolean) => {
 
 const ensureLyricsForCurrentTrack = () => {
   const track = currentTrack.value;
-  if (!track || lyricStore.isLoading) return;
+  if (!track) return;
 
   const lyricHash = currentTrackLyricHash.value;
   if (!lyricHash) {
@@ -415,6 +434,132 @@ const clearArtistBackdrop = () => {
   artistPortraitUrls.value = [];
   activePortraitIndex.value = 0;
   stopPortraitCarousel();
+  luminanceCache.clear();
+};
+
+// ── 写真背景亮度检测（采样按钮中心点的图片颜色） ──
+const portraitImgRef = ref<HTMLImageElement | null>(null);
+const luminanceCache = new Map<string, { top: number; bottom: number }>();
+
+const getPointLuminance = (
+  ctx: CanvasRenderingContext2D,
+  imgEl: HTMLImageElement,
+  screenX: number,
+  screenY: number,
+) => {
+  const imgRect = imgEl.getBoundingClientRect();
+  const nw = imgEl.naturalWidth;
+  const nh = imgEl.naturalHeight;
+  const rw = imgRect.width;
+  const rh = imgRect.height;
+  const x = Math.floor(((screenX - imgRect.left) * nw) / rw);
+  const y = Math.floor(((screenY - imgRect.top) * nh) / rh);
+  // 采样 7x7 区域取平均
+  const s = 7;
+  const sx = Math.max(0, x - Math.floor(s / 2));
+  const sy = Math.max(0, y - Math.floor(s / 2));
+  const sw = Math.min(s, nw - sx);
+  const sh = Math.min(s, nh - sy);
+  if (sw <= 0 || sh <= 0) return 0.5;
+  const data = ctx.getImageData(sx, sy, sw, sh).data;
+  let rSum = 0;
+  let gSum = 0;
+  let bSum = 0;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    rSum += data[i];
+    gSum += data[i + 1];
+    bSum += data[i + 2];
+    count++;
+  }
+  if (count === 0) return 0.5;
+  return (0.299 * (rSum / count) + 0.587 * (gSum / count) + 0.114 * (bSum / count)) / 255;
+};
+
+const applyContrastVars = (root: HTMLElement, topLum: number, bottomLum: number) => {
+  const t = 0.6;
+  const tl = topLum > t;
+  const bl = bottomLum > t;
+  const s = root.style;
+  s.setProperty('--pt-fg', tl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
+  s.setProperty('--pt-fg-hover', tl ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,1)');
+  s.setProperty('--pt-fg-muted', tl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)');
+  s.setProperty('--pt-btn-bg', tl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)');
+  s.setProperty('--pt-btn-bg-hover', tl ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.5)');
+  s.setProperty('--pt-btn-border', tl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)');
+  s.setProperty('--pb-fg', bl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
+  s.setProperty('--pb-fg-hover', bl ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,1)');
+  s.setProperty('--pb-fg-muted', bl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)');
+  s.setProperty('--pb-btn-bg', bl ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)');
+  s.setProperty('--pb-btn-border', bl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)');
+  s.setProperty('--pb-card-bg', bl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)');
+};
+
+const analyzeRenderedImage = (img: HTMLImageElement) => {
+  if (!settingStore.lyricAdaptiveButtonColor) return;
+  const root = img.closest('.lyric-view') as HTMLElement | null;
+  if (!root) return;
+
+  const url = img.src;
+  const cached = luminanceCache.get(url);
+  if (cached) {
+    applyContrastVars(root, cached.top, cached.bottom);
+    return;
+  }
+
+  const nw = img.naturalWidth;
+  const nh = img.naturalHeight;
+  if (!nw || !nh) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = nw;
+  canvas.height = nh;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.drawImage(img, 0, 0, nw, nh);
+
+  const toolbarEl = root.querySelector('.px-6.pb-3') as HTMLElement | null;
+  const controlsEl = root.querySelector('.lyric-controls-surface') as HTMLElement | null;
+
+  let topLum = 0.3;
+  let bottomLum = 0.3;
+
+  if (toolbarEl) {
+    const r = toolbarEl.getBoundingClientRect();
+    const pts = [
+      getPointLuminance(ctx, img, r.left + r.width * 0.2, r.top + r.height / 2),
+      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height / 2),
+      getPointLuminance(ctx, img, r.left + r.width * 0.8, r.top + r.height / 2),
+    ];
+    topLum = Math.min(...pts);
+  }
+  if (controlsEl) {
+    const r = controlsEl.getBoundingClientRect();
+    const pts = [
+      getPointLuminance(ctx, img, r.left + r.width * 0.1, r.top + r.height * 0.3),
+      getPointLuminance(ctx, img, r.left + r.width * 0.3, r.top + r.height * 0.3),
+      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height * 0.3),
+      getPointLuminance(ctx, img, r.left + r.width * 0.7, r.top + r.height * 0.3),
+      getPointLuminance(ctx, img, r.left + r.width * 0.9, r.top + r.height * 0.3),
+      getPointLuminance(ctx, img, r.left + r.width * 0.1, r.top + r.height * 0.8),
+      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height * 0.8),
+      getPointLuminance(ctx, img, r.left + r.width * 0.9, r.top + r.height * 0.8),
+    ];
+    bottomLum = Math.min(...pts);
+  }
+
+  // 遮罩层影响
+  topLum *= 0.85;
+  bottomLum *= 0.85;
+
+  luminanceCache.set(url, { top: topLum, bottom: bottomLum });
+  applyContrastVars(root, topLum, bottomLum);
+};
+
+const onPortraitImageLoad = () => {
+  const img = portraitImgRef.value;
+  if (!img || !hasPortraitGallery.value) return;
+  // 延迟一帧，等 DOM 布局完成后再采样
+  requestAnimationFrame(() => analyzeRenderedImage(img));
 };
 
 // 写真轮播
@@ -570,8 +715,99 @@ watch(
   },
 );
 
-const closeLyricPage = async () => {
-  await closeTransientView(router, route);
+// ── 写真模式歌词自动收起 ──
+const isLyricCollapsed = ref(false);
+const wasCollapsed = ref(false);
+let collapseTimer: number | null = null;
+let wasCollapsedTimer: number | null = null;
+
+const clearCollapseTimer = () => {
+  if (collapseTimer !== null) {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
+};
+
+const scheduleCollapse = () => {
+  clearCollapseTimer();
+  if (!hasPortraitGallery.value || !settingStore.lyricAutoCollapseEnabled) return;
+  const delay = Math.max(settingStore.lyricAutoCollapseDelay || 5, 5) * 1000;
+  collapseTimer = window.setTimeout(() => {
+    collapseTimer = null;
+    if (hasPortraitGallery.value) {
+      isLyricCollapsed.value = true;
+      // 等底部控制栏隐藏动画（500ms）完成后再滚动到底部位置
+      window.setTimeout(() => {
+        scrollToCurrentLine(false);
+      }, 520);
+    }
+  }, delay);
+};
+
+const handleUserActivity = () => {
+  if (isLyricCollapsed.value) {
+    isLyricCollapsed.value = false;
+    wasCollapsed.value = true;
+    // 恢复动画结束后清除 wasCollapsed，避免后续正常切歌词行时带 transition
+    if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
+    wasCollapsedTimer = window.setTimeout(() => {
+      wasCollapsed.value = false;
+      wasCollapsedTimer = null;
+    }, 700);
+    nextTick(() => scrollToCurrentLine(true));
+  }
+  scheduleCollapse();
+};
+
+const handleLyricViewMouseMove = () => {
+  handleUserActivity();
+};
+
+watch(
+  hasPortraitGallery,
+  (active) => {
+    if (active) {
+      scheduleCollapse();
+    } else {
+      clearCollapseTimer();
+      isLyricCollapsed.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => settingStore.lyricAutoCollapseDelay,
+  () => {
+    if (hasPortraitGallery.value && !isLyricCollapsed.value) {
+      scheduleCollapse();
+    }
+  },
+);
+
+watch(
+  () => settingStore.lyricAutoCollapseEnabled,
+  (enabled) => {
+    if (enabled) {
+      scheduleCollapse();
+    } else {
+      clearCollapseTimer();
+      if (isLyricCollapsed.value) {
+        isLyricCollapsed.value = false;
+        wasCollapsed.value = true;
+        if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
+        wasCollapsedTimer = window.setTimeout(() => {
+          wasCollapsed.value = false;
+          wasCollapsedTimer = null;
+        }, 700);
+        nextTick(() => scrollToCurrentLine(true));
+      }
+    }
+  },
+);
+
+const closeLyricPage = () => {
+  playerStore.toggleLyricView(false);
 };
 
 const handleKeydown = (event: KeyboardEvent) => {
@@ -659,6 +895,7 @@ onMounted(() => {
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
   document.addEventListener('click', handleVolumeClickOutside);
+  if (hasPortraitGallery.value) scheduleCollapse();
 });
 
 onUnmounted(() => {
@@ -666,6 +903,8 @@ onUnmounted(() => {
   artistBackdropRequestId += 1;
   clearUserScrollResumeTimer();
   stopPortraitCarousel();
+  clearCollapseTimer();
+  if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
   window.removeEventListener('keydown', handleKeydown);
   document.removeEventListener('click', handleVolumeClickOutside);
   if (volumeWheelTimer) clearTimeout(volumeWheelTimer);
@@ -674,7 +913,13 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="lyric-view relative h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
+    class="lyric-view fixed inset-0 z-[2000] h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
+    :class="{
+      'portrait-mode': hasPortraitGallery,
+    }"
+    @mousemove="handleLyricViewMouseMove"
+    @click="handleUserActivity"
+    @wheel.passive="handleUserActivity"
   >
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div
@@ -683,9 +928,11 @@ onUnmounted(() => {
         :style="backdropOpacityStyle"
       >
         <img
+          ref="portraitImgRef"
           :src="activePortraitUrl"
           :alt="`${currentTrack?.artist || '歌手'}写真`"
           class="lyric-portrait-backdrop"
+          @load="onPortraitImageLoad"
         />
       </div>
       <div
@@ -707,7 +954,13 @@ onUnmounted(() => {
     <OverlayHeader />
 
     <div class="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col overflow-hidden">
-      <div class="px-6 pb-3 no-drag">
+      <div
+        class="px-6 pb-3 no-drag transition-opacity duration-500"
+        :style="{
+          opacity: isLyricCollapsed ? 0 : 1,
+          pointerEvents: isLyricCollapsed ? 'none' : undefined,
+        }"
+      >
         <div class="flex h-12 items-center">
           <Button
             variant="unstyled"
@@ -764,7 +1017,7 @@ onUnmounted(() => {
               </PopoverTrigger>
               <PopoverPortal>
                 <PopoverContent
-                  class="z-[100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  class="z-[2100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   :side-offset="8"
                   align="end"
                 >
@@ -805,6 +1058,31 @@ onUnmounted(() => {
                         thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
                       />
                     </template>
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">歌词自动收起</span>
+                      <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
+                    </div>
+                    <template v-if="settingStore.lyricAutoCollapseEnabled">
+                      <div class="flex items-center justify-between text-[13px] font-semibold">
+                        <span class="text-black/60 dark:text-white/60">收起延迟</span>
+                        <span class="font-mono">{{ settingStore.lyricAutoCollapseDelay }}s</span>
+                      </div>
+                      <Slider
+                        :model-value="settingStore.lyricAutoCollapseDelay"
+                        :min="5"
+                        :max="60"
+                        :step="1"
+                        @update:model-value="(v) => (settingStore.lyricAutoCollapseDelay = v)"
+                        class="lyric-popover-slider h-1 w-full"
+                        track-class="bg-black/15 dark:bg-white/30"
+                        range-class="bg-black dark:bg-white"
+                        thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
+                      />
+                    </template>
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">按钮自适应颜色</span>
+                      <Switch v-model="settingStore.lyricAdaptiveButtonColor" />
+                    </div>
                   </div>
                 </PopoverContent>
               </PopoverPortal>
@@ -830,7 +1108,7 @@ onUnmounted(() => {
               </PopoverTrigger>
               <PopoverPortal>
                 <PopoverContent
-                  class="z-[100] w-[260px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  class="z-[2100] w-[260px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   :side-offset="8"
                   align="end"
                 >
@@ -923,7 +1201,7 @@ onUnmounted(() => {
               </PopoverTrigger>
               <PopoverPortal>
                 <PopoverContent
-                  class="z-[100] w-[220px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                  class="z-[2100] w-[220px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   :side-offset="8"
                   align="end"
                 >
@@ -998,7 +1276,14 @@ onUnmounted(() => {
             :class="[hasPortraitGallery ? 'flex-1' : 'flex-[7]']"
           >
             <!-- 写真模式：歌曲信息浮层 -->
-            <div v-if="hasPortraitGallery && currentTrack" class="lyric-photo-song-info">
+            <div
+              v-if="hasPortraitGallery && currentTrack"
+              class="lyric-photo-song-info transition-opacity duration-500"
+              :style="{
+                opacity: isLyricCollapsed ? 0 : 1,
+                pointerEvents: isLyricCollapsed ? 'none' : undefined,
+              }"
+            >
               <div class="lyric-photo-song-cover">
                 <Cover
                   :url="currentTrack?.coverUrl"
@@ -1013,14 +1298,25 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="lyric-stage absolute inset-0">
+            <div
+              class="lyric-stage absolute inset-0"
+              :style="{
+                bottom: isLyricCollapsed ? '-120px' : '0',
+                transition: 'bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              }"
+            >
               <div
                 ref="lyricListRef"
                 class="lyric-scroll absolute inset-0"
                 @wheel.passive="handleLyricWheel"
               >
                 <template v-if="hasLyrics">
-                  <div class="py-[40vh]">
+                  <div
+                    :style="{
+                      paddingTop: isLyricCollapsed && currentIndex < 0 ? '85vh' : '40vh',
+                      paddingBottom: '40vh',
+                    }"
+                  >
                     <div
                       v-for="(line, index) in lyricStore.lines"
                       :key="line.time"
@@ -1029,15 +1325,26 @@ onUnmounted(() => {
                       :style="{
                         minHeight:
                           (lyricStore.lyricsMode === 'both'
-                            ? 108
+                            ? 72
                             : lyricStore.lyricsMode === 'translation' ||
                                 lyricStore.lyricsMode === 'romanization'
-                              ? 84
-                              : 56) *
+                              ? 56
+                              : 36) *
                             lyricStore.fontScale +
                           'px',
-                        paddingTop: '8px',
-                        paddingBottom: '8px',
+                        paddingTop: '2px',
+                        paddingBottom: '2px',
+                        opacity: isLyricCollapsed
+                          ? index === currentIndex ||
+                            index === currentIndex + 1 ||
+                            (currentIndex < 0 && index <= 1)
+                            ? 1
+                            : 0
+                          : undefined,
+                        transition:
+                          isLyricCollapsed || wasCollapsed
+                            ? 'opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
+                            : undefined,
                       }"
                     >
                       <div
@@ -1143,10 +1450,16 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="mt-1 px-6 pb-1 pt-0 no-drag">
+      <div
+        class="px-6 pb-1 pt-0 no-drag transition-opacity duration-500"
+        :style="{
+          opacity: isLyricCollapsed ? 0 : 1,
+          pointerEvents: isLyricCollapsed ? 'none' : undefined,
+        }"
+      >
         <div class="lyric-controls-surface mx-auto flex w-full max-w-[820px] flex-col gap-0.5">
           <!-- 核心播放控制行 -->
-          <div class="flex items-center justify-center gap-5 self-center">
+          <div class="lyric-controls-row flex items-center justify-center gap-5 self-center">
             <Tooltip :content="playModeLabel" side="top">
               <template #trigger>
                 <Button
@@ -1667,9 +1980,26 @@ onUnmounted(() => {
 </template>
 
 <style>
+/* 歌词页面打开时，提升所有弹出层的 z-index */
+body:has(.lyric-view) .dialog-overlay {
+  z-index: 2200 !important;
+}
+
+body:has(.lyric-view) .dialog-content {
+  z-index: 2210 !important;
+}
+
+body:has(.lyric-view) .drawer-overlay {
+  z-index: 2200 !important;
+}
+
+body:has(.lyric-view) .drawer-panel {
+  z-index: 2210 !important;
+}
+
 /* 歌词页弹出层通用 */
 .lyric-popover {
-  z-index: 100;
+  z-index: 2100;
   border-radius: 16px;
   border: 1px solid rgba(0, 0, 0, 0.1);
   background: rgba(255, 255, 255, 0.7);
@@ -1816,11 +2146,11 @@ onUnmounted(() => {
 }
 
 .lyric-portrait-overlay {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .dark .lyric-portrait-overlay {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .lyric-icon-btn {
@@ -1846,7 +2176,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
+  padding: 0 18px;
+  height: 39.5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
@@ -2091,7 +2422,7 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.32);
   backdrop-filter: blur(18px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  max-width: 360px;
+  max-width: 280px;
 }
 
 .dark .lyric-photo-song-info {
@@ -2142,6 +2473,7 @@ onUnmounted(() => {
 
 .lyric-stage {
   min-height: 0;
+  z-index: 25;
   mask-image: linear-gradient(180deg, transparent 0%, black 12%, black 88%, transparent 100%);
   -webkit-mask-image: linear-gradient(
     180deg,
@@ -2193,7 +2525,7 @@ onUnmounted(() => {
 .lyric-line {
   width: 100%;
   max-width: min(100%, 920px);
-  padding: 12px 24px;
+  padding: 6px 24px;
   border-radius: 28px;
   text-align: center;
   color: inherit;
@@ -2415,5 +2747,112 @@ onUnmounted(() => {
 
 .dark .lyric-add-playlist-divider {
   color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── 写真模式：CSS 变量驱动按钮颜色 ── */
+.portrait-mode {
+  --pt-fg: rgba(255, 255, 255, 0.9);
+  --pt-fg-hover: rgba(255, 255, 255, 1);
+  --pt-fg-muted: rgba(255, 255, 255, 0.5);
+  --pt-btn-bg: rgba(0, 0, 0, 0.35);
+  --pt-btn-bg-hover: rgba(0, 0, 0, 0.5);
+  --pt-btn-border: rgba(255, 255, 255, 0.1);
+  --pb-fg: rgba(255, 255, 255, 0.85);
+  --pb-fg-hover: rgba(255, 255, 255, 1);
+  --pb-fg-muted: rgba(255, 255, 255, 0.5);
+  --pb-btn-bg: rgba(245, 245, 247, 0.12);
+  --pb-btn-border: rgba(255, 255, 255, 0.06);
+  --pb-card-bg: rgba(10, 14, 20, 0.52);
+}
+
+.portrait-mode .lyric-icon-btn,
+.portrait-mode .lyric-tool-chip {
+  background: var(--pt-btn-bg);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--pt-btn-border);
+  backdrop-filter: blur(24px);
+  color: var(--pt-fg);
+}
+
+.portrait-mode .lyric-icon-btn:hover,
+.portrait-mode .lyric-tool-chip:hover {
+  background: var(--pt-btn-bg-hover);
+}
+
+.portrait-mode .lyric-tool-group {
+  background: var(--pt-btn-bg);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--pt-btn-border);
+}
+
+.portrait-mode .lyric-tool-chip-label,
+.portrait-mode .lyric-photo-chip,
+.portrait-mode .lyric-tool-chip-main {
+  color: var(--pt-fg);
+}
+
+.portrait-mode .lyric-tool-chip.is-active {
+  background: var(--pt-btn-bg);
+  box-shadow: none;
+}
+
+.portrait-mode .lyric-main-play-btn {
+  background: var(--pb-btn-bg);
+  border-color: var(--pb-btn-border);
+  color: var(--pb-fg);
+}
+
+.portrait-mode .lyric-main-play-btn:hover {
+  background: var(--pb-btn-bg);
+  opacity: 0.85;
+}
+
+.portrait-mode .lyric-photo-song-info {
+  background: var(--pb-card-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.portrait-mode .lyric-photo-song-title {
+  color: var(--pb-fg);
+}
+
+.portrait-mode .lyric-photo-song-artist {
+  color: var(--pb-fg-muted);
+}
+
+.portrait-mode .lyric-portrait-overlay {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* 写真模式下控制器颜色 */
+.portrait-mode .lyric-controls-surface .iconify,
+.portrait-mode .lyric-controls-surface svg,
+.portrait-mode .lyric-controls-surface button,
+.portrait-mode .lyric-controls-surface [class*='text-black'],
+.portrait-mode .lyric-controls-surface [class*='text-white'] {
+  color: var(--pb-fg) !important;
+}
+
+.portrait-mode .lyric-controls-surface button:hover .iconify,
+.portrait-mode .lyric-controls-surface button:hover svg {
+  color: var(--pb-fg-hover) !important;
+}
+
+.portrait-mode .lyric-controls-surface span {
+  color: var(--pb-fg-muted);
+}
+
+/* 写真模式下进度条/滑块颜色 */
+.portrait-mode .lyric-controls-surface [data-orientation] > span:first-child {
+  background-color: var(--pb-fg-muted) !important;
+}
+
+.portrait-mode .lyric-controls-surface [data-orientation] > span:first-child > span {
+  background-color: var(--pb-fg) !important;
+}
+
+.portrait-mode .lyric-controls-surface [role='slider'] {
+  background-color: var(--pb-fg) !important;
+  border-color: var(--pb-fg-muted) !important;
 }
 </style>

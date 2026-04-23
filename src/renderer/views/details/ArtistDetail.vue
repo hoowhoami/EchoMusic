@@ -503,7 +503,10 @@ onUnmounted(() => {
             </div>
             <div class="flex items-center gap-3 text-[12px] text-text-secondary">
               <span v-if="artist.fansCount" class="flex items-center gap-1">
-                <span class="font-semibold text-text-main/80">{{ formatFansCount(artist.fansCount) }}</span> 粉丝
+                <span class="font-semibold text-text-main/80">{{
+                  formatFansCount(artist.fansCount)
+                }}</span>
+                粉丝
               </span>
               <span v-if="artist.birthday">🎂 {{ artist.birthday }}</span>
             </div>

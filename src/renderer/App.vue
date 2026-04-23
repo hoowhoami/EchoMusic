@@ -9,6 +9,9 @@ import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import type { UpdateCheckResult } from '../shared/app';
+import { defineAsyncComponent } from 'vue';
+
+const LyricView = defineAsyncComponent(() => import('@/views/Lyric.vue'));
 
 const player = usePlayerStore();
 const settings = useSettingStore();
@@ -116,6 +119,11 @@ watch(
       <component :is="Component" />
     </transition>
   </RouterView>
+  <Teleport to="body">
+    <Transition name="lyric-overlay">
+      <LyricView v-if="player.isLyricViewOpen" />
+    </Transition>
+  </Teleport>
   <AuthExpiredDialog />
   <ToastViewport />
   <UpdateDialog
@@ -139,5 +147,24 @@ watch(
 .page-leave-to {
   opacity: 0;
   transform: translateY(-8px);
+}
+
+/* 歌词覆盖层动画 */
+.lyric-overlay-enter-active {
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lyric-overlay-leave-active {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.lyric-overlay-enter-from {
+  opacity: 0;
+  transform: translateY(30px) scale(0.97);
+}
+
+.lyric-overlay-leave-to {
+  opacity: 0;
+  transform: translateY(30px) scale(0.97);
 }
 </style>

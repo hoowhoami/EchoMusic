@@ -45,8 +45,6 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 
-import { preloadLyricComponent } from '@/utils/preloadLyric';
-
 const router = useRouter();
 
 const {
@@ -108,14 +106,7 @@ const formatTime = (seconds: number) => {
 };
 
 const navigateToLyric = () => {
-  // 确保组件已预加载
-  preloadLyricComponent().then(() => {
-    const currentPath = router.currentRoute.value.fullPath;
-    router.push({
-      name: 'lyric',
-      query: { from: currentPath },
-    });
-  });
+  player.toggleLyricView(true);
 };
 
 const isArtistClickable = (artist: SongArtist) => {
