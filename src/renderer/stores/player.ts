@@ -118,6 +118,8 @@ const resolveTrackLoudness = (payload: unknown): TrackLoudness | null => {
         ? (source.volumePeak as number)
         : 0;
   if (!Number.isFinite(lufs)) return null;
+  // volume=0 且 volume_gain=0 表示服务端没有响度数据
+  if (lufs === 0 && gain === 0) return null;
   return { lufs, gain, peak: Math.max(0, peak) };
 };
 
@@ -1743,23 +1745,33 @@ export const usePlayerStore = defineStore('player', {
     },
 
     /**
-     * 如果音效是人声/伴奏且 URL 指向 MKV 文件，通过本地代理提取对应音轨。
+     * 如果音效是人声/伴奏且 URL 指向 MKV 文件，通过自定义协议提取对应音轨。
      * 否则原样返回 URL。
      */
-    async resolveVocalExtractUrl(url: string, effect: AudioEffectValue): Promise<string> {
+    async resolveVocalExtractUrl(
+      url: string,
+      effect: AudioEffectValue,
+      hash: string,
+      apiResponse?: unknown,
+    ): Promise<string> {
       if (effect !== 'vocal' && effect !== 'accompaniment') return url;
       if (!url.toLowerCase().includes('.mkv')) return url;
 
-      const port = await window.electron.ipcRenderer.invoke('mkv-extractor:port');
-      if (!port) {
-        logger.warn('PlayerStore', 'MKV extractor service not available, falling back to raw url');
-        return url;
-      }
-
       // 人声=音轨2，伴奏=音轨1
       const trackNum = effect === 'vocal' ? 2 : 1;
-      const proxyUrl = `http://127.0.0.1:${port}/extract?track=${trackNum}&url=${encodeURIComponent(url)}`;
-      logger.info('PlayerStore', 'Resolved MKV extract proxy url', { effect, trackNum });
+
+      // 从接口响应中提取 fileSize，估算单音轨大小供首次流式播放使用
+      let sizeParam = '';
+      const res = apiResponse as Record<string, unknown> | undefined;
+      const fileSize = Number(
+        res?.fileSize ?? (res?.data as Record<string, unknown>)?.fileSize ?? 0,
+      );
+      if (fileSize > 0) {
+        sizeParam = `&size=${Math.floor(fileSize / 2)}`;
+      }
+
+      const proxyUrl = `mkv-extract://extract?track=${trackNum}&hash=${encodeURIComponent(hash)}${sizeParam}&url=${encodeURIComponent(url)}`;
+      logger.info('PlayerStore', 'Resolved MKV extract url', { effect, trackNum, hash });
       return proxyUrl;
     },
 
@@ -1850,7 +1862,12 @@ export const usePlayerStore = defineStore('player', {
             const effectRes = await getSongUrl(effectHash, apiEffect);
             let effectUrl = resolveUrlFromResponse(effectRes);
             if (effectUrl) {
-              effectUrl = await this.resolveVocalExtractUrl(effectUrl, audioEffect);
+              effectUrl = await this.resolveVocalExtractUrl(
+                effectUrl,
+                audioEffect,
+                effectHash,
+                effectRes,
+              );
               logger.info('PlayerStore', 'Resolved effect audio url successfully', {
                 track: summarizeSong(track),
                 audioEffect,
@@ -2034,7 +2051,12 @@ export const usePlayerStore = defineStore('player', {
       this.currentResolvedAudioQuality = resolved.quality;
       this.currentResolvedAudioEffect = resolved.effect;
       track.audioUrl = resolved.url;
+      // 保存当前 duration，避免 setSource 重置后进度条闪烁
+      const savedDuration = this.duration;
       engine.setSource(resolved.url);
+      if (!this.duration && savedDuration) {
+        this.duration = savedDuration;
+      }
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(this.playbackRate);
       void this.fetchClimaxMarks(track);

@@ -5,7 +5,7 @@ import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
-import { startMkvExtractorServer, stopMkvExtractorServer } from './mkvExtractor';
+import { registerMkvExtractScheme, registerMkvExtractHandler } from './mkvExtractor';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -15,6 +15,9 @@ initLogger();
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.hoowhoami.echomusic');
 }
+
+// 自定义协议必须在 app.ready 之前注册
+registerMkvExtractScheme();
 
 const installWindowsTrayRecovery = () => {
   if (process.platform !== 'win32') return;
@@ -50,9 +53,7 @@ if (!gotTheLock) {
       console.error('[Main] Failed to init API server:', err);
     });
 
-    await startMkvExtractorServer().catch((err) => {
-      console.error('[Main] Failed to start MKV extractor server:', err);
-    });
+    registerMkvExtractHandler();
 
     await createWindow();
     try {
@@ -93,8 +94,6 @@ if (!gotTheLock) {
     console.log('[Main] before-quit: cleaning up and exiting...');
     globalShortcut.unregisterAll();
     destroyTray();
-    // 停止 MKV 提取代理服务
-    stopMkvExtractorServer().catch(() => {});
     // 销毁桌面歌词窗口
     try {
       const lyricWin = getDesktopLyricWindow();
