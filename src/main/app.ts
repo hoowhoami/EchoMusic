@@ -5,6 +5,7 @@ import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
+import { startMkvExtractorServer, stopMkvExtractorServer } from './mkvExtractor';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -49,6 +50,10 @@ if (!gotTheLock) {
       console.error('[Main] Failed to init API server:', err);
     });
 
+    await startMkvExtractorServer().catch((err) => {
+      console.error('[Main] Failed to start MKV extractor server:', err);
+    });
+
     await createWindow();
     try {
       initTray(trayContext);
@@ -88,6 +93,8 @@ if (!gotTheLock) {
     console.log('[Main] before-quit: cleaning up and exiting...');
     globalShortcut.unregisterAll();
     destroyTray();
+    // 停止 MKV 提取代理服务
+    stopMkvExtractorServer().catch(() => {});
     // 销毁桌面歌词窗口
     try {
       const lyricWin = getDesktopLyricWindow();

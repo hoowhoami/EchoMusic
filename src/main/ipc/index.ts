@@ -5,6 +5,7 @@ import { registerSettingsHandlers } from './settings';
 import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
+import { registerMkvExtractorHandlers } from './mkvExtractor';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -17,6 +18,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerShortcutHandlers(context);
   registerTrayHandlers();
   registerDesktopLyricHandlers();
+  registerMkvExtractorHandlers();
   registered = true;
 };
 
@@ -56,4 +58,5 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('desktop-lyric:toggle-lock');
   ipcMain.removeHandler('desktop-lyric:update-settings');
   ipcMain.removeAllListeners('desktop-lyric:sync-snapshot');
+  ipcMain.removeHandler('mkv-extractor:port');
 };

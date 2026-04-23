@@ -219,7 +219,8 @@ const lyricColorPresets = [
 const audioEffectOptions = [
   { value: 'none', label: '原声' },
   { value: 'piano', label: '钢琴' },
-  // { value: 'acappella', label: '人声（伴奏）' },
+  { value: 'vocal', label: '人声' },
+  { value: 'accompaniment', label: '伴奏' },
   { value: 'subwoofer', label: '骨笛' },
   { value: 'ancient', label: '尤克里里' },
   { value: 'surnay', label: '唢呐' },

@@ -37,7 +37,8 @@ const normalizeEffect = (value: string | undefined): AudioEffectValue => {
   const options: AudioEffectValue[] = [
     'none',
     'piano',
-    'acappella',
+    'vocal',
+    'accompaniment',
     'subwoofer',
     'ancient',
     'surnay',
@@ -1148,6 +1149,10 @@ export const usePlayerStore = defineStore('player', {
         this.autoNextAttempts = 0;
         this.autoNextSourceTrackId = String(track.id);
         this.clearAutoNextTimer();
+        // 流式音频（如 MKV 提取）可能无法从 <audio> 获取时长，用 track 自身的时长兜底
+        if (!this.duration && track.duration) {
+          this.duration = track.duration;
+        }
         // 非淡入模式才直接设音量（淡入时由 engine 内部处理）
         if (!autoPlay || !settingStore.volumeFade) {
           engine.setVolume(this.volume);
@@ -1737,6 +1742,27 @@ export const usePlayerStore = defineStore('player', {
       settingStore.outputDeviceType = 'default';
     },
 
+    /**
+     * 如果音效是人声/伴奏且 URL 指向 MKV 文件，通过本地代理提取对应音轨。
+     * 否则原样返回 URL。
+     */
+    async resolveVocalExtractUrl(url: string, effect: AudioEffectValue): Promise<string> {
+      if (effect !== 'vocal' && effect !== 'accompaniment') return url;
+      if (!url.toLowerCase().includes('.mkv')) return url;
+
+      const port = await window.electron.ipcRenderer.invoke('mkv-extractor:port');
+      if (!port) {
+        logger.warn('PlayerStore', 'MKV extractor service not available, falling back to raw url');
+        return url;
+      }
+
+      // 人声=音轨2，伴奏=音轨1
+      const trackNum = effect === 'vocal' ? 2 : 1;
+      const proxyUrl = `http://127.0.0.1:${port}/extract?track=${trackNum}&url=${encodeURIComponent(url)}`;
+      logger.info('PlayerStore', 'Resolved MKV extract proxy url', { effect, trackNum });
+      return proxyUrl;
+    },
+
     async resolveAudioUrl(
       track: Song,
       options?: { forceReload?: boolean },
@@ -1803,7 +1829,11 @@ export const usePlayerStore = defineStore('player', {
       const relateGoods = await this.ensureTrackRelateGoods(track, { forceRefresh: true });
 
       if (audioEffect !== 'none') {
-        const matchedEffect = relateGoods.find((item) => item.quality === audioEffect && item.hash);
+        // 人声/伴奏需要特殊处理：用 acappella 请求 MKV，再通过本地代理提取音轨
+        const isVocalEffect = audioEffect === 'vocal' || audioEffect === 'accompaniment';
+        const apiEffect = isVocalEffect ? 'acappella' : audioEffect;
+
+        const matchedEffect = relateGoods.find((item) => item.quality === apiEffect && item.hash);
         const effectHashes = [matchedEffect?.hash, track.hash].filter(
           (value, index, list): value is string => !!value && list.indexOf(value) === index,
         );
@@ -1813,12 +1843,14 @@ export const usePlayerStore = defineStore('player', {
             logger.debug('PlayerStore', 'Trying effect audio url', {
               track: summarizeSong(track),
               audioEffect,
+              apiEffect,
               hash: effectHash,
               source: effectHash === matchedEffect?.hash ? 'relateGoods' : 'track',
             });
-            const effectRes = await getSongUrl(effectHash, audioEffect);
-            const effectUrl = resolveUrlFromResponse(effectRes);
+            const effectRes = await getSongUrl(effectHash, apiEffect);
+            let effectUrl = resolveUrlFromResponse(effectRes);
             if (effectUrl) {
+              effectUrl = await this.resolveVocalExtractUrl(effectUrl, audioEffect);
               logger.info('PlayerStore', 'Resolved effect audio url successfully', {
                 track: summarizeSong(track),
                 audioEffect,
@@ -2031,6 +2063,11 @@ export const usePlayerStore = defineStore('player', {
         } catch (error) {
           logger.error('PlayerStore', 'Reload track failed:', error);
         }
+      }
+
+      // 流式音频可能无法从 <audio> 获取时长，用 track 自身的时长兜底
+      if (!this.duration && track.duration) {
+        this.duration = track.duration;
       }
 
       if (wasPlaying) {

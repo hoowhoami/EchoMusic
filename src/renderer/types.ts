@@ -8,7 +8,8 @@ export type AudioQualityValue = '128' | '320' | 'flac' | 'high';
 export type AudioEffectValue =
   | 'none'
   | 'piano'
-  | 'acappella'
+  | 'vocal'
+  | 'accompaniment'
   | 'subwoofer'
   | 'ancient'
   | 'surnay'

@@ -26,7 +26,8 @@ const QUALITY_LABEL_MAP: Record<string, string> = {
 
 const EFFECT_QUALITIES = new Set([
   'piano',
-  'acappella',
+  'vocal',
+  'accompaniment',
   'subwoofer',
   'ancient',
   'surnay',

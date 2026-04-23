@@ -849,20 +849,30 @@ onUnmounted(() => {
                     >✓</span
                   >
                 </DropdownMenuItem>
-                <!-- 暂时隐藏人声（伴奏）选项
                 <DropdownMenuItem
                   class="player-dropdown-item"
-                  :class="{ 'is-active': player.audioEffect === 'acappella' }"
-                  @select="setAudioEffect('acappella')"
+                  :class="{ 'is-active': player.audioEffect === 'vocal' }"
+                  @select="setAudioEffect('vocal')"
                 >
-                  <span>人声（伴奏）</span>
+                  <span>人声</span>
                   <span
                     class="player-dropdown-check"
-                    :class="{ 'is-visible': player.audioEffect === 'acappella' }"
+                    :class="{ 'is-visible': player.audioEffect === 'vocal' }"
                     >✓</span
                   >
                 </DropdownMenuItem>
-                -->
+                <DropdownMenuItem
+                  class="player-dropdown-item"
+                  :class="{ 'is-active': player.audioEffect === 'accompaniment' }"
+                  @select="setAudioEffect('accompaniment')"
+                >
+                  <span>伴奏</span>
+                  <span
+                    class="player-dropdown-check"
+                    :class="{ 'is-visible': player.audioEffect === 'accompaniment' }"
+                    >✓</span
+                  >
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   class="player-dropdown-item"
                   :class="{ 'is-active': player.audioEffect === 'subwoofer' }"
