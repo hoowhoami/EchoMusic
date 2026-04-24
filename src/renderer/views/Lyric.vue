@@ -1016,11 +1016,7 @@ onUnmounted(() => {
                 </Button>
               </PopoverTrigger>
               <PopoverPortal>
-                <PopoverContent
-                  class="z-[2100] w-[240px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
-                  :side-offset="8"
-                  align="end"
-                >
+                <PopoverContent class="lyric-popover w-[240px] p-4" :side-offset="8" align="end">
                   <div class="flex flex-col gap-2 text-black dark:text-white">
                     <div class="flex items-center justify-between text-[13px] font-semibold">
                       <span class="text-black/60 dark:text-white/60">背景透明度</span>
@@ -1107,11 +1103,7 @@ onUnmounted(() => {
                 </Button>
               </PopoverTrigger>
               <PopoverPortal>
-                <PopoverContent
-                  class="z-[2100] w-[260px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
-                  :side-offset="8"
-                  align="end"
-                >
+                <PopoverContent class="lyric-popover w-[260px] p-4" :side-offset="8" align="end">
                   <div class="space-y-4 text-black dark:text-white">
                     <div>
                       <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
@@ -1200,11 +1192,7 @@ onUnmounted(() => {
                 </Button>
               </PopoverTrigger>
               <PopoverPortal>
-                <PopoverContent
-                  class="z-[2100] w-[220px] rounded-[24px] border border-black/10 bg-white/70 p-4 shadow-2xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
-                  :side-offset="8"
-                  align="end"
-                >
+                <PopoverContent class="lyric-popover w-[220px] p-4" :side-offset="8" align="end">
                   <div class="space-y-3 text-black dark:text-white">
                     <div class="flex items-center justify-between text-[13px] font-semibold">
                       <span class="text-black/60 dark:text-white/60">翻译</span>
@@ -1550,7 +1538,7 @@ onUnmounted(() => {
                   @click.stop
                 >
                   <div
-                    class="lyric-volume-popup lyric-popover rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                    class="lyric-volume-popup rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   >
                     <div class="flex h-36 flex-col items-center gap-2">
                       <SliderRoot
@@ -2014,6 +2002,21 @@ body:has(.lyric-view) .drawer-panel {
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(0, 0, 0, 0.6);
   color: white;
+}
+
+/* 弹出层内滑块颜色跟随弹出层文字色 */
+.lyric-popover [data-orientation] > span:first-child {
+  background-color: currentColor !important;
+  opacity: 0.15;
+}
+
+.lyric-popover [data-orientation] > span:first-child > span {
+  background-color: currentColor !important;
+  opacity: 1;
+}
+
+.lyric-popover [role='slider'] {
+  background-color: currentColor !important;
 }
 
 .lyric-popover--speed {
@@ -2856,31 +2859,9 @@ body:has(.lyric-view) .drawer-panel {
   border-color: var(--pb-fg-muted) !important;
 }
 
-/* 写真模式下弹出层颜色（倍速、音质、音量等） */
-.portrait-mode .lyric-popover {
+/* 写真模式下音量弹窗颜色 */
+.portrait-mode .lyric-volume-popup {
   background: var(--pb-card-bg) !important;
   border-color: var(--pb-btn-border) !important;
-  color: var(--pb-fg) !important;
-}
-
-.portrait-mode .lyric-popover span,
-.portrait-mode .lyric-popover button {
-  color: var(--pb-fg);
-}
-
-.portrait-mode .lyric-popover .lyric-quality-item:hover {
-  background: var(--pb-btn-bg);
-}
-
-.portrait-mode .lyric-popover [data-orientation] > span:first-child {
-  background-color: var(--pb-fg-muted) !important;
-}
-
-.portrait-mode .lyric-popover [data-orientation] > span:first-child > span {
-  background-color: var(--pb-fg) !important;
-}
-
-.portrait-mode .lyric-popover [role='slider'] {
-  background-color: var(--pb-fg) !important;
 }
 </style>
