@@ -21,7 +21,6 @@ import {
   iconCurrentLocation,
   iconChevronLeft,
   iconChevronRight,
-  iconChevronUpDown,
 } from '@/icons';
 
 interface Props {
@@ -56,7 +55,6 @@ const dragOffsetX = ref(0);
 const pendingDragOffsetX = ref(0);
 const dragAxis = ref<'idle' | 'x' | 'y'>('idle');
 const dragPointerType = ref<string | null>(null);
-const sortQueueId = ref<string | null>(null);
 const isDraggingSlides = ref(false);
 const animatePageTransition = ref(false);
 
@@ -235,9 +233,6 @@ const headerMeta = computed(() => {
   const count = previewQueue.value?.songs.length ?? 0;
   return `${count} 首`;
 });
-const isSortMode = computed(() => !!sortQueueId.value);
-const canSortQueue = (queue: QueueLike | null | undefined) => (queue?.songs.length ?? 0) > 1;
-const isQueueSorting = (queueId: string) => sortQueueId.value === queueId;
 
 const resolveResumeTrack = (queue: QueueLike | null | undefined) => {
   if (!queue) return null;
@@ -287,13 +282,9 @@ const destroySortable = () => {
 const initSortable = async () => {
   const initToken = ++sortableInitToken;
   destroySortable();
-  if (!open.value || !sortQueueId.value) return;
-  const queue = queueOptions.value.find((item) => item.id === sortQueueId.value) ?? null;
-  if (!canSortQueue(queue)) {
-    sortQueueId.value = null;
-    return;
-  }
-  if (!queue) return;
+  if (!open.value) return;
+  const queue = previewQueue.value;
+  if (!queue || queue.songs.length < 2) return;
   await nextTick();
   if (initToken !== sortableInitToken) return;
   const listEl = queueListRefs.value[queue.id];
@@ -304,7 +295,7 @@ const initSortable = async () => {
 
   sortableInstance = new Sortable(el, {
     animation: 160,
-    handle: '.queue-card.is-sorting',
+    handle: '.queue-card',
     delay: 180,
     delayOnTouchOnly: true,
     touchStartThreshold: 8,
@@ -423,12 +414,12 @@ const resetSlideDrag = (animate = false) => {
 };
 
 const handleSwitchQueueByDirection = (direction: -1 | 1, animate = false) => {
-  if (isSortMode.value || queueOptions.value.length <= 1) return;
+  if (queueOptions.value.length <= 1) return;
   setPreviewQueueByIndex(previewIndex.value + direction, animate);
 };
 
 const handleQueueNavKeydown = (event: KeyboardEvent) => {
-  if (isSortMode.value || queueOptions.value.length <= 1) return;
+  if (queueOptions.value.length <= 1) return;
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
   event.preventDefault();
   handleSwitchQueueByDirection(event.key === 'ArrowRight' ? 1 : -1, false);
@@ -436,7 +427,6 @@ const handleQueueNavKeydown = (event: KeyboardEvent) => {
 
 const handlePointerDown = (event: PointerEvent) => {
   if (!canSwipeQueues.value) return;
-  if (isSortMode.value) return;
   if (event.pointerType === 'mouse') return;
   if (!(event.target instanceof HTMLElement)) return;
   if (event.target.closest('button, input, [role="button"]')) return;
@@ -590,14 +580,6 @@ const handleClear = () => {
   playerStore.stop();
 };
 
-const toggleSortMode = async (queueId: string) => {
-  const queue = queueOptions.value.find((item) => item.id === queueId) ?? null;
-  if (!canSortQueue(queue)) return;
-  sortQueueId.value = sortQueueId.value === queueId ? null : queueId;
-  previewQueueId.value = queueId;
-  await initSortable();
-};
-
 const handleResumePreviewQueue = async (song?: Song | null) => {
   const queue = previewQueue.value;
   if (!queue || queue.id === currentPlaybackQueue.value?.id) return;
@@ -614,7 +596,6 @@ watch(
   () => open.value,
   async (isOpen) => {
     if (!isOpen) {
-      sortQueueId.value = null;
       sortableInitToken += 1;
       destroySortable();
       return;
@@ -648,13 +629,9 @@ watch(
   async () => {
     if (queueOptions.value.length === 0) {
       previewQueueId.value = null;
-      sortQueueId.value = null;
       sortableInitToken += 1;
       destroySortable();
       return;
-    }
-    if (sortQueueId.value && !queueOptions.value.some((queue) => queue.id === sortQueueId.value)) {
-      sortQueueId.value = null;
     }
     if (!previewQueue.value) {
       previewQueueId.value = queueOptions.value[0]?.id ?? null;
@@ -667,7 +644,6 @@ watch(
       await nextTick();
       await initSortable();
       scheduleVirtualMeasure();
-      // 移除这里的 scrollToCurrent 调用，避免队列变化时自动滚动
     }
   },
 );
@@ -676,23 +652,11 @@ watch(
   () => queueOptions.value.map((queue) => `${queue.id}:${queue.songs.length}`).join('|'),
   async () => {
     if (open.value) {
-      if (sortQueueId.value) {
-        const sortingQueue =
-          queueOptions.value.find((queue) => queue.id === sortQueueId.value) ?? null;
-        if (!canSortQueue(sortingQueue)) {
-          sortQueueId.value = null;
-        }
-      }
       await initSortable();
       scheduleVirtualMeasure();
     }
   },
 );
-
-// 切换排序模式时重新计算虚拟范围
-watch(sortQueueId, () => {
-  scheduleVirtualMeasure();
-});
 
 onMounted(() => {
   canSwipeQueues.value =
@@ -817,7 +781,7 @@ onBeforeUnmount(() => {
     <div
       ref="slidesRef"
       class="queue-slides"
-      :class="{ 'is-sorting': isSortMode, 'is-dragging': isDraggingSlides }"
+      :class="{ 'is-dragging': isDraggingSlides }"
       @pointerdown="handlePointerDown"
       @pointermove="handlePointerMove"
       @pointerup="handlePointerEnd"
@@ -848,19 +812,6 @@ onBeforeUnmount(() => {
               <span class="queue-inline-resume-text">
                 {{ resolveResumeTrack(queue)?.title || '这首歌' }}
               </span>
-            </Button>
-            <Button
-              type="button"
-              class="queue-sort-toggle"
-              :class="{ 'is-active': isQueueSorting(queue.id) }"
-              variant="ghost"
-              size="xs"
-              :disabled="!canSortQueue(queue)"
-              :title="isQueueSorting(queue.id) ? '完成排序' : '排序'"
-              @click="toggleSortMode(queue.id)"
-            >
-              <Icon :icon="iconChevronUpDown" width="16" height="16" />
-              {{ isQueueSorting(queue.id) ? '完成' : '排序' }}
             </Button>
           </div>
           <Scrollbar
@@ -911,7 +862,6 @@ onBeforeUnmount(() => {
 
                     <div
                       class="queue-card"
-                      :class="{ 'is-sorting': isQueueSorting(queue.id) }"
                       :style="{ opacity: isSongPlayable(entry.data) ? 1 : 0.45 }"
                     >
                       <SongCard
@@ -948,7 +898,7 @@ onBeforeUnmount(() => {
                     </div>
 
                     <Button
-                      v-if="!isSortMode && queue.id === previewQueue?.id"
+                      v-if="queue.id === previewQueue?.id"
                       type="button"
                       class="queue-remove"
                       variant="unstyled"
@@ -1201,23 +1151,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.queue-sort-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.queue-sort-toggle.is-active {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
 .queue-list {
   flex: 1;
   min-height: 0;
@@ -1295,10 +1228,11 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   user-select: none;
   -webkit-user-select: none;
+  cursor: grab;
 }
 
-.queue-card.is-sorting {
-  cursor: grab;
+.queue-card:active {
+  cursor: grabbing;
 }
 
 .queue-card :deep(.song-card),
@@ -1324,14 +1258,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   gap: 4px;
   flex-wrap: nowrap;
-}
-
-.queue-card.is-sorting:active {
-  cursor: grabbing;
-}
-
-.queue-slides.is-sorting {
-  overflow: hidden;
 }
 
 .queue-remove {

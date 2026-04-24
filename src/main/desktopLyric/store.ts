@@ -247,31 +247,36 @@ export function constrainBoundsToDisplay(bounds: DesktopLyricWindowState): Deskt
 
 export function resolveInitialBounds() {
   const primaryArea = screen.getPrimaryDisplay().workArea;
-  const screenWidth = primaryArea.width;
-  const screenHeight = primaryArea.height;
-  const defaultWidth = Math.floor(screenWidth * 0.7);
+  const defaultWidth = Math.floor(primaryArea.width * 0.7);
   const defaultHeight = 200;
 
   const savedState = getDesktopLyricWindowState();
-  let x = savedState.x;
-  let y = savedState.y;
-  let width = savedState.width || defaultWidth;
-  let height = savedState.height || defaultHeight;
+  const width = savedState.width || defaultWidth;
+  const height = savedState.height || defaultHeight;
+  const x = savedState.x;
+  const y = savedState.y;
 
-  width = Math.min(width, screenWidth);
-  height = Math.min(height, screenHeight);
-
+  // 检查保存的位置是否在任意一个显示器的工作区内有可见区域
   const isValidPosition =
     x !== undefined &&
     y !== undefined &&
-    x >= primaryArea.x &&
-    x <= primaryArea.x + screenWidth &&
-    y >= primaryArea.y &&
-    y <= primaryArea.y + screenHeight;
+    screen.getAllDisplays().some((display) => {
+      const area = display.workArea;
+      // 窗口与该显示器工作区有交集（至少 50px 可见）
+      const overlap = 50;
+      return (
+        x + width > area.x + overlap &&
+        x < area.x + area.width - overlap &&
+        y + height > area.y + overlap &&
+        y < area.y + area.height - overlap
+      );
+    });
 
   if (!isValidPosition) {
-    x = Math.floor(primaryArea.x + (screenWidth - width) / 2);
-    y = Math.floor(primaryArea.y + screenHeight - height);
+    // 位置无效，回退到主显示器底部居中
+    const fallbackX = Math.floor(primaryArea.x + (primaryArea.width - width) / 2);
+    const fallbackY = Math.floor(primaryArea.y + primaryArea.height - height);
+    return constrainBoundsToDisplay({ width, height, x: fallbackX, y: fallbackY });
   }
 
   return constrainBoundsToDisplay({ width, height, x, y });

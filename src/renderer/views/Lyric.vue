@@ -1332,8 +1332,8 @@ onUnmounted(() => {
                               : 36) *
                             lyricStore.fontScale +
                           'px',
-                        paddingTop: '2px',
-                        paddingBottom: '2px',
+                        paddingTop: isLyricCollapsed ? '2px' : '16px',
+                        paddingBottom: isLyricCollapsed ? '2px' : '16px',
                         opacity: isLyricCollapsed
                           ? index === currentIndex ||
                             index === currentIndex + 1 ||

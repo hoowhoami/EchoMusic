@@ -164,8 +164,16 @@ export const createDesktopLyricWindow = () => {
     desktopLyricWindow?.webContents.setZoomFactor(1.0);
   });
 
-  desktopLyricWindow.on('move', persistWindowBounds);
-  desktopLyricWindow.on('resize', persistWindowBounds);
+  // Windows 上用 moved/resized 事件保存位置（仅在操作结束后触发一次），
+  // 避免 move/resize 高频触发时 DPI 缩放导致的坐标舍入偏移累积。
+  // macOS/Linux 保持 move/resize（macOS 的 moved 行为不一致，Linux 不支持 moved）。
+  if (process.platform === 'win32') {
+    desktopLyricWindow.on('moved', persistWindowBounds);
+    desktopLyricWindow.on('resized', persistWindowBounds);
+  } else {
+    desktopLyricWindow.on('move', persistWindowBounds);
+    desktopLyricWindow.on('resize', persistWindowBounds);
+  }
 
   return desktopLyricWindow;
 };

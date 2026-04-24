@@ -8,7 +8,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue';
-import { useRafFn, useThrottleFn, useTimeoutFn, useWindowSize, useDebounceFn } from '@vueuse/core';
+import { useRafFn, useThrottleFn, useWindowSize, useDebounceFn } from '@vueuse/core';
 import {
   iconLanguage,
   iconLock,
@@ -116,29 +116,60 @@ const secondaryDisplayLabel = computed(() => {
 });
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
-const shadowColor = computed(() =>
-  settings.value?.strokeEnabled
-    ? (settings.value?.strokeColor ?? 'rgba(0,0,0,0.5)')
-    : 'rgba(0,0,0,0.5)',
-);
 const fontFamily = computed(() => settings.value?.fontFamily ?? 'system-ui');
 const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
 
 // hover 状态
 const isHovered = ref(false);
-const { start: startHoverTimer } = useTimeoutFn(
-  () => {
-    isHovered.value = false;
-  },
-  1000,
-  { immediate: false },
-);
-const handleMouseMove = () => {
-  isHovered.value = true;
-  startHoverTimer();
+
+const handleMouseMove = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null;
+
+  if (isLocked.value) {
+    // 锁定状态：鼠标在窗口内任意位置都显示锁定按钮，但只有在按钮上才取消穿透
+    const container = document.querySelector('.desktop-lyric');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const isInContainer =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      isHovered.value = isInContainer;
+    }
+    const isOnLockBtn = target?.closest('.lock-btn') !== null;
+    window.electron?.desktopLyric?.setIgnoreMouseEvents(!isOnLockBtn);
+    return;
+  }
+
+  // 非锁定状态：检测鼠标是否在歌词内容或工具栏区域
+  const isOnContent = target?.closest('.lyric-container') !== null;
+  const isOnHeader = target?.closest('.header') !== null;
+
+  if (isOnContent || isOnHeader) {
+    isHovered.value = true;
+  }
+
+  // 检测鼠标是否完全离开窗口容器
+  const container = document.querySelector('.desktop-lyric');
+  if (container) {
+    const rect = container.getBoundingClientRect();
+    const isInContainer =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+    if (!isInContainer) {
+      isHovered.value = false;
+    }
+  }
 };
+
 const handleMouseLeave = () => {
   isHovered.value = false;
+  if (isLocked.value) {
+    window.electron?.desktopLyric?.setIgnoreMouseEvents(true);
+  }
 };
 
 // ── 占位行 ──
@@ -476,12 +507,12 @@ watch(computedFontSize, (size) => {
 
 const toggleLyricLock = () => {
   void window.electron?.desktopLyric?.toggleLock();
-};
-
-const tempToggleLyricLock = (lock: boolean) => {
-  if (!isLocked.value) return;
-  // 直接用 preload 暴露的 API，不走 sendToMain 包装
-  window.electron?.desktopLyric?.setIgnoreMouseEvents(lock);
+  // 锁定后立即设置穿透并重置 hover
+  if (!isLocked.value) {
+    // 即将变为锁定状态
+    isHovered.value = false;
+    window.electron?.desktopLyric?.setIgnoreMouseEvents(true);
+  }
 };
 
 // ── 操作命令 ──
@@ -662,12 +693,7 @@ onBeforeUnmount(() => {
             <Icon :icon="iconChevronUpDown" width="18" height="18" />
           </button>
         </div>
-        <button
-          class="menu-btn lock-btn"
-          @mouseenter.stop="tempToggleLyricLock(false)"
-          @mouseleave.stop="tempToggleLyricLock(true)"
-          @click.stop="toggleLyricLock"
-        >
+        <button class="menu-btn lock-btn" @click.stop="toggleLyricLock">
           <Icon :icon="isLocked ? iconLockOpen : iconLock" width="20" height="20" />
         </button>
         <button class="menu-btn" @click.stop="closeWindow">
@@ -684,7 +710,7 @@ onBeforeUnmount(() => {
         fontSize: localFontSize + 'px',
         fontFamily,
         fontWeight,
-        textShadow: `0 0 4px ${shadowColor}`,
+        textShadow: `0 1px 2px rgba(0,0,0,0.2)`,
       }"
       :class="['lyric-container', alignment]"
     >
@@ -731,7 +757,7 @@ onBeforeUnmount(() => {
                     {
                       backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
                       textShadow: 'none',
-                      filter: `drop-shadow(0 0 1px ${shadowColor}) drop-shadow(0 0 2px ${shadowColor})`,
+                      filter: `drop-shadow(0 1px 1px rgba(0,0,0,0.2))`,
                     },
                     getYrcStyle(char, line.index),
                   ]"
