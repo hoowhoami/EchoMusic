@@ -100,7 +100,7 @@ const mvTag = ref<'all' | 'official' | 'live' | 'fan' | 'artist'>('all');
 
 const activeTab = ref('songs');
 const loadedSongCount = ref(0);
-const loadedAlbumCount = computed(() => albums.value.length);
+// const loadedAlbumCount = computed(() => albums.value.length);
 const showBatchDrawer = ref(false);
 const showIntroDialog = ref(false);
 const togglingFollow = ref(false);
@@ -395,7 +395,7 @@ const fetchMvs = async (page = 1) => {
   }
 };
 
-const loadedMvCount = computed(() => (mvFetched.value ? mvTotal.value : 0));
+// const loadedMvCount = computed(() => (mvFetched.value ? mvTotal.value : 0));
 
 const mvTagOptions = [
   { value: 'all' as const, label: '全部' },

@@ -111,5 +111,13 @@ withDefaults(defineProps<Props>(), {
 .speed-popover.echo-popover-content {
   width: 320px;
   padding: 14px 16px 12px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .speed-popover.echo-popover-content {
+  background: rgba(28, 28, 30, 0.78);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 </style>

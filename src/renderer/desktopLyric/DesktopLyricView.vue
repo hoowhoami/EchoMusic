@@ -117,7 +117,11 @@ const secondaryDisplayLabel = computed(() => {
 });
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
-const fontFamily = computed(() => buildFontFamily(settings.value?.fontFamily ?? 'system-ui'));
+const fontFamily = computed(() => {
+  const raw = settings.value?.fontFamily ?? 'system-ui';
+  // 跟随全局时使用系统默认
+  return buildFontFamily(raw === 'follow' ? 'system-ui' : raw);
+});
 const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
 
 // hover 状态

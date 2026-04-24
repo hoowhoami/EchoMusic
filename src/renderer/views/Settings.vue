@@ -20,7 +20,6 @@ import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
 import type { CloseBehavior, ThemeMode, UpdateCheckResult } from '../../shared/app';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 import Select from '@/components/ui/Select.vue';
-import MultiSelect from '@/components/ui/MultiSelect.vue';
 import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -29,7 +28,8 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
-import FontSelect from '@/components/ui/FontSelect.vue';
+import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
+import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
 import { marked } from 'marked';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
 import {
@@ -44,7 +44,6 @@ import {
   iconExternalLink,
   iconChevronRight,
   iconTypography,
-  iconLanguage,
 } from '@/icons';
 
 const settingStore = useSettingStore();
@@ -165,6 +164,7 @@ const globalFontOptions = computed(() => [
 ]);
 const lyricFontOptions = computed(() => [
   { label: '跟随全局', value: 'follow' },
+  { label: '系统默认', value: 'system-ui' },
   ...systemFontOptions.value,
 ]);
 
@@ -180,11 +180,11 @@ const fetchSystemFonts = async () => {
   systemFontOptions.value = sorted.map((name) => ({ label: name, value: name }));
 };
 
-// 桌面歌词字体名（现在直接是纯字体名）
-const desktopLyricFontName = computed(() => desktopLyricStore.settings.fontFamily || 'system-ui');
+// 桌面歌词字体名
+const desktopLyricFontName = computed(() => desktopLyricStore.settings.fontFamily || 'follow');
 
 const applyDesktopLyricFont = (fontName: string) => {
-  void commitDesktopLyricSettings({ fontFamily: fontName || 'system-ui' });
+  void commitDesktopLyricSettings({ fontFamily: fontName || 'follow' });
 };
 
 onMounted(() => {
@@ -607,7 +607,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">选择您喜欢的主题外观</p>
           </div>
           <Select
-            class="min-w-[180px]"
+            class="w-[180px]"
             :model-value="settingStore.theme"
             :options="themeOptions"
             @update:model-value="settingStore.setTheme($event as ThemeMode)"
@@ -644,7 +644,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
           </div>
           <Select
-            class="min-w-[180px]"
+            class="w-[180px]"
             :model-value="settingStore.closeBehavior"
             :options="closeBehaviorOptions"
             @update:model-value="
@@ -653,19 +653,23 @@ onUnmounted(() => {
             "
           />
         </div>
-        <div class="settings-divider"></div>
+      </div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+          <Icon :icon="iconTypography" width="18" height="18" />
+        </div>
+        <h2 class="text-lg font-bold">字体设置</h2>
+      </div>
+      <div class="settings-card">
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">全局字体</h3>
             <p class="text-sm text-text-secondary">应用到软件内所有区域的字体</p>
           </div>
           <div class="flex items-center gap-2">
-            <FontSelect
-              class="min-w-[180px]"
-              :model-value="settingStore.globalFont"
-              :options="globalFontOptions"
-              @update:model-value="settingStore.globalFont = $event"
-            />
             <button
               v-if="settingStore.globalFont !== 'system-ui'"
               type="button"
@@ -674,6 +678,61 @@ onUnmounted(() => {
             >
               重置
             </button>
+            <Select
+              filterable
+              class="w-[180px]"
+              :model-value="settingStore.globalFont"
+              :options="globalFontOptions"
+              @update:model-value="settingStore.globalFont = String($event)"
+            />
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">页面歌词字体</h3>
+            <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="settingStore.lyricFont !== 'follow'"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+              @click="settingStore.lyricFont = 'follow'"
+            >
+              重置
+            </button>
+            <Select
+              filterable
+              class="w-[180px]"
+              :model-value="settingStore.lyricFont"
+              :options="lyricFontOptions"
+              @update:model-value="settingStore.lyricFont = String($event)"
+            />
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">桌面歌词字体</h3>
+            <p class="text-sm text-text-secondary">桌面歌词窗口使用的字体，跟随全局或单独指定</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="desktopLyricFontName !== 'follow'"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+              @click="applyDesktopLyricFont('follow')"
+            >
+              重置
+            </button>
+            <Select
+              filterable
+              class="w-[180px]"
+              :model-value="desktopLyricFontName"
+              :options="lyricFontOptions"
+              @update:model-value="applyDesktopLyricFont(String($event))"
+            />
           </div>
         </div>
       </div>
@@ -820,7 +879,7 @@ onUnmounted(() => {
             </p>
           </div>
           <Select
-            class="min-w-[180px]"
+            class="w-[180px]"
             :model-value="settingStore.defaultAudioQuality"
             :options="audioQualityOptions"
             @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
@@ -840,34 +899,11 @@ onUnmounted(() => {
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconLanguage" width="18" height="18" />
+          <PageLyricIcon :size="18" />
         </div>
         <h2 class="text-lg font-bold">页面歌词</h2>
       </div>
       <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌词字体</h3>
-            <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <FontSelect
-              class="min-w-[180px]"
-              :model-value="settingStore.lyricFont"
-              :options="lyricFontOptions"
-              @update:model-value="settingStore.lyricFont = $event"
-            />
-            <button
-              v-if="settingStore.lyricFont !== 'follow'"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
-              @click="settingStore.lyricFont = 'follow'"
-            >
-              重置
-            </button>
-          </div>
-        </div>
-        <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">显示翻译</h3>
@@ -1049,7 +1085,7 @@ onUnmounted(() => {
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconTypography" width="18" height="18" />
+          <DesktopLyricIcon :size="18" />
         </div>
         <h2 class="text-lg font-bold">桌面歌词</h2>
       </div>
@@ -1106,34 +1142,11 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
           </div>
           <Select
-            class="min-w-[120px]"
+            class="w-[120px]"
             :model-value="desktopLyricStore.settings.alignment"
             :options="desktopLyricAlignOptions"
             @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
           />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌词字体</h3>
-            <p class="text-sm text-text-secondary">桌面歌词窗口使用的字体</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <FontSelect
-              class="min-w-[180px]"
-              :model-value="desktopLyricFontName"
-              :options="globalFontOptions"
-              @update:model-value="applyDesktopLyricFont($event)"
-            />
-            <button
-              v-if="desktopLyricFontName !== 'system-ui'"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
-              @click="applyDesktopLyricFont('system-ui')"
-            >
-              重置
-            </button>
-          </div>
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">
@@ -1283,10 +1296,10 @@ onUnmounted(() => {
             </p>
           </div>
           <Select
-            class="min-w-[180px]"
+            class="w-[180px]"
             :model-value="settingStore.outputDevice"
             :options="outputDeviceOptions"
-            @update:model-value="handleOutputDeviceChange"
+            @update:model-value="handleOutputDeviceChange($event as string)"
           />
         </div>
         <div class="settings-divider"></div>
@@ -1298,7 +1311,7 @@ onUnmounted(() => {
             </p>
           </div>
           <Select
-            class="min-w-[180px]"
+            class="w-[180px]"
             :model-value="settingStore.outputDeviceDisconnectBehavior"
             :options="outputDeviceDisconnectBehaviorOptions"
             @update:model-value="
@@ -1359,12 +1372,13 @@ onUnmounted(() => {
               <h3 class="font-semibold">缓存页面</h3>
               <p class="text-sm text-text-secondary">选择需要缓存的页面</p>
             </div>
-            <MultiSelect
-              class="min-w-[180px]"
+            <Select
+              multiple
+              class="w-[180px]"
               :model-value="settingStore.keepAliveRoutes"
               :options="keepAliveOptions"
               placeholder="选择页面"
-              @update:model-value="settingStore.keepAliveRoutes = $event"
+              @update:model-value="settingStore.keepAliveRoutes = $event as string[]"
             />
           </div>
           <div class="settings-divider"></div>

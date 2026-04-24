@@ -20,6 +20,7 @@ import Switch from '@/components/ui/Switch.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
+import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -33,7 +34,6 @@ import {
   iconSkipForward,
   iconHeart,
   iconHeartFilled,
-  iconTypography,
   iconList,
   iconPlaylistAdd,
 } from '@/icons';
@@ -1030,7 +1030,7 @@ onUnmounted(() => {
             >
               <template #trigger>
                 <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
-                  <Icon :icon="iconTypography" width="14" height="14" />
+                  <DesktopLyricIcon :size="14" />
                   <span>字体</span>
                 </Button>
               </template>
@@ -1564,7 +1564,7 @@ onUnmounted(() => {
                     "
                     @click="toggleDesktopLyric"
                   >
-                    <Icon :icon="iconTypography" width="20" height="20" />
+                    <DesktopLyricIcon :size="20" />
                   </Button>
                 </template>
               </Tooltip>
@@ -2333,6 +2333,15 @@ body:has(.lyric-view) .drawer-panel {
 
 .dark .lyric-add-playlist-divider {
   color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── 写真模式：统一底色，减少深浅主题下的亮度差异 ── */
+.portrait-mode {
+  background-color: #2a2d32 !important;
+}
+
+.dark .portrait-mode {
+  background-color: #1a1d22 !important;
 }
 
 /* ── 写真模式：CSS 变量驱动按钮颜色 ── */

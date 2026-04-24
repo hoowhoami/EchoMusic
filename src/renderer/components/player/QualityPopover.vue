@@ -138,6 +138,14 @@ withDefaults(defineProps<Props>(), {
 .quality-popover.echo-popover-content {
   width: 160px;
   padding: 10px 0 10px 6px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .quality-popover.echo-popover-content {
+  background: rgba(28, 28, 30, 0.78);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .pm-title {

@@ -168,10 +168,10 @@ const isActivePlaylist = (playlist: PlaylistMeta): boolean => {
   return getPlaylistRouteId(playlist) === activePlaylistRouteId.value;
 };
 
-const isActiveAlbum = (playlist: PlaylistMeta): boolean => {
-  if (playlist.source !== 2) return false;
-  return getPlaylistRouteId(playlist) === activeAlbumRouteId.value;
-};
+// const isActiveAlbum = (playlist: PlaylistMeta): boolean => {
+//   if (playlist.source !== 2) return false;
+//   return getPlaylistRouteId(playlist) === activeAlbumRouteId.value;
+// };
 
 const navigateToPlaylist = (playlist: PlaylistMeta) => {
   if (playlist.source === 2) {

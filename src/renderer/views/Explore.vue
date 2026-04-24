@@ -626,7 +626,7 @@ const getArtistCardProps = (artist: ArtistMeta): ExploreArtistCardProps => {
   };
 };
 
-const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
+// const artistCards = computed(() => artistResults.value.map((entry) => getArtistCardProps(entry)));
 
 const scrollToArtistGroup = (letter: string) => {
   activeArtistLetter.value = letter;

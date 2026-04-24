@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent, PopoverArrow } from 'reka-ui';
 
 type TriggerMode = 'hover' | 'click' | 'focus' | 'manual';
@@ -7,27 +7,16 @@ type Placement = 'top' | 'bottom' | 'left' | 'right';
 type Align = 'start' | 'center' | 'end';
 
 interface Props {
-  /** 触发方式 */
   trigger?: TriggerMode;
-  /** 弹出方向 */
   side?: Placement;
-  /** 对齐方式 */
   align?: Align;
-  /** 与触发器的间距 */
   sideOffset?: number;
-  /** 是否显示箭头 */
   showArrow?: boolean;
-  /** hover 模式下显示延迟（毫秒） */
   delay?: number;
-  /** hover 模式下隐藏延迟（毫秒） */
   duration?: number;
-  /** 外部控制显隐 */
   open?: boolean;
-  /** 是否禁用 */
   disabled?: boolean;
-  /** 内容区域自定义 class */
   contentClass?: string;
-  /** 内容区域自定义 style */
   contentStyle?: string | Record<string, string>;
 }
 
@@ -47,21 +36,16 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void;
 }>();
 
-// 内部状态
 const internalOpen = ref(false);
+// 真实 DOM 引用，用于点击外部判断
+const triggerWrapRef = ref<HTMLElement | null>(null);
+const contentWrapRef = ref<HTMLElement | null>(null);
 let showTimer: ReturnType<typeof setTimeout> | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
-// 合并外部和内部状态
 const isOpen = computed(() => {
   if (props.trigger === 'manual') return props.open ?? false;
   return internalOpen.value;
-});
-
-// reka-ui PopoverRoot 的 open 状态（click 模式直接用它）
-const rekaOpen = computed(() => {
-  if (props.trigger === 'click') return internalOpen.value;
-  return false;
 });
 
 const clearTimers = () => {
@@ -75,105 +59,110 @@ const clearTimers = () => {
   }
 };
 
+const setOpen = (val: boolean) => {
+  internalOpen.value = val;
+  emit('update:open', val);
+};
+
 const doShow = () => {
   if (props.disabled) return;
   clearTimers();
   if (props.trigger === 'hover') {
-    showTimer = setTimeout(() => {
-      internalOpen.value = true;
-      emit('update:open', true);
-    }, props.delay);
+    showTimer = setTimeout(() => setOpen(true), props.delay);
   } else {
-    internalOpen.value = true;
-    emit('update:open', true);
+    setOpen(true);
   }
 };
 
 const doHide = () => {
   clearTimers();
   if (props.trigger === 'hover') {
-    hideTimer = setTimeout(() => {
-      internalOpen.value = false;
-      emit('update:open', false);
-    }, props.duration);
+    hideTimer = setTimeout(() => setOpen(false), props.duration);
   } else {
-    internalOpen.value = false;
-    emit('update:open', false);
+    setOpen(false);
   }
 };
 
+// hover
 const handleTriggerEnter = () => {
   if (props.trigger === 'hover') doShow();
 };
-
 const handleTriggerLeave = () => {
   if (props.trigger === 'hover') doHide();
 };
-
 const handleContentEnter = () => {
-  if (props.trigger === 'hover') {
-    // 鼠标进入内容区，取消隐藏
-    clearTimers();
-  }
+  if (props.trigger === 'hover') clearTimers();
 };
-
 const handleContentLeave = () => {
   if (props.trigger === 'hover') doHide();
 };
 
-const handleTriggerClick = () => {
-  if (props.trigger === 'click') {
-    if (internalOpen.value) {
-      doHide();
-    } else {
-      doShow();
-    }
-  }
-};
-
+// focus
 const handleTriggerFocus = () => {
   if (props.trigger === 'focus') doShow();
 };
-
 const handleTriggerBlur = () => {
   if (props.trigger === 'focus') doHide();
 };
 
-// click 模式下 reka-ui 的 open 变化同步
-const handleRekaOpenChange = (val: boolean) => {
-  if (props.trigger === 'click') {
-    internalOpen.value = val;
-    emit('update:open', val);
-  }
+// click
+const handleTriggerClick = () => {
+  if (props.trigger !== 'click') return;
+  if (internalOpen.value) doHide();
+  else doShow();
 };
 
-// manual 模式下外部 open 变化同步
+// 点击外部关闭（替代 reka-ui 的 interact-outside）
+const handleDocumentMousedown = (e: MouseEvent) => {
+  if (props.trigger !== 'click' || !internalOpen.value) return;
+  const target = e.target as Node;
+  // 点击在触发器内 → 不处理，让 handleTriggerClick 管
+  if (triggerWrapRef.value?.contains(target)) return;
+  // 点击在内容区内 → 不关闭
+  if (contentWrapRef.value?.contains(target)) return;
+  doHide();
+};
+
+// 阻止 reka-ui 自行管理 open
+const handleRekaOpenChange = () => {};
+// 阻止 reka-ui 的 interact-outside
+const handleInteractOutside = (e: Event) => {
+  e.preventDefault();
+};
+
 watch(
   () => props.open,
   (val) => {
-    if (props.trigger === 'manual' && val !== undefined) {
+    if (val !== undefined) {
       internalOpen.value = val;
     }
   },
 );
 
-onUnmounted(clearTimers);
+onMounted(() => {
+  document.addEventListener('mousedown', handleDocumentMousedown, true);
+});
+
+onUnmounted(() => {
+  clearTimers();
+  document.removeEventListener('mousedown', handleDocumentMousedown, true);
+});
 </script>
 
 <template>
-  <PopoverRoot
-    :open="props.trigger === 'click' ? rekaOpen : isOpen"
-    @update:open="handleRekaOpenChange"
-  >
-    <PopoverTrigger
-      as-child
-      @mouseenter="handleTriggerEnter"
-      @mouseleave="handleTriggerLeave"
-      @click="handleTriggerClick"
-      @focus="handleTriggerFocus"
-      @blur="handleTriggerBlur"
-    >
-      <slot name="trigger" />
+  <PopoverRoot :open="isOpen" @update:open="handleRekaOpenChange">
+    <PopoverTrigger as-child>
+      <span
+        ref="triggerWrapRef"
+        style="display: inline-flex"
+        @mouseenter="handleTriggerEnter"
+        @mouseleave="handleTriggerLeave"
+        @click="handleTriggerClick"
+        @focus="handleTriggerFocus"
+        @blur="handleTriggerBlur"
+      >
+        <slot name="trigger" />
+      </span>
     </PopoverTrigger>
     <PopoverPortal>
       <Transition name="popover-fade">
@@ -188,9 +177,11 @@ onUnmounted(clearTimers);
           :style="props.contentStyle"
           @mouseenter="handleContentEnter"
           @mouseleave="handleContentLeave"
-          @interact-outside="props.trigger === 'click' ? doHide() : undefined"
+          @interact-outside="handleInteractOutside"
         >
-          <slot />
+          <div ref="contentWrapRef">
+            <slot />
+          </div>
           <PopoverArrow v-if="props.showArrow" :width="14" :height="8" class="echo-popover-arrow" />
         </PopoverContent>
       </Transition>
@@ -211,7 +202,6 @@ onUnmounted(clearTimers);
   user-select: none;
   -webkit-user-select: none;
   outline: none;
-  will-change: transform, opacity;
 }
 
 .dark .echo-popover-content {
@@ -226,7 +216,6 @@ onUnmounted(clearTimers);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.04));
 }
 
-/* 动画 */
 .popover-fade-enter-active {
   transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }

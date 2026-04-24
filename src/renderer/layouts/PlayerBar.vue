@@ -11,6 +11,7 @@ import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
+import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
 import {
@@ -29,7 +30,6 @@ import {
   iconPlay,
   iconPause,
   iconList,
-  iconTypography,
   iconPlaylistAdd,
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
@@ -499,7 +499,7 @@ onUnmounted(() => {
           :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
           @click="toggleDesktopLyric"
         >
-          <Icon :icon="iconTypography" width="20" height="20" />
+          <DesktopLyricIcon :size="20" />
         </Button>
 
         <div class="relative">
