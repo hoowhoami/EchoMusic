@@ -29,6 +29,9 @@ export interface IElectronAPI {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
   };
+  fonts: {
+    getAll: () => Promise<string[]>;
+  };
   updater: {
     download: () => void;
     install: (silent?: boolean) => void;

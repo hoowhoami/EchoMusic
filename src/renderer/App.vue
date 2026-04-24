@@ -31,6 +31,10 @@ const updateTheme = () => {
   document.documentElement.classList.toggle('dark', isDark);
 };
 
+const applyGlobalFont = () => {
+  document.documentElement.style.fontFamily = settings.buildGlobalFontFamily();
+};
+
 const syncTrayPlayback = () => {
   window.electron?.tray?.syncPlayback({
     isPlaying: player.isPlaying,
@@ -54,6 +58,7 @@ onMounted(() => {
     disposeDesktopLyricSync = dispose;
   });
   updateTheme();
+  applyGlobalFont();
   settings.syncTheme();
   settings.syncCloseBehavior();
   settings.syncRememberWindowSize();
@@ -89,6 +94,7 @@ onUnmounted(() => {
 });
 
 watch(() => settings.theme, updateTheme);
+watch(() => settings.globalFont, applyGlobalFont);
 watch(
   () => settings.rememberWindowSize,
   () => settings.syncRememberWindowSize(),

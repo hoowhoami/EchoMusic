@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('electron', {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
   },
+  fonts: {
+    getAll: () => ipcRenderer.invoke('get-all-fonts') as Promise<string[]>,
+  },
   updater: {
     download: () => ipcRenderer.send('update:download'),
     install: (silent?: boolean) => ipcRenderer.send('update:install', { silent: !!silent }),

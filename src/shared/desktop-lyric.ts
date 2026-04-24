@@ -62,8 +62,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   theme: 'system',
   opacity: 0.92,
   scale: 1,
-  fontFamily:
-    'SF Pro Display, PingFang SC, Hiragino Sans GB, Microsoft YaHei, Inter, system-ui, sans-serif',
+  fontFamily: 'system-ui',
   inactiveFontSize: 26,
   activeFontSize: 40,
   secondaryFontSize: 18,

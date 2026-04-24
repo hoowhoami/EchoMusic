@@ -25,6 +25,7 @@ import type {
   LyricLinePayload,
   LyricCharacterPayload,
 } from '../../shared/desktop-lyric';
+import { buildFontFamily } from '../../shared/font';
 
 // ── 渲染行类型 ──
 
@@ -116,7 +117,7 @@ const secondaryDisplayLabel = computed(() => {
 });
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
-const fontFamily = computed(() => settings.value?.fontFamily ?? 'system-ui');
+const fontFamily = computed(() => buildFontFamily(settings.value?.fontFamily ?? 'system-ui'));
 const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
 
 // hover 状态

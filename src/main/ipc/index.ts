@@ -48,6 +48,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('api:request');
   ipcMain.removeHandler('app:get-info');
   ipcMain.removeHandler('app:get-changelog');
+  ipcMain.removeHandler('get-all-fonts');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
   ipcMain.removeHandler('desktop-lyric:get-bounds');
   ipcMain.removeHandler('desktop-lyric:get-virtual-screen-bounds');

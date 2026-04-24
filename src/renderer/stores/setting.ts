@@ -6,6 +6,7 @@ import type {
   OutputDeviceOption,
   OutputDeviceStatus,
 } from '../types';
+import { buildFontFamily } from '../../shared/font';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘Space',
@@ -85,6 +86,9 @@ export const useSettingStore = defineStore('setting', {
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     disableGpuAcceleration: false,
+    // 字体设置
+    globalFont: 'system-ui',
+    lyricFont: 'follow',
   }),
   actions: {
     setTheme(theme: ThemeMode) {
@@ -193,6 +197,25 @@ export const useSettingStore = defineStore('setting', {
     },
     acceptUserAgreement() {
       this.userAgreementAccepted = true;
+    },
+    // 获取系统字体列表
+    async fetchSystemFonts(): Promise<string[]> {
+      if (!window.electron?.fonts) return [];
+      try {
+        const fonts = await window.electron.fonts.getAll();
+        return (fonts ?? []).map((f: string) => f.replace(/^['"]+|['"]+$/g, ''));
+      } catch {
+        return [];
+      }
+    },
+    // 构建全局 font-family 字符串
+    buildGlobalFontFamily(): string {
+      return buildFontFamily(this.globalFont);
+    },
+    // 构建歌词区域 font-family 字符串
+    buildLyricFontFamily(): string {
+      if (!this.lyricFont || this.lyricFont === 'follow') return this.buildGlobalFontFamily();
+      return buildFontFamily(this.lyricFont);
     },
   },
   persist: true,

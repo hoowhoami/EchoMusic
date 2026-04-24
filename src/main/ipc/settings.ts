@@ -4,6 +4,7 @@ import log from 'electron-log';
 import fs from 'fs';
 import { dirname, join } from 'path';
 import { autoUpdater } from 'electron-updater';
+import { getFonts } from 'font-list';
 import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
 import type { IpcContext } from './types';
 
@@ -204,5 +205,16 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
   // GPU 加速设置（需重启生效）
   ipcMain.on('update-disable-gpu-acceleration', (_event, disabled: boolean) => {
     appSettingsStore.set('disableGpuAcceleration', disabled);
+  });
+
+  // 获取系统全部字体
+  ipcMain.handle('get-all-fonts', async () => {
+    try {
+      const fonts = await getFonts({ disableQuoting: true });
+      return fonts;
+    } catch (error) {
+      log.error('[Fonts] 获取系统字体失败:', error);
+      return [];
+    }
   });
 };

@@ -29,6 +29,7 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
+import FontSelect from '@/components/ui/FontSelect.vue';
 import { marked } from 'marked';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
 import {
@@ -156,11 +157,42 @@ const applyDesktopLyricColor = async (value: string) => {
   });
   closeDesktopLyricColorPicker();
 };
+// ── 系统字体列表 ──
+const systemFontOptions = ref<{ label: string; value: string }[]>([]);
+const globalFontOptions = computed(() => [
+  { label: '系统默认', value: 'system-ui' },
+  ...systemFontOptions.value,
+]);
+const lyricFontOptions = computed(() => [
+  { label: '跟随全局', value: 'follow' },
+  ...systemFontOptions.value,
+]);
+
+const fetchSystemFonts = async () => {
+  const fonts = await settingStore.fetchSystemFonts();
+  // 短名优先排序
+  const sorted = fonts.slice().sort((a, b) => {
+    if (a === b) return 0;
+    if (a.startsWith(b)) return 1;
+    if (b.startsWith(a)) return -1;
+    return a.localeCompare(b);
+  });
+  systemFontOptions.value = sorted.map((name) => ({ label: name, value: name }));
+};
+
+// 桌面歌词字体名（现在直接是纯字体名）
+const desktopLyricFontName = computed(() => desktopLyricStore.settings.fontFamily || 'system-ui');
+
+const applyDesktopLyricFont = (fontName: string) => {
+  void commitDesktopLyricSettings({ fontFamily: fontName || 'system-ui' });
+};
+
 onMounted(() => {
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
   void settingStore.hydrateAppInfo();
   void desktopLyricStore.hydrate();
+  void fetchSystemFonts();
 });
 
 const desktopLyricAlignOptions = [
@@ -621,6 +653,29 @@ onUnmounted(() => {
             "
           />
         </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">全局字体</h3>
+            <p class="text-sm text-text-secondary">应用到软件内所有区域的字体</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <FontSelect
+              class="min-w-[180px]"
+              :model-value="settingStore.globalFont"
+              :options="globalFontOptions"
+              @update:model-value="settingStore.globalFont = $event"
+            />
+            <button
+              v-if="settingStore.globalFont !== 'system-ui'"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+              @click="settingStore.globalFont = 'system-ui'"
+            >
+              重置
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -790,6 +845,29 @@ onUnmounted(() => {
         <h2 class="text-lg font-bold">页面歌词</h2>
       </div>
       <div class="settings-card">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词字体</h3>
+            <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <FontSelect
+              class="min-w-[180px]"
+              :model-value="settingStore.lyricFont"
+              :options="lyricFontOptions"
+              @update:model-value="settingStore.lyricFont = $event"
+            />
+            <button
+              v-if="settingStore.lyricFont !== 'follow'"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+              @click="settingStore.lyricFont = 'follow'"
+            >
+              重置
+            </button>
+          </div>
+        </div>
+        <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">显示翻译</h3>
@@ -1033,6 +1111,29 @@ onUnmounted(() => {
             :options="desktopLyricAlignOptions"
             @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
           />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词字体</h3>
+            <p class="text-sm text-text-secondary">桌面歌词窗口使用的字体</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <FontSelect
+              class="min-w-[180px]"
+              :model-value="desktopLyricFontName"
+              :options="globalFontOptions"
+              @update:model-value="applyDesktopLyricFont($event)"
+            />
+            <button
+              v-if="desktopLyricFontName !== 'system-ui'"
+              type="button"
+              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+              @click="applyDesktopLyricFont('system-ui')"
+            >
+              重置
+            </button>
+          </div>
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">

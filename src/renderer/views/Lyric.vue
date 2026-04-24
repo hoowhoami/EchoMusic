@@ -196,6 +196,7 @@ const secondaryFontSize = computed(
 );
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
+const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
 
 const lyricColorPresets = [
   '#31cfa1',
@@ -1296,6 +1297,7 @@ onUnmounted(() => {
               <div
                 ref="lyricListRef"
                 class="lyric-scroll absolute inset-0"
+                :style="{ fontFamily: lyricFontFamily }"
                 @wheel.passive="handleLyricWheel"
               >
                 <template v-if="hasLyrics">

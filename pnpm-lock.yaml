@@ -32,6 +32,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      font-list:
+        specifier: ^2.0.2
+        version: 2.0.2
       howler:
         specifier: ^2.2.4
         version: 2.2.4
@@ -1572,6 +1575,9 @@ packages:
     peerDependenciesMeta:
       debug:
         optional: true
+
+  font-list@2.0.2:
+    resolution: {integrity: sha512-kNG2sY5+Nh5bbWL9kgAi+k8tuXfZ3m+6fjNGF4iUITTyex2S6wITREgr9ZqY1xw2+mFM6Bi5NPEPpRB6jLLOnw==}
 
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
@@ -4290,6 +4296,8 @@ snapshots:
   flatted@3.4.2: {}
 
   follow-redirects@1.15.11: {}
+
+  font-list@2.0.2: {}
 
   foreground-child@3.3.1:
     dependencies:

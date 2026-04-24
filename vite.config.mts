@@ -28,7 +28,7 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             emptyOutDir: true,
             rollupOptions: {
-              external: ['electron'],
+              external: ['electron', 'font-list'],
             },
           },
         },
