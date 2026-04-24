@@ -1295,6 +1295,24 @@ onUnmounted(() => {
             </div>
           </div>
         </template>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">禁用 GPU 加速</h3>
+            <p class="text-sm text-text-secondary">
+              遇到界面花屏、字体发虚等问题时可尝试开启，重启后生效
+            </p>
+          </div>
+          <Switch
+            :model-value="settingStore.disableGpuAcceleration"
+            @update:model-value="
+              (v: boolean) => {
+                settingStore.disableGpuAcceleration = v;
+                settingStore.syncDisableGpuAcceleration();
+              }
+            "
+          />
+        </div>
       </div>
     </section>
 

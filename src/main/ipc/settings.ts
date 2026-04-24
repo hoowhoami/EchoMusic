@@ -200,4 +200,9 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
   });
+
+  // GPU 加速设置（需重启生效）
+  ipcMain.on('update-disable-gpu-acceleration', (_event, disabled: boolean) => {
+    appSettingsStore.set('disableGpuAcceleration', disabled);
+  });
 };

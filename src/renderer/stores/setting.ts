@@ -84,6 +84,7 @@ export const useSettingStore = defineStore('setting', {
     isPrerelease: false,
     searchHistory: [] as string[],
     userAgreementAccepted: false,
+    disableGpuAcceleration: false,
   }),
   actions: {
     setTheme(theme: ThemeMode) {
@@ -162,6 +163,14 @@ export const useSettingStore = defineStore('setting', {
           enabled: this.preventSleep,
           isPlaying,
         });
+      }
+    },
+    syncDisableGpuAcceleration() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send(
+          'update-disable-gpu-acceleration',
+          this.disableGpuAcceleration,
+        );
       }
     },
     setOutputDeviceStatus(status: OutputDeviceStatus, message = '') {

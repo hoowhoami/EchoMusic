@@ -24,6 +24,7 @@ type AppSettings = {
   theme: ThemeMode;
   rememberWindowSize: boolean;
   preventSleep: boolean;
+  disableGpuAcceleration: boolean;
   windowState: WindowState;
 };
 
@@ -34,6 +35,7 @@ const settingsStore = new Conf<AppSettings>({
     theme: 'system',
     rememberWindowSize: true,
     preventSleep: true,
+    disableGpuAcceleration: false,
     windowState: {
       width: 1100,
       height: 750,
