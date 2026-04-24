@@ -1,17 +1,6 @@
 <script setup lang="ts">
-import {
-  SelectContent,
-  SelectIcon,
-  SelectItem,
-  SelectItemIndicator,
-  SelectItemText,
-  SelectPortal,
-  SelectRoot,
-  SelectTrigger,
-  SelectValue,
-  SelectViewport,
-} from 'reka-ui';
-import { computed } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
+import Popover from './Popover.vue';
 import { iconChevronDown } from '@/icons';
 
 type SelectValueType = string | number;
@@ -29,162 +18,228 @@ interface Props {
   class?: string;
   triggerClass?: string;
   contentClass?: string;
+  /** 是否可搜索 */
+  filterable?: boolean;
+  /** 虚拟滚动（选项超过此数量时启用） */
+  virtualThreshold?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   options: () => [],
   placeholder: '请选择',
+  filterable: false,
+  virtualThreshold: 50,
 });
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: SelectValueType): void;
 }>();
 
+const open = ref(false);
+const searchTerm = ref('');
+const inputRef = ref<HTMLInputElement | null>(null);
+const scrollTop = ref(0);
+
+const ITEM_HEIGHT = 36;
+const VISIBLE_COUNT = 10;
+
 const selectedLabel = computed(() => {
-  const selected = props.options.find((option) => Object.is(option.value, props.modelValue));
+  const selected = props.options.find((opt) => Object.is(opt.value, props.modelValue));
   return selected?.label ?? '';
+});
+
+const filteredOptions = computed(() => {
+  if (!props.filterable || !searchTerm.value) return props.options;
+  const keyword = searchTerm.value.toLowerCase();
+  return props.options.filter((opt) => opt.label.toLowerCase().includes(keyword));
+});
+
+const useVirtual = computed(() => filteredOptions.value.length > props.virtualThreshold);
+
+// 虚拟滚动
+const totalHeight = computed(() => filteredOptions.value.length * ITEM_HEIGHT);
+const startIndex = computed(() => Math.max(0, Math.floor(scrollTop.value / ITEM_HEIGHT) - 2));
+const endIndex = computed(() =>
+  Math.min(filteredOptions.value.length, startIndex.value + VISIBLE_COUNT + 4),
+);
+const visibleItems = computed(() => {
+  if (!useVirtual.value) return filteredOptions.value;
+  return filteredOptions.value.slice(startIndex.value, endIndex.value);
+});
+const offsetY = computed(() => (useVirtual.value ? startIndex.value * ITEM_HEIGHT : 0));
+
+const handleScroll = (e: Event) => {
+  scrollTop.value = (e.target as HTMLDivElement).scrollTop;
+};
+
+const handleSelect = (option: SelectOption) => {
+  if (option.disabled) return;
+  emit('update:modelValue', option.value);
+  open.value = false;
+  searchTerm.value = '';
+};
+
+watch(open, (val) => {
+  if (val) {
+    searchTerm.value = '';
+    scrollTop.value = 0;
+    if (props.filterable) {
+      nextTick(() => inputRef.value?.focus());
+    }
+  }
 });
 </script>
 
 <template>
-  <SelectRoot
-    :model-value="props.modelValue"
-    @update:model-value="emit('update:modelValue', $event as SelectValueType)"
+  <Popover
+    v-model:open="open"
+    trigger="click"
+    side="bottom"
+    :align="'end'"
+    :side-offset="6"
+    :show-arrow="false"
+    content-class="echo-select-content"
   >
-    <SelectTrigger :class="['select-trigger', props.triggerClass, props.class]">
-      <SelectValue
-        :placeholder="props.placeholder"
-        :title="selectedLabel || props.placeholder"
-        class="select-value"
-      />
-      <SelectIcon class="select-icon">
-        <Icon :icon="iconChevronDown" width="14" height="14" />
-      </SelectIcon>
-    </SelectTrigger>
-
-    <SelectPortal>
-      <SelectContent
-        class="select-content"
-        :class="props.contentClass"
-        position="popper"
-        :side-offset="6"
-        :collision-padding="12"
-        avoid-collisions
+    <template #trigger>
+      <button
+        type="button"
+        :class="['echo-select-trigger', props.triggerClass, props.class]"
+        :data-state="open ? 'open' : 'closed'"
       >
-        <SelectViewport class="select-viewport">
-          <SelectItem
-            v-for="option in props.options"
+        <span class="echo-select-value" :class="{ 'is-placeholder': !selectedLabel }">
+          {{ selectedLabel || props.placeholder }}
+        </span>
+        <span class="echo-select-icon" :class="{ 'is-open': open }">
+          <Icon :icon="iconChevronDown" width="14" height="14" />
+        </span>
+      </button>
+    </template>
+
+    <div v-if="props.filterable" class="echo-select-search">
+      <input
+        ref="inputRef"
+        v-model="searchTerm"
+        class="echo-select-search-input"
+        placeholder="搜索..."
+        @keydown.stop
+      />
+    </div>
+
+    <div v-if="filteredOptions.length === 0" class="echo-select-empty">无匹配项</div>
+    <div v-else class="echo-select-list" @scroll.passive="handleScroll">
+      <div :style="useVirtual ? { height: totalHeight + 'px', position: 'relative' } : {}">
+        <div :style="useVirtual ? { transform: `translateY(${offsetY}px)` } : {}">
+          <button
+            v-for="option in visibleItems"
             :key="String(option.value)"
-            :value="option.value"
+            type="button"
+            class="echo-select-item"
+            :class="{
+              'is-selected': Object.is(option.value, props.modelValue),
+              'is-disabled': option.disabled,
+            }"
+            :style="useVirtual ? { height: ITEM_HEIGHT + 'px' } : {}"
             :disabled="option.disabled"
-            class="select-item"
+            @click="handleSelect(option)"
           >
-            <SelectItemText class="select-item-text" :title="option.label">
-              {{ option.label }}
-            </SelectItemText>
-            <SelectItemIndicator class="select-item-indicator"> ✓ </SelectItemIndicator>
-          </SelectItem>
-        </SelectViewport>
-      </SelectContent>
-    </SelectPortal>
-  </SelectRoot>
+            <span class="echo-select-item-text">{{ option.label }}</span>
+            <span v-if="Object.is(option.value, props.modelValue)" class="echo-select-item-check"
+              >✓</span
+            >
+          </button>
+        </div>
+      </div>
+    </div>
+  </Popover>
 </template>
 
 <style scoped>
 @reference "@/style.css";
 
-.select-trigger {
-  @apply inline-flex w-auto min-w-[140px] h-9 px-3 rounded-xl border border-border-light bg-black/[0.06] dark:bg-white/[0.06] text-text-main text-[13px] font-semibold items-center justify-between gap-2 transition-all;
+.echo-select-trigger {
+  @apply inline-flex w-auto min-w-[140px] h-9 px-3 rounded-xl border border-border-light bg-black/6 dark:bg-white/6 text-text-main text-[13px] font-semibold items-center justify-between gap-2 transition-all cursor-pointer;
 }
 
-.select-trigger[data-state='open'] {
-  @apply border-primary/40 bg-primary/10 shadow-[0_10px_24px_rgba(0,0,0,0.14)];
+.echo-select-trigger:hover {
+  @apply border-primary/30 bg-black/8 dark:bg-white/8;
 }
 
-.select-trigger:hover {
-  @apply border-primary/30 bg-black/[0.08] dark:bg-white/[0.08];
+.echo-select-trigger[data-state='open'] {
+  @apply border-primary/40 bg-primary/10;
 }
 
-.select-trigger:focus-visible {
-  @apply outline-none;
-  box-shadow: none;
+.echo-select-value {
+  @apply truncate text-text-main/80;
 }
 
-.select-value {
-  @apply truncate text-text-main/80 data-[placeholder]:text-text-secondary/70;
+.echo-select-value.is-placeholder {
+  @apply text-text-secondary/70;
 }
 
-.select-icon {
-  @apply transition-transform data-[state=open]:rotate-180;
+.echo-select-icon {
+  @apply transition-transform duration-200 shrink-0;
 }
 
-:global(.select-content) {
-  @apply relative z-[9999] rounded-[20px] border border-border-light bg-bg-card shadow-[0_16px_40px_rgba(0,0,0,0.18)] p-2;
-  box-sizing: border-box;
-  width: max-content;
-  min-width: var(--reka-select-trigger-width);
-  max-width: min(320px, var(--reka-select-content-available-width));
-  max-height: min(320px, var(--reka-select-content-available-height));
-  overflow: hidden;
-  animation: select-fade-in 0.16s ease-out;
+.echo-select-icon.is-open {
+  transform: rotate(180deg);
 }
 
-:global(.select-content[data-state='closed']) {
-  animation: select-fade-out 0.12s ease-in;
+.echo-select-search {
+  @apply px-1 pb-2;
 }
 
-.select-viewport {
-  max-height: min(304px, var(--reka-select-content-available-height));
+.echo-select-search-input {
+  @apply w-full h-8 px-2.5 rounded-lg bg-black/5 dark:bg-white/5 text-text-main text-[13px] font-medium outline-none border border-transparent;
+}
+
+.echo-select-search-input:focus {
+  @apply border-primary/30;
+}
+
+.echo-select-search-input::placeholder {
+  @apply text-text-secondary/60;
+}
+
+.echo-select-empty {
+  @apply px-3 py-4 text-center text-[13px] text-text-secondary;
+}
+
+.echo-select-list {
+  max-height: 320px;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  background: transparent;
 }
 
-.select-item {
-  @apply w-full px-3 py-2.5 rounded-xl text-left text-[13px] font-semibold flex items-center justify-between gap-2;
-  @apply hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer select-none;
-  @apply data-[state=checked]:text-primary data-[state=checked]:bg-primary/10;
-  @apply data-[disabled]:opacity-60 data-[disabled]:cursor-not-allowed;
-  @apply focus-visible:outline-none;
+.echo-select-item {
+  @apply w-full px-3 py-2.5 rounded-xl text-left text-[13px] font-semibold flex items-center justify-between gap-2 transition-colors cursor-pointer select-none;
 }
 
-.select-item:focus-visible {
-  box-shadow: none;
+.echo-select-item:hover {
+  @apply bg-black/5 dark:bg-white/5;
 }
 
-:global(.select-content::after) {
-  content: '';
-  @apply absolute inset-0 rounded-xl border border-black/5 pointer-events-none;
+.echo-select-item.is-selected {
+  @apply text-primary bg-primary/10;
 }
 
-.select-item-text {
+.echo-select-item.is-disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.echo-select-item-text {
   @apply truncate;
 }
 
-.select-item-indicator {
-  @apply text-primary text-[14px] leading-none font-bold;
+.echo-select-item-check {
+  @apply text-primary text-[14px] leading-none font-bold shrink-0;
 }
+</style>
 
-@keyframes select-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes select-fade-out {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
+<style>
+.echo-select-content {
+  min-width: var(--reka-popover-trigger-width, 140px);
+  max-width: min(320px, 90vw);
+  padding: 6px;
 }
 </style>
