@@ -53,7 +53,7 @@ export const useSettingStore = defineStore('setting', {
     lyricCarouselInterval: 15,
     lyricAutoCollapseDelay: 5,
     lyricAutoCollapseEnabled: true,
-    lyricAdaptiveButtonColor: true,
+    lyricAdaptiveColor: true,
     autoNext: false,
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,

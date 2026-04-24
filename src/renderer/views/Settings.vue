@@ -960,10 +960,10 @@ onUnmounted(() => {
         </div>
         <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
           <div class="space-y-1">
-            <h3 class="font-semibold">按钮自适应颜色</h3>
-            <p class="text-sm text-text-secondary">根据写真背景自动调整按钮颜色</p>
+            <h3 class="font-semibold">写真模式颜色自适应</h3>
+            <p class="text-sm text-text-secondary">根据写真背景亮度自动切换按钮和控件的深浅配色</p>
           </div>
-          <Switch v-model="settingStore.lyricAdaptiveButtonColor" />
+          <Switch v-model="settingStore.lyricAdaptiveColor" />
         </div>
       </div>
     </section>

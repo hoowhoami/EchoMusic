@@ -496,7 +496,7 @@ const applyContrastVars = (root: HTMLElement, topLum: number, bottomLum: number)
 };
 
 const analyzeRenderedImage = (img: HTMLImageElement) => {
-  if (!settingStore.lyricAdaptiveButtonColor) return;
+  if (!settingStore.lyricAdaptiveColor) return;
   const root = img.closest('.lyric-view') as HTMLElement | null;
   if (!root) return;
 
@@ -1080,8 +1080,8 @@ onUnmounted(() => {
                       />
                     </template>
                     <div class="flex items-center justify-between text-[13px] font-semibold">
-                      <span class="text-black/60 dark:text-white/60">按钮自适应颜色</span>
-                      <Switch v-model="settingStore.lyricAdaptiveButtonColor" />
+                      <span class="text-black/60 dark:text-white/60">颜色自适应</span>
+                      <Switch v-model="settingStore.lyricAdaptiveColor" />
                     </div>
                   </div>
                 </PopoverContent>
@@ -1550,7 +1550,7 @@ onUnmounted(() => {
                   @click.stop
                 >
                   <div
-                    class="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
+                    class="lyric-volume-popup lyric-popover rounded-2xl border border-black/10 bg-white/70 p-3 shadow-xl backdrop-blur-xl dark:border-white/20 dark:bg-black/60"
                   >
                     <div class="flex h-36 flex-col items-center gap-2">
                       <SliderRoot
@@ -2854,5 +2854,33 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-controls-surface [role='slider'] {
   background-color: var(--pb-fg) !important;
   border-color: var(--pb-fg-muted) !important;
+}
+
+/* 写真模式下弹出层颜色（倍速、音质、音量等） */
+.portrait-mode .lyric-popover {
+  background: var(--pb-card-bg) !important;
+  border-color: var(--pb-btn-border) !important;
+  color: var(--pb-fg) !important;
+}
+
+.portrait-mode .lyric-popover span,
+.portrait-mode .lyric-popover button {
+  color: var(--pb-fg);
+}
+
+.portrait-mode .lyric-popover .lyric-quality-item:hover {
+  background: var(--pb-btn-bg);
+}
+
+.portrait-mode .lyric-popover [data-orientation] > span:first-child {
+  background-color: var(--pb-fg-muted) !important;
+}
+
+.portrait-mode .lyric-popover [data-orientation] > span:first-child > span {
+  background-color: var(--pb-fg) !important;
+}
+
+.portrait-mode .lyric-popover [role='slider'] {
+  background-color: var(--pb-fg) !important;
 }
 </style>
