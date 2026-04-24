@@ -1300,7 +1300,7 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">禁用 GPU 加速</h3>
             <p class="text-sm text-text-secondary">
-              遇到界面花屏、字体发虚等问题时可尝试开启，重启后生效
+              遇到界面花屏等渲染异常时可尝试开启，重启后生效
             </p>
           </div>
           <Switch
