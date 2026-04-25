@@ -48,6 +48,7 @@
 - **Routing**: [Vue Router](https://router.vuejs.org/)
 - **Package Manager**: [pnpm](https://pnpm.io/)
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务）
+- **Audio Engine**: [mpv](https://mpv.io/)（独立进程播放引擎，支持几乎所有音频格式）
 
 ## 🖼️ 界面截图
 
@@ -82,6 +83,7 @@
 
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/) 9+
+- [mpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install mpv`，Windows: 自动下载）
 
 ### 本地开发
 
