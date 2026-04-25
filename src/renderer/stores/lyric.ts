@@ -154,8 +154,8 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 // };
 
 // 页面歌词默认颜色
-export const DEFAULT_LYRIC_PLAYED_COLOR = '#0071e3';
-export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#8a8a8a';
+export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
+export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
 
 export const useLyricStore = defineStore('lyric', {
   state: () => ({

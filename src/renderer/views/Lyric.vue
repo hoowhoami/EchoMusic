@@ -2,7 +2,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRafFn } from '@vueuse/core';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
-import { useLyricStore } from '@/stores/lyric';
+import {
+  useLyricStore,
+  DEFAULT_LYRIC_PLAYED_COLOR,
+  DEFAULT_LYRIC_UNPLAYED_COLOR,
+} from '@/stores/lyric';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
@@ -158,10 +162,13 @@ const lyricColorPresets = [
 const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 const activeLyricColorValue = computed(() => {
-  if (!activeLyricColorField.value) return '#0071e3';
-  const stored = lyricStore[activeLyricColorField.value];
-  if (stored) return stored;
-  return activeLyricColorField.value === 'playedColor' ? '#0071e3' : '#8a8a8a';
+  if (!activeLyricColorField.value) return DEFAULT_LYRIC_PLAYED_COLOR;
+  return (
+    lyricStore[activeLyricColorField.value] ||
+    (activeLyricColorField.value === 'playedColor'
+      ? DEFAULT_LYRIC_PLAYED_COLOR
+      : DEFAULT_LYRIC_UNPLAYED_COLOR)
+  );
 });
 
 const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
@@ -183,16 +190,8 @@ const resetLyricColors = () => {
   lyricStore.unplayedColor = '';
 };
 
-const effectivePlayedColor = computed(() => lyricStore.playedColor || '');
-const effectiveUnplayedColor = computed(() => lyricStore.unplayedColor || '');
-const isDarkMode = computed(
-  () =>
-    settingStore.theme === 'dark' ||
-    (settingStore.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches),
-);
-const defaultUnplayedSwatchColor = computed(() =>
-  isDarkMode.value ? 'rgba(255,255,255,0.66)' : 'rgba(15,23,42,0.58)',
-);
+const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
+const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
 
 const clearUserScrollResumeTimer = () => {
   if (userScrollResumeTimer === null) return;
@@ -772,16 +771,8 @@ const syncSeekAnchor = () => {
 };
 
 // 已播/未播颜色（用于逐字渐变）
-const yrcPlayedColor = computed(
-  () =>
-    effectivePlayedColor.value ||
-    (isDarkMode.value ? 'rgba(255,255,255,0.98)' : 'rgba(15,23,42,0.98)'),
-);
-const yrcUnplayedColor = computed(
-  () =>
-    effectiveUnplayedColor.value ||
-    (isDarkMode.value ? 'rgba(255,255,255,0.66)' : 'rgba(15,23,42,0.58)'),
-);
+const yrcPlayedColor = computed(() => effectivePlayedColor.value);
+const yrcUnplayedColor = computed(() => effectiveUnplayedColor.value);
 
 const getYrcStyle = (char: { startTime: number; endTime: number }, lineIndex: number) => {
   const line = lyricStore.lines[lineIndex];
@@ -1090,7 +1081,7 @@ onUnmounted(() => {
                       <button
                         type="button"
                         class="lyric-color-swatch"
-                        :style="{ backgroundColor: effectivePlayedColor || 'var(--color-primary)' }"
+                        :style="{ backgroundColor: effectivePlayedColor }"
                         @click="openLyricColorPicker('playedColor')"
                       ></button>
                     </div>
@@ -1102,7 +1093,7 @@ onUnmounted(() => {
                         type="button"
                         class="lyric-color-swatch"
                         :style="{
-                          backgroundColor: effectiveUnplayedColor || defaultUnplayedSwatchColor,
+                          backgroundColor: effectiveUnplayedColor,
                         }"
                         @click="openLyricColorPicker('unplayedColor')"
                       ></button>
