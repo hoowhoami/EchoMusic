@@ -29,7 +29,7 @@ const handleWheel = (e: WheelEvent) => {
 </script>
 
 <template>
-  <div @wheel.prevent="handleWheel">
+  <div class="flex items-center" @wheel.prevent="handleWheel">
     <Popover
       trigger="hover"
       :side="side"
