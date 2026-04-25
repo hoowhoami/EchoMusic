@@ -1,7 +1,6 @@
 import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
-import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
 import { useDesktopLyricStore } from './store';
 import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared/desktop-lyric';
@@ -46,7 +45,6 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
 export const initDesktopLyricSync = async () => {
   const desktopLyricStore = useDesktopLyricStore();
   const playerStore = usePlayerStore();
-  const settingStore = useSettingStore();
   const lyricStore = useLyricStore();
   if (!window.electron?.desktopLyric) return () => {};
 
@@ -63,12 +61,8 @@ export const initDesktopLyricSync = async () => {
   const { lines, currentIndex, wantTranslation, wantRomanization } = storeToRefs(lyricStore);
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
-    // 桌面歌词字体「跟随全局」时解析为实际全局字体名
-    const fontFamily =
-      settings.fontFamily === 'follow' ? settingStore.globalFont : settings.fontFamily;
     return {
       ...settings,
-      fontFamily,
       wantTranslation: wantTranslation.value,
       wantRomanization: wantRomanization.value,
     };
@@ -132,12 +126,7 @@ export const initDesktopLyricSync = async () => {
   };
 
   const disposeSnapshotListener = window.electron.desktopLyric.onSnapshot((nextSnapshot) => {
-    // 保留原始 fontFamily 值（可能是 'follow'），不被解析后的值覆盖
-    const originalFontFamily = desktopLyricStore.settings.fontFamily;
     desktopLyricStore.setLocal(nextSnapshot.settings);
-    if (originalFontFamily === 'follow') {
-      desktopLyricStore.setLocal({ fontFamily: 'follow' });
-    }
     lastSyncedSettingsKey = JSON.stringify(buildSyncedSettings(nextSnapshot.settings));
     lastSyncedPlaybackKey = JSON.stringify({
       playback: nextSnapshot.playback,
@@ -180,12 +169,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [
-        () => desktopLyricStore.settings,
-        wantTranslation,
-        wantRomanization,
-        () => settingStore.globalFont,
-      ],
+      [() => desktopLyricStore.settings, wantTranslation, wantRomanization],
       () => {
         void syncSettingsSnapshot();
       },
