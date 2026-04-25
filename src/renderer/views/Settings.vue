@@ -58,17 +58,15 @@ const isRequestingOutputPermission = ref(false);
 // ── 页面缓存候选列表 ──
 const keepAliveOptions = [
   { label: '为您推荐', value: 'home' },
-  { label: '探索发现', value: 'explore' },
-  { label: '排行榜', value: 'ranking' },
-  { label: '搜索', value: 'search-page' },
   { label: '每日推荐', value: 'recommend-songs' },
+  { label: '排行榜', value: 'ranking' },
+  { label: '探索发现', value: 'explore' },
+  { label: '搜索', value: 'search-page' },
+  { label: '我的云盘', value: 'cloud' },
+  { label: '我最喜爱', value: 'favorites' },
   { label: '歌单详情', value: 'playlist-detail' },
   { label: '歌手详情', value: 'artist-detail' },
   { label: '专辑详情', value: 'album-detail' },
-  { label: '个人资料', value: 'profile' },
-  { label: '播放历史', value: 'history' },
-  { label: '我最喜爱', value: 'favorites' },
-  { label: '我的云盘', value: 'cloud' },
 ];
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
