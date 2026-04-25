@@ -378,6 +378,7 @@ export const usePlayerStore = defineStore('player', {
     shufflePlayed: new Set<number>(),
     seekTargetTime: null as number | null,
     seekTimestamp: 0,
+    isResuming: false,
   }),
   actions: {
     toggleLyricView(open?: boolean) {
@@ -830,7 +831,14 @@ export const usePlayerStore = defineStore('player', {
         currentTrackId: this.currentTrackId,
         isPlaying: this.isPlaying,
         hasSource: !!engine.source,
+        isResuming: this.isResuming,
       });
+
+      if (this.isResuming) {
+        logger.debug('PlayerStore', 'Ignoring toggle: already resuming');
+        return;
+      }
+
       if (!this.currentTrackId) {
         const playlist = usePlaylistStore();
         if ((playlist.activeQueue?.songs.length ?? playlist.defaultList.length) > 0) {
@@ -857,10 +865,21 @@ export const usePlayerStore = defineStore('player', {
         return;
       }
 
+      this.isResuming = true;
       try {
-        await engine.play();
+        const settingStore = useSettingStore();
+        const timeoutMs = (settingStore.playResumeTimeout ?? 5) * 1000;
+        await engine.play({ timeoutMs: timeoutMs > 0 ? timeoutMs : undefined });
       } catch (error) {
-        logger.error('PlayerStore', 'Playback failed:', error);
+        logger.error('PlayerStore', 'Playback resume failed, replaying current track', error);
+        // play 彻底失败，重新走 playTrack 流程
+        try {
+          await this.playTrack(this.currentTrackId);
+        } catch {
+          // playTrack 也失败则放弃
+        }
+      } finally {
+        this.isResuming = false;
       }
     },
 

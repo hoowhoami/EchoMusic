@@ -25,6 +25,7 @@ import Switch from '@/components/ui/Switch.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
+import InputNumber from '@/components/ui/InputNumber.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
@@ -820,36 +821,53 @@ onUnmounted(() => {
             <h3 class="font-semibold">失败后切换延迟</h3>
             <p class="text-sm text-text-secondary">给用户留出确认失败状态的时间，再自动切换</p>
           </div>
-          <div class="flex items-center gap-3">
-            <input
-              v-model="autoNextDelayInput"
-              type="number"
-              min="0"
-              max="600"
-              step="1"
-              placeholder="0"
-              class="settings-number-input"
-            />
-            <span class="text-sm text-text-secondary">秒</span>
-          </div>
+          <InputNumber
+            class="w-[180px]"
+            :model-value="autoNextDelayInput"
+            :min="0"
+            :max="600"
+            :step="1"
+            placeholder="0"
+            suffix="秒"
+            @update:model-value="autoNextDelayInput = $event"
+          />
         </div>
         <div v-if="settingStore.autoNext" class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">最大自动切换次数</h3>
             <p class="text-sm text-text-secondary">连续失败时最多自动尝试的次数，避免无限跳歌</p>
           </div>
-          <div class="flex items-center gap-3">
-            <input
-              v-model="autoNextMaxAttemptsInput"
-              type="number"
-              min="1"
-              max="999"
-              step="1"
-              placeholder="10"
-              class="settings-number-input"
-            />
-            <span class="text-sm text-text-secondary">次</span>
+          <InputNumber
+            class="w-[180px]"
+            :model-value="autoNextMaxAttemptsInput"
+            :min="1"
+            :max="999"
+            :step="1"
+            placeholder="10"
+            suffix="次"
+            @update:model-value="autoNextMaxAttemptsInput = $event"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">播放恢复超时</h3>
+            <p class="text-sm text-text-secondary">
+              长时间暂停后恢复播放可能卡住，超时后自动重新加载音频源。设为 0 禁用
+            </p>
           </div>
+          <InputNumber
+            class="w-[180px]"
+            :model-value="String(settingStore.playResumeTimeout ?? 5)"
+            :min="0"
+            :max="30"
+            :step="1"
+            placeholder="5"
+            suffix="秒"
+            @update:model-value="
+              settingStore.playResumeTimeout = Math.max(0, Math.min(30, Number($event) || 0))
+            "
+          />
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">
@@ -1141,7 +1159,7 @@ onUnmounted(() => {
             <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
           </div>
           <Select
-            class="w-[120px]"
+            class="w-[180px]"
             :model-value="desktopLyricStore.settings.alignment"
             :options="desktopLyricAlignOptions"
             @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
@@ -1306,7 +1324,7 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">设备断开后的行为</h3>
             <p class="text-sm text-text-secondary">
-              当当前所选输出设备断开时，选择暂停播放或临时切换到系统默认设备
+              当前所选输出设备断开时，选择暂停播放或临时切换到系统默认设备
             </p>
           </div>
           <Select
@@ -1388,25 +1406,22 @@ onUnmounted(() => {
                 超出后自动释放最早缓存的页面，避免占用过多内存
               </p>
             </div>
-            <div class="flex items-center gap-3">
-              <input
-                :value="String(settingStore.keepAliveMax)"
-                type="number"
-                min="3"
-                max="30"
-                step="1"
-                placeholder="20"
-                class="settings-number-input"
-                @change="
-                  (e) => {
-                    const parsed = Number.parseInt((e.target as HTMLInputElement).value, 10);
-                    settingStore.keepAliveMax = Number.isNaN(parsed)
-                      ? 20
-                      : Math.max(3, Math.min(parsed, 30));
-                  }
-                "
-              />
-            </div>
+            <InputNumber
+              class="w-[180px]"
+              :model-value="String(settingStore.keepAliveMax)"
+              :min="3"
+              :max="30"
+              :step="1"
+              placeholder="20"
+              @update:model-value="
+                (val) => {
+                  const parsed = Number.parseInt(String(val), 10);
+                  settingStore.keepAliveMax = Number.isNaN(parsed)
+                    ? 20
+                    : Math.max(3, Math.min(parsed, 30));
+                }
+              "
+            />
           </div>
         </template>
         <div class="settings-divider"></div>
@@ -1618,20 +1633,6 @@ onUnmounted(() => {
 
 .settings-select {
   @apply bg-bg-main text-text-main border border-border-light rounded-lg px-3 py-1.5 text-sm font-semibold focus:outline-none min-w-[160px];
-}
-
-.settings-number-input {
-  width: 120px;
-  height: 40px;
-  padding: 0 6px 0 14px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 92%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  color: var(--color-text-main);
-  color-scheme: light;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 40px;
 }
 
 .settings-text-input {

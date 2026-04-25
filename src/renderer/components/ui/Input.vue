@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useVModel } from '@vueuse/core';
 import { type PrimitiveProps } from 'reka-ui';
-import Button from '@/components/ui/Button.vue';
 import { iconX } from '@/icons';
 
 interface Props extends PrimitiveProps {
@@ -42,15 +41,13 @@ const handleClear = () => {
     />
 
     <!-- 清除图标按钮 -->
-    <Button
+    <button
       v-if="showClear && value"
-      @click="handleClear"
       type="button"
-      variant="ghost"
-      size="xs"
-      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 min-w-0 p-0 text-text-main opacity-40 hover:opacity-70"
+      class="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-full text-text-main opacity-40 hover:opacity-70 transition-opacity"
+      @click="handleClear"
     >
       <Icon :icon="iconX" width="14" height="14" />
-    </Button>
+    </button>
   </div>
 </template>

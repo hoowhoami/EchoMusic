@@ -601,23 +601,72 @@ export class PlayerEngine {
     return this.applySinkId();
   }
 
-  async play(options?: { fadeIn?: boolean; fadeDurationMs?: number }): Promise<void> {
+  async play(options?: {
+    fadeIn?: boolean;
+    fadeDurationMs?: number;
+    timeoutMs?: number;
+  }): Promise<void> {
     if (this.normalizationEnabled && this.audioContext) {
       await this.ensureAudioContextRunning();
     }
 
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
+    const timeoutMs = options?.timeoutMs ?? 0;
 
-    if (durationMs > 0) {
-      const targetVolume = this.volumeValue;
-      // 淡入起始：音量设为 0
-      this.applyVolumeToOutput(0);
-      this.volumeValue = targetVolume; // 保留目标值，applyVolumeToOutput 会覆盖
-      await this.audio.play();
-      void this.animateFade(0, targetVolume, durationMs);
-    } else {
-      await this.audio.play();
+    const doPlay = async (): Promise<void> => {
+      if (durationMs > 0) {
+        const targetVolume = this.volumeValue;
+        // 淡入起始：音量设为 0
+        this.applyVolumeToOutput(0);
+        this.volumeValue = targetVolume; // 保留目标值，applyVolumeToOutput 会覆盖
+        await this.audio.play();
+        void this.animateFade(0, targetVolume, durationMs);
+      } else {
+        await this.audio.play();
+      }
+    };
+
+    if (timeoutMs <= 0) {
+      await doPlay();
+      return;
     }
+
+    // 带超时的播放：超时后 load() 重试一次
+    const playWithTimeout = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          logger.warn('PlayerEngine', 'play() timed out, reloading audio source', {
+            timeoutMs,
+            src: this.audio.src?.slice(0, 80),
+          });
+          // load() 重新建立网络连接
+          const savedSrc = this.audio.src;
+          this.audio.load();
+          if (savedSrc) this.audio.src = savedSrc;
+          // 重试一次，不再带超时
+          doPlay().then(resolve, reject);
+        }, timeoutMs);
+
+        doPlay().then(
+          () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve();
+          },
+          (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(err);
+          },
+        );
+      });
+
+    await playWithTimeout();
   }
 
   async pause(options?: { fadeOut?: boolean; fadeDurationMs?: number }): Promise<void> {

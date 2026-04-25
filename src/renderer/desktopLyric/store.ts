@@ -28,12 +28,8 @@ export const useDesktopLyricStore = defineStore('desktopLyric', {
     async syncSettings(partial?: Partial<DesktopLyricSettings>) {
       if (!window.electron?.desktopLyric) return;
       const toastStore = useToastStore();
-      const payload = {
-        ...this.settings,
-        ...(partial ?? {}),
-      };
       try {
-        const snapshot = await window.electron.desktopLyric.updateSettings(payload);
+        const snapshot = await window.electron.desktopLyric.updateSettings(partial ?? {});
         this.settings = mergeSettings(snapshot.settings);
       } catch {
         toastStore.actionFailed('同步桌面歌词设置');

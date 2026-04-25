@@ -247,7 +247,6 @@ watch(open, (val) => {
 
 .echo-select-trigger {
   @apply inline-flex h-9 px-3 rounded-xl border border-border-light bg-black/6 dark:bg-white/6 text-text-main text-[13px] font-semibold items-center gap-2 transition-all cursor-pointer overflow-hidden;
-  width: 100%;
 }
 
 .echo-select-trigger:hover {
