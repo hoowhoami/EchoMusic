@@ -1,0 +1,474 @@
+import { ChildProcess, spawn } from 'child_process';
+import { EventEmitter } from 'events';
+import net from 'net';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
+import { resolveMpvPath } from './path';
+import type { MpvAudioDevice, MpvMessage, MpvState, MpvTrackInfo } from './types';
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+export class MpvController extends EventEmitter {
+  private process: ChildProcess | null = null;
+  private socket: net.Socket | null = null;
+  private socketPath: string;
+  private mpvBinPath: string | null;
+  private requestId = 0;
+  private pendingRequests = new Map<
+    number,
+    { resolve: (data: unknown) => void; reject: (err: Error) => void }
+  >();
+  private buffer = '';
+  private state: MpvState = {
+    playing: false,
+    paused: true,
+    duration: 0,
+    timePos: 0,
+    volume: 100,
+    speed: 1,
+    idle: true,
+    path: '',
+    audioDevice: 'auto',
+  };
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private isDestroyed = false;
+
+  // 淡入淡出
+  private fadeTimer: ReturnType<typeof setInterval> | null = null;
+  private fadeSeq = 0;
+
+  // 文件加载就绪 promise
+  private fileReadyPromise: Promise<void> = Promise.resolve();
+  private fileReadyResolve: (() => void) | null = null;
+
+  constructor() {
+    super();
+    if (process.platform === 'win32') {
+      this.socketPath = `\\\\.\\pipe\\echomusic-mpv-${process.pid}`;
+    } else {
+      this.socketPath = path.join(os.tmpdir(), `echomusic-mpv-${process.pid}.sock`);
+    }
+    this.mpvBinPath = resolveMpvPath();
+  }
+
+  get available(): boolean {
+    return this.mpvBinPath !== null;
+  }
+
+  get currentState(): Readonly<MpvState> {
+    return { ...this.state };
+  }
+
+  // ── 生命周期 ──
+
+  async start(): Promise<void> {
+    if (!this.mpvBinPath) throw new Error('mpv binary not found');
+
+    // 清理旧 socket
+    if (process.platform !== 'win32') {
+      try {
+        fs.unlinkSync(this.socketPath);
+      } catch {}
+    }
+
+    const args = [
+      '--idle=yes',
+      '--pause',
+      '--no-video',
+      '--no-terminal',
+      '--no-config',
+      `--input-ipc-server=${this.socketPath}`,
+      '--volume=100',
+      '--audio-display=no',
+      '--hr-seek=yes',
+      '--volume-max=100',
+      '--demuxer-max-bytes=50MiB',
+      '--demuxer-max-back-bytes=10MiB',
+      '--cache=yes',
+      '--cache-secs=30',
+      '--user-agent=Mozilla/5.0',
+      '--input-media-keys=no',
+    ];
+
+    this.process = spawn(this.mpvBinPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: process.platform === 'win32' ? path.dirname(this.mpvBinPath) : undefined,
+      env: this.buildEnv(),
+    });
+
+    this.process.on('exit', (code) => {
+      this.emit('exit', code);
+      this.cleanup();
+      if (!this.isDestroyed && code !== 0) this.scheduleRestart();
+    });
+
+    this.process.on('error', (err) => this.emit('error', err));
+
+    await this.waitForSocket(5000);
+    await this.connectSocket();
+    await this.observeProperties();
+    this.emit('ready');
+  }
+
+  destroy(): void {
+    this.isDestroyed = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.cancelFade();
+    this.cleanup();
+    if (this.process && !this.process.killed) {
+      this.process.kill('SIGTERM');
+      setTimeout(() => {
+        if (this.process && !this.process.killed) this.process.kill('SIGKILL');
+      }, 2000);
+    }
+    if (process.platform !== 'win32') {
+      try {
+        fs.unlinkSync(this.socketPath);
+      } catch {}
+    }
+  }
+
+  // ── 内部方法 ──
+
+  private buildEnv(): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    if (process.platform === 'linux' && this.mpvBinPath) {
+      const libDir = path.join(path.dirname(this.mpvBinPath), 'lib');
+      if (fs.existsSync(libDir)) {
+        env.LD_LIBRARY_PATH = `${libDir}:${env.LD_LIBRARY_PATH || ''}`;
+      }
+    }
+    return env;
+  }
+
+  private waitForSocket(timeoutMs: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (process.platform === 'win32') {
+        // named pipe 不需要检查文件，等一小段时间让 mpv 启动
+        setTimeout(resolve, 300);
+        return;
+      }
+      const start = Date.now();
+      const check = () => {
+        if (fs.existsSync(this.socketPath)) return resolve();
+        if (Date.now() - start > timeoutMs) return reject(new Error('mpv socket timeout'));
+        setTimeout(check, 50);
+      };
+      check();
+    });
+  }
+
+  private connectSocket(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.socket = net.connect(this.socketPath);
+      this.socket.on('connect', () => {
+        this.buffer = '';
+        resolve();
+      });
+      this.socket.on('data', (data) => {
+        this.buffer += data.toString();
+        this.processBuffer();
+      });
+      this.socket.on('error', reject);
+      this.socket.on('close', () => {
+        this.socket = null;
+      });
+    });
+  }
+
+  private processBuffer(): void {
+    const lines = this.buffer.split('\n');
+    this.buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        this.handleMessage(JSON.parse(line) as MpvMessage);
+      } catch {}
+    }
+  }
+
+  private handleMessage(msg: MpvMessage): void {
+    if (msg.request_id !== undefined) {
+      const pending = this.pendingRequests.get(msg.request_id);
+      if (pending) {
+        this.pendingRequests.delete(msg.request_id);
+        if (msg.error === 'success') pending.resolve(msg.data);
+        else pending.reject(new Error(msg.error || 'mpv command failed'));
+      }
+      return;
+    }
+    if (msg.event) this.handleEvent(msg);
+  }
+
+  private handleEvent(msg: MpvMessage): void {
+    // 触发原始事件名，供 waitForEvent 使用
+    if (msg.event) this.emit(`mpv:${msg.event}`);
+
+    switch (msg.event) {
+      case 'property-change':
+        this.handlePropertyChange(msg.name!, msg.data);
+        break;
+      case 'end-file':
+        this.state.playing = false;
+        this.state.paused = true;
+        this.emit('playback-end', msg.reason || 'eof');
+        break;
+      case 'file-loaded':
+        this.state.idle = false;
+        if (this.fileReadyResolve) {
+          this.fileReadyResolve();
+          this.fileReadyResolve = null;
+        }
+        break;
+      case 'idle':
+        this.state.idle = true;
+        break;
+    }
+  }
+
+  private handlePropertyChange(name: string, value: unknown): void {
+    switch (name) {
+      case 'time-pos':
+        if (typeof value === 'number') {
+          this.state.timePos = value;
+          this.emit('time-update', value);
+        }
+        break;
+      case 'duration':
+        if (typeof value === 'number') {
+          this.state.duration = value;
+          this.emit('duration-change', value);
+        }
+        break;
+      case 'pause':
+        this.state.paused = !!value;
+        this.state.playing = !value;
+        this.emit('state-change', { paused: this.state.paused, playing: this.state.playing });
+        break;
+      case 'volume':
+        if (typeof value === 'number') this.state.volume = value;
+        break;
+      case 'speed':
+        if (typeof value === 'number') this.state.speed = value;
+        break;
+    }
+  }
+
+  private async observeProperties(): Promise<void> {
+    const props = [
+      'time-pos',
+      'duration',
+      'pause',
+      'volume',
+      'speed',
+      'eof-reached',
+      'idle-active',
+    ];
+    for (const prop of props) {
+      await this.command('observe_property', 0, prop);
+    }
+  }
+
+  private cleanup(): void {
+    this.socket?.destroy();
+    this.socket = null;
+    this.pendingRequests.forEach(({ reject }) => reject(new Error('mpv process exited')));
+    this.pendingRequests.clear();
+    this.buffer = '';
+  }
+
+  private scheduleRestart(): void {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
+      try {
+        await this.start();
+      } catch (err) {
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+      }
+    }, 2000);
+  }
+
+  // ── 命令发送 ──
+
+  command(...args: unknown[]): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || this.socket.destroyed) {
+        return reject(new Error('mpv socket not connected'));
+      }
+      const id = ++this.requestId;
+      const payload = JSON.stringify({ command: args, request_id: id }) + '\n';
+      this.pendingRequests.set(id, { resolve, reject });
+      setTimeout(() => {
+        if (this.pendingRequests.has(id)) {
+          this.pendingRequests.delete(id);
+          reject(new Error(`mpv command timeout: ${String(args[0])}`));
+        }
+      }, 5000);
+      this.socket.write(payload);
+    });
+  }
+
+  // ── 播放控制 ──
+
+  async loadFile(url: string): Promise<void> {
+    this.state.path = url;
+    this.state.idle = true;
+    this.fileReadyPromise = new Promise<void>((resolve) => {
+      this.fileReadyResolve = resolve;
+      // 超时兜底
+      setTimeout(() => {
+        if (this.fileReadyResolve === resolve) {
+          resolve();
+          this.fileReadyResolve = null;
+        }
+      }, 15000);
+    });
+    await this.command('loadfile', url, 'replace');
+  }
+
+  async loadMkvTrack(url: string, audioTrackId: number): Promise<void> {
+    this.state.path = url;
+    this.state.idle = true;
+    this.fileReadyPromise = new Promise<void>((resolve) => {
+      this.fileReadyResolve = resolve;
+      setTimeout(() => {
+        if (this.fileReadyResolve === resolve) {
+          resolve();
+          this.fileReadyResolve = null;
+        }
+      }, 15000);
+    });
+    await this.command('loadfile', url, 'replace');
+    // file-loaded 后设置音轨
+    this.fileReadyPromise
+      .then(() => this.command('set_property', 'aid', audioTrackId))
+      .catch(() => {});
+  }
+
+  async getTrackList(): Promise<MpvTrackInfo[]> {
+    return (await this.command('get_property', 'track-list')) as MpvTrackInfo[];
+  }
+
+  /** 等待文件加载就绪（loadFile 后的命令都应先 await 这个） */
+  private async whenReady(): Promise<void> {
+    await this.fileReadyPromise;
+  }
+
+  async play(): Promise<void> {
+    await this.whenReady();
+    await this.command('set_property', 'pause', false);
+  }
+
+  async pause(): Promise<void> {
+    await this.command('set_property', 'pause', true);
+  }
+
+  async stop(): Promise<void> {
+    try {
+      await this.command('stop');
+    } catch {
+      // idle 状态下 stop 可能失败
+    }
+    this.state.playing = false;
+    this.state.paused = true;
+    this.state.timePos = 0;
+    this.state.duration = 0;
+    this.state.path = '';
+  }
+
+  async seek(time: number): Promise<void> {
+    try {
+      await this.whenReady();
+      await this.command('seek', time, 'absolute');
+    } catch {
+      // seek 失败时忽略
+    }
+  }
+
+  async setVolume(volume: number): Promise<void> {
+    const v = clamp(volume, 0, 100);
+    await this.command('set_property', 'volume', v);
+    this.state.volume = v;
+  }
+
+  async setSpeed(speed: number): Promise<void> {
+    const s = clamp(speed, 0.1, 5);
+    await this.command('set_property', 'speed', s);
+    this.state.speed = s;
+  }
+
+  async setAudioDevice(deviceName: string): Promise<void> {
+    await this.command('set_property', 'audio-device', deviceName);
+    this.state.audioDevice = deviceName;
+  }
+
+  async getAudioDevices(): Promise<MpvAudioDevice[]> {
+    return (await this.command('get_property', 'audio-device-list')) as MpvAudioDevice[];
+  }
+
+  async setAudioFilter(filterString: string): Promise<void> {
+    await this.command('set_property', 'af', filterString || '');
+  }
+
+  async applyNormalizationGain(gainDb: number): Promise<void> {
+    // 使用 volume-gain 属性独立于 volume 做增益，避免和 volume 叠加
+    try {
+      await this.command('set_property', 'volume-gain', gainDb);
+    } catch {
+      // volume-gain 在旧版 mpv 不支持，回退到 af 滤镜
+      if (gainDb === 0) {
+        await this.setAudioFilter('');
+      } else {
+        await this.setAudioFilter(`lavfi=[volume=${gainDb}dB]`);
+      }
+    }
+  }
+
+  // ── 淡入淡出 ──
+
+  async fade(fromPercent: number, toPercent: number, durationMs: number): Promise<void> {
+    this.cancelFade();
+    if (durationMs <= 0) {
+      await this.setVolume(toPercent);
+      return;
+    }
+
+    const seq = ++this.fadeSeq;
+    const steps = Math.ceil(durationMs / 16);
+    const stepMs = durationMs / steps;
+    const diff = toPercent - fromPercent;
+    let step = 0;
+
+    return new Promise<void>((resolve) => {
+      this.fadeTimer = setInterval(() => {
+        if (seq !== this.fadeSeq) {
+          resolve();
+          return;
+        }
+        step++;
+        const progress = step / steps;
+        const eased = 1 - Math.pow(1 - progress, 2);
+        const current = fromPercent + diff * eased;
+        this.setVolume(current).catch(() => {});
+
+        if (step >= steps) {
+          this.cancelFade();
+          resolve();
+        }
+      }, stepMs);
+    });
+  }
+
+  cancelFade(): void {
+    if (this.fadeTimer) {
+      clearInterval(this.fadeTimer);
+      this.fadeTimer = null;
+    }
+    this.fadeSeq++;
+  }
+}

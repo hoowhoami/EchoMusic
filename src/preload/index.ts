@@ -125,4 +125,56 @@ contextBridge.exposeInMainWorld('electron', {
     ) => ipcRenderer.send('desktop-lyric:command', command),
   },
   log: log.functions,
+  mpv: {
+    load: (url: string) => ipcRenderer.invoke('mpv:load', url),
+    loadMkvTrack: (url: string, trackId: number) =>
+      ipcRenderer.invoke('mpv:load-mkv-track', url, trackId),
+    getTrackList: () => ipcRenderer.invoke('mpv:get-track-list'),
+    play: () => ipcRenderer.invoke('mpv:play'),
+    pause: () => ipcRenderer.invoke('mpv:pause'),
+    stop: () => ipcRenderer.invoke('mpv:stop'),
+    seek: (time: number) => ipcRenderer.invoke('mpv:seek', time),
+    setVolume: (volume: number) => ipcRenderer.invoke('mpv:set-volume', volume),
+    setSpeed: (speed: number) => ipcRenderer.invoke('mpv:set-speed', speed),
+    setAudioDevice: (deviceName: string) => ipcRenderer.invoke('mpv:set-audio-device', deviceName),
+    getAudioDevices: () =>
+      ipcRenderer.invoke('mpv:get-audio-devices') as Promise<
+        Array<{ name: string; description: string }>
+      >,
+    setNormalizationGain: (gainDb: number) =>
+      ipcRenderer.invoke('mpv:set-normalization-gain', gainDb),
+    fade: (from: number, to: number, durationMs: number) =>
+      ipcRenderer.invoke('mpv:fade', from, to, durationMs),
+    cancelFade: () => ipcRenderer.invoke('mpv:cancel-fade'),
+    getState: () => ipcRenderer.invoke('mpv:get-state'),
+    available: () => ipcRenderer.invoke('mpv:available') as Promise<boolean>,
+    onTimeUpdate: (func: (time: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
+      ipcRenderer.on('mpv:time-update', listener);
+      return () => ipcRenderer.removeListener('mpv:time-update', listener);
+    },
+    onDurationChange: (func: (duration: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, duration: number) => func(duration);
+      ipcRenderer.on('mpv:duration-change', listener);
+      return () => ipcRenderer.removeListener('mpv:duration-change', listener);
+    },
+    onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        state: { playing?: boolean; paused?: boolean },
+      ) => func(state);
+      ipcRenderer.on('mpv:state-change', listener);
+      return () => ipcRenderer.removeListener('mpv:state-change', listener);
+    },
+    onPlaybackEnd: (func: (reason: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, reason: string) => func(reason);
+      ipcRenderer.on('mpv:playback-end', listener);
+      return () => ipcRenderer.removeListener('mpv:playback-end', listener);
+    },
+    onError: (func: (message: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, message: string) => func(message);
+      ipcRenderer.on('mpv:error', listener);
+      return () => ipcRenderer.removeListener('mpv:error', listener);
+    },
+  },
 });

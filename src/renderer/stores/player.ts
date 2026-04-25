@@ -1775,7 +1775,6 @@ export const usePlayerStore = defineStore('player', {
       url: string,
       effect: AudioEffectValue,
       hash: string,
-      apiResponse?: unknown,
     ): Promise<string> {
       if (effect !== 'vocal' && effect !== 'accompaniment') return url;
       if (!url.toLowerCase().includes('.mkv')) return url;
@@ -1783,17 +1782,7 @@ export const usePlayerStore = defineStore('player', {
       // 人声=音轨2，伴奏=音轨1
       const trackNum = effect === 'vocal' ? 2 : 1;
 
-      // 从接口响应中提取 fileSize，估算单音轨大小供首次流式播放使用
-      let sizeParam = '';
-      const res = apiResponse as Record<string, unknown> | undefined;
-      const fileSize = Number(
-        res?.fileSize ?? (res?.data as Record<string, unknown>)?.fileSize ?? 0,
-      );
-      if (fileSize > 0) {
-        sizeParam = `&size=${Math.floor(fileSize / 2)}`;
-      }
-
-      const proxyUrl = `mkv-extract://extract?track=${trackNum}&hash=${encodeURIComponent(hash)}${sizeParam}&url=${encodeURIComponent(url)}`;
+      const proxyUrl = `mpv-mkv://track=${trackNum}&url=${encodeURIComponent(url)}`;
       logger.info('PlayerStore', 'Resolved MKV extract url', { effect, trackNum, hash });
       return proxyUrl;
     },
@@ -1885,12 +1874,7 @@ export const usePlayerStore = defineStore('player', {
             const effectRes = await getSongUrl(effectHash, apiEffect);
             let effectUrl = resolveUrlFromResponse(effectRes);
             if (effectUrl) {
-              effectUrl = await this.resolveVocalExtractUrl(
-                effectUrl,
-                audioEffect,
-                effectHash,
-                effectRes,
-              );
+              effectUrl = await this.resolveVocalExtractUrl(effectUrl, audioEffect, effectHash);
               logger.info('PlayerStore', 'Resolved effect audio url successfully', {
                 track: summarizeSong(track),
                 audioEffect,

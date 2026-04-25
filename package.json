@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.1",
+  "version": "2.2.2-beta.1",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -83,6 +83,13 @@
       "dist-electron"
     ],
     "extraResources": [
+      {
+        "from": "build/mpv",
+        "to": "mpv",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "build/icons",
         "to": "icons",

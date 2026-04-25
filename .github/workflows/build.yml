@@ -22,18 +22,18 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            electron_builder_args: ""
+            electron_builder_args: ''
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.dmg
               release/latest-mac.yml
           - os: macos-14
-            electron_builder_args: "--mac --x64"
+            electron_builder_args: '--mac --x64'
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
-            electron_builder_args: ""
+            electron_builder_args: ''
             artifact_name: EchoMusic-Linux-x64
             artifact_glob: |
               release/EchoMusic-*.AppImage
@@ -42,7 +42,7 @@ jobs:
               release/EchoMusic-*.tar.gz
               release/latest-linux.yml
           - os: ubuntu-22.04-arm
-            electron_builder_args: "--linux --arm64"
+            electron_builder_args: '--linux --arm64'
             artifact_name: EchoMusic-Linux-arm64
             artifact_glob: |
               release/EchoMusic-*.AppImage
@@ -51,7 +51,7 @@ jobs:
               release/EchoMusic-*.tar.gz
               release/latest-linux-arm64.yml
           - os: windows-latest
-            electron_builder_args: ""
+            electron_builder_args: ''
             artifact_name: EchoMusic-Windows
             artifact_glob: |
               release/EchoMusic-*-Windows-Setup-*.exe
@@ -98,6 +98,65 @@ jobs:
         working-directory: server
         shell: bash
         run: find module -name '*.test.js' -delete
+
+      - name: Download mpv binary
+        shell: bash
+        run: |
+          set -e
+          mkdir -p build/mpv
+
+          case "${{ matrix.os }}" in
+            macos-latest)
+              # macOS arm64
+              brew install mpv
+              MPV_BIN=$(brew --prefix mpv)/bin/mpv
+              cp "$MPV_BIN" build/mpv/
+              chmod +x build/mpv/mpv
+              # 复制依赖的 dylib
+              mkdir -p build/mpv/lib
+              otool -L "$MPV_BIN" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
+                cp "$lib" build/mpv/lib/ 2>/dev/null || true
+              done
+              echo "mpv macOS arm64 binary prepared"
+              ;;
+            macos-14)
+              # macOS x64
+              brew install mpv
+              MPV_BIN=$(brew --prefix mpv)/bin/mpv
+              cp "$MPV_BIN" build/mpv/
+              chmod +x build/mpv/mpv
+              mkdir -p build/mpv/lib
+              otool -L "$MPV_BIN" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
+                cp "$lib" build/mpv/lib/ 2>/dev/null || true
+              done
+              echo "mpv macOS x64 binary prepared"
+              ;;
+            ubuntu-22.04|ubuntu-22.04-arm)
+              # Linux: apt install mpv 后提取二进制和依赖库
+              sudo apt-get update
+              sudo apt-get install -y mpv
+              cp "$(which mpv)" build/mpv/
+              chmod +x build/mpv/mpv
+              mkdir -p build/mpv/lib
+              ldd "$(which mpv)" | grep "=> /" | awk '{print $3}' | while read -r lib; do
+                case "$(basename "$lib")" in
+                  libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*) continue ;;
+                esac
+                cp "$lib" build/mpv/lib/ 2>/dev/null || true
+              done
+              echo "mpv Linux binary prepared"
+              ;;
+            windows-latest)
+              # Windows: 从 shinchiro 构建下载
+              curl -L -o /tmp/mpv.7z "https://github.com/shinchiro/mpv-winbuild-cmake/releases/latest/download/mpv-x86_64-windows-msvc.7z" || \
+              curl -L -o /tmp/mpv.7z "https://github.com/zhongfly/mpv-winbuild/releases/latest/download/mpv-x86_64-windows-msvc.7z"
+              7z x /tmp/mpv.7z -o"build/mpv" -y
+              echo "mpv Windows binary prepared"
+              ;;
+          esac
+
+          echo "=== mpv build directory ==="
+          ls -la build/mpv/
 
       - name: Build desktop app
         shell: bash

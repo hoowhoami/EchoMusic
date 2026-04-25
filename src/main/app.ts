@@ -5,7 +5,8 @@ import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
-import { registerMkvExtractScheme, registerMkvExtractHandler } from './mkvExtractor';
+import { initMpvPlayer, destroyMpvPlayer } from './mpv';
+import { registerPlayerIpc } from './ipc/player';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -15,9 +16,6 @@ initLogger();
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.hoowhoami.echomusic');
 }
-
-// 自定义协议必须在 app.ready 之前注册
-registerMkvExtractScheme();
 
 const installWindowsTrayRecovery = () => {
   if (process.platform !== 'win32') return;
@@ -53,9 +51,15 @@ if (!gotTheLock) {
       console.error('[Main] Failed to init API server:', err);
     });
 
-    registerMkvExtractHandler();
-
     await createWindow();
+
+    // 初始化 mpv 播放引擎
+    const mpv = await initMpvPlayer(getMainWindow).catch((err) => {
+      console.error('[Main] Failed to init mpv player:', err);
+      return null;
+    });
+    registerPlayerIpc(mpv ?? null);
+
     try {
       initTray(trayContext);
     } catch (err) {
@@ -94,6 +98,7 @@ if (!gotTheLock) {
     console.log('[Main] before-quit: cleaning up and exiting...');
     globalShortcut.unregisterAll();
     destroyTray();
+    destroyMpvPlayer();
     // 销毁桌面歌词窗口
     try {
       const lyricWin = getDesktopLyricWindow();
