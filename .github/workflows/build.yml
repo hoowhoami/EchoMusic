@@ -147,9 +147,15 @@ jobs:
               echo "mpv Linux binary prepared"
               ;;
             windows-latest)
-              # Windows: 从 shinchiro 构建下载
-              curl -L -o /tmp/mpv.7z "https://github.com/shinchiro/mpv-winbuild-cmake/releases/latest/download/mpv-x86_64-windows-msvc.7z" || \
-              curl -L -o /tmp/mpv.7z "https://github.com/zhongfly/mpv-winbuild/releases/latest/download/mpv-x86_64-windows-msvc.7z"
+              # Windows: 从 zhongfly 预编译构建下载
+              DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" \
+                | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); urls=[a['browser_download_url'] for a in assets if a['name'].startswith('mpv-x86_64-') and not 'debug' in a['name'] and not 'dev' in a['name'] and not 'v3' in a['name']]; print(urls[0] if urls else '')")
+              if [ -z "$DOWNLOAD_URL" ]; then
+                echo "ERROR: Failed to find mpv Windows download URL"
+                exit 1
+              fi
+              echo "Downloading mpv from: $DOWNLOAD_URL"
+              curl -L -o /tmp/mpv.7z "$DOWNLOAD_URL"
               7z x /tmp/mpv.7z -o"build/mpv" -y
               echo "mpv Windows binary prepared"
               ;;
