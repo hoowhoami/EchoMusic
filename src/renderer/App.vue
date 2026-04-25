@@ -157,20 +157,24 @@ watch(
 
 /* 歌词覆盖层动画 */
 .lyric-overlay-enter-active {
-  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .lyric-overlay-leave-active {
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 0.4s cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 0.28s cubic-bezier(0.4, 0, 1, 1);
 }
 
 .lyric-overlay-enter-from {
   opacity: 0;
-  transform: translateY(30px) scale(0.97);
+  transform: translateY(100%);
 }
 
 .lyric-overlay-leave-to {
   opacity: 0;
-  transform: translateY(30px) scale(0.97);
+  transform: translateY(100%);
 }
 </style>
