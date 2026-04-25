@@ -419,7 +419,7 @@ watch(
   position: absolute;
   top: 0;
   right: 0;
-  width: 8px;
+  width: 10px;
   height: 100%;
   padding: v-bind('`${effectiveScrollbarInset}px 2px`');
   box-sizing: border-box;
@@ -428,11 +428,14 @@ watch(
 }
 
 .scrollbar-thumb {
-  width: 100%;
+  width: 4px;
+  margin-left: auto;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 4px;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition:
+    background 0.2s ease,
+    width 0.2s ease;
   will-change: transform;
 }
 
@@ -440,11 +443,14 @@ watch(
   background: rgba(255, 255, 255, 0.3);
 }
 
-.scrollbar-thumb:hover {
+.scrollbar-thumb:hover,
+.scrollbar-thumb:active {
+  width: 6px;
   background: rgba(0, 0, 0, 0.5);
 }
 
-.dark .scrollbar-thumb:hover {
+.dark .scrollbar-thumb:hover,
+.dark .scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.5);
 }
 
