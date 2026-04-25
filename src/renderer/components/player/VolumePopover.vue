@@ -46,29 +46,14 @@ const handleWheel = (e: WheelEvent) => {
           :class="[
             'p-2 transition-colors',
             variant === 'lyric'
-              ? 'flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-black/55 dark:text-white/55'
+              ? 'flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90 text-black/55 dark:text-white/55'
               : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90',
           ]"
           @click.stop="toggleMute"
         >
-          <Icon
-            v-if="player.volume === 0"
-            :icon="iconVolume3"
-            :width="variant === 'lyric' ? 21 : 22"
-            :height="variant === 'lyric' ? 21 : 22"
-          />
-          <Icon
-            v-else-if="player.volume <= 0.5"
-            :icon="iconVolume1"
-            :width="variant === 'lyric' ? 21 : 22"
-            :height="variant === 'lyric' ? 21 : 22"
-          />
-          <Icon
-            v-else
-            :icon="iconVolume2"
-            :width="variant === 'lyric' ? 21 : 22"
-            :height="variant === 'lyric' ? 21 : 22"
-          />
+          <Icon v-if="player.volume === 0" :icon="iconVolume3" width="22" height="22" />
+          <Icon v-else-if="player.volume <= 0.5" :icon="iconVolume1" width="22" height="22" />
+          <Icon v-else :icon="iconVolume2" width="22" height="22" />
         </Button>
       </template>
       <div class="vol-body">

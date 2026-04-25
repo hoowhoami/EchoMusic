@@ -62,15 +62,15 @@ withDefaults(defineProps<Props>(), {
         variant="unstyled"
         size="none"
         type="button"
-        class="p-2 transition-colors"
+        class="p-2 transition-all"
         :class="
           player.currentAudioQualityOverride !== null || player.audioEffect !== 'none'
             ? variant === 'lyric'
-              ? 'text-black dark:text-white'
-              : 'text-primary'
+              ? 'text-black dark:text-white hover:scale-110 active:scale-90'
+              : 'text-primary hover:scale-110 active:scale-90'
             : variant === 'lyric'
-              ? 'text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70'
-              : 'text-text-main/50 hover:text-primary'
+              ? 'text-black/40 dark:text-white/40 hover:scale-110 active:scale-90'
+              : 'text-text-main/50 hover:text-primary hover:scale-110 active:scale-90'
         "
         title="音质"
       >

@@ -490,7 +490,7 @@ onUnmounted(() => {
         <Button
           variant="unstyled"
           size="none"
-          class="p-2 transition-colors"
+          class="p-2 transition-all hover:scale-110 active:scale-90"
           :class="
             desktopLyricStore.settings.enabled
               ? 'text-primary'
@@ -510,7 +510,7 @@ onUnmounted(() => {
             title="播放队列"
             @click="openQueue"
           >
-            <Icon :icon="iconList" width="22" height="22" />
+            <Icon :icon="iconList" width="20" height="20" />
           </Button>
           <Badge
             v-if="settingStore.showPlaylistCount"

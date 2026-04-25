@@ -1374,13 +1374,13 @@ onUnmounted(() => {
                   variant="unstyled"
                   size="none"
                   type="button"
-                  class="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+                  class="flex h-9 w-9 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
                   @click="cyclePlayMode"
                 >
                   <Icon
                     :icon="playModeIcon"
-                    width="21"
-                    height="21"
+                    width="22"
+                    height="22"
                     class="text-black/55 dark:text-white/55"
                   />
                 </Button>
@@ -1390,14 +1390,14 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+              class="flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
               title="上一曲"
               @click="playerStore.prev()"
             >
               <Icon
                 :icon="iconSkipBack"
-                width="24"
-                height="24"
+                width="22"
+                height="22"
                 class="text-black/80 dark:text-white/80"
               />
             </Button>
@@ -1420,14 +1420,14 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+              class="flex h-10 w-10 items-center justify-center rounded-full transition-all hover:scale-110 active:scale-90"
               title="下一曲"
               @click="playerStore.next()"
             >
               <Icon
                 :icon="iconSkipForward"
-                width="24"
-                height="24"
+                width="22"
+                height="22"
                 class="text-black/80 dark:text-white/80"
               />
             </Button>
@@ -1548,11 +1548,11 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     type="button"
-                    class="p-2 transition-colors"
+                    class="p-2 transition-all hover:scale-110 active:scale-90"
                     :class="
                       desktopLyricStore.settings.enabled
                         ? 'text-black dark:text-white'
-                        : 'text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70'
+                        : 'text-black/40 dark:text-white/40'
                     "
                     @click="toggleDesktopLyric"
                   >
@@ -1567,10 +1567,10 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     type="button"
-                    class="p-2 transition-colors text-black/40 dark:text-white/40 hover:text-black/70 dark:hover:text-white/70 relative"
+                    class="p-2 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40 relative"
                     @click="isQueueDrawerOpen = true"
                   >
-                    <Icon :icon="iconList" width="22" height="22" />
+                    <Icon :icon="iconList" width="20" height="20" />
                     <Badge
                       v-if="settingStore.showPlaylistCount"
                       :count="queueCount > 99 ? '99+' : queueCount"
