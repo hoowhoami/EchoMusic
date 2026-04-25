@@ -30,6 +30,7 @@ import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
 import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
+
 import { marked } from 'marked';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
 import {

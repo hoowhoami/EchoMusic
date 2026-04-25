@@ -79,7 +79,6 @@ const filteredSongs = computed(() => {
 const itemHeight = 60;
 const overscan = 10;
 const containerRef = ref<HTMLElement | null>(null);
-const scrollContainerRef = ref<HTMLElement | null>(null);
 const visibleStart = ref(0);
 const visibleEnd = ref(0);
 let measureFrame = 0;
@@ -183,7 +182,7 @@ const updateVisibleRange = () => {
     return;
   }
 
-  const scrollContainer = scrollContainerRef.value ?? getScrollContainer();
+  const scrollContainer = getScrollContainer();
   const containerEl = containerRef.value;
 
   if (!scrollContainer || !containerEl) {
@@ -226,18 +225,20 @@ const handleScroll = () => {
   scheduleMeasure();
 };
 
+let boundContainer: HTMLElement | null = null;
+
 const bindScrollContainer = () => {
   const nextContainer = getScrollContainer();
-  if (scrollContainerRef.value === nextContainer) return;
-  if (scrollContainerRef.value) {
-    scrollContainerRef.value.removeEventListener('scroll', handleScroll);
+  if (boundContainer === nextContainer) return;
+  if (boundContainer) {
+    boundContainer.removeEventListener('scroll', handleScroll);
   }
-  scrollContainerRef.value = nextContainer;
-  scrollContainerRef.value?.addEventListener('scroll', handleScroll, { passive: true });
+  boundContainer = nextContainer;
+  boundContainer?.addEventListener('scroll', handleScroll, { passive: true });
 };
 
 const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
-  const scrollContainer = scrollContainerRef.value ?? getScrollContainer();
+  const scrollContainer = getScrollContainer();
   const containerEl = containerRef.value;
   if (!scrollContainer || !containerEl) return;
 
@@ -364,7 +365,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (measureFrame) cancelAnimationFrame(measureFrame);
   window.removeEventListener('resize', scheduleMeasure);
-  scrollContainerRef.value?.removeEventListener('scroll', handleScroll);
+  boundContainer?.removeEventListener('scroll', handleScroll);
 });
 
 useResizeObserver(containerRef, () => {

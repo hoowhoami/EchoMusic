@@ -21,6 +21,7 @@ import { iconPlay, iconList, iconChevronDown, iconCurrentLocation, iconSearch } 
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import Badge from '@/components/ui/Badge.vue';
+
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();

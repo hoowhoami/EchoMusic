@@ -8,6 +8,7 @@ import Button from '@/components/ui/Button.vue';
 
 import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
+
 import logger from '@/utils/logger';
 import {
   iconLogOut,

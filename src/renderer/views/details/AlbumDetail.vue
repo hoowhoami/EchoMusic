@@ -2,7 +2,7 @@
 defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, computed } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useRouteId } from '@/utils/useRouteId';
 import {
   getAlbumDetail,
@@ -54,7 +54,7 @@ const parseIntSafe = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const route = useRouter().currentRoute;
+const route = useRoute();
 const router = useRouter();
 const { id: currentId, onIdChange } = useRouteId();
 const getAlbumId = () => currentId.value;
