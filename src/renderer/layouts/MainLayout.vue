@@ -28,10 +28,12 @@ router.beforeEach((to, from) => {
 watch(
   () => route.fullPath,
   (to) => {
-    // 恢复或重置滚动位置
+    // 恢复或重置滚动位置，延迟到 DOM 渲染完成后
     void nextTick(() => {
-      const viewport = document.querySelector('.view-port');
-      if (viewport) viewport.scrollTop = scrollCache.get(to) ?? 0;
+      requestAnimationFrame(() => {
+        const viewport = document.querySelector('.view-port');
+        if (viewport) viewport.scrollTop = scrollCache.get(to) ?? 0;
+      });
     });
   },
 );

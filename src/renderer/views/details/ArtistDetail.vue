@@ -1,7 +1,8 @@
 <script setup lang="ts">
 defineOptions({ name: 'artist-detail' });
 import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
+import { useRouteId } from '@/utils/useRouteId';
 import {
   getArtistDetail,
   getArtistSongs,
@@ -69,10 +70,9 @@ const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
 
-const route = useRoute();
 const router = useRouter();
-const getArtistId = () =>
-  String(Array.isArray(route.params.id) ? (route.params.id[0] ?? '') : (route.params.id ?? ''));
+const { id: currentId, onIdChange } = useRouteId();
+const getArtistId = () => currentId.value;
 
 const formatFansCount = (count: number): string => {
   if (count >= 10000) return `${(count / 10000).toFixed(1).replace(/\.0$/, '')}万`;
@@ -228,28 +228,26 @@ const fetchData = async () => {
   await Promise.allSettled([detailTask, songsTask]);
 };
 
-watch(
-  () => route.params.id,
-  () => {
-    artist.value = null;
-    songs.value = [];
-    albums.value = [];
-    mvs.value = [];
-    mvFetched.value = false;
-    mvTotal.value = 0;
-    mvPage.value = 1;
-    mvHasMore.value = false;
-    albumPage.value = 1;
-    albumHasMore.value = false;
-    albumFetched.value = false;
-    loadedSongCount.value = 0;
-    searchQuery.value = '';
-    sortField.value = null;
-    sortOrder.value = null;
-    activeTab.value = 'songs';
-    void fetchData();
-  },
-);
+// id 变化时重置数据（仅同路由间切换，如歌手A→歌手B）
+onIdChange(() => {
+  artist.value = null;
+  songs.value = [];
+  albums.value = [];
+  mvs.value = [];
+  mvFetched.value = false;
+  mvTotal.value = 0;
+  mvPage.value = 1;
+  mvHasMore.value = false;
+  albumPage.value = 1;
+  albumHasMore.value = false;
+  albumFetched.value = false;
+  loadedSongCount.value = 0;
+  searchQuery.value = '';
+  sortField.value = null;
+  sortOrder.value = null;
+  activeTab.value = 'songs';
+  void fetchData();
+});
 
 const isFollowed = computed(() => userStore.isArtistFollowed(artist.value?.id ?? ''));
 

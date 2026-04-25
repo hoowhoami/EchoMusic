@@ -344,12 +344,12 @@ const rankingSummary = computed(() => {
 });
 
 const singerComments = computed(() => hotComments.value.filter((item) => item.isStar));
-const popularComments = computed(() =>
-  hotComments.value.filter((item) => item.isHot && !item.isStar),
-);
-const hasFeaturedComments = computed(
-  () => singerComments.value.length > 0 || popularComments.value.length > 0,
-);
+// const popularComments = computed(() =>
+//   hotComments.value.filter((item) => item.isHot && !item.isStar),
+// );
+// const hasFeaturedComments = computed(
+//   () => singerComments.value.length > 0 || popularComments.value.length > 0,
+// );
 
 const buildPayload = (data: unknown): CommentPayload => {
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};

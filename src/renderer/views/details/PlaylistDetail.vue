@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'playlist-detail' });
 import { ref, shallowRef, onMounted, computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRouteId } from '@/utils/useRouteId';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
 import { getPlaylistComments, getFloorComments } from '@/api/comment';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
@@ -53,9 +53,9 @@ const parseIntSafe = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const route = useRoute();
+const { id: currentId, onIdChange } = useRouteId();
 // const router = useRouter();
-const getPlaylistId = () => route.params.id as string;
+const getPlaylistId = () => currentId.value;
 
 const loading = ref(true);
 const playlist = ref<PlaylistMeta | null>(null);
@@ -340,25 +340,26 @@ const fetchAllPlaylistTracks = async (queryId: string, totalCount: number) => {
   }
 };
 
-onMounted(fetchData);
-watch(
-  () => route.params.id,
-  () => {
-    playlist.value = null;
-    songs.value = [];
-    loadedSongCount.value = 0;
-    playlistFilteredInvalidCount.value = 0;
-    comments.value = [];
-    hotComments.value = [];
-    commentPage.value = 1;
-    commentTotal.value = 0;
-    hasMoreComments.value = true;
-    fetchData();
-    if (activeTab.value === 'comments') {
-      fetchComments(true);
-    }
-  },
-);
+onMounted(() => {
+  fetchData();
+});
+
+// id 变化时重置数据（仅同路由间切换，如歌单A→歌单B）
+onIdChange(() => {
+  playlist.value = null;
+  songs.value = [];
+  loadedSongCount.value = 0;
+  playlistFilteredInvalidCount.value = 0;
+  comments.value = [];
+  hotComments.value = [];
+  commentPage.value = 1;
+  commentTotal.value = 0;
+  hasMoreComments.value = true;
+  fetchData();
+  if (activeTab.value === 'comments') {
+    fetchComments(true);
+  }
+});
 
 watch(
   () => playlistCommentId.value,

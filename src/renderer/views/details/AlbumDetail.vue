@@ -1,8 +1,9 @@
 <script setup lang="ts">
 defineOptions({ name: 'album-detail' });
-import { ref, shallowRef, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, computed } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
+import { useRouteId } from '@/utils/useRouteId';
 import {
   getAlbumDetail,
   getAlbumSongs,
@@ -53,9 +54,10 @@ const parseIntSafe = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const route = useRoute();
+const route = useRouter().currentRoute;
 const router = useRouter();
-const getAlbumId = () => route.params.id as string;
+const { id: currentId, onIdChange } = useRouteId();
+const getAlbumId = () => currentId.value;
 
 const isSameRoute = (name: string, targetId: string | number) => {
   const routeId = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
@@ -416,26 +418,26 @@ const fetchAllAlbumSongs = async (totalCount: number) => {
   }
 };
 
-onMounted(fetchData);
+onMounted(() => {
+  fetchData();
+});
 
-watch(
-  () => route.params.id,
-  () => {
-    album.value = null;
-    albumArtists.value = [];
-    songs.value = [];
-    loadedSongCount.value = 0;
-    comments.value = [];
-    hotComments.value = [];
-    commentPage.value = 1;
-    commentTotal.value = 0;
-    hasMoreComments.value = true;
-    fetchData();
-    if (activeTab.value === 'comments') {
-      fetchComments(true);
-    }
-  },
-);
+// id 变化时重置数据（仅同路由间切换，如专辑A→专辑B）
+onIdChange(() => {
+  album.value = null;
+  albumArtists.value = [];
+  songs.value = [];
+  loadedSongCount.value = 0;
+  comments.value = [];
+  hotComments.value = [];
+  commentPage.value = 1;
+  commentTotal.value = 0;
+  hasMoreComments.value = true;
+  fetchData();
+  if (activeTab.value === 'comments') {
+    fetchComments(true);
+  }
+});
 
 const secondaryActions = computed(() => {
   if (!userStore.isLoggedIn || !album.value) return [];
