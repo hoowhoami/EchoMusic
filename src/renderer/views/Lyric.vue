@@ -20,7 +20,6 @@ import Switch from '@/components/ui/Switch.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
-import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -36,8 +35,10 @@ import {
   iconHeartFilled,
   iconList,
   iconPlaylistAdd,
+  iconTypography,
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
+import FontIcon from '@/components/ui/FontIcon.vue';
 
 const lyricStore = useLyricStore();
 
@@ -1030,7 +1031,7 @@ onUnmounted(() => {
             >
               <template #trigger>
                 <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
-                  <DesktopLyricIcon :size="14" />
+                  <FontIcon :size="14" />
                   <span>字体</span>
                 </Button>
               </template>
@@ -1564,7 +1565,7 @@ onUnmounted(() => {
                     "
                     @click="toggleDesktopLyric"
                   >
-                    <DesktopLyricIcon :size="20" />
+                    <Icon :icon="iconTypography" width="20" height="20" />
                   </Button>
                 </template>
               </Tooltip>

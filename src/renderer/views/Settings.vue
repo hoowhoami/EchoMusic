@@ -29,7 +29,6 @@ import InputNumber from '@/components/ui/InputNumber.vue';
 import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
-import DesktopLyricIcon from '@/components/ui/DesktopLyricIcon.vue';
 import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
 
 import { marked } from 'marked';
@@ -47,6 +46,7 @@ import {
   iconChevronRight,
   iconTypography,
 } from '@/icons';
+import FontIcon from '@/components/ui/FontIcon.vue';
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
@@ -659,7 +659,7 @@ onUnmounted(() => {
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconTypography" width="18" height="18" />
+          <FontIcon :size="18" />
         </div>
         <h2 class="text-lg font-bold">字体设置</h2>
       </div>
@@ -1102,7 +1102,7 @@ onUnmounted(() => {
     <section class="space-y-6">
       <div class="flex items-center gap-3">
         <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <DesktopLyricIcon :size="18" />
+          <Icon :icon="iconTypography" :width="18" :height="18" />
         </div>
         <h2 class="text-lg font-bold">桌面歌词</h2>
       </div>
