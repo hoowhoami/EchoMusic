@@ -87,9 +87,19 @@ export function registerPlayerIpc(ref: MpvRef): void {
   // 设置音频独占模式（需要重启 mpv 生效）
   ipcMain.handle('mpv:set-exclusive', async (_e, exclusive: boolean) => {
     try {
-      // 先停止当前播放，再设置独占属性，最后重新加载
+      // 先停止当前播放
       await ref.current?.stop().catch(() => {});
+      // 设置独占属性
       await ref.current?.command('set_property', 'audio-exclusive', exclusive ? 'yes' : 'no');
+      // 强制 mpv 重新初始化音频输出，避免切换后杂音
+      try {
+        const currentDevice = await ref.current?.command('get_property', 'audio-device');
+        if (currentDevice) {
+          await ref.current?.command('set_property', 'audio-device', currentDevice);
+        }
+      } catch {
+        // 忽略
+      }
       return true;
     } catch {
       return false;

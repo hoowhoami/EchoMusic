@@ -757,6 +757,23 @@ export const usePlayerStore = defineStore('player', {
         seekbackward: (offset) => this.seek(Math.max(0, this.currentTime - offset)),
         seekforward: (offset) => this.seek(Math.min(this.duration, this.currentTime + offset)),
       });
+
+      // 渲染进程重新加载后，从 mpv 同步当前播放状态
+      const mpv = (window as any).electron?.mpv;
+      mpv?.getState?.().then((state: any) => {
+        if (!state) return;
+        if (state.playing && !this.isPlaying) {
+          this.isPlaying = true;
+          this.isLoading = false;
+          settingStore.syncPreventSleep(true);
+        }
+        if (state.duration > 0) {
+          this.duration = state.duration;
+        }
+        if (state.timePos > 0) {
+          this.currentTime = state.timePos;
+        }
+      });
     },
 
     registerSettingWatchers(settingStore: ReturnType<typeof useSettingStore>) {
@@ -1668,10 +1685,16 @@ export const usePlayerStore = defineStore('player', {
           this.appliedOutputDeviceId = deviceId;
         }
 
-        // 独占切换后恢复播放
+        // 独占切换后恢复播放：先清除 sourceUrl 让 setSource 能重新加载
         if (wasPlaying && this.currentTrackId && this.currentAudioUrl) {
-          engine.setSource(this.currentAudioUrl);
+          const savedUrl = this.currentAudioUrl;
+          const savedTime = this.currentTime;
+          engine.reset();
+          engine.setSource(savedUrl);
           await engine.play();
+          if (savedTime > 0) {
+            engine.seek(savedTime);
+          }
         }
       } else {
         applied = await engine.setOutputDevice(mpvDevice);

@@ -70,9 +70,11 @@ onMounted(() => {
     }) ?? null;
   syncTrayPlayback();
   window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
-  silentUpdateCheckTimer = window.setTimeout(() => {
-    settings.checkForUpdates(true);
-  }, 4000);
+  if (settings.autoCheckUpdate) {
+    silentUpdateCheckTimer = window.setTimeout(() => {
+      settings.checkForUpdates(true);
+    }, 4000);
+  }
   colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   colorSchemeMediaQuery.addEventListener('change', updateTheme);
 });

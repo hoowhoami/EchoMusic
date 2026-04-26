@@ -1421,6 +1421,14 @@ onUnmounted(() => {
       <div class="settings-card">
         <div class="settings-item">
           <div class="space-y-1">
+            <h3 class="font-semibold">自动检查更新</h3>
+            <p class="text-sm text-text-secondary">启动时自动检查是否有新版本</p>
+          </div>
+          <Switch v-model="settingStore.autoCheckUpdate" />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
             <h3 class="font-semibold">检查预发布版本</h3>
             <p class="text-sm text-text-secondary">开启后可收到 Alpha/Beta/RC 版本更新推送</p>
           </div>

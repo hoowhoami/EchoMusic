@@ -39,6 +39,7 @@ export class MpvController extends EventEmitter {
   // 淡入淡出
   private fadeTimer: ReturnType<typeof setInterval> | null = null;
   private fadeSeq = 0;
+  private fadeResolve: (() => void) | null = null;
 
   // 文件加载就绪 promise
   private fileReadyPromise: Promise<void> = Promise.resolve();
@@ -495,9 +496,11 @@ export class MpvController extends EventEmitter {
     let step = 0;
 
     return new Promise<void>((resolve) => {
+      this.fadeResolve = resolve;
       this.fadeTimer = setInterval(() => {
         if (seq !== this.fadeSeq) {
           resolve();
+          this.fadeResolve = null;
           return;
         }
         step++;
@@ -507,6 +510,7 @@ export class MpvController extends EventEmitter {
         this.setVolume(current).catch(() => {});
 
         if (step >= steps) {
+          this.fadeResolve = null;
           this.cancelFade();
           resolve();
         }
@@ -518,6 +522,11 @@ export class MpvController extends EventEmitter {
     if (this.fadeTimer) {
       clearInterval(this.fadeTimer);
       this.fadeTimer = null;
+    }
+    // 主动 resolve 被取消的 fade Promise，防止悬挂
+    if (this.fadeResolve) {
+      this.fadeResolve();
+      this.fadeResolve = null;
     }
     this.fadeSeq++;
   }
