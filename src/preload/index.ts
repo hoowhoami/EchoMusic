@@ -149,6 +149,7 @@ contextBridge.exposeInMainWorld('electron', {
     getState: () => ipcRenderer.invoke('mpv:get-state'),
     available: () => ipcRenderer.invoke('mpv:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('mpv:restart') as Promise<boolean>,
+    setExclusive: (exclusive: boolean) => ipcRenderer.invoke('mpv:set-exclusive', exclusive),
     onTimeUpdate: (func: (time: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
       ipcRenderer.on('mpv:time-update', listener);

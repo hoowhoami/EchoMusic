@@ -54,7 +54,6 @@ const playerStore = usePlayerStore();
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 const showDisclaimer = ref(false);
-const isRequestingOutputPermission = ref(false);
 
 // ── 页面缓存候选列表 ──
 const keepAliveOptions = [
@@ -457,47 +456,21 @@ const outputDeviceDisconnectBehaviorOptions = [
 ];
 
 const outputDeviceOptions = computed(() => settingStore.outputDevices);
-const selectedOutputDeviceLabel = computed(() => {
-  const matched = settingStore.outputDevices.find(
-    (item) => item.value === settingStore.outputDevice,
-  );
-  return matched?.label || (settingStore.outputDevice === 'default' ? '系统默认' : '未识别设备');
-});
-const appliedOutputDeviceLabel = computed(() => {
+
+const currentOutputDeviceLabel = computed(() => {
   const matched = settingStore.outputDevices.find(
     (item) => item.value === playerStore.appliedOutputDeviceId,
   );
   return (
-    matched?.label || (playerStore.appliedOutputDeviceId === 'default' ? '系统默认' : '未识别设备')
+    matched?.label || (playerStore.appliedOutputDeviceId === 'default' ? '系统默认' : '未知设备')
   );
 });
-const isOutputDeviceTemporarilyFellBack = computed(
-  () => playerStore.appliedOutputDeviceId === 'default' && settingStore.outputDevice !== 'default',
-);
-const outputDeviceFeedbackTone = computed(() => {
-  if (settingStore.outputDeviceStatus === 'error') return 'danger';
-  if (
-    settingStore.outputDeviceStatus === 'unsupported' ||
-    settingStore.outputDeviceStatus === 'permission' ||
-    settingStore.outputDeviceStatus === 'fallback'
-  )
-    return 'warning';
-  return 'info';
-});
-const hasOutputDeviceFeedback = computed(
-  () => settingStore.outputDeviceStatus !== 'idle' && !!settingStore.outputDeviceStatusMessage,
-);
-const canRequestOutputDevicePermission = computed(() => {
-  const status = settingStore.outputDeviceStatus;
-  return (
-    typeof navigator.mediaDevices?.getUserMedia === 'function' &&
-    (status === 'permission' || status === 'error')
-  );
-});
-const outputDevicePermissionActionLabel = computed(() => {
-  if (isRequestingOutputPermission.value) return '请求中...';
-  return settingStore.outputDeviceStatus === 'error' ? '重新获取设备' : '授权音频设备';
-});
+
+const handleOutputDeviceChange = async (value: string | number | boolean | null | undefined) => {
+  const nextValue = String(value ?? 'default');
+  if (nextValue === settingStore.outputDevice) return;
+  settingStore.outputDevice = nextValue;
+};
 
 const versionLabel = computed(() => settingStore.appVersion || '未知');
 const releaseChannelLabel = computed(() => (settingStore.isPrerelease ? 'Prerelease' : 'Release'));
@@ -518,38 +491,6 @@ const handleShowChangelog = async () => {
     changelogHtml.value = '<p>无法读取更新日志</p>';
   }
   showChangelog.value = true;
-};
-
-const handleRequestOutputDevicePermission = async () => {
-  if (isRequestingOutputPermission.value) return;
-  isRequestingOutputPermission.value = true;
-  try {
-    await playerStore.requestOutputDevicePermission(settingStore);
-  } finally {
-    isRequestingOutputPermission.value = false;
-  }
-};
-
-const handleOutputDeviceChange = async (value: string | number | boolean | null | undefined) => {
-  const nextValue = String(value ?? 'default');
-  if (nextValue === settingStore.outputDevice) return;
-
-  if (
-    nextValue !== 'default' &&
-    settingStore.outputDeviceStatus === 'permission' &&
-    typeof navigator.mediaDevices?.getUserMedia === 'function'
-  ) {
-    if (isRequestingOutputPermission.value) return;
-    isRequestingOutputPermission.value = true;
-    try {
-      const granted = await playerStore.requestOutputDevicePermission(settingStore);
-      if (!granted) return;
-    } finally {
-      isRequestingOutputPermission.value = false;
-    }
-  }
-
-  settingStore.outputDevice = nextValue;
 };
 
 const handleUpdateCheckResult = (payload: unknown) => {
@@ -1305,12 +1246,7 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">输出设备</h3>
             <p class="text-sm text-text-secondary">选择音频播放输出设备</p>
-            <p class="text-xs text-text-secondary/80">
-              首选输出：{{ selectedOutputDeviceLabel }}
-              <span v-if="isOutputDeviceTemporarilyFellBack">
-                · 当前实际输出：{{ appliedOutputDeviceLabel }}</span
-              >
-            </p>
+            <p class="text-xs text-text-secondary/80">当前使用：{{ currentOutputDeviceLabel }}</p>
           </div>
           <Select
             class="w-[180px]"
@@ -1318,6 +1254,16 @@ onUnmounted(() => {
             :options="outputDeviceOptions"
             @update:model-value="handleOutputDeviceChange($event as string)"
           />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">独占音频设备</h3>
+            <p class="text-sm text-text-secondary">
+              绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音
+            </p>
+          </div>
+          <Switch v-model="settingStore.exclusiveAudioDevice" />
         </div>
         <div class="settings-divider"></div>
         <div class="settings-item">
@@ -1335,24 +1281,6 @@ onUnmounted(() => {
               settingStore.outputDeviceDisconnectBehavior = $event as OutputDeviceDisconnectBehavior
             "
           />
-        </div>
-        <div
-          v-if="hasOutputDeviceFeedback"
-          :class="['settings-warning', `is-${outputDeviceFeedbackTone}`]"
-        >
-          <div class="settings-warning-content">
-            <span>{{ settingStore.outputDeviceStatusMessage }}</span>
-            <Button
-              v-if="canRequestOutputDevicePermission"
-              variant="outline"
-              size="xs"
-              class="settings-button"
-              :disabled="isRequestingOutputPermission"
-              @click="handleRequestOutputDevicePermission"
-            >
-              {{ outputDevicePermissionActionLabel }}
-            </Button>
-          </div>
         </div>
       </div>
     </section>

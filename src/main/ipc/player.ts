@@ -44,10 +44,9 @@ export function registerPlayerIpc(ref: MpvRef): void {
     await ref.current?.setSpeed(speed);
   });
 
-  // Chromium 用 "default"，mpv 用 "auto"
+  // 直接透传 mpv 设备名（如 wasapi/{id}、auto 等）
   ipcMain.handle('mpv:set-audio-device', async (_e, deviceName: string) => {
-    const mpvDevice = !deviceName || deviceName === 'default' ? 'auto' : deviceName;
-    await ref.current?.setAudioDevice(mpvDevice);
+    await ref.current?.setAudioDevice(deviceName || 'auto');
   });
 
   ipcMain.handle('mpv:get-audio-devices', async () => {
@@ -74,6 +73,15 @@ export function registerPlayerIpc(ref: MpvRef): void {
 
   ipcMain.handle('mpv:available', () => {
     return ref.current?.available ?? false;
+  });
+
+  // 设置音频独占模式
+  ipcMain.handle('mpv:set-exclusive', async (_e, exclusive: boolean) => {
+    try {
+      await ref.current?.command('set_property', 'audio-exclusive', exclusive ? 'yes' : 'no');
+    } catch {
+      // 旧版 mpv 可能不支持
+    }
   });
 
   // 重启 mpv 播放引擎，供 Loading 页面重试使用

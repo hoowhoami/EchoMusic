@@ -213,7 +213,9 @@ export class PlayerEngine {
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
     try {
-      await mpv?.setAudioDevice(deviceId);
+      // default 映射为 mpv 的 auto
+      const mpvDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
+      await mpv?.setAudioDevice(mpvDevice);
       return true;
     } catch {
       return false;

@@ -69,6 +69,7 @@ export const useSettingStore = defineStore('setting', {
     outputDevice: 'default',
     outputDevices: [{ label: '系统默认', value: 'default' }] as OutputDeviceOption[],
     outputDeviceType: 'default' as 'default' | 'wasapi',
+    exclusiveAudioDevice: false,
     outputDeviceStatus: 'idle' as OutputDeviceStatus,
     outputDeviceStatusMessage: '',
     outputDeviceDisconnectBehavior: 'pause' as OutputDeviceDisconnectBehavior,

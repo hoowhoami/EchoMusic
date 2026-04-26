@@ -123,24 +123,6 @@ const resolveTrackLoudness = (payload: unknown): TrackLoudness | null => {
   return { lufs, gain, peak: Math.max(0, peak) };
 };
 
-const buildAudioOutputDeviceSignature = (devices: MediaDeviceInfo[]): string | null => {
-  const outputs = devices
-    .filter((device) => device.kind === 'audiooutput')
-    .map((device) => ({
-      deviceId: device.deviceId || 'default',
-      groupId: device.groupId || '',
-      label: device.label || '',
-    }))
-    .sort((left, right) => {
-      const leftKey = `${left.deviceId}|${left.groupId}|${left.label}`;
-      const rightKey = `${right.deviceId}|${right.groupId}|${right.label}`;
-      return leftKey.localeCompare(rightKey);
-    });
-
-  if (outputs.length === 0) return null;
-  return outputs.map((device) => `${device.deviceId}|${device.groupId}|${device.label}`).join('::');
-};
-
 const findTrackById = (
   id: string | null,
   list: Song[] | null | undefined,
@@ -358,7 +340,6 @@ export const usePlayerStore = defineStore('player', {
     pendingSettingRefresh: false,
     climaxMarks: [] as ClimaxMark[],
     outputDeviceWatcherRegistered: false,
-    lastAudioOutputDeviceSignature: null as string | null,
     outputDeviceRefreshTimer: null as number | null,
     appliedOutputDeviceId: 'default' as string,
     currentAudioQualityOverride: null as AudioQualityValue | null,
@@ -787,6 +768,7 @@ export const usePlayerStore = defineStore('player', {
         volumeFade: settingStore.volumeFade,
         volumeFadeTime: settingStore.volumeFadeTime,
         outputDevice: settingStore.outputDevice,
+        exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
       };
 
       settingStore.$subscribe((_mutation, state) => {
@@ -798,7 +780,9 @@ export const usePlayerStore = defineStore('player', {
         const shouldUpdateFade =
           state.volumeFade !== snapshot.volumeFade ||
           state.volumeFadeTime !== snapshot.volumeFadeTime;
-        const shouldUpdateOutputDevice = state.outputDevice !== snapshot.outputDevice;
+        const shouldUpdateOutputDevice =
+          state.outputDevice !== snapshot.outputDevice ||
+          state.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
 
         snapshot = {
           defaultAudioQuality: state.defaultAudioQuality,
@@ -806,6 +790,7 @@ export const usePlayerStore = defineStore('player', {
           volumeFade: state.volumeFade,
           volumeFadeTime: state.volumeFadeTime,
           outputDevice: state.outputDevice,
+          exclusiveAudioDevice: state.exclusiveAudioDevice,
         };
 
         if (shouldRefresh) {
@@ -1540,55 +1525,47 @@ export const usePlayerStore = defineStore('player', {
     async refreshOutputDevices(settingStore: ReturnType<typeof useSettingStore>) {
       const fallbackOptions = [{ label: '系统默认', value: 'default' }];
 
-      logger.info('PlayerStore', 'Refreshing output devices', {
-        currentOutputDevice: settingStore.outputDevice,
-        hasEnumerateDevices: typeof navigator.mediaDevices?.enumerateDevices === 'function',
-        hasGetUserMedia: typeof navigator.mediaDevices?.getUserMedia === 'function',
-      });
-
-      if (!navigator.mediaDevices?.enumerateDevices) {
-        logger.warn('PlayerStore', 'Output device enumeration unsupported in current environment');
-        settingStore.outputDevices = fallbackOptions;
-        settingStore.outputDeviceType = 'default';
-        settingStore.setOutputDeviceStatus(
-          'unsupported',
-          '当前系统暂不支持在应用内切换输出设备，请使用系统声音设置切换。',
-        );
-        return;
-      }
+      logger.info('PlayerStore', 'Refreshing output devices from mpv');
 
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const outputs = devices.filter((device) => device.kind === 'audiooutput');
-        const nextSignature = buildAudioOutputDeviceSignature(devices);
-        const previousSignature = this.lastAudioOutputDeviceSignature;
-        this.lastAudioOutputDeviceSignature = nextSignature;
+        const mpvDevices = await (window as any).electron?.mpv?.getAudioDevices();
+        if (!Array.isArray(mpvDevices) || mpvDevices.length === 0) {
+          logger.warn('PlayerStore', 'mpv returned no audio devices');
+          settingStore.outputDevices = fallbackOptions;
+          settingStore.setOutputDeviceStatus('ready', '当前仅检测到系统默认输出设备。');
+          return;
+        }
 
-        const outputOptions = outputs
-          .filter((device) => device.deviceId && device.deviceId !== 'default')
-          .map((device, index) => ({
-            label: device.label || `输出设备 ${index + 1}`,
-            value: device.deviceId,
-          }));
+        // mpv 设备格式：{ name: "wasapi/{GUID}", description: "扬声器 (Realtek)" }
+        // auto 是 mpv 的默认设备，映射为 default
+        const outputOptions = mpvDevices
+          .filter(
+            (d: { name: string; description: string }) =>
+              d.name && d.name !== 'auto' && d.name !== 'null',
+          )
+          .map((d: { name: string; description: string }) => ({
+            label: d.description || d.name,
+            value: d.name,
+          }))
+          .filter(
+            (
+              item: { label: string; value: string },
+              index: number,
+              arr: { label: string; value: string }[],
+            ) => arr.findIndex((other) => other.label === item.label) === index,
+          );
 
         settingStore.outputDevices = [...fallbackOptions, ...outputOptions];
 
-        logger.info('PlayerStore', 'Output devices enumerated', {
-          totalDevices: devices.length,
-          outputCount: outputs.length,
-          options: outputOptions.map((device) => ({
-            label: device.label,
-            value: device.value,
+        logger.info('PlayerStore', 'mpv audio devices enumerated', {
+          count: outputOptions.length,
+          devices: outputOptions.map((d: { label: string; value: string }) => ({
+            label: d.label,
+            value: d.value,
           })),
         });
 
-        const labelsMissing = outputs.length > 0 && outputs.every((device) => !device.label);
-        if (labelsMissing) {
-          settingStore.setOutputDeviceStatus(
-            'permission',
-            '系统未返回设备名称，可能需要授予媒体设备权限后才能显示完整列表。',
-          );
-        } else if (outputs.length <= 1) {
+        if (outputOptions.length === 0) {
           settingStore.setOutputDeviceStatus('ready', '当前仅检测到系统默认输出设备。');
         } else {
           settingStore.setOutputDeviceStatus('ready', '已检测到可用输出设备。');
@@ -1596,7 +1573,8 @@ export const usePlayerStore = defineStore('player', {
 
         const currentOutput = settingStore.outputDevice;
         const hasCurrentDevice =
-          currentOutput === 'default' || outputOptions.some((item) => item.value === currentOutput);
+          currentOutput === 'default' ||
+          outputOptions.some((item: { value: string }) => item.value === currentOutput);
         const shouldRestorePreferredOutput =
           currentOutput !== 'default' &&
           hasCurrentDevice &&
@@ -1610,8 +1588,6 @@ export const usePlayerStore = defineStore('player', {
             currentOutput,
             shouldPause,
             disconnectBehavior,
-            previousSignature,
-            nextSignature,
           });
 
           if (disconnectBehavior === 'fallback') {
@@ -1644,68 +1620,14 @@ export const usePlayerStore = defineStore('player', {
       } catch (error) {
         logger.warn('PlayerStore', 'Refresh output devices failed:', error);
         settingStore.outputDevices = fallbackOptions;
-        settingStore.outputDeviceType = 'default';
-        const errorName = error instanceof DOMException ? error.name : '';
-        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
-          settingStore.setOutputDeviceStatus(
-            'permission',
-            '尚未获得音频设备权限，请先授权后再获取完整设备列表。',
-          );
-        } else {
-          settingStore.setOutputDeviceStatus(
-            'error',
-            '获取输出设备失败，请检查系统音频权限或稍后重试。',
-          );
-        }
+        settingStore.setOutputDeviceStatus('error', '获取输出设备失败，请稍后重试。');
       }
     },
 
     async requestOutputDevicePermission(settingStore = useSettingStore()) {
-      logger.info('PlayerStore', 'Requesting output device permission', {
-        currentOutputDevice: settingStore.outputDevice,
-        hasGetUserMedia: typeof navigator.mediaDevices?.getUserMedia === 'function',
-      });
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        settingStore.setOutputDeviceStatus(
-          'unsupported',
-          '当前系统暂不支持在应用内请求音频设备权限，请使用系统声音设置切换输出设备。',
-        );
-        return false;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        logger.info('PlayerStore', 'Output device permission granted', {
-          trackCount: stream.getTracks().length,
-        });
-        stream.getTracks().forEach((track) => track.stop());
-        await this.refreshOutputDevices(settingStore);
-
-        if (settingStore.outputDeviceStatus === 'permission') {
-          settingStore.setOutputDeviceStatus(
-            'permission',
-            '已发起权限请求，但系统仍未返回完整设备信息，请确认系统已允许麦克风或媒体设备访问。',
-          );
-          return false;
-        }
-
-        return true;
-      } catch (error) {
-        logger.warn('PlayerStore', 'Request output device permission failed:', error);
-        const errorName = error instanceof DOMException ? error.name : '';
-        if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
-          settingStore.setOutputDeviceStatus(
-            'permission',
-            '未获得音频设备权限，请在系统设置中允许麦克风或媒体设备访问后重试。',
-          );
-        } else if (errorName === 'NotFoundError') {
-          settingStore.setOutputDeviceStatus('error', '未检测到可用音频设备，请连接设备后重试。');
-        } else {
-          settingStore.setOutputDeviceStatus('error', '请求音频设备权限失败，请稍后重试。');
-        }
-        return false;
-      }
+      // mpv 直接获取系统设备列表，不需要浏览器权限
+      await this.refreshOutputDevices(settingStore);
+      return true;
     },
 
     async applyOutputDevice(
@@ -1713,22 +1635,33 @@ export const usePlayerStore = defineStore('player', {
       settingStore = useSettingStore(),
       options?: { persistSelection?: boolean },
     ) {
-      const targetDeviceId = deviceId;
       const persistSelection = options?.persistSelection ?? true;
+      const mpvDevice = !deviceId || deviceId === 'default' ? 'auto' : deviceId;
+      const exclusive = settingStore.exclusiveAudioDevice;
       logger.info('PlayerStore', 'Applying output device', {
-        requestedDeviceId: targetDeviceId,
-        currentOutputDevice: settingStore.outputDevice,
+        requestedDeviceId: deviceId,
+        mpvDevice,
+        exclusive,
         persistSelection,
       });
-      const applied = await engine.setOutputDevice(targetDeviceId);
-      if (applied) {
-        this.appliedOutputDeviceId = targetDeviceId;
+
+      // 通过 mpv 属性设置独占模式（适用于所有平台）
+      const mpv = (window as any).electron?.mpv;
+      try {
+        await mpv?.setExclusive(exclusive);
+      } catch {
+        // 旧版 mpv 可能不支持
       }
-      if (!applied && targetDeviceId !== 'default') {
+
+      const applied = await engine.setOutputDevice(mpvDevice);
+      if (applied) {
+        this.appliedOutputDeviceId = deviceId;
+      }
+      if (!applied && deviceId !== 'default') {
         logger.warn('PlayerStore', 'Apply output device failed, falling back to default', {
-          requestedDeviceId: targetDeviceId,
+          requestedDeviceId: deviceId,
         });
-        await engine.setOutputDevice('default');
+        await engine.setOutputDevice('auto');
         this.appliedOutputDeviceId = 'default';
         if (persistSelection) {
           settingStore.outputDevice = 'default';
@@ -1740,8 +1673,8 @@ export const usePlayerStore = defineStore('player', {
             : '当前设备不支持切换到所选输出，已临时回退到系统默认输出。',
         );
       } else if (!applied) {
-        logger.warn('PlayerStore', 'Apply output device unsupported in current environment', {
-          requestedDeviceId: targetDeviceId,
+        logger.warn('PlayerStore', 'Apply output device unsupported', {
+          requestedDeviceId: deviceId,
         });
         settingStore.setOutputDeviceStatus(
           'unsupported',
@@ -1755,16 +1688,14 @@ export const usePlayerStore = defineStore('player', {
         );
       } else {
         const matched = settingStore.outputDevices.find((item) => item.value === deviceId);
+        const deviceLabel = matched?.label || deviceId;
         logger.info('PlayerStore', 'Output device switched successfully', {
-          requestedDeviceId: targetDeviceId,
-          label: matched?.label || '所选输出设备',
+          requestedDeviceId: deviceId,
+          label: deviceLabel,
+          exclusive,
         });
-        settingStore.setOutputDeviceStatus(
-          'ready',
-          `已切换到 ${matched?.label || '所选输出设备'}。`,
-        );
+        settingStore.setOutputDeviceStatus('ready', `已切换到 ${deviceLabel}。`);
       }
-      settingStore.outputDeviceType = 'default';
     },
 
     /**
