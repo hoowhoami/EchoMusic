@@ -75,12 +75,15 @@ export function registerPlayerIpc(ref: MpvRef): void {
     return ref.current?.available ?? false;
   });
 
-  // 设置音频独占模式
+  // 设置音频独占模式（需要重启 mpv 生效）
   ipcMain.handle('mpv:set-exclusive', async (_e, exclusive: boolean) => {
     try {
+      // 先停止当前播放，再设置独占属性，最后重新加载
+      await ref.current?.stop().catch(() => {});
       await ref.current?.command('set_property', 'audio-exclusive', exclusive ? 'yes' : 'no');
+      return true;
     } catch {
-      // 旧版 mpv 可能不支持
+      return false;
     }
   });
 

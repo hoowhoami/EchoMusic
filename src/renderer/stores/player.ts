@@ -1174,6 +1174,10 @@ export const usePlayerStore = defineStore('player', {
               playbackRate: this.playbackRate,
             }),
           );
+        } else if (!this.isPlaying) {
+          // mpv 的 state-change 事件可能因 IPC 延迟未到达，强制同步状态
+          this.isPlaying = true;
+          settingStore.syncPreventSleep(true);
         }
         void this.fetchClimaxMarks(track);
         if (this.pendingSettingRefresh) {
@@ -1645,8 +1649,10 @@ export const usePlayerStore = defineStore('player', {
         persistSelection,
       });
 
-      // 通过 mpv 属性设置独占模式（适用于所有平台）
+      // 通过 mpv 属性设置独占模式
+      // 独占模式切换需要先停止播放，设置属性后重新加载
       const mpv = (window as any).electron?.mpv;
+      const wasPlaying = this.isPlaying;
       try {
         await mpv?.setExclusive(exclusive);
       } catch {
@@ -1656,6 +1662,12 @@ export const usePlayerStore = defineStore('player', {
       const applied = await engine.setOutputDevice(mpvDevice);
       if (applied) {
         this.appliedOutputDeviceId = deviceId;
+      }
+
+      // 独占模式切换后，如果之前在播放，需要重新加载当前曲目
+      if (wasPlaying && this.currentTrackId && this.currentAudioUrl) {
+        engine.setSource(this.currentAudioUrl);
+        await engine.play();
       }
       if (!applied && deviceId !== 'default') {
         logger.warn('PlayerStore', 'Apply output device failed, falling back to default', {
