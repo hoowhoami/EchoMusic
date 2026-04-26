@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type { MpvController } from '../mpv/controller';
+import { restartMpvPlayer } from '../mpv';
 
 /** 可变引用，允许 mpv 实例在注册后异步赋值 */
 export type MpvRef = { current: MpvController | null };
@@ -73,5 +74,12 @@ export function registerPlayerIpc(ref: MpvRef): void {
 
   ipcMain.handle('mpv:available', () => {
     return ref.current?.available ?? false;
+  });
+
+  // 重启 mpv 播放引擎，供 Loading 页面重试使用
+  ipcMain.handle('mpv:restart', async () => {
+    const instance = await restartMpvPlayer();
+    ref.current = instance;
+    return !!instance;
   });
 }

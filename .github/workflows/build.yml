@@ -105,6 +105,60 @@ jobs:
           set -e
           mkdir -p build/mpv
 
+          # 递归复制 dylib 依赖（macOS 专用）
+          copy_dylibs_recursive() {
+            local bin_or_lib="$1"
+            local dest_dir="$2"
+            local depth="${3:-0}"
+            if [ "$depth" -gt 5 ]; then return; fi
+
+            otool -L "$bin_or_lib" 2>/dev/null | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
+              local base_name
+              base_name=$(basename "$lib")
+              if [ -f "$dest_dir/$base_name" ]; then continue; fi
+              if [ -f "$lib" ]; then
+                cp "$lib" "$dest_dir/" 2>/dev/null || true
+                # 递归处理这个 dylib 的依赖
+                copy_dylibs_recursive "$dest_dir/$base_name" "$dest_dir" $((depth + 1))
+              fi
+            done
+          }
+
+          # 修复 macOS dylib 的加载路径，使用 @executable_path 相对路径
+          # 避免依赖 DYLD_LIBRARY_PATH（会被 SIP 剥离）
+          fix_macos_rpaths() {
+            local mpv_bin="$1"
+            local lib_dir="$2"
+
+            # 修复 mpv 二进制中的 dylib 引用
+            otool -L "$mpv_bin" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
+              local base_name
+              base_name=$(basename "$lib")
+              if [ -f "$lib_dir/$base_name" ]; then
+                install_name_tool -change "$lib" "@executable_path/lib/$base_name" "$mpv_bin" 2>/dev/null || true
+              fi
+            done
+
+            # 修复每个 dylib 内部的依赖引用
+            for dylib in "$lib_dir"/*.dylib; do
+              [ -f "$dylib" ] || continue
+              local dylib_name
+              dylib_name=$(basename "$dylib")
+              # 修复 dylib 的 install name
+              install_name_tool -id "@executable_path/lib/$dylib_name" "$dylib" 2>/dev/null || true
+              # 修复 dylib 内部引用的其他 dylib
+              otool -L "$dylib" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r dep; do
+                local dep_name
+                dep_name=$(basename "$dep")
+                if [ -f "$lib_dir/$dep_name" ]; then
+                  install_name_tool -change "$dep" "@executable_path/lib/$dep_name" "$dylib" 2>/dev/null || true
+                fi
+              done
+            done
+
+            echo "rpath fixup complete"
+          }
+
           case "${{ matrix.os }}" in
             macos-latest)
               # macOS arm64
@@ -112,12 +166,12 @@ jobs:
               MPV_BIN=$(brew --prefix mpv)/bin/mpv
               cp "$MPV_BIN" build/mpv/
               chmod +x build/mpv/mpv
-              # 复制依赖的 dylib
               mkdir -p build/mpv/lib
-              otool -L "$MPV_BIN" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
-                cp "$lib" build/mpv/lib/ 2>/dev/null || true
-              done
+              copy_dylibs_recursive "$MPV_BIN" "build/mpv/lib"
+              fix_macos_rpaths "build/mpv/mpv" "build/mpv/lib"
               echo "mpv macOS arm64 binary prepared"
+              echo "=== lib directory ==="
+              ls -la build/mpv/lib/ | head -30
               ;;
             macos-14)
               # macOS x64
@@ -126,10 +180,11 @@ jobs:
               cp "$MPV_BIN" build/mpv/
               chmod +x build/mpv/mpv
               mkdir -p build/mpv/lib
-              otool -L "$MPV_BIN" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
-                cp "$lib" build/mpv/lib/ 2>/dev/null || true
-              done
+              copy_dylibs_recursive "$MPV_BIN" "build/mpv/lib"
+              fix_macos_rpaths "build/mpv/mpv" "build/mpv/lib"
               echo "mpv macOS x64 binary prepared"
+              echo "=== lib directory ==="
+              ls -la build/mpv/lib/ | head -30
               ;;
             ubuntu-22.04|ubuntu-22.04-arm)
               # Linux: apt install mpv 后提取二进制和依赖库
@@ -156,7 +211,18 @@ jobs:
               fi
               echo "Downloading mpv from: $DOWNLOAD_URL"
               curl -L -o /tmp/mpv.7z "$DOWNLOAD_URL"
-              7z x /tmp/mpv.7z -o"build/mpv" -y
+              # 先解压到临时目录
+              7z x /tmp/mpv.7z -o"/tmp/mpv-extract" -y
+              echo "=== extracted contents ==="
+              find /tmp/mpv-extract -maxdepth 2 -type f -name "*.exe" -o -name "*.dll" | head -20
+              # 把 mpv.exe 和所有 DLL 移到 build/mpv/（处理子目录情况）
+              find /tmp/mpv-extract -name "mpv.exe" -exec cp {} build/mpv/ \;
+              find /tmp/mpv-extract -name "*.dll" -exec cp {} build/mpv/ \;
+              # 验证 mpv.exe 存在
+              if [ ! -f "build/mpv/mpv.exe" ]; then
+                echo "ERROR: mpv.exe not found after extraction"
+                exit 1
+              fi
               echo "mpv Windows binary prepared"
               ;;
           esac

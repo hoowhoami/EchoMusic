@@ -148,6 +148,7 @@ contextBridge.exposeInMainWorld('electron', {
     cancelFade: () => ipcRenderer.invoke('mpv:cancel-fade'),
     getState: () => ipcRenderer.invoke('mpv:get-state'),
     available: () => ipcRenderer.invoke('mpv:available') as Promise<boolean>,
+    restart: () => ipcRenderer.invoke('mpv:restart') as Promise<boolean>,
     onTimeUpdate: (func: (time: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
       ipcRenderer.on('mpv:time-update', listener);

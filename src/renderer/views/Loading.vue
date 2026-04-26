@@ -98,6 +98,27 @@ const completeStartup = async () => {
   if (hasCompletedStartup.value) return;
   hasCompletedStartup.value = true;
 
+  // 检查 mpv 播放引擎是否可用
+  statusMessage.value = '正在检查播放引擎...';
+  try {
+    const mpv = (window as any).electron?.mpv;
+    const mpvReady = await mpv?.available();
+    if (!mpvReady) {
+      logger.error('Loading', 'mpv player engine is not available');
+      statusMessage.value = '播放引擎初始化失败';
+      hasError.value = true;
+      hasCompletedStartup.value = false;
+      return;
+    }
+    logger.info('Loading', 'mpv player engine is available');
+  } catch (error) {
+    logger.error('Loading', 'mpv availability check failed:', error);
+    statusMessage.value = '播放引擎检查失败';
+    hasError.value = true;
+    hasCompletedStartup.value = false;
+    return;
+  }
+
   await maybeAutoReceiveVip();
 
   statusMessage.value = '引擎就绪，正在开启音乐世界...';
@@ -154,7 +175,15 @@ const initStatus = async () => {
 const retryStart = async () => {
   hasCompletedStartup.value = false;
   hasError.value = false;
-  statusMessage.value = '正在重新启动音乐引擎...';
+  statusMessage.value = '正在重新启动...';
+
+  // 尝试重启 mpv 播放引擎
+  try {
+    const mpv = (window as any).electron?.mpv;
+    await mpv?.restart();
+  } catch (error) {
+    logger.warn('Loading', 'mpv restart attempt failed:', error);
+  }
 
   try {
     const result = await window.electron.apiServer.start();

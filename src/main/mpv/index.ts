@@ -1,19 +1,15 @@
 import type { BrowserWindow } from 'electron';
 import { MpvController } from './controller';
+import log from '../logger';
 
 let mpvController: MpvController | null = null;
+let cachedGetMainWindow: (() => BrowserWindow | null) | null = null;
 
-export async function initMpvPlayer(
+/** 绑定事件转发到渲染进程 */
+function bindEventForwarding(
+  controller: MpvController,
   getMainWindow: () => BrowserWindow | null,
-): Promise<MpvController | null> {
-  const controller = new MpvController();
-
-  if (!controller.available) {
-    console.warn('[Main] mpv binary not found');
-    return null;
-  }
-
-  // 转发事件到渲染进程
+): void {
   controller.on('time-update', (time: number) => {
     getMainWindow()?.webContents.send('mpv:time-update', time);
   });
@@ -29,16 +25,42 @@ export async function initMpvPlayer(
   controller.on('error', (error: Error) => {
     getMainWindow()?.webContents.send('mpv:error', error.message);
   });
+}
+
+export async function initMpvPlayer(
+  getMainWindow: () => BrowserWindow | null,
+): Promise<MpvController | null> {
+  cachedGetMainWindow = getMainWindow;
+  const controller = new MpvController();
+
+  if (!controller.available) {
+    log.warn('[Main] mpv binary not found, player engine unavailable');
+    return null;
+  }
+
+  log.info('[Main] mpv controller ready, registering event forwarding');
+  bindEventForwarding(controller, getMainWindow);
 
   try {
     await controller.start();
-    console.log('[Main] mpv player engine started');
+    log.info('[Main] mpv player engine started successfully');
     mpvController = controller;
     return controller;
   } catch (err) {
-    console.error('[Main] mpv failed to start:', err);
+    log.error('[Main] mpv player engine failed to start:', err);
     return null;
   }
+}
+
+/** 销毁旧实例并重新初始化 mpv，供 Loading 页面重试使用 */
+export async function restartMpvPlayer(): Promise<MpvController | null> {
+  log.info('[Main] Restarting mpv player engine');
+  destroyMpvPlayer();
+  if (!cachedGetMainWindow) {
+    log.error('[Main] Cannot restart mpv: getMainWindow not initialized');
+    return null;
+  }
+  return initMpvPlayer(cachedGetMainWindow);
 }
 
 export function destroyMpvPlayer(): void {

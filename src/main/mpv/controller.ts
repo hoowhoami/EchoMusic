@@ -4,8 +4,10 @@ import net from 'net';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import { resolveMpvPath } from './path';
+import { app } from 'electron';
+import { resolveMpvPath, resolveMpvLibDir } from './path';
 import type { MpvAudioDevice, MpvMessage, MpvState, MpvTrackInfo } from './types';
+import log from '../logger';
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
@@ -65,6 +67,12 @@ export class MpvController extends EventEmitter {
   async start(): Promise<void> {
     if (!this.mpvBinPath) throw new Error('mpv binary not found');
 
+    log.info('[MpvController] Starting mpv process', {
+      binPath: this.mpvBinPath,
+      socketPath: this.socketPath,
+      platform: process.platform,
+    });
+
     // 清理旧 socket
     if (process.platform !== 'win32') {
       try {
@@ -93,17 +101,31 @@ export class MpvController extends EventEmitter {
 
     this.process = spawn(this.mpvBinPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      cwd: process.platform === 'win32' ? path.dirname(this.mpvBinPath) : undefined,
+      // 所有平台都设置 cwd 到 mpv 所在目录
+      // Windows: DLL 依赖需要在同目录
+      // macOS/Linux: bundled dylib/so 可能在同级 lib/ 下
+      cwd: path.dirname(this.mpvBinPath),
       env: this.buildEnv(),
     });
 
-    this.process.on('exit', (code) => {
+    this.process.on('exit', (code, signal) => {
+      log.info('[MpvController] mpv process exited', { code, signal });
       this.emit('exit', code);
       this.cleanup();
-      if (!this.isDestroyed && code !== 0) this.scheduleRestart();
+      // 只在非正常退出（非 0 且非信号杀死）时重启
+      if (!this.isDestroyed && code !== null && code !== 0) this.scheduleRestart();
     });
 
-    this.process.on('error', (err) => this.emit('error', err));
+    this.process.on('error', (err) => {
+      log.error('[MpvController] mpv process spawn error:', err.message);
+      this.emit('error', err);
+    });
+
+    // 捕获 stderr，方便排查启动失败
+    this.process.stderr?.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg) log.warn('[MpvController] mpv stderr:', msg);
+    });
 
     await this.waitForSocket(5000);
     await this.connectSocket();
@@ -136,20 +158,48 @@ export class MpvController extends EventEmitter {
 
   private buildEnv(): NodeJS.ProcessEnv {
     const env = { ...process.env };
-    if (process.platform === 'linux' && this.mpvBinPath) {
-      const libDir = path.join(path.dirname(this.mpvBinPath), 'lib');
-      if (fs.existsSync(libDir)) {
-        env.LD_LIBRARY_PATH = `${libDir}:${env.LD_LIBRARY_PATH || ''}`;
-      }
+    if (!this.mpvBinPath) return env;
+
+    // 只有打包后使用 bundled mpv 时才需要设置库搜索路径
+    // 系统安装的 mpv 已通过 rpath 正确链接，不需要额外设置
+    const libDir = resolveMpvLibDir(this.mpvBinPath);
+    if (!libDir) return env;
+
+    const isBundled = app.isPackaged || this.mpvBinPath.includes('build/mpv');
+
+    if (!isBundled) return env;
+
+    if (process.platform === 'linux') {
+      env.LD_LIBRARY_PATH = `${libDir}:${env.LD_LIBRARY_PATH || ''}`;
+    } else if (process.platform === 'darwin') {
+      env.DYLD_LIBRARY_PATH = `${libDir}:${env.DYLD_LIBRARY_PATH || ''}`;
+      env.DYLD_FALLBACK_LIBRARY_PATH = `${libDir}:${env.DYLD_FALLBACK_LIBRARY_PATH || ''}`;
     }
+
     return env;
   }
 
   private waitForSocket(timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
       if (process.platform === 'win32') {
-        // named pipe 不需要检查文件，等一小段时间让 mpv 启动
-        setTimeout(resolve, 300);
+        // Windows named pipe：轮询尝试连接，直到成功或超时
+        const start = Date.now();
+        const tryConnect = () => {
+          const testSocket = net.connect(this.socketPath);
+          testSocket.on('connect', () => {
+            testSocket.destroy();
+            resolve();
+          });
+          testSocket.on('error', () => {
+            testSocket.destroy();
+            if (Date.now() - start > timeoutMs) {
+              return reject(new Error('mpv named pipe connect timeout'));
+            }
+            setTimeout(tryConnect, 100);
+          });
+        };
+        // 给 mpv 进程一点启动时间
+        setTimeout(tryConnect, 200);
         return;
       }
       const start = Date.now();
