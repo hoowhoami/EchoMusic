@@ -54,16 +54,19 @@ export class PlayerEngine {
   private cleanupFns: Array<() => void> = [];
 
   // 静音 audio 元素，用于激活 Chromium 的 MediaSession API
+  // volume=0 + setSinkId('default') 确保不输出声音且不与 mpv 独占模式冲突
   private silentAudio: HTMLAudioElement;
 
   constructor() {
-    // 创建静音 audio 元素，让 Chromium 认为页面有音频活动
     this.silentAudio = new Audio();
-    // 1 秒静音 WAV，循环播放
     this.silentAudio.src =
       'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUoGAACA';
     this.silentAudio.loop = true;
     this.silentAudio.volume = 0.01;
+    // 固定输出到默认设备，不跟随 mpv 独占设备
+    if (typeof (this.silentAudio as any).setSinkId === 'function') {
+      (this.silentAudio as any).setSinkId('default').catch(() => {});
+    }
 
     if (mpv) {
       this.bindMpvEvents();

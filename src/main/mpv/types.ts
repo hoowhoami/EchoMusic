@@ -20,6 +20,7 @@ export interface MpvMessage {
   error?: string;
   request_id?: number;
   reason?: string;
+  args?: string[];
 }
 
 /** mpv 音频设备信息 */

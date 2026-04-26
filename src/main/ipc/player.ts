@@ -75,6 +75,15 @@ export function registerPlayerIpc(ref: MpvRef): void {
     return ref.current?.available ?? false;
   });
 
+  // 设置系统媒体面板显示的标题
+  ipcMain.handle('mpv:set-media-title', async (_e, title: string) => {
+    try {
+      await ref.current?.command('set_property', 'force-media-title', title);
+    } catch {
+      // 忽略
+    }
+  });
+
   // 设置音频独占模式（需要重启 mpv 生效）
   ipcMain.handle('mpv:set-exclusive', async (_e, exclusive: boolean) => {
     try {

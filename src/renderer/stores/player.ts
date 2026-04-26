@@ -342,6 +342,7 @@ export const usePlayerStore = defineStore('player', {
     outputDeviceWatcherRegistered: false,
     outputDeviceRefreshTimer: null as number | null,
     appliedOutputDeviceId: 'default' as string,
+    _lastAppliedExclusive: false,
     currentAudioQualityOverride: null as AudioQualityValue | null,
     playbackRequestSeq: 0,
     climaxRequestSeq: 0,
@@ -1649,25 +1650,34 @@ export const usePlayerStore = defineStore('player', {
         persistSelection,
       });
 
-      // 通过 mpv 属性设置独占模式
-      // 独占模式切换需要先停止播放，设置属性后重新加载
+      // 独占模式：只在状态真正变化时才 stop + 重设，避免设备刷新时打断播放
       const mpv = (window as any).electron?.mpv;
-      const wasPlaying = this.isPlaying;
-      try {
-        await mpv?.setExclusive(exclusive);
-      } catch {
-        // 旧版 mpv 可能不支持
-      }
+      const exclusiveChanged = exclusive !== (this._lastAppliedExclusive ?? false);
+      let applied = false;
+      if (exclusiveChanged) {
+        const wasPlaying = this.isPlaying;
+        try {
+          await mpv?.setExclusive(exclusive);
+        } catch {
+          // 旧版 mpv 可能不支持
+        }
+        this._lastAppliedExclusive = exclusive;
 
-      const applied = await engine.setOutputDevice(mpvDevice);
-      if (applied) {
-        this.appliedOutputDeviceId = deviceId;
-      }
+        applied = await engine.setOutputDevice(mpvDevice);
+        if (applied) {
+          this.appliedOutputDeviceId = deviceId;
+        }
 
-      // 独占模式切换后，如果之前在播放，需要重新加载当前曲目
-      if (wasPlaying && this.currentTrackId && this.currentAudioUrl) {
-        engine.setSource(this.currentAudioUrl);
-        await engine.play();
+        // 独占切换后恢复播放
+        if (wasPlaying && this.currentTrackId && this.currentAudioUrl) {
+          engine.setSource(this.currentAudioUrl);
+          await engine.play();
+        }
+      } else {
+        applied = await engine.setOutputDevice(mpvDevice);
+        if (applied) {
+          this.appliedOutputDeviceId = deviceId;
+        }
       }
       if (!applied && deviceId !== 'default') {
         logger.warn('PlayerStore', 'Apply output device failed, falling back to default', {
