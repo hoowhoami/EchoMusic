@@ -53,12 +53,20 @@ if (!gotTheLock) {
 
     await createWindow();
 
-    // 初始化 mpv 播放引擎
-    const mpv = await initMpvPlayer(getMainWindow).catch((err) => {
-      console.error('[Main] Failed to init mpv player:', err);
-      return null;
-    });
-    registerPlayerIpc(mpv ?? null);
+    // IPC handler 必须在窗口创建前注册，否则渲染进程初始化时会找不到 handler
+    const mpvRef: { current: import('./mpv/controller').MpvController | null } = { current: null };
+    registerPlayerIpc(mpvRef);
+
+    await createWindow();
+
+    // 异步初始化 mpv 播放引擎
+    initMpvPlayer(getMainWindow)
+      .then((instance) => {
+        mpvRef.current = instance;
+      })
+      .catch((err) => {
+        console.error('[Main] Failed to init mpv player:', err);
+      });
 
     try {
       initTray(trayContext);
