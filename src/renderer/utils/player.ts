@@ -53,10 +53,32 @@ export class PlayerEngine {
   private lastTrackLoudness: TrackLoudness | null = null;
   private cleanupFns: Array<() => void> = [];
 
-  // [测试] silentAudio 已临时禁用，验证独占模式杂音是否由此引起
-  // private silentAudio: HTMLAudioElement;
+  // 静音 audio 元素，用于激活 Chromium 的 MediaSession API
+  // volume > 0 保证 MediaSession 激活，通过 Web Audio GainNode 将实际输出静音
+  private silentAudio: HTMLAudioElement;
 
   constructor() {
+    this.silentAudio = new Audio();
+    this.silentAudio.src =
+      'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUoGAACA';
+    this.silentAudio.loop = true;
+    this.silentAudio.volume = 0.01;
+    // 通过 Web Audio GainNode 将实际输出静音，避免与 mpv 独占模式冲突
+    try {
+      const ctx = new AudioContext();
+      const source = ctx.createMediaElementSource(this.silentAudio);
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(gain);
+      gain.connect(ctx.destination);
+    } catch {
+      // Web Audio 不可用时回退，setSinkId 尽量隔离输出
+    }
+    // 固定输出到默认设备，不跟随 mpv 独占设备
+    if (typeof (this.silentAudio as any).setSinkId === 'function') {
+      (this.silentAudio as any).setSinkId('default').catch(() => {});
+    }
+
     if (mpv) {
       this.bindMpvEvents();
     } else {
@@ -83,10 +105,10 @@ export class PlayerEngine {
 
     const offState = mpv.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
       if (state.playing) {
-        // [测试] silentAudio.play() 已禁用
+        this.silentAudio.play().catch(() => {});
         this.events.play?.();
       } else if (state.paused) {
-        // [测试] silentAudio.pause() 已禁用
+        this.silentAudio.pause();
         this.events.pause?.();
       }
     });
