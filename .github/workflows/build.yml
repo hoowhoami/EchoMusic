@@ -467,6 +467,37 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_ENV"
 
+      - name: Build artifact links
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${VERSION}" --jq '.assets[].name' 2>/dev/null || true)
+          if [ -z "$ASSETS" ]; then
+            echo "QQ_ARTIFACT_LINKS=无" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          LINKS=""
+          while IFS= read -r filename; do
+            link="https://github.com/${REPO}/releases/download/${VERSION}/${filename}"
+            if [ -z "$LINKS" ]; then
+              LINKS="• ${filename}\n  ${link}"
+            else
+              LINKS="${LINKS}\n• ${filename}\n  ${link}"
+            fi
+          done <<< "$ASSETS"
+
+          {
+            echo "QQ_ARTIFACT_LINKS<<EOF"
+            printf '%b\n' "$LINKS"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
       - name: Send QQ group message via OneBot API
         shell: bash
         env:
@@ -483,8 +514,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
 
-          MESSAGE=$(printf '🎉 EchoMusic %s 发布啦！\n\n📝 更新内容：\n%s\n\n🔗 下载地址：https://github.com/%s/releases/tag/%s' \
-            "$VERSION" "$CHANGELOG" "$REPO" "$VERSION")
+          MESSAGE=$(printf '🎉 EchoMusic %s 发布啦！\n\n📝 更新内容：\n%s\n\n📦 下载地址：\n%s\n\n🔗 查看完整 Release：https://github.com/%s/releases/tag/%s' \
+            "$VERSION" "$CHANGELOG" "$QQ_ARTIFACT_LINKS" "$REPO" "$VERSION")
 
           HEADERS=(-H "Content-Type: application/json")
           if [ -n "$QQ_BOT_TOKEN" ]; then

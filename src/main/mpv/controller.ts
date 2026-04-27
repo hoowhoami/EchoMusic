@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, execSync, spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import net from 'net';
 import path from 'path';
@@ -79,6 +79,16 @@ export class MpvController extends EventEmitter {
       try {
         fs.unlinkSync(this.socketPath);
       } catch {}
+    }
+
+    // macOS: 清除 Gatekeeper 隔离属性，防止 mpv 被 SIGKILL
+    if (process.platform === 'darwin') {
+      try {
+        const mpvDir = path.dirname(this.mpvBinPath);
+        execSync(`xattr -cr "${mpvDir}"`, { timeout: 5000 });
+      } catch {
+        // 忽略，可能没有隔离属性
+      }
     }
 
     const args = [
