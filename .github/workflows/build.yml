@@ -425,3 +425,81 @@ jobs:
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
+
+  notify-qq:
+    name: Send QQ Group Notification
+    if: startsWith(github.ref, 'refs/tags/') && success()
+    needs:
+      - build
+      - release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build changelog
+        shell: bash
+        run: |
+          set -e
+          VERSION="${GITHUB_REF_NAME#v}"
+          CHANGELOG=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) found=1
+              next
+            }
+            found && NF { print }
+          ' CHANGELOG.md \
+            | sed 's/^### /\n📌 /' \
+            | sed 's/^- /• /' \
+            | awk 'NR==1{printf "%s",$0;next}{printf "\n%s",$0}')
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="详见 CHANGELOG.md"
+          fi
+
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Send QQ group message via OneBot API
+        shell: bash
+        env:
+          QQ_BOT_API: ${{ secrets.QQ_BOT_API }}
+          QQ_GROUP_ID: ${{ secrets.QQ_GROUP_ID }}
+          QQ_BOT_TOKEN: ${{ secrets.QQ_BOT_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$QQ_BOT_API" ] || [ -z "$QQ_GROUP_ID" ]; then
+            echo "QQ Bot secrets are missing, skip QQ notification."
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+
+          MESSAGE="🎉 EchoMusic ${VERSION} 发布啦！
+
+📝 更新内容：
+${CHANGELOG}
+
+🔗 下载地址：https://github.com/${REPO}/releases/tag/${VERSION}"
+
+          HEADERS=(-H "Content-Type: application/json")
+          if [ -n "$QQ_BOT_TOKEN" ]; then
+            HEADERS+=(-H "Authorization: Bearer ${QQ_BOT_TOKEN}")
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg group_id "$QQ_GROUP_ID" \
+            --arg message "$MESSAGE" \
+            '{message_type: "group", group_id: $group_id, message: $message}')
+
+          curl -sS -X POST "${QQ_BOT_API}/send_msg" \
+            "${HEADERS[@]}" \
+            -d "$PAYLOAD"
