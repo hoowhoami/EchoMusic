@@ -84,7 +84,6 @@ export const useSettingStore = defineStore('setting', {
     silentUpdate: true,
     autoCheckUpdate: true,
     checkPrerelease: false,
-    autoCheckUpdate: true,
     appVersion: '',
     isPrerelease: false,
     searchHistory: [] as string[],

@@ -98,6 +98,9 @@ export class MpvController extends EventEmitter {
       '--cache-secs=30',
       '--user-agent=Mozilla/5.0',
       '--input-media-keys=no',
+      // 音频优化：采样率跟随源文件，避免不必要的重采样
+      '--audio-samplerate=0',
+      '--audio-channels=stereo',
     ];
 
     this.process = spawn(this.mpvBinPath, args, {
@@ -274,11 +277,31 @@ export class MpvController extends EventEmitter {
           this.fileReadyResolve();
           this.fileReadyResolve = null;
         }
+        // 打印当前音频详细信息，方便排查音质问题
+        this.logAudioInfo();
         break;
       case 'idle':
         this.state.idle = true;
         break;
     }
+  }
+
+  /** 文件加载后打印音频详细信息 */
+  private logAudioInfo(): void {
+    // 独占模式下音频输出初始化稍慢，延迟查询确保 audio-params 就绪
+    setTimeout(() => {
+      const props = ['audio-params', 'audio-codec-name', 'audio-exclusive', 'audio-device'];
+      Promise.all(
+        props.map((p) =>
+          this.command('get_property', p)
+            .then((v) => [p, v] as const)
+            .catch(() => [p, null] as const),
+        ),
+      ).then((results) => {
+        const info = Object.fromEntries(results);
+        log.info('[MpvController] Audio info', info);
+      });
+    }, 500);
   }
 
   private handlePropertyChange(name: string, value: unknown): void {
