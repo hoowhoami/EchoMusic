@@ -520,8 +520,17 @@ export class MpvController extends EventEmitter {
 
     return new Promise<void>((resolve) => {
       this.fadeResolve = resolve;
+      // 超时保护，防止 Promise 永远不 resolve
+      const safetyTimeout = setTimeout(() => {
+        if (this.fadeResolve === resolve) {
+          this.fadeResolve = null;
+          this.cancelFade();
+          resolve();
+        }
+      }, durationMs + 500);
       this.fadeTimer = setInterval(() => {
         if (seq !== this.fadeSeq) {
+          clearTimeout(safetyTimeout);
           resolve();
           this.fadeResolve = null;
           return;
@@ -533,6 +542,7 @@ export class MpvController extends EventEmitter {
         this.setVolume(current).catch(() => {});
 
         if (step >= steps) {
+          clearTimeout(safetyTimeout);
           this.fadeResolve = null;
           this.cancelFade();
           resolve();

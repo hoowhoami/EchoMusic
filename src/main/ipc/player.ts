@@ -58,9 +58,13 @@ export function registerPlayerIpc(ref: MpvRef): void {
   });
 
   ipcMain.handle('mpv:fade', async (_e, from: number, to: number, durationMs: number) => {
-    const fromMpv = Math.pow(Math.max(0, from), 1 / 3) * 100;
-    const toMpv = Math.pow(Math.max(0, to), 1 / 3) * 100;
-    await ref.current?.fade(fromMpv, toMpv, durationMs);
+    try {
+      const fromMpv = Math.pow(Math.max(0, from), 1 / 3) * 100;
+      const toMpv = Math.pow(Math.max(0, to), 1 / 3) * 100;
+      await ref.current?.fade(fromMpv, toMpv, durationMs);
+    } catch {
+      // mpv 不可用或 fade 被中断，静默忽略
+    }
   });
 
   ipcMain.handle('mpv:cancel-fade', () => {
