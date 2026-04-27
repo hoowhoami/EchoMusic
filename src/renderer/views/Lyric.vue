@@ -13,6 +13,7 @@ import Popover from '@/components/ui/Popover.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Slider from '@/components/ui/Slider.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
+import CommentDrawer from '@/components/music/CommentDrawer.vue';
 import { formatDuration } from '@/utils/format';
 import { getCoverUrl } from '@/utils/cover';
 import Button from '@/components/ui/Button.vue';
@@ -40,6 +41,7 @@ import {
   iconList,
   iconPlaylistAdd,
   iconTypography,
+  iconMessageCircle,
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 import FontIcon from '@/components/ui/FontIcon.vue';
@@ -98,6 +100,7 @@ const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const copyFeedback = ref(false);
 const isUserScrollingLyrics = ref(false);
+const isCommentDrawerOpen = ref(false);
 const artistPortraitUrls = ref<string[]>([]);
 const activePortraitIndex = ref(0);
 let userScrollResumeTimer: number | null = null;
@@ -906,7 +909,6 @@ onUnmounted(() => {
                 <Icon :icon="iconChevronLeft" width="14" height="14" />
               </Button>
               <div class="lyric-photo-chip">
-                <Icon :icon="iconImage" width="14" height="14" />
                 <span>{{ portraitCounterLabel }}</span>
               </div>
               <Button
@@ -1483,6 +1485,19 @@ onUnmounted(() => {
                   </Button>
                 </template>
               </Tooltip>
+              <Tooltip v-if="currentTrack" content="评论" side="top">
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    class="p-1.5 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                    @click="isCommentDrawerOpen = true"
+                  >
+                    <Icon :icon="iconMessageCircle" width="20" height="20" />
+                  </Button>
+                </template>
+              </Tooltip>
             </div>
 
             <!-- 中列：进度条 -->
@@ -1591,6 +1606,17 @@ onUnmounted(() => {
     </div>
 
     <PlayerQueueDrawer v-model:open="isQueueDrawerOpen" />
+
+    <CommentDrawer
+      v-if="currentTrack"
+      v-model:open="isCommentDrawerOpen"
+      :resourceId="
+        currentTrack.mixSongId ? String(currentTrack.mixSongId) : String(currentTrack.id)
+      "
+      resourceType="music"
+      :mixSongId="currentTrack.mixSongId ? String(currentTrack.mixSongId) : String(currentTrack.id)"
+      title="评论"
+    />
 
     <Dialog
       v-model:open="showAddToPlaylistDialog"
@@ -1788,7 +1814,7 @@ body:has(.lyric-view) .drawer-panel {
   display: inline-flex;
   align-items: center;
   gap: 0;
-  padding: 3px;
+  padding: 3px 4px;
   height: 39.5px;
   box-sizing: border-box;
   border-radius: 999px;
@@ -1800,13 +1826,13 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-tool-chip-main {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  min-width: max-content;
-  flex-shrink: 0;
+  width: 28px;
   height: 33.5px;
-  padding: 0 10px;
   box-shadow: none;
   background: transparent;
+  border-radius: 999px;
 }
 
 .lyric-tool-chip-label {
@@ -1821,10 +1847,10 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-photo-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
   justify-content: center;
-  padding: 0 4px;
+  padding: 0 2px;
   font-size: 12px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.84);

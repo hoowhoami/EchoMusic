@@ -400,7 +400,7 @@ const handleRemoveFromPlaylist = async () => {
   box-shadow: none;
   width: min(600px, 96vw);
   top: 0;
-  bottom: calc(var(--drawer-bottom-offset, 96px) - 8px);
+  bottom: 0;
 }
 
 .batch-header {
@@ -668,7 +668,7 @@ const handleRemoveFromPlaylist = async () => {
 
 @media (max-width: 720px) {
   :global(.batch-drawer) {
-    bottom: calc(var(--drawer-bottom-offset, 96px) - 8px);
+    bottom: 0;
     width: 94vw;
   }
 }

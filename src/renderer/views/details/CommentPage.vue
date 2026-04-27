@@ -7,7 +7,6 @@ import {
   getAlbumComments,
   getMusicClassifyComments,
   getMusicHotwordComments,
-  getFloorComments,
   getFavoriteCount,
   getCommentCount,
 } from '@/api/comment';
@@ -15,8 +14,6 @@ import { getSongPrivilegeLite, getSongRanking } from '@/api/music';
 import { mapCommentItem } from '@/utils/mappers';
 import type { Comment } from '@/models/comment';
 import { getSongEffectTags, getSongQualityTags } from '@/utils/song';
-import Dialog from '@/components/ui/Dialog.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Tabs from '@/components/ui/Tabs.vue';
 import TabsList from '@/components/ui/TabsList.vue';
 import TabsTrigger from '@/components/ui/TabsTrigger.vue';
@@ -26,7 +23,6 @@ import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import BackToTop from '@/components/ui/BackToTop.vue';
 import Button from '@/components/ui/Button.vue';
-import { iconX } from '@/icons';
 import { useToastStore } from '@/stores/toast';
 
 interface CommentPayload {
@@ -118,39 +114,8 @@ const favoriteCount = ref(0);
 const commentCount = ref(0);
 const commentCountData = ref<Record<string, unknown> | null>(null);
 
-const showFloor = ref(false);
-const floorLoading = ref(false);
-const floorReplies = ref<Comment[]>([]);
-const floorTotal = ref(0);
-const floorPage = ref(1);
-const floorHasMore = ref(true);
-const activeFloorComment = ref<Comment | null>(null);
-const floorMessage = ref('');
-const floorLoadMoreMessage = ref('');
-const floorBodyRef = ref<HTMLElement | null>(null);
 const classifyChipRowRef = ref<HTMLElement | null>(null);
 const hotwordChipRowRef = ref<HTMLElement | null>(null);
-
-const initialFloorComment = computed<Comment | null>(() => {
-  const specialId = String(route.query.floorSpecialId ?? '');
-  const tid = String(route.query.floorTid ?? '');
-  if (!specialId || !tid) return null;
-  return {
-    id: String(route.query.floorCommentId ?? tid),
-    userName: String(route.query.floorUserName ?? ''),
-    avatar: String(route.query.floorAvatar ?? ''),
-    content: String(route.query.floorContent ?? ''),
-    time: String(route.query.floorTime ?? ''),
-    likeCount: Number(route.query.floorLikeCount ?? 0) || 0,
-    replyCount: Number(route.query.floorReplyCount ?? 0) || 0,
-    isHot: String(route.query.floorIsHot ?? '') === '1',
-    isStar: String(route.query.floorIsStar ?? '') === '1',
-    specialId,
-    tid,
-    code: String(route.query.floorCode ?? ''),
-    mixSongId: String(route.query.floorMixSongId ?? ''),
-  };
-});
 
 const title = computed(() => {
   switch (type) {
@@ -243,9 +208,6 @@ const showClassifyEnd = computed(
 );
 const showHotwordEnd = computed(
   () => !hasMoreHotword.value && !isLoadingHotword.value && hotwordComments.value.length > 0,
-);
-const showFloorEnd = computed(
-  () => !floorHasMore.value && !floorLoading.value && floorReplies.value.length > 0,
 );
 
 const resolveCommentCountFromHeaderStats = (): number | null => {
@@ -601,86 +563,6 @@ const fetchComments = async (reset = false) => {
   return fetchAlbumComments(reset);
 };
 
-const resetFloor = () => {
-  floorReplies.value = [];
-  floorTotal.value = 0;
-  floorPage.value = 1;
-  floorHasMore.value = true;
-  floorMessage.value = '';
-  floorLoadMoreMessage.value = '';
-};
-
-const openFloor = (comment: Comment) => {
-  activeFloorComment.value = comment;
-  resetFloor();
-  showFloor.value = true;
-  void fetchFloorReplies(true);
-};
-
-const handleFloorScroll = () => {
-  if (!floorBodyRef.value) return;
-  if (floorLoading.value || !floorHasMore.value) return;
-  const { scrollTop, scrollHeight, clientHeight } = floorBodyRef.value;
-  if (scrollHeight - scrollTop - clientHeight < 240) {
-    void fetchFloorReplies();
-  }
-};
-
-const fetchFloorReplies = async (reset = false) => {
-  if (!activeFloorComment.value) return;
-  if (floorLoading.value) return;
-  if (!floorHasMore.value && !reset) return;
-  if (reset) {
-    floorPage.value = 1;
-    floorReplies.value = [];
-    floorHasMore.value = true;
-  }
-  floorLoading.value = true;
-  try {
-    const comment = activeFloorComment.value;
-    const specialId = comment.specialId ?? '';
-    const tid = comment.tid ?? String(comment.id);
-    const mixSongId =
-      comment.mixSongId ?? (type === 'music' ? songMixSongId.value || id : undefined);
-    if (!specialId || !tid) {
-      floorMessage.value = '楼层评论暂不可用';
-      floorHasMore.value = false;
-      return;
-    }
-    const res = await getFloorComments({
-      specialId,
-      tid,
-      mixSongId,
-      code: comment.code,
-      resourceType: type,
-      page: floorPage.value,
-      pagesize: 30,
-    });
-    if (res && typeof res === 'object') {
-      const payload = (res as { data?: unknown }).data ?? res;
-      const listCandidate = (payload as Record<string, unknown>).list ?? [];
-      const errCode = Number((payload as Record<string, unknown>).err_code ?? 0) || 0;
-      const message = String((payload as Record<string, unknown>).message ?? '');
-      const list = Array.isArray(listCandidate) ? listCandidate : [];
-      const mapped = list.map(mapCommentItem);
-      floorReplies.value = reset ? mapped : [...floorReplies.value, ...mapped];
-      const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
-      floorTotal.value = totalCount;
-      floorHasMore.value =
-        totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
-      if (floorHasMore.value) floorPage.value += 1;
-      if (floorReplies.value.length === 0) {
-        floorMessage.value = errCode !== 0 ? '楼层评论暂不可用' : message || '暂无回复';
-      }
-    }
-  } catch {
-    toastStore.loadFailed('楼层评论');
-    floorLoadMoreMessage.value = '加载更多失败，点击重试';
-  } finally {
-    floorLoading.value = false;
-  }
-};
-
 const handleCommentTabChange = (value: string | number) => {
   activeCommentTab.value = String(value);
   if (value === 'classify' && classifyComments.value.length === 0) {
@@ -751,22 +633,13 @@ const fetchDetailData = async () => {
 };
 
 onMounted(async () => {
-  if (route.query.floorSpecialId || route.query.floorTid) {
-    mainTab.value = 'comment';
-  } else {
-    mainTab.value =
-      String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment'
-        ? 'comment'
-        : 'detail';
-  }
+  mainTab.value =
+    String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
   window.addEventListener('scroll', maybeFetchByScroll, { passive: true });
   await fetchComments(true);
   if (isMusicType.value) {
     void fetchHeaderStats();
     void fetchDetailData();
-  }
-  if (initialFloorComment.value) {
-    openFloor(initialFloorComment.value);
   }
   void nextTick(() => {
     scrollChipRowToActive(classifyChipRowRef.value);
@@ -921,7 +794,8 @@ watch(total, (value) => {
                     v-if="singerComments.length"
                     :comments="singerComments"
                     :loading="false"
-                    :onTapReplies="openFloor"
+                    :resourceType="type"
+                    :fallbackMixSongId="songMixSongId || id"
                     compact
                     hide-empty
                   />
@@ -929,7 +803,8 @@ watch(total, (value) => {
                   <CommentList
                     :comments="comments"
                     :loading="isLoadingComments"
-                    :onTapReplies="openFloor"
+                    :resourceType="type"
+                    :fallbackMixSongId="songMixSongId || id"
                     compact
                   />
                   <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
@@ -963,7 +838,8 @@ watch(total, (value) => {
                   <CommentList
                     :comments="classifyComments"
                     :loading="isLoadingClassify"
-                    :onTapReplies="openFloor"
+                    :resourceType="type"
+                    :fallbackMixSongId="songMixSongId || id"
                     compact
                     empty-text="该分类下暂无评论"
                   />
@@ -998,7 +874,8 @@ watch(total, (value) => {
                   <CommentList
                     :comments="hotwordComments"
                     :loading="isLoadingHotword"
-                    :onTapReplies="openFloor"
+                    :resourceType="type"
+                    :fallbackMixSongId="songMixSongId || id"
                     compact
                     empty-text="该热词下暂无评论"
                   />
@@ -1021,14 +898,16 @@ watch(total, (value) => {
         <CommentList
           :comments="hotComments"
           :loading="isLoadingComments"
-          :onTapReplies="openFloor"
+          :resourceType="type"
+          :fallbackMixSongId="songMixSongId || id"
           compact
           hide-empty
         />
         <CommentList
           :comments="comments"
           :loading="isLoadingComments"
-          :onTapReplies="openFloor"
+          :resourceType="type"
+          :fallbackMixSongId="songMixSongId || id"
           compact
         />
         <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
@@ -1040,66 +919,6 @@ watch(total, (value) => {
         </div>
       </template>
     </div>
-
-    <Dialog
-      v-model:open="showFloor"
-      contentClass="comment-floor-dialog"
-      bodyClass="comment-floor-dialog-body"
-      noScroll
-    >
-      <div class="comment-floor-header">
-        <div class="comment-floor-title">楼层评论</div>
-        <Button class="comment-floor-close" variant="ghost" size="xs" @click="showFloor = false">
-          <Icon :icon="iconX" width="20" height="20" />
-        </Button>
-      </div>
-      <Scrollbar
-        class="comment-floor-body flex-1 min-h-0"
-        :content-props="{ ref: floorBodyRef }"
-        @scroll="handleFloorScroll"
-      >
-        <div class="comment-floor-body-inner">
-          <div class="comment-floor-section">原评论</div>
-          <CommentList
-            v-if="activeFloorComment"
-            :comments="[activeFloorComment]"
-            :showDivider="false"
-            :loading="false"
-            compact
-          />
-          <div class="comment-floor-section">
-            回复{{ floorTotal > 0 ? ` (${floorTotal})` : '' }}
-          </div>
-          <CommentList
-            :comments="floorReplies"
-            :loading="floorLoading"
-            :showDivider="true"
-            compact
-          />
-          <div v-if="!floorLoading && floorReplies.length === 0" class="comment-floor-empty">
-            {{ floorMessage || '暂无回复' }}
-          </div>
-          <div
-            v-if="floorHasMore || floorLoading || showFloorEnd"
-            class="comment-load-more comment-load-more-floor"
-          >
-            <div v-if="floorLoading" class="comment-loading-inline">
-              <div class="comment-loading-spinner"></div>
-              <span>加载中...</span>
-            </div>
-            <Button
-              v-else-if="floorHasMore"
-              variant="outline"
-              size="xs"
-              @click="fetchFloorReplies()"
-            >
-              {{ floorLoadMoreMessage || '加载更多' }}
-            </Button>
-            <div v-else class="comment-end-hint">已加载全部评论</div>
-          </div>
-        </div>
-      </Scrollbar>
-    </Dialog>
 
     <BackToTop target-selector=".comment-content-wrap" :threshold="360" />
   </div>
@@ -1440,99 +1259,5 @@ watch(total, (value) => {
   padding: 24px 0;
   text-align: center;
   color: var(--color-text-secondary);
-}
-
-:global(.comment-floor-dialog) {
-  left: calc(var(--drawer-content-left, 0px) + (var(--drawer-content-width, 100vw) / 2));
-  top: calc(var(--drawer-content-top, 0px) + (var(--drawer-content-height, 100vh) / 2));
-  width: min(620px, calc(var(--drawer-content-width, 100vw) - 40px));
-  max-width: calc(var(--drawer-content-width, 100vw) - 40px);
-  max-height: min(720px, calc(var(--drawer-content-height, 100vh) - 24px));
-  padding: 24px 2px 24px 24px;
-  border-radius: 24px;
-  box-shadow: 0 18px 48px color-mix(in srgb, black 18%, transparent);
-  transform: translate(-50%, -50%) scale(0.98);
-}
-
-:global(.comment-floor-dialog[data-state='open']) {
-  transform: translate(-50%, -50%) scale(1);
-}
-
-:global(.comment-floor-dialog[data-state='closed']) {
-  transform: translate(-50%, -50%) scale(0.98);
-}
-
-:global(.comment-floor-dialog .comment-floor-dialog-body) {
-  padding-right: 0;
-  margin-top: 0;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.comment-floor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 0 16px 12px 0;
-  margin-bottom: 4px;
-  background: var(--color-bg-main);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-light) 72%, transparent);
-}
-
-.comment-floor-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.comment-floor-close {
-  width: 32px;
-  height: 32px;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-
-.comment-floor-close:hover {
-  color: var(--color-text-main);
-}
-
-.comment-floor-body {
-  max-height: none;
-  min-height: 0;
-}
-
-.comment-floor-body-inner {
-  padding: 0 12px 2px 0;
-}
-
-.comment-floor-empty {
-  padding: 16px 0 24px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.comment-floor-section {
-  margin: 16px 0 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-}
-
-.comment-load-more-floor {
-  margin-bottom: 8px;
 }
 </style>

@@ -938,7 +938,7 @@ onBeforeUnmount(() => {
 :global(.queue-drawer) {
   padding: 0;
   box-shadow: none;
-  bottom: calc(var(--drawer-bottom-offset, 96px) - 8px);
+  bottom: 0;
 }
 
 .queue-header {
