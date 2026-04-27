@@ -483,12 +483,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           REPO="${GITHUB_REPOSITORY}"
 
-          MESSAGE="🎉 EchoMusic ${VERSION} 发布啦！
-
-📝 更新内容：
-${CHANGELOG}
-
-🔗 下载地址：https://github.com/${REPO}/releases/tag/${VERSION}"
+          MESSAGE=$(printf '🎉 EchoMusic %s 发布啦！\n\n📝 更新内容：\n%s\n\n🔗 下载地址：https://github.com/%s/releases/tag/%s' \
+            "$VERSION" "$CHANGELOG" "$REPO" "$VERSION")
 
           HEADERS=(-H "Content-Type: application/json")
           if [ -n "$QQ_BOT_TOKEN" ]; then
