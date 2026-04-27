@@ -204,7 +204,7 @@ const scheduleAutoHide = () => {
       isHovering.value = false;
     }
     autoHideTimer.value = null;
-  }, 1000);
+  }, 1500);
 };
 
 const handleScroll = (event: Event) => {
@@ -224,9 +224,8 @@ const handleScrollAreaMouseEnter = () => {
 
 const handleScrollAreaMouseLeave = () => {
   if (!isDragging.value) {
-    isHovering.value = false;
+    scheduleAutoHide();
   }
-  clearAutoHideTimer();
 };
 
 const handleThumbMouseDown = (e: MouseEvent) => {
@@ -266,7 +265,7 @@ const handleScrollbarMouseEnter = () => {
 
 const handleScrollbarMouseLeave = () => {
   if (!isDragging.value) {
-    isHovering.value = false;
+    scheduleAutoHide();
   }
 };
 
@@ -419,7 +418,7 @@ watch(
   position: absolute;
   top: 0;
   right: 0;
-  width: 10px;
+  width: 12px;
   height: 100%;
   padding: v-bind('`${effectiveScrollbarInset}px 2px`');
   box-sizing: border-box;
@@ -445,7 +444,7 @@ watch(
 
 .scrollbar-thumb:hover,
 .scrollbar-thumb:active {
-  width: 6px;
+  width: 8px;
   background: rgba(0, 0, 0, 0.5);
 }
 
