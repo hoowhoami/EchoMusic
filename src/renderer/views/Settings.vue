@@ -457,12 +457,6 @@ const outputDeviceDisconnectBehaviorOptions = [
 ];
 
 const outputDeviceOptions = computed(() => settingStore.outputDevices);
-const selectedOutputDeviceLabel = computed(() => {
-  const matched = settingStore.outputDevices.find(
-    (item) => item.value === settingStore.outputDevice,
-  );
-  return matched?.label || (settingStore.outputDevice === 'default' ? '系统默认' : '未识别设备');
-});
 const appliedOutputDeviceLabel = computed(() => {
   const matched = settingStore.outputDevices.find(
     (item) => item.value === playerStore.appliedOutputDeviceId,
@@ -474,16 +468,6 @@ const appliedOutputDeviceLabel = computed(() => {
 const isOutputDeviceTemporarilyFellBack = computed(
   () => playerStore.appliedOutputDeviceId === 'default' && settingStore.outputDevice !== 'default',
 );
-const outputDeviceFeedbackTone = computed(() => {
-  if (settingStore.outputDeviceStatus === 'error') return 'danger';
-  if (
-    settingStore.outputDeviceStatus === 'unsupported' ||
-    settingStore.outputDeviceStatus === 'permission' ||
-    settingStore.outputDeviceStatus === 'fallback'
-  )
-    return 'warning';
-  return 'info';
-});
 const hasOutputDeviceFeedback = computed(
   () => settingStore.outputDeviceStatus !== 'idle' && !!settingStore.outputDeviceStatusMessage,
 );
@@ -1305,11 +1289,20 @@ onUnmounted(() => {
           <div class="space-y-1">
             <h3 class="font-semibold">输出设备</h3>
             <p class="text-sm text-text-secondary">选择音频播放输出设备</p>
-            <p class="text-xs text-text-secondary/80">
-              首选输出：{{ selectedOutputDeviceLabel }}
-              <span v-if="isOutputDeviceTemporarilyFellBack">
-                · 当前实际输出：{{ appliedOutputDeviceLabel }}</span
+            <p v-if="hasOutputDeviceFeedback" class="text-xs text-text-secondary/70">
+              {{ settingStore.outputDeviceStatusMessage }}
+              <button
+                v-if="canRequestOutputDevicePermission"
+                type="button"
+                class="text-primary font-semibold ml-1 hover:underline"
+                :disabled="isRequestingOutputPermission"
+                @click="handleRequestOutputDevicePermission"
               >
+                {{ outputDevicePermissionActionLabel }}
+              </button>
+            </p>
+            <p v-if="isOutputDeviceTemporarilyFellBack" class="text-xs text-text-secondary/70">
+              首选设备不可用，当前使用「{{ appliedOutputDeviceLabel }}」输出
             </p>
           </div>
           <Select
@@ -1336,24 +1329,6 @@ onUnmounted(() => {
             "
           />
         </div>
-        <div
-          v-if="hasOutputDeviceFeedback"
-          :class="['settings-warning', `is-${outputDeviceFeedbackTone}`]"
-        >
-          <div class="settings-warning-content">
-            <span>{{ settingStore.outputDeviceStatusMessage }}</span>
-            <Button
-              v-if="canRequestOutputDevicePermission"
-              variant="outline"
-              size="xs"
-              class="settings-button"
-              :disabled="isRequestingOutputPermission"
-              @click="handleRequestOutputDevicePermission"
-            >
-              {{ outputDevicePermissionActionLabel }}
-            </Button>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -1368,7 +1343,7 @@ onUnmounted(() => {
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">自动领取 VIP</h3>
-            <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP (需要登录)</p>
+            <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
           </div>
           <Switch v-model="settingStore.autoReceiveVip" />
         </div>
@@ -1491,6 +1466,14 @@ onUnmounted(() => {
         <h2 class="text-lg font-bold">关于 EchoMusic</h2>
       </div>
       <div class="settings-card">
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">自动检查更新</h3>
+            <p class="text-sm text-text-secondary">启动时自动检测是否有新版本可用</p>
+          </div>
+          <Switch v-model="settingStore.autoCheckUpdate" />
+        </div>
+        <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">检查预发布版本</h3>

@@ -71,7 +71,9 @@ onMounted(() => {
   syncTrayPlayback();
   window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
   silentUpdateCheckTimer = window.setTimeout(() => {
-    settings.checkForUpdates(true);
+    if (settings.autoCheckUpdate) {
+      settings.checkForUpdates(true);
+    }
   }, 4000);
   colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   colorSchemeMediaQuery.addEventListener('change', updateTheme);

@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 
 import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -163,9 +164,16 @@ const handleUpgradeSvip = async () => {
 };
 
 const handleLogout = () => {
+  showLogoutConfirm.value = true;
+};
+
+const confirmLogout = () => {
+  showLogoutConfirm.value = false;
   userStore.logout();
   router.push('/main/home');
 };
+
+const showLogoutConfirm = ref(false);
 
 onMounted(() => loadData());
 </script>
@@ -403,6 +411,13 @@ onMounted(() => loadData());
       >
     </div>
   </div>
+
+  <Dialog v-model:open="showLogoutConfirm" title="退出登录" description="确定要退出当前账号吗？">
+    <template #footer>
+      <Button variant="outline" size="sm" @click="showLogoutConfirm = false">取消</Button>
+      <Button variant="danger" size="sm" @click="confirmLogout">确认退出</Button>
+    </template>
+  </Dialog>
 </template>
 
 <style scoped>
