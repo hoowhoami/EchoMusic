@@ -1412,7 +1412,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full transition-[background-color,opacity] active:opacity-70"
+              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full"
               :title="playerStore.isPlaying ? '暂停' : '播放'"
               @click="playerStore.togglePlay()"
             >
@@ -1987,25 +1987,19 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .lyric-main-play-btn {
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(18px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: none;
-}
-
-.lyric-main-play-btn:hover {
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
+  transition: none !important;
+  transform: none !important;
 }
 
 .dark .lyric-main-play-btn {
-  background: rgba(28, 28, 30, 0.5);
-  backdrop-filter: blur(18px);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: none;
-}
-
-.dark .lyric-main-play-btn:hover {
-  background: rgba(28, 28, 30, 0.62);
+  background: rgba(22, 30, 44, 0.35);
+  backdrop-filter: blur(24px);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
 }
 
 .lyric-cover-shell {
@@ -2417,17 +2411,13 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .portrait-mode .lyric-main-play-btn {
-  background: var(--pb-btn-bg);
-  border-color: var(--pb-btn-border);
-  backdrop-filter: blur(24px);
+  background: var(--pt-btn-bg) !important;
+  border: 1px solid var(--pt-btn-border) !important;
+  backdrop-filter: blur(24px) !important;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   color: var(--pb-fg);
-}
-
-.portrait-mode .lyric-main-play-btn:hover {
-  background: var(--pb-btn-bg);
-  backdrop-filter: blur(24px);
-  opacity: 0.85;
+  transition: none !important;
+  transform: none !important;
 }
 
 .portrait-mode .lyric-photo-song-info {
@@ -2452,15 +2442,22 @@ body:has(.lyric-view) .drawer-panel {
 /* 写真模式下控制器颜色 */
 .portrait-mode .lyric-controls-surface .iconify,
 .portrait-mode .lyric-controls-surface svg,
-.portrait-mode .lyric-controls-surface button,
+.portrait-mode .lyric-controls-surface button:not(.lyric-main-play-btn),
 .portrait-mode .lyric-controls-surface [class*='text-black'],
 .portrait-mode .lyric-controls-surface [class*='text-white'] {
   color: var(--pb-fg) !important;
 }
 
-.portrait-mode .lyric-controls-surface button:hover .iconify,
-.portrait-mode .lyric-controls-surface button:hover svg {
+.portrait-mode .lyric-controls-surface button:not(.lyric-main-play-btn):hover .iconify,
+.portrait-mode .lyric-controls-surface button:not(.lyric-main-play-btn):hover svg {
   color: var(--pb-fg-hover) !important;
+}
+
+/* 播放按钮图标颜色独立控制，不受通配覆盖 */
+.portrait-mode .lyric-main-play-btn,
+.portrait-mode .lyric-main-play-btn .iconify,
+.portrait-mode .lyric-main-play-btn svg {
+  color: var(--pb-fg) !important;
 }
 
 .portrait-mode .lyric-controls-surface span {
