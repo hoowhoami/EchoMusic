@@ -1412,7 +1412,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full transition-all active:opacity-70"
+              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full transition-[background-color,opacity] active:opacity-70"
               :title="playerStore.isPlaying ? '暂停' : '播放'"
               @click="playerStore.togglePlay()"
             >
