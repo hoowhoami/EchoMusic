@@ -1993,6 +1993,7 @@ body:has(.lyric-view) .drawer-panel {
   box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
   transition: none !important;
   transform: none !important;
+  will-change: backdrop-filter;
 }
 
 .dark .lyric-main-play-btn {
