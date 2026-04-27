@@ -1296,7 +1296,7 @@ onUnmounted(() => {
         <div class="settings-item">
           <div class="space-y-1">
             <h3 class="font-semibold">自动领取 VIP</h3>
-            <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP (需要登录)</p>
+            <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
           </div>
           <Switch v-model="settingStore.autoReceiveVip" />
         </div>

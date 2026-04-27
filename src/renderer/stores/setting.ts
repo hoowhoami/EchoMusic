@@ -82,6 +82,7 @@ export const useSettingStore = defineStore('setting', {
     keepAliveRoutes: ['playlist-detail', 'artist-detail', 'album-detail', 'favorites'] as string[],
     playResumeTimeout: 5,
     silentUpdate: true,
+    autoCheckUpdate: true,
     checkPrerelease: false,
     autoCheckUpdate: true,
     appVersion: '',

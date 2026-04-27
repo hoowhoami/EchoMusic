@@ -864,7 +864,7 @@ onUnmounted(() => {
       ></div>
       <div
         v-if="!hasPortraitGallery"
-        class="absolute inset-0 bg-white/40 transition-colors duration-500 dark:bg-[#04070b]/50"
+        class="absolute inset-0 bg-[#04070b]/40 transition-colors duration-500 dark:bg-[#04070b]/50"
       ></div>
     </div>
 
@@ -1956,23 +1956,25 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .lyric-main-play-btn {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: none;
 }
 
 .lyric-main-play-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .dark .lyric-main-play-btn {
-  background: rgba(245, 245, 247, 0.12);
-  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(28, 28, 30, 0.5);
+  backdrop-filter: blur(18px);
+  border-color: rgba(255, 255, 255, 0.12);
   box-shadow: none;
 }
 
 .dark .lyric-main-play-btn:hover {
-  background: rgba(245, 245, 247, 0.18);
+  background: rgba(28, 28, 30, 0.62);
 }
 
 .lyric-cover-shell {
@@ -2386,17 +2388,22 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-main-play-btn {
   background: var(--pb-btn-bg);
   border-color: var(--pb-btn-border);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   color: var(--pb-fg);
 }
 
 .portrait-mode .lyric-main-play-btn:hover {
   background: var(--pb-btn-bg);
+  backdrop-filter: blur(24px);
   opacity: 0.85;
 }
 
 .portrait-mode .lyric-photo-song-info {
   background: var(--pb-card-bg);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(24px);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--pb-btn-border);
 }
 
 .portrait-mode .lyric-photo-song-title {
