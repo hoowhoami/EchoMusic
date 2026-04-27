@@ -41,6 +41,7 @@ const isDragging = ref(false);
 const dragStartY = ref(0);
 const dragStartScrollTop = ref(0);
 const isHovering = ref(false);
+const isMouseInArea = ref(false);
 const autoHideTimer = ref<number | null>(null);
 let measureFrame = 0;
 let resizeObserver: ResizeObserver | null = null;
@@ -200,7 +201,7 @@ const clearAutoHideTimer = () => {
 const scheduleAutoHide = () => {
   clearAutoHideTimer();
   autoHideTimer.value = window.setTimeout(() => {
-    if (!isDragging.value) {
+    if (!isDragging.value && !isMouseInArea.value) {
       isHovering.value = false;
     }
     autoHideTimer.value = null;
@@ -218,11 +219,13 @@ const handleScroll = (event: Event) => {
 
 const handleScrollAreaMouseEnter = () => {
   updateScrollMetrics();
+  isMouseInArea.value = true;
   isHovering.value = true;
   clearAutoHideTimer();
 };
 
 const handleScrollAreaMouseLeave = () => {
+  isMouseInArea.value = false;
   if (!isDragging.value) {
     scheduleAutoHide();
   }
