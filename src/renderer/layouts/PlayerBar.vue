@@ -127,6 +127,7 @@ const handleSeek = (value: number[] | undefined) => {
 
 const handleSeekStart = () => {
   isDraggingSeek.value = true;
+  pendingSeekTime.value = player.currentTime;
   player.notifySeekStart();
 };
 
@@ -469,7 +470,7 @@ onUnmounted(() => {
               <SliderRange class="absolute bg-primary rounded-full h-full" />
             </SliderTrack>
             <SliderThumb
-              class="player-progress-thumb block w-2.5 h-2.5 bg-white border border-black/10 rounded-full shadow-md focus-visible:outline-none transition-all duration-200"
+              class="player-progress-thumb block w-2.5 h-2.5 bg-white border border-black/10 rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"
               :class="[isHoveringProgress ? 'opacity-100 scale-125' : 'opacity-0 scale-50']"
             />
           </SliderRoot>

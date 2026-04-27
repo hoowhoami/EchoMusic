@@ -1303,6 +1303,8 @@ onUnmounted(() => {
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
+                              color: effectiveUnplayedColor ? effectiveUnplayedColor : undefined,
+                              opacity: effectiveUnplayedColor ? 0.7 : undefined,
                             }"
                           >
                             {{ line.translated.trim() }}
@@ -1317,7 +1319,8 @@ onUnmounted(() => {
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
-                              opacity: 0.72,
+                              color: effectiveUnplayedColor ? effectiveUnplayedColor : undefined,
+                              opacity: effectiveUnplayedColor ? 0.55 : 0.72,
                             }"
                           >
                             {{ line.romanized.trim() }}
@@ -1335,6 +1338,8 @@ onUnmounted(() => {
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
+                              color: effectiveUnplayedColor ? effectiveUnplayedColor : undefined,
+                              opacity: effectiveUnplayedColor ? 0.7 : undefined,
                             }"
                           >
                             {{ lyricStore.lineSecondaryText(line) }}
@@ -1405,7 +1410,7 @@ onUnmounted(() => {
               variant="unstyled"
               size="none"
               type="button"
-              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full transition-all active:scale-95"
+              class="lyric-main-play-btn flex h-12 w-12 items-center justify-center rounded-full transition-all active:opacity-70"
               :title="playerStore.isPlaying ? '暂停' : '播放'"
               @click="playerStore.togglePlay()"
             >
@@ -1521,7 +1526,7 @@ onUnmounted(() => {
                   <SliderRange class="absolute bg-black dark:bg-white rounded-full h-full" />
                 </SliderTrack>
                 <SliderThumb
-                  class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none transition-all duration-200"
+                  class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"
                   :class="[isHoveringProgress ? 'opacity-100 scale-110' : 'opacity-0 scale-50']"
                 />
               </SliderRoot>
