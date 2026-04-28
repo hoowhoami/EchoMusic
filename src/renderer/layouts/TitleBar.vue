@@ -226,9 +226,26 @@ onUnmounted(() => {
       </Button>
       <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" title="刷新">
         <RefreshIcon
+          width="22"
+          height="22"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
+        />
+      </Button>
+
+      <!-- 听歌识曲 -->
+      <Button
+        variant="unstyled"
+        size="none"
+        class="nav-btn group"
+        title="听歌识曲"
+        @click="router.push({ name: 'recognize' })"
+      >
+        <Icon
+          :icon="iconMicrophone"
           width="18"
           height="18"
-          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
+          style="stroke-width: 3"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
         />
       </Button>
 
@@ -239,12 +256,17 @@ onUnmounted(() => {
           v-if="!isSearchExpanded"
           variant="unstyled"
           size="none"
-          class="tb-search-trigger"
+          class="nav-btn group"
           title="搜索"
           @click="expandSearch"
         >
-          <Icon :icon="iconSearch" width="16" height="16" />
-          <span class="tb-search-trigger-text">搜索</span>
+          <Icon
+            :icon="iconSearch"
+            width="18"
+            height="18"
+            style="stroke-width: 3"
+            class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
+          />
         </Button>
 
         <!-- 展开状态：搜索输入框 -->
@@ -315,17 +337,6 @@ onUnmounted(() => {
           </Scrollbar>
         </div>
       </div>
-
-      <!-- 听歌识曲 -->
-      <Button
-        variant="unstyled"
-        size="none"
-        class="tb-recognize-btn"
-        title="听歌识曲"
-        @click="router.push({ name: 'recognize' })"
-      >
-        <Icon :icon="iconMicrophone" width="16" height="16" />
-      </Button>
     </div>
 
     <!-- 2. 中间：拖拽区域 -->
@@ -362,7 +373,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 50%;
   transition: all 0.2s;
   background: transparent;
   border: none;
@@ -383,6 +394,14 @@ onUnmounted(() => {
 
 .nav-btn:disabled:hover {
   background-color: transparent;
+}
+
+/* 加粗图标（穿透到 SVG 内部） */
+.tb-icon-bold :deep(path),
+.tb-icon-bold :deep(line),
+.tb-icon-bold :deep(circle),
+.tb-icon-bold :deep(polyline) {
+  stroke-width: 2.5 !important;
 }
 
 .control-btn {
@@ -414,37 +433,6 @@ onUnmounted(() => {
   position: relative;
 }
 
-.tb-search-trigger {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.dark .tb-search-trigger {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.tb-search-trigger:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: var(--color-text-main);
-}
-
-.dark .tb-search-trigger:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.tb-search-trigger-text {
-  line-height: 1;
-}
-
 .tb-search-expanded {
   position: relative;
   width: 320px;
@@ -465,7 +453,7 @@ onUnmounted(() => {
 .tb-search-input-wrap {
   display: flex;
   align-items: center;
-  height: 34px;
+  height: 30px;
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.06);
   padding: 0 4px 0 10px;
@@ -619,32 +607,5 @@ onUnmounted(() => {
 .tb-suggest-item-icon {
   flex-shrink: 0;
   opacity: 0.4;
-}
-
-/* 听歌识曲按钮 */
-.tb-recognize-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--color-text-secondary);
-  transition: all 0.2s ease;
-}
-
-.dark .tb-recognize-btn {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.tb-recognize-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-  color: var(--color-primary);
-}
-
-.dark .tb-recognize-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--color-primary);
 }
 </style>
