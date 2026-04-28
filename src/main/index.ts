@@ -1,5 +1,9 @@
 import { app } from 'electron';
 import Conf from 'conf';
+import { initMain as initAudioLoopback } from 'electron-audio-loopback';
+
+// 初始化系统音频 loopback（必须在 app.ready 之前）
+initAudioLoopback();
 
 if (process.platform === 'win32' && app.isPackaged) {
   app.commandLine.appendSwitch('no-sandbox');

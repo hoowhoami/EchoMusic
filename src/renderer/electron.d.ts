@@ -7,6 +7,7 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type { RecognizeResponse } from '../shared/shazam';
 
 export interface IElectronAPI {
   platform: string;
@@ -84,6 +85,11 @@ export interface IElectronAPI {
     error: (...args: unknown[]) => void;
     debug: (...args: unknown[]) => void;
     verbose: (...args: unknown[]) => void;
+  };
+  shazam: {
+    recognize: (pcmData: ArrayBuffer) => Promise<RecognizeResponse>;
+    enableLoopback: () => Promise<void>;
+    disableLoopback: () => Promise<void>;
   };
 }
 

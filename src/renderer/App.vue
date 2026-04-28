@@ -9,9 +9,7 @@ import { useSettingStore } from './stores/setting';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import type { UpdateCheckResult } from '../shared/app';
-import { defineAsyncComponent } from 'vue';
-
-const LyricView = defineAsyncComponent(() => import('@/views/Lyric.vue'));
+import LyricView from '@/views/Lyric.vue';
 
 const player = usePlayerStore();
 const settings = useSettingStore();
@@ -160,14 +158,16 @@ watch(
 /* 歌词覆盖层动画 */
 .lyric-overlay-enter-active {
   transition:
-    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
 .lyric-overlay-leave-active {
   transition:
-    transform 0.4s cubic-bezier(0.4, 0, 0.6, 1),
-    opacity 0.28s cubic-bezier(0.4, 0, 1, 1);
+    transform 0.3s cubic-bezier(0.4, 0, 0.6, 1),
+    opacity 0.2s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
 }
 
 .lyric-overlay-enter-from {

@@ -28,7 +28,7 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             emptyOutDir: true,
             rollupOptions: {
-              external: ['electron', 'font-list'],
+              external: ['electron', 'font-list', 'shazam-api', 'electron-audio-loopback'],
             },
           },
         },

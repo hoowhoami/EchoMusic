@@ -24,6 +24,7 @@
     "@vueuse/core": "^14.2.1",
     "axios": "^1.13.6",
     "conf": "^15.1.0",
+    "electron-audio-loopback": "^1.0.6",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
     "font-list": "^2.0.2",
@@ -33,6 +34,7 @@
     "pinia-plugin-persistedstate": "^4.2.0",
     "reka-ui": "^2.9.2",
     "semver": "^7.7.4",
+    "shazam-api": "^0.3.0",
     "sortablejs": "^1.15.7",
     "vue": "^3.5.30",
     "vue-router": "^4.5.0"

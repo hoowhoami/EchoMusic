@@ -1782,16 +1782,15 @@ body:has(.lyric-view) .drawer-panel {
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.28);
   box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
-  backdrop-filter: blur(24px);
   transition: all 0.2s ease;
 }
 
 .lyric-icon-btn:hover,
 .lyric-tool-chip:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.48);
 }
 
 .lyric-tool-chip {
@@ -1801,9 +1800,8 @@ body:has(.lyric-view) .drawer-panel {
   padding: 0 18px;
   height: 39.5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.28);
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
-  backdrop-filter: blur(24px);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -1818,9 +1816,8 @@ body:has(.lyric-view) .drawer-panel {
   height: 39.5px;
   box-sizing: border-box;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.22);
   box-shadow: 0 12px 28px rgba(148, 163, 184, 0.1);
-  backdrop-filter: blur(18px);
 }
 
 .lyric-tool-chip-main {
@@ -1870,9 +1867,8 @@ body:has(.lyric-view) .drawer-panel {
   margin-left: 2px;
   border-radius: 999px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.44);
   box-shadow: none;
-  backdrop-filter: blur(18px);
   opacity: 0.92;
   transition: all 0.2s ease;
 }
@@ -1884,26 +1880,25 @@ body:has(.lyric-view) .drawer-panel {
 
 .dark .lyric-tool-chip,
 .dark .lyric-icon-btn {
-  background: rgba(22, 30, 44, 0.5);
+  background: rgba(22, 30, 44, 0.72);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px);
 }
 
 .dark .lyric-tool-group {
-  background: rgba(14, 18, 26, 0.4);
+  background: rgba(14, 18, 26, 0.65);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .dark .lyric-tool-chip-inline {
-  background: rgba(28, 36, 52, 0.92);
+  background: rgba(28, 36, 52, 0.88);
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: none;
 }
 
 .dark .lyric-tool-chip.is-active {
-  background: rgba(22, 30, 44, 0.5);
+  background: rgba(22, 30, 44, 0.72);
   box-shadow: none;
 }
 
@@ -1921,13 +1916,13 @@ body:has(.lyric-view) .drawer-panel {
 
 .dark .lyric-icon-btn:hover,
 .dark .lyric-tool-chip:hover {
-  background: rgba(36, 48, 70, 0.94);
+  background: rgba(36, 48, 70, 0.82);
 }
 
 .dark .lyric-tool-chip:disabled,
 .dark .lyric-weight-btn:disabled {
   opacity: 0.5;
-  background: rgba(18, 24, 36, 0.72);
+  background: rgba(18, 24, 36, 0.8);
   border-color: rgba(255, 255, 255, 0.05);
 }
 
@@ -1987,18 +1982,15 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .lyric-main-play-btn {
-  background: rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.38);
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
   transition: none !important;
   transform: none !important;
-  will-change: backdrop-filter;
 }
 
 .dark .lyric-main-play-btn {
-  background: rgba(22, 30, 44, 0.35);
-  backdrop-filter: blur(24px);
+  background: rgba(22, 30, 44, 0.6);
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
 }
@@ -2038,14 +2030,13 @@ body:has(.lyric-view) .drawer-panel {
   gap: 12px;
   padding: 8px 16px 8px 8px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.32);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.42);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   max-width: 280px;
 }
 
 .dark .lyric-photo-song-info {
-  background: rgba(10, 14, 20, 0.52);
+  background: rgba(10, 14, 20, 0.7);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
@@ -2385,7 +2376,6 @@ body:has(.lyric-view) .drawer-panel {
   background: var(--pt-btn-bg);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--pt-btn-border);
-  backdrop-filter: blur(24px);
   color: var(--pt-fg);
 }
 
@@ -2414,7 +2404,6 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-main-play-btn {
   background: var(--pt-btn-bg) !important;
   border: 1px solid var(--pt-btn-border) !important;
-  backdrop-filter: blur(24px) !important;
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   color: var(--pb-fg);
   transition: none !important;
@@ -2423,7 +2412,6 @@ body:has(.lyric-view) .drawer-panel {
 
 .portrait-mode .lyric-photo-song-info {
   background: var(--pb-card-bg);
-  backdrop-filter: blur(24px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--pb-btn-border);
 }

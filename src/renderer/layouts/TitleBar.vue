@@ -12,7 +12,9 @@ import {
   iconSquare,
   iconX,
   iconSearch,
+  iconMicrophone,
 } from '@/icons';
+import RecognizeDialog from '@/components/app/RecognizeDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -31,6 +33,7 @@ const showSuggestions = ref(false);
 const suggestions = ref<{ label: string; records: { text: string }[] }[]>([]);
 const isLoadingSuggestions = ref(false);
 let suggestTimer: number | null = null;
+const showRecognizeDialog = ref(false);
 
 const updateNavState = () => {
   if (typeof window === 'undefined') return;
@@ -314,6 +317,17 @@ onUnmounted(() => {
           </Scrollbar>
         </div>
       </div>
+
+      <!-- 听歌识曲 -->
+      <Button
+        variant="unstyled"
+        size="none"
+        class="tb-recognize-btn"
+        title="听歌识曲"
+        @click="showRecognizeDialog = true"
+      >
+        <Icon :icon="iconMicrophone" width="16" height="16" />
+      </Button>
     </div>
 
     <!-- 2. 中间：拖拽区域 -->
@@ -337,6 +351,8 @@ onUnmounted(() => {
       </Button>
     </div>
   </header>
+
+  <RecognizeDialog v-model:open="showRecognizeDialog" />
 </template>
 
 <style scoped>
@@ -607,5 +623,32 @@ onUnmounted(() => {
 .tb-suggest-item-icon {
   flex-shrink: 0;
   opacity: 0.4;
+}
+
+/* 听歌识曲按钮 */
+.tb-recognize-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.dark .tb-recognize-btn {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tb-recognize-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--color-primary);
+}
+
+.dark .tb-recognize-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-primary);
 }
 </style>

@@ -9,6 +9,7 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type { RecognizeResponse } from '../shared/shazam';
 
 const ipcListenerMap = new Map<
   string,
@@ -183,5 +184,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('mpv:error', listener);
       return () => ipcRenderer.removeListener('mpv:error', listener);
     },
+  },
+  shazam: {
+    recognize: (pcmData: ArrayBuffer) =>
+      ipcRenderer.invoke('shazam:recognize', pcmData) as Promise<RecognizeResponse>,
+    enableLoopback: () => ipcRenderer.invoke('enable-loopback-audio'),
+    disableLoopback: () => ipcRenderer.invoke('disable-loopback-audio'),
   },
 });

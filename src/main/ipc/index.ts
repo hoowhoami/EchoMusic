@@ -5,6 +5,7 @@ import { registerSettingsHandlers } from './settings';
 import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
+import { registerShazamHandlers } from './shazam';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -17,6 +18,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerShortcutHandlers(context);
   registerTrayHandlers();
   registerDesktopLyricHandlers();
+  registerShazamHandlers();
   registered = true;
 };
 
