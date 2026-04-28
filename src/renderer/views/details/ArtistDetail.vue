@@ -32,6 +32,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import {
   iconCurrentLocation,
@@ -158,33 +159,13 @@ const sortedSongs = computed(() => {
   });
 });
 
-const fetchAllArtistSongs = async (totalCount: number) => {
-  if (songs.value.length >= totalCount) return;
-  const artistId = getArtistId();
-  const pageSize = 200;
-  const seenIds = new Set(songs.value.map((song) => song.id));
-  let page = 2;
+// 歌曲分页加载器
+let songLoader: PagedSongLoader<Song> | null = null;
 
-  let bufferedSongs = [...songs.value];
-
-  try {
-    while (bufferedSongs.length < totalCount) {
-      const res = await getArtistSongs(artistId, page, pageSize, 'hot');
-      const nextSongs = extractList(res).map((item) => mapArtistSong(artistId, item));
-      const filtered = nextSongs.filter((song) => {
-        if (seenIds.has(song.id)) return false;
-        seenIds.add(song.id);
-        return true;
-      });
-      if (filtered.length === 0) break;
-      bufferedSongs = [...bufferedSongs, ...filtered];
-      loadedSongCount.value = bufferedSongs.length;
-      page += 1;
-    }
-    songs.value = bufferedSongs;
-  } catch {
-    toastStore.loadFailed('歌手歌曲');
-  }
+const fetchAllArtistSongs = (totalCount: number) => {
+  if (!songLoader || songLoader.fullyLoaded) return;
+  if (songLoader.count >= totalCount) return;
+  void songLoader.loadRemaining();
 };
 
 const fetchData = async () => {
@@ -208,17 +189,44 @@ const fetchData = async () => {
       loading.value = false;
     });
 
-  // 2. 获取歌曲列表
-  const songsTask = getArtistSongs(artistId, 1, 200, 'hot')
-    .then((res) => {
-      const fetched = extractList(res).map((item) => mapArtistSong(artistId, item));
-      songs.value = fetched;
-      loadedSongCount.value = fetched.length;
-      loadingSongs.value = false;
+  // 2. 中止上一次加载
+  if (songLoader) {
+    songLoader.abort();
+  }
 
-      const totalSongs = artist.value?.songCount ?? fetched.length;
-      if (totalSongs > fetched.length) {
-        void fetchAllArtistSongs(totalSongs);
+  // 3. 创建加载器获取歌曲
+  songLoader = new PagedSongLoader<Song>(
+    async (page, pageSize) => {
+      const res = await getArtistSongs(artistId, page, pageSize, 'hot');
+      const items = extractList(res).map((item) => mapArtistSong(artistId, item));
+      return { items, hasMore: items.length >= pageSize };
+    },
+    {
+      pageSize: 200,
+      concurrency: 3,
+      dedupeKey: (song) => String(song.id),
+      logTag: 'ArtistSongsLoader',
+      onPageLoaded(allItems) {
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onComplete(allItems) {
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onError() {
+        toastStore.loadFailed('歌手歌曲');
+      },
+    },
+  );
+
+  const songsTask = songLoader
+    .loadFirstPage()
+    .then(() => {
+      loadingSongs.value = false;
+      const totalSongs = artist.value?.songCount ?? songLoader!.count;
+      if (totalSongs > songLoader!.count) {
+        fetchAllArtistSongs(totalSongs);
       }
     })
     .catch(() => {
@@ -246,6 +254,10 @@ onIdChange(() => {
   sortField.value = null;
   sortOrder.value = null;
   activeTab.value = 'songs';
+  if (songLoader) {
+    songLoader.abort();
+    songLoader = null;
+  }
   void fetchData();
 });
 
@@ -323,12 +335,20 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+  const queueOpts = {
     queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
     title: artist.value?.name || '歌手',
     subtitle: '',
-    type: 'artist',
-  });
+    type: 'artist' as const,
+  };
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, queueOpts);
+  // 后台等待全部加载完，静默更新播放队列
+  if (songLoader && !songLoader.fullyLoaded) {
+    const allSongs = await songLoader.waitForAll();
+    if (allSongs.length > songs.value.length) {
+      playlistStore.setPlaybackQueueWithOptions(allSongs.slice() as Song[], 0, queueOpts);
+    }
+  }
 };
 const openBatchDrawer = () => {
   if (songs.value.length === 0) return;

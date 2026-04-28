@@ -43,6 +43,7 @@ import {
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { toRecord } from '../../../shared/object';
+import { PagedSongLoader } from '@/utils/PagedSongLoader';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -234,6 +235,9 @@ const handleTabChange = (value: string | number) => {
   }
 };
 
+// 歌曲分页加载器
+let songLoader: PagedSongLoader<Song> | null = null;
+
 const fetchData = async () => {
   loading.value = true;
   try {
@@ -256,75 +260,66 @@ const fetchData = async () => {
       currentUserId,
     });
 
-    const tracksRes = await getPlaylistTracks(queryId, 1, 200);
-
-    if (tracksRes && typeof tracksRes === 'object') {
-      const hasStatus = 'status' in tracksRes;
-      const statusOk = hasStatus && (tracksRes as { status?: number }).status === 1;
-      const hasPayload = 'data' in tracksRes || 'info' in tracksRes;
-      if (statusOk || hasPayload) {
-        const payload =
-          'data' in tracksRes
-            ? (tracksRes as { data?: unknown }).data
-            : 'info' in tracksRes
-              ? (tracksRes as { info?: unknown }).info
-              : tracksRes;
-        const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? tracksRes);
-        songs.value = parsedSongs;
-        loadedSongCount.value = parsedSongs.length;
-        playlistFilteredInvalidCount.value = filteredCount;
-      }
+    // 中止上一次加载
+    if (songLoader) {
+      songLoader.abort();
     }
 
+    // 重置过滤计数
+    playlistFilteredInvalidCount.value = 0;
+
+    songLoader = new PagedSongLoader<Song>(
+      async (page, pageSize) => {
+        const res = await getPlaylistTracks(queryId, page, pageSize);
+        if (!res || typeof res !== 'object') return { items: [], hasMore: false };
+        const hasStatus = 'status' in res;
+        const statusOk = hasStatus && (res as { status?: number }).status === 1;
+        const hasPayload = 'data' in res || 'info' in res;
+        if (!statusOk && !hasPayload) return { items: [], hasMore: false };
+
+        const payload =
+          'data' in res
+            ? (res as { data?: unknown }).data
+            : 'info' in res
+              ? (res as { info?: unknown }).info
+              : res;
+        const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? res);
+        playlistFilteredInvalidCount.value += filteredCount;
+        // 返回数量不足一页说明没有更多了
+        const hasMore = parsedSongs.length + filteredCount >= pageSize;
+        return { items: parsedSongs, hasMore };
+      },
+      {
+        pageSize: 200,
+        concurrency: 3,
+        dedupeKey: (song) => String(song.id),
+        logTag: 'PlaylistDetailLoader',
+        onPageLoaded(allItems) {
+          songs.value = allItems.slice();
+          loadedSongCount.value = allItems.length;
+        },
+        onComplete(allItems) {
+          songs.value = allItems.slice();
+          loadedSongCount.value = allItems.length;
+        },
+        onError() {
+          toastStore.loadFailed('歌单歌曲');
+        },
+      },
+    );
+
+    // 首页加载完立即渲染
+    await songLoader.loadFirstPage();
+
+    // 后台加载剩余页
     const targetTotal = playlistMeta?.count ?? 0;
-    if (songs.value.length > 0 && targetTotal > songs.value.length) {
-      void fetchAllPlaylistTracks(queryId, targetTotal);
+    if (!songLoader.fullyLoaded && targetTotal > songLoader.count) {
+      void songLoader.loadRemaining();
     }
   } catch (e) {
     console.error('Fetch playlist error:', e);
   } finally {
     loading.value = false;
-  }
-};
-
-const fetchAllPlaylistTracks = async (queryId: string, totalCount: number) => {
-  const pageSize = 200;
-  const seenIds = new Set(songs.value.map((song) => song.id));
-  let page = 2;
-  let bufferedSongs = [...songs.value];
-
-  try {
-    while (bufferedSongs.length < totalCount) {
-      const res = await getPlaylistTracks(queryId, page, pageSize);
-
-      if (!res || typeof res !== 'object') break;
-      const hasStatus = 'status' in res;
-      const statusOk = hasStatus && (res as { status?: number }).status === 1;
-      const hasPayload = 'data' in res || 'info' in res;
-      if (!statusOk && !hasPayload) break;
-
-      const payload =
-        'data' in res
-          ? (res as { data?: unknown }).data
-          : 'info' in res
-            ? (res as { info?: unknown }).info
-            : res;
-      const { songs: parsedSongs, filteredCount } = parsePlaylistTracks(payload ?? res);
-      playlistFilteredInvalidCount.value += filteredCount;
-      const nextSongs = parsedSongs.filter((song) => {
-        if (seenIds.has(song.id)) return false;
-        seenIds.add(song.id);
-        return true;
-      });
-
-      if (nextSongs.length === 0) break;
-      bufferedSongs = [...bufferedSongs, ...nextSongs];
-      loadedSongCount.value = bufferedSongs.length;
-      page += 1;
-    }
-    songs.value = bufferedSongs;
-  } catch {
-    toastStore.loadFailed('歌单歌曲');
   }
 };
 
@@ -343,6 +338,10 @@ onIdChange(() => {
   commentPage.value = 1;
   commentTotal.value = 0;
   hasMoreComments.value = true;
+  if (songLoader) {
+    songLoader.abort();
+    songLoader = null;
+  }
   fetchData();
   if (activeTab.value === 'comments') {
     fetchComments(true);
@@ -414,19 +413,31 @@ const handleRemovedFromPlaylist = (song: Song) => {
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
+  const queueOpts = {
+    queueId: `queue:playlist:${playlist.value?.id ?? getPlaylistId()}`,
+    title: playlist.value?.name || '歌单',
+    subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
+    type: 'playlist' as const,
+  };
   await replaceQueueAndPlay(
     playlistStore,
     playerStore,
     songs.value,
     playlistFilteredInvalidCount.value,
     undefined,
-    {
-      queueId: `queue:playlist:${playlist.value?.id ?? getPlaylistId()}`,
-      title: playlist.value?.name || '歌单',
-      subtitle: playlist.value?.nickname || playlist.value?.list_create_username || '',
-      type: 'playlist',
-    },
+    queueOpts,
   );
+  // 后台等待全部加载完，静默更新播放队列
+  if (songLoader && !songLoader.fullyLoaded) {
+    const allSongs = await songLoader.waitForAll();
+    if (allSongs.length > songs.value.length) {
+      playlistStore.setPlaybackQueueWithOptions(
+        allSongs.slice() as Song[],
+        playlistFilteredInvalidCount.value,
+        queueOpts,
+      );
+    }
+  }
 };
 const openBatchDrawer = () => {
   if (songs.value.length === 0) return;

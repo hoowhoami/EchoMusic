@@ -15,6 +15,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
 import { extractList } from '@/utils/extractors';
+import { PagedSongLoader } from '@/utils/PagedSongLoader';
 
 export type { Song, SongRelateGood, SongArtist } from '@/models/song';
 export type { PlaylistInfo } from '@/models/playlist';
@@ -147,6 +148,9 @@ const FAVORITES_PAGE_SIZE = 200;
 const MAX_PLAYBACK_QUEUE_COUNT = 4;
 const PERSONAL_FM_MODE = 'normal';
 let personalFmSessionResetPending = true;
+
+// 收藏歌曲加载器（模块级，非响应式）
+let favoritesLoader: PagedSongLoader<Song> | null = null;
 
 const buildPlaybackQueueState = (
   options: SetPlaybackQueueOptions = {},
@@ -841,38 +845,52 @@ export const usePlaylistStore = defineStore('playlist', {
         return false;
       }
 
-      const songs: Song[] = [];
-
-      try {
-        let page = 1;
-        const seenIds = new Set<string>();
-
-        while (true) {
-          const response = await getPlaylistTracks(String(likedQueryId), page, FAVORITES_PAGE_SIZE);
-          const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
-
-          if (pageSongs.length === 0 && filteredCount === 0) break;
-
-          const nextSongs = pageSongs.filter((song) => {
-            const sid = String(song.id);
-            if (seenIds.has(sid)) return false;
-            seenIds.add(sid);
-            return true;
-          });
-
-          songs.push(...nextSongs);
-
-          if (pageSongs.length + filteredCount < FAVORITES_PAGE_SIZE) break;
-
-          if (page >= 50) break;
-          page += 1;
-        }
-      } catch (error) {
-        logger.warn('PlaylistStore', 'Fetch liked playlist songs failed:', error);
+      // 中止上一次加载
+      if (favoritesLoader) {
+        favoritesLoader.abort();
       }
 
-      this.syncCloudFavorites(songs);
-      return songs.length > 0;
+      const queryId = String(likedQueryId);
+      const updateFavorites = (items: readonly Song[]) => {
+        this.favorites = dedupeSongs(items.slice());
+      };
+
+      const loader = new PagedSongLoader<Song>(
+        async (page, pageSize) => {
+          const response = await getPlaylistTracks(queryId, page, pageSize);
+          const { songs: pageSongs, filteredCount } = parsePlaylistTracks(response);
+          const hasMore = pageSongs.length + filteredCount >= pageSize;
+          return { items: pageSongs, hasMore };
+        },
+        {
+          pageSize: FAVORITES_PAGE_SIZE,
+          concurrency: 3,
+          dedupeKey: (song) => String(song.id),
+          logTag: 'FavoritesLoader',
+          maxPages: 50,
+          onPageLoaded: (allItems) => updateFavorites(allItems),
+          onComplete: (allItems) => updateFavorites(allItems),
+        },
+      );
+
+      favoritesLoader = loader;
+
+      // 首页加载完立即渲染，剩余页后台并发
+      await loader.loadFirstPage();
+      if (!loader.fullyLoaded) {
+        void loader.loadRemaining();
+      }
+
+      return loader.count > 0;
+    },
+    /**
+     * 等待收藏歌曲全部加载完成
+     */
+    async waitForFavoritesLoaded(): Promise<readonly Song[]> {
+      if (favoritesLoader) {
+        return favoritesLoader.waitForAll();
+      }
+      return this.favorites;
     },
     setPlaybackQueue(songs: Song[], filteredInvalidCount = 0) {
       this.setPlaybackQueueWithOptions(songs, filteredInvalidCount);

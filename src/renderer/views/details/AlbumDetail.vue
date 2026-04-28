@@ -44,6 +44,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { isRecord, toRecord } from '../../../shared/object';
+import { PagedSongLoader } from '@/utils/PagedSongLoader';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -326,6 +327,9 @@ const fetchComments = async (reset = false) => {
 
 const loadingSongs = ref(true);
 
+// 歌曲分页加载器
+let songLoader: PagedSongLoader<Song> | null = null;
+
 const handleTabChange = (value: string | number) => {
   activeTab.value = String(value);
   if (value === 'comments' && comments.value.length === 0) {
@@ -338,7 +342,7 @@ const fetchData = async () => {
   loadingSongs.value = true;
   const albumId = getAlbumId();
 
-  // 1. 先获取专辑详情，用于展示 Header
+  // 1. 先获取专辑详情
   const detailTask = getAlbumDetail(albumId)
     .then((detailRes) => {
       const detailRaw = extractFirstObject(detailRes);
@@ -355,18 +359,47 @@ const fetchData = async () => {
       loading.value = false;
     });
 
-  // 2. 获取歌曲列表
-  const songsTask = getAlbumSongs(albumId, 1, 30)
-    .then((songsRes) => {
-      const fetched = extractList(songsRes).map((item) => mapAlbumSong(item));
-      songs.value = fetched;
-      loadedSongCount.value = fetched.length;
-      loadingSongs.value = false;
+  // 2. 中止上一次加载
+  if (songLoader) {
+    songLoader.abort();
+  }
 
-      // 优先使用详情接口给出的总数，避免并发请求下读取到旧值
-      const totalSongs = album.value?.songCount ?? fetched.length;
-      if (totalSongs > fetched.length) {
-        void fetchAllAlbumSongs(totalSongs);
+  // 3. 创建加载器获取歌曲
+  songLoader = new PagedSongLoader<Song>(
+    async (page, pageSize) => {
+      const res = await getAlbumSongs(albumId, page, pageSize);
+      if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) {
+        return { items: [], hasMore: false };
+      }
+      const items = extractList(res).map((item) => mapAlbumSong(item));
+      return { items, hasMore: items.length >= pageSize };
+    },
+    {
+      pageSize: 30,
+      concurrency: 3,
+      dedupeKey: (song) => String(song.id),
+      logTag: 'AlbumSongsLoader',
+      onPageLoaded(allItems) {
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onComplete(allItems) {
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onError() {
+        toastStore.loadFailed('专辑歌曲');
+      },
+    },
+  );
+
+  const songsTask = songLoader
+    .loadFirstPage()
+    .then(() => {
+      loadingSongs.value = false;
+      const totalSongs = album.value?.songCount ?? songLoader!.count;
+      if (totalSongs > songLoader!.count && !songLoader!.fullyLoaded) {
+        void songLoader!.loadRemaining();
       }
     })
     .catch((e) => {
@@ -375,35 +408,6 @@ const fetchData = async () => {
     });
 
   await Promise.allSettled([detailTask, songsTask]);
-};
-
-const fetchAllAlbumSongs = async (totalCount: number) => {
-  if (songs.value.length >= totalCount) return;
-  const pageSize = 30;
-  const albumId = getAlbumId();
-  const seenIds = new Set(songs.value.map((song) => song.id));
-  let page = 2;
-  let bufferedSongs = [...songs.value];
-
-  try {
-    while (bufferedSongs.length < totalCount) {
-      const res = await getAlbumSongs(albumId, page, pageSize);
-      if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) break;
-      const nextSongs = extractList(res).map((item) => mapAlbumSong(item));
-      const filtered = nextSongs.filter((song) => {
-        if (seenIds.has(song.id)) return false;
-        seenIds.add(song.id);
-        return true;
-      });
-      if (filtered.length === 0) break;
-      bufferedSongs = [...bufferedSongs, ...filtered];
-      loadedSongCount.value = bufferedSongs.length;
-      page += 1;
-    }
-    songs.value = bufferedSongs;
-  } catch {
-    toastStore.loadFailed('专辑歌曲');
-  }
 };
 
 onMounted(() => {
@@ -421,6 +425,10 @@ onIdChange(() => {
   commentPage.value = 1;
   commentTotal.value = 0;
   hasMoreComments.value = true;
+  if (songLoader) {
+    songLoader.abort();
+    songLoader = null;
+  }
   fetchData();
   if (activeTab.value === 'comments') {
     fetchComments(true);
@@ -454,12 +462,20 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 
 const handlePlayAll = async () => {
   if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+  const queueOpts = {
     queueId: `queue:album:${album.value?.id ?? getAlbumId()}`,
     title: album.value?.name || '专辑',
     subtitle: album.value?.singerName || '',
-    type: 'album',
-  });
+    type: 'album' as const,
+  };
+  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, queueOpts);
+  // 后台等待全部加载完，静默更新播放队列
+  if (songLoader && !songLoader.fullyLoaded) {
+    const allSongs = await songLoader.waitForAll();
+    if (allSongs.length > songs.value.length) {
+      playlistStore.setPlaybackQueueWithOptions(allSongs.slice() as Song[], 0, queueOpts);
+    }
+  }
 };
 const openBatchDrawer = () => {
   if (songs.value.length === 0) return;
