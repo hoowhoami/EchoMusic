@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '搜索' },
       },
       {
+        path: 'recognize',
+        name: 'recognize',
+        component: () => import('@/views/Recognize.vue'),
+        meta: { title: '听歌识曲', keepAlive: true },
+      },
+      {
         path: 'ranking',
         name: 'ranking',
         component: () => import('@/views/Ranking.vue'),

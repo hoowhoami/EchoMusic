@@ -13,7 +13,7 @@ const settingStore = useSettingStore();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
 
 // 始终 keepAlive 的路由
-const alwaysKeepAlive = ['personal-fm'];
+const alwaysKeepAlive = ['personal-fm', 'recognize-page'];
 
 // 根据设置动态计算 keepAlive 列表
 const keepAliveRouteNames = computed(() => {

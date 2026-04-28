@@ -14,7 +14,6 @@ import {
   iconSearch,
   iconMicrophone,
 } from '@/icons';
-import RecognizeDialog from '@/components/app/RecognizeDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -33,7 +32,6 @@ const showSuggestions = ref(false);
 const suggestions = ref<{ label: string; records: { text: string }[] }[]>([]);
 const isLoadingSuggestions = ref(false);
 let suggestTimer: number | null = null;
-const showRecognizeDialog = ref(false);
 
 const updateNavState = () => {
   if (typeof window === 'undefined') return;
@@ -324,7 +322,7 @@ onUnmounted(() => {
         size="none"
         class="tb-recognize-btn"
         title="听歌识曲"
-        @click="showRecognizeDialog = true"
+        @click="router.push({ name: 'recognize' })"
       >
         <Icon :icon="iconMicrophone" width="16" height="16" />
       </Button>
@@ -351,8 +349,6 @@ onUnmounted(() => {
       </Button>
     </div>
   </header>
-
-  <RecognizeDialog v-model:open="showRecognizeDialog" />
 </template>
 
 <style scoped>
