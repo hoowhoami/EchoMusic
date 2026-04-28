@@ -146,6 +146,10 @@ contextBridge.exposeInMainWorld('electron', {
     fade: (from: number, to: number, durationMs: number) =>
       ipcRenderer.invoke('mpv:fade', from, to, durationMs),
     cancelFade: () => ipcRenderer.invoke('mpv:cancel-fade'),
+    pauseWithFade: (savedVolume: number, durationMs: number) =>
+      ipcRenderer.invoke('mpv:pause-with-fade', savedVolume, durationMs),
+    playWithFade: (targetVolume: number, durationMs: number) =>
+      ipcRenderer.invoke('mpv:play-with-fade', targetVolume, durationMs),
     getState: () => ipcRenderer.invoke('mpv:get-state'),
     available: () => ipcRenderer.invoke('mpv:available') as Promise<boolean>,
     restart: () => ipcRenderer.invoke('mpv:restart') as Promise<boolean>,

@@ -169,14 +169,12 @@ export class PlayerEngine {
   }): Promise<void> {
     const durationMs = options?.fadeIn ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
-      const targetVolume = this.volumeValue;
-      logger.info('PlayerEngine', 'Fade in started', { targetVolume, durationMs });
-      await mpv?.setVolume(0);
-      await mpv?.play();
-      // fade 完成或被取消后，同步最终音量，防止音量卡在中间值
-      void mpv?.fade(0, targetVolume, durationMs).then(() => {
-        mpv?.setVolume(this.volumeValue);
+      logger.info('PlayerEngine', 'Fade in started', {
+        targetVolume: this.volumeValue,
+        durationMs,
       });
+      // 复合命令：主进程内完成 setVolume(0) → play → fade，fade 不阻塞
+      await mpv?.playWithFade(this.volumeValue, durationMs);
     } else {
       await mpv?.play();
     }
@@ -185,11 +183,9 @@ export class PlayerEngine {
   async pause(options?: { fadeOut?: boolean; fadeDurationMs?: number }): Promise<void> {
     const durationMs = options?.fadeOut ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
-      const savedVolume = this.volumeValue;
-      await mpv?.fade(savedVolume, 0, durationMs);
-      await mpv?.pause();
-      await mpv?.setVolume(savedVolume);
-      this.volumeValue = savedVolume;
+      // 复合命令：主进程内完成 fade → pause → 恢复音量
+      // 渲染进程不阻塞等待 fade，但 await 确保暂停最终执行
+      await mpv?.pauseWithFade(this.volumeValue, durationMs);
     } else {
       await mpv?.pause();
     }

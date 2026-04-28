@@ -71,6 +71,28 @@ export function registerPlayerIpc(ref: MpvRef): void {
     ref.current?.cancelFade();
   });
 
+  // 复合操作：淡出 → 暂停 → 恢复音量，主进程内一次性完成
+  ipcMain.handle('mpv:pause-with-fade', async (_e, savedVolume: number, durationMs: number) => {
+    try {
+      const savedMpv = Math.pow(Math.max(0, savedVolume), 1 / 3) * 100;
+      await ref.current?.pauseWithFade(savedMpv, durationMs);
+    } catch {
+      // 淡出失败时直接暂停，确保暂停一定执行
+      await ref.current?.pause().catch(() => {});
+    }
+  });
+
+  // 复合操作：设置音量 0 → 播放 → 淡入，主进程内一次性完成
+  ipcMain.handle('mpv:play-with-fade', async (_e, targetVolume: number, durationMs: number) => {
+    try {
+      const targetMpv = Math.pow(Math.max(0, targetVolume), 1 / 3) * 100;
+      await ref.current?.playWithFade(targetMpv, durationMs);
+    } catch {
+      // 淡入失败时直接播放
+      await ref.current?.play().catch(() => {});
+    }
+  });
+
   ipcMain.handle('mpv:get-state', () => {
     return ref.current?.currentState ?? null;
   });

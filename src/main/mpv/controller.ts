@@ -386,15 +386,42 @@ export class MpvController extends EventEmitter {
       }
       const id = ++this.requestId;
       const payload = JSON.stringify({ command: args, request_id: id }) + '\n';
-      this.pendingRequests.set(id, { resolve, reject });
-      setTimeout(() => {
+      // 根据命令类型设置不同超时：文件加载类 15s，属性设置类 2s
+      const cmdName = String(args[0] ?? '');
+      const timeoutMs = cmdName === 'loadfile' || cmdName === 'stop' ? 15000 : 2000;
+      const timer = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`mpv command timeout: ${String(args[0])}`));
+          reject(new Error(`mpv command timeout (${timeoutMs}ms): ${cmdName}`));
         }
-      }, 5000);
+      }, timeoutMs);
+      this.pendingRequests.set(id, {
+        resolve: (data) => {
+          clearTimeout(timer);
+          resolve(data);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      });
       this.socket.write(payload);
     });
+  }
+
+  /** 向 mpv 发送命令但不等待响应，用于高频操作（如 fade 每步的音量设置） */
+  private fireAndForget(...args: unknown[]): void {
+    if (!this.socket || this.socket.destroyed) return;
+    const id = ++this.requestId;
+    const payload = JSON.stringify({ command: args, request_id: id }) + '\n';
+    // 注册一个静默处理的 pending，防止响应到达时报错
+    this.pendingRequests.set(id, {
+      resolve: () => this.pendingRequests.delete(id),
+      reject: () => this.pendingRequests.delete(id),
+    });
+    // 超时自动清理，防止内存泄漏
+    setTimeout(() => this.pendingRequests.delete(id), 3000);
+    this.socket.write(payload);
   }
 
   // ── 播放控制 ──
@@ -530,7 +557,6 @@ export class MpvController extends EventEmitter {
 
     return new Promise<void>((resolve) => {
       this.fadeResolve = resolve;
-      // 超时保护，防止 Promise 永远不 resolve
       const safetyTimeout = setTimeout(() => {
         if (this.fadeResolve === resolve) {
           this.fadeResolve = null;
@@ -549,7 +575,8 @@ export class MpvController extends EventEmitter {
         const progress = step / steps;
         const eased = 1 - Math.pow(1 - progress, 2);
         const current = fromPercent + diff * eased;
-        this.setVolume(current).catch(() => {});
+        // 使用 fire-and-forget 写入，不等待 socket 响应，避免命令堆积
+        this.fireAndForget('set_property', 'volume', clamp(current, 0, 100));
 
         if (step >= steps) {
           clearTimeout(safetyTimeout);
@@ -559,6 +586,29 @@ export class MpvController extends EventEmitter {
         }
       }, stepMs);
     });
+  }
+
+  /**
+   * 复合操作：淡出音量 → 暂停 → 恢复音量。
+   * 整个流程在主进程内完成，渲染进程只需一次 IPC 调用。
+   */
+  async pauseWithFade(savedVolumePercent: number, durationMs: number): Promise<void> {
+    await this.fade(savedVolumePercent, 0, durationMs);
+    await this.pause();
+    await this.setVolume(savedVolumePercent);
+  }
+
+  /**
+   * 复合操作：设置音量为 0 → 播放 → 淡入到目标音量。
+   * fade 部分不阻塞，播放命令发出后立即返回。
+   */
+  async playWithFade(targetVolumePercent: number, durationMs: number): Promise<void> {
+    await this.setVolume(0);
+    await this.play();
+    // 淡入不阻塞，后台完成后同步最终音量
+    this.fade(0, targetVolumePercent, durationMs)
+      .then(() => this.setVolume(targetVolumePercent).catch(() => {}))
+      .catch(() => {});
   }
 
   cancelFade(): void {

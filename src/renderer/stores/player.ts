@@ -666,6 +666,7 @@ export const usePlayerStore = defineStore('player', {
           );
         },
         durationChange: (duration) => {
+          // 始终使用 mpv 报告的实际时长，这是真实可播放范围
           this.duration = duration;
           engine.updateMediaPlaybackState(
             buildMediaState({
@@ -856,7 +857,24 @@ export const usePlayerStore = defineStore('player', {
       }
 
       if (this.isPlaying) {
-        await engine.pause();
+        // 乐观更新：立即切换 UI 状态，不等待 IPC 往返
+        // mpv 的 state-change 事件会做最终确认（幂等赋值 isPlaying = false）
+        // pause 命令几乎不可能失败（唯一场景是 mpv 崩溃，此时音乐本身也停了）
+        this.isPlaying = false;
+        const settingStore = useSettingStore();
+        settingStore.syncPreventSleep(false);
+        engine.updateMediaPlaybackState(
+          buildMediaState({
+            isPlaying: false,
+            duration: this.duration,
+            currentTime: this.currentTime,
+            playbackRate: this.playbackRate,
+          }),
+        );
+
+        engine.pause().catch((err) => {
+          logger.error('PlayerStore', 'Pause command failed', err);
+        });
         return;
       }
 
@@ -869,13 +887,26 @@ export const usePlayerStore = defineStore('player', {
       }
 
       this.isResuming = true;
+      this.isPlaying = true;
+      const settingStore = useSettingStore();
+      settingStore.syncPreventSleep(true);
+      engine.updateMediaPlaybackState(
+        buildMediaState({
+          isPlaying: true,
+          duration: this.duration,
+          currentTime: this.currentTime,
+          playbackRate: this.playbackRate,
+        }),
+      );
+
       try {
-        const settingStore = useSettingStore();
         const timeoutMs = (settingStore.playResumeTimeout ?? 5) * 1000;
         await engine.play({ timeoutMs: timeoutMs > 0 ? timeoutMs : undefined });
       } catch (error) {
         logger.error('PlayerStore', 'Playback resume failed, replaying current track', error);
-        // play 彻底失败，重新走 playTrack 流程
+        // play 失败，回滚状态并尝试重新加载
+        this.isPlaying = false;
+        settingStore.syncPreventSleep(false);
         try {
           await this.playTrack(this.currentTrackId);
         } catch {
@@ -922,12 +953,15 @@ export const usePlayerStore = defineStore('player', {
     },
 
     seek(time: number) {
-      const targetTime = Math.max(0, Math.min(this.duration, time));
+      // 用 mpv 报告的实际时长做 clamp，比 store 的 duration（可能来自元数据）更准确
+      const effectiveDuration = engine.duration > 0 ? engine.duration : this.duration;
+      const targetTime = Math.max(0, Math.min(effectiveDuration, time));
       logger.info('PlayerStore', 'Seek requested', {
         currentTrackId: this.currentTrackId,
         from: this.currentTime,
         to: targetTime,
         duration: this.duration,
+        engineDuration: engine.duration,
       });
       if (this.isDraggingProgress) {
         this.isDraggingProgress = false;
@@ -1177,8 +1211,8 @@ export const usePlayerStore = defineStore('player', {
         this.autoNextAttempts = 0;
         this.autoNextSourceTrackId = String(track.id);
         this.clearAutoNextTimer();
-        // 流式音频（如 MKV 提取）可能无法从 <audio> 获取时长，用 track 自身的时长兜底
-        if (!this.duration && track.duration) {
+        // mpv 未推送 duration 时用 track 元数据兜底（流式音频场景）
+        if (!this.duration && !engine.duration && track.duration) {
           this.duration = track.duration;
         }
         // 非淡入模式才直接设音量（淡入时由 engine 内部处理）
@@ -2034,20 +2068,48 @@ export const usePlayerStore = defineStore('player', {
       this.currentResolvedAudioQuality = resolved.quality;
       this.currentResolvedAudioEffect = resolved.effect;
       track.audioUrl = resolved.url;
-      // 保存当前 duration，避免 setSource 重置后进度条闪烁
       const savedDuration = this.duration;
       engine.setSource(resolved.url);
-      if (!this.duration && savedDuration) {
+      // mpv 推送的 duration 优先；savedDuration 仅在 mpv 尚未推送时临时填充，防止进度条闪烁
+      if (!this.duration && !engine.duration && savedDuration) {
         this.duration = savedDuration;
       }
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(this.playbackRate);
       void this.fetchClimaxMarks(track);
 
+      // 音效切换后新文件时长可能比原文件短，需要 clamp 防止 seek 越界触发 EOF
       if (previousTime > 0) {
-        engine.seek(previousTime);
-        this.currentTime = previousTime;
-        useLyricStore().updateCurrentIndex(previousTime);
+        // 设置标志，防止 seek 越界时触发的 EOF 被误处理为正常播放结束
+        this.recentSeekIgnoreEnd = true;
+        window.setTimeout(() => {
+          this.recentSeekIgnoreEnd = false;
+        }, 1500);
+
+        // 等待 mpv 推送新文件的 duration（轮询，最多等 500ms）
+        let actualDuration = engine.duration;
+        if (actualDuration <= 0) {
+          for (let i = 0; i < 10; i++) {
+            await new Promise((r) => window.setTimeout(r, 50));
+            actualDuration = engine.duration;
+            if (actualDuration > 0) break;
+          }
+        }
+
+        // clamp：如果新文件时长已知且 previousTime 超出，回到开头
+        let safeTime = previousTime;
+        if (actualDuration > 0 && previousTime >= actualDuration - 0.5) {
+          logger.warn('PlayerStore', 'Seek position exceeds new source duration, reset to 0', {
+            previousTime,
+            actualDuration,
+            track: summarizeSong(track),
+          });
+          safeTime = 0;
+        }
+
+        engine.seek(safeTime);
+        this.currentTime = safeTime;
+        useLyricStore().updateCurrentIndex(safeTime);
       }
 
       if (wasPlaying) {
@@ -2070,8 +2132,8 @@ export const usePlayerStore = defineStore('player', {
         }
       }
 
-      // 流式音频可能无法从 <audio> 获取时长，用 track 自身的时长兜底
-      if (!this.duration && track.duration) {
+      // mpv 未推送 duration 时用 track 元数据兜底（流式音频场景）
+      if (!this.duration && !engine.duration && track.duration) {
         this.duration = track.duration;
       }
 
