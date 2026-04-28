@@ -84,10 +84,12 @@ export type DesktopLyricSnapshot = {
   currentIndex: number;
   settings: DesktopLyricSettings;
   lockPhase: DesktopLyricLockPhase;
+  /** 歌词同步警告（实际播放时长与歌词时长差异过大） */
+  lyricSyncWarning?: boolean;
 };
 
 export type DesktopLyricSnapshotPatch = Partial<
-  Pick<DesktopLyricSnapshot, 'playback' | 'lyrics' | 'currentIndex'>
+  Pick<DesktopLyricSnapshot, 'playback' | 'lyrics' | 'currentIndex' | 'lyricSyncWarning'>
 > & {
   settings?: Partial<DesktopLyricSettings>;
 };

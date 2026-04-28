@@ -689,6 +689,15 @@ export const usePlayerStore = defineStore('player', {
               playbackRate: this.playbackRate,
             }),
           );
+          // 检测实际时长与歌曲元数据时长的差异，差异过大时提示歌词可能不同步
+          const lyricStore = useLyricStore();
+          const trackDuration = this.currentTrackSnapshot?.duration ?? 0;
+          if (duration > 0 && trackDuration > 0) {
+            const diff = Math.abs(duration - trackDuration);
+            lyricStore.lyricSyncWarning = diff > 10 && diff / trackDuration > 0.1;
+          } else {
+            lyricStore.lyricSyncWarning = false;
+          }
         },
         ended: () => {
           if (this.recentSeekIgnoreEnd) {

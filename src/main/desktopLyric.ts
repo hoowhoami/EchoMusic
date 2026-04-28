@@ -408,6 +408,9 @@ export const registerDesktopLyricHandlers = () => {
     if (payload.currentIndex !== undefined) {
       snapshot = { ...snapshot, currentIndex: payload.currentIndex };
     }
+    if (payload.lyricSyncWarning !== undefined) {
+      snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
+    }
     if (payload.settings) {
       snapshot = { ...snapshot, settings: { ...snapshot.settings, ...payload.settings } };
     }

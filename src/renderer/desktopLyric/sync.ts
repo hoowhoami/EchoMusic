@@ -81,12 +81,14 @@ export const initDesktopLyricSync = async () => {
     const nextPlaybackKey = JSON.stringify({
       playback,
       currentIndex: currentIndex.value,
+      lyricSyncWarning: lyricStore.lyricSyncWarning,
     });
     if (nextPlaybackKey === lastSyncedPlaybackKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
       playback,
       currentIndex: currentIndex.value,
+      lyricSyncWarning: lyricStore.lyricSyncWarning,
     });
     lastSyncedPlaybackKey = nextPlaybackKey;
   };

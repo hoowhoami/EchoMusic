@@ -89,6 +89,7 @@ const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
 const alignment = computed(() => settings.value?.alignment ?? 'center');
 const doubleLine = computed(() => settings.value?.doubleLine ?? true);
+const lyricSyncWarning = computed(() => snapshot.value?.lyricSyncWarning ?? false);
 const secondaryEnabled = computed(() => {
   const s = settings.value;
   return (s?.wantTranslation ?? false) || (s?.wantRomanization ?? false);
@@ -785,6 +786,11 @@ onBeforeUnmount(() => {
       <!-- 占位 -->
       <span v-if="renderLyricLines.length === 0" class="lyric-line" key="placeholder">&nbsp;</span>
     </TransitionGroup>
+
+    <!-- 歌词同步警告 -->
+    <div v-if="lyricSyncWarning" class="sync-warning">
+      播放时长与原曲存在差异，歌词可能不同步，可能不是完整的音效/歌曲
+    </div>
   </div>
 </template>
 
@@ -1096,6 +1102,18 @@ onBeforeUnmount(() => {
 .desktop-lyric.locked.hovered .lock-btn {
   opacity: 1;
   background-color: rgba(0, 0, 0, 0.45);
+}
+
+.sync-warning {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: rgba(255, 200, 50, 0.85);
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 </style>
 

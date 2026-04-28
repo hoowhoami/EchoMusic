@@ -1178,6 +1178,12 @@ onUnmounted(() => {
                 <p class="truncate text-[14px] font-semibold text-black/60 dark:text-white/60">
                   {{ currentTrack?.artist || '点击播放开始同步歌词' }}
                 </p>
+                <p
+                  v-if="lyricStore.lyricSyncWarning"
+                  class="inline-block rounded-full bg-yellow-600/15 dark:bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-700 dark:text-yellow-400 pointer-events-none"
+                >
+                  播放时长与原曲存在差异，歌词可能不同步，可能不是完整的音效/歌曲
+                </p>
               </div>
             </div>
           </section>
@@ -1186,26 +1192,36 @@ onUnmounted(() => {
             class="lyric-panel-surface relative flex min-w-0 flex-col justify-center self-stretch"
             :class="[hasPortraitGallery ? 'flex-1' : 'flex-[7]']"
           >
-            <!-- 写真模式：歌曲信息浮层 -->
+            <!-- 写真模式：歌曲信息 + 警告 -->
             <div
               v-if="hasPortraitGallery && currentTrack"
-              class="lyric-photo-song-info transition-opacity duration-500"
+              class="absolute left-6 bottom-2 z-20 flex flex-col items-start gap-1.5 transition-opacity duration-500"
               :style="{
                 opacity: isLyricCollapsed ? 0 : 1,
                 pointerEvents: isLyricCollapsed ? 'none' : undefined,
               }"
             >
-              <div class="lyric-photo-song-cover">
-                <Cover
-                  :url="currentTrack?.coverUrl"
-                  :size="120"
-                  :borderRadius="10"
-                  class="h-full w-full"
-                />
+              <div class="lyric-photo-song-info">
+                <div class="lyric-photo-song-cover">
+                  <Cover
+                    :url="currentTrack?.coverUrl"
+                    :size="120"
+                    :borderRadius="10"
+                    class="h-full w-full"
+                  />
+                </div>
+                <div class="lyric-photo-song-meta">
+                  <span class="lyric-photo-song-title">{{
+                    currentTrack?.title || '未在播放'
+                  }}</span>
+                  <span class="lyric-photo-song-artist">{{ currentTrack?.artist || '' }}</span>
+                </div>
               </div>
-              <div class="lyric-photo-song-meta">
-                <span class="lyric-photo-song-title">{{ currentTrack?.title || '未在播放' }}</span>
-                <span class="lyric-photo-song-artist">{{ currentTrack?.artist || '' }}</span>
+              <div
+                v-if="lyricStore.lyricSyncWarning"
+                class="rounded-full bg-black/40 backdrop-blur-md px-2 py-1 text-[11px] text-yellow-300 pointer-events-none"
+              >
+                播放时长与原曲存在差异，歌词可能不同步，可能不是完整的音效/歌曲
               </div>
             </div>
 
@@ -2023,10 +2039,7 @@ body:has(.lyric-view) .drawer-panel {
 
 /* 写真模式歌曲信息浮层 */
 .lyric-photo-song-info {
-  position: absolute;
-  left: 24px;
-  bottom: 8px;
-  z-index: 20;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;

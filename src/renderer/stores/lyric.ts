@@ -165,6 +165,8 @@ export const useLyricStore = defineStore('lyric', {
     loadedHash: '',
     tips: '暂无歌词',
     isLoading: false,
+    // 歌词同步警告（实际播放时长与歌词时长差异过大时显示）
+    lyricSyncWarning: false,
     // 用户意图：是否想看翻译/音译（持久化，切歌不重置）
     wantTranslation: false,
     wantRomanization: false,
@@ -252,6 +254,7 @@ export const useLyricStore = defineStore('lyric', {
       this.loadedHash = payload?.hash ?? '';
       this.tips = payload?.tips ?? '暂无歌词';
       this.isLoading = false;
+      this.lyricSyncWarning = false;
       // 不重置 lyricsMode 和 secondaryEnabled，保留用户的翻译偏好
       this.hasTranslation = false;
       this.hasRomanization = false;
