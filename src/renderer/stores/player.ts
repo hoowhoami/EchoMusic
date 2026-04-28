@@ -624,7 +624,6 @@ export const usePlayerStore = defineStore('player', {
     },
 
     init() {
-      const lyricStore = useLyricStore();
       const settingStore = useSettingStore();
       logger.info('PlayerStore', 'Initializing player store', {
         volume: this.volume,
@@ -641,6 +640,13 @@ export const usePlayerStore = defineStore('player', {
       this.registerOutputDeviceWatcher(settingStore);
       void this.refreshOutputDevices(settingStore);
 
+      // 节流：MediaSession 位置状态每 2 秒同步一次即可
+      let lastMediaSessionSync = 0;
+      const MEDIA_SESSION_SYNC_MS = 2000;
+      // 节流：播放历史上报每 5 秒检查一次
+      let lastHistoryCheck = 0;
+      const HISTORY_CHECK_MS = 5000;
+
       const events: PlayerEngineEvents = {
         timeUpdate: (currentTime) => {
           if (this.isDraggingProgress) return;
@@ -654,16 +660,23 @@ export const usePlayerStore = defineStore('player', {
           }
           this.seekTargetTime = null;
           this.currentTime = currentTime;
-          lyricStore.updateCurrentIndex(currentTime);
-          this.maybeCommitListeningHistory();
-          engine.updateMediaPlaybackState(
-            buildMediaState({
-              isPlaying: this.isPlaying,
-              duration: this.duration,
-              currentTime,
-              playbackRate: this.playbackRate,
-            }),
-          );
+
+          const now = Date.now();
+          if (now - lastHistoryCheck >= HISTORY_CHECK_MS) {
+            lastHistoryCheck = now;
+            this.maybeCommitListeningHistory();
+          }
+          if (now - lastMediaSessionSync >= MEDIA_SESSION_SYNC_MS) {
+            lastMediaSessionSync = now;
+            engine.updateMediaPlaybackState(
+              buildMediaState({
+                isPlaying: this.isPlaying,
+                duration: this.duration,
+                currentTime,
+                playbackRate: this.playbackRate,
+              }),
+            );
+          }
         },
         durationChange: (duration) => {
           // 始终使用 mpv 报告的实际时长，这是真实可播放范围
@@ -974,7 +987,6 @@ export const usePlayerStore = defineStore('player', {
       window.setTimeout(() => {
         this.recentSeekIgnoreEnd = false;
       }, 800);
-      useLyricStore().updateCurrentIndex(targetTime);
       engine.updateMediaPlaybackState(
         buildMediaState({
           isPlaying: this.isPlaying,
@@ -2109,7 +2121,6 @@ export const usePlayerStore = defineStore('player', {
 
         engine.seek(safeTime);
         this.currentTime = safeTime;
-        useLyricStore().updateCurrentIndex(safeTime);
       }
 
       if (wasPlaying) {

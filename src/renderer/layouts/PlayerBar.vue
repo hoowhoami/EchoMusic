@@ -172,15 +172,46 @@ const songInfoRef = ref<HTMLElement | null>(null);
 const isMarqueeActive = ref(false);
 const marqueeDistance = ref('0px');
 const MARQUEE_MAX_SCROLL_PX = 180;
+const MARQUEE_ITERATIONS = 2;
+let marqueeStopTimer: number | null = null;
 
-const checkMarquee = () => {
+const stopMarquee = () => {
+  isMarqueeActive.value = false;
+  if (marqueeStopTimer) {
+    window.clearTimeout(marqueeStopTimer);
+    marqueeStopTimer = null;
+  }
+};
+
+const startMarquee = () => {
   if (!songInfoRef.value) return;
   const container = songInfoRef.value.parentElement;
   if (!container) return;
   const overflow = Math.max(0, songInfoRef.value.scrollWidth - container.clientWidth);
   const travelDistance = Math.min(overflow, MARQUEE_MAX_SCROLL_PX);
-  isMarqueeActive.value = overflow > 8 && travelDistance > 8;
+  if (overflow <= 8 || travelDistance <= 8) {
+    stopMarquee();
+    return;
+  }
   marqueeDistance.value = `${travelDistance}px`;
+  isMarqueeActive.value = true;
+  // 动画播放 N 次后自动停止（10s 一次循环）
+  if (marqueeStopTimer) window.clearTimeout(marqueeStopTimer);
+  marqueeStopTimer = window.setTimeout(() => {
+    marqueeStopTimer = null;
+    isMarqueeActive.value = false;
+  }, 10000 * MARQUEE_ITERATIONS);
+};
+
+const checkMarquee = () => {
+  startMarquee();
+};
+
+const handleSongInfoHover = () => {
+  // hover 时如果动画已停止，重新启动
+  if (!isMarqueeActive.value) {
+    startMarquee();
+  }
 };
 
 watch(
@@ -202,6 +233,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', checkMarquee);
   window.removeEventListener('resize', updateDrawerWidth);
+  stopMarquee();
 });
 </script>
 
@@ -237,7 +269,7 @@ onUnmounted(() => {
               class="player-song-info whitespace-nowrap transition-transform flex items-center gap-1 min-w-max"
               :class="{ 'marquee-animation': isMarqueeActive }"
               :style="{ '--marquee-distance': marqueeDistance }"
-              @mouseenter="checkMarquee"
+              @mouseenter="handleSongInfoHover"
             >
               <span
                 class="text-[14px] font-bold text-text-main hover:text-primary cursor-pointer transition-colors"

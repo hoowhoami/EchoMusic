@@ -141,6 +141,10 @@ export const initDesktopLyricSync = async () => {
     watch(
       [currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot],
       () => {
+        // 桌面歌词启用时自驱动歌词行索引（不更新逐字高亮，桌面歌词窗口自己处理）
+        if (desktopLyricStore.settings.enabled) {
+          lyricStore.updateCurrentIndex(currentTime.value);
+        }
         scheduleProgressSync();
       },
       { immediate: true, deep: true },

@@ -599,6 +599,8 @@ watch(
   (value) => {
     if (isProgressDragging.value) return;
     progressValue.value = value;
+    // 歌词页打开时自驱动歌词行索引和逐字高亮
+    lyricStore.updateCurrentIndex(value, true);
   },
   { immediate: true },
 );

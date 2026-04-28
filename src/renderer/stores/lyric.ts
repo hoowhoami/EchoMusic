@@ -440,7 +440,7 @@ export const useLyricStore = defineStore('lyric', {
 
       this.tips = this.lines.length > 0 ? '歌词已加载' : '暂无歌词';
     },
-    updateCurrentIndex(currentTime: number) {
+    updateCurrentIndex(currentTime: number, isLyricViewOpen = false) {
       if (this.lines.length === 0) {
         this.currentIndex = -1;
         return;
@@ -470,17 +470,25 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       if (this.currentIndex !== nextIndex) {
-        const previousLine = this.currentIndex >= 0 ? this.lines[this.currentIndex] : null;
-        previousLine?.characters.forEach((char) => {
-          char.highlighted = false;
-        });
+        // 逐字高亮状态只在歌词页打开时更新，避免无意义的响应式开销
+        if (isLyricViewOpen) {
+          const previousLine = this.currentIndex >= 0 ? this.lines[this.currentIndex] : null;
+          previousLine?.characters.forEach((char) => {
+            if (char.highlighted) char.highlighted = false;
+          });
+        }
         this.currentIndex = nextIndex;
       }
 
       if (this.currentIndex < 0) return;
+      // 逐字高亮只在歌词页打开时更新
+      if (!isLyricViewOpen) return;
       const currentLine = this.lines[this.currentIndex];
       currentLine.characters.forEach((char) => {
-        char.highlighted = currentTimeMs >= char.startTime;
+        const shouldHighlight = currentTimeMs >= char.startTime;
+        if (char.highlighted !== shouldHighlight) {
+          char.highlighted = shouldHighlight;
+        }
       });
     },
     async fetchLyrics(hash: string, options?: { preserveCurrent?: boolean }) {
