@@ -104,6 +104,46 @@ export interface IElectronAPI {
     available: () => Promise<boolean>;
     onEvent: (func: (event: { type: string; positionMs?: number }) => void) => () => void;
   };
+  mpv: {
+    load: (url: string) => Promise<void>;
+    loadMkvTrack: (url: string, trackId: number) => Promise<void>;
+    getTrackList: () => Promise<
+      Array<{ id: number; type: string; codec: string; title?: string; lang?: string }>
+    >;
+    play: () => Promise<void>;
+    pause: () => Promise<void>;
+    stop: () => Promise<void>;
+    seek: (time: number) => Promise<void>;
+    setVolume: (volume: number) => Promise<void>;
+    setSpeed: (speed: number) => Promise<void>;
+    setAudioDevice: (deviceName: string) => Promise<void>;
+    getAudioDevices: () => Promise<Array<{ name: string; description: string }>>;
+    setNormalizationGain: (gainDb: number) => Promise<void>;
+    fade: (from: number, to: number, durationMs: number) => Promise<void>;
+    cancelFade: () => Promise<void>;
+    pauseWithFade: (savedVolume: number, durationMs: number) => Promise<void>;
+    playWithFade: (targetVolume: number, durationMs: number) => Promise<void>;
+    getState: () => Promise<{
+      playing: boolean;
+      paused: boolean;
+      duration: number;
+      timePos: number;
+      volume: number;
+      speed: number;
+      idle: boolean;
+      path: string;
+      audioDevice: string;
+    } | null>;
+    available: () => Promise<boolean>;
+    restart: () => Promise<boolean>;
+    setExclusive: (exclusive: boolean) => Promise<boolean>;
+    setMediaTitle: (title: string) => Promise<void>;
+    onTimeUpdate: (func: (time: number) => void) => () => void;
+    onDurationChange: (func: (duration: number) => void) => () => void;
+    onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
+    onPlaybackEnd: (func: (reason: string) => void) => () => void;
+    onError: (func: (message: string) => void) => () => void;
+  };
 }
 
 declare global {

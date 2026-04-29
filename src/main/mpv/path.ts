@@ -1,26 +1,41 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 import log from '../logger';
 
-const MPV_BIN_NAME = process.platform === 'win32' ? 'mpv.exe' : 'mpv';
+/** 各平台的 libmpv 动态库文件名 */
+const LIBMPV_NAMES: Record<string, string[]> = {
+  win32: ['libmpv-2.dll', 'mpv-2.dll'],
+  darwin: ['libmpv.dylib', 'libmpv.2.dylib'],
+  linux: ['libmpv.so', 'libmpv.so.2', 'libmpv.so.1'],
+};
 
 /**
- * 在目录中递归查找 mpv 二进制，最多搜索 maxDepth 层。
- * 兼容 7z 解压后带子目录的情况（如 mpv-x86_64-xxx/mpv.exe）。
+ * 在目录中递归查找 libmpv 动态库，最多搜索 maxDepth 层。
  */
-function findMpvBinRecursive(dir: string, maxDepth = 3): string | null {
+function findLibmpvRecursive(dir: string, maxDepth = 3): string | null {
   if (maxDepth <= 0 || !fs.existsSync(dir)) return null;
 
-  const directPath = path.join(dir, MPV_BIN_NAME);
-  if (fs.existsSync(directPath)) return directPath;
+  const names = LIBMPV_NAMES[process.platform] ?? [];
+  for (const name of names) {
+    const directPath = path.join(dir, name);
+    if (fs.existsSync(directPath)) return directPath;
+  }
+
+  // 检查 lib 子目录
+  const libDir = path.join(dir, 'lib');
+  if (fs.existsSync(libDir)) {
+    for (const name of names) {
+      const libPath = path.join(libDir, name);
+      if (fs.existsSync(libPath)) return libPath;
+    }
+  }
 
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const found = findMpvBinRecursive(path.join(dir, entry.name), maxDepth - 1);
+      if (!entry.isDirectory() || entry.name === 'lib') continue;
+      const found = findLibmpvRecursive(path.join(dir, entry.name), maxDepth - 1);
       if (found) return found;
     }
   } catch {
@@ -30,14 +45,14 @@ function findMpvBinRecursive(dir: string, maxDepth = 3): string | null {
   return null;
 }
 
-/** 解析 mpv 二进制路径，优先使用打包的版本，回退到系统 PATH */
-export function resolveMpvPath(): string | null {
+/** 解析 libmpv 动态库路径，优先使用打包的版本，回退到系统安装 */
+export function resolveLibmpvPath(): string | null {
   const resourceBase = app.isPackaged
     ? process.resourcesPath
     : path.join(__dirname, '../../../build');
   const bundledDir = path.join(resourceBase, 'mpv');
 
-  log.info('[mpv:path] Resolving mpv binary', {
+  log.info('[mpv:path] Resolving libmpv library', {
     isPackaged: app.isPackaged,
     resourceBase,
     bundledDir,
@@ -45,42 +60,61 @@ export function resolveMpvPath(): string | null {
     arch: process.arch,
   });
 
-  // 递归查找，兼容子目录
-  const bundledBin = findMpvBinRecursive(bundledDir);
-  if (bundledBin) {
-    log.info('[mpv:path] Found bundled mpv binary:', bundledBin);
-    return bundledBin;
+  // 递归查找打包的 libmpv
+  const bundledLib = findLibmpvRecursive(bundledDir);
+  if (bundledLib) {
+    log.info('[mpv:path] Found bundled libmpv:', bundledLib);
+    return bundledLib;
   }
 
-  log.info('[mpv:path] Bundled mpv not found, trying system PATH');
+  log.info('[mpv:path] Bundled libmpv not found, trying system paths');
 
-  // 开发环境或 Linux：尝试系统 PATH
-  const cmd = process.platform === 'win32' ? 'where mpv.exe' : 'which mpv';
-  try {
-    const result = execSync(cmd, { encoding: 'utf-8', timeout: 3000 }).trim();
-    if (result) {
-      const systemBin = result.split('\n')[0].trim();
-      log.info('[mpv:path] Found system mpv binary:', systemBin);
-      return systemBin;
+  // 系统路径查找
+  if (process.platform === 'darwin') {
+    // Homebrew 路径
+    const brewPaths = [
+      '/opt/homebrew/lib', // arm64
+      '/usr/local/lib', // x64
+    ];
+    for (const dir of brewPaths) {
+      const found = findLibmpvRecursive(dir, 1);
+      if (found) {
+        log.info('[mpv:path] Found system libmpv:', found);
+        return found;
+      }
     }
-  } catch {
-    // 未找到
+  } else if (process.platform === 'linux') {
+    const linuxPaths = [
+      '/usr/lib',
+      '/usr/lib/x86_64-linux-gnu',
+      '/usr/lib/aarch64-linux-gnu',
+      '/usr/local/lib',
+    ];
+    for (const dir of linuxPaths) {
+      const found = findLibmpvRecursive(dir, 1);
+      if (found) {
+        log.info('[mpv:path] Found system libmpv:', found);
+        return found;
+      }
+    }
+  } else if (process.platform === 'win32') {
+    // Windows: 检查 build/mpv 目录（开发环境手动放置）
+    const devDir = path.join(__dirname, '../../../build/mpv');
+    const found = findLibmpvRecursive(devDir);
+    if (found) {
+      log.info('[mpv:path] Found dev libmpv:', found);
+      return found;
+    }
   }
 
-  log.warn('[mpv:path] No mpv binary found');
+  log.warn('[mpv:path] No libmpv library found');
   return null;
 }
 
 /**
- * 获取 mpv 二进制所在目录的 lib 子目录路径。
- * 用于设置 DYLD_LIBRARY_PATH / LD_LIBRARY_PATH。
+ * 获取 libmpv 所在目录的 lib 子目录路径。
+ * 用于设置 DLL 搜索路径（Windows）或 DYLD_LIBRARY_PATH（macOS）。
  */
-export function resolveMpvLibDir(mpvBinPath: string): string | null {
-  const binDir = path.dirname(mpvBinPath);
-  // lib 目录可能和 mpv 同级，也可能在上一级
-  const candidates = [path.join(binDir, 'lib'), path.join(path.dirname(binDir), 'lib')];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return null;
+export function resolveLibmpvDir(libmpvPath: string): string {
+  return path.dirname(libmpvPath);
 }

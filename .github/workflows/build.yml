@@ -94,6 +94,13 @@ jobs:
           npm install
           npm run build
 
+      - name: Build native mpv player addon
+        working-directory: native/echo-mpv-player
+        shell: bash
+        run: |
+          npm install
+          npm run build
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
@@ -109,7 +116,7 @@ jobs:
         shell: bash
         run: find module -name '*.test.js' -delete
 
-      - name: Download mpv binary
+      - name: Download libmpv library
         shell: bash
         run: |
           set -e
@@ -134,20 +141,9 @@ jobs:
             done
           }
 
-          # 修复 macOS dylib 的加载路径，使用 @executable_path 相对路径
-          # 避免依赖 DYLD_LIBRARY_PATH（会被 SIP 剥离）
+          # 修复 macOS dylib 的加载路径，使用 @loader_path 相对路径
           fix_macos_rpaths() {
-            local mpv_bin="$1"
-            local lib_dir="$2"
-
-            # 修复 mpv 二进制中的 dylib 引用
-            otool -L "$mpv_bin" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r lib; do
-              local base_name
-              base_name=$(basename "$lib")
-              if [ -f "$lib_dir/$base_name" ]; then
-                install_name_tool -change "$lib" "@executable_path/lib/$base_name" "$mpv_bin" 2>/dev/null || true
-              fi
-            done
+            local lib_dir="$1"
 
             # 修复每个 dylib 内部的依赖引用
             for dylib in "$lib_dir"/*.dylib; do
@@ -155,13 +151,13 @@ jobs:
               local dylib_name
               dylib_name=$(basename "$dylib")
               # 修复 dylib 的 install name
-              install_name_tool -id "@executable_path/lib/$dylib_name" "$dylib" 2>/dev/null || true
+              install_name_tool -id "@loader_path/$dylib_name" "$dylib" 2>/dev/null || true
               # 修复 dylib 内部引用的其他 dylib
               otool -L "$dylib" | awk '/\/opt\/homebrew|\/usr\/local/{print $1}' | while read -r dep; do
                 local dep_name
                 dep_name=$(basename "$dep")
                 if [ -f "$lib_dir/$dep_name" ]; then
-                  install_name_tool -change "$dep" "@executable_path/lib/$dep_name" "$dylib" 2>/dev/null || true
+                  install_name_tool -change "$dep" "@loader_path/$dep_name" "$dylib" 2>/dev/null || true
                 fi
               done
             done
@@ -171,72 +167,85 @@ jobs:
 
           case "${{ matrix.os }}" in
             macos-latest)
-              # macOS arm64
+              # macOS arm64: 提取 libmpv 及其依赖
               brew install mpv
-              MPV_BIN=$(brew --prefix mpv)/bin/mpv
-              cp "$MPV_BIN" build/mpv/
-              chmod +x build/mpv/mpv
-              mkdir -p build/mpv/lib
-              copy_dylibs_recursive "$MPV_BIN" "build/mpv/lib"
-              fix_macos_rpaths "build/mpv/mpv" "build/mpv/lib"
-              echo "mpv macOS arm64 binary prepared"
-              echo "=== lib directory ==="
-              ls -la build/mpv/lib/ | head -30
+              MPV_PREFIX=$(brew --prefix mpv)
+              # 复制 libmpv 主库
+              cp "$MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
+              # 复制所有 dylib 依赖
+              for lib in build/mpv/libmpv*.dylib; do
+                [ -f "$lib" ] || continue
+                copy_dylibs_recursive "$lib" "build/mpv"
+              done
+              fix_macos_rpaths "build/mpv"
+              echo "libmpv macOS arm64 prepared"
+              echo "=== build/mpv directory ==="
+              ls -la build/mpv/ | head -30
               ;;
             macos-14)
-              # macOS x64
+              # macOS x64: 同上
               brew install mpv
-              MPV_BIN=$(brew --prefix mpv)/bin/mpv
-              cp "$MPV_BIN" build/mpv/
-              chmod +x build/mpv/mpv
-              mkdir -p build/mpv/lib
-              copy_dylibs_recursive "$MPV_BIN" "build/mpv/lib"
-              fix_macos_rpaths "build/mpv/mpv" "build/mpv/lib"
-              echo "mpv macOS x64 binary prepared"
-              echo "=== lib directory ==="
-              ls -la build/mpv/lib/ | head -30
+              MPV_PREFIX=$(brew --prefix mpv)
+              cp "$MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
+              for lib in build/mpv/libmpv*.dylib; do
+                [ -f "$lib" ] || continue
+                copy_dylibs_recursive "$lib" "build/mpv"
+              done
+              fix_macos_rpaths "build/mpv"
+              echo "libmpv macOS x64 prepared"
+              echo "=== build/mpv directory ==="
+              ls -la build/mpv/ | head -30
               ;;
             ubuntu-22.04|ubuntu-22.04-arm)
-              # Linux: apt install mpv 后提取二进制和依赖库
+              # Linux: 提取 libmpv 及其依赖库
               sudo apt-get update
-              sudo apt-get install -y mpv
-              cp "$(which mpv)" build/mpv/
-              chmod +x build/mpv/mpv
-              mkdir -p build/mpv/lib
-              ldd "$(which mpv)" | grep "=> /" | awk '{print $3}' | while read -r lib; do
-                case "$(basename "$lib")" in
-                  libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*) continue ;;
-                esac
-                cp "$lib" build/mpv/lib/ 2>/dev/null || true
-              done
-              echo "mpv Linux binary prepared"
+              sudo apt-get install -y libmpv-dev
+              # 查找 libmpv.so
+              LIBMPV=$(find /usr/lib -name "libmpv.so*" -not -type l | head -1)
+              if [ -z "$LIBMPV" ]; then
+                LIBMPV=$(find /usr/lib -name "libmpv.so*" | head -1)
+              fi
+              if [ -n "$LIBMPV" ]; then
+                cp "$LIBMPV" build/mpv/
+                # 创建符号链接
+                LIBMPV_NAME=$(basename "$LIBMPV")
+                if [ "$LIBMPV_NAME" != "libmpv.so" ]; then
+                  ln -sf "$LIBMPV_NAME" build/mpv/libmpv.so
+                fi
+              fi
+              # 复制依赖库
+              if [ -n "$LIBMPV" ]; then
+                ldd "$LIBMPV" | grep "=> /" | awk '{print $3}' | while read -r lib; do
+                  case "$(basename "$lib")" in
+                    libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*) continue ;;
+                  esac
+                  cp "$lib" build/mpv/ 2>/dev/null || true
+                done
+              fi
+              echo "libmpv Linux prepared"
               ;;
             windows-latest)
-              # Windows: 从 zhongfly 预编译构建下载
+              # Windows: 从 zhongfly 预编译构建下载 dev 包（含 libmpv-2.dll）
               DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" \
-                | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); urls=[a['browser_download_url'] for a in assets if a['name'].startswith('mpv-x86_64-') and not 'debug' in a['name'] and not 'dev' in a['name'] and not 'v3' in a['name']]; print(urls[0] if urls else '')")
+                | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); urls=[a['browser_download_url'] for a in assets if 'dev' in a['name'] and 'x86_64' in a['name'] and 'lgpl' not in a['name']]; print(urls[0] if urls else '')")
               if [ -z "$DOWNLOAD_URL" ]; then
-                echo "ERROR: Failed to find mpv Windows download URL"
+                echo "ERROR: Failed to find mpv dev package download URL"
                 exit 1
               fi
-              echo "Downloading mpv from: $DOWNLOAD_URL"
-              curl -L -o /tmp/mpv.7z "$DOWNLOAD_URL"
-              # 先解压到临时目录
-              7z x /tmp/mpv.7z -o"/tmp/mpv-extract" -y
+              echo "Downloading mpv dev package from: $DOWNLOAD_URL"
+              curl -L -o /tmp/mpv-dev.7z "$DOWNLOAD_URL"
+              7z x /tmp/mpv-dev.7z -o"/tmp/mpv-dev-extract" -y
               echo "=== extracted contents ==="
-              find /tmp/mpv-extract -maxdepth 2 -type f -name "*.exe" -o -name "*.dll" | head -20
-              # 把 mpv.exe 和所有 DLL 移到 build/mpv/（处理子目录情况）
-              find /tmp/mpv-extract -name "mpv.exe" -exec cp {} build/mpv/ \;
-              find /tmp/mpv-extract -name "*.dll" -exec cp {} build/mpv/ \;
-              # 验证 mpv.exe 存在
-              if [ ! -f "build/mpv/mpv.exe" ]; then
-                echo "ERROR: mpv.exe not found after extraction"
+              find /tmp/mpv-dev-extract -maxdepth 2 -type f -name "*.dll" | head -20
+              # 复制 libmpv-2.dll 和所有依赖 DLL
+              find /tmp/mpv-dev-extract -name "libmpv-2.dll" -exec cp {} build/mpv/ \;
+              find /tmp/mpv-dev-extract -name "*.dll" -exec cp {} build/mpv/ \;
+              # 验证 libmpv-2.dll 存在
+              if [ ! -f "build/mpv/libmpv-2.dll" ]; then
+                echo "ERROR: libmpv-2.dll not found after extraction"
                 exit 1
               fi
-              # 替换 mpv.exe 内嵌图标为 EchoMusic 图标，让音量合成器显示正确图标
-              echo "Replacing mpv.exe icon with EchoMusic icon..."
-              npx rcedit build/mpv/mpv.exe --set-icon icons/icon.ico
-              echo "mpv Windows binary prepared"
+              echo "libmpv Windows prepared"
               ;;
           esac
 

@@ -10,7 +10,7 @@ function bindEventForwarding(
   controller: MpvController,
   getMainWindow: () => BrowserWindow | null,
 ): void {
-  // 节流 time-update 的 IPC 转发，mpv 默认 ~60fps 报告 time-pos，
+  // 节流 time-update 的 IPC 转发，libmpv 默认 ~60fps 报告 time-pos，
   // 渲染进程不需要这么高频率，限制为 ~5fps（200ms）即可满足进度条更新
   let lastTimeSent = 0;
   let pendingTimeValue = -1;
@@ -66,7 +66,7 @@ export async function initMpvPlayer(
   const controller = new MpvController();
 
   if (!controller.available) {
-    log.warn('[Main] mpv binary not found, player engine unavailable');
+    log.warn('[Main] libmpv library not found, player engine unavailable');
     return null;
   }
 
@@ -75,11 +75,11 @@ export async function initMpvPlayer(
 
   try {
     await controller.start();
-    log.info('[Main] mpv player engine started successfully');
+    log.info('[Main] libmpv player engine started successfully');
     mpvController = controller;
     return controller;
   } catch (err) {
-    log.error('[Main] mpv player engine failed to start:', err);
+    log.error('[Main] libmpv player engine failed to start:', err);
     return null;
   }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "echo-mpv-player",
+  "version": "0.1.0",
+  "main": "echo-mpv-player.node",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  },
+  "napi": {
+    "binaryName": "echo-mpv-player",
+    "triples": {}
+  },
+  "scripts": {
+    "build": "source $HOME/.cargo/env 2>/dev/null; napi build --release --no-const-enum",
+    "build:debug": "source $HOME/.cargo/env 2>/dev/null; napi build --no-const-enum"
+  }
+}

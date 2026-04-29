@@ -93,6 +93,13 @@
         ]
       },
       {
+        "from": "native/echo-mpv-player/echo-mpv-player.node",
+        "to": "native/echo-mpv-player.node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build/mpv",
         "to": "mpv",
         "filter": [

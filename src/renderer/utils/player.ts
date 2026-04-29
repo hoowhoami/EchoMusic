@@ -39,11 +39,11 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const DEFAULT_REFERENCE_LUFS = -14.0;
 
-// mpv preload API
-const mpv = (window as any).electron?.mpv;
+// mpv preload API（类型来自 electron.d.ts）
+const mpv = window.electron?.mpv;
 
 // 原生媒体控制 preload API
-const mediaControls = (window as any).electron?.mediaControls;
+const mediaControls = window.electron?.mediaControls;
 
 export class PlayerEngine {
   private events: PlayerEngineEvents = {};
