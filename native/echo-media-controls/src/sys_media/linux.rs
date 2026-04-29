@@ -2,168 +2,19 @@ use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, Timelin
 use super::{EventCallback, SystemMediaControls};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::sync::{Arc, Mutex};
-use mpris_server::{
-    zbus, LoopStatus, Metadata, PlaybackRate, PlaybackStatus, Player, PlayerInterface, Property,
-    RootInterface, Signal, Time, TrackId, Uri, Volume,
-};
+use mpris_server::{Metadata, PlaybackStatus, Player, Time, Uri};
 
-/// MPRIS 播放器状态
-struct MprisState {
-    metadata: Metadata,
-    playback_status: PlaybackStatus,
-    position_us: i64,
-    callback: Arc<Mutex<Option<EventCallback>>>,
-}
-
-impl MprisState {
-    fn emit_event(&self, event: MediaControlEvent) {
-        if let Ok(guard) = self.callback.lock() {
-            if let Some(ref tsfn) = *guard {
-                tsfn.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
-            }
+/// 通过回调发送媒体控制事件
+fn emit_event(callback: &Arc<Mutex<Option<EventCallback>>>, event: MediaControlEvent) {
+    if let Ok(guard) = callback.lock() {
+        if let Some(ref tsfn) = *guard {
+            tsfn.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
         }
     }
 }
 
-impl RootInterface for MprisState {
-    async fn identity(&self) -> zbus::fdo::Result<String> {
-        Ok("EchoMusic".to_string())
-    }
-    async fn can_raise(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-    async fn can_quit(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-    async fn raise(&self) -> zbus::fdo::Result<()> {
-        Ok(())
-    }
-    async fn quit(&self) -> zbus::fdo::Result<()> {
-        Ok(())
-    }
-    async fn has_track_list(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-    async fn supported_uri_schemes(&self) -> zbus::fdo::Result<Vec<String>> {
-        Ok(vec![])
-    }
-    async fn supported_mime_types(&self) -> zbus::fdo::Result<Vec<String>> {
-        Ok(vec![])
-    }
-    async fn desktop_entry(&self) -> zbus::fdo::Result<String> {
-        Ok("echomusic".to_string())
-    }
-    async fn fullscreen(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-    async fn set_fullscreen(&self, _fullscreen: bool) -> zbus::Result<()> {
-        Ok(())
-    }
-    async fn can_set_fullscreen(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-}
-
-impl PlayerInterface for MprisState {
-    async fn play(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::play());
-        Ok(())
-    }
-    async fn pause(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::pause());
-        Ok(())
-    }
-    async fn play_pause(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::play());
-        Ok(())
-    }
-    async fn stop(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::stop());
-        Ok(())
-    }
-    async fn next(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::next());
-        Ok(())
-    }
-    async fn previous(&self) -> zbus::fdo::Result<()> {
-        self.emit_event(MediaControlEvent::previous());
-        Ok(())
-    }
-    async fn seek(&self, offset: Time) -> zbus::fdo::Result<()> {
-        let new_pos_us = self.position_us + offset.as_micros();
-        let new_pos_ms = (new_pos_us as f64) / 1000.0;
-        self.emit_event(MediaControlEvent::seek(new_pos_ms.max(0.0)));
-        Ok(())
-    }
-    async fn set_position(&self, _track_id: TrackId, position: Time) -> zbus::fdo::Result<()> {
-        let pos_ms = (position.as_micros() as f64) / 1000.0;
-        self.emit_event(MediaControlEvent::seek(pos_ms.max(0.0)));
-        Ok(())
-    }
-    async fn open_uri(&self, _uri: String) -> zbus::fdo::Result<()> {
-        Ok(())
-    }
-    async fn playback_status(&self) -> zbus::fdo::Result<PlaybackStatus> {
-        Ok(self.playback_status)
-    }
-    async fn loop_status(&self) -> zbus::fdo::Result<LoopStatus> {
-        Ok(LoopStatus::None)
-    }
-    async fn set_loop_status(&self, _status: LoopStatus) -> zbus::Result<()> {
-        Ok(())
-    }
-    async fn shuffle(&self) -> zbus::fdo::Result<bool> {
-        Ok(false)
-    }
-    async fn set_shuffle(&self, _shuffle: bool) -> zbus::Result<()> {
-        Ok(())
-    }
-    async fn rate(&self) -> zbus::fdo::Result<PlaybackRate> {
-        Ok(PlaybackRate::default())
-    }
-    async fn set_rate(&self, _rate: PlaybackRate) -> zbus::Result<()> {
-        Ok(())
-    }
-    async fn metadata(&self) -> zbus::fdo::Result<Metadata> {
-        Ok(self.metadata.clone())
-    }
-    async fn volume(&self) -> zbus::fdo::Result<Volume> {
-        Ok(Volume::default())
-    }
-    async fn set_volume(&self, _volume: Volume) -> zbus::Result<()> {
-        Ok(())
-    }
-    async fn position(&self) -> zbus::fdo::Result<Time> {
-        Ok(Time::from_micros(self.position_us))
-    }
-    async fn minimum_rate(&self) -> zbus::fdo::Result<PlaybackRate> {
-        Ok(PlaybackRate::from(1.0))
-    }
-    async fn maximum_rate(&self) -> zbus::fdo::Result<PlaybackRate> {
-        Ok(PlaybackRate::from(1.0))
-    }
-    async fn can_go_next(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-    async fn can_go_previous(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-    async fn can_play(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-    async fn can_pause(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-    async fn can_seek(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-    async fn can_control(&self) -> zbus::fdo::Result<bool> {
-        Ok(true)
-    }
-}
-
 pub struct LinuxMediaControls {
-    player: Option<Player<MprisState>>,
+    player: Option<Player>,
     callback: Arc<Mutex<Option<EventCallback>>>,
     cover_temp_dir: Option<tempfile::TempDir>,
     runtime_handle: Option<tokio::runtime::Handle>,
@@ -185,8 +36,8 @@ impl LinuxMediaControls {
 
 impl SystemMediaControls for LinuxMediaControls {
     fn initialize(&mut self, _app_name: &str) -> Result<(), String> {
-        let cb = self.callback.clone();
-        let temp_dir = tempfile::TempDir::new().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+        let temp_dir = tempfile::TempDir::new()
+            .map_err(|e| format!("Failed to create temp dir: {e}"))?;
         self.cover_temp_dir = Some(temp_dir);
 
         let rt = tokio::runtime::Handle::current();
@@ -194,22 +45,67 @@ impl SystemMediaControls for LinuxMediaControls {
 
         let player = rt
             .block_on(async {
-                let state = MprisState {
-                    metadata: Metadata::new(),
-                    playback_status: PlaybackStatus::Stopped,
-                    position_us: 0,
-                    callback: cb,
-                };
                 Player::builder("EchoMusic")
                     .can_play(true)
                     .can_pause(true)
                     .can_go_next(true)
                     .can_go_previous(true)
                     .can_seek(true)
-                    .build_with_state(state)
+                    .build()
                     .await
             })
             .map_err(|e| format!("Failed to create MPRIS Player: {e}"))?;
+
+        // 注册媒体控制事件回调
+        let cb = self.callback.clone();
+        player.connect_play(move |_| {
+            emit_event(&cb, MediaControlEvent::play());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_pause(move |_| {
+            emit_event(&cb, MediaControlEvent::pause());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_play_pause(move |_| {
+            emit_event(&cb, MediaControlEvent::play());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_stop(move |_| {
+            emit_event(&cb, MediaControlEvent::stop());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_next(move |_| {
+            emit_event(&cb, MediaControlEvent::next());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_previous(move |_| {
+            emit_event(&cb, MediaControlEvent::previous());
+        });
+
+        let cb = self.callback.clone();
+        player.connect_seek(move |p, offset| {
+            let current_us = p.position().as_micros();
+            let new_us = current_us + offset.as_micros();
+            let new_ms = (new_us as f64) / 1000.0;
+            emit_event(&cb, MediaControlEvent::seek(new_ms.max(0.0)));
+        });
+
+        let cb = self.callback.clone();
+        player.connect_set_position(move |_, _track_id, position| {
+            let pos_ms = (position.as_micros() as f64) / 1000.0;
+            emit_event(&cb, MediaControlEvent::seek(pos_ms.max(0.0)));
+        });
+
+        // 启动事件处理任务
+        let player_clone = player.clone();
+        rt.spawn(async move {
+            player_clone.run().await;
+        });
 
         self.player = Some(player);
         tracing::info!("Linux MPRIS D-Bus service initialized");
@@ -258,7 +154,6 @@ impl SystemMediaControls for LinuxMediaControls {
             let player = player.clone();
             let _ = rt.block_on(async {
                 player.set_metadata(built).await.ok();
-                player.properties_changed([Property::Metadata]).await.ok();
             });
         }
     }
@@ -274,10 +169,6 @@ impl SystemMediaControls for LinuxMediaControls {
             let player = player.clone();
             let _ = rt.block_on(async {
                 player.set_playback_status(status).await.ok();
-                player
-                    .properties_changed([Property::PlaybackStatus])
-                    .await
-                    .ok();
             });
         }
     }
