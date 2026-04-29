@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
@@ -18,19 +19,35 @@ withDefaults(defineProps<Props>(), {
 });
 
 const isMac = navigator.platform.toLowerCase().includes('mac');
+const popoverOpen = ref(false);
+
+// 滚轮保持弹出层不消失的定时器
+let wheelKeepAliveTimer: ReturnType<typeof setTimeout> | null = null;
 
 const handleWheel = (e: WheelEvent) => {
+  // 弹出层未打开时不拦截，让 Sidebar 正常滚动
+  if (!popoverOpen.value) return;
   e.preventDefault();
+  e.stopPropagation();
+
   const normalized = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120);
   const step = (normalized / 120) * 0.05;
   const direction = isMac ? 1 : -1;
   player.setVolume(Math.max(0, Math.min(1, player.volume + step * direction)));
+
+  // 滚轮操作时保持弹出层打开
+  if (wheelKeepAliveTimer) clearTimeout(wheelKeepAliveTimer);
+  popoverOpen.value = true;
+  wheelKeepAliveTimer = setTimeout(() => {
+    wheelKeepAliveTimer = null;
+  }, 300);
 };
 </script>
 
 <template>
-  <div class="flex items-center" @wheel.prevent="handleWheel">
+  <div class="flex items-center" @wheel="handleWheel">
     <Popover
+      v-model:open="popoverOpen"
       trigger="hover"
       :side="side"
       align="center"
