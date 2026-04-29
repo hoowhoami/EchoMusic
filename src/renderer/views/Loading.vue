@@ -101,8 +101,7 @@ const completeStartup = async () => {
   // 检查 mpv 播放引擎是否可用
   statusMessage.value = '正在检查播放引擎...';
   try {
-    const mpv = (window as any).electron?.mpv;
-    const mpvReady = await mpv?.available();
+    const mpvReady = await window.electron?.mpv?.available();
     if (!mpvReady) {
       logger.error('Loading', 'mpv player engine is not available');
       statusMessage.value = '播放引擎初始化失败';
@@ -179,8 +178,7 @@ const retryStart = async () => {
 
   // 尝试重启 mpv 播放引擎
   try {
-    const mpv = (window as any).electron?.mpv;
-    await mpv?.restart();
+    await window.electron?.mpv?.restart();
   } catch (error) {
     logger.warn('Loading', 'mpv restart attempt failed:', error);
   }

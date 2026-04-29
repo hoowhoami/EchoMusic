@@ -788,8 +788,7 @@ export const usePlayerStore = defineStore('player', {
       });
 
       // 渲染进程重新加载后，从 mpv 同步当前播放状态
-      const mpv = (window as any).electron?.mpv;
-      mpv?.getState?.().then((state: any) => {
+      window.electron?.mpv?.getState?.().then((state) => {
         if (!state) return;
         if (state.playing && !this.isPlaying) {
           this.isPlaying = true;
@@ -1620,7 +1619,7 @@ export const usePlayerStore = defineStore('player', {
       logger.info('PlayerStore', 'Refreshing output devices from mpv');
 
       try {
-        const mpvDevices = await (window as any).electron?.mpv?.getAudioDevices();
+        const mpvDevices = await window.electron?.mpv?.getAudioDevices();
         if (!Array.isArray(mpvDevices) || mpvDevices.length === 0) {
           logger.warn('PlayerStore', 'mpv returned no audio devices');
           settingStore.outputDevices = fallbackOptions;
@@ -1738,7 +1737,7 @@ export const usePlayerStore = defineStore('player', {
       });
 
       // 独占模式：只在状态真正变化时才 stop + 重设，避免设备刷新时打断播放
-      const mpv = (window as any).electron?.mpv;
+      const mpv = window.electron?.mpv;
       const exclusiveChanged = exclusive !== (this._lastAppliedExclusive ?? false);
       let applied = false;
       if (exclusiveChanged) {
