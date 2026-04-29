@@ -102,11 +102,19 @@ impl SystemMediaControls for LinuxMediaControls {
         });
 
         // 启动事件处理任务
-        // Player 不实现 Clone，run() 需要 &self，在 spawn 前调用获取 task
+        // LocalServerRunTask 不是 Send，需要在 LocalSet 中运行
         let run_task = player.run();
-        rt.spawn(async move {
-            run_task.await;
-        });
+        std::thread::Builder::new()
+            .name("mpris-event-loop".to_string())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("failed to create MPRIS tokio runtime");
+                let local = tokio::task::LocalSet::new();
+                local.block_on(&rt, run_task);
+            })
+            .map_err(|e| format!("Failed to spawn MPRIS thread: {e}"))?;
 
         self.player = Some(player);
         tracing::info!("Linux MPRIS D-Bus service initialized");

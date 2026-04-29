@@ -42,12 +42,12 @@ impl WindowsMediaControls {
         writer
             .StoreAsync()
             .map_err(|e| format!("Store failed: {e}"))?
-            .get()
+            .GetResults()
             .map_err(|e| format!("Store get failed: {e}"))?;
         writer
             .FlushAsync()
             .map_err(|e| format!("Flush failed: {e}"))?
-            .get()
+            .GetResults()
             .map_err(|e| format!("Flush get failed: {e}"))?;
         writer
             .DetachStream()
@@ -90,8 +90,8 @@ impl SystemMediaControls for WindowsMediaControls {
                 SystemMediaTransportControls,
                 SystemMediaTransportControlsButtonPressedEventArgs,
             >::new(move |_, args| {
-                if let Some(args) = args {
-                    let event = match args.Button()? {
+                let Some(ref args) = *args else { return Ok(()) };
+                let event = match args.Button()? {
                         windows::Media::SystemMediaTransportControlsButton::Play => {
                             MediaControlEvent::play()
                         }
@@ -114,7 +114,6 @@ impl SystemMediaControls for WindowsMediaControls {
                             tsfn.call(Ok(event), ThreadsafeFunctionCallMode::NonBlocking);
                         }
                     }
-                }
                 Ok(())
             }),
         )
