@@ -138,4 +138,9 @@ export function registerPlayerIpc(ref: MpvRef): void {
     ref.current = instance;
     return !!instance;
   });
+
+  // 设置文件循环模式（单曲循环用）
+  ipcMain.handle('mpv:set-loop-file', (_e, loop: boolean) => {
+    ref.current?.setLoopFile(loop);
+  });
 }

@@ -138,6 +138,7 @@ export interface IElectronAPI {
     restart: () => Promise<boolean>;
     setExclusive: (exclusive: boolean) => Promise<boolean>;
     setMediaTitle: (title: string) => Promise<void>;
+    setLoopFile: (loop: boolean) => Promise<void>;
     onTimeUpdate: (func: (time: number) => void) => () => void;
     onDurationChange: (func: (duration: number) => void) => () => void;
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;

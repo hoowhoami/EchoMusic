@@ -262,6 +262,14 @@ pub fn set_media_title(title: String) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 设置文件循环（"inf" 无限循环，"no" 不循环）
+#[napi]
+pub fn set_loop_file(value: String) -> napi::Result<()> {
+    get_player()?
+        .set_loop_file(&value)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
 /// 获取当前状态快照
 #[napi]
 pub fn get_state() -> napi::Result<PlayerState> {

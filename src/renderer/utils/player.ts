@@ -228,6 +228,11 @@ export class PlayerEngine {
     this.events.timeUpdate?.(0);
   }
 
+  /** 设置 mpv 文件循环模式（单曲循环用） */
+  setLoopFile(loop: boolean): void {
+    mpv?.setLoopFile(loop);
+  }
+
   // ── 音量均衡 ──
 
   setVolumeNormalization(enabled: boolean): void {

@@ -33,6 +33,7 @@ interface MpvAddon {
   setMediaTitle(title: string): void;
   getState(): MpvState;
   getProperty(name: string): string;
+  setLoopFile(value: string): void;
   fade(from: number, to: number, durationMs: number): void;
   cancelFade(): void;
   pauseWithFade(savedVolume: number, durationMs: number): void;
@@ -486,6 +487,15 @@ export class MpvController extends EventEmitter {
   cancelFade(): void {
     try {
       this.addon?.cancelFade();
+    } catch {
+      // 忽略
+    }
+  }
+
+  /** 设置文件循环模式 */
+  setLoopFile(loop: boolean): void {
+    try {
+      this.addon?.setLoopFile(loop ? 'inf' : 'no');
     } catch {
       // 忽略
     }

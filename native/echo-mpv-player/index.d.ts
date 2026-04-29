@@ -97,6 +97,9 @@ export declare function setAudioTrack(trackId: number): void
 /** 设置独占模式 */
 export declare function setExclusive(exclusive: boolean): void
 
+/** 设置文件循环（"inf" 无限循环，"no" 不循环） */
+export declare function setLoopFile(value: string): void
+
 /** 设置 force-media-title */
 export declare function setMediaTitle(title: string): void
 

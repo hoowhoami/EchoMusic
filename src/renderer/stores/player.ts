@@ -636,6 +636,8 @@ export const usePlayerStore = defineStore('player', {
       // 恢复音量均衡设置
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
+      // 同步文件循环模式
+      engine.setLoopFile(this.playMode === 'single');
       this.registerSettingWatchers(settingStore);
       this.registerOutputDeviceWatcher(settingStore);
       void this.refreshOutputDevices(settingStore);
@@ -1016,6 +1018,8 @@ export const usePlayerStore = defineStore('player', {
       this.shuffleQueue = null;
       this.shuffleQueueLength = 0;
       this.shufflePlayed = new Set();
+      // 同步 mpv 文件循环：单曲循环由 mpv 内部处理，不依赖 end-file 事件
+      engine.setLoopFile(mode === 'single');
       logger.info('PlayerStore', 'Play mode updated', {
         mode,
       });
@@ -1213,6 +1217,8 @@ export const usePlayerStore = defineStore('player', {
       });
       engine.setSource(resolved.url);
       engine.applyTrackLoudness(resolved.loudness);
+      // 同步文件循环模式
+      engine.setLoopFile(this.playMode === 'single');
 
       try {
         if (autoPlay) {
@@ -2195,9 +2201,13 @@ export const usePlayerStore = defineStore('player', {
         });
       }
       if (this.playMode === 'single') {
+        // 正常情况下 mpv 的 loop-file=inf 会自动循环，不触发 end-file
+        // 这里作为兜底：如果意外收到 end-file，重新加载文件
         logger.info('PlayerStore', 'Single repeat mode active, replay current track');
-        this.seek(0);
-        void engine.play();
+        if (this.currentAudioUrl) {
+          engine.setSource(this.currentAudioUrl);
+          void engine.play();
+        }
         return;
       }
       this.next();

@@ -156,6 +156,7 @@ contextBridge.exposeInMainWorld('electron', {
     restart: () => ipcRenderer.invoke('mpv:restart') as Promise<boolean>,
     setExclusive: (exclusive: boolean) => ipcRenderer.invoke('mpv:set-exclusive', exclusive),
     setMediaTitle: (title: string) => ipcRenderer.invoke('mpv:set-media-title', title),
+    setLoopFile: (loop: boolean) => ipcRenderer.invoke('mpv:set-loop-file', loop),
     onTimeUpdate: (func: (time: number) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, time: number) => func(time);
       ipcRenderer.on('mpv:time-update', listener);

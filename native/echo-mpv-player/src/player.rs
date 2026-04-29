@@ -440,6 +440,11 @@ impl MpvPlayer {
         self.set_property_string("force-media-title", title)
     }
 
+    /// 设置文件循环模式
+    pub fn set_loop_file(&self, value: &str) -> Result<(), String> {
+        self.set_property_string("loop-file", value)
+    }
+
     /// 设置音轨 ID
     pub fn set_audio_track(&self, track_id: i64) -> Result<(), String> {
         let c_name = CString::new("aid").unwrap();
