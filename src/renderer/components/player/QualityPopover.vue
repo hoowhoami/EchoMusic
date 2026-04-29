@@ -92,7 +92,7 @@ withDefaults(defineProps<Props>(), {
     <div class="space-y-1">
       <div class="pm-title">音质选择</div>
       <button
-        v-for="q in ['128', '320', 'flac', 'high'] as const"
+        v-for="q in ['128', '320', 'flac', 'high', 'super'] as const"
         :key="q"
         type="button"
         class="pm-item"
@@ -104,10 +104,26 @@ withDefaults(defineProps<Props>(), {
         @click="setAudioQuality(q)"
       >
         <span class="pm-label">{{
-          q === '128' ? '标准' : q === '320' ? '高品质' : q === 'flac' ? '无损' : 'Hi-Res'
+          q === '128'
+            ? '标准'
+            : q === '320'
+              ? '高品质'
+              : q === 'flac'
+                ? '无损'
+                : q === 'high'
+                  ? 'Hi-Res'
+                  : '臻品音质'
         }}</span>
         <Tag class="pm-tag" :color="getAudioQualityTagColor(q)">{{
-          q === '128' ? 'SD' : q === '320' ? 'HQ' : q === 'flac' ? 'SQ' : 'HR'
+          q === '128'
+            ? 'SD'
+            : q === '320'
+              ? 'HQ'
+              : q === 'flac'
+                ? 'SQ'
+                : q === 'high'
+                  ? 'HR'
+                  : 'DSD'
         }}</Tag>
         <span class="pm-check" :class="{ 'is-visible': effectiveAudioQuality === q }">✓</span>
       </button>

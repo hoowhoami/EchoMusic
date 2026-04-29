@@ -443,6 +443,7 @@ const audioQualityOptions = [
   { label: 'HQ 高品质', value: '320' },
   { label: 'SQ 无损品质', value: 'flac' },
   { label: 'Hi-Res 品质', value: 'high' },
+  { label: 'DSD 臻品音质', value: 'super' },
 ];
 
 const closeBehaviorOptions = [

@@ -368,29 +368,37 @@ const clearArtistBackdrop = () => {
   luminanceCache.clear();
 };
 
-// ── 写真背景亮度检测（采样按钮中心点的图片颜色） ──
+// ── 写真背景亮度检测（缩小采样，避免大图阻塞主线程） ──
 const portraitImgRef = ref<HTMLImageElement | null>(null);
 const luminanceCache = new Map<string, { top: number; bottom: number }>();
+// 缩小后的 Canvas 缓存，避免每次重建
+let thumbCanvas: HTMLCanvasElement | null = null;
+let thumbCtx: CanvasRenderingContext2D | null = null;
+// 亮度分析序列号，防止异步回调过期
+let luminanceSeq = 0;
+
+const THUMB_MAX_WIDTH = 200;
 
 const getPointLuminance = (
   ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
   imgEl: HTMLImageElement,
   screenX: number,
   screenY: number,
 ) => {
   const imgRect = imgEl.getBoundingClientRect();
-  const nw = imgEl.naturalWidth;
-  const nh = imgEl.naturalHeight;
   const rw = imgRect.width;
   const rh = imgRect.height;
-  const x = Math.floor(((screenX - imgRect.left) * nw) / rw);
-  const y = Math.floor(((screenY - imgRect.top) * nh) / rh);
-  // 采样 7x7 区域取平均
-  const s = 7;
+  // 屏幕坐标映射到缩小后的 Canvas 坐标
+  const x = Math.floor(((screenX - imgRect.left) * canvasW) / rw);
+  const y = Math.floor(((screenY - imgRect.top) * canvasH) / rh);
+  // 采样 5x5 区域取平均（缩小后不需要 7x7）
+  const s = 5;
   const sx = Math.max(0, x - Math.floor(s / 2));
   const sy = Math.max(0, y - Math.floor(s / 2));
-  const sw = Math.min(s, nw - sx);
-  const sh = Math.min(s, nh - sy);
+  const sw = Math.min(s, canvasW - sx);
+  const sh = Math.min(s, canvasH - sy);
   if (sw <= 0 || sh <= 0) return 0.5;
   const data = ctx.getImageData(sx, sy, sw, sh).data;
   let rSum = 0;
@@ -441,12 +449,21 @@ const analyzeRenderedImage = (img: HTMLImageElement) => {
   const nw = img.naturalWidth;
   const nh = img.naturalHeight;
   if (!nw || !nh) return;
-  const canvas = document.createElement('canvas');
-  canvas.width = nw;
-  canvas.height = nh;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.drawImage(img, 0, 0, nw, nh);
+
+  // 缩小到 ~200px 宽度再分析，大幅减少 drawImage + getImageData 开销
+  const scale = Math.min(1, THUMB_MAX_WIDTH / nw);
+  const tw = Math.round(nw * scale);
+  const th = Math.round(nh * scale);
+
+  // 复用 Canvas 实例
+  if (!thumbCanvas) {
+    thumbCanvas = document.createElement('canvas');
+    thumbCtx = thumbCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  if (!thumbCtx) return;
+  thumbCanvas.width = tw;
+  thumbCanvas.height = th;
+  thumbCtx.drawImage(img, 0, 0, tw, th);
 
   const toolbarEl = root.querySelector('.px-6.pb-3') as HTMLElement | null;
   const controlsEl = root.querySelector('.lyric-controls-surface') as HTMLElement | null;
@@ -457,23 +474,23 @@ const analyzeRenderedImage = (img: HTMLImageElement) => {
   if (toolbarEl) {
     const r = toolbarEl.getBoundingClientRect();
     const pts = [
-      getPointLuminance(ctx, img, r.left + r.width * 0.2, r.top + r.height / 2),
-      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height / 2),
-      getPointLuminance(ctx, img, r.left + r.width * 0.8, r.top + r.height / 2),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.2, r.top + r.height / 2),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height / 2),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.8, r.top + r.height / 2),
     ];
     topLum = Math.min(...pts);
   }
   if (controlsEl) {
     const r = controlsEl.getBoundingClientRect();
     const pts = [
-      getPointLuminance(ctx, img, r.left + r.width * 0.1, r.top + r.height * 0.3),
-      getPointLuminance(ctx, img, r.left + r.width * 0.3, r.top + r.height * 0.3),
-      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height * 0.3),
-      getPointLuminance(ctx, img, r.left + r.width * 0.7, r.top + r.height * 0.3),
-      getPointLuminance(ctx, img, r.left + r.width * 0.9, r.top + r.height * 0.3),
-      getPointLuminance(ctx, img, r.left + r.width * 0.1, r.top + r.height * 0.8),
-      getPointLuminance(ctx, img, r.left + r.width * 0.5, r.top + r.height * 0.8),
-      getPointLuminance(ctx, img, r.left + r.width * 0.9, r.top + r.height * 0.8),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.1, r.top + r.height * 0.3),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.3, r.top + r.height * 0.3),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height * 0.3),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.7, r.top + r.height * 0.3),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.9, r.top + r.height * 0.3),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.1, r.top + r.height * 0.8),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height * 0.8),
+      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.9, r.top + r.height * 0.8),
     ];
     bottomLum = Math.min(...pts);
   }
@@ -489,8 +506,16 @@ const analyzeRenderedImage = (img: HTMLImageElement) => {
 const onPortraitImageLoad = () => {
   const img = portraitImgRef.value;
   if (!img || !hasPortraitGallery.value) return;
-  // 延迟一帧，等 DOM 布局完成后再采样
-  requestAnimationFrame(() => analyzeRenderedImage(img));
+  const seq = ++luminanceSeq;
+  // 先让浏览器完成当前帧的渲染和合成，再做亮度分析
+  requestAnimationFrame(() => {
+    // 推到下一个宏任务，不阻塞渲染帧
+    setTimeout(() => {
+      if (seq !== luminanceSeq) return;
+      if (!portraitImgRef.value || portraitImgRef.value !== img) return;
+      analyzeRenderedImage(img);
+    }, 0);
+  });
 };
 
 // 写真轮播
@@ -523,6 +548,22 @@ const restartPortraitCarousel = () => {
     startPortraitCarousel();
   }
 };
+
+// 预解码下一张写真，避免切换时浏览器同步解码造成卡顿
+const preDecodePortrait = (url: string) => {
+  if (!url) return;
+  const img = new Image();
+  img.src = url;
+  img.decode?.().catch(() => {});
+};
+
+// 写真索引变化时预解码下一张
+watch(activePortraitIndex, (index) => {
+  const urls = artistPortraitUrls.value;
+  if (urls.length <= 1) return;
+  const nextUrl = urls[(index + 1) % urls.length];
+  if (nextUrl) preDecodePortrait(nextUrl);
+});
 
 const ensureArtistBackdropForCurrentTrack = async () => {
   const requestId = ++artistBackdropRequestId;
@@ -578,6 +619,8 @@ const ensureArtistBackdropForCurrentTrack = async () => {
     artistPortraitUrls.value = portraitUrls;
     syncPortraitIndex();
     restartPortraitCarousel();
+    // 预解码前两张写真，减少首次显示时的解码卡顿
+    portraitUrls.slice(0, 2).forEach(preDecodePortrait);
   } catch {
     singerPortraitCache.set(lyricHash, []);
     if (requestId !== artistBackdropRequestId) return;

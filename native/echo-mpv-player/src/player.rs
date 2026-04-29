@@ -84,6 +84,8 @@ impl MpvPlayer {
         player.observe_property("speed", MPV_FORMAT_DOUBLE);
         player.observe_property("eof-reached", MPV_FORMAT_FLAG);
         player.observe_property("idle-active", MPV_FORMAT_FLAG);
+        // 观察音频设备列表变化，同时触发设备枚举
+        player.observe_property("audio-device-list", MPV_FORMAT_NONE);
 
         Ok(player)
     }
@@ -379,24 +381,36 @@ impl MpvPlayer {
 
     /// 获取音频设备列表
     pub fn get_audio_devices(&self) -> Result<Vec<AudioDevice>, String> {
-        let node = self.get_property_node("audio-device-list")?;
+        // mpv 0.41+ 的 audio-device-list 用 MPV_FORMAT_NODE 读取可能返回空数组，
+        // 改用字符串方式读取 JSON 后手动解析
+        let json_str = self.get_property_string("audio-device-list")?;
         let mut devices = Vec::new();
-        if let MpvNodeOwned::Array(items) = node {
-            for item in items {
-                if let MpvNodeOwned::Map(map) = item {
-                    let name = map.iter()
-                        .find(|(k, _)| k == "name")
-                        .and_then(|(_, v)| v.as_str())
-                        .unwrap_or("auto")
-                        .to_string();
-                    let description = map.iter()
-                        .find(|(k, _)| k == "description")
-                        .and_then(|(_, v)| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    devices.push(AudioDevice { name, description });
+        // 简易 JSON 数组解析：[{"name":"...","description":"..."},...]
+        // 按 "},{" 分割每个设备条目
+        let trimmed = json_str.trim();
+        if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+            return Ok(devices);
+        }
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if inner.trim().is_empty() {
+            return Ok(devices);
+        }
+        // 分割对象（简单处理，不考虑嵌套）
+        for entry in inner.split("},{") {
+            let obj = entry.trim().trim_start_matches('{').trim_end_matches('}');
+            let mut name = String::from("auto");
+            let mut description = String::new();
+            for field in obj.split(',') {
+                let field = field.trim();
+                if let Some(val) = field.strip_prefix("\"name\"") {
+                    let val = val.trim().trim_start_matches(':').trim();
+                    name = val.trim_matches('"').to_string();
+                } else if let Some(val) = field.strip_prefix("\"description\"") {
+                    let val = val.trim().trim_start_matches(':').trim();
+                    description = val.trim_matches('"').to_string();
                 }
             }
+            devices.push(AudioDevice { name, description });
         }
         Ok(devices)
     }

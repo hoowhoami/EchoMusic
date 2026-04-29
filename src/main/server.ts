@@ -51,6 +51,8 @@ const noCacheRoutes: string[] = [
   '/artist/unfollow',
   // 播放历史上传
   '/playhistory/upload',
+  // 听歌时长上报
+  '/listen/timeadd',
   // 登录相关
   '/login/qr/key',
   '/login/qr/create',

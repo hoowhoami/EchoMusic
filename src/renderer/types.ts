@@ -3,7 +3,7 @@ import type { PlayMode } from '../shared/playback';
 
 export type { PlayMode };
 
-export type AudioQualityValue = '128' | '320' | 'flac' | 'high';
+export type AudioQualityValue = '128' | '320' | 'flac' | 'high' | 'super';
 
 export type AudioEffectValue =
   | 'none'

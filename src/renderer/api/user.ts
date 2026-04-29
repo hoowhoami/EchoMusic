@@ -153,6 +153,13 @@ export function uploadPlayHistory(
 }
 
 /**
+ * 上报听歌时长（用于等级积分）
+ */
+export function reportListenTime() {
+  return request.get('/listen/timeadd');
+}
+
+/**
  * 获取用户云盘
  */
 export function getUserCloud(page = 1, pagesize = 30) {

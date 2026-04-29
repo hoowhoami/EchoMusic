@@ -170,6 +170,7 @@ export function usePlayerControls() {
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
+    if (effectiveAudioQuality.value === 'super') return 'DSD';
     return 'HR';
   });
 
@@ -183,6 +184,7 @@ export function usePlayerControls() {
     if (quality === '128') return '#64748B';
     if (quality === '320') return '#8B5CF6';
     if (quality === 'flac') return '#2563EB';
+    if (quality === 'super') return '#E11D48';
     return '#F59E0B';
   };
 
