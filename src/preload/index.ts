@@ -191,4 +191,26 @@ contextBridge.exposeInMainWorld('electron', {
     enableLoopback: () => ipcRenderer.invoke('enable-loopback-audio'),
     disableLoopback: () => ipcRenderer.invoke('disable-loopback-audio'),
   },
+  mediaControls: {
+    updateMetadata: (payload: {
+      title: string;
+      artist: string;
+      album: string;
+      coverUrl?: string;
+      durationMs?: number;
+    }) => ipcRenderer.invoke('media-control:update-metadata', payload),
+    updateState: (payload: { status: string }) =>
+      ipcRenderer.invoke('media-control:update-state', payload),
+    updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) =>
+      ipcRenderer.invoke('media-control:update-timeline', payload),
+    available: () => ipcRenderer.invoke('media-control:available') as Promise<boolean>,
+    onEvent: (func: (event: { type: string; positionMs?: number }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { type: string; positionMs?: number },
+      ) => func(data);
+      ipcRenderer.on('media-control:event', listener);
+      return () => ipcRenderer.removeListener('media-control:event', listener);
+    },
+  },
 });

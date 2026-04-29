@@ -84,6 +84,16 @@ jobs:
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native media controls addon
+        working-directory: native/echo-media-controls
+        shell: bash
+        run: |
+          npm install
+          npm run build
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash
@@ -223,6 +233,9 @@ jobs:
                 echo "ERROR: mpv.exe not found after extraction"
                 exit 1
               fi
+              # 替换 mpv.exe 内嵌图标为 EchoMusic 图标，让音量合成器显示正确图标
+              echo "Replacing mpv.exe icon with EchoMusic icon..."
+              npx rcedit build/mpv/mpv.exe --set-icon icons/icon.ico
               echo "mpv Windows binary prepared"
               ;;
           esac

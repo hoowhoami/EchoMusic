@@ -772,8 +772,12 @@ export const usePlayerStore = defineStore('player', {
 
       engine.setEvents(events);
       engine.setMediaSessionHandlers({
-        play: () => this.togglePlay(),
-        pause: () => this.togglePlay(),
+        play: () => {
+          if (!this.isPlaying) this.togglePlay();
+        },
+        pause: () => {
+          if (this.isPlaying) this.togglePlay();
+        },
         previoustrack: () => this.prev(),
         nexttrack: () => this.next(),
         seekto: (time) => this.seek(time),
@@ -1150,7 +1154,12 @@ export const usePlayerStore = defineStore('player', {
       }
 
       const pendingMediaMeta = buildMediaMeta(track);
-      if (pendingMediaMeta) engine.updateMediaMetadata(pendingMediaMeta);
+      if (pendingMediaMeta) {
+        engine.updateMediaMetadata({
+          ...pendingMediaMeta,
+          durationMs: (track.duration || 0) * 1000,
+        });
+      }
       engine.updateMediaPlaybackState(
         buildStoppedPlaybackState({
           playbackRate: this.playbackRate,

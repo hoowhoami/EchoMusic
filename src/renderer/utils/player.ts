@@ -14,6 +14,8 @@ export interface MediaSessionMeta {
   artist: string;
   album?: string;
   artwork?: Array<{ src: string; sizes: string; type: string }>;
+  /** 歌曲时长，单位毫秒（用于原生媒体控制） */
+  durationMs?: number;
 }
 
 export interface MediaSessionState {
@@ -40,6 +42,9 @@ const DEFAULT_REFERENCE_LUFS = -14.0;
 // mpv preload API
 const mpv = (window as any).electron?.mpv;
 
+// 原生媒体控制 preload API
+const mediaControls = (window as any).electron?.mediaControls;
+
 export class PlayerEngine {
   private events: PlayerEngineEvents = {};
   private sourceUrl = '';
@@ -52,24 +57,11 @@ export class PlayerEngine {
   private referenceLufs = DEFAULT_REFERENCE_LUFS;
   private lastTrackLoudness: TrackLoudness | null = null;
   private cleanupFns: Array<() => void> = [];
-
-  // 极低音量 audio 元素，用于激活 Chromium 的 MediaSession API
-  // Chromium 要求有活跃的 <audio> 元素才能使用 MediaSession
-  // 不使用 Web Audio API（AudioContext/GainNode），避免持续消耗 CPU
-  private silentAudio: HTMLAudioElement;
+  // 原生媒体控制始终尝试调用，IPC handler 在主进程侧做降级
+  private lastMediaStateStatus = '';
+  private lastTimelineSyncMs = 0;
 
   constructor() {
-    this.silentAudio = new Audio();
-    this.silentAudio.src =
-      'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUoGAACA';
-    this.silentAudio.loop = true;
-    // 极低音量，人耳不可感知，但足以让 Chromium 认为在播放
-    this.silentAudio.volume = 0.001;
-    // 固定输出到默认设备，不跟随 mpv 独占设备
-    if (typeof (this.silentAudio as any).setSinkId === 'function') {
-      (this.silentAudio as any).setSinkId('default').catch(() => {});
-    }
-
     if (mpv) {
       this.bindMpvEvents();
     } else {
@@ -96,10 +88,8 @@ export class PlayerEngine {
 
     const offState = mpv.onStateChange((state: { playing?: boolean; paused?: boolean }) => {
       if (state.playing) {
-        this.silentAudio.play().catch(() => {});
         this.events.play?.();
       } else if (state.paused) {
-        this.silentAudio.pause();
         this.events.pause?.();
       }
     });
@@ -294,35 +284,41 @@ export class PlayerEngine {
     return clamp(gain, 0.1, 3.0);
   }
 
-  // ── MediaSession（渲染进程浏览器 API，不依赖 mpv） ──
+  // ── 系统媒体控制（通过主进程 native addon） ──
 
+  /** 更新系统媒体控制的歌曲元数据 */
   updateMediaMetadata(meta: MediaSessionMeta): void {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album ?? '',
-        artwork: meta.artwork ?? [],
-      });
-    } catch {}
+    mediaControls?.updateMetadata({
+      title: meta.title,
+      artist: meta.artist,
+      album: meta.album ?? '',
+      coverUrl: meta.artwork?.[meta.artwork.length - 1]?.src,
+      durationMs: meta.durationMs || 0,
+    });
   }
 
+  /** 更新系统媒体控制的播放状态和进度 */
   updateMediaPlaybackState(state: MediaSessionState): void {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    const session = navigator.mediaSession;
-    session.playbackState = state.isPlaying ? 'playing' : 'paused';
-    if (typeof session.setPositionState === 'function') {
-      try {
-        session.setPositionState({
-          duration: state.duration || 0,
-          playbackRate: state.playbackRate || 1,
-          position: state.currentTime || 0,
+    // 播放状态变化时才发送，避免重复 IPC
+    const newStatus = state.isPlaying ? 'Playing' : 'Paused';
+    if (newStatus !== this.lastMediaStateStatus) {
+      this.lastMediaStateStatus = newStatus;
+      mediaControls?.updateState({ status: newStatus });
+    }
+    // 进度节流：每 2 秒同步一次
+    if (state.duration > 0) {
+      const now = Date.now();
+      if (now - this.lastTimelineSyncMs >= 2000) {
+        this.lastTimelineSyncMs = now;
+        mediaControls?.updateTimeline({
+          currentTimeMs: (state.currentTime || 0) * 1000,
+          totalTimeMs: (state.duration || 0) * 1000,
         });
-      } catch {}
+      }
     }
   }
 
+  /** 注册系统媒体控制事件处理（通过主进程 IPC 转发） */
   setMediaSessionHandlers(handlers: {
     play?: () => void;
     pause?: () => void;
@@ -332,24 +328,29 @@ export class PlayerEngine {
     seekbackward?: (offset: number) => void;
     seekforward?: (offset: number) => void;
   }): void {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    const session = navigator.mediaSession;
-    session.setActionHandler('play', handlers.play ?? null);
-    session.setActionHandler('pause', handlers.pause ?? null);
-    session.setActionHandler('previoustrack', handlers.previoustrack ?? null);
-    session.setActionHandler('nexttrack', handlers.nexttrack ?? null);
-    session.setActionHandler(
-      'seekto',
-      handlers.seekto ? (d) => handlers.seekto?.(d.seekTime ?? 0) : null,
-    );
-    session.setActionHandler(
-      'seekbackward',
-      handlers.seekbackward ? (d) => handlers.seekbackward?.(d.seekOffset ?? 10) : null,
-    );
-    session.setActionHandler(
-      'seekforward',
-      handlers.seekforward ? (d) => handlers.seekforward?.(d.seekOffset ?? 10) : null,
-    );
+    // 监听主进程转发的原生媒体控制事件
+    const offEvent = mediaControls?.onEvent?.((event: { type: string; positionMs?: number }) => {
+      switch (event.type) {
+        case 'Play':
+          handlers.play?.();
+          break;
+        case 'Pause':
+          handlers.pause?.();
+          break;
+        case 'NextSong':
+          handlers.nexttrack?.();
+          break;
+        case 'PreviousSong':
+          handlers.previoustrack?.();
+          break;
+        case 'Seek':
+          if (event.positionMs !== undefined) {
+            handlers.seekto?.(event.positionMs / 1000);
+          }
+          break;
+      }
+    });
+    if (offEvent) this.cleanupFns.push(offEvent);
   }
 
   // ── getter ──

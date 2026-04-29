@@ -8,6 +8,7 @@ import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerPlayerIpc } from './ipc/player';
+import { initMediaControls, destroyMediaControls } from './mediaControls';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -72,6 +73,9 @@ if (!gotTheLock) {
       arch: process.arch,
     });
 
+    // 初始化原生媒体控制（SMTC / MPNowPlaying / MPRIS）
+    initMediaControls(getMainWindow);
+
     // --- 创建主窗口 ---
     await createWindow();
 
@@ -113,6 +117,7 @@ if (!gotTheLock) {
     log.info('[Main] before-quit: cleaning up and exiting');
     globalShortcut.unregisterAll();
     destroyTray();
+    destroyMediaControls();
     destroyMpvPlayer();
     // 销毁桌面歌词窗口
     try {

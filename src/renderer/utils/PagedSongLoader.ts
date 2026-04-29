@@ -121,7 +121,7 @@ export class PagedSongLoader<T> {
         this.markComplete();
       }
 
-      logger.info(this.logTag, `首页加载完成`, {
+      logger.info(this.logTag, `First page load finished`, {
         count: this._items.length,
         hasMore,
       });
@@ -129,7 +129,7 @@ export class PagedSongLoader<T> {
       return this._items;
     } catch (error) {
       if (!this._aborted) {
-        logger.warn(this.logTag, '首页加载失败:', error);
+        logger.warn(this.logTag, 'First page load failed:', error);
         this.onError?.(error);
         this.markComplete();
       }
@@ -289,7 +289,7 @@ export class PagedSongLoader<T> {
       this._completionResolve(this._items);
       this._completionResolve = null;
     }
-    logger.info(this.logTag, `加载完成`, {
+    logger.info(this.logTag, `load completed`, {
       total: this._items.length,
       pages: this._loadedPages,
     });

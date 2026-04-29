@@ -91,6 +91,19 @@ export interface IElectronAPI {
     enableLoopback: () => Promise<void>;
     disableLoopback: () => Promise<void>;
   };
+  mediaControls: {
+    updateMetadata: (payload: {
+      title: string;
+      artist: string;
+      album: string;
+      coverUrl?: string;
+      durationMs?: number;
+    }) => Promise<void>;
+    updateState: (payload: { status: string }) => Promise<void>;
+    updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) => Promise<void>;
+    available: () => Promise<boolean>;
+    onEvent: (func: (event: { type: string; positionMs?: number }) => void) => () => void;
+  };
 }
 
 declare global {

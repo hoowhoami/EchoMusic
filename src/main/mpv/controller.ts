@@ -108,6 +108,8 @@ export class MpvController extends EventEmitter {
       '--cache-secs=30',
       '--user-agent=Mozilla/5.0',
       '--input-media-keys=no',
+      // 音量合成器中显示为 EchoMusic 而非 mpv
+      '--audio-client-name=EchoMusic',
       // 音频优化：采样率跟随源文件，避免不必要的重采样
       '--audio-samplerate=0',
       '--audio-channels=stereo',

@@ -52,3 +52,8 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 .ace-tool/
+
+# Native addon build artifacts
+native/*/target/
+native/*/*.node
+native/*/node_modules/

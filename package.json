@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.3-beta.2",
+  "version": "2.2.3-beta.3",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -85,6 +85,13 @@
       "dist-electron"
     ],
     "extraResources": [
+      {
+        "from": "native/echo-media-controls/echo-media-controls.node",
+        "to": "native/echo-media-controls.node",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "build/mpv",
         "to": "mpv",
