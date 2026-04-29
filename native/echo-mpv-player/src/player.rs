@@ -474,7 +474,7 @@ impl MpvPlayer {
         self.get_property_string(name)
     }
 
-    // ── 淡入淡出（方案 B：Rust 侧实现） ──
+    // ── 淡入淡出 ──
 
     /// 启动淡入淡出，返回序列号
     pub fn start_fade(&self, _from: f64, _to: f64, _duration_ms: u64) -> u64 {

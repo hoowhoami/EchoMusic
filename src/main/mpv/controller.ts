@@ -428,7 +428,7 @@ export class MpvController extends EventEmitter {
     this.addon.setNormalizationGain(gainDb);
   }
 
-  // ── 淡入淡出（方案 B：Rust 侧实现） ──
+  // ── 淡入淡出 ──
 
   async fade(fromPercent: number, toPercent: number, durationMs: number): Promise<void> {
     if (!this.addon) return;

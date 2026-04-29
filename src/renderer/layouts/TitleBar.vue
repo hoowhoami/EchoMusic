@@ -184,7 +184,7 @@ onUnmounted(() => {
     ref="titleBarRef"
     class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
-    <!-- 拖动层：VS Code 方案，绝对定位铺满标题栏 -->
+    <!-- 拖动层：绝对定位铺满标题栏 -->
     <div class="drag-region"></div>
 
     <!-- 1. 左侧：导航按钮 -->

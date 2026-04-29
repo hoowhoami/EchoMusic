@@ -284,7 +284,7 @@ pub fn get_property(name: String) -> napi::Result<String> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
-/// 淡入淡出（方案 B：Rust 侧独立线程执行）
+/// 淡入淡出
 /// 返回后 fade 在后台线程执行，完成时通过事件回调通知
 #[napi]
 pub fn fade(from: f64, to: f64, duration_ms: f64) -> napi::Result<()> {

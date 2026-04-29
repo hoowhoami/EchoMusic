@@ -25,7 +25,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     },
   );
 
-  // 窗口拖动已改为 CSS -webkit-app-region: drag 原生方案，
+  // 窗口拖动已改为 CSS -webkit-app-region: drag
   // 保留 IPC 通道兼容旧代码
   ipcMain.on('window-drag:start', () => {});
   ipcMain.on('window-drag:move', () => {});
