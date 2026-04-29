@@ -13,6 +13,7 @@ import {
   iconX,
   iconSearch,
   iconMicrophone,
+  iconFullscreen,
 } from '@/icons';
 
 const route = useRoute();
@@ -44,7 +45,7 @@ const updateNavState = () => {
   canGoForward.value = !skipCurrent && !!historyState?.forward;
 };
 
-const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
+const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
 };
 
@@ -346,6 +347,15 @@ onUnmounted(() => {
     <div v-if="!isMac" class="window-controls flex items-center no-drag h-full relative z-10">
       <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn">
         <Icon :icon="iconMinus" width="14" height="14" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('fullscreen')"
+        class="control-btn"
+        title="全屏"
+      >
+        <Icon :icon="iconFullscreen" width="14" height="14" />
       </Button>
       <Button variant="unstyled" size="none" @click="handleControl('maximize')" class="control-btn">
         <Icon :icon="iconSquare" width="13" height="13" />

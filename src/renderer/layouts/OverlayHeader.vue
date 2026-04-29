@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { iconMinus, iconSquare, iconX } from '@/icons';
+import { iconMinus, iconSquare, iconX, iconFullscreen } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const headerRef = ref<HTMLElement | null>(null);
 
-const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
+const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
 };
 </script>
@@ -25,6 +25,15 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close') => {
         title="最小化"
       >
         <Icon :icon="iconMinus" width="14" height="14" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="handleControl('fullscreen')"
+        class="overlay-control-btn"
+        title="全屏"
+      >
+        <Icon :icon="iconFullscreen" width="14" height="14" />
       </Button>
       <Button
         variant="unstyled"

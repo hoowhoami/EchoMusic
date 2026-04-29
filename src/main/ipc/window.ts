@@ -3,22 +3,27 @@ import { hideMainWindow, quitApplication, requestMainWindowClose, showMainWindow
 import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
-  ipcMain.on('window-control', (event, action: 'minimize' | 'maximize' | 'close') => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow();
-    if (!browserWindow) return;
-    if (action === 'minimize') browserWindow.minimize();
-    else if (action === 'maximize') {
-      if (browserWindow.isMaximized()) browserWindow.unmaximize();
-      else browserWindow.maximize();
-    } else if (action === 'close') {
-      const mainWindow = getMainWindow();
-      if (mainWindow && browserWindow.id === mainWindow.id) {
-        requestMainWindowClose();
-      } else {
-        browserWindow.close();
+  ipcMain.on(
+    'window-control',
+    (event, action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow();
+      if (!browserWindow) return;
+      if (action === 'minimize') browserWindow.minimize();
+      else if (action === 'maximize') {
+        if (browserWindow.isMaximized()) browserWindow.unmaximize();
+        else browserWindow.maximize();
+      } else if (action === 'fullscreen') {
+        browserWindow.setFullScreen(!browserWindow.isFullScreen());
+      } else if (action === 'close') {
+        const mainWindow = getMainWindow();
+        if (mainWindow && browserWindow.id === mainWindow.id) {
+          requestMainWindowClose();
+        } else {
+          browserWindow.close();
+        }
       }
-    }
-  });
+    },
+  );
 
   // 窗口拖动已改为 CSS -webkit-app-region: drag 原生方案，
   // 保留 IPC 通道兼容旧代码

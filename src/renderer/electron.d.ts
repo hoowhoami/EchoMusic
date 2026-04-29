@@ -25,7 +25,7 @@ export interface IElectronAPI {
     refresh: () => Promise<ShortcutRegistrationResult>;
     onTrigger: (func: (command: string) => void) => () => void;
   };
-  windowControl: (action: 'minimize' | 'maximize' | 'close') => void;
+  windowControl: (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => void;
   appInfo: {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
