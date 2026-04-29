@@ -102,9 +102,10 @@ impl SystemMediaControls for LinuxMediaControls {
         });
 
         // 启动事件处理任务
-        let player_clone = player.clone();
+        // Player 不实现 Clone，run() 需要 &self，在 spawn 前调用获取 task
+        let run_task = player.run();
         rt.spawn(async move {
-            player_clone.run().await;
+            run_task.await;
         });
 
         self.player = Some(player);
@@ -137,21 +138,16 @@ impl SystemMediaControls for LinuxMediaControls {
                     let cover_path = temp_dir.path().join("cover.jpg");
                     if std::fs::write(&cover_path, data).is_ok() {
                         let uri = format!("file://{}", cover_path.display());
-                        if let Ok(art_url) = Uri::try_from(uri.as_str()) {
-                            metadata = metadata.art_url(art_url);
-                        }
+                        metadata = metadata.art_url(Uri::from(uri.as_str()));
                     }
                 }
             }
         } else if let Some(ref url) = payload.cover_url {
-            if let Ok(art_url) = Uri::try_from(url.as_str()) {
-                metadata = metadata.art_url(art_url);
-            }
+            metadata = metadata.art_url(Uri::from(url.as_str()));
         }
 
         let built = metadata.build();
         if let Some(ref rt) = self.runtime_handle {
-            let player = player.clone();
             let _ = rt.block_on(async {
                 player.set_metadata(built).await.ok();
             });
@@ -166,7 +162,6 @@ impl SystemMediaControls for LinuxMediaControls {
             _ => PlaybackStatus::Stopped,
         };
         if let Some(ref rt) = self.runtime_handle {
-            let player = player.clone();
             let _ = rt.block_on(async {
                 player.set_playback_status(status).await.ok();
             });
@@ -177,7 +172,6 @@ impl SystemMediaControls for LinuxMediaControls {
         let Some(ref player) = self.player else { return };
         let position_us = (payload.current_time_ms * 1000.0) as i64;
         if let Some(ref rt) = self.runtime_handle {
-            let player = player.clone();
             let _ = rt.block_on(async {
                 player.seeked(Time::from_micros(position_us)).await.ok();
             });

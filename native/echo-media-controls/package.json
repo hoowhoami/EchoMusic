@@ -10,7 +10,7 @@
     "triples": {}
   },
   "scripts": {
-    "build": "source $HOME/.cargo/env 2>/dev/null; napi build --release --no-const-enum",
-    "build:debug": "source $HOME/.cargo/env 2>/dev/null; napi build --no-const-enum"
+    "build": "napi build --release --no-const-enum",
+    "build:debug": "napi build --no-const-enum"
   }
 }
