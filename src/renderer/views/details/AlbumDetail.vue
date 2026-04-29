@@ -377,7 +377,7 @@ const fetchData = async () => {
     {
       pageSize: 30,
       concurrency: 3,
-      dedupeKey: (song) => String(song.id),
+      dedupeKey: (song) => String(song.mixSongId || song.id),
       logTag: 'AlbumSongsLoader',
       onPageLoaded(allItems) {
         songs.value = allItems.slice();
@@ -397,8 +397,8 @@ const fetchData = async () => {
     .loadFirstPage()
     .then(() => {
       loadingSongs.value = false;
-      const totalSongs = album.value?.songCount ?? songLoader!.count;
-      if (totalSongs > songLoader!.count && !songLoader!.fullyLoaded) {
+      // 首页加载完后，只要还有更多数据就继续加载剩余页
+      if (!songLoader!.fullyLoaded) {
         void songLoader!.loadRemaining();
       }
     })

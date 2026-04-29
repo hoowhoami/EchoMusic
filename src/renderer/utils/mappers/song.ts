@@ -292,8 +292,13 @@ export const mapAlbumSong = (json: unknown): Song => {
     pickValue(record.pic, record.img, audioInfo.img, albumInfo.cover, transParam.union_cover, ''),
   );
 
+  // 优先使用 album_audio_id 作为唯一标识，避免同一首歌不同版本 id 冲突
+  const uniqueId = readString(
+    pickValue(base.album_audio_id, base.audio_id, record.audio_id, audioInfo.audio_id, ''),
+  );
+
   return {
-    id: readString(pickValue(base.audio_id, record.audio_id, audioInfo.audio_id, '')),
+    id: uniqueId,
     title: processSongTitle(readString(pickValue(base.audio_name, record.songname, '未知歌曲'))),
     name: processSongTitle(readString(pickValue(base.audio_name, record.songname, '未知歌曲'))),
     artist: fallbackArtistName,
