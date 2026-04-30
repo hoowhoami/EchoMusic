@@ -40,6 +40,7 @@ import {
   iconHeartFilled,
   iconList,
   iconPlaylistAdd,
+  iconTriangleAlert,
   iconTypography,
   iconMessageCircle,
 } from '@/icons';
@@ -1559,6 +1560,26 @@ onUnmounted(() => {
                   </Button>
                 </template>
               </Tooltip>
+              <Popover
+                v-if="playerStore.playbackNotice"
+                trigger="hover"
+                side="top"
+                align="center"
+                :side-offset="8"
+                :show-arrow="true"
+                content-class="player-error-popover"
+              >
+                <template #trigger>
+                  <div class="lyric-error-indicator">
+                    <Icon :icon="iconTriangleAlert" width="18" height="18" />
+                  </div>
+                </template>
+                <div class="player-error-content">
+                  <div class="player-error-title">{{ playerStore.playbackNotice.title }}</div>
+                  <div class="player-error-reason">{{ playerStore.playbackNotice.reason }}</div>
+                  <div class="player-error-detail">{{ playerStore.playbackNotice.detail }}</div>
+                </div>
+              </Popover>
             </div>
 
             <!-- 中列：进度条 -->
@@ -2523,5 +2544,25 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-controls-surface [role='slider'] {
   background-color: var(--pb-fg) !important;
   border-color: var(--pb-fg-muted) !important;
+}
+
+.lyric-error-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  color: #ef4444;
+  opacity: 0.88;
+  cursor: help;
+  transition: all 0.2s ease;
+}
+
+.dark .lyric-error-indicator {
+  color: #f87171;
+}
+
+.lyric-error-indicator:hover {
+  opacity: 1;
+  transform: scale(1.1);
 }
 </style>

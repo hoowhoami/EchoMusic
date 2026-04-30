@@ -51,7 +51,7 @@ const handleWheel = (e: WheelEvent) => {
       trigger="hover"
       :side="side"
       align="center"
-      :side-offset="8"
+      :side-offset="0"
       :show-arrow="true"
       content-class="vol-popover"
     >

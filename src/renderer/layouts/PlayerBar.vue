@@ -10,6 +10,7 @@ import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
+import Popover from '@/components/ui/Popover.vue';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import PlayerQueueDrawer from '@/components/music/PlayerQueueDrawer.vue';
@@ -348,24 +349,26 @@ onUnmounted(() => {
               <Icon :icon="iconCloud" width="20" height="20" />
             </div>
 
-            <Tooltip
+            <Popover
               v-if="playbackNotice"
+              trigger="hover"
               side="top"
-              align="start"
-              :side-offset="10"
-              contentClass="player-error-tooltip"
+              align="center"
+              :side-offset="8"
+              :show-arrow="true"
+              content-class="player-error-popover"
             >
               <template #trigger>
                 <div class="player-error-indicator">
                   <Icon :icon="iconTriangleAlert" width="20" height="20" />
                 </div>
               </template>
-              <div class="player-error-tooltip-content">
-                <div class="player-error-tooltip-title">{{ playbackNotice.title }}</div>
-                <div class="player-error-tooltip-reason">{{ playbackNotice.reason }}</div>
-                <div class="player-error-tooltip-detail">{{ playbackNotice.detail }}</div>
+              <div class="player-error-content">
+                <div class="player-error-title">{{ playbackNotice.title }}</div>
+                <div class="player-error-reason">{{ playbackNotice.reason }}</div>
+                <div class="player-error-detail">{{ playbackNotice.detail }}</div>
               </div>
-            </Tooltip>
+            </Popover>
           </div>
         </div>
       </div>
@@ -793,5 +796,50 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
+}
+</style>
+
+<style>
+.player-error-popover.echo-popover-content {
+  width: 220px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .player-error-popover.echo-popover-content {
+  background: rgba(28, 28, 30, 0.78);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.player-error-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-error-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.dark .player-error-title {
+  color: #f87171;
+}
+
+.player-error-reason {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.5;
+}
+
+.player-error-detail {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
 }
 </style>
