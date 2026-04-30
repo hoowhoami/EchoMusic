@@ -2,10 +2,9 @@ import { defineStore } from 'pinia';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
-import { useUserStore } from './user';
 import logger from '@/utils/logger';
 import { getCloudSongUrl, getSongClimax, getSongPrivilegeLite, getSongUrl } from '@/api/music';
-import { getServerNow, uploadPlayHistory, reportListenTime } from '@/api/user';
+import { getServerNow, uploadPlayHistory } from '@/api/user';
 import {
   PlayerEngine,
   type MediaSessionMeta,
@@ -2197,10 +2196,10 @@ export const usePlayerStore = defineStore('player', {
         playMode: this.playMode,
       });
       // 上报听歌时长
-      const userStore = useUserStore();
-      if (userStore.isLoggedIn) {
-        reportListenTime().catch(() => {});
-      }
+      // const userStore = useUserStore();
+      // if (userStore.isLoggedIn) {
+      //   reportListenTime().catch(() => {});
+      // }
       const playlistStore = usePlaylistStore();
       if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
         const currentTrack =

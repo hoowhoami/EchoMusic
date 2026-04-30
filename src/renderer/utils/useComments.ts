@@ -73,8 +73,8 @@ const buildPayload = (data: unknown): CommentPayload => {
 
 export function useComments(options: UseCommentsOptions) {
   const toastStore = useToastStore();
-  const { resourceId, resourceType, mixSongId } = options;
-  const effectiveId = mixSongId || resourceId;
+  let { resourceId, resourceType, mixSongId } = options;
+  let effectiveId = mixSongId || resourceId;
 
   // 全部评论
   const isLoadingComments = ref(false);
@@ -323,6 +323,13 @@ export function useComments(options: UseCommentsOptions) {
     }
   };
 
+  const updateResource = (newOptions: Partial<UseCommentsOptions>) => {
+    if (newOptions.resourceId !== undefined) resourceId = newOptions.resourceId;
+    if (newOptions.resourceType !== undefined) resourceType = newOptions.resourceType;
+    if (newOptions.mixSongId !== undefined) mixSongId = newOptions.mixSongId;
+    effectiveId = mixSongId || resourceId;
+  };
+
   return {
     // 全部评论
     isLoadingComments,
@@ -333,6 +340,7 @@ export function useComments(options: UseCommentsOptions) {
     singerComments,
     showCommentsEnd,
     fetchComments,
+    updateResource,
     // 分类评论
     classifyList,
     isLoadingClassify,

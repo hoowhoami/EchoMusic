@@ -27,6 +27,8 @@ const emit = defineEmits<{
 }>();
 
 const inputRef = ref<HTMLInputElement | null>(null);
+const isEditing = ref(false);
+const editingValue = ref('');
 let pressTimer: ReturnType<typeof setTimeout> | null = null;
 let pressInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -49,12 +51,14 @@ const canDecrement = computed(() => {
 
 const increment = () => {
   if (!canIncrement.value) return;
+  isEditing.value = false;
   const base = numericValue.value ?? props.min;
   emit('update:modelValue', String(clamp(base + props.step)));
 };
 
 const decrement = () => {
   if (!canDecrement.value) return;
+  isEditing.value = false;
   const base = numericValue.value ?? props.max;
   emit('update:modelValue', String(clamp(base - props.step)));
 };
@@ -66,15 +70,25 @@ const handleInput = (e: Event) => {
   if (raw !== filtered) {
     (e.target as HTMLInputElement).value = filtered;
   }
-  emit('update:modelValue', filtered);
+  isEditing.value = true;
+  editingValue.value = filtered;
+};
+
+const handleFocus = () => {
+  isEditing.value = true;
+  editingValue.value = String(props.modelValue ?? '');
 };
 
 const handleBlur = () => {
-  if (numericValue.value === undefined) return;
-  const clamped = clamp(numericValue.value);
-  if (clamped !== numericValue.value) {
-    emit('update:modelValue', String(clamped));
+  isEditing.value = false;
+  const parsed = Number(editingValue.value);
+  if (editingValue.value === '' || Number.isNaN(parsed)) {
+    // 空值或无效值，恢复原值
+    editingValue.value = '';
+    return;
   }
+  const clamped = clamp(parsed);
+  emit('update:modelValue', String(clamped));
 };
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -114,10 +128,11 @@ onBeforeUnmount(stopPress);
       ref="inputRef"
       type="text"
       inputmode="numeric"
-      :value="props.modelValue"
+      :value="isEditing ? editingValue : props.modelValue"
       :placeholder="props.placeholder"
       :disabled="props.disabled"
       class="input-number-field"
+      @focus="handleFocus"
       @input="handleInput"
       @blur="handleBlur"
       @keydown="handleKeydown"

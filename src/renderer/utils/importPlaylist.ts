@@ -139,7 +139,6 @@ const buildSongPayload = (song: Song): string => {
   return `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
 };
 
-const DEFAULT_MATCH_CONCURRENCY = 2;
 const DEFAULT_ADD_BATCH_SIZE = 50;
 const ADD_BATCH_DELAY_MS = 400;
 // 每次 search 后 worker 的思考时间（含随机抖动），降低稳定 QPS 触发风控
@@ -159,10 +158,7 @@ export const runImport = async (
   const summary: ImportSummary = { total, success: 0, low: 0, skipped: 0, failed: 0 };
   if (total === 0) return summary;
 
-  const matchConcurrency = Math.max(
-    1,
-    Math.min(callbacks.matchConcurrency ?? DEFAULT_MATCH_CONCURRENCY, 8),
-  );
+  const matchConcurrency = 1;
   const addBatchSize = Math.max(1, Math.min(callbacks.addBatchSize ?? DEFAULT_ADD_BATCH_SIZE, 50));
 
   const items: ImportItemResult[] = tracks.map((t) => ({ external: t, status: 'pending' }));

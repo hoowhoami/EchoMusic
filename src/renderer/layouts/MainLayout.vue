@@ -22,7 +22,9 @@ const keepAliveRouteNames = computed(() => {
 });
 
 const keepAliveMax = computed(() =>
-  settingStore.keepAliveEnabled ? settingStore.keepAliveMax : alwaysKeepAlive.length,
+  settingStore.keepAliveEnabled
+    ? Math.max(alwaysKeepAlive.length, Math.min(settingStore.keepAliveMax, 30))
+    : alwaysKeepAlive.length,
 );
 </script>
 

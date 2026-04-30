@@ -42,6 +42,7 @@ const {
   singerComments,
   showCommentsEnd,
   fetchComments,
+  updateResource,
   total,
 } = useComments({
   resourceId: props.resourceId,
@@ -61,17 +62,38 @@ const handleScroll = () => {
 
 const resourceKey = () => `${props.resourceType}:${props.resourceId}:${props.mixSongId ?? ''}`;
 
+// 资源变化时：打开状态下立即刷新，关闭状态下标记为需要刷新
+watch(
+  () => resourceKey(),
+  async (newKey) => {
+    if (newKey === currentResourceKey) return;
+    updateResource({
+      resourceId: props.resourceId,
+      resourceType: props.resourceType,
+      mixSongId: props.mixSongId,
+    });
+    if (open.value) {
+      currentResourceKey = newKey;
+      await fetchComments(true);
+    } else {
+      // 标记为需要刷新，下次打开时会重新加载
+      currentResourceKey = '';
+    }
+  },
+);
+
 watch(
   () => open.value,
   async (isOpen) => {
     if (!isOpen) return;
     const key = resourceKey();
-    if (key !== currentResourceKey) {
+    if (key !== currentResourceKey || comments.value.length === 0) {
       currentResourceKey = key;
-      // 需要重新初始化 useComments
-      // 由于 composable 在 setup 时绑定，这里直接重新加载
-      await fetchComments(true);
-    } else if (comments.value.length === 0) {
+      updateResource({
+        resourceId: props.resourceId,
+        resourceType: props.resourceType,
+        mixSongId: props.mixSongId,
+      });
       await fetchComments(true);
     }
   },
