@@ -114,22 +114,32 @@ if (!gotTheLock) {
     if (isExiting) return;
     isExiting = true;
     event.preventDefault();
-    log.info('[Main] before-quit: cleaning up and exiting');
-    globalShortcut.unregisterAll();
+    log.info('[Main] before-quit: hiding windows and scheduling cleanup');
+
+    // 第一步：立即隐藏所有窗口 + 销毁托盘，用户视觉上已退出
     destroyTray();
-    destroyMediaControls();
-    destroyMpvPlayer();
-    // 销毁桌面歌词窗口
-    try {
-      const lyricWin = getDesktopLyricWindow();
-      if (lyricWin && !lyricWin.isDestroyed()) lyricWin.destroy();
-    } catch {
-      // 忽略
-    }
-    // 销毁所有剩余窗口
     BrowserWindow.getAllWindows().forEach((w) => {
-      if (!w.isDestroyed()) w.destroy();
+      if (!w.isDestroyed()) w.hide();
     });
-    app.exit(0);
+
+    // 第二步：让主线程完成一轮消息循环（渲染窗口隐藏），再执行阻塞清理
+    setImmediate(() => {
+      log.info('[Main] before-quit: cleaning up native resources');
+      globalShortcut.unregisterAll();
+      destroyMediaControls();
+      destroyMpvPlayer();
+      // 销毁桌面歌词窗口
+      try {
+        const lyricWin = getDesktopLyricWindow();
+        if (lyricWin && !lyricWin.isDestroyed()) lyricWin.destroy();
+      } catch {
+        // 忽略
+      }
+      // 销毁所有剩余窗口
+      BrowserWindow.getAllWindows().forEach((w) => {
+        if (!w.isDestroyed()) w.destroy();
+      });
+      app.exit(0);
+    });
   });
 }
