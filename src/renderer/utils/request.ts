@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
+import { ensureDevice } from './device';
 import { logger } from './logger';
 
 // --- 类型定义 ---
@@ -68,7 +69,7 @@ const checkAuthExpiration = (path: string, data: any): boolean => {
   if (!data || typeof data !== 'object') return false;
 
   const rules = [
-    () => data.error_code === 20018,
+    () => Number(data.error_code) === 20018,
     () => data.msg && typeof data.msg === 'string' && data.msg.includes('登录已过期'),
   ];
 
@@ -79,8 +80,9 @@ const checkAuthExpiration = (path: string, data: any): boolean => {
 const handleAuthExpired = (path: string, responseStatus: number, data: unknown) => {
   const userStore = useUserStore();
 
-  // 网络错误或网关错误时跳过过期检测，避免断网误判
-  if (responseStatus === 0 || responseStatus === 502) return;
+  // 仅在真实 IPC 失败（body 为 null）时跳过；上游业务错误（如 error_code 20018）
+  // 在 server/util/request.js 中会被包装成 status=502，仍需基于 body 判定。
+  if (responseStatus === 0) return;
 
   if (!userStore.isLoggedIn || isAuthExpiredNotified || !checkAuthExpiration(path, data)) {
     return;
@@ -103,6 +105,11 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
   const skipAuth = config?.headers?.['X-Skip-Auth'] === '1';
   const headers: Record<string, string> = { ...(config?.headers || {}) };
   delete headers['X-Skip-Auth'];
+
+  // 请求前确保设备已注册（跳过注册接口本身，避免循环调用）
+  if (!skipAuth) {
+    await ensureDevice();
+  }
 
   // 请求拦截：注入 Authorization
   const auth = buildAuthHeader(skipAuth);
@@ -185,8 +192,17 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
 
   // 处理错误状态
   if (response.status >= 400) {
+    // 502 在本项目内是 server/util/request.js 的统一错误包装：
+    // - 上游业务错误（body 含 error_code）：仅记录业务错误码
+    // - 真实网关/网络失败（body 为 {status:0, msg:Error} 或 null）：保留网关告警
     if (response.status === 502) {
-      logger.error('API', 'Bad gateway (502)');
+      const body = response.body as { error_code?: number | string } | null;
+      const code = body?.error_code;
+      if (code != null && Number(code) !== 0) {
+        logger.warn('API', `Upstream business error (error_code=${code})`);
+      } else {
+        logger.error('API', 'Bad gateway (502)');
+      }
     }
     const err = new Error(`API Error: ${response.status}`);
     (err as any).response = response;

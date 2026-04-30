@@ -6,14 +6,18 @@ import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import Input from '@/components/ui/Input.vue';
+import Popover from '@/components/ui/Popover.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
+import ImportPlaylistDialog from '@/components/music/ImportPlaylistDialog.vue';
 import {
   iconClock,
   iconCloud,
   iconCompass,
+  iconExternalLink,
   iconHeart,
+  iconPlaylistAdd,
   iconPulse,
   iconPlus,
   iconSearch,
@@ -44,6 +48,8 @@ const userInfo = computed(() => userStore.info);
 const activePlaylistTab = ref(0);
 const showCreateDialog = ref(false);
 const showRemoveDialog = ref(false);
+const showImportDialog = ref(false);
+const showCreateMenu = ref(false);
 const isCreatingPlaylist = ref(false);
 const isRemovingPlaylist = ref(false);
 const newPlaylistName = ref('');
@@ -509,17 +515,67 @@ watch(
           <RefreshIcon width="15" height="15" />
         </Button>
         <div class="sidebar-section-action-slot">
-          <Button
+          <Popover
             v-if="isLoggedIn && activePlaylistTab === 0"
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="sidebar-section-action sidebar-icon-btn"
-            title="新建歌单"
-            @click="openCreatePlaylistDialog"
+            v-model:open="showCreateMenu"
+            trigger="click"
+            side="bottom"
+            align="end"
+            :side-offset="6"
+            :show-arrow="false"
+            content-class="sidebar-create-menu"
           >
-            <Icon :icon="iconPlus" width="14" height="14" />
-          </Button>
+            <template #trigger>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="sidebar-section-action sidebar-icon-btn"
+                title="添加歌单"
+              >
+                <Icon :icon="iconPlus" width="14" height="14" />
+              </Button>
+            </template>
+            <div class="sidebar-create-menu-list">
+              <div class="sidebar-create-menu-title">添加歌单</div>
+              <button
+                type="button"
+                class="sidebar-create-menu-item"
+                @click="
+                  () => {
+                    showCreateMenu = false;
+                    openCreatePlaylistDialog();
+                  }
+                "
+              >
+                <span class="sidebar-create-menu-icon">
+                  <Icon :icon="iconPlaylistAdd" width="16" height="16" />
+                </span>
+                <div class="min-w-0 flex-1 text-left">
+                  <div class="sidebar-create-menu-title-row">新建空歌单</div>
+                  <div class="sidebar-create-menu-desc">自定义名称从零开始</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                class="sidebar-create-menu-item"
+                @click="
+                  () => {
+                    showCreateMenu = false;
+                    showImportDialog = true;
+                  }
+                "
+              >
+                <span class="sidebar-create-menu-icon">
+                  <Icon :icon="iconExternalLink" width="16" height="16" />
+                </span>
+                <div class="min-w-0 flex-1 text-left">
+                  <div class="sidebar-create-menu-title-row">从链接导入</div>
+                  <div class="sidebar-create-menu-desc">网易云 / QQ / 酷狗 / 文本</div>
+                </div>
+              </button>
+            </div>
+          </Popover>
         </div>
       </div>
     </div>
@@ -718,6 +774,8 @@ watch(
       </Button>
     </template>
   </Dialog>
+
+  <ImportPlaylistDialog v-model:open="showImportDialog" />
 </template>
 
 <style scoped>
@@ -822,6 +880,51 @@ watch(
 
 :deep(.sidebar-dialog) {
   width: min(420px, 92vw);
+}
+
+:deep(.sidebar-create-menu) {
+  padding: 8px;
+  border-radius: 16px;
+  min-width: 248px;
+}
+
+.sidebar-create-menu-list {
+  @apply flex flex-col gap-0.5;
+}
+
+.sidebar-create-menu-title {
+  @apply px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider;
+  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+}
+
+.sidebar-create-menu-item {
+  @apply w-full flex items-center gap-3 px-2 py-2 rounded-[12px] transition-all;
+}
+
+.sidebar-create-menu-item:hover {
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.sidebar-create-menu-item:active {
+  transform: scale(0.985);
+}
+
+.sidebar-create-menu-icon {
+  @apply inline-flex items-center justify-center w-8 h-8 rounded-[10px] shrink-0 transition-colors;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.sidebar-create-menu-item:hover .sidebar-create-menu-icon {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.sidebar-create-menu-title-row {
+  @apply text-[13px] font-medium text-text-main leading-tight;
+}
+
+.sidebar-create-menu-desc {
+  @apply text-[11px] text-text-secondary/75 leading-tight mt-0.5;
 }
 
 .no-scrollbar::-webkit-scrollbar {

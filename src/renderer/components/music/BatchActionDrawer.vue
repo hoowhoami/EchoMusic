@@ -256,8 +256,15 @@ const handleRemoveFromPlaylist = async () => {
           删除
         </Button>
       </div>
-      <Button type="button" class="batch-close" variant="ghost" size="xs" @click="open = false">
-        <Icon :icon="iconX" width="18" height="18" />
+      <Button
+        type="button"
+        class="batch-close"
+        variant="ghost"
+        size="xs"
+        aria-label="关闭"
+        @click="open = false"
+      >
+        <Icon :icon="iconX" width="14" height="14" />
       </Button>
     </div>
 
@@ -466,22 +473,7 @@ const handleRemoveFromPlaylist = async () => {
 }
 
 .batch-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  outline: none;
-  box-shadow: none;
-  -webkit-tap-highlight-color: transparent;
-  transition: all 0.2s ease;
-}
-
-.batch-close:hover {
-  color: var(--color-text-main);
-  transform: scale(1.06);
+  @apply h-8 w-8 min-w-0 p-0 text-text-main/50 hover:text-text-main;
 }
 
 .batch-selection {

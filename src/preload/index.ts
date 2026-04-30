@@ -10,6 +10,7 @@ import type {
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type { RecognizeResponse } from '../shared/shazam';
+import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 
 const ipcListenerMap = new Map<
   string,
@@ -191,6 +192,10 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('shazam:recognize', pcmData) as Promise<RecognizeResponse>,
     enableLoopback: () => ipcRenderer.invoke('enable-loopback-audio'),
     disableLoopback: () => ipcRenderer.invoke('disable-loopback-audio'),
+  },
+  external: {
+    resolvePlaylist: (req: ResolvePlaylistRequest) =>
+      ipcRenderer.invoke('external:resolve-playlist', req) as Promise<ResolvePlaylistResponse>,
   },
   mediaControls: {
     updateMetadata: (payload: {

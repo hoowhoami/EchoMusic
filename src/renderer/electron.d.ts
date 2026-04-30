@@ -8,6 +8,7 @@ import type {
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type { RecognizeResponse } from '../shared/shazam';
+import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 
 export interface IElectronAPI {
   platform: string;
@@ -90,6 +91,9 @@ export interface IElectronAPI {
     recognize: (pcmData: ArrayBuffer) => Promise<RecognizeResponse>;
     enableLoopback: () => Promise<void>;
     disableLoopback: () => Promise<void>;
+  };
+  external: {
+    resolvePlaylist: (req: ResolvePlaylistRequest) => Promise<ResolvePlaylistResponse>;
   };
   mediaControls: {
     updateMetadata: (payload: {

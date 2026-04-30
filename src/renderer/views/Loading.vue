@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { registerDevice } from '@/api/user';
 import { iconTriangleAlert } from '@/icons';
-import { useDeviceStore, type DeviceInfo } from '@/stores/device';
+import { useDeviceStore } from '@/stores/device';
 import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import { useUserStore } from '@/stores/user';
+import { ensureDevice } from '@/utils/device';
 import logger from '@/utils/logger';
 import Button from '@/components/ui/Button.vue';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
@@ -23,40 +23,6 @@ const isDeviceReady = ref(false);
 const hasCompletedStartup = ref(false);
 let isNavigating = false;
 
-const extractDeviceInfo = (payload: unknown): DeviceInfo | null => {
-  if (!payload || typeof payload !== 'object') return null;
-
-  const record = payload as Record<string, unknown>;
-  const data = record.data;
-
-  if (!data || typeof data !== 'object') return null;
-
-  const device = data as Record<string, unknown>;
-  const dfid = typeof device.dfid === 'string' ? device.dfid : '';
-
-  if (!dfid) return null;
-
-  return {
-    ...deviceStore.info,
-    dfid,
-    mid: typeof device.mid === 'string' ? device.mid : deviceStore.info?.mid,
-    uuid: typeof device.uuid === 'string' ? device.uuid : deviceStore.info?.uuid,
-    guid: typeof device.guid === 'string' ? device.guid : deviceStore.info?.guid,
-    serverDev:
-      typeof device.serverDev === 'string' ? device.serverDev : deviceStore.info?.serverDev,
-    mac: typeof device.mac === 'string' ? device.mac : deviceStore.info?.mac,
-    appid: typeof device.appid === 'string' ? device.appid : deviceStore.info?.appid,
-    clientver:
-      typeof device.clientver === 'string' ? device.clientver : deviceStore.info?.clientver,
-  };
-};
-
-const navigateToHome = () => {
-  if (isNavigating) return;
-  isNavigating = true;
-  router.push('/main/home');
-};
-
 const ensureDeviceReady = async () => {
   if (deviceStore.info?.dfid || isDeviceReady.value) {
     isDeviceReady.value = true;
@@ -65,22 +31,25 @@ const ensureDeviceReady = async () => {
 
   statusMessage.value = '正在注册设备信息...';
 
-  let response: unknown;
   try {
-    response = await registerDevice();
+    await ensureDevice();
   } catch {
     toastStore.actionFailed('注册设备');
     throw new Error('设备注册失败');
   }
 
-  const deviceInfo = extractDeviceInfo(response);
-  if (!deviceInfo?.dfid) {
+  if (!deviceStore.info?.dfid) {
     throw new Error('设备注册失败');
   }
 
-  deviceStore.setDeviceInfo(deviceInfo);
   isDeviceReady.value = true;
-  logger.info('Loading', 'Device registered', deviceInfo);
+  logger.info('Loading', 'Device registered', deviceStore.info);
+};
+
+const navigateToHome = () => {
+  if (isNavigating) return;
+  isNavigating = true;
+  router.push('/main/home');
 };
 
 const maybeAutoReceiveVip = async () => {

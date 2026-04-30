@@ -31,6 +31,7 @@ import {
   iconCheck,
   iconChevronLeft,
   iconQrCode,
+  iconRefreshCw,
   iconSmartphone,
 } from '@/icons';
 
@@ -64,9 +65,10 @@ const qrStatus = ref(1);
 const isLoadingQr = ref(false);
 const qrError = ref('');
 let isPollingQr = false;
+let isLoginDone = false;
 
 const loadQrCode = async () => {
-  if (activeTab.value !== '0') return;
+  if (activeTab.value !== '0' || isLoginDone) return;
   isLoadingQr.value = true;
   qrUrl.value = undefined;
   qrError.value = '';
@@ -98,7 +100,7 @@ const loadQrCode = async () => {
 };
 
 const startCheckStatus = async () => {
-  if (isPollingQr || activeTab.value !== '0') return;
+  if (isPollingQr || isLoginDone || activeTab.value !== '0') return;
   isPollingQr = true;
   logger.info('Login', 'Starting Kugou QR polling...');
 
@@ -112,6 +114,7 @@ const startCheckStatus = async () => {
         qrStatus.value = status;
         if (status === 4 && res.data) {
           isPollingQr = false;
+          isLoginDone = true;
           userStore.handleLoginSuccess(res.data);
           triggerAutoReceiveVipAfterLogin();
           router.push('/main/home');
@@ -182,6 +185,7 @@ const handleSmsLogin = async () => {
   try {
     const res: any = await loginBySms(mobile, smsData.code);
     if (res.status === 1 && res.data) {
+      isLoginDone = true;
       userStore.handleLoginSuccess(res.data);
       triggerAutoReceiveVipAfterLogin();
       router.push('/main/home');
@@ -206,7 +210,7 @@ const wxQr = reactive({
 let isPollingWx = false;
 
 const loadWxQr = async () => {
-  if (activeTab.value !== '2') return;
+  if (activeTab.value !== '2' || isLoginDone) return;
   wxQr.isLoading = true;
   wxQr.url = '';
   wxQr.status = 0;
@@ -234,7 +238,7 @@ const loadWxQr = async () => {
 };
 
 const startCheckWxStatus = async () => {
-  if (isPollingWx || activeTab.value !== '2') return;
+  if (isPollingWx || isLoginDone || activeTab.value !== '2') return;
   isPollingWx = true;
   logger.info('Login', 'Starting WeChat polling...');
 
@@ -251,6 +255,7 @@ const startCheckWxStatus = async () => {
           if (wxCode) {
             const loginRes: any = await loginByOpenPlat(wxCode);
             if (loginRes?.status === 1 || loginRes?.code === 200) {
+              isLoginDone = true;
               userStore.handleLoginSuccess(loginRes.data || loginRes.body?.data || loginRes);
               triggerAutoReceiveVipAfterLogin();
               router.push('/main/home');
@@ -287,6 +292,7 @@ const stopCheckStatus = () => {
 
 // 监听 Tab 切换，触发对应逻辑
 watch(activeTab, (newTab) => {
+  if (isLoginDone) return;
   logger.info('Login', 'Tab changed to:', newTab);
   stopCheckStatus();
   if (newTab === '0') loadQrCode();
@@ -376,8 +382,17 @@ onUnmounted(() => {
                   <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
                 </div>
               </div>
-              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">
-                等待扫码中
+              <div class="mt-6 relative flex items-center justify-center">
+                <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                  等待扫码中
+                </span>
+                <button
+                  class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-primary hover:bg-primary/10 transition-all active:scale-90"
+                  :disabled="isLoadingQr"
+                  @click="loadQrCode"
+                >
+                  <Icon :icon="iconRefreshCw" width="14" height="14" />
+                </button>
               </div>
             </TabsContent>
 
@@ -457,8 +472,17 @@ onUnmounted(() => {
                   <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
                 </div>
               </div>
-              <div class="mt-6 text-[11px] font-black opacity-40 uppercase tracking-[3px]">
-                等待微信扫码
+              <div class="mt-6 relative flex items-center justify-center">
+                <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
+                  等待微信扫码
+                </span>
+                <button
+                  class="absolute right-0 w-7 h-7 rounded-full flex items-center justify-center text-text-main/40 hover:text-[#07C160] hover:bg-[#07C160]/10 transition-all active:scale-90"
+                  :disabled="wxQr.isLoading"
+                  @click="loadWxQr"
+                >
+                  <Icon :icon="iconRefreshCw" width="14" height="14" />
+                </button>
               </div>
             </TabsContent>
           </div>

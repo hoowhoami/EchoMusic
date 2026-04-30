@@ -3,6 +3,7 @@ defineOptions({ name: 'profile' });
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useDeviceStore } from '@/stores/device';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -170,6 +171,8 @@ const handleLogout = () => {
 const confirmLogout = () => {
   showLogoutConfirm.value = false;
   userStore.logout();
+  // 清除设备信息，下次请求时自动重新注册
+  useDeviceStore().clearDeviceInfo();
   router.push('/main/home');
 };
 

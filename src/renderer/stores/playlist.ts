@@ -1204,6 +1204,47 @@ export const usePlaylistStore = defineStore('playlist', {
       }
       return false;
     },
+    async createPlaylistAndReturnId(
+      name: string,
+      isPrivate = false,
+      currentUserId?: number,
+    ): Promise<number | null> {
+      if (!currentUserId) return null;
+      try {
+        const res = await addPlaylist(name, {
+          is_pri: isPrivate ? 1 : 0,
+          type: 0,
+          list_create_userid: currentUserId,
+          source: 1,
+        });
+        if (!res || typeof res !== 'object' || !('status' in res) || res.status !== 1) {
+          return null;
+        }
+        const data = (res as { data?: unknown }).data;
+        const directId =
+          data && typeof data === 'object' && 'listid' in data
+            ? Number((data as { listid?: unknown }).listid)
+            : NaN;
+        await this.fetchUserPlaylists();
+        if (Number.isFinite(directId) && directId > 0) {
+          return directId;
+        }
+        // 兜底：从用户歌单中按 name + userId 反查最新创建的项
+        const candidates = this.userPlaylists.filter(
+          (p) =>
+            p.name === name &&
+            (p.listCreateUserid === currentUserId || p.listCreateUserid === undefined) &&
+            p.source !== 2,
+        );
+        if (candidates.length === 0) return null;
+        candidates.sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0));
+        const found = candidates[0];
+        return found.listid ?? (typeof found.id === 'number' ? found.id : null);
+      } catch (e) {
+        logger.error('PlaylistStore', 'Create playlist (returnId) error:', e);
+        return null;
+      }
+    },
     async deleteOwnedPlaylist(listId: string | number | null | undefined) {
       if (listId === undefined || listId === null || String(listId) === '') return false;
       try {

@@ -5,6 +5,7 @@ import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useUserStore } from '@/stores/user';
+import { useDeviceStore } from '@/stores/device';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -20,6 +21,8 @@ const open = computed({
 const handleLogin = async () => {
   authStore.hideSessionExpiredDialog();
   userStore.logout();
+  // 清除设备信息，下次请求时自动重新注册
+  useDeviceStore().clearDeviceInfo();
   if (router.currentRoute.value.name !== 'login') {
     await router.push({ name: 'login' });
   }
