@@ -137,7 +137,8 @@ const emptyStateTitle = computed(() => {
   return '暂无歌词';
 });
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem !important`);
-const secondaryFontSize = computed(() => `${1.0 * lyricStore.fontScale}rem !important`);
+const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem !important`);
+const romanizationFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem !important`);
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
@@ -1371,7 +1372,7 @@ onUnmounted(() => {
                             v-if="line.romanized?.trim()"
                             class="lyric-subline mt-1 block max-w-full truncate"
                             :style="{
-                              fontSize: secondaryFontSize,
+                              fontSize: romanizationFontSize,
                               fontWeight: String(
                                 currentIndex === index
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
