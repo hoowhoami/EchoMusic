@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-14
             electron_builder_args: ''
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
