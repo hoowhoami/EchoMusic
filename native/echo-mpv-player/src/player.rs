@@ -381,12 +381,13 @@ impl MpvPlayer {
 
     /// 获取音频设备列表
     pub fn get_audio_devices(&self) -> Result<Vec<AudioDevice>, String> {
-        // mpv 0.41+ 的 audio-device-list 用 MPV_FORMAT_NODE 读取可能返回空数组，
-        // 改用字符串方式读取 JSON 后手动解析
         let json_str = self.get_property_string("audio-device-list")?;
+        Self::parse_device_list_json(&json_str)
+    }
+
+    /// 从 JSON 字符串解析设备列表（也可供事件循环静态调用）
+    fn parse_device_list_json(json_str: &str) -> Result<Vec<AudioDevice>, String> {
         let mut devices = Vec::new();
-        // 简易 JSON 数组解析：[{"name":"...","description":"..."},...]
-        // 按 "},{" 分割每个设备条目
         let trimmed = json_str.trim();
         if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
             return Ok(devices);
@@ -413,6 +414,59 @@ impl MpvPlayer {
             devices.push(AudioDevice { name, description });
         }
         Ok(devices)
+    }
+
+    /// 从 property change 事件的 MpvEventProperty 中解析设备列表
+    /// audio-device-list 以 MPV_FORMAT_NODE 形式传来，直接解析节点
+    pub fn parse_audio_device_list_json(
+        prop: &MpvEventProperty,
+    ) -> Result<Vec<AudioDevice>, String> {
+        use std::os::raw::c_char;
+
+        if prop.data.is_null() {
+            return Ok(Vec::new());
+        }
+
+        // 属性变化事件中的 audio-device-list 可能是 NODE 格式或 STRING 格式
+        if prop.format == MPV_FORMAT_NODE {
+            let node = unsafe { &*(prop.data as *const MpvNode) };
+            // 从 node 中提取设备列表
+            let owned = unsafe { super::player::parse_mpv_node(node) };
+            let mut devices = Vec::new();
+            if let MpvNodeOwned::Array(arr) = owned {
+                for item in arr {
+                    if let MpvNodeOwned::Map(map) = item {
+                        let name = map.iter()
+                            .find(|(k, _)| k == "name")
+                            .and_then(|(_, v)| v.as_str())
+                            .unwrap_or("auto")
+                            .to_string();
+                        let description = map.iter()
+                            .find(|(k, _)| k == "description")
+                            .and_then(|(_, v)| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        devices.push(AudioDevice { name, description });
+                    }
+                }
+            }
+            Ok(devices)
+        } else if prop.format == MPV_FORMAT_STRING || prop.format == MPV_FORMAT_OSD_STRING {
+            let ptr = unsafe { prop.data as *const *const c_char };
+            if ptr.is_null() {
+                return Ok(Vec::new());
+            }
+            let c_str = unsafe { *ptr };
+            if c_str.is_null() {
+                return Ok(Vec::new());
+            }
+            let json_str = unsafe { std::ffi::CStr::from_ptr(c_str) }
+                .to_string_lossy()
+                .into_owned();
+            Self::parse_device_list_json(&json_str)
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     /// 设置音频滤镜
@@ -547,6 +601,10 @@ impl MpvPlayer {
         self.shutdown.store(true, Ordering::SeqCst);
         self.cancel_fade();
         unsafe {
+            // 先唤醒事件循环线程（正在 mpv_wait_event 中阻塞），使其立即退出
+            (self.lib.mpv_wakeup)(self.handle);
+            // 短暂 yield 让事件线程有机会检查 shutdown 标志
+            std::thread::yield_now();
             (self.lib.mpv_terminate_destroy)(self.handle);
         }
     }

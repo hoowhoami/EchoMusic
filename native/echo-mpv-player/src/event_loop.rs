@@ -2,6 +2,7 @@
 
 use crate::mpv_ffi::*;
 use crate::types::*;
+use crate::player::MpvPlayer;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -156,6 +157,12 @@ fn handle_property_change(
                     s.speed = value;
                 }
             }
+        }
+        "audio-device-list" => {
+            // 设备列表变化，解析属性节点中的设备列表一并发送
+            let devices = MpvPlayer::parse_audio_device_list_json(prop)
+                .unwrap_or_default();
+            call_callback(callback, PlayerEvent::audio_device_list_changed(devices));
         }
         _ => {}
     }

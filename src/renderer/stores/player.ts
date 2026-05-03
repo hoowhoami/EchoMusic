@@ -211,7 +211,9 @@ type PlaybackNotice = {
 
 // 保持一个全局 PlayerEngine 实例
 const engine = new PlayerEngine();
-let outputDeviceChangeHandler: ((this: MediaDevices, event: Event) => void) | null = null;
+let outputDeviceChangeHandler:
+  | ((devices: Array<{ name: string; description: string }>) => void)
+  | null = null;
 
 const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null => {
   if (!track) return null;
@@ -526,13 +528,6 @@ export const usePlayerStore = defineStore('player', {
     },
 
     unregisterOutputDeviceWatcher() {
-      if (
-        outputDeviceChangeHandler &&
-        navigator.mediaDevices?.removeEventListener &&
-        this.outputDeviceWatcherRegistered
-      ) {
-        navigator.mediaDevices.removeEventListener('devicechange', outputDeviceChangeHandler);
-      }
       outputDeviceChangeHandler = null;
       this.outputDeviceWatcherRegistered = false;
       this.clearOutputDeviceRefreshTimer();
@@ -647,7 +642,7 @@ export const usePlayerStore = defineStore('player', {
       engine.setLoopFile(this.playMode === 'single');
       this.registerSettingWatchers(settingStore);
       this.registerOutputDeviceWatcher(settingStore);
-      void this.refreshOutputDevices(settingStore);
+      void this.refreshOutputDevices(undefined, settingStore);
 
       // 节流：MediaSession 位置状态每 2 秒同步一次即可
       let lastMediaSessionSync = 0;
@@ -881,11 +876,23 @@ export const usePlayerStore = defineStore('player', {
         const playlist = usePlaylistStore();
         if ((playlist.activeQueue?.songs.length ?? playlist.defaultList.length) > 0) {
           const activeSongs = playlist.activeQueue?.songs ?? playlist.defaultList;
-          logger.info('PlayerStore', 'No active track, playing first item from default list', {
-            firstTrackId: activeSongs[0]?.id,
-            listLength: activeSongs.length,
-          });
-          this.playTrack(activeSongs[0].id, activeSongs);
+          let firstTrackIndex = 0;
+          if (this.playMode === 'random') {
+            firstTrackIndex = Math.floor(Math.random() * activeSongs.length);
+          }
+          const playableIndex = findPlayableIndex(activeSongs, firstTrackIndex, true, true);
+          if (playableIndex !== -1) {
+            const trackToPlay = activeSongs[playableIndex];
+            logger.info('PlayerStore', 'No active track, starting playback', {
+              trackId: trackToPlay.id,
+              index: playableIndex,
+              playMode: this.playMode,
+              listLength: activeSongs.length,
+            });
+            this.playTrack(trackToPlay.id, activeSongs);
+          } else {
+            logger.warn('PlayerStore', 'No playable track found in the list.');
+          }
         }
         return;
       }
@@ -1597,36 +1604,47 @@ export const usePlayerStore = defineStore('player', {
     registerOutputDeviceWatcher(settingStore: ReturnType<typeof useSettingStore>) {
       if (this.outputDeviceWatcherRegistered) return;
       this.outputDeviceWatcherRegistered = true;
-      if (!navigator.mediaDevices?.addEventListener) {
+
+      if (!window.electron?.mpv?.onAudioDeviceListChanged) {
         logger.info(
           'PlayerStore',
-          'Output device watcher unavailable: mediaDevices.addEventListener not supported',
+          'Output device watcher unavailable: electron.mpv.onAudioDeviceListChanged not supported',
         );
         return;
       }
 
-      logger.info('PlayerStore', 'Output device watcher registered');
+      logger.info('PlayerStore', 'Output device watcher registered (via mpv)');
       outputDeviceChangeHandler = () => {
-        logger.info(
-          'PlayerStore',
-          'Detected media device change, scheduling output device refresh',
-        );
+        logger.info('PlayerStore', 'Detected mpv audio device list change, scheduling refresh');
         this.clearOutputDeviceRefreshTimer();
         this.outputDeviceRefreshTimer = window.setTimeout(() => {
           this.outputDeviceRefreshTimer = null;
-          void this.refreshOutputDevices(settingStore);
+          void this.refreshOutputDevices(undefined, settingStore);
         }, 800);
       };
-      navigator.mediaDevices.addEventListener('devicechange', outputDeviceChangeHandler);
+      window.electron.mpv.onAudioDeviceListChanged(outputDeviceChangeHandler);
     },
 
-    async refreshOutputDevices(settingStore: ReturnType<typeof useSettingStore>) {
+    async refreshOutputDevices(
+      mpvDevicesArg?: Array<{ name: string; description: string }>,
+      settingStoreArg?: ReturnType<typeof useSettingStore>,
+    ) {
+      const settingStore = settingStoreArg ?? useSettingStore();
       const fallbackOptions = [{ label: '系统默认', value: 'default' }];
-
-      logger.info('PlayerStore', 'Refreshing output devices from mpv');
-
       try {
-        const mpvDevices = await window.electron?.mpv?.getAudioDevices();
+        let mpvDevices: Array<{ name: string; description: string }>;
+
+        if (mpvDevicesArg) {
+          mpvDevices = mpvDevicesArg;
+        } else {
+          logger.info('PlayerStore', 'Refreshing output devices from mpv');
+          try {
+            mpvDevices = (await window.electron?.mpv?.getAudioDevices()) ?? [];
+          } catch {
+            mpvDevices = [];
+          }
+        }
+
         if (!Array.isArray(mpvDevices) || mpvDevices.length === 0) {
           logger.warn('PlayerStore', 'mpv returned no audio devices');
           settingStore.outputDevices = fallbackOptions;
@@ -1724,7 +1742,7 @@ export const usePlayerStore = defineStore('player', {
 
     async requestOutputDevicePermission(settingStore = useSettingStore()) {
       // mpv 直接获取系统设备列表，不需要浏览器权限
-      await this.refreshOutputDevices(settingStore);
+      await this.refreshOutputDevices(undefined, settingStore);
       return true;
     },
 

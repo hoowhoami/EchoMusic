@@ -45,6 +45,8 @@ pub struct PlayerEvent {
     pub flag: Option<bool>,
     /// 事件关联的字符串（错误信息、end-file reason 等）
     pub message: Option<String>,
+    /// 事件关联的设备列表（audio-device-list-changed 时携带）
+    pub devices: Option<Vec<AudioDevice>>,
 }
 
 impl PlayerEvent {
@@ -54,6 +56,7 @@ impl PlayerEvent {
             value: Some(time),
             flag: None,
             message: None,
+            devices: None,
         }
     }
 
@@ -63,6 +66,7 @@ impl PlayerEvent {
             value: Some(duration),
             flag: None,
             message: None,
+            devices: None,
         }
     }
 
@@ -72,6 +76,7 @@ impl PlayerEvent {
             value: None,
             flag: Some(paused),
             message: None,
+            devices: None,
         }
     }
 
@@ -81,6 +86,7 @@ impl PlayerEvent {
             value: None,
             flag: None,
             message: Some(reason.to_string()),
+            devices: None,
         }
     }
 
@@ -90,6 +96,7 @@ impl PlayerEvent {
             value: None,
             flag: None,
             message: None,
+            devices: None,
         }
     }
 
@@ -99,6 +106,7 @@ impl PlayerEvent {
             value: None,
             flag: None,
             message: None,
+            devices: None,
         }
     }
 
@@ -108,6 +116,17 @@ impl PlayerEvent {
             value: None,
             flag: None,
             message: Some(msg.to_string()),
+            devices: None,
+        }
+    }
+
+    pub fn audio_device_list_changed(devices: Vec<AudioDevice>) -> Self {
+        Self {
+            r#type: "audio-device-list-changed".to_string(),
+            value: None,
+            flag: None,
+            message: None,
+            devices: Some(devices),
         }
     }
 
@@ -117,6 +136,7 @@ impl PlayerEvent {
             value: None,
             flag: None,
             message: None,
+            devices: None,
         }
     }
 }

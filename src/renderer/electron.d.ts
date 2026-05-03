@@ -148,6 +148,9 @@ export interface IElectronAPI {
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onError: (func: (message: string) => void) => () => void;
+    onAudioDeviceListChanged: (
+      func: (devices: Array<{ name: string; description: string }>) => void,
+    ) => () => void;
   };
 }
 

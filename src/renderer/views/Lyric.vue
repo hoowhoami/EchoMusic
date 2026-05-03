@@ -136,14 +136,8 @@ const emptyStateTitle = computed(() => {
   if (lyricStore.isLoading) return '歌词加载中…';
   return '暂无歌词';
 });
-const titleFontSize = computed(
-  () =>
-    `clamp(${23 * lyricStore.fontScale}px, ${2.3 * lyricStore.fontScale}vw, ${36 * lyricStore.fontScale}px)`,
-);
-const secondaryFontSize = computed(
-  () =>
-    `clamp(${12 * lyricStore.fontScale}px, ${1.0 * lyricStore.fontScale}vw, ${15 * lyricStore.fontScale}px)`,
-);
+const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem !important`);
+const secondaryFontSize = computed(() => `${1.0 * lyricStore.fontScale}rem !important`);
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());

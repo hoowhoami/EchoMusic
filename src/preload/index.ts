@@ -186,6 +186,16 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('mpv:error', listener);
       return () => ipcRenderer.removeListener('mpv:error', listener);
     },
+    onAudioDeviceListChanged: (
+      func: (devices: Array<{ name: string; description: string }>) => void,
+    ) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        devices: Array<{ name: string; description: string }>,
+      ) => func(devices);
+      ipcRenderer.on('mpv:audio-device-list-changed', listener);
+      return () => ipcRenderer.removeListener('mpv:audio-device-list-changed', listener);
+    },
   },
   shazam: {
     recognize: (pcmData: ArrayBuffer) =>

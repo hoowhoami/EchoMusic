@@ -57,6 +57,12 @@ function bindEventForwarding(
   controller.on('error', (error: Error) => {
     getMainWindow()?.webContents.send('mpv:error', error.message);
   });
+  controller.on(
+    'audio-device-list-changed',
+    (devices: Array<{ name: string; description: string }>) => {
+      getMainWindow()?.webContents.send('mpv:audio-device-list-changed', devices);
+    },
+  );
 }
 
 export async function initMpvPlayer(

@@ -119,6 +119,8 @@ pub struct MpvLib {
         libloading::Symbol<'static, unsafe extern "C" fn(*mut c_void)>,
     pub mpv_free_node_contents:
         libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvNode)>,
+    pub mpv_wakeup:
+        libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvHandle)>,
     pub mpv_error_string:
         libloading::Symbol<'static, unsafe extern "C" fn(c_int) -> *const c_char>,
 }
@@ -154,6 +156,7 @@ impl MpvLib {
             mpv_wait_event: load_fn!(mpv_wait_event, unsafe extern "C" fn(*mut MpvHandle, f64) -> *mut MpvEvent),
             mpv_free: load_fn!(mpv_free, unsafe extern "C" fn(*mut c_void)),
             mpv_free_node_contents: load_fn!(mpv_free_node_contents, unsafe extern "C" fn(*mut MpvNode)),
+            mpv_wakeup: load_fn!(mpv_wakeup, unsafe extern "C" fn(*mut MpvHandle)),
             mpv_error_string: load_fn!(mpv_error_string, unsafe extern "C" fn(c_int) -> *const c_char),
             _lib: lib,
         })

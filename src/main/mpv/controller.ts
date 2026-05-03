@@ -165,6 +165,7 @@ export class MpvController extends EventEmitter {
     value?: number;
     flag?: boolean;
     message?: string;
+    devices?: Array<{ name: string; description: string }>;
   }): void {
     switch (event.type) {
       case 'time-update':
@@ -210,6 +211,9 @@ export class MpvController extends EventEmitter {
         break;
       case 'fade-complete':
         this.emit('fade-complete');
+        break;
+      case 'audio-device-list-changed':
+        this.emit('audio-device-list-changed', event.devices ?? []);
         break;
     }
   }
