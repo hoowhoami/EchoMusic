@@ -904,7 +904,12 @@ export const usePlaylistStore = defineStore('playlist', {
       const targetQueue = this.ensurePlaybackQueue(options.queueId, options);
       targetQueue.songs = songs.slice();
       targetQueue.filteredInvalidCount = Math.max(0, filteredInvalidCount);
-      targetQueue.queuedNextTrackIds = [];
+      if (
+        songs.length !== targetQueue.songs.length ||
+        songs.some((song, index) => String(song.id) !== String(targetQueue.songs[index]?.id))
+      ) {
+        targetQueue.queuedNextTrackIds = [];
+      }
       targetQueue.title = options.title?.trim() || targetQueue.title || '播放列表';
       targetQueue.subtitle = options.subtitle?.trim() ?? targetQueue.subtitle;
       targetQueue.coverUrl = options.coverUrl?.trim() ?? targetQueue.coverUrl;
