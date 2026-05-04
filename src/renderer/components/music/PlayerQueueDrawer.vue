@@ -134,16 +134,21 @@ const isMyQueue = computed(() => previewQueue.value?.id === playlistStore.custom
 const virtualOverscan = 10;
 const virtualRanges = ref<Record<string, VirtualRange>>({});
 let virtualMeasureFrame = 0;
+let virtualMeasureTimer = 0;
 const pendingVirtualMeasureQueueIds = new Set<string>();
+// 滚动节流间隔（毫秒）
+const VIRTUAL_SCROLL_THROTTLE_MS = 50;
 
 const getQueueVirtualRange = (queueId: string): VirtualRange =>
   virtualRanges.value[queueId] ?? { start: 0, end: 0 };
 
 const setQueueVirtualRange = (queueId: string, range: VirtualRange) => {
-  virtualRanges.value = {
-    ...virtualRanges.value,
-    [queueId]: range,
-  };
+  // 直接修改对象，避免创建新对象触发不必要的响应式更新
+  const current = virtualRanges.value[queueId];
+  if (current && current.start === range.start && current.end === range.end) {
+    return; // 范围未变化，跳过更新
+  }
+  virtualRanges.value[queueId] = range;
 };
 
 const getQueueVirtualItems = (queue: QueueLike) => {
@@ -166,9 +171,7 @@ const getQueueVirtualOffsetStyle = (queueId: string) => ({
 const updateVirtualRange = (queueId: string) => {
   const queue = queueOptions.value.find((item) => item.id === queueId) ?? null;
   if (!queue) {
-    const nextRanges = { ...virtualRanges.value };
-    delete nextRanges[queueId];
-    virtualRanges.value = nextRanges;
+    delete virtualRanges.value[queueId];
     return;
   }
   const scroller = queueListRefs.value[queue.id];
@@ -197,16 +200,25 @@ const updateVirtualRange = (queueId: string) => {
   });
 };
 
+const flushVirtualMeasure = () => {
+  virtualMeasureFrame = 0;
+  virtualMeasureTimer = 0;
+  const ids = Array.from(pendingVirtualMeasureQueueIds);
+  pendingVirtualMeasureQueueIds.clear();
+  ids.forEach((id) => updateVirtualRange(id));
+};
+
 const scheduleVirtualMeasure = (queueId?: string | null) => {
   const targetIds = queueId ? [queueId] : queueOptions.value.map((queue) => queue.id);
   targetIds.forEach((id) => pendingVirtualMeasureQueueIds.add(id));
-  if (virtualMeasureFrame) return;
-  virtualMeasureFrame = requestAnimationFrame(() => {
-    virtualMeasureFrame = 0;
-    const ids = Array.from(pendingVirtualMeasureQueueIds);
-    pendingVirtualMeasureQueueIds.clear();
-    ids.forEach((id) => updateVirtualRange(id));
-  });
+  // 使用定时器节流，避免高频滚动时过度更新
+  if (virtualMeasureTimer) return;
+  virtualMeasureTimer = window.setTimeout(() => {
+    virtualMeasureTimer = 0;
+    // 使用 rAF 确保在渲染帧内执行
+    if (virtualMeasureFrame) return;
+    virtualMeasureFrame = requestAnimationFrame(flushVirtualMeasure);
+  }, VIRTUAL_SCROLL_THROTTLE_MS);
 };
 
 const handleQueueListScroll = (queueId: string) => scheduleVirtualMeasure(queueId);
@@ -317,7 +329,8 @@ const initSortable = async () => {
 const scrollPreviewToTop = () => {
   const queue = previewQueue.value;
   if (!queue) return;
-  queueListRefs.value[queue.id]?.scrollTo({ top: 0, behavior: 'smooth' });
+  // 即时滚动，避免平滑滚动造成的渲染压力
+  queueListRefs.value[queue.id]?.scrollTo({ top: 0 });
   scheduleVirtualMeasure(queue.id);
 };
 
@@ -345,7 +358,8 @@ const scrollToCurrent = (force = true) => {
 
   const index = queue.songs.findIndex((song) => String(song.id) === targetId);
   if (index < 0) return;
-  scroller.scrollTo({ top: Math.max(0, index * itemHeight - 8), behavior: 'smooth' });
+  // 即时滚动，避免平滑滚动造成的渲染压力
+  scroller.scrollTo({ top: Math.max(0, index * itemHeight - 8) });
   scheduleVirtualMeasure(queue.id);
 };
 
@@ -673,6 +687,7 @@ onBeforeUnmount(() => {
   sortableInitToken += 1;
   destroySortable();
   if (virtualMeasureFrame) cancelAnimationFrame(virtualMeasureFrame);
+  if (virtualMeasureTimer) clearTimeout(virtualMeasureTimer);
   clearPageTransitionTimer();
   clearDragAnimationFrame();
 });

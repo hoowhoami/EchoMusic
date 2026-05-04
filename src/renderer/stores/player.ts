@@ -334,6 +334,7 @@ export const usePlayerStore = defineStore('player', {
     duration: 0,
     playbackRate: 1,
     playMode: 'list' as PlayMode,
+    equalizerGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as number[],
     currentTrackId: null as string | null,
     currentSourceQueueId: null as string | null,
     isLoading: false,
@@ -1056,6 +1057,13 @@ export const usePlayerStore = defineStore('player', {
       logger.info('PlayerStore', 'Reference LUFS updated', { lufs });
     },
 
+    setEq(gains: number[]) {
+      const clampedGains = gains.map((g) => clampNumber(g, -12, 12));
+      this.equalizerGains = clampedGains;
+      engine.setEqualizer(clampedGains);
+      logger.info('PlayerStore', 'Equalizer updated', { gains: clampedGains });
+    },
+
     async playTrack(
       id: string,
       playlist?: Song[],
@@ -1115,9 +1123,12 @@ export const usePlayerStore = defineStore('player', {
       const autoPlay = options?.autoPlay ?? true;
       const wasPlaying = autoPlay ? this.isPlaying : false;
 
+      // 淡出不阻塞 UI，在后台线程执行
+      // 注意：需要先重置引擎，淡出会继续在后台进行
       if (wasPlaying && settingStore.volumeFade) {
         const fadeMs = clampNumber(settingStore.volumeFadeTime ?? 1000, 500, 3000);
-        await engine.pause({ fadeOut: true, fadeDurationMs: fadeMs });
+        // 非阻塞调用，不等待淡出完成
+        void engine.pause({ fadeOut: true, fadeDurationMs: fadeMs });
       }
 
       if (requestSeq !== this.playbackRequestSeq) {

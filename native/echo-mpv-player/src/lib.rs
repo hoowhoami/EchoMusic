@@ -238,6 +238,29 @@ pub fn set_audio_filter(filter: String) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 设置均衡器增益
+#[napi]
+pub fn set_eq(gains: Vec<f64>) -> napi::Result<()> {
+    if gains.len() != 10 {
+        return Err(napi::Error::new(
+            napi::Status::InvalidArg,
+            "Expected 10 equalizer gains".to_string(),
+        ));
+    }
+
+    let gains_str = gains
+        .iter()
+        .map(|g| g.to_string())
+        .collect::<Vec<String>>()
+        .join(":");
+
+    let filter_str = format!("equalizer=f=60:f=170:f=310:f=600:f=1000:f=3000:f=6000:f=12000:f=14000:f=16000,gains={}", gains_str);
+
+    get_player()?
+        .set_audio_filter(&filter_str)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
 /// 设置音量均衡增益
 #[napi]
 pub fn set_normalization_gain(gain_db: f64) -> napi::Result<()> {

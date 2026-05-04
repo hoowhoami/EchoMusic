@@ -164,8 +164,7 @@ export class PlayerEngine {
   async pause(options?: { fadeOut?: boolean; fadeDurationMs?: number }): Promise<void> {
     const durationMs = options?.fadeOut ? (options.fadeDurationMs ?? 500) : 0;
     if (durationMs > 0) {
-      // 复合命令：主进程内完成 fade → pause → 恢复音量
-      // 渲染进程不阻塞等待 fade，但 await 确保暂停最终执行
+      // 非阻塞调用：淡出在 Rust 后台线程执行，不阻塞 UI
       await mpv?.pauseWithFade(this.volumeValue, durationMs);
     } else {
       await mpv?.pause();
@@ -178,6 +177,10 @@ export class PlayerEngine {
     });
     this.lastTimeValue = time;
     this.events.timeUpdate?.(time);
+  }
+
+  setEqualizer(gains: number[]): void {
+    mpv?.setEqualizer(gains);
   }
 
   setVolume(value: number): number {

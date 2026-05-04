@@ -459,23 +459,12 @@ export class MpvController extends EventEmitter {
 
   /**
    * 复合操作：淡出音量 → 暂停 → 恢复音量。
-   * 整个流程在 Rust 侧完成。
+   * 整个流程在 Rust 侧完成，不阻塞 UI 线程。
    */
   async pauseWithFade(savedVolumePercent: number, durationMs: number): Promise<void> {
     if (!this.addon) return;
-    return new Promise<void>((resolve) => {
-      const onComplete = () => {
-        this.removeListener('fade-complete', onComplete);
-        clearTimeout(timer);
-        resolve();
-      };
-      const timer = setTimeout(() => {
-        this.removeListener('fade-complete', onComplete);
-        resolve();
-      }, durationMs + 500);
-      this.once('fade-complete', onComplete);
-      this.addon!.pauseWithFade(savedVolumePercent, durationMs);
-    });
+    // 非阻塞调用，淡出在 Rust 后台线程执行
+    this.addon.pauseWithFade(savedVolumePercent, durationMs);
   }
 
   /**
