@@ -65,6 +65,9 @@ export class MpvController extends EventEmitter {
     audioDevice: 'auto',
   };
 
+  private currentEqualizerFilter = '';
+  private currentNormalizationFilter = '';
+
   constructor() {
     super();
     this.libmpvPath = resolveLibmpvPath();
@@ -200,6 +203,8 @@ export class MpvController extends EventEmitter {
         }
         // 打印音频详细信息
         this.logAudioInfo();
+        // 重新应用音频滤镜（防止被新文件加载重置）
+        void this.syncAudioFilters();
         // 触发原始事件名
         this.emit('mpv:file-loaded');
         break;
@@ -407,6 +412,20 @@ export class MpvController extends EventEmitter {
     this.state.speed = s;
   }
 
+  private async updateAudioFilter(updater: () => void): Promise<void> {
+    if (!this.addon) return;
+    updater();
+    await this.syncAudioFilters();
+  }
+
+  async setEq(gains: number[]): Promise<void> {
+    await this.updateAudioFilter(() => {
+      const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
+      const filterParts = gains.map((gain, i) => `f=${freqs[i]}:g=${gain}`);
+      this.currentEqualizerFilter = `equalizer=${filterParts.join(':')}`;
+    });
+  }
+
   async setAudioDevice(deviceName: string): Promise<void> {
     if (!this.addon) return;
     this.addon.setAudioDevice(deviceName);
@@ -427,9 +446,39 @@ export class MpvController extends EventEmitter {
     this.addon.setAudioFilter(filterString || '');
   }
 
+  async getAudioFilter(): Promise<string> {
+    if (!this.addon) return '';
+    try {
+      return this.addon.getProperty('af');
+    } catch {
+      return '';
+    }
+  }
+
   async applyNormalizationGain(gainDb: number): Promise<void> {
+    await this.updateAudioFilter(() => {
+      // 优先尝试直接设置属性（新版 mpv 支持）
+      try {
+        this.addon!.setNormalizationGain(gainDb);
+        this.currentNormalizationFilter = '';
+      } catch {
+        // 旧版 mpv 不支持 volume-gain，回退到 af 滤镜
+        if (gainDb === 0) {
+          this.currentNormalizationFilter = '';
+        } else {
+          this.currentNormalizationFilter = `lavfi=[volume=${gainDb}dB]`;
+        }
+      }
+    });
+  }
+
+  /** 同步合并后的音频滤镜到 mpv */
+  private async syncAudioFilters(): Promise<void> {
     if (!this.addon) return;
-    this.addon.setNormalizationGain(gainDb);
+    const filters = [this.currentEqualizerFilter, this.currentNormalizationFilter].filter(Boolean);
+    const filterString = filters.join(',');
+    log.info('[MpvController] Applying audio filter:', filterString);
+    this.addon.setAudioFilter(filterString);
   }
 
   // ── 淡入淡出 ──

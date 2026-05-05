@@ -571,10 +571,11 @@ const handleCommentTabChange = (value: string | number) => {
   if (value === 'hotword' && hotwordComments.value.length === 0) {
     void fetchHotwordComments(true);
   }
-  void nextTick(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // 延迟检查，等待 DOM 更新完成
+  setTimeout(() => {
     maybeFetchByScroll();
-  });
+  }, 100);
 };
 
 const fetchHeaderStats = async () => {
@@ -644,6 +645,8 @@ onMounted(async () => {
   void nextTick(() => {
     scrollChipRowToActive(classifyChipRowRef.value);
     scrollChipRowToActive(hotwordChipRowRef.value);
+    // 首屏内容不足时主动加载更多
+    maybeFetchByScroll();
   });
 });
 

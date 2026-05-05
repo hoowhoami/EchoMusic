@@ -44,6 +44,14 @@ export function registerPlayerIpc(ref: MpvRef): void {
     await ref.current?.setSpeed(speed);
   });
 
+  ipcMain.handle('mpv:set-equalizer', async (_e, gains: number[]) => {
+    await ref.current?.setEq(gains);
+  });
+
+  ipcMain.handle('mpv:get-audio-filter', async () => {
+    return (await ref.current?.getAudioFilter()) ?? '';
+  });
+
   // 直接透传 mpv 设备名（如 wasapi/{id}、auto 等）
   ipcMain.handle('mpv:set-audio-device', async (_e, deviceName: string) => {
     await ref.current?.setAudioDevice(deviceName || 'auto');

@@ -5,6 +5,7 @@ import type { SongArtist } from '@/models/song';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
+import EffectPopover from '@/components/player/EffectPopover.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -522,6 +523,7 @@ onUnmounted(() => {
       >
         <SpeedPopover />
         <QualityPopover />
+        <EffectPopover />
 
         <Button
           variant="unstyled"

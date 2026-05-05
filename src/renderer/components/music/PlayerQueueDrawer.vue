@@ -229,6 +229,17 @@ const currentTrackId = computed(() => {
   return previewQueue.value.currentTrackId ?? null;
 });
 
+// 缓存播放状态，避免频繁访问 store
+const isPlayerPlaying = ref(playerStore.isPlaying);
+let playingStateTimer = 0;
+const updatePlayerPlayingState = () => {
+  if (playingStateTimer) return;
+  playingStateTimer = window.setTimeout(() => {
+    playingStateTimer = 0;
+    isPlayerPlaying.value = playerStore.isPlaying;
+  }, 100);
+};
+
 const headerTitle = computed(() => (previewIndex.value === 0 ? '播放队列' : '历史队列'));
 const headerSubtitle = computed(() => {
   const queue = previewQueue.value;
@@ -624,6 +635,14 @@ watch(
     if (previewQueue.value?.id === currentPlaybackQueue.value?.id) {
       scrollToCurrent(false);
     }
+    isPlayerPlaying.value = playerStore.isPlaying;
+  },
+);
+
+watch(
+  () => playerStore.isPlaying,
+  () => {
+    updatePlayerPlayingState();
   },
 );
 
@@ -688,6 +707,7 @@ onBeforeUnmount(() => {
   destroySortable();
   if (virtualMeasureFrame) cancelAnimationFrame(virtualMeasureFrame);
   if (virtualMeasureTimer) clearTimeout(virtualMeasureTimer);
+  if (playingStateTimer) clearTimeout(playingStateTimer);
   clearPageTransitionTimer();
   clearDragAnimationFrame();
 });
@@ -862,16 +882,27 @@ onBeforeUnmount(() => {
                         @click="handlePlay(entry.data)"
                       >
                         <Icon
-                          v-if="
+                          v-show="
                             String(entry.data.id) !== String(currentTrackId ?? '') ||
                             queue.id !== currentPlaybackQueue?.id ||
-                            !playerStore.isPlaying
+                            !isPlayerPlaying
                           "
                           :icon="iconPlay"
                           width="14"
                           height="14"
                         />
-                        <Icon v-else :icon="iconPause" width="14" height="14" />
+                        <Icon
+                          v-show="
+                            !(
+                              String(entry.data.id) !== String(currentTrackId ?? '') ||
+                              queue.id !== currentPlaybackQueue?.id ||
+                              !isPlayerPlaying
+                            )
+                          "
+                          :icon="iconPause"
+                          width="14"
+                          height="14"
+                        />
                       </Button>
                     </div>
 

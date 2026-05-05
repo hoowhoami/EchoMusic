@@ -60,6 +60,9 @@ export class PlayerEngine {
   // 原生媒体控制始终尝试调用，IPC handler 在主进程侧做降级
   private lastMediaStateStatus = '';
   private lastTimelineSyncMs = 0;
+  // 时间更新节流
+  private lastTimeUpdateMs = 0;
+  private readonly TIME_UPDATE_THROTTLE_MS = 250;
 
   constructor() {
     if (mpv) {
@@ -75,6 +78,10 @@ export class PlayerEngine {
     const offTime = mpv.onTimeUpdate((time: number) => {
       if (time === this.lastTimeValue) return;
       this.lastTimeValue = time;
+      // 节流：限制时间更新频率
+      const now = Date.now();
+      if (now - this.lastTimeUpdateMs < this.TIME_UPDATE_THROTTLE_MS) return;
+      this.lastTimeUpdateMs = now;
       this.events.timeUpdate?.(time);
     });
     this.cleanupFns.push(offTime);
@@ -181,6 +188,10 @@ export class PlayerEngine {
 
   setEqualizer(gains: number[]): void {
     mpv?.setEqualizer(gains);
+  }
+
+  async getAudioFilter(): Promise<string> {
+    return (await mpv?.getAudioFilter()) || '';
   }
 
   setVolume(value: number): number {

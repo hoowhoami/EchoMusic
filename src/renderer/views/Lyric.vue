@@ -24,7 +24,7 @@ import Badge from '@/components/ui/Badge.vue';
 import Switch from '@/components/ui/Switch.vue';
 import SpeedPopover from '@/components/player/SpeedPopover.vue';
 import QualityPopover from '@/components/player/QualityPopover.vue';
-import VolumePopover from '@/components/player/VolumePopover.vue';
+import EffectPopover from '@/components/player/EffectPopover.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -1635,6 +1635,7 @@ onUnmounted(() => {
               <SpeedPopover variant="lyric" />
               <!-- 音质 -->
               <QualityPopover variant="lyric" />
+              <EffectPopover variant="lyric" />
               <!-- 桌面歌词 -->
               <Tooltip
                 :content="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"

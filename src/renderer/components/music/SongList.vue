@@ -64,6 +64,17 @@ const playlistStore = usePlaylistStore();
 const router = useRouter();
 const route = useRoute();
 
+// 缓存播放状态，避免每次渲染都访问 store
+const isPlaying = ref(playerStore.isPlaying);
+let playingStateTimer = 0;
+const updatePlayingState = () => {
+  if (playingStateTimer) return;
+  playingStateTimer = window.setTimeout(() => {
+    playingStateTimer = 0;
+    isPlaying.value = playerStore.isPlaying;
+  }, 100);
+};
+
 // 搜索过滤
 const filteredSongs = computed(() => {
   if (!props.searchQuery.trim()) return props.songs;
@@ -325,6 +336,13 @@ const scrollToActive = async () => {
 };
 
 watch(
+  () => playerStore.isPlaying,
+  () => {
+    updatePlayingState();
+  },
+);
+
+watch(
   filteredSongs,
   () => {
     scheduleMeasure();
@@ -360,10 +378,12 @@ onMounted(async () => {
   bindScrollContainer();
   window.addEventListener('resize', scheduleMeasure, { passive: true });
   scheduleMeasure();
+  isPlaying.value = playerStore.isPlaying;
 });
 
 onBeforeUnmount(() => {
   if (measureFrame) cancelAnimationFrame(measureFrame);
+  if (playingStateTimer) clearTimeout(playingStateTimer);
   window.removeEventListener('resize', scheduleMeasure);
   boundContainer?.removeEventListener('scroll', handleScroll);
 });
@@ -405,14 +425,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongs.value
               <div class="relative w-4 h-4">
                 <template v-if="isActiveSong(entry.data)">
                   <div
-                    v-if="playerStore.isPlaying"
+                    v-show="isPlaying"
                     class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
                     @click.stop="handleTogglePlay(entry.data)"
                   >
                     <Icon :icon="iconPause" width="14" height="14" />
                   </div>
                   <div
-                    v-else
+                    v-show="!isPlaying"
                     class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
                     @click.stop="handleTogglePlay(entry.data)"
                   >

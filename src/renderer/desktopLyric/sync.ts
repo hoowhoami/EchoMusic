@@ -30,7 +30,7 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
     trackId: String(playerStore.currentTrackId),
     title: String(track.title || track.name || '未知歌曲'),
     artist: String(
-      track.artist || track.artists?.map((item) => item.name).join(' / ') || '未知歌手',
+      track.artist || track.artists?.map((item: any) => item.name).join(' / ') || '未知歌手',
     ),
     album: String(track.album ?? track.albumName ?? ''),
     coverUrl: String(track.coverUrl || track.cover || ''),

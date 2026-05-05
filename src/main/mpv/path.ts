@@ -45,7 +45,7 @@ function findLibmpvRecursive(dir: string, maxDepth = 3): string | null {
   return null;
 }
 
-/** 解析 libmpv 动态库路径，优先使用打包的版本，回退到系统安装 */
+/** 解析 libmpv 动态库路径 */
 export function resolveLibmpvPath(): string | null {
   const resourceBase = app.isPackaged
     ? process.resourcesPath
@@ -54,22 +54,38 @@ export function resolveLibmpvPath(): string | null {
 
   log.info('[mpv:path] Resolving libmpv library', {
     isPackaged: app.isPackaged,
-    resourceBase,
-    bundledDir,
     platform: process.platform,
-    arch: process.arch,
   });
 
-  // 递归查找打包的 libmpv
+  // Linux 平台优先尝试系统库，以解决 Arch 等滚动更新发行版与打包库（通常基于 Ubuntu 构建）的兼容性问题
+  const preferSystem = process.platform === 'linux';
+
+  if (preferSystem) {
+    const systemLib = findSystemLibmpv();
+    if (systemLib) return systemLib;
+  }
+
+  // 尝试打包的库
   const bundledLib = findLibmpvRecursive(bundledDir);
   if (bundledLib) {
     log.info('[mpv:path] Found bundled libmpv:', bundledLib);
     return bundledLib;
   }
 
-  log.info('[mpv:path] Bundled libmpv not found, trying system paths');
+  // 非 Linux 平台，或 Linux 下未找到系统库时，作为回退尝试系统库
+  if (!preferSystem) {
+    const systemLib = findSystemLibmpv();
+    if (systemLib) return systemLib;
+  }
 
-  // 系统路径查找
+  log.warn('[mpv:path] No libmpv library found');
+  return null;
+}
+
+/** 查找系统路径中的 libmpv */
+function findSystemLibmpv(): string | null {
+  log.info('[mpv:path] Searching for system libmpv');
+
   if (process.platform === 'darwin') {
     // Homebrew 路径
     const brewPaths = [
@@ -107,7 +123,6 @@ export function resolveLibmpvPath(): string | null {
     }
   }
 
-  log.warn('[mpv:path] No libmpv library found');
   return null;
 }
 

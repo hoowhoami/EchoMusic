@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'album-detail' });
-import { ref, shallowRef, onMounted, computed } from 'vue';
+import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';
 import { useRouteId } from '@/utils/useRouteId';
@@ -303,12 +303,9 @@ const fetchComments = async (reset = false) => {
       const totalRaw =
         data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
       const totalValue = parseIntSafe(totalRaw);
-      if (totalValue > 0) {
-        commentTotal.value = totalValue;
-        hasMoreComments.value = comments.value.length < totalValue;
-      } else {
-        hasMoreComments.value = mapped.length > 0;
-      }
+      hasMoreComments.value =
+        mapped.length > 0 &&
+        (totalValue > 0 ? comments.value.length < totalValue : mapped.length >= 30);
 
       if (hasMoreComments.value) {
         commentPage.value += 1;
@@ -334,6 +331,22 @@ const handleTabChange = (value: string | number) => {
   activeTab.value = String(value);
   if (value === 'comments' && comments.value.length === 0) {
     fetchComments(true);
+  }
+};
+
+// 滚动加载更多评论
+const maybeFetchMoreComments = () => {
+  if (activeTab.value !== 'comments') return;
+  if (loadingComments.value || !hasMoreComments.value) return;
+
+  const scrollTop =
+    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+
+  // 距离底部 400px 时触发加载
+  if (fullHeight - scrollTop - viewportHeight <= 400) {
+    fetchComments();
   }
 };
 
@@ -412,6 +425,11 @@ const fetchData = async () => {
 
 onMounted(() => {
   fetchData();
+  window.addEventListener('scroll', maybeFetchMoreComments, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', maybeFetchMoreComments);
 });
 
 // id 变化时重置数据（仅同路由间切换，如专辑A→专辑B）

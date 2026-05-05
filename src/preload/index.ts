@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld('electron', {
     seek: (time: number) => ipcRenderer.invoke('mpv:seek', time),
     setVolume: (volume: number) => ipcRenderer.invoke('mpv:set-volume', volume),
     setSpeed: (speed: number) => ipcRenderer.invoke('mpv:set-speed', speed),
+    setEqualizer: (gains: number[]) => ipcRenderer.invoke('mpv:set-equalizer', gains),
+    getAudioFilter: () => ipcRenderer.invoke('mpv:get-audio-filter') as Promise<string>,
     setAudioDevice: (deviceName: string) => ipcRenderer.invoke('mpv:set-audio-device', deviceName),
     getAudioDevices: () =>
       ipcRenderer.invoke('mpv:get-audio-devices') as Promise<

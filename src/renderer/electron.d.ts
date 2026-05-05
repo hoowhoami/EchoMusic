@@ -121,6 +121,7 @@ export interface IElectronAPI {
     setVolume: (volume: number) => Promise<void>;
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
+    getAudioFilter: () => Promise<string>;
     setAudioDevice: (deviceName: string) => Promise<void>;
     getAudioDevices: () => Promise<Array<{ name: string; description: string }>>;
     setNormalizationGain: (gainDb: number) => Promise<void>;

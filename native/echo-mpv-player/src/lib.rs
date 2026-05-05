@@ -248,13 +248,14 @@ pub fn set_eq(gains: Vec<f64>) -> napi::Result<()> {
         ));
     }
 
-    let gains_str = gains
+    let freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
+    let filter_parts: Vec<String> = gains
         .iter()
-        .map(|g| g.to_string())
-        .collect::<Vec<String>>()
-        .join(":");
+        .zip(freqs.iter())
+        .map(|(gain, freq)| format!("f={}:g={}", freq, gain))
+        .collect();
 
-    let filter_str = format!("equalizer=f=60:f=170:f=310:f=600:f=1000:f=3000:f=6000:f=12000:f=14000:f=16000,gains={}", gains_str);
+    let filter_str = format!("equalizer={}", filter_parts.join(":"));
 
     get_player()?
         .set_audio_filter(&filter_str)

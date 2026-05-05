@@ -75,6 +75,7 @@ export function useComments(options: UseCommentsOptions) {
   const toastStore = useToastStore();
   let { resourceId, resourceType, mixSongId } = options;
   let effectiveId = mixSongId || resourceId;
+  const stopped = ref(false);
 
   // 全部评论
   const isLoadingComments = ref(false);
@@ -113,6 +114,7 @@ export function useComments(options: UseCommentsOptions) {
   );
 
   const fetchMusicComments = async (reset = false) => {
+    if (stopped.value) return;
     if (isLoadingComments.value) return;
     if (reset) {
       page.value = 1;
@@ -149,7 +151,8 @@ export function useComments(options: UseCommentsOptions) {
           : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
         total.value = payload.total;
         hasMore.value =
-          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+          payload.list.length > 0 &&
+          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
       }
     } catch {
@@ -160,6 +163,7 @@ export function useComments(options: UseCommentsOptions) {
   };
 
   const fetchPlaylistComments = async (reset = false) => {
+    if (stopped.value) return;
     if (isLoadingComments.value) return;
     if (reset) {
       page.value = 1;
@@ -188,7 +192,8 @@ export function useComments(options: UseCommentsOptions) {
           : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
         total.value = payload.total;
         hasMore.value =
-          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+          payload.list.length > 0 &&
+          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
       }
     } catch {
@@ -199,6 +204,7 @@ export function useComments(options: UseCommentsOptions) {
   };
 
   const fetchAlbumComments = async (reset = false) => {
+    if (stopped.value) return;
     if (isLoadingComments.value) return;
     if (reset) {
       page.value = 1;
@@ -227,7 +233,8 @@ export function useComments(options: UseCommentsOptions) {
           : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
         total.value = payload.total;
         hasMore.value =
-          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+          payload.list.length > 0 &&
+          (total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30);
         if (hasMore.value) page.value += 1;
       }
     } catch {
@@ -244,6 +251,7 @@ export function useComments(options: UseCommentsOptions) {
   };
 
   const fetchClassifyComments = async (reset = false) => {
+    if (stopped.value) return;
     if (!selectedClassify.value) return;
     if (resourceType !== 'music') return;
     if (isLoadingClassify.value) return;
@@ -273,7 +281,8 @@ export function useComments(options: UseCommentsOptions) {
         const selectedItem = classifyList.value.find((item) => item.id === selectedClassify.value);
         const totalCount = payload.total || selectedItem?.count || 0;
         hasMoreClassify.value =
-          totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30;
+          payload.list.length > 0 &&
+          (totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreClassify.value) classifyPage.value += 1;
       }
     } catch {
@@ -284,6 +293,7 @@ export function useComments(options: UseCommentsOptions) {
   };
 
   const fetchHotwordComments = async (reset = false) => {
+    if (stopped.value) return;
     if (!selectedHotword.value) return;
     if (resourceType !== 'music') return;
     if (isLoadingHotword.value) return;
@@ -313,7 +323,8 @@ export function useComments(options: UseCommentsOptions) {
         );
         const totalCount = payload.total || selectedItem?.count || 0;
         hasMoreHotword.value =
-          totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30;
+          payload.list.length > 0 &&
+          (totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30);
         if (hasMoreHotword.value) hotwordPage.value += 1;
       }
     } catch {
@@ -330,6 +341,13 @@ export function useComments(options: UseCommentsOptions) {
     effectiveId = mixSongId || resourceId;
   };
 
+  const stop = () => {
+    stopped.value = true;
+  };
+  const resume = () => {
+    stopped.value = false;
+  };
+
   return {
     // 全部评论
     isLoadingComments,
@@ -341,6 +359,8 @@ export function useComments(options: UseCommentsOptions) {
     showCommentsEnd,
     fetchComments,
     updateResource,
+    stop,
+    resume,
     // 分类评论
     classifyList,
     isLoadingClassify,
@@ -424,7 +444,8 @@ export function useFloorComments(resourceType: CommentResourceType, fallbackMixS
         const totalCount = Number((payload as Record<string, unknown>).comments_num ?? 0) || 0;
         floorTotal.value = totalCount;
         floorHasMore.value =
-          totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30;
+          mapped.length > 0 &&
+          (totalCount > 0 ? floorReplies.value.length < totalCount : mapped.length >= 30);
         if (floorHasMore.value) floorPage.value += 1;
         if (floorReplies.value.length === 0) {
           floorMessage.value = errCode !== 0 ? '楼层评论暂不可用' : message || '暂无回复';

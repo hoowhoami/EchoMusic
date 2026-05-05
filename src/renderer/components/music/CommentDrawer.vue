@@ -44,6 +44,8 @@ const {
   fetchComments,
   updateResource,
   total,
+  stop,
+  resume,
 } = useComments({
   resourceId: props.resourceId,
   resourceType: props.resourceType,
@@ -85,16 +87,20 @@ watch(
 watch(
   () => open.value,
   async (isOpen) => {
-    if (!isOpen) return;
-    const key = resourceKey();
-    if (key !== currentResourceKey || comments.value.length === 0) {
-      currentResourceKey = key;
-      updateResource({
-        resourceId: props.resourceId,
-        resourceType: props.resourceType,
-        mixSongId: props.mixSongId,
-      });
-      await fetchComments(true);
+    if (isOpen) {
+      resume();
+      const key = resourceKey();
+      if (key !== currentResourceKey || comments.value.length === 0) {
+        currentResourceKey = key;
+        updateResource({
+          resourceId: props.resourceId,
+          resourceType: props.resourceType,
+          mixSongId: props.mixSongId,
+        });
+        await fetchComments(true);
+      }
+    } else {
+      stop();
     }
   },
 );

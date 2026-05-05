@@ -382,7 +382,7 @@ onUnmounted(() => {
                   <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
                 </div>
               </div>
-              <div class="mt-6 relative flex items-center justify-center">
+              <div class="mt-6 w-full relative flex items-center justify-center">
                 <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
                   等待扫码中
                 </span>
@@ -472,7 +472,7 @@ onUnmounted(() => {
                   <p class="text-[14px] font-black opacity-80">请在手机端确认</p>
                 </div>
               </div>
-              <div class="mt-6 relative flex items-center justify-center">
+              <div class="mt-6 w-full relative flex items-center justify-center">
                 <span class="text-[11px] font-black opacity-40 uppercase tracking-[3px]">
                   等待微信扫码
                 </span>

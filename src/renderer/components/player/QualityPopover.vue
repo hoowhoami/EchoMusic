@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import Popover from '@/components/ui/Popover.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import Button from '@/components/ui/Button.vue';
 import { usePlayerControls } from '@/utils/usePlayerControls';
-import type { AudioEffectValue } from '@/types';
 
 const {
   player,
@@ -18,22 +16,7 @@ const {
   currentAudioQualityBadgeColor,
   getAudioQualityTagColor,
   setAudioQuality,
-  setAudioEffect,
 } = usePlayerControls();
-
-const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] = [
-  { value: 'none', label: '原声' },
-  { value: 'piano', label: '钢琴' },
-  { value: 'vocal', label: '人声' },
-  { value: 'accompaniment', label: '伴奏' },
-  { value: 'subwoofer', label: '骨笛' },
-  { value: 'ancient', label: '尤克里里' },
-  { value: 'surnay', label: '唢呐' },
-  { value: 'dj', label: 'DJ' },
-  { value: 'viper_tape', label: '蝰蛇母带' },
-  { value: 'viper_atmos', label: '蝰蛇全景声' },
-  { value: 'viper_clear', label: '蝰蛇超清' },
-];
 
 interface Props {
   /** 触发按钮的样式变体 */
@@ -64,7 +47,7 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="p-2 transition-all"
         :class="
-          player.currentAudioQualityOverride !== null || player.audioEffect !== 'none'
+          player.currentAudioQualityOverride !== null
             ? variant === 'lyric'
               ? 'text-black dark:text-white hover:scale-110 active:scale-90'
               : 'text-primary hover:scale-110 active:scale-90'
@@ -127,33 +110,14 @@ withDefaults(defineProps<Props>(), {
         }}</Tag>
         <span class="pm-check" :class="{ 'is-visible': effectiveAudioQuality === q }">✓</span>
       </button>
-      <div class="h-px bg-current opacity-8 my-1"></div>
-      <div class="pm-title">音效</div>
     </div>
-    <Scrollbar class="pm-scroll" :content-props="{ class: 'pm-scroll-wrap' }">
-      <div class="space-y-1">
-        <button
-          v-for="option in audioEffectOptions"
-          :key="option.value"
-          type="button"
-          class="pm-item"
-          :class="{ 'is-active': player.audioEffect === option.value }"
-          @click="setAudioEffect(option.value)"
-        >
-          <span class="pm-label">{{ option.label }}</span>
-          <span class="pm-check" :class="{ 'is-visible': player.audioEffect === option.value }"
-            >✓</span
-          >
-        </button>
-      </div>
-    </Scrollbar>
   </Popover>
 </template>
 
 <style>
 .quality-popover.echo-popover-content {
   width: 160px;
-  padding: 10px 0 10px 6px;
+  padding: 10px 0;
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(18px);
   border-color: rgba(0, 0, 0, 0.1);
@@ -168,14 +132,14 @@ withDefaults(defineProps<Props>(), {
   font-size: 11px;
   font-weight: 700;
   opacity: 0.5;
-  padding: 0 8px 4px 8px;
+  padding: 0 10px 4px 10px;
 }
 
 .pm-item {
   display: flex;
   align-items: center;
-  width: calc(100% - 4px);
-  margin: 0 2px;
+  width: calc(100% - 12px);
+  margin: 0 6px;
   padding: 6px 8px;
   border-radius: 8px;
   font-size: 12px;
@@ -237,16 +201,5 @@ withDefaults(defineProps<Props>(), {
 
 .pm-check.is-visible {
   opacity: 1;
-}
-
-.pm-scroll {
-  max-height: 168px;
-  min-height: 0;
-  margin-right: 2px;
-}
-
-.pm-scroll-wrap {
-  overflow-x: hidden;
-  padding-right: 0;
 }
 </style>

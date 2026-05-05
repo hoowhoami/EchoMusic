@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'playlist-detail' });
-import { ref, shallowRef, onMounted, computed, watch } from 'vue';
+import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useRouteId } from '@/utils/useRouteId';
 import { getPlaylistDetail, getPlaylistTracks } from '@/api/playlist';
 import { getPlaylistComments } from '@/api/comment';
@@ -235,6 +235,22 @@ const handleTabChange = (value: string | number) => {
   }
 };
 
+// 滚动加载更多评论
+const maybeFetchMoreComments = () => {
+  if (activeTab.value !== 'comments') return;
+  if (loadingComments.value || !hasMoreComments.value) return;
+
+  const scrollTop =
+    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
+
+  // 距离底部 400px 时触发加载
+  if (fullHeight - scrollTop - viewportHeight <= 400) {
+    fetchComments();
+  }
+};
+
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
 
@@ -325,6 +341,7 @@ const fetchData = async () => {
 
 onMounted(() => {
   fetchData();
+  window.addEventListener('scroll', maybeFetchMoreComments, { passive: true });
 });
 
 // id 变化时重置数据（仅同路由间切换，如歌单A→歌单B）
@@ -346,6 +363,10 @@ onIdChange(() => {
   if (activeTab.value === 'comments') {
     fetchComments(true);
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', maybeFetchMoreComments);
 });
 
 watch(

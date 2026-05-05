@@ -148,7 +148,7 @@ export function usePlayerControls() {
   };
 
   // ── 音质 ──
-  const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality(settingStore));
+  const requestedAudioQuality = computed(() => player.getEffectiveAudioQuality());
   const effectiveAudioQuality = computed(() => {
     if (player.currentResolvedAudioQuality) return player.currentResolvedAudioQuality;
     if (!currentTrack.value) return requestedAudioQuality.value;
@@ -166,7 +166,6 @@ export function usePlayerControls() {
   };
 
   const audioQualityButtonBadge = computed(() => {
-    if (player.currentResolvedAudioEffect !== 'none') return 'FX';
     if (effectiveAudioQuality.value === '128') return 'SD';
     if (effectiveAudioQuality.value === '320') return 'HQ';
     if (effectiveAudioQuality.value === 'flac') return 'SQ';
@@ -174,10 +173,14 @@ export function usePlayerControls() {
     return 'HR';
   });
 
+  const audioEffectButtonBadge = computed(() => {
+    if (player.currentResolvedAudioEffect !== 'none') return 'FX';
+    if (player.equalizerGains.some((g) => g !== 0)) return 'EQ';
+    return null;
+  });
+
   const currentAudioQualityBadgeColor = computed(() =>
-    player.currentResolvedAudioEffect !== 'none'
-      ? '#10B981'
-      : getAudioQualityTagColor(effectiveAudioQuality.value),
+    getAudioQualityTagColor(effectiveAudioQuality.value),
   );
 
   const getAudioQualityTagColor = (quality: AudioQualityValue) => {
@@ -347,6 +350,7 @@ export function usePlayerControls() {
     effectiveAudioQuality,
     isAudioQualityDisabled,
     audioQualityButtonBadge,
+    audioEffectButtonBadge,
     currentAudioQualityBadgeColor,
     getAudioQualityTagColor,
     setAudioQuality,
