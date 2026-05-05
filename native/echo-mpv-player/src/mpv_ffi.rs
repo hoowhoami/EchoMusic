@@ -129,7 +129,7 @@ impl MpvLib {
     /// 运行时加载 libmpv 动态库
     pub unsafe fn load(lib_path: &str) -> Result<Self, String> {
         #[cfg(target_os = "linux")]
-        let lib = {
+        let lib: libloading::Library = {
             use libloading::os::unix::Library as UnixLibrary;
             // RTLD_NOW = 0x2, RTLD_DEEPBIND = 0x8
             // 使用 RTLD_DEEPBIND 优先使用 libmpv 自身的依赖库（如 libavcodec），
@@ -140,7 +140,7 @@ impl MpvLib {
         };
 
         #[cfg(not(target_os = "linux"))]
-        let lib = libloading::Library::new(lib_path)
+        let lib: libloading::Library = libloading::Library::new(lib_path)
             .map_err(|e| format!("failed to load libmpv: {e}"))?;
 
         // 使用 transmute 延长 Symbol 生命周期，因为 Library 和 Symbol 存储在同一结构体中

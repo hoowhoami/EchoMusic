@@ -452,7 +452,7 @@ impl MpvPlayer {
             }
             Ok(devices)
         } else if prop.format == MPV_FORMAT_STRING || prop.format == MPV_FORMAT_OSD_STRING {
-            let ptr = unsafe { prop.data as *const *const c_char };
+            let ptr = prop.data as *const *const c_char;
             if ptr.is_null() {
                 return Ok(Vec::new());
             }
