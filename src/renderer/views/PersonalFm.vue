@@ -644,7 +644,6 @@ onActivated(() => {
   padding: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(10px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
@@ -750,7 +749,6 @@ onActivated(() => {
   justify-content: center;
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(10px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
@@ -852,9 +850,8 @@ onActivated(() => {
   height: 176px;
   flex: 0 0 auto;
   padding: 0;
-  border: 0;
+  border: 8px solid rgba(72, 46, 53, 0.82);
   border-radius: 999px;
-  overflow: hidden;
   box-shadow: 0 26px 40px rgba(5, 12, 20, 0.32);
   background:
     radial-gradient(
@@ -880,18 +877,7 @@ onActivated(() => {
 .radio-vinyl :deep(img) {
   width: 100%;
   height: 100%;
-}
-
-.radio-vinyl::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  box-shadow:
-    inset 0 0 0 8px rgba(72, 46, 53, 0.82),
-    inset 0 0 0 9px rgba(255, 255, 255, 0.06);
-  pointer-events: none;
-  z-index: 2;
+  border-radius: 50%;
 }
 
 .radio-vinyl-current {
@@ -903,12 +889,24 @@ onActivated(() => {
 .radio-vinyl-core {
   width: 100%;
   height: 100%;
-  border-radius: inherit;
-  overflow: hidden;
+  border-radius: 50%;
+  clip-path: circle(50%);
+  contain: strict;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .radio-vinyl-core.is-spinning {
-  animation: radio-vinyl-spin 8s linear infinite;
+  animation: radio-vinyl-spin 3s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+}
+
+@keyframes radio-vinyl-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(120deg);
+  }
 }
 
 .fm-panel {
@@ -1047,15 +1045,6 @@ onActivated(() => {
   min-height: 180px;
   display: flex;
   align-items: center;
-}
-
-@keyframes radio-vinyl-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @keyframes radio-play-spin {

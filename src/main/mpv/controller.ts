@@ -65,8 +65,8 @@ export class MpvController extends EventEmitter {
     audioDevice: 'auto',
   };
 
-  private currentEqualizerFilter = '';
-  private currentNormalizationFilter = '';
+  private equalizerGains: number[] = Array(10).fill(0);
+  private normalizationGainDb = 0;
 
   constructor() {
     super();
@@ -419,11 +419,8 @@ export class MpvController extends EventEmitter {
   }
 
   async setEq(gains: number[]): Promise<void> {
-    await this.updateAudioFilter(() => {
-      const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
-      const filterParts = gains.map((gain, i) => `f=${freqs[i]}:g=${gain}`);
-      this.currentEqualizerFilter = `equalizer=${filterParts.join(':')}`;
-    });
+    this.equalizerGains = gains.map((g) => clamp(g, -12, 12));
+    await this.syncAudioFilters();
   }
 
   async setAudioDevice(deviceName: string): Promise<void> {
@@ -456,26 +453,41 @@ export class MpvController extends EventEmitter {
   }
 
   async applyNormalizationGain(gainDb: number): Promise<void> {
-    await this.updateAudioFilter(() => {
-      // 优先尝试直接设置属性（新版 mpv 支持）
-      try {
-        this.addon!.setNormalizationGain(gainDb);
-        this.currentNormalizationFilter = '';
-      } catch {
-        // 旧版 mpv 不支持 volume-gain，回退到 af 滤镜
-        if (gainDb === 0) {
-          this.currentNormalizationFilter = '';
-        } else {
-          this.currentNormalizationFilter = `lavfi=[volume=${gainDb}dB]`;
-        }
-      }
-    });
+    this.normalizationGainDb = gainDb;
+    await this.syncAudioFilters();
   }
 
   /** 同步合并后的音频滤镜到 mpv */
   private async syncAudioFilters(): Promise<void> {
     if (!this.addon) return;
-    const filters = [this.currentEqualizerFilter, this.currentNormalizationFilter].filter(Boolean);
+
+    const filters: string[] = [];
+    const hasEq = this.equalizerGains.some((g) => g !== 0);
+
+    if (hasEq) {
+      const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
+      const eqParts = this.equalizerGains
+        .map((gain, i) => {
+          if (gain === 0) return '';
+          return `equalizer=f=${freqs[i]}:g=${gain}:w=1`;
+        })
+        .filter(Boolean);
+
+      if (eqParts.length > 0) {
+        filters.push(...eqParts);
+      }
+    }
+
+    if (this.normalizationGainDb !== 0) {
+      filters.push(`volume=${this.normalizationGainDb}dB`);
+    }
+
+    if (filters.length === 0) {
+      log.info('[MpvController] Applying audio filter: (cleared)');
+      this.addon.setAudioFilter('');
+      return;
+    }
+
     const filterString = filters.join(',');
     log.info('[MpvController] Applying audio filter:', filterString);
     this.addon.setAudioFilter(filterString);
