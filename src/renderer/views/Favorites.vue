@@ -176,7 +176,7 @@ const fetchFollowed = async () => {
           source_desc: typeof record.source_desc === 'string' ? record.source_desc : '',
         });
 
-        if (record.is_star === 1 && record.iden === 8) {
+        if (record.singerid && record.iden_type === 1) {
           singers.push(artist);
         } else {
           users.push(artist);
