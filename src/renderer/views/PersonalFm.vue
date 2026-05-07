@@ -28,11 +28,13 @@ let personalFmVinylsObserver: ResizeObserver | null = null;
 const personalFmModeOptions: Array<{ value: PersonalFmMode; label: string }> = [
   { value: 'normal', label: '红心' },
   { value: 'small', label: '小众' },
+  { value: 'peak', label: '速览' },
 ];
 
 const personalFmSongPoolOptions: Array<{ value: PersonalFmSongPoolId; label: string }> = [
   { value: 0, label: '根据口味' },
   { value: 1, label: '根据风格' },
+  { value: 2, label: '探索' },
 ];
 
 const personalFmQueue = computed(

@@ -2,6 +2,7 @@ import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
+import type { PlayMode } from '../../types';
 
 export interface PlaybackQueueStoreLike {
   setPlaybackQueue: (songs: Song[], filteredInvalidCount?: number) => void;
@@ -30,6 +31,7 @@ export interface PlaybackPlayerLike {
   currentPlaylist?: Song[] | null;
   isPlaying?: boolean;
   togglePlay?: () => void;
+  playMode?: PlayMode;
 }
 
 export interface ResolvedPlayableQueue {
@@ -95,7 +97,14 @@ export const replaceQueueAndPlay = async (
   } else {
     playlistStore.setPlaybackQueue(resolved.queue, resolved.filteredInvalidCount);
   }
-  await playerStore.playTrack(String(resolved.firstPlayable.id), resolved.queue, {
+
+  let songToPlay = resolved.firstPlayable;
+  if (playerStore.playMode === 'random' && !requestedSong && resolved.queue.length > 0) {
+    const randomIndex = Math.floor(Math.random() * resolved.queue.length);
+    songToPlay = resolved.queue[randomIndex];
+  }
+
+  await playerStore.playTrack(String(songToPlay.id), resolved.queue, {
     sourceQueueId: options?.queueId ? String(options.queueId) : null,
   });
   return true;

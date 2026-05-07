@@ -67,6 +67,9 @@ const noCacheRoutes: string[] = [
   '/youth/day/vip',
   '/youth/day/vip/upgrade',
   '/youth/vip',
+  // AI 推荐 & FM
+  '/ai/recommend',
+  '/personal/fm',
 ];
 
 // 写操作成功后，自动清除关联的读缓存（按路由前缀匹配）

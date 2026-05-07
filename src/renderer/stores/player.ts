@@ -142,16 +142,22 @@ export const usePlayerStore = defineStore(
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
     };
 
-    const handlePlaybackEnded = () => {
+    const handlePlaybackEnded = async () => {
       if (playlistStore.activeQueue?.id === PERSONAL_FM_QUEUE_ID) {
-        const currentTrack =
-          findTrackById(state.currentTrackId, state.currentPlaylist, playlistStore) ||
-          state.currentTrackSnapshot;
-        void playlistStore.ensurePersonalFmQueue({
-          track: currentTrack,
+        const nextFmSong = await playlistStore.consumeNextPersonalFmTrack({
+          track: state.currentTrackSnapshot,
           playtime: state.duration,
           isOverplay: true,
         });
+
+        if (nextFmSong) {
+          await playbackManager.playTrack(String(nextFmSong.id), playlistStore.activeQueue.songs, {
+            sourceQueueId: PERSONAL_FM_QUEUE_ID,
+          });
+        } else {
+          playbackManager.stop();
+        }
+        return;
       }
       if (state.playMode === 'single') {
         if (state.currentAudioUrl) {

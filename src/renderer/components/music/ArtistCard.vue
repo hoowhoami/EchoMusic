@@ -11,9 +11,12 @@ interface Props {
   albumCount?: number;
   fansCount?: number;
   sourceDesc?: string;
+  isSinger?: boolean;
 }
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  isSinger: true,
+});
 const router = useRouter();
 
 const formatFans = (count: number): string => {
@@ -32,12 +35,18 @@ const subtitle = computed(() => {
 });
 
 const handleClick = () => {
-  router.push({ name: 'artist-detail', params: { id: props.id } });
+  if (props.isSinger) {
+    router.push({ name: 'artist-detail', params: { id: props.id } });
+  }
 };
 </script>
 
 <template>
-  <div class="artist-card group cursor-pointer" @click="handleClick">
+  <div
+    class="artist-card group"
+    :class="{ 'is-singer': isSinger }"
+    @click="handleClick"
+  >
     <div class="card-container flex flex-col">
       <div class="cover-shell">
         <div class="cover-wrapper">
@@ -59,7 +68,11 @@ const handleClick = () => {
   @apply transition-all duration-300 ease-out;
 }
 
-.artist-card:hover {
+.artist-card.is-singer {
+  @apply cursor-pointer;
+}
+
+.artist-card.is-singer:hover {
   transform: scale(1.03);
 }
 
@@ -73,13 +86,13 @@ const handleClick = () => {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
 }
 
-.artist-card:hover .card-container {
+.artist-card.is-singer:hover .card-container {
   box-shadow:
     0 12px 28px rgba(15, 23, 42, 0.12),
     0 0 24px var(--color-primary-light);
 }
 
-.dark .artist-card:hover .card-container {
+.dark .artist-card.is-singer:hover .card-container {
   box-shadow:
     0 14px 34px rgba(0, 0, 0, 0.42),
     0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);

@@ -70,12 +70,24 @@ export const PERSONAL_FM_QUEUE_ID = 'queue:personal-fm';
 export type PersonalFmSongPoolId = 0 | 1 | 2;
 
 export const getPersonalFmModePresentation = (mode?: PersonalFmMode | string) => {
-  const resolvedMode: PersonalFmMode = mode === 'small' ? 'small' : 'normal';
+  const resolvedMode: PersonalFmMode =
+    mode === 'small' ? 'small' : mode === 'peak' ? 'peak' : 'normal';
   return {
     mode: resolvedMode,
-    title: resolvedMode === 'small' ? '小众 Radio' : '红心 Radio',
-    subtitle: resolvedMode === 'small' ? '小众推荐' : '猜你喜欢',
-    label: resolvedMode === 'small' ? '小众 Radio' : '红心 Radio',
+    title:
+      resolvedMode === 'small'
+        ? '小众 Radio'
+        : resolvedMode === 'peak'
+          ? '速览 Radio'
+          : '红心 Radio',
+    subtitle:
+      resolvedMode === 'small' ? '小众推荐' : resolvedMode === 'peak' ? '速览推荐' : '猜你喜欢',
+    label:
+      resolvedMode === 'small'
+        ? '小众 Radio'
+        : resolvedMode === 'peak'
+          ? '速览 Radio'
+          : '红心 Radio',
   };
 };
 
@@ -84,7 +96,7 @@ export const getPersonalFmSongPoolPresentation = (songPoolId?: number | string) 
     Number(songPoolId) === 1 ? 1 : Number(songPoolId) === 2 ? 2 : 0;
   return {
     songPoolId: resolvedSongPoolId,
-    label: resolvedSongPoolId === 1 ? '根据风格' : resolvedSongPoolId === 2 ? 'Gamma' : '根据口味',
+    label: resolvedSongPoolId === 1 ? '根据风格' : resolvedSongPoolId === 2 ? '探索' : '根据口味',
   };
 };
 

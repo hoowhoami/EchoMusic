@@ -117,13 +117,14 @@ const openBatchDrawer = () => {
   showBatchDrawer.value = true;
 };
 
-// ========== 歌手 Tab ==========
-const artists = shallowRef<ArtistMeta[]>([]);
-const artistsLoading = ref(false);
-const artistsLoaded = ref(false);
+// ========== 关注 Tab ==========
+const followedSingers = shallowRef<ArtistMeta[]>([]);
+const followedUsers = shallowRef<ArtistMeta[]>([]);
+const followedLoading = ref(false);
+const followedLoaded = ref(false);
 
-const artistCards = computed(() =>
-  artists.value.map((artist) => ({
+const singerCards = computed(() =>
+  followedSingers.value.map((artist) => ({
     id: artist.id,
     name: artist.name,
     coverUrl: artist.pic,
@@ -131,18 +132,34 @@ const artistCards = computed(() =>
     albumCount: artist.albumCount,
     fansCount: artist.fansCount,
     sourceDesc: (artist as unknown as Record<string, unknown>).sourceDesc as string | undefined,
+    isSinger: true,
   })),
 );
 
-const fetchArtists = async () => {
-  if (artistsLoaded.value || artistsLoading.value) return;
-  artistsLoading.value = true;
+const userCards = computed(() =>
+  followedUsers.value.map((artist) => ({
+    id: artist.id,
+    name: artist.name,
+    coverUrl: artist.pic,
+    songCount: artist.songCount,
+    albumCount: artist.albumCount,
+    fansCount: artist.fansCount,
+    sourceDesc: (artist as unknown as Record<string, unknown>).sourceDesc as string | undefined,
+    isSinger: false,
+  })),
+);
+
+const fetchFollowed = async () => {
+  if (followedLoaded.value || followedLoading.value) return;
+  followedLoading.value = true;
   try {
     const res = await getUserFollow();
     if (res && typeof res === 'object' && 'data' in res) {
       const data = (res as { data?: { lists?: unknown[] } }).data;
       const lists = Array.isArray(data?.lists) ? data.lists : [];
-      artists.value = lists.map((item) => {
+      const singers: ArtistMeta[] = [];
+      const users: ArtistMeta[] = [];
+      lists.forEach((item) => {
         const record = item as Record<string, unknown>;
         const artist = mapArtistMeta({
           singerid: record.singerid,
@@ -152,20 +169,29 @@ const fetchArtists = async () => {
           name: record.nickname,
           pic: record.pic,
         });
-        // 附加 source_desc
-        (artist as unknown as Record<string, unknown>).sourceDesc =
-          typeof record.source_desc === 'string' ? record.source_desc : '';
-        return artist;
+        // 附加其他信息以便区分
+        Object.assign(artist, {
+          is_star: record.is_star,
+          iden: record.iden,
+          source_desc: typeof record.source_desc === 'string' ? record.source_desc : '',
+        });
+
+        if (record.is_star === 1 && record.iden === 8) {
+          singers.push(artist);
+        } else {
+          users.push(artist);
+        }
       });
+      followedSingers.value = singers;
+      followedUsers.value = users;
     }
-    artistsLoaded.value = true;
+    followedLoaded.value = true;
   } catch {
-    toastStore.loadFailed('关注歌手');
+    toastStore.loadFailed('关注列表');
   } finally {
-    artistsLoading.value = false;
+    followedLoading.value = false;
   }
 };
-
 // ========== 专辑 Tab ==========
 const favoritedAlbums = computed(() =>
   playlistStore.userPlaylists.filter((playlist) => playlist.source === 2),
@@ -285,8 +311,8 @@ const detachScrollTarget = () => {
 // ========== Tab 切换懒加载 ==========
 const handleTabChange = (value: string | number) => {
   activeTab.value = String(value);
-  if (value === 'artists' && !artistsLoaded.value) {
-    void fetchArtists();
+  if ((value === 'singers' || value === 'users') && !followedLoaded.value) {
+    void fetchFollowed();
   }
   if (value === 'videos' && !videosLoaded.value) {
     void fetchVideos(true);
@@ -311,7 +337,7 @@ onUnmounted(() => {
 watch(isLoggedIn, (value) => {
   if (value) {
     void playlistStore.fetchLikedPlaylistSongs();
-    artistsLoaded.value = false;
+    followedLoaded.value = false;
     videosLoaded.value = false;
   }
 });
@@ -360,9 +386,14 @@ watch(isLoggedIn, (value) => {
                 <TabsTrigger value="songs">
                   <span class="relative">歌曲 <Badge :count="songs.length" /></span>
                 </TabsTrigger>
-                <TabsTrigger value="artists">
+                <TabsTrigger value="singers">
                   <span class="relative"
-                    >歌手 <Badge v-if="artists.length > 0" :count="artists.length"
+                    >歌手 <Badge v-if="followedSingers.length > 0" :count="followedSingers.length"
+                  /></span>
+                </TabsTrigger>
+                <TabsTrigger value="users">
+                  <span class="relative"
+                    >用户 <Badge v-if="followedUsers.length > 0" :count="followedUsers.length"
                   /></span>
                 </TabsTrigger>
                 <TabsTrigger value="albums">
@@ -445,17 +476,37 @@ watch(isLoggedIn, (value) => {
           </TabsContent>
 
           <!-- 歌手 -->
-          <TabsContent value="artists" class="px-6 pt-4">
+          <TabsContent value="singers" class="px-6 pt-4">
             <VirtualGrid
-              :items="artistCards"
-              :loading="artistsLoading"
-              :active="activeTab === 'artists'"
+              :items="singerCards"
+              :loading="followedLoading"
+              :active="activeTab === 'singers'"
               :itemMinWidth="180"
               :itemHeight="218"
               :gap="20"
               :overscan="3"
               :stateMinHeight="320"
               emptyText="暂无关注歌手"
+              keyField="id"
+            >
+              <template #default="{ item }">
+                <ArtistCard v-bind="item" />
+              </template>
+            </VirtualGrid>
+          </TabsContent>
+
+          <!-- 用户 -->
+          <TabsContent value="users" class="px-6 pt-4">
+            <VirtualGrid
+              :items="userCards"
+              :loading="followedLoading"
+              :active="activeTab === 'users'"
+              :itemMinWidth="180"
+              :itemHeight="218"
+              :gap="20"
+              :overscan="3"
+              :stateMinHeight="320"
+              emptyText="暂无关注用户"
               keyField="id"
             >
               <template #default="{ item }">
