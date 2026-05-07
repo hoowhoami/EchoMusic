@@ -13,13 +13,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
         if (browserWindow.isMaximized()) browserWindow.unmaximize();
         else browserWindow.maximize();
       } else if (action === 'fullscreen') {
-        // Windows 上 setFullScreen 会因 titleBarStyle: 'hidden' 产生白边
-        // 使用 simpleFullScreen 避免此问题，macOS/Linux 用标准全屏
-        if (process.platform === 'win32') {
-          browserWindow.setSimpleFullScreen(!browserWindow.isSimpleFullScreen());
-        } else {
-          browserWindow.setFullScreen(!browserWindow.isFullScreen());
-        }
+        browserWindow.setFullScreen(!browserWindow.isFullScreen());
       } else if (action === 'close') {
         const mainWindow = getMainWindow();
         if (mainWindow && browserWindow.id === mainWindow.id) {

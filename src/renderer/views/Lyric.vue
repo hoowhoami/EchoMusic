@@ -46,6 +46,7 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 import FontIcon from '@/components/ui/FontIcon.vue';
+import VolumePopover from '@/components/player/VolumePopover.vue';
 
 const lyricStore = useLyricStore();
 

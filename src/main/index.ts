@@ -7,6 +7,9 @@ initAudioLoopback();
 
 if (process.platform === 'win32' && app.isPackaged) {
   app.commandLine.appendSwitch('no-sandbox');
+  // 禁用 Chromium 的 DSF（设备缩放因子）缩放，以解决 Windows 高 DPI 下全屏可能出现的裁剪问题。
+  // 这会强制 Electron 使用更传统的像素缩放方法，通常更可靠。
+  app.commandLine.appendSwitch('disable-features', 'UseZoomForDSF');
 }
 
 // 必须在 app.ready 之前读取并应用 GPU 加速设置
