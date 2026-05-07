@@ -1,0 +1,48 @@
+name: Auto Close Invalid Issues
+on:
+  schedule:
+    # 每天凌晨 0 点（北京时间 GMT+8）执行一次清理，对应 UTC 时间 16:00
+    - cron: '0 16 * * *'
+  workflow_dispatch: # 允许手动触发测试
+
+jobs:
+  batch-close:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Close Invalid Issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            
+            // 查询所有带有 'invalid' 标签且处于 open 状态的 Issue
+            const issues = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'invalid'
+            });
+
+            for (const issue of issues.data) {
+              // 发送提醒评论
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: `🤖 自动助手提示：
+此 Issue 已被标记为“无效”超过一段时间，现自动关闭。
+如果您已补充完整信息，请重新开启或提交新的 Issue，谢谢合作！`
+              });
+
+              // 关闭 Issue
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+              
+              console.log(`Closed issue #${issue.number}`);
+            }
