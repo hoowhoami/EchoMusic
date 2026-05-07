@@ -12,7 +12,6 @@ jobs:
     steps:
       - name: AI Judge
         id: ai_judge
-        # uses: actions/ai-inference@v1
         uses: flixlix/ai-model-inference@v1
         with:
           model: llama3-8b
