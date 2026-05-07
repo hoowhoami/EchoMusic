@@ -12,9 +12,9 @@ jobs:
     steps:
       - name: AI Judge
         id: ai_judge
-        uses: flixlix/ai-model-inference@v1
+        uses: actions/ai-inference@v1
         with:
-          model: llama3-8b
+          model: gpt-3.5-turbo
           prompt: |
             你是一个开源项目的 Issue 审核助手。请根据以下标准判定 Issue 是否【合规】：
 
