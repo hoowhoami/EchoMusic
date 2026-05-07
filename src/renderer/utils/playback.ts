@@ -2,7 +2,7 @@ import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
-import type { PlayMode } from '../../types';
+import type { PlayMode } from '../types';
 
 export interface PlaybackQueueStoreLike {
   setPlaybackQueue: (songs: Song[], filteredInvalidCount?: number) => void;
