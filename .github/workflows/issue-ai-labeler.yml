@@ -11,40 +11,54 @@ jobs:
       contents: read
 
     steps:
-      - name: AI Judge with DeepSeek
+      - name: Run DeepSeek AI Check
         id: ai_judge
         env:
-          API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          TITLE: ${{ toJson(github.event.issue.title) }}
-          BODY: ${{ toJson(github.event.issue.body) }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
         run: |
+          # 安装工具
           sudo apt-get install -y jq
 
-          # 安全构造请求，避免 JSON 转义错误
-          json=$(jq -n \
-            --arg title "$TITLE" \
-            --arg body "$BODY" \
+          # 输出调试信息（你能看到真的在跑）
+          echo "======== 开始 AI 审核 ========"
+          echo "标题：$TITLE"
+          echo "内容长度：${#BODY}"
+
+          # 构造安全的请求（不会JSON报错）
+          JSON=$(jq -n \
+            --arg t "$TITLE" \
+            --arg b "$BODY" \
             '{
               "model": "deepseek-chat",
-              "messages": [{
-                "role": "user",
-                "content": "判断Issue是否合规。规则：Bug需要问题描述、复现步骤、环境信息；功能请求需要功能概述、期望行为。空内容、无意义、灌水返回INVALID，合规返回VALID，只输出这两个单词。标题：\($title)，正文：\($body)"
-              }],
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "你是Issue审核员。规则：Bug必须有复现步骤、环境信息、问题描述；功能需求要有说明。空内容、太短、无意义返回INVALID，合规返回VALID。只输出这两个单词。标题：\($t) 内容：\($b)"
+                }
+              ],
               "temperature": 0
             }')
 
-          # 调用 API
-          res=$(curl -s https://api.deepseek.com/v1/chat/completions \
-            -H "Authorization: Bearer $API_KEY" \
+          # 调用AI
+          RESPONSE=$(curl -s https://api.deepseek.com/v1/chat/completions \
+            -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$json")
+            -d "$JSON")
 
-          # 安全提取结果
-          result=$(echo "$res" | jq -r '.choices[0].message.content | gsub("^\\s+|\\s+$"; "")' 2>/dev/null || echo "VALID")
-          echo "response=$result" >> $GITHUB_OUTPUT
-          echo "Result: $result"
+          # 打印原始返回（你能看到AI真的返回了）
+          echo "AI原始返回：$RESPONSE"
 
-      - name: Add Invalid Label
+          # 提取结果
+          RESULT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content' | xargs 2>/dev/null)
+
+          # 输出最终结果
+          echo "AI判定结果：$RESULT"
+          echo "response=$RESULT" >> $GITHUB_OUTPUT
+
+      # 不合格 → 打标签
+      - name: Add invalid label
         if: contains(steps.ai_judge.outputs.response, 'INVALID')
         uses: actions/github-script@v7
         with:
