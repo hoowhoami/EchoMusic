@@ -11,46 +11,38 @@ jobs:
       contents: read
 
     steps:
-      - name: Validate Issue with DeepSeek AI
+      - name: AI Judge with DeepSeek
         id: ai_judge
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+          API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          TITLE: ${{ toJson(github.event.issue.title) }}
+          BODY: ${{ toJson(github.event.issue.body) }}
         run: |
           sudo apt-get install -y jq
 
-          # 构造 AI 提示词（完全保留你原来的规则）
-          PROMPT="你是一个开源项目的 Issue 审核助手。请根据以下标准判定 Issue 是否【合规】：
-
-          1. 结构完整性：
-             - Bug 报告必须包含：问题描述、复现步骤、环境信息。
-             - 功能请求必须包含：功能概述、期望的行为。
-          2. 内容有效性：
-             - 禁止空模板提交。
-             - 禁止无意义内容（不能用、救命、??? 等）。
-          3. 禁止广告、恶意灌水。
-
-          不合规返回：INVALID
-          合规返回：VALID
-          严禁返回其他文字。
-
-          标题：$ISSUE_TITLE
-          正文：$ISSUE_BODY"
-
-          # 调用 DeepSeek API
-          response=$(curl -s https://api.deepseek.com/v1/chat/completions \
-            -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{
+          # 安全构造请求，避免 JSON 转义错误
+          json=$(jq -n \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            '{
               "model": "deepseek-chat",
-              "messages": [{"role":"user","content":"'"$PROMPT"'"}],
-              "temperature": 0.0
+              "messages": [{
+                "role": "user",
+                "content": "判断Issue是否合规。规则：Bug需要问题描述、复现步骤、环境信息；功能请求需要功能概述、期望行为。空内容、无意义、灌水返回INVALID，合规返回VALID，只输出这两个单词。标题：\($title)，正文：\($body)"
+              }],
+              "temperature": 0
             }')
 
-          # 提取结果
-          result=$(echo "$response" | jq -r '.choices[0].message.content' | xargs)
+          # 调用 API
+          res=$(curl -s https://api.deepseek.com/v1/chat/completions \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$json")
+
+          # 安全提取结果
+          result=$(echo "$res" | jq -r '.choices[0].message.content | gsub("^\\s+|\\s+$"; "")' 2>/dev/null || echo "VALID")
           echo "response=$result" >> $GITHUB_OUTPUT
+          echo "Result: $result"
 
       - name: Add Invalid Label
         if: contains(steps.ai_judge.outputs.response, 'INVALID')
