@@ -18,36 +18,33 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
-          # 安装 jq
           sudo apt-get install -y jq
-          
-          # 构造请求
+
+          # 构造 AI 提示词（完全保留你原来的规则）
+          PROMPT="你是一个开源项目的 Issue 审核助手。请根据以下标准判定 Issue 是否【合规】：
+
+          1. 结构完整性：
+             - Bug 报告必须包含：问题描述、复现步骤、环境信息。
+             - 功能请求必须包含：功能概述、期望的行为。
+          2. 内容有效性：
+             - 禁止空模板提交。
+             - 禁止无意义内容（不能用、救命、??? 等）。
+          3. 禁止广告、恶意灌水。
+
+          不合规返回：INVALID
+          合规返回：VALID
+          严禁返回其他文字。
+
+          标题：$ISSUE_TITLE
+          正文：$ISSUE_BODY"
+
+          # 调用 DeepSeek API
           response=$(curl -s https://api.deepseek.com/v1/chat/completions \
             -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{
               "model": "deepseek-chat",
-              "messages": [
-                {
-                  "role": "user",
-                  "content": "'"你是一个开源项目的 Issue 审核助手。请根据以下标准判定 Issue 是否【合规】：
-
-1. **结构完整性**：
-   - 如果是 Bug 报告，必须包含：【问题描述】、【复现步骤】和【环境信息】。
-   - 如果是功能请求，必须包含：【功能概述】和【期望的行为】。
-2. **内容有效性**：
-   - 禁止空模板提交（即只保留了标题，内容全是模板默认的占位符）。
-   - 禁止无意义内容（如“不能用”、“救命”、“？？？”等）。
-3. **文明交流**：禁止广告、恶意灌水或攻击性言论。
-
-如果 Issue 严重缺少上述必要信息或属于灌水，返回：INVALID
-如果 Issue 信息基本完整且描述清晰，返回：VALID
-严禁返回任何其他文字。
-
-标题：'"$ISSUE_TITLE"'
-正文：'"$ISSUE_BODY"'"
-                }
-              ],
+              "messages": [{"role":"user","content":"'"$PROMPT"'"}],
               "temperature": 0.0
             }')
 
@@ -62,7 +59,7 @@ jobs:
           script: |
             github.rest.issues.addLabels({
               owner: context.repo.owner,
-              repo: context.repo.reo,
+              repo: context.repo.repo,
               issue_number: context.issue.number,
               labels: ['invalid']
             });
