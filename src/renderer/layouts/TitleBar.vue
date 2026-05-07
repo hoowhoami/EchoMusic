@@ -56,8 +56,6 @@ const goForward = () => {
   if (canGoForward.value) router.forward();
 };
 const refresh = async () => {
-  // 清空 API 缓存，确保刷新后拿到最新数据
-  await window.electron.api.clearCache();
   await router.replace({
     path: route.path,
     query: { ...route.query, _t: Date.now().toString() },

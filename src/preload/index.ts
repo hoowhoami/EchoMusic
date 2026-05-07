@@ -89,7 +89,6 @@ contextBridge.exposeInMainWorld('electron', {
       data?: any;
       headers?: Record<string, string>;
     }) => ipcRenderer.invoke('api:request', config),
-    clearCache: () => ipcRenderer.invoke('api:cache-clear'),
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>

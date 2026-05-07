@@ -244,8 +244,6 @@ export const useUserStore = defineStore('user', {
       this.isAutoClaimingVip = false;
       this.followedArtistIds = new Set();
       this.hasFetchedFollowedArtists = false;
-      // 清空 API 缓存，避免换账号后命中旧用户的缓存数据
-      window.electron?.api?.clearCache?.();
     },
 
     isArtistFollowed(artistId: string | number): boolean {

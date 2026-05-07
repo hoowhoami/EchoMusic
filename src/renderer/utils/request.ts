@@ -117,7 +117,7 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
     headers['Authorization'] = auth;
   }
 
-  // 透传调用方的参数，不做任何缓存相关处理
+  // 透传调用方的参数
   const params = {
     ...(config?.params || {}),
   };

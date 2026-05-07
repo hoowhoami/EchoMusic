@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { shallowRef } from 'vue';
 import {
   getUserPlaylists,
   getPlaylistTracks,
@@ -227,7 +228,7 @@ const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean => {
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
     defaultList: [] as Song[],
-    favorites: [] as Song[],
+    favorites: shallowRef<Song[]>([]),
     userPlaylists: [] as PlaylistMeta[],
     queueFilteredInvalidCount: 0,
     queuedNextTrackIds: [] as string[],
@@ -1111,7 +1112,7 @@ export const usePlaylistStore = defineStore('playlist', {
       const listId = likedPlaylist.listId;
       const alreadyFavorited = this.isFavoriteSong(song);
       if (!alreadyFavorited) {
-        this.favorites.unshift(song);
+        this.favorites = [song, ...this.favorites];
       }
 
       if (listId) {
@@ -1176,8 +1177,45 @@ export const usePlaylistStore = defineStore('playlist', {
       const matched = this.favorites.find(
         (item) => isSameSong(item, song) || String(item.id) === String(song.id),
       );
-      if (!matched) return;
-      return this.removeFromFavorites(String(matched.id));
+
+      // 优先使用传入 song 的 fileId（来自歌单详情页 API，值更准确），
+      // 其次使用 favorites 中匹配项的 fileId
+      const effectiveFileId = String(
+        song.fileId ?? matched?.fileId ?? song.mixSongId ?? matched?.mixSongId ?? '',
+      );
+
+      const previousFavorites = this.favorites.slice();
+      if (matched) {
+        this.favorites = this.favorites.filter(
+          (item) => !isSameSong(item, matched) && String(item.id) !== String(matched.id),
+        );
+      } else {
+        this.favorites = this.favorites.filter(
+          (item) => !isSameSong(item, song) && String(item.id) !== String(song.id),
+        );
+      }
+
+      const likedPlaylist = await this.ensureLikedPlaylistReady();
+      const listId = likedPlaylist.listId;
+      if (!listId) {
+        this.favorites = previousFavorites;
+        return false;
+      }
+
+      try {
+        const res = await deletePlaylistTrack(listId, effectiveFileId);
+        if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+          logger.info('PlaylistStore', `Song ${song.title} removed from favorites on cloud`);
+          return true;
+        }
+        this.favorites = previousFavorites;
+        logger.warn('PlaylistStore', 'Remove from favorites sync failed:', res);
+        return false;
+      } catch (e) {
+        this.favorites = previousFavorites;
+        logger.error('PlaylistStore', 'Remove from favorites sync error:', e);
+        return false;
+      }
     },
     async fetchUserPlaylists() {
       try {
