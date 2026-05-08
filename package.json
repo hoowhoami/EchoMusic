@@ -172,6 +172,11 @@
         "libmpv2 | libmpv1"
       ]
     },
+    "rpm": {
+      "depends": [
+        "mpv-libs"
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
