@@ -131,11 +131,12 @@ impl MpvLib {
         #[cfg(target_os = "linux")]
         let lib: libloading::Library = {
             use libloading::os::unix::Library as UnixLibrary;
-            // RTLD_NOW = 0x2, RTLD_DEEPBIND = 0x8
-            // 使用 RTLD_DEEPBIND 优先使用 libmpv 自身的依赖库（如 libavcodec），
-            // 防止与 Electron 进程中已加载的、裁剪版的 libffmpeg 发生符号冲突，从而导致网络流无法播放。
-            UnixLibrary::open(Some(lib_path), 0x2 | 0x8)
-                .map_err(|e| format!("failed to load libmpv with DEEPBIND: {e}"))?
+            // RTLD_NOW = 0x2
+            // 不使用 RTLD_DEEPBIND：与新版 glibc + Electron PartitionAlloc 冲突会导致崩溃。
+            // 符号冲突问题（Electron 裁剪版 libffmpeg vs 系统完整版 libav*）
+            // 由外部 wrapper 脚本通过 LD_LIBRARY_PATH 在进程启动前解决。
+            UnixLibrary::open(Some(lib_path), 0x2)
+                .map_err(|e| format!("failed to load libmpv: {e}"))?
                 .into()
         };
 

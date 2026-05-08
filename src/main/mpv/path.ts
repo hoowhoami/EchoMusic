@@ -57,7 +57,8 @@ export function resolveLibmpvPath(): string | null {
     platform: process.platform,
   });
 
-  // Linux 平台优先尝试系统库，以解决 Arch 等滚动更新发行版与打包库（通常基于 Ubuntu 构建）的兼容性问题
+  // Linux 平台优先尝试系统库，以解决 Arch 等滚动更新发行版与打包库（通常基于 Ubuntu 构建）的兼容性问题，
+  // 同时避免 Electron 内置裁剪版 libffmpeg 与 libmpv 依赖的完整版 libav* 发生符号冲突
   const preferSystem = process.platform === 'linux';
 
   if (preferSystem) {

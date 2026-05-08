@@ -197,7 +197,9 @@ jobs:
               ls -la build/mpv/ | head -30
               ;;
             ubuntu-22.04|ubuntu-22.04-arm)
-              # Linux: 提取 libmpv 及其依赖库
+              # Linux: 只打包 libmpv.so 本身作为 fallback（不打包 libav* 等依赖）。
+              # 运行时优先使用系统 libmpv，wrapper 脚本通过 LD_LIBRARY_PATH 确保
+              # 系统完整版 libav* 优先于 Electron 裁剪版 libffmpeg 被加载。
               sudo apt-get update
               sudo apt-get install -y libmpv-dev
               # 查找 libmpv.so
@@ -212,17 +214,11 @@ jobs:
                 if [ "$LIBMPV_NAME" != "libmpv.so" ]; then
                   ln -sf "$LIBMPV_NAME" build/mpv/libmpv.so
                 fi
+                if [ "$LIBMPV_NAME" != "libmpv.so.2" ]; then
+                  ln -sf "$LIBMPV_NAME" build/mpv/libmpv.so.2
+                fi
               fi
-              # 复制依赖库
-              if [ -n "$LIBMPV" ]; then
-                ldd "$LIBMPV" | grep "=> /" | awk '{print $3}' | while read -r lib; do
-                  case "$(basename "$lib")" in
-                    libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*) continue ;;
-                  esac
-                  cp "$lib" build/mpv/ 2>/dev/null || true
-                done
-              fi
-              echo "libmpv Linux prepared"
+              echo "libmpv Linux prepared (system deps not bundled)"
               ;;
             windows-latest)
               # Windows: 从 zhongfly 预编译构建下载 dev 包（含 libmpv-2.dll）

@@ -80,6 +80,7 @@
       "output": "release",
       "buildResources": "build"
     },
+    "afterPack": "./build/afterPack.js",
     "files": [
       "dist",
       "dist-electron"
@@ -167,7 +168,8 @@
     },
     "deb": {
       "depends": [
-        "libasound2"
+        "libasound2",
+        "libmpv2 | libmpv1"
       ]
     },
     "nsis": {
