@@ -204,9 +204,15 @@ jobs:
                 if [ ! -f /usr/local/bin/brew ]; then
                   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
                 fi
-                /usr/local/bin/brew install mpv
+                # brew install 可能因依赖 link 冲突返回非零，但 mpv 本身已安装成功
+                /usr/local/bin/brew install mpv || true
               '
+              # 验证 mpv 确实已安装
               X86_MPV_PREFIX=$(/usr/local/bin/brew --prefix mpv)
+              if [ ! -d "$X86_MPV_PREFIX/lib" ]; then
+                echo "ERROR: mpv x86_64 installation failed, lib dir not found"
+                exit 1
+              fi
               cp "$X86_MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
               for lib in build/mpv/libmpv*.dylib; do
                 [ -f "$lib" ] || continue
