@@ -102,6 +102,8 @@ export class MpvController extends EventEmitter {
     this.addon = this.loadAddon();
     if (!this.addon) throw new Error('Failed to load echo-mpv-player addon');
 
+    log.info('[MpvController] Native addon loaded, initializing libmpv...');
+
     // Windows: 设置 DLL 搜索路径
     if (process.platform === 'win32') {
       const libDir = resolveLibmpvDir(this.libmpvPath);

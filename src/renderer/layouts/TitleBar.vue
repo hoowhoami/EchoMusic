@@ -225,8 +225,8 @@ onUnmounted(() => {
       </Button>
       <Button variant="unstyled" size="none" @click="refresh" class="nav-btn group" title="刷新">
         <RefreshIcon
-          width="22"
-          height="22"
+          width="20"
+          height="20"
           class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
         />
       </Button>
@@ -241,8 +241,8 @@ onUnmounted(() => {
       >
         <Icon
           :icon="iconMicrophone"
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           style="stroke-width: 3"
           class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
         />
@@ -261,8 +261,8 @@ onUnmounted(() => {
         >
           <Icon
             :icon="iconSearch"
-            width="18"
-            height="18"
+            width="17"
+            height="17"
             style="stroke-width: 3"
             class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity tb-icon-bold"
           />

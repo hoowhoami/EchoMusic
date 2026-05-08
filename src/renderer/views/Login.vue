@@ -324,16 +324,11 @@ onUnmounted(() => {
       <div class="absolute top-12 left-6 z-[100]">
         <Button
           @click="closeLoginPage"
-          variant="ghost"
-          size="xs"
-          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 text-text-main dark:text-white bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.1]"
+          variant="unstyled"
+          size="none"
+          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-black/[0.05] dark:bg-white/[0.1] hover:bg-black/[0.1] dark:hover:bg-white/[0.2]"
         >
-          <Icon
-            class="opacity-60 group-hover:opacity-100"
-            :icon="iconChevronLeft"
-            width="24"
-            height="24"
-          />
+          <Icon :icon="iconChevronLeft" width="24" height="24" />
         </Button>
       </div>
 

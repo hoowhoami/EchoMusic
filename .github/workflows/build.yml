@@ -22,17 +22,20 @@ jobs:
       matrix:
         include:
           - os: macos-14
+            rust_target: aarch64-apple-darwin
             electron_builder_args: ''
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
               release/EchoMusic-*.dmg
               release/latest-mac.yml
           - os: macos-14
+            rust_target: x86_64-apple-darwin
             electron_builder_args: '--mac --x64'
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
+            rust_target: ''
             electron_builder_args: ''
             artifact_name: EchoMusic-Linux-x64
             artifact_glob: |
@@ -42,6 +45,7 @@ jobs:
               release/EchoMusic-*.tar.gz
               release/latest-linux.yml
           - os: ubuntu-22.04-arm
+            rust_target: ''
             electron_builder_args: '--linux --arm64'
             artifact_name: EchoMusic-Linux-arm64
             artifact_glob: |
@@ -51,6 +55,7 @@ jobs:
               release/EchoMusic-*.tar.gz
               release/latest-linux-arm64.yml
           - os: windows-latest
+            rust_target: ''
             electron_builder_args: ''
             artifact_name: EchoMusic-Windows
             artifact_glob: |
@@ -87,19 +92,31 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Rust cross-compile target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
       - name: Build native media controls addon
         working-directory: native/echo-media-controls
         shell: bash
         run: |
           npm install
-          npm run build
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
 
       - name: Build native mpv player addon
         working-directory: native/echo-mpv-player
         shell: bash
         run: |
           npm install
-          npm run build
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
 
       - name: Install server runtime dependencies
         working-directory: server
@@ -165,14 +182,12 @@ jobs:
             echo "rpath fixup complete"
           }
 
-          case "${{ matrix.os }}" in
-            macos-latest)
-              # macOS arm64: 提取 libmpv 及其依赖
+          case "${{ matrix.rust_target }}:${{ matrix.os }}" in
+            aarch64-apple-darwin:*)
+              # macOS arm64: 使用原生 homebrew 安装 mpv
               brew install mpv
               MPV_PREFIX=$(brew --prefix mpv)
-              # 复制 libmpv 主库
               cp "$MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
-              # 复制所有 dylib 依赖
               for lib in build/mpv/libmpv*.dylib; do
                 [ -f "$lib" ] || continue
                 copy_dylibs_recursive "$lib" "build/mpv"
@@ -182,11 +197,17 @@ jobs:
               echo "=== build/mpv directory ==="
               ls -la build/mpv/ | head -30
               ;;
-            macos-14)
-              # macOS x64: 同上
-              brew install mpv
-              MPV_PREFIX=$(brew --prefix mpv)
-              cp "$MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
+            x86_64-apple-darwin:*)
+              # macOS x64: 在 arm64 runner 上通过 x86_64 homebrew 安装 x64 版本的 mpv
+              arch -x86_64 /bin/bash -c '
+                # 安装 x86_64 homebrew（如果不存在）
+                if [ ! -f /usr/local/bin/brew ]; then
+                  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+                fi
+                /usr/local/bin/brew install mpv
+              '
+              X86_MPV_PREFIX=$(/usr/local/bin/brew --prefix mpv)
+              cp "$X86_MPV_PREFIX"/lib/libmpv*.dylib build/mpv/ 2>/dev/null || true
               for lib in build/mpv/libmpv*.dylib; do
                 [ -f "$lib" ] || continue
                 copy_dylibs_recursive "$lib" "build/mpv"
@@ -196,7 +217,7 @@ jobs:
               echo "=== build/mpv directory ==="
               ls -la build/mpv/ | head -30
               ;;
-            ubuntu-22.04|ubuntu-22.04-arm)
+            *:ubuntu-*)
               # Linux: 只打包 libmpv.so 本身作为 fallback（不打包 libav* 等依赖）。
               # 运行时优先使用系统 libmpv，wrapper 脚本通过 LD_LIBRARY_PATH 确保
               # 系统完整版 libav* 优先于 Electron 裁剪版 libffmpeg 被加载。
@@ -220,7 +241,7 @@ jobs:
               fi
               echo "libmpv Linux prepared (system deps not bundled)"
               ;;
-            windows-latest)
+            *:windows-*)
               # Windows: 从 zhongfly 预编译构建下载 dev 包（含 libmpv-2.dll）
               DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest" \
                 | python3 -c "import sys,json; assets=json.load(sys.stdin).get('assets',[]); urls=[a['browser_download_url'] for a in assets if 'dev' in a['name'] and 'x86_64' in a['name'] and 'lgpl' not in a['name']]; print(urls[0] if urls else '')")

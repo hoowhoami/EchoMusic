@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRafFn } from '@vueuse/core';
+import { useRafFn, useClipboard } from '@vueuse/core';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
 import {
   useLyricStore,
   DEFAULT_LYRIC_PLAYED_COLOR,
   DEFAULT_LYRIC_UNPLAYED_COLOR,
 } from '@/stores/lyric';
+import { useToastStore } from '@/stores/toast';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
@@ -49,6 +50,8 @@ import FontIcon from '@/components/ui/FontIcon.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 
 const lyricStore = useLyricStore();
+const toastStore = useToastStore();
+const { copy } = useClipboard();
 
 const {
   player: playerStore,
@@ -100,7 +103,6 @@ const lyricListRef = ref<HTMLElement | null>(null);
 const progressValue = ref(0);
 const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
-const copyFeedback = ref(false);
 const isUserScrollingLyrics = ref(false);
 const isCommentDrawerOpen = ref(false);
 const artistPortraitUrls = ref<string[]>([]);
@@ -281,23 +283,19 @@ const copyLyrics = async () => {
   const text = lyricStore.copyableText.trim();
   if (!text) return;
 
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-  } else {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.opacity = '0';
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textArea);
-  }
+  await copy(text);
+  toastStore.success('歌词已复制');
+};
 
-  copyFeedback.value = true;
-  window.setTimeout(() => {
-    copyFeedback.value = false;
-  }, 1200);
+const copySongInfo = async () => {
+  const track = currentTrack.value;
+  if (!track) return;
+  const parts = [track.title, track.artist, track.album].filter(Boolean);
+  const text = parts.join(' - ');
+  if (!text) return;
+
+  await copy(text);
+  toastStore.success('歌曲信息已复制');
 };
 
 const handleLyricLineClick = (time: number) => {
@@ -1186,7 +1184,7 @@ onUnmounted(() => {
               @click="copyLyrics"
             >
               <Icon :icon="iconCopy" width="14" height="14" />
-              <span>{{ copyFeedback ? '已复制' : '复制' }}</span>
+              <span>复制</span>
             </Button>
           </div>
         </div>
@@ -1198,7 +1196,7 @@ onUnmounted(() => {
             v-if="!hasPortraitGallery"
             class="hidden min-w-[250px] max-w-[420px] flex-[5] items-center justify-center md:flex"
           >
-            <div class="lyric-info-card lyric-info-panel">
+            <div class="lyric-info-card lyric-info-panel cursor-pointer" @click.stop="copySongInfo">
               <div class="lyric-cover-shell">
                 <div class="lyric-cover-frame">
                   <Cover
@@ -1235,13 +1233,13 @@ onUnmounted(() => {
             <!-- 写真模式：歌曲信息 + 警告 -->
             <div
               v-if="hasPortraitGallery && currentTrack"
-              class="absolute left-6 bottom-2 z-20 flex flex-col items-start gap-1.5 transition-opacity duration-500"
+              class="absolute left-6 bottom-2 z-30 flex flex-col items-start gap-1.5 transition-opacity duration-500"
               :style="{
                 opacity: isLyricCollapsed ? 0 : 1,
                 pointerEvents: isLyricCollapsed ? 'none' : undefined,
               }"
             >
-              <div class="lyric-photo-song-info">
+              <div class="lyric-photo-song-info cursor-pointer" @click.stop="copySongInfo">
                 <div class="lyric-photo-song-cover">
                   <Cover
                     :url="currentTrack?.coverUrl"
