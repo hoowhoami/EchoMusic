@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, nextTick, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
 import Sidebar from './Sidebar.vue';
@@ -10,6 +10,7 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 
 const route = useRoute();
 const settingStore = useSettingStore();
+const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
 
 // 始终 keepAlive 的路由
@@ -26,6 +27,16 @@ const keepAliveMax = computed(() =>
     ? Math.max(alwaysKeepAlive.length, Math.min(settingStore.keepAliveMax, 30))
     : alwaysKeepAlive.length,
 );
+
+// ── 滚动位置：每次路由变化归零 ──
+watch(
+  () => route.fullPath,
+  () => {
+    nextTick(() => {
+      scrollbarRef.value?.setScrollTop(0);
+    });
+  },
+);
 </script>
 
 <template>
@@ -38,6 +49,7 @@ const keepAliveMax = computed(() =>
       <main class="main-content flex-1 flex flex-col min-h-0 overflow-hidden">
         <TitleBar />
         <Scrollbar
+          ref="scrollbarRef"
           class="view-port-scroll flex-1 min-h-0 min-w-0"
           :content-props="{ class: 'view-port' }"
         >
