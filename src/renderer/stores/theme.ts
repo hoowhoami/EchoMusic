@@ -24,7 +24,7 @@ export const useThemeStore = defineStore('theme', {
     // 全局主题色：true 时影响整个 App，false 时仅影响播放相关区域
     globalAccent: true,
     // 歌词已播字色是否跟随主题色
-    lyricAccentSync: true,
+    lyricAccentSync: false,
     // 当前生效的主题色源（未归一化，用于重算）
     sourceColor: DEFAULT_ACCENT,
   }),

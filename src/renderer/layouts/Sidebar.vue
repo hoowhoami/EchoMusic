@@ -381,8 +381,10 @@ watch(
 <template>
   <aside
     v-bind="attrs"
-    class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative"
+    class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative overflow-hidden"
   >
+    <!-- 主题色顶部渐变氛围层 -->
+    <div class="sidebar-accent-gradient"></div>
     <div :class="['w-full shrink-0 relative', isMac ? 'h-12' : 'h-6']">
       <div class="drag-region"></div>
     </div>
@@ -934,5 +936,22 @@ watch(
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.sidebar-accent-gradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(var(--color-primary-rgb), 0.1) 0%,
+    rgba(var(--color-primary-rgb), 0.03) 60%,
+    transparent 100%
+  );
+  transition: background 0.6s ease;
 }
 </style>

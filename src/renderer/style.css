@@ -500,3 +500,26 @@ body.accent-scoped .main-layout .player-bar-container {
     scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
   }
 }
+
+/* 主题色顶部渐变氛围层 */
+.main-content {
+  position: relative;
+}
+
+.main-content::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  z-index: 200;
+  background: linear-gradient(
+    180deg,
+    rgba(var(--color-primary-rgb), 0.1) 0%,
+    rgba(var(--color-primary-rgb), 0.03) 60%,
+    transparent 100%
+  );
+  transition: background 0.6s ease;
+}
