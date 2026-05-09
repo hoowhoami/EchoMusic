@@ -13,13 +13,13 @@
 }
 
 .dark {
-  --bg-sidebar: #1c1c1e; /* 深色侧栏深灰 */
-  --bg-main: #0c0c0e; /* 深色主体纯黑 */
-  --bg-card: #1c1c1e;
+  --bg-sidebar: #36363a;
+  --bg-main: #26262a;
+  --bg-card: #36363a;
   --bg-info-card: rgba(255, 255, 255, 0.06);
   --text-main: #f5f5f7;
   --text-secondary: #a8b0bf;
-  --border-light: #2c2c2e;
+  --border-light: #3a3a3d;
 }
 
 @theme {

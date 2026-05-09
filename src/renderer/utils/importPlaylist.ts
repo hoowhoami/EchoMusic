@@ -141,6 +141,8 @@ const buildSongPayload = (song: Song): string => {
 
 const DEFAULT_ADD_BATCH_SIZE = 50;
 const ADD_BATCH_DELAY_MS = 400;
+/** 单批 payload (data 参数) encode 后的字节上限，留出 URL 安全余量 */
+const ADD_BATCH_MAX_PARAM_LEN = 4000;
 // 每次 search 后 worker 的思考时间（含随机抖动），降低稳定 QPS 触发风控
 const MATCH_THINK_BASE_MS = 250;
 const MATCH_THINK_JITTER_MS = 250;
@@ -226,11 +228,34 @@ export const runImport = async (
   // 反向喂入：用户选择的最后一首先发，最终在列表底部；第一首最后发，最终在顶部。
   pendingAdd.reverse();
 
+  // 预先按"条数上限 + URL 参数字节上限"双重阈值切批，避免歌名过长时单批 URL 超长
+  type AddChunk = { index: number; song: Song; score: number; payload: string }[];
+  const addChunks: AddChunk[] = [];
+  {
+    let current: AddChunk = [];
+    let currentLen = 0;
+    for (const entry of pendingAdd) {
+      const payload = buildSongPayload(entry.song);
+      const payloadLen = encodeURIComponent(payload).length;
+      const extra = current.length > 0 ? 1 + payloadLen : payloadLen; // 含分隔逗号
+      const overSize = current.length > 0 && currentLen + extra > ADD_BATCH_MAX_PARAM_LEN;
+      const overCount = current.length >= addBatchSize;
+      if (overSize || overCount) {
+        addChunks.push(current);
+        current = [];
+        currentLen = 0;
+      }
+      current.push({ ...entry, payload });
+      currentLen += current.length === 1 ? payloadLen : extra;
+    }
+    if (current.length > 0) addChunks.push(current);
+  }
+
   // Phase 3: 顺序按批次提交，一批一次 HTTP，组件内部按 payload 顺序追加
-  for (let bi = 0; bi < pendingAdd.length; bi += addBatchSize) {
+  for (let bi = 0; bi < addChunks.length; bi++) {
     if (callbacks.shouldAbort?.()) break;
-    const chunk = pendingAdd.slice(bi, bi + addBatchSize);
-    const payload = chunk.map((c) => buildSongPayload(c.song)).join(',');
+    const chunk = addChunks[bi];
+    const payload = chunk.map((c) => c.payload).join(',');
     let ok = false;
     let errMsg = '';
     try {
@@ -262,7 +287,7 @@ export const runImport = async (
       addProgress++;
       emit(c.index);
     }
-    if (bi + addBatchSize < pendingAdd.length) {
+    if (bi + 1 < addChunks.length) {
       await new Promise((resolve) => setTimeout(resolve, ADD_BATCH_DELAY_MS));
     }
   }

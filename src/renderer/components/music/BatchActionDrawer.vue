@@ -44,6 +44,15 @@ const selectedKeys = ref<Set<string>>(new Set());
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 
+// 删除二次确认
+const showRemoveConfirm = ref(false);
+
+// 批量操作进度状态（删除 / 添加到歌单）
+type BatchOpType = 'remove' | 'addPlaylist' | null;
+const batchOp = ref<BatchOpType>(null);
+const batchProgress = ref({ done: 0, total: 0 });
+const isBatchBusy = computed(() => batchOp.value !== null);
+
 const selectedSongs = computed(() =>
   props.songs.filter((song) => selectedKeys.value.has(String(song.id))),
 );
@@ -154,6 +163,7 @@ const handlePlaySelected = async () => {
 
 const handleAddToPlaylist = async () => {
   if (!canAddSelected.value) return;
+  if (isBatchBusy.value) return;
   showPlaylistDialog.value = true;
   if (playlistStore.userPlaylists.length === 0) {
     isPlaylistLoading.value = true;
@@ -186,28 +196,81 @@ const handleAddToQueue = (queueId?: string) => {
 };
 
 const handleSelectPlaylist = async (listId: string | number) => {
+  if (isBatchBusy.value) return;
+  const total = selectedSongs.value.length;
+  if (total === 0) return;
+
+  // 反转顺序：歌单默认按加入时间倒序展示，反向提交可让界面顺序与用户所见一致
+  const songsToAdd = [...selectedSongs.value].reverse();
+  const targetName =
+    createdPlaylists.value.find((p) => String(p.listid ?? p.id) === String(listId))?.name ?? '歌单';
+
+  showPlaylistDialog.value = false;
+  batchOp.value = 'addPlaylist';
+  batchProgress.value = { done: 0, total };
+
   try {
-    for (const song of selectedSongs.value) {
-      await playlistStore.addToPlaylist(String(listId), song);
+    const { successCount, failedCount } = await playlistStore.addSongsToPlaylist(
+      listId,
+      songsToAdd,
+      (done, tot) => {
+        batchProgress.value = { done, total: tot };
+      },
+    );
+    if (successCount > 0 && failedCount === 0) {
+      toastStore.actionCompleted(`已添加 ${successCount} 首到『${targetName}』`);
+      open.value = false;
+    } else if (successCount > 0 && failedCount > 0) {
+      toastStore.warning(`已添加 ${successCount} 首到『${targetName}』，${failedCount} 首失败`);
+    } else {
+      toastStore.actionFailed('添加到歌单');
     }
-    toastStore.actionCompleted('已添加到歌单');
-    showPlaylistDialog.value = false;
-    open.value = false;
   } catch {
-    toastStore.actionFailed('已添加到歌单');
+    toastStore.actionFailed('添加到歌单');
+  } finally {
+    batchOp.value = null;
+    batchProgress.value = { done: 0, total: 0 };
   }
 };
 
-const handleRemoveFromPlaylist = async () => {
+const handleRemoveFromPlaylist = () => {
   if (!canRemoveSelected.value) return;
+  if (isBatchBusy.value) return;
+  showRemoveConfirm.value = true;
+};
+
+const confirmRemoveFromPlaylist = async () => {
+  if (!canRemoveSelected.value) return;
+  const total = selectedSongs.value.length;
+  if (total === 0) return;
+
+  showRemoveConfirm.value = false;
+  batchOp.value = 'remove';
+  batchProgress.value = { done: 0, total };
+
+  const songsToRemove = [...selectedSongs.value];
+
   try {
-    for (const song of selectedSongs.value) {
-      await playlistStore.removeFromPlaylist(String(props.sourceId), song);
+    const { successCount, failedCount } = await playlistStore.removeSongsFromPlaylist(
+      String(props.sourceId),
+      songsToRemove,
+      (done, tot) => {
+        batchProgress.value = { done, total: tot };
+      },
+    );
+    if (successCount > 0 && failedCount === 0) {
+      toastStore.actionCompleted(`已从歌单移除 ${successCount} 首`);
+      open.value = false;
+    } else if (successCount > 0 && failedCount > 0) {
+      toastStore.warning(`已移除 ${successCount} 首，${failedCount} 首失败`);
+    } else {
+      toastStore.actionFailed('从歌单移除');
     }
-    toastStore.actionCompleted('已从歌单移除');
-    open.value = false;
   } catch {
     toastStore.actionFailed('从歌单移除');
+  } finally {
+    batchOp.value = null;
+    batchProgress.value = { done: 0, total: 0 };
   }
 };
 </script>
@@ -227,7 +290,7 @@ const handleRemoveFromPlaylist = async () => {
           class="batch-action"
           variant="secondary"
           size="xs"
-          :disabled="!canPlaySelected"
+          :disabled="!canPlaySelected || isBatchBusy"
           @click="handlePlaySelected"
         >
           <Icon :icon="iconPlay" width="16" height="16" />
@@ -238,22 +301,30 @@ const handleRemoveFromPlaylist = async () => {
           class="batch-action"
           variant="secondary"
           size="xs"
-          :disabled="!canAddSelected"
+          :disabled="!canAddSelected || isBatchBusy"
+          :loading="batchOp === 'addPlaylist'"
           @click="handleAddToPlaylist"
         >
-          <Icon :icon="iconPlus" width="16" height="16" />
-          添加到
+          <Icon v-if="batchOp !== 'addPlaylist'" :icon="iconPlus" width="16" height="16" />
+          <template v-if="batchOp === 'addPlaylist'">
+            添加中 {{ batchProgress.done }}/{{ batchProgress.total }}
+          </template>
+          <template v-else>添加到</template>
         </Button>
         <Button
           type="button"
           class="batch-action danger"
           variant="ghost"
           size="xs"
-          :disabled="!canRemoveSelected"
+          :disabled="!canRemoveSelected || isBatchBusy"
+          :loading="batchOp === 'remove'"
           @click="handleRemoveFromPlaylist"
         >
-          <Icon :icon="iconTrash" width="16" height="16" />
-          删除
+          <Icon v-if="batchOp !== 'remove'" :icon="iconTrash" width="16" height="16" />
+          <template v-if="batchOp === 'remove'">
+            删除中 {{ batchProgress.done }}/{{ batchProgress.total }}
+          </template>
+          <template v-else>删除</template>
         </Button>
       </div>
       <Button
@@ -262,6 +333,7 @@ const handleRemoveFromPlaylist = async () => {
         variant="ghost"
         size="xs"
         aria-label="关闭"
+        :disabled="isBatchBusy"
         @click="open = false"
       >
         <Icon :icon="iconX" width="14" height="14" />
@@ -392,6 +464,19 @@ const handleRemoveFromPlaylist = async () => {
         <span class="batch-playlist-count">{{ entry.count ?? 0 }} 首</span>
       </Button>
     </div>
+  </Dialog>
+
+  <Dialog
+    v-model:open="showRemoveConfirm"
+    title="从歌单移除"
+    :description="`确认从当前歌单移除选中的 ${selectedKeys.size} 首歌曲？此操作无法撤销。`"
+    overlayClass="batch-playlist-overlay"
+    contentClass="batch-playlist-dialog max-w-[420px]"
+  >
+    <template #footer>
+      <Button variant="outline" size="sm" @click="showRemoveConfirm = false">取消</Button>
+      <Button variant="danger" size="sm" @click="confirmRemoveFromPlaylist">确认移除</Button>
+    </template>
   </Dialog>
 </template>
 

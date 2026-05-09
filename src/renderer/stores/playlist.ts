@@ -1107,6 +1107,131 @@ export const usePlaylistStore = defineStore('playlist', {
       }
       return false;
     },
+    /**
+     * 批量添加歌曲到歌单
+     * 根据 URL 参数长度自动分批（单批 data 参数 encode 后 <= 4KB），串行调用
+     * @param listId 目标歌单 id
+     * @param songs 待添加歌曲列表（调用方自行决定顺序）
+     * @param onProgress 进度回调：已处理数 / 总数
+     * @returns { successCount, failedCount }
+     */
+    async addSongsToPlaylist(
+      listId: string | number,
+      songs: Song[],
+      onProgress?: (done: number, total: number) => void,
+    ): Promise<{ successCount: number; failedCount: number }> {
+      const targetId = String(listId ?? '');
+      const total = songs.length;
+      if (!targetId || total === 0) return { successCount: 0, failedCount: total };
+
+      const MAX_PARAM_LEN = 4000;
+      const encode = (s: string) => encodeURIComponent(s).length;
+      const payloads = songs.map(
+        (song) => `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`,
+      );
+
+      // 按 encode 后长度分批
+      const batches: string[][] = [];
+      let current: string[] = [];
+      let currentLen = 0;
+      for (const payload of payloads) {
+        const payloadLen = encode(payload);
+        const extra = current.length > 0 ? 1 + payloadLen : payloadLen; // 含分隔逗号
+        if (current.length > 0 && currentLen + extra > MAX_PARAM_LEN) {
+          batches.push(current);
+          current = [];
+          currentLen = 0;
+        }
+        current.push(payload);
+        currentLen += current.length === 1 ? payloadLen : extra;
+      }
+      if (current.length > 0) batches.push(current);
+
+      let successCount = 0;
+      let failedCount = 0;
+      let done = 0;
+      onProgress?.(0, total);
+
+      for (const batch of batches) {
+        try {
+          const res = await addPlaylistTrack(targetId, batch.join(','));
+          if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+            successCount += batch.length;
+          } else {
+            failedCount += batch.length;
+            logger.warn('PlaylistStore', 'Batch add partial failure:', res);
+          }
+        } catch (e) {
+          failedCount += batch.length;
+          logger.error('PlaylistStore', 'Batch add error:', e);
+        }
+        done += batch.length;
+        onProgress?.(done, total);
+      }
+
+      return { successCount, failedCount };
+    },
+    /**
+     * 批量从歌单删除歌曲
+     * 根据 URL 参数长度自动分批（单批 fileids 参数 <= 4KB），串行调用
+     * @param listId 目标歌单 id
+     * @param songs 待删除歌曲列表
+     * @param onProgress 进度回调：已处理数 / 总数
+     * @returns { successCount, failedCount }
+     */
+    async removeSongsFromPlaylist(
+      listId: string | number,
+      songs: Song[],
+      onProgress?: (done: number, total: number) => void,
+    ): Promise<{ successCount: number; failedCount: number }> {
+      const targetId = String(listId ?? '');
+      const total = songs.length;
+      if (!targetId || total === 0) return { successCount: 0, failedCount: total };
+
+      const MAX_PARAM_LEN = 4000;
+      const fileIds = songs
+        .map((song) => String(song.fileId ?? song.mixSongId ?? ''))
+        .filter((id) => id && id !== '0');
+
+      const batches: string[][] = [];
+      let current: string[] = [];
+      let currentLen = 0;
+      for (const id of fileIds) {
+        const extra = current.length > 0 ? 1 + id.length : id.length;
+        if (current.length > 0 && currentLen + extra > MAX_PARAM_LEN) {
+          batches.push(current);
+          current = [];
+          currentLen = 0;
+        }
+        current.push(id);
+        currentLen += current.length === 1 ? id.length : extra;
+      }
+      if (current.length > 0) batches.push(current);
+
+      let successCount = 0;
+      let failedCount = 0;
+      let done = 0;
+      onProgress?.(0, total);
+
+      for (const batch of batches) {
+        try {
+          const res = await deletePlaylistTrack(targetId, batch.join(','));
+          if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+            successCount += batch.length;
+          } else {
+            failedCount += batch.length;
+            logger.warn('PlaylistStore', 'Batch remove partial failure:', res);
+          }
+        } catch (e) {
+          failedCount += batch.length;
+          logger.error('PlaylistStore', 'Batch remove error:', e);
+        }
+        done += batch.length;
+        onProgress?.(done, total);
+      }
+
+      return { successCount, failedCount };
+    },
     async addToFavorites(song: Song) {
       const likedPlaylist = await this.ensureLikedPlaylistReady();
       const listId = likedPlaylist.listId;

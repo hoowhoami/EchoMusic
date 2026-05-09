@@ -7,6 +7,7 @@ import { useDeviceStore } from '@/stores/device';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Popover from '@/components/ui/Popover.vue';
 
 import { claimDayVip, upgradeDayVip, getVipMonthRecord } from '@/api/user';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -20,6 +21,7 @@ import {
   iconScan,
   iconCheck,
   iconChevronRight,
+  iconInfo,
 } from '@/icons';
 
 interface VipActionResponse {
@@ -30,6 +32,7 @@ interface VipActionResponse {
 interface VipLevelInfo {
   product_type?: string;
   is_vip?: number;
+  vip_begin_time?: string | number;
   vip_end_time?: string | number;
 }
 
@@ -92,13 +95,32 @@ const getVipExpireText = (vipData: any) => {
     const now = new Date();
     const diff = expireDate.getTime() - now.getTime();
     if (diff < 0) return '已过期';
+    const totalMinutes = Math.floor(diff / (1000 * 60));
+    const totalHours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     if (days > 365) return `${Math.floor(days / 365)}年后到期`;
     if (days > 30) return `${Math.floor(days / 30)}个月后到期`;
     if (days > 0) return `${days}天后到期`;
+    if (totalHours > 0) return `${totalHours}小时后到期`;
+    if (totalMinutes > 0) return `${totalMinutes}分钟后到期`;
     return '即将到期';
   } catch {
     return null;
+  }
+};
+
+// 格式化原始时间字符串为 yyyy-MM-dd HH:mm
+const formatVipDate = (value?: string | number) => {
+  if (!value) return '--';
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+      d.getHours(),
+    )}:${pad(d.getMinutes())}`;
+  } catch {
+    return String(value);
   }
 };
 
@@ -339,9 +361,36 @@ onMounted(() => loadData());
                     >
                       领取畅听会员
                     </h4>
-                    <p v-if="tvip" class="text-[10px] opacity-60 font-bold uppercase">
-                      {{ getVipExpireText(tvip) }}
-                    </p>
+                    <div v-if="tvip" @click.stop>
+                      <Popover
+                        trigger="hover"
+                        side="top"
+                        align="start"
+                        :side-offset="6"
+                        contentClass="vip-expire-popover"
+                      >
+                        <template #trigger>
+                          <span
+                            class="inline-flex items-center gap-1 text-[11px] opacity-60 font-bold uppercase cursor-pointer hover:opacity-100 transition-opacity"
+                          >
+                            {{ getVipExpireText(tvip) }}
+                            <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
+                          </span>
+                        </template>
+                        <div class="min-w-[180px] space-y-1.5 text-[13px] normal-case">
+                          <div class="flex items-center justify-between gap-3">
+                            <span class="font-bold opacity-60">开始时间</span>
+                            <span class="font-black">{{ formatVipDate(tvip.vip_begin_time) }}</span>
+                          </div>
+                          <div class="flex items-center justify-between gap-3">
+                            <span class="font-bold opacity-60">到期时间</span>
+                            <span class="font-black text-green-500">{{
+                              formatVipDate(tvip.vip_end_time)
+                            }}</span>
+                          </div>
+                        </div>
+                      </Popover>
+                    </div>
                   </div>
                   <div v-if="userStore.isTvipClaimedToday" class="text-green-500">
                     <Icon :icon="iconCheck" width="16" height="16" />
@@ -382,9 +431,36 @@ onMounted(() => loadData());
                     >
                       升级概念会员
                     </h4>
-                    <p v-if="svip" class="text-[10px] opacity-60 font-bold uppercase">
-                      {{ getVipExpireText(svip) }}
-                    </p>
+                    <div v-if="svip" @click.stop>
+                      <Popover
+                        trigger="hover"
+                        side="top"
+                        align="start"
+                        :side-offset="6"
+                        contentClass="vip-expire-popover"
+                      >
+                        <template #trigger>
+                          <span
+                            class="inline-flex items-center gap-1 text-[11px] opacity-60 font-bold uppercase cursor-pointer hover:opacity-100 transition-opacity"
+                          >
+                            {{ getVipExpireText(svip) }}
+                            <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
+                          </span>
+                        </template>
+                        <div class="min-w-[180px] space-y-1.5 text-[13px] normal-case">
+                          <div class="flex items-center justify-between gap-3">
+                            <span class="font-bold opacity-60">开始时间</span>
+                            <span class="font-black">{{ formatVipDate(svip.vip_begin_time) }}</span>
+                          </div>
+                          <div class="flex items-center justify-between gap-3">
+                            <span class="font-bold opacity-60">到期时间</span>
+                            <span class="font-black text-orange-500">{{
+                              formatVipDate(svip.vip_end_time)
+                            }}</span>
+                          </div>
+                        </div>
+                      </Popover>
+                    </div>
                   </div>
                   <div v-if="userStore.isSvipClaimedToday || svip" class="text-orange-500">
                     <Icon :icon="iconCheck" width="16" height="16" />
@@ -438,5 +514,20 @@ onMounted(() => loadData());
   background-color: rgba(255, 255, 255, 0.04) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
   box-shadow: none !important;
+}
+</style>
+
+<style>
+.vip-expire-popover.echo-popover-content {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark .vip-expire-popover.echo-popover-content {
+  background: rgba(28, 28, 30, 0.78);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 </style>

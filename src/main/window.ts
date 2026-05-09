@@ -210,13 +210,27 @@ const buildWindowBounds = () => {
 
 const persistWindowState = () => {
   if (!win || !rememberWindowSize || win.isDestroyed()) return;
+  const maximized = win.isMaximized();
+  // 最大化时 getBounds 返回的是全屏尺寸，会污染窗口化后恢复的大小
+  // 因此最大化状态下只更新 isMaximized 标记，保留上一次窗口化时的 width/height/x/y
+  if (maximized) {
+    const prev = getPersistedWindowState();
+    settingsStore.set('windowState', {
+      width: prev.width,
+      height: prev.height,
+      x: prev.x,
+      y: prev.y,
+      isMaximized: true,
+    });
+    return;
+  }
   const bounds = win.getBounds();
   settingsStore.set('windowState', {
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
-    isMaximized: win.isMaximized(),
+    isMaximized: false,
   });
 };
 
