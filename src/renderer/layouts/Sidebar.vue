@@ -954,4 +954,13 @@ watch(
   );
   transition: background 0.6s ease;
 }
+
+.dark .sidebar-accent-gradient {
+  background: linear-gradient(
+    180deg,
+    rgba(var(--color-primary-rgb), 0.18) 0%,
+    rgba(var(--color-primary-rgb), 0.05) 60%,
+    transparent 100%
+  );
+}
 </style>

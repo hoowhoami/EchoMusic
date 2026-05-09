@@ -11,7 +11,7 @@ const props = defineProps<Props>();
   <span
     v-if="count !== undefined"
     :class="[
-      'badge absolute -top-1.5 -right-5 inline-flex min-w-[16px] h-4 items-center justify-center px-1 rounded-full text-[9px] font-bold bg-primary text-white shadow-sm select-none pointer-events-none tabular-nums',
+      'badge absolute -top-1.5 -right-5 inline-flex min-w-[16px] h-4 items-center justify-center px-1 rounded-full text-[9px] font-bold bg-black text-white dark:bg-white dark:text-black shadow-sm select-none pointer-events-none tabular-nums',
       props.class,
     ]"
   >
@@ -21,6 +21,6 @@ const props = defineProps<Props>();
 
 <style scoped>
 .badge {
-  /* 可以添加额外的全局样式 */
+  /* 固定深浅背景保证任何主题色下都清晰 */
 }
 </style>

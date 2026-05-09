@@ -398,7 +398,8 @@ const handleFavorite = () => {
             <Tag v-if="isOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
           </div>
           <div
-            class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap text-text-secondary"
+            class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
+            :class="props.active ? 'text-primary/70' : 'text-text-secondary'"
           >
             <span class="song-artist-list">
               <span
@@ -567,6 +568,10 @@ const handleFavorite = () => {
 .song-card .song-subline {
   color: var(--color-text-secondary);
   font-weight: 500;
+}
+
+.song-card .song-subline.text-primary\/70 {
+  color: color-mix(in srgb, var(--color-primary) 70%, transparent);
 }
 
 .song-content {

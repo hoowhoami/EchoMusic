@@ -375,6 +375,9 @@ const applyContrastVars = (root: HTMLElement, topLum: number, bottomLum: number)
   s.setProperty('--pb-btn-bg', bl ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)');
   s.setProperty('--pb-btn-border', bl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)');
   s.setProperty('--pb-card-bg', bl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)');
+  // 徽标：纯色不透明，和前景色反转
+  s.setProperty('--pb-badge-bg', bl ? '#000' : '#fff');
+  s.setProperty('--pb-badge-fg', bl ? '#fff' : '#000');
 };
 
 const analyzeRenderedImage = (img: HTMLImageElement) => {
@@ -2525,5 +2528,18 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-error-indicator:hover {
   opacity: 1;
   transform: scale(1.1);
+}
+
+/* 歌词页徽标根据亮度自适应 */
+.lyric-view .badge,
+.lyric-view [class*='badge'] {
+  background-color: var(--pb-badge-bg, #000) !important;
+  color: var(--pb-badge-fg, #fff) !important;
+}
+
+.portrait-mode .lyric-controls-surface .badge,
+.portrait-mode .lyric-controls-surface [class*='badge'] {
+  background-color: var(--pb-badge-bg, #000) !important;
+  color: var(--pb-badge-fg, #fff) !important;
 }
 </style>

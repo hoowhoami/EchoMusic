@@ -119,11 +119,7 @@ withDefaults(defineProps<Props>(), {
             v-if="currentTrack && settingStore.showAudioQualityBadge && audioEffectButtonBadge"
             :count="audioEffectButtonBadge"
             class="absolute -top-2"
-            :style="{
-              right: '-12px',
-              color: '#FFF',
-              backgroundColor: '#10B981',
-            }"
+            :style="{ right: '-12px' }"
           />
         </span>
       </Button>
