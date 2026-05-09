@@ -177,12 +177,15 @@ export const useLyricStore = defineStore('lyric', {
     fontWeightIndex: 8,
     playedColor: '',
     unplayedColor: '',
+    // 由主题色 store 同步的已播色（不持久化）；用户自定义的 playedColor 优先级更高
+    accentPlayedColor: '',
     requestSerial: 0,
     detailResolved: false,
   }),
   getters: {
-    // 有效歌词颜色（用户自定义 > 默认值）
-    effectivePlayedColor: (state) => state.playedColor || DEFAULT_LYRIC_PLAYED_COLOR,
+    // 有效歌词颜色（用户自定义 > 主题色同步 > 默认值）
+    effectivePlayedColor: (state) =>
+      state.playedColor || state.accentPlayedColor || DEFAULT_LYRIC_PLAYED_COLOR,
     effectiveUnplayedColor: (state) => state.unplayedColor || DEFAULT_LYRIC_UNPLAYED_COLOR,
     // 兼容旧代码
     secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,

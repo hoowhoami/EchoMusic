@@ -402,7 +402,7 @@ watch(
           </div>
           <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
             <span
-              class="text-[13px] font-semibold text-text-main truncate leading-tight tracking-tight"
+              class="text-[13px] font-semibold text-primary truncate leading-tight tracking-tight"
             >
               {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
             </span>
@@ -841,14 +841,14 @@ watch(
 }
 
 .sidebar-user-link:hover {
-  background-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 5%, transparent);
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .sidebar-settings-btn:hover,
 .sidebar-icon-btn:hover {
-  background-color: color-mix(in srgb, var(--color-text-main) 20%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 5%, transparent);
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
 .sidebar-section-action-slot {

@@ -274,20 +274,20 @@ onUnmounted(() => {
               @mouseenter="handleSongInfoHover"
             >
               <span
-                class="text-[14px] font-bold text-text-main hover:text-primary cursor-pointer transition-colors"
+                class="text-[14px] font-bold text-primary cursor-pointer transition-colors"
                 @click="navigateToLyric"
               >
                 {{ currentTrack ? currentTrack.title : '未在播放' }}
               </span>
-              <span v-if="currentTrack" class="text-[14px] text-text-main/60 mx-0.5">-</span>
+              <span v-if="currentTrack" class="text-[14px] text-primary/60 mx-0.5">-</span>
               <div v-if="currentTrack" class="flex items-center">
                 <template v-for="(artist, index) in artistList" :key="index">
                   <span
                     class="text-[13px] transition-colors"
                     :class="
                       isArtistClickable(artist)
-                        ? 'text-text-main/60 hover:text-primary cursor-pointer'
-                        : 'text-text-main/60'
+                        ? 'text-primary/70 hover:text-primary cursor-pointer'
+                        : 'text-primary/70'
                     "
                     @click="isArtistClickable(artist) && goToArtist(artist)"
                   >

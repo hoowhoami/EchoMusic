@@ -10,6 +10,62 @@
   --text-main: #1d1d1f;
   --text-secondary: #4b5563;
   --border-light: #e5e5ea;
+
+  /* 品牌蓝：非全局主题色模式下非播放区域的回退色 */
+  --color-brand: #0071e3;
+  --color-brand-hover: #0077ed;
+  --color-brand-light: rgba(0, 113, 227, 0.15);
+  --color-brand-dark: rgba(0, 113, 227, 0.36);
+  --color-brand-rgb: 0, 113, 227;
+
+  /* 主题色变更平滑过渡 */
+  transition:
+    --color-primary 0.6s ease,
+    --color-primary-hover 0.6s ease,
+    --color-primary-light 0.6s ease,
+    --color-primary-dark 0.6s ease;
+}
+
+/* 注册为 color 类型以支持 CSS 变量过渡 */
+@property --color-primary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #0071e3;
+}
+
+@property --color-primary-hover {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #0077ed;
+}
+
+@property --color-primary-light {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(0, 113, 227, 0.15);
+}
+
+@property --color-primary-dark {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(0, 113, 227, 0.36);
+}
+
+/* 非全局主题色：主布局内回退到品牌蓝，播放栏内恢复真主题色 */
+body.accent-scoped .main-layout {
+  --color-primary: var(--color-brand);
+  --color-primary-hover: var(--color-brand-hover);
+  --color-primary-light: var(--color-brand-light);
+  --color-primary-dark: var(--color-brand-dark);
+  --color-primary-rgb: var(--color-brand-rgb);
+}
+
+body.accent-scoped .main-layout .player-bar-container {
+  --color-primary: var(--color-primary-root);
+  --color-primary-hover: var(--color-primary-hover-root);
+  --color-primary-light: var(--color-primary-light-root);
+  --color-primary-dark: var(--color-primary-dark-root);
+  --color-primary-rgb: var(--color-primary-rgb-root);
 }
 
 .dark {

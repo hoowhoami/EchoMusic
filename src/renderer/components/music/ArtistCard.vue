@@ -42,11 +42,7 @@ const handleClick = () => {
 </script>
 
 <template>
-  <div
-    class="artist-card group"
-    :class="{ 'is-singer': isSinger }"
-    @click="handleClick"
-  >
+  <div class="artist-card group" :class="{ 'is-singer': isSinger }" @click="handleClick">
     <div class="card-container flex flex-col">
       <div class="cover-shell">
         <div class="cover-wrapper">

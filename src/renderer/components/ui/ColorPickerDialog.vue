@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
-import Button from '@/components/ui/Button.vue';
 import Input from '@/components/ui/Input.vue';
 import { iconCheck } from '@/icons';
 
@@ -57,6 +56,11 @@ const applyPreset = (color: string) => {
   draft.value = color;
 };
 
+const handleNativeInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (target?.value) draft.value = target.value;
+};
+
 const confirm = () => {
   const color = normalizedDraft.value;
   emit('update:value', color);
@@ -70,16 +74,28 @@ const confirm = () => {
     v-model:open="open"
     :title="props.title"
     contentClass="color-picker-dialog"
-    :contentStyle="{ maxWidth: '420px' }"
+    :contentStyle="{ maxWidth: '380px' }"
     showClose
   >
     <div class="color-picker-body">
-      <div class="color-picker-preview-row">
-        <div class="color-picker-preview" :style="{ backgroundColor: normalizedDraft }"></div>
-        <input v-model="draft" class="color-picker-native" type="color" />
-        <Input v-model="draft" inputClass="!h-11 !rounded-xl !pl-4 !pr-4 !text-[14px] font-mono" />
+      <!-- 顶部：原生色盘（美化为色块）+ hex 输入框 -->
+      <div class="color-picker-top-row">
+        <div class="color-picker-native-wrap">
+          <input
+            :value="normalizedDraft"
+            type="color"
+            class="color-picker-native"
+            title="点击打开系统色盘"
+            @input="handleNativeInput"
+            @change="handleNativeInput"
+          />
+        </div>
+        <div class="color-picker-input-wrap">
+          <Input v-model="draft" inputClass="!h-9 !rounded-lg !pl-3 !pr-3 !text-[13px] font-mono" />
+        </div>
       </div>
 
+      <!-- 预设色 -->
       <div v-if="props.presets.length" class="color-picker-presets">
         <button
           v-for="color in props.presets"
@@ -88,20 +104,22 @@ const confirm = () => {
           class="color-picker-swatch"
           :class="{ active: normalizedDraft === color.toLowerCase() }"
           :style="{ backgroundColor: color }"
+          :title="color"
           @click="applyPreset(color)"
         >
           <Icon
             v-if="normalizedDraft === color.toLowerCase()"
             :icon="iconCheck"
-            width="14"
-            height="14"
+            width="12"
+            height="12"
           />
         </button>
       </div>
 
+      <!-- 操作按钮 -->
       <div class="color-picker-actions">
-        <Button variant="ghost" @click="open = false">取消</Button>
-        <Button @click="confirm">确定</Button>
+        <button type="button" class="color-picker-btn cancel" @click="open = false">取消</button>
+        <button type="button" class="color-picker-btn confirm" @click="confirm">确定</button>
       </div>
     </div>
   </Dialog>
@@ -113,32 +131,37 @@ const confirm = () => {
 .color-picker-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 0 14px 14px;
+  gap: 14px;
+  padding: 0 12px 0;
 }
 
-.color-picker-preview-row {
-  display: grid;
-  grid-template-columns: 52px 56px minmax(0, 1fr);
+.color-picker-top-row {
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
-.color-picker-preview {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+/* 原生 color input 美化为圆角色块 */
+.color-picker-native-wrap {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dark .color-picker-native-wrap {
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .color-picker-native {
-  width: 56px;
-  height: 44px;
+  display: block;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: none;
-  border-radius: 14px;
-  background: transparent;
+  background: none;
   cursor: pointer;
 }
 
@@ -147,38 +170,89 @@ const confirm = () => {
 }
 
 .color-picker-native::-webkit-color-swatch {
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
-  border-radius: 14px;
+  border: none;
+  border-radius: 0;
 }
 
+.color-picker-input-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 预设色网格 */
 .color-picker-presets {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .color-picker-swatch {
   width: 100%;
   aspect-ratio: 1;
   border: none;
-  border-radius: 14px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: white;
   cursor: pointer;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 6px 18px rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.color-picker-swatch:hover {
+  transform: scale(1.06);
 }
 
 .color-picker-swatch.active {
-  transform: scale(1.04);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.6),
+    0 0 0 2px var(--color-text-main);
 }
 
+/* 底部按钮 */
 .color-picker-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+}
+
+.color-picker-btn {
+  height: 36px;
+  padding: 0 18px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.color-picker-btn.cancel {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--color-text-main);
+}
+
+.color-picker-btn.cancel:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dark .color-picker-btn.cancel {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .color-picker-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.color-picker-btn.confirm {
+  background: var(--color-primary);
+  color: white;
+}
+
+.color-picker-btn.confirm:hover {
+  opacity: 0.9;
 }
 </style>

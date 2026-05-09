@@ -3,11 +3,10 @@ import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
-import {
-  useLyricStore,
-  DEFAULT_LYRIC_PLAYED_COLOR,
-  DEFAULT_LYRIC_UNPLAYED_COLOR,
-} from '@/stores/lyric';
+import { useThemeStore, type AccentMode } from '@/stores/theme';
+import { ACCENT_PRESETS } from '@/utils/color';
+import { useLyricColorPicker } from '@/utils/useLyricColorPicker';
+import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import type {
   AudioQualityValue,
@@ -52,8 +51,19 @@ const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
 const playerStore = usePlayerStore();
 const lyricStore = useLyricStore();
+const themeStore = useThemeStore();
 const toastStore = useToastStore();
 const showDisclaimer = ref(false);
+
+// ── 主题色 ──
+const accentModeOptions: { label: string; value: AccentMode }[] = [
+  { label: '跟随封面', value: 'cover' },
+  { label: '预设主题', value: 'preset' },
+  { label: '自定义', value: 'custom' },
+];
+const accentPresets = ACCENT_PRESETS;
+const showAccentPicker = ref(false);
+const accentPresetValues = accentPresets.map((item) => item.color);
 
 // ── 页面缓存候选列表 ──
 const keepAliveOptions = [
@@ -71,51 +81,7 @@ const keepAliveOptions = [
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 // ── 页面歌词颜色选择器 ──
-const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
-
-const lyricColorPresets = [
-  '#31cfa1',
-  '#0071e3',
-  '#8b5cf6',
-  '#ef476f',
-  '#f59e0b',
-  '#22c55e',
-  '#60a5fa',
-  '#f97316',
-  '#e11d48',
-  '#14b8a6',
-  '#a855f7',
-  '#ffffff',
-];
-
-const activeLyricColorValue = computed(() => {
-  if (!activeLyricColorField.value) return DEFAULT_LYRIC_PLAYED_COLOR;
-  return (
-    lyricStore[activeLyricColorField.value] ||
-    (activeLyricColorField.value === 'playedColor'
-      ? DEFAULT_LYRIC_PLAYED_COLOR
-      : DEFAULT_LYRIC_UNPLAYED_COLOR)
-  );
-});
-
-const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
-  activeLyricColorField.value = field;
-};
-
-const closeLyricColorPicker = () => {
-  activeLyricColorField.value = null;
-};
-
-const applyLyricColor = (value: string) => {
-  if (!activeLyricColorField.value) return;
-  lyricStore[activeLyricColorField.value] = value;
-  closeLyricColorPicker();
-};
-
-const resetLyricColors = () => {
-  lyricStore.playedColor = '';
-  lyricStore.unplayedColor = '';
-};
+const lyricColorPicker = useLyricColorPicker();
 
 const lyricFontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const lyricFontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
@@ -558,6 +524,71 @@ onUnmounted(() => {
         <div class="settings-divider"></div>
         <div class="settings-item">
           <div class="space-y-1">
+            <h3 class="font-semibold">主题色来源</h3>
+            <p class="text-sm text-text-secondary">切歌自动跟随封面，或固定为预设 / 自定义颜色</p>
+          </div>
+          <Select
+            class="w-[180px]"
+            :model-value="themeStore.accentMode"
+            :options="accentModeOptions"
+            @update:model-value="themeStore.setMode($event as AccentMode)"
+          />
+        </div>
+        <div v-if="themeStore.accentMode === 'preset'" class="settings-item items-start">
+          <div class="space-y-1">
+            <h3 class="font-semibold">预设主题色</h3>
+            <p class="text-sm text-text-secondary">挑一个贴合心情的配色</p>
+          </div>
+          <div class="flex gap-2 flex-nowrap">
+            <button
+              v-for="preset in accentPresets"
+              :key="preset.id"
+              type="button"
+              class="accent-preset-swatch"
+              :class="{ 'is-active': themeStore.presetId === preset.id }"
+              :style="{ backgroundColor: preset.color }"
+              :title="preset.name"
+              @click="themeStore.setPreset(preset.id)"
+            ></button>
+          </div>
+        </div>
+        <div v-if="themeStore.accentMode === 'custom'" class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">自定义主题色</h3>
+            <p class="text-sm text-text-secondary">从色盘中选一种颜色固定为主题色</p>
+          </div>
+          <button
+            type="button"
+            class="settings-color-swatch"
+            :style="{ backgroundColor: themeStore.customColor }"
+            @click="showAccentPicker = true"
+          ></button>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">全局主题色</h3>
+            <p class="text-sm text-text-secondary">关闭后仅播放栏与歌词页跟随主题色</p>
+          </div>
+          <Switch
+            :model-value="themeStore.globalAccent"
+            @update:model-value="themeStore.setGlobalAccent(Boolean($event))"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
+            <h3 class="font-semibold">歌词字色跟随主题</h3>
+            <p class="text-sm text-text-secondary">歌词已播色自动跟随主题色，手动设置的颜色优先</p>
+          </div>
+          <Switch
+            :model-value="themeStore.lyricAccentSync"
+            @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
+          />
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-item">
+          <div class="space-y-1">
             <h3 class="font-semibold">记住窗口大小</h3>
             <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
           </div>
@@ -927,7 +958,7 @@ onUnmounted(() => {
                 type="button"
                 class="settings-color-swatch"
                 :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
-                @click="openLyricColorPicker('playedColor')"
+                @click="lyricColorPicker.open('playedColor')"
               ></button>
             </div>
             <div class="flex items-center gap-2.5">
@@ -936,14 +967,14 @@ onUnmounted(() => {
                 type="button"
                 class="settings-color-swatch"
                 :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
-                @click="openLyricColorPicker('unplayedColor')"
+                @click="lyricColorPicker.open('unplayedColor')"
               ></button>
             </div>
             <button
               v-if="lyricStore.playedColor || lyricStore.unplayedColor"
               type="button"
               class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors"
-              @click="resetLyricColors"
+              @click="lyricColorPicker.reset"
             >
               重置
             </button>
@@ -1158,12 +1189,21 @@ onUnmounted(() => {
     />
 
     <ColorPickerDialog
-      :open="activeLyricColorField !== null"
-      :title="activeLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
-      :value="activeLyricColorValue"
-      :presets="lyricColorPresets"
-      @update:open="(open) => !open && closeLyricColorPicker()"
-      @confirm="applyLyricColor"
+      :open="lyricColorPicker.isOpen.value"
+      :title="lyricColorPicker.activeTitle.value"
+      :value="lyricColorPicker.activeValue.value"
+      :presets="lyricColorPicker.presets"
+      @update:open="(open) => !open && lyricColorPicker.close()"
+      @confirm="lyricColorPicker.apply"
+    />
+
+    <ColorPickerDialog
+      :open="showAccentPicker"
+      title="选择主题色"
+      :value="themeStore.customColor"
+      :presets="accentPresetValues"
+      @update:open="(open) => (showAccentPicker = open)"
+      @confirm="(color: string) => themeStore.setCustomColor(color)"
     />
 
     <section class="space-y-6">
@@ -1791,6 +1831,27 @@ onUnmounted(() => {
 
 .dark .settings-color-swatch {
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.accent-preset-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.accent-preset-swatch:hover {
+  transform: scale(1.08);
+}
+
+.accent-preset-swatch.is-active {
+  border-color: var(--color-text-main);
+  transform: scale(1.08);
 }
 
 @keyframes fade-in {

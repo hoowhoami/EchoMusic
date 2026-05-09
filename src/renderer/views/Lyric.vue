@@ -2,11 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRafFn, useClipboard } from '@vueuse/core';
 import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
-import {
-  useLyricStore,
-  DEFAULT_LYRIC_PLAYED_COLOR,
-  DEFAULT_LYRIC_UNPLAYED_COLOR,
-} from '@/stores/lyric';
+import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
@@ -46,6 +42,7 @@ import {
   iconMessageCircle,
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
+import { useLyricColorPicker } from '@/utils/useLyricColorPicker';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 
@@ -146,51 +143,7 @@ const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
 
-const lyricColorPresets = [
-  '#31cfa1',
-  '#0071e3',
-  '#8b5cf6',
-  '#ef476f',
-  '#f59e0b',
-  '#22c55e',
-  '#60a5fa',
-  '#f97316',
-  '#e11d48',
-  '#14b8a6',
-  '#a855f7',
-  '#ffffff',
-];
-
-const activeLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
-
-const activeLyricColorValue = computed(() => {
-  if (!activeLyricColorField.value) return DEFAULT_LYRIC_PLAYED_COLOR;
-  return (
-    lyricStore[activeLyricColorField.value] ||
-    (activeLyricColorField.value === 'playedColor'
-      ? DEFAULT_LYRIC_PLAYED_COLOR
-      : DEFAULT_LYRIC_UNPLAYED_COLOR)
-  );
-});
-
-const openLyricColorPicker = (field: 'playedColor' | 'unplayedColor') => {
-  activeLyricColorField.value = field;
-};
-
-const closeLyricColorPicker = () => {
-  activeLyricColorField.value = null;
-};
-
-const applyLyricColor = (value: string) => {
-  if (!activeLyricColorField.value) return;
-  lyricStore[activeLyricColorField.value] = value;
-  closeLyricColorPicker();
-};
-
-const resetLyricColors = () => {
-  lyricStore.playedColor = '';
-  lyricStore.unplayedColor = '';
-};
+const lyricColorPicker = useLyricColorPicker();
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
@@ -363,15 +316,12 @@ const clearArtistBackdrop = () => {
   luminanceCache.clear();
 };
 
-// ── 写真背景亮度检测（缩小采样，避免大图阻塞主线程） ──
+// ── 写真背景亮度检测（缩小采样） ──
 const portraitImgRef = ref<HTMLImageElement | null>(null);
 const luminanceCache = new Map<string, { top: number; bottom: number }>();
-// 缩小后的 Canvas 缓存，避免每次重建
 let thumbCanvas: HTMLCanvasElement | null = null;
 let thumbCtx: CanvasRenderingContext2D | null = null;
-// 亮度分析序列号，防止异步回调过期
 let luminanceSeq = 0;
-
 const THUMB_MAX_WIDTH = 200;
 
 const getPointLuminance = (
@@ -385,10 +335,8 @@ const getPointLuminance = (
   const imgRect = imgEl.getBoundingClientRect();
   const rw = imgRect.width;
   const rh = imgRect.height;
-  // 屏幕坐标映射到缩小后的 Canvas 坐标
   const x = Math.floor(((screenX - imgRect.left) * canvasW) / rw);
   const y = Math.floor(((screenY - imgRect.top) * canvasH) / rh);
-  // 采样 5x5 区域取平均（缩小后不需要 7x7）
   const s = 5;
   const sx = Math.max(0, x - Math.floor(s / 2));
   const sy = Math.max(0, y - Math.floor(s / 2));
@@ -416,13 +364,13 @@ const applyContrastVars = (root: HTMLElement, topLum: number, bottomLum: number)
   const bl = bottomLum > t;
   const s = root.style;
   s.setProperty('--pt-fg', tl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
-  s.setProperty('--pt-fg-hover', tl ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,1)');
+  s.setProperty('--pt-fg-hover', 'var(--color-primary)');
   s.setProperty('--pt-fg-muted', tl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)');
   s.setProperty('--pt-btn-bg', tl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)');
   s.setProperty('--pt-btn-bg-hover', tl ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.5)');
   s.setProperty('--pt-btn-border', tl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)');
   s.setProperty('--pb-fg', bl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
-  s.setProperty('--pb-fg-hover', bl ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,1)');
+  s.setProperty('--pb-fg-hover', 'var(--color-primary)');
   s.setProperty('--pb-fg-muted', bl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)');
   s.setProperty('--pb-btn-bg', bl ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)');
   s.setProperty('--pb-btn-border', bl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)');
@@ -445,12 +393,10 @@ const analyzeRenderedImage = (img: HTMLImageElement) => {
   const nh = img.naturalHeight;
   if (!nw || !nh) return;
 
-  // 缩小到 ~200px 宽度再分析，大幅减少 drawImage + getImageData 开销
   const scale = Math.min(1, THUMB_MAX_WIDTH / nw);
   const tw = Math.round(nw * scale);
   const th = Math.round(nh * scale);
 
-  // 复用 Canvas 实例
   if (!thumbCanvas) {
     thumbCanvas = document.createElement('canvas');
     thumbCtx = thumbCanvas.getContext('2d', { willReadFrequently: true });
@@ -490,7 +436,6 @@ const analyzeRenderedImage = (img: HTMLImageElement) => {
     bottomLum = Math.min(...pts);
   }
 
-  // 遮罩层影响
   topLum *= 0.85;
   bottomLum *= 0.85;
 
@@ -502,9 +447,7 @@ const onPortraitImageLoad = () => {
   const img = portraitImgRef.value;
   if (!img || !hasPortraitGallery.value) return;
   const seq = ++luminanceSeq;
-  // 先让浏览器完成当前帧的渲染和合成，再做亮度分析
   requestAnimationFrame(() => {
-    // 推到下一个宏任务，不阻塞渲染帧
     setTimeout(() => {
       if (seq !== luminanceSeq) return;
       if (!portraitImgRef.value || portraitImgRef.value !== img) return;
@@ -1110,7 +1053,7 @@ onUnmounted(() => {
                       v-if="lyricStore.playedColor || lyricStore.unplayedColor"
                       type="button"
                       class="text-[11px] font-semibold text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
-                      @click="resetLyricColors"
+                      @click="lyricColorPicker.reset"
                     >
                       重置
                     </button>
@@ -1124,7 +1067,7 @@ onUnmounted(() => {
                         type="button"
                         class="lyric-color-swatch"
                         :style="{ backgroundColor: effectivePlayedColor }"
-                        @click="openLyricColorPicker('playedColor')"
+                        @click="lyricColorPicker.open('playedColor')"
                       ></button>
                     </div>
                     <div class="flex items-center gap-2">
@@ -1137,7 +1080,7 @@ onUnmounted(() => {
                         :style="{
                           backgroundColor: effectiveUnplayedColor,
                         }"
-                        @click="openLyricColorPicker('unplayedColor')"
+                        @click="lyricColorPicker.open('unplayedColor')"
                       ></button>
                     </div>
                   </div>
@@ -1742,12 +1685,12 @@ onUnmounted(() => {
     </Dialog>
 
     <ColorPickerDialog
-      :open="activeLyricColorField !== null"
-      :title="activeLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
-      :value="activeLyricColorValue"
-      :presets="lyricColorPresets"
-      @update:open="(open) => !open && closeLyricColorPicker()"
-      @confirm="applyLyricColor"
+      :open="lyricColorPicker.isOpen.value"
+      :title="lyricColorPicker.activeTitle.value"
+      :value="lyricColorPicker.activeValue.value"
+      :presets="lyricColorPicker.presets"
+      @update:open="(open: boolean) => !open && lyricColorPicker.close()"
+      @confirm="lyricColorPicker.apply"
     />
   </div>
 </template>
@@ -1868,6 +1811,12 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-tool-chip:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.48);
+  color: var(--color-primary) !important;
+}
+
+.lyric-icon-btn:hover *,
+.lyric-tool-chip:hover * {
+  color: var(--color-primary) !important;
 }
 
 .lyric-tool-chip {
@@ -1994,6 +1943,12 @@ body:has(.lyric-view) .drawer-panel {
 .dark .lyric-icon-btn:hover,
 .dark .lyric-tool-chip:hover {
   background: rgba(36, 48, 70, 0.82);
+  color: var(--color-primary) !important;
+}
+
+.dark .lyric-icon-btn:hover *,
+.dark .lyric-tool-chip:hover * {
+  color: var(--color-primary) !important;
 }
 
 .dark .lyric-tool-chip:disabled,
@@ -2058,6 +2013,12 @@ body:has(.lyric-view) .drawer-panel {
   padding: 0 10px 0;
 }
 
+/* 非写真模式：控制栏按钮 hover 时应用主题色 */
+.lyric-controls-surface button:hover,
+.lyric-controls-surface button:hover * {
+  color: var(--color-primary) !important;
+}
+
 .lyric-main-play-btn {
   background: rgba(255, 255, 255, 0.38);
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -2096,7 +2057,7 @@ body:has(.lyric-view) .drawer-panel {
   box-shadow: 0 22px 56px rgba(0, 0, 0, 0.45);
 }
 
-/* 写真模式歌曲信息浮层 */
+/* 歌曲信息浮层 */
 .lyric-photo-song-info {
   position: relative;
   display: flex;
@@ -2104,13 +2065,14 @@ body:has(.lyric-view) .drawer-panel {
   gap: 12px;
   padding: 8px 16px 8px 8px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.42);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   max-width: 280px;
 }
 
 .dark .lyric-photo-song-info {
-  background: rgba(10, 14, 20, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
@@ -2132,27 +2094,28 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-photo-song-title {
   font-size: 14px;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.92);
+  color: var(--color-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .dark .lyric-photo-song-title {
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--color-primary);
 }
 
 .lyric-photo-song-artist {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(15, 23, 42, 0.56);
+  color: var(--color-primary);
+  opacity: 0.85;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .dark .lyric-photo-song-artist {
-  color: rgba(255, 255, 255, 0.56);
+  color: var(--color-primary);
 }
 
 .lyric-stage {
@@ -2429,16 +2392,16 @@ body:has(.lyric-view) .drawer-panel {
   background-color: #1a1d22 !important;
 }
 
-/* ── 写真模式：CSS 变量驱动按钮颜色 ── */
+/* ── 写真模式：分区亮度自适应 + hover 主题色 ── */
 .portrait-mode {
   --pt-fg: rgba(255, 255, 255, 0.9);
-  --pt-fg-hover: rgba(255, 255, 255, 1);
+  --pt-fg-hover: var(--color-primary);
   --pt-fg-muted: rgba(255, 255, 255, 0.5);
   --pt-btn-bg: rgba(0, 0, 0, 0.35);
   --pt-btn-bg-hover: rgba(0, 0, 0, 0.5);
   --pt-btn-border: rgba(255, 255, 255, 0.1);
   --pb-fg: rgba(255, 255, 255, 0.85);
-  --pb-fg-hover: rgba(255, 255, 255, 1);
+  --pb-fg-hover: var(--color-primary);
   --pb-fg-muted: rgba(255, 255, 255, 0.5);
   --pb-btn-bg: rgba(245, 245, 247, 0.12);
   --pb-btn-border: rgba(255, 255, 255, 0.06);
@@ -2456,6 +2419,7 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-icon-btn:hover,
 .portrait-mode .lyric-tool-chip:hover {
   background: var(--pt-btn-bg-hover);
+  color: var(--pt-fg-hover);
 }
 
 .portrait-mode .lyric-tool-group {
@@ -2486,16 +2450,18 @@ body:has(.lyric-view) .drawer-panel {
 
 .portrait-mode .lyric-photo-song-info {
   background: var(--pb-card-bg);
+  backdrop-filter: blur(16px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--pb-btn-border);
 }
 
 .portrait-mode .lyric-photo-song-title {
-  color: var(--pb-fg);
+  color: var(--color-primary);
 }
 
 .portrait-mode .lyric-photo-song-artist {
-  color: var(--pb-fg-muted);
+  color: var(--color-primary);
+  opacity: 0.85;
 }
 
 .portrait-mode .lyric-portrait-overlay {
