@@ -28,7 +28,7 @@ importers:
         version: 15.1.0
       electron-audio-loopback:
         specifier: ^1.0.6
-        version: 1.0.6(electron@42.0.0)
+        version: 1.0.6(electron@42.0.1)
       electron-log:
         specifier: ^5.4.3
         version: 5.4.3
@@ -103,8 +103,8 @@ importers:
         specifier: ^10.4.27
         version: 10.4.27(postcss@8.5.8)
       electron:
-        specifier: 42.0.0
-        version: 42.0.0
+        specifier: 42.0.1
+        version: 42.0.1
       electron-builder:
         specifier: ^26.8.1
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
@@ -1366,8 +1366,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@42.0.0:
-    resolution: {integrity: sha512-in5jnW/Ywy3Rh3FPr4MR80exPEkywKYAmDJRZ/gIKlr8VXEi3zXgiAZbf0Si7KRccHTF2y8euVMRz7M6HqTjMA==}
+  electron@42.0.1:
+    resolution: {integrity: sha512-d8HnycE970DGESe91Nj30eonFBUcAI9EZ1TwUGJVzSAnJZdh0BkFEinAXjdklvDYst+bVDc8HsksCuqVLrnqdg==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -4026,9 +4026,9 @@ snapshots:
     dependencies:
       jake: 10.9.4
 
-  electron-audio-loopback@1.0.6(electron@42.0.0):
+  electron-audio-loopback@1.0.6(electron@42.0.1):
     dependencies:
-      electron: 42.0.0
+      electron: 42.0.1
 
   electron-builder-squirrel-windows@26.8.1(dmg-builder@26.8.1):
     dependencies:
@@ -4097,7 +4097,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@42.0.0:
+  electron@42.0.1:
     dependencies:
       '@electron/get': 5.0.0
       '@types/node': 24.12.0
