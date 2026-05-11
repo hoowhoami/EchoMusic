@@ -245,15 +245,14 @@ export const extractDominantColor = (url: string): Promise<string | null> => {
 
 // ─────────────── 写入 CSS 变量 ───────────────
 
-// 向 :root 注入主题色变量
-// 写入两套：主变量 --color-primary-*（全局生效）和 *-root 副本（给 accent-scoped 的播放栏覆盖用）
-export const applyAccentToRoot = (hex: string, isDark: boolean) => {
-  const normalized = normalizeAccent(hex, isDark);
-  const rgb = hexToRgb(normalized);
-  if (!rgb) return;
-  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+// 上一次应用的 RGB（用于插值动画）
+let lastAppliedRgb = { r: 0, g: 113, b: 227 };
+let animationFrameId: number | null = null;
 
-  // hover：浅色模式下亮度略降，深色模式下亮度略升，增强点按反馈
+// 直接写入 CSS 变量（无动画）
+const setAccentVars = (rgb: { r: number; g: number; b: number }, isDark: boolean) => {
+  const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
   const hoverL = isDark ? Math.min(0.8, l + 0.06) : Math.max(0.36, l - 0.04);
   const hoverRgb = hslToRgb(h, s, hoverL);
   const hoverHex = rgbToHex(hoverRgb.r, hoverRgb.g, hoverRgb.b);
@@ -262,18 +261,60 @@ export const applyAccentToRoot = (hex: string, isDark: boolean) => {
   const rgbValue = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
 
   const root = document.documentElement;
-  root.style.setProperty('--color-primary', normalized);
+  root.style.setProperty('--color-primary', hex);
   root.style.setProperty('--color-primary-hover', hoverHex);
   root.style.setProperty('--color-primary-light', lightValue);
   root.style.setProperty('--color-primary-dark', darkValue);
   root.style.setProperty('--color-primary-rgb', rgbValue);
-
-  // 副本：即使 .main-layout 把 --color-primary 覆盖为品牌蓝，播放栏仍可取到真主题色
-  root.style.setProperty('--color-primary-root', normalized);
+  root.style.setProperty('--color-primary-root', hex);
   root.style.setProperty('--color-primary-hover-root', hoverHex);
   root.style.setProperty('--color-primary-light-root', lightValue);
   root.style.setProperty('--color-primary-dark-root', darkValue);
   root.style.setProperty('--color-primary-rgb-root', rgbValue);
+};
+
+// 带 600ms 插值动画的主题色应用
+export const applyAccentToRoot = (hex: string, isDark: boolean) => {
+  const normalized = normalizeAccent(hex, isDark);
+  const targetRgb = hexToRgb(normalized);
+  if (!targetRgb) return;
+
+  // 取消上一次未完成的动画
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
+  const fromRgb = { ...lastAppliedRgb };
+  const toRgb = targetRgb;
+  const duration = 600;
+  const startTime = performance.now();
+
+  const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+
+  const animate = (now: number) => {
+    const elapsed = now - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    // ease-out 缓动
+    const eased = 1 - (1 - progress) * (1 - progress);
+
+    const currentRgb = {
+      r: lerp(fromRgb.r, toRgb.r, eased),
+      g: lerp(fromRgb.g, toRgb.g, eased),
+      b: lerp(fromRgb.b, toRgb.b, eased),
+    };
+
+    setAccentVars(currentRgb, isDark);
+    lastAppliedRgb = currentRgb;
+
+    if (progress < 1) {
+      animationFrameId = requestAnimationFrame(animate);
+    } else {
+      animationFrameId = null;
+    }
+  };
+
+  animationFrameId = requestAnimationFrame(animate);
 };
 
 // 获取归一化后的主题色 hex（给外部使用，如歌词字色同步）
