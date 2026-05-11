@@ -240,14 +240,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="player-bar-container w-full px-2 pb-[5px] z-[1000]">
+  <div class="player-bar-container w-full px-2 pb-[5px] z-1000">
     <footer
       class="player-bar w-full h-[84px] bg-bg-card border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-[120px] max-w-[320px] overflow-hidden">
         <div
-          class="relative w-[56px] h-[56px] shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-black/[0.04] dark:bg-white/[0.04]"
+          class="relative w-[56px] h-[56px] shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-black/4 dark:bg-white/4"
           @click="navigateToLyric"
         >
           <Cover
@@ -443,7 +443,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.togglePlay"
-            class="player-toggle w-[38px] h-[38px] rounded-full bg-black/[0.04] flex items-center justify-center hover:scale-110 active:scale-95 transition-all border border-black/5"
+            class="player-toggle w-[38px] h-[38px] rounded-full bg-black/4 flex items-center justify-center hover:scale-110 active:scale-95 transition-all border border-black/5"
           >
             <Icon v-if="!player.isPlaying" :icon="iconPlay" width="16" height="16" class="ml-0.5" />
             <Icon v-else :icon="iconPause" width="20" height="20" />
@@ -485,7 +485,7 @@ onUnmounted(() => {
             @mouseleave="isHoveringProgress = false"
           >
             <SliderTrack
-              class="player-progress-track bg-black/[0.08] relative grow rounded-full h-[3px]"
+              class="player-progress-track bg-black/8 relative grow rounded-full h-[3px]"
             >
               <div class="climax-mark-layer">
                 <template

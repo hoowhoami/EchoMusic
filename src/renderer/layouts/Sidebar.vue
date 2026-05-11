@@ -391,7 +391,7 @@ watch(
 
     <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
       <div
-        class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/[0.08] dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
+        class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/8 dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
       >
         <div
           class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
@@ -446,7 +446,7 @@ watch(
               isMenuItemDisabled(item)
                 ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
                 : isMenuItemActive(item)
-                  ? 'is-active cursor-pointer bg-primary/[0.12] text-primary'
+                  ? 'is-active cursor-pointer bg-primary/12 text-primary'
                   : 'cursor-pointer text-text-main/90',
             ]"
             @click="handleMenuClick(item)"
@@ -595,7 +595,7 @@ watch(
             :class="[
               'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
               isActivePlaylist(playlist)
-                ? 'is-active bg-primary/[0.12] text-primary'
+                ? 'is-active bg-primary/12 text-primary'
                 : 'text-text-main/90',
             ]"
             @click="navigateToPlaylist(playlist)"
@@ -650,7 +650,7 @@ watch(
             :class="[
               'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
               isActivePlaylist(playlist)
-                ? 'is-active bg-primary/[0.12] text-primary'
+                ? 'is-active bg-primary/12 text-primary'
                 : 'text-text-main/90',
             ]"
             @click="navigateToPlaylist(playlist)"
@@ -719,7 +719,7 @@ watch(
         input-class="h-12 rounded-[14px] px-4 pr-10 text-[14px] font-medium"
       />
       <div
-        class="flex items-center justify-between rounded-[14px] bg-black/[0.03] dark:bg-white/[0.03] px-4 py-3"
+        class="flex items-center justify-between rounded-[14px] bg-black/3 dark:bg-white/3 px-4 py-3"
       >
         <div class="flex flex-col gap-1">
           <span class="text-[14px] font-medium text-text-main">设为隐私歌单</span>
@@ -801,7 +801,7 @@ watch(
 }
 
 .sidebar-user-divider {
-  @apply mx-1.5 h-[22px] w-[1px] shrink-0 rounded-full bg-text-main/14;
+  @apply mx-1.5 h-[22px] w-px shrink-0 rounded-full bg-text-main/14;
 }
 
 .dark .sidebar-user-divider {
@@ -809,7 +809,7 @@ watch(
 }
 
 .sidebar-tab-divider {
-  @apply shrink-0 mx-1 w-[1px] h-3 rounded-full bg-text-main/22;
+  @apply shrink-0 mx-1 w-px h-3 rounded-full bg-text-main/22;
 }
 
 .dark .sidebar-tab-divider {

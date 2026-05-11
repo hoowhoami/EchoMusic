@@ -157,7 +157,7 @@ withDefaults(defineProps<Props>(), {
                 v-for="option in audioEffectOptions"
                 :key="option.value"
                 type="button"
-                class="pm-item !w-full !m-0"
+                class="pm-item w-full! m-0!"
                 :class="{ 'is-active': player.audioEffect === option.value }"
                 @click="setAudioEffect(option.value)"
               >

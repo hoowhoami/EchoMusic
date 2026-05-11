@@ -1752,7 +1752,7 @@ onUnmounted(() => {
 }
 
 .settings-update-changelog {
-  @apply max-h-[min(288px,40vh)] text-[13px] leading-6 text-text-secondary rounded-xl bg-black/[0.03] dark:bg-white/[0.04];
+  @apply max-h-[min(288px,40vh)] text-[13px] leading-6 text-text-secondary rounded-xl bg-black/3 dark:bg-white/4;
 }
 
 .changelog-content :deep(h2) {

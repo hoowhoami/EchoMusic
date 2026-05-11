@@ -70,6 +70,21 @@ const gender = computed(() => {
   return g === 1 ? '男' : g === 0 ? '女' : '保密';
 });
 
+const location = computed(() => {
+  const p = detail?.value?.province || '';
+  const c = detail?.value?.city || '';
+  if (p && c) {
+    return `${p} - ${c}`;
+  }
+  if (p) {
+    return p;
+  }
+  if (c) {
+    return c;
+  }
+  return '-';
+});
+
 // 格式化逻辑
 const formatLeLing = (rtime: any) => {
   if (!rtime) return '未知';
@@ -224,7 +239,7 @@ onMounted(() => loadData());
 
           <!-- 2. User Profile Card -->
           <div
-            class="user-card relative overflow-hidden p-6 rounded-[24px] bg-gradient-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
+            class="user-card relative overflow-hidden p-6 rounded-[24px] bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
           >
             <div class="flex items-center gap-6 relative z-10">
               <div class="p-1 rounded-full border-2 border-primary/30 shrink-0">
@@ -235,13 +250,13 @@ onMounted(() => loadData());
                   <h2 class="text-[20px] font-black truncate">{{ userInfo.nickname }}</h2>
                   <div
                     v-if="tvip"
-                    class="px-1.5 py-0.5 rounded-md bg-gradient-to-r from-[#07C160] to-[#07C160]/80 text-white text-[9px] font-black shadow-sm"
+                    class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-[#07C160] to-[#07C160]/80 text-white text-[9px] font-black shadow-sm"
                   >
                     畅听
                   </div>
                   <div
                     v-if="svip"
-                    class="px-1.5 py-0.5 rounded-md bg-gradient-to-r from-orange-500 to-orange-500/80 text-white text-[9px] font-black shadow-sm"
+                    class="px-1.5 py-0.5 rounded-md bg-linear-to-r from-orange-500 to-orange-500/80 text-white text-[9px] font-black shadow-sm"
                   >
                     概念
                   </div>
@@ -261,21 +276,21 @@ onMounted(() => loadData());
                         >等级</span
                       >
                     </div>
-                    <div class="w-[1px] h-4 bg-black/5 dark:bg-white/5"></div>
+                    <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
                     <div class="flex flex-col">
                       <span class="text-[15px] font-black">{{ detail.follows || 0 }}</span>
                       <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
                         >关注</span
                       >
                     </div>
-                    <div class="w-[1px] h-4 bg-black/5 dark:bg-white/5"></div>
+                    <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
                     <div class="flex flex-col">
                       <span class="text-[15px] font-black">{{ detail.fans || 0 }}</span>
                       <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
                         >粉丝</span
                       >
                     </div>
-                    <div class="w-[1px] h-4 bg-black/5 dark:bg-white/5"></div>
+                    <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
                     <div class="flex flex-col">
                       <span class="text-[15px] font-black">{{ detail.nvisitors || 0 }}</span>
                       <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
@@ -300,7 +315,7 @@ onMounted(() => loadData());
                 <h3 class="text-[16px] font-black">账号档案</h3>
               </div>
               <div
-                class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-white border border-black/10 shadow-sm dark:bg-white/[0.04] dark:border-white/10 dark:shadow-none"
+                class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-white border border-black/10 shadow-sm dark:bg-white/4 dark:border-white/10 dark:shadow-none"
               >
                 <div class="flex items-center justify-between px-4 py-3">
                   <span class="text-[13px] opacity-60 font-bold">用户 ID</span>
@@ -320,7 +335,7 @@ onMounted(() => loadData());
                 </div>
                 <div class="flex items-center justify-between px-4 py-3">
                   <span class="text-[13px] opacity-60 font-bold">所在地区</span>
-                  <span class="text-[13px] font-black">{{ detail.city || '-' }}</span>
+                  <span class="text-[13px] font-black">{{ location }}</span>
                 </div>
               </div>
             </div>
@@ -339,7 +354,7 @@ onMounted(() => loadData());
                     'flex items-center gap-3 p-3 rounded-[16px] transition-all border',
                     userStore.isTvipClaimedToday
                       ? 'bg-green-500/10 border-green-500/20'
-                      : 'bg-black/[0.03] dark:bg-white/[0.03] border-transparent hover:bg-black/[0.06] dark:hover:bg-white/[0.06] cursor-pointer',
+                      : 'bg-black/3 dark:bg-white/3 border-transparent hover:bg-black/6 dark:hover:bg-white/6 cursor-pointer',
                   ]"
                 >
                   <div
@@ -408,8 +423,8 @@ onMounted(() => loadData());
                     userStore.isSvipClaimedToday || svip
                       ? 'bg-orange-500/10 border-orange-500/20'
                       : userStore.isTvipClaimedToday
-                        ? 'bg-black/[0.03] dark:bg-white/[0.03] border-transparent hover:bg-black/[0.06] dark:hover:bg-white/[0.06] cursor-pointer'
-                        : 'bg-black/[0.01] dark:bg-white/[0.01] opacity-60 cursor-not-allowed',
+                        ? 'bg-black/3 dark:bg-white/3 border-transparent hover:bg-black/6 dark:hover:bg-white/6 cursor-pointer'
+                        : 'bg-black/1 dark:bg-white/1 opacity-60 cursor-not-allowed',
                   ]"
                 >
                   <div

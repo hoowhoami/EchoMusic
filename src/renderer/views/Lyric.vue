@@ -819,7 +819,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="lyric-view fixed inset-0 z-[2000] h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
+    class="lyric-view fixed inset-0 z-2000 h-screen w-screen overflow-hidden bg-[#eef2f7] text-black select-none transition-colors duration-500 dark:bg-[#030406] dark:text-white"
     :class="{
       'portrait-mode': hasPortraitGallery,
     }"
@@ -1140,7 +1140,7 @@ onUnmounted(() => {
         <div class="mx-auto flex h-full max-w-[1560px] gap-7">
           <section
             v-if="!hasPortraitGallery"
-            class="hidden min-w-[250px] max-w-[420px] flex-[5] items-center justify-center md:flex"
+            class="hidden min-w-[250px] max-w-[420px] flex-5 items-center justify-center md:flex"
           >
             <div class="lyric-info-card lyric-info-panel cursor-pointer" @click.stop="copySongInfo">
               <div class="lyric-cover-shell">
@@ -1174,7 +1174,7 @@ onUnmounted(() => {
 
           <section
             class="lyric-panel-surface relative flex min-w-0 flex-col justify-center self-stretch"
-            :class="[hasPortraitGallery ? 'flex-1' : 'flex-[7]']"
+            :class="[hasPortraitGallery ? 'flex-1' : 'flex-7']"
           >
             <!-- 写真模式：歌曲信息 + 警告 -->
             <div
