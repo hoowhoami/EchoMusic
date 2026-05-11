@@ -26,6 +26,7 @@ jobs:
             electron_builder_args: ''
             artifact_name: EchoMusic-macOS-arm64
             artifact_glob: |
+              release/EchoMusic-*.zip
               release/EchoMusic-*.dmg
               release/latest-mac.yml
           - os: macos-14
@@ -33,6 +34,7 @@ jobs:
             electron_builder_args: '--mac --x64'
             artifact_name: EchoMusic-macOS-x64
             artifact_glob: |
+              release/EchoMusic-*.zip
               release/EchoMusic-*.dmg
           - os: ubuntu-22.04
             rust_target: ''

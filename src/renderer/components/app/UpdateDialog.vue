@@ -145,11 +145,12 @@ const handleClose = () => {
       </div>
       <div
         v-else-if="result?.status === 'available' && downloadStatus === 'error'"
-        class="flex-1 min-w-0 mr-3"
+        class="flex-1 min-w-0 mr-3 flex items-center gap-2"
       >
         <span class="text-xs text-red-500 truncate">
           下载失败：{{ downloadError || '未知错误' }}
         </span>
+        <Button variant="ghost" size="sm" @click="handleOpenRelease">前往下载</Button>
       </div>
       <div v-else class="flex-1"></div>
 
