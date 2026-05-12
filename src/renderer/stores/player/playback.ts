@@ -207,9 +207,8 @@ export const createPlaybackManager = (
         durationMs: (track.duration || 0) * 1000,
       });
     }
-    engine.updateMediaPlaybackState(
-      buildStoppedPlaybackState({ playbackRate: state.playbackRate }),
-    );
+    // 切歌期间不发送 Paused 状态，避免蓝牙耳机多点连接将音频路由切走
+    // 保持上一首的 Playing 状态，直到新歌开始播放或加载失败
 
     const resolved = await resolver.resolveAudioUrl(track);
     if (requestSeq !== state.playbackRequestSeq) return;
