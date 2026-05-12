@@ -70,6 +70,7 @@ impl MpvPlayer {
         player.set_option("audio-channels", "stereo");
         // 播放结束后保持音频设备占用，避免多设备同步抢占
         player.set_option("keep-open", "always");
+        player.set_option("audio-stream-silence", "yes");
 
         let rc = (player.lib.mpv_initialize)(player.handle);
         if rc < 0 {
