@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRafFn, useClipboard } from '@vueuse/core';
-import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '@/api/music';
+import { useRafFn, useClipboard, useThrottleFn } from '@vueuse/core';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
@@ -43,6 +42,9 @@ import {
 } from '@/icons';
 import { usePlayerControls } from '@/utils/usePlayerControls';
 import { useLyricColorPicker } from '@/utils/useLyricColorPicker';
+import { useLyricPortrait } from '@/utils/useLyricPortrait';
+import { useLyricLuminance } from '@/utils/useLyricLuminance';
+import { useLyricCollapse } from '@/utils/useLyricCollapse';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 
@@ -72,29 +74,24 @@ const {
   handleAddToQueue,
   handleSelectPlaylist,
 } = usePlayerControls();
-const singerPortraitCache = new Map<string, string[]>();
-const singerPortraitPending = new Map<string, Promise<string[]>>();
 
-const normalizeRemoteImageUrl = (url: string | undefined): string => {
-  return String(url ?? '')
-    .trim()
-    .replace(/^http:\/\//, 'https://');
-};
+const currentTrackLyricHash = computed(() =>
+  String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
+);
 
-const resolvePortraitsFromAuthors = (authors: unknown): string[] => {
-  if (!Array.isArray(authors)) return [];
-  const portraitSet = new Set<string>();
-  for (const author of authors as AudioImageAuthor[]) {
-    const portraits = Array.isArray(author?.imgs?.['3'])
-      ? (author.imgs?.['3'] as AudioImagePortrait[])
-      : [];
-    for (const portrait of portraits) {
-      const url = normalizeRemoteImageUrl(portrait?.sizable_portrait);
-      if (url) portraitSet.add(url);
-    }
-  }
-  return [...portraitSet];
-};
+// 写真模式
+const {
+  artistPortraitUrls,
+  activePortraitUrl,
+  hasPortraitGallery,
+  portraitCounterLabel,
+  showPreviousPortrait,
+  showNextPortrait,
+  ensureArtistBackdropForCurrentTrack,
+  startPortraitCarousel,
+  stopPortraitCarousel,
+  dispose: disposePortrait,
+} = useLyricPortrait({ currentTrack, currentTrackLyricHash, settingStore });
 
 const lyricListRef = ref<HTMLElement | null>(null);
 const progressValue = ref(0);
@@ -102,29 +99,13 @@ const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const isUserScrollingLyrics = ref(false);
 const isCommentDrawerOpen = ref(false);
-const artistPortraitUrls = ref<string[]>([]);
-const activePortraitIndex = ref(0);
 let userScrollResumeTimer: number | null = null;
-let artistBackdropRequestId = 0;
 
 const coverBackgroundUrl = computed(() => getCoverUrl(currentTrack.value?.coverUrl, 900));
-const activePortraitUrl = computed(() => {
-  return artistPortraitUrls.value[activePortraitIndex.value] || '';
-});
-const hasPortraitGallery = computed(
-  () => settingStore.lyricArtistBackdrop && artistPortraitUrls.value.length > 0,
-);
 const backdropOpacityStyle = computed(() => ({
   opacity: settingStore.lyricBackdropOpacity / 100,
 }));
 const backdropOpacityLabel = computed(() => `${settingStore.lyricBackdropOpacity}%`);
-const portraitCounterLabel = computed(() => {
-  if (!hasPortraitGallery.value) return '';
-  return `${activePortraitIndex.value + 1} / ${artistPortraitUrls.value.length}`;
-});
-const currentTrackLyricHash = computed(() =>
-  String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
-);
 const currentIndex = computed(() => lyricStore.currentIndex);
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const hasActiveTrack = computed(() => Boolean(currentTrack.value));
@@ -286,288 +267,11 @@ const ensureLyricsForCurrentTrack = () => {
   });
 };
 
-const syncPortraitIndex = (nextIndex = 0) => {
-  if (artistPortraitUrls.value.length === 0) {
-    activePortraitIndex.value = 0;
-    return;
-  }
-  const max = artistPortraitUrls.value.length - 1;
-  activePortraitIndex.value = Math.min(Math.max(nextIndex, 0), max);
-};
-
-const showPreviousPortrait = () => {
-  if (artistPortraitUrls.value.length <= 1) return;
-  const total = artistPortraitUrls.value.length;
-  activePortraitIndex.value = (activePortraitIndex.value - 1 + total) % total;
-  restartPortraitCarousel();
-};
-
-const showNextPortrait = () => {
-  if (artistPortraitUrls.value.length <= 1) return;
-  const total = artistPortraitUrls.value.length;
-  activePortraitIndex.value = (activePortraitIndex.value + 1) % total;
-  restartPortraitCarousel();
-};
-
-const clearArtistBackdrop = () => {
-  artistPortraitUrls.value = [];
-  activePortraitIndex.value = 0;
-  stopPortraitCarousel();
-  luminanceCache.clear();
-};
-
-// ── 写真背景亮度检测（缩小采样） ──
-const portraitImgRef = ref<HTMLImageElement | null>(null);
-const luminanceCache = new Map<string, { top: number; bottom: number }>();
-let thumbCanvas: HTMLCanvasElement | null = null;
-let thumbCtx: CanvasRenderingContext2D | null = null;
-let luminanceSeq = 0;
-const THUMB_MAX_WIDTH = 200;
-
-const getPointLuminance = (
-  ctx: CanvasRenderingContext2D,
-  canvasW: number,
-  canvasH: number,
-  imgEl: HTMLImageElement,
-  screenX: number,
-  screenY: number,
-) => {
-  const imgRect = imgEl.getBoundingClientRect();
-  const rw = imgRect.width;
-  const rh = imgRect.height;
-  const x = Math.floor(((screenX - imgRect.left) * canvasW) / rw);
-  const y = Math.floor(((screenY - imgRect.top) * canvasH) / rh);
-  const s = 5;
-  const sx = Math.max(0, x - Math.floor(s / 2));
-  const sy = Math.max(0, y - Math.floor(s / 2));
-  const sw = Math.min(s, canvasW - sx);
-  const sh = Math.min(s, canvasH - sy);
-  if (sw <= 0 || sh <= 0) return 0.5;
-  const data = ctx.getImageData(sx, sy, sw, sh).data;
-  let rSum = 0;
-  let gSum = 0;
-  let bSum = 0;
-  let count = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    rSum += data[i];
-    gSum += data[i + 1];
-    bSum += data[i + 2];
-    count++;
-  }
-  if (count === 0) return 0.5;
-  return (0.299 * (rSum / count) + 0.587 * (gSum / count) + 0.114 * (bSum / count)) / 255;
-};
-
-const applyContrastVars = (root: HTMLElement, topLum: number, bottomLum: number) => {
-  const t = 0.6;
-  const tl = topLum > t;
-  const bl = bottomLum > t;
-  const s = root.style;
-  s.setProperty('--pt-fg', tl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
-  s.setProperty('--pt-fg-hover', 'var(--color-primary)');
-  s.setProperty('--pt-fg-muted', tl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)');
-  s.setProperty('--pt-btn-bg', tl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.35)');
-  s.setProperty('--pt-btn-bg-hover', tl ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.5)');
-  s.setProperty('--pt-btn-border', tl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)');
-  s.setProperty('--pb-fg', bl ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)');
-  s.setProperty('--pb-fg-hover', 'var(--color-primary)');
-  s.setProperty('--pb-fg-muted', bl ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.6)');
-  s.setProperty('--pb-btn-bg', bl ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.3)');
-  s.setProperty('--pb-btn-border', bl ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)');
-  s.setProperty('--pb-card-bg', bl ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)');
-  // 徽标：纯色不透明，和前景色反转
-  s.setProperty('--pb-badge-bg', bl ? '#000' : '#fff');
-  s.setProperty('--pb-badge-fg', bl ? '#fff' : '#000');
-};
-
-const analyzeRenderedImage = (img: HTMLImageElement) => {
-  if (!settingStore.lyricAdaptiveColor) return;
-  const root = img.closest('.lyric-view') as HTMLElement | null;
-  if (!root) return;
-
-  const url = img.src;
-  const cached = luminanceCache.get(url);
-  if (cached) {
-    applyContrastVars(root, cached.top, cached.bottom);
-    return;
-  }
-
-  const nw = img.naturalWidth;
-  const nh = img.naturalHeight;
-  if (!nw || !nh) return;
-
-  const scale = Math.min(1, THUMB_MAX_WIDTH / nw);
-  const tw = Math.round(nw * scale);
-  const th = Math.round(nh * scale);
-
-  if (!thumbCanvas) {
-    thumbCanvas = document.createElement('canvas');
-    thumbCtx = thumbCanvas.getContext('2d', { willReadFrequently: true });
-  }
-  if (!thumbCtx) return;
-  thumbCanvas.width = tw;
-  thumbCanvas.height = th;
-  thumbCtx.drawImage(img, 0, 0, tw, th);
-
-  const toolbarEl = root.querySelector('.px-6.pb-3') as HTMLElement | null;
-  const controlsEl = root.querySelector('.lyric-controls-surface') as HTMLElement | null;
-
-  let topLum = 0.3;
-  let bottomLum = 0.3;
-
-  if (toolbarEl) {
-    const r = toolbarEl.getBoundingClientRect();
-    const pts = [
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.2, r.top + r.height / 2),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height / 2),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.8, r.top + r.height / 2),
-    ];
-    topLum = Math.min(...pts);
-  }
-  if (controlsEl) {
-    const r = controlsEl.getBoundingClientRect();
-    const pts = [
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.1, r.top + r.height * 0.3),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.3, r.top + r.height * 0.3),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height * 0.3),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.7, r.top + r.height * 0.3),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.9, r.top + r.height * 0.3),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.1, r.top + r.height * 0.8),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.5, r.top + r.height * 0.8),
-      getPointLuminance(thumbCtx, tw, th, img, r.left + r.width * 0.9, r.top + r.height * 0.8),
-    ];
-    bottomLum = Math.min(...pts);
-  }
-
-  topLum *= 0.85;
-  bottomLum *= 0.85;
-
-  luminanceCache.set(url, { top: topLum, bottom: bottomLum });
-  applyContrastVars(root, topLum, bottomLum);
-};
-
-const onPortraitImageLoad = () => {
-  const img = portraitImgRef.value;
-  if (!img || !hasPortraitGallery.value) return;
-  const seq = ++luminanceSeq;
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      if (seq !== luminanceSeq) return;
-      if (!portraitImgRef.value || portraitImgRef.value !== img) return;
-      analyzeRenderedImage(img);
-    }, 0);
-  });
-};
-
-// 写真轮播
-let portraitCarouselTimer: number | null = null;
-
-const stopPortraitCarousel = () => {
-  if (portraitCarouselTimer) {
-    window.clearInterval(portraitCarouselTimer);
-    portraitCarouselTimer = null;
-  }
-};
-
-const startPortraitCarousel = () => {
-  stopPortraitCarousel();
-  if (!settingStore.lyricCarouselEnabled) return;
-  if (artistPortraitUrls.value.length <= 1) return;
-  const ms = Math.max(settingStore.lyricCarouselInterval || 15, 5) * 1000;
-  portraitCarouselTimer = window.setInterval(() => {
-    const total = artistPortraitUrls.value.length;
-    if (total <= 1) {
-      stopPortraitCarousel();
-      return;
-    }
-    activePortraitIndex.value = (activePortraitIndex.value + 1) % total;
-  }, ms);
-};
-
-const restartPortraitCarousel = () => {
-  if (hasPortraitGallery.value && artistPortraitUrls.value.length > 1) {
-    startPortraitCarousel();
-  }
-};
-
-// 预解码下一张写真，避免切换时浏览器同步解码造成卡顿
-const preDecodePortrait = (url: string) => {
-  if (!url) return;
-  const img = new Image();
-  img.src = url;
-  img.decode?.().catch(() => {});
-};
-
-// 写真索引变化时预解码下一张
-watch(activePortraitIndex, (index) => {
-  const urls = artistPortraitUrls.value;
-  if (urls.length <= 1) return;
-  const nextUrl = urls[(index + 1) % urls.length];
-  if (nextUrl) preDecodePortrait(nextUrl);
+// 亮度检测
+const { portraitImgRef, onPortraitImageLoad } = useLyricLuminance({
+  hasPortraitGallery,
+  settingStore,
 });
-
-const ensureArtistBackdropForCurrentTrack = async () => {
-  const requestId = ++artistBackdropRequestId;
-  const track = currentTrack.value;
-  const lyricHash = currentTrackLyricHash.value;
-
-  if (!settingStore.lyricArtistBackdrop || !track || !lyricHash) {
-    clearArtistBackdrop();
-    return;
-  }
-
-  if (singerPortraitCache.has(lyricHash)) {
-    artistPortraitUrls.value = singerPortraitCache.get(lyricHash) ?? [];
-    syncPortraitIndex();
-    restartPortraitCarousel();
-    return;
-  }
-
-  try {
-    const pendingRequest =
-      singerPortraitPending.get(lyricHash) ??
-      (async () => {
-        try {
-          const res = await getAudioImages({
-            hash: lyricHash,
-            audioId: track.fileId,
-            albumAudioId: track.mixSongId,
-            filename: track.name ?? track.title,
-            count: 5,
-          });
-          const data = Array.isArray((res as { data?: unknown[] })?.data)
-            ? ((res as { data?: unknown[] }).data ?? [])
-            : [];
-          const matchedGroups = data.filter((group) => Array.isArray(group));
-          const portraitSet = new Set<string>();
-          for (const group of matchedGroups) {
-            for (const portraitUrl of resolvePortraitsFromAuthors(group)) {
-              portraitSet.add(portraitUrl);
-            }
-          }
-          const portraitUrls = [...portraitSet].slice(0, 5);
-
-          singerPortraitCache.set(lyricHash, portraitUrls);
-          return portraitUrls;
-        } finally {
-          singerPortraitPending.delete(lyricHash);
-        }
-      })();
-
-    singerPortraitPending.set(lyricHash, pendingRequest);
-    const portraitUrls = (await pendingRequest) ?? [];
-    if (requestId !== artistBackdropRequestId) return;
-    artistPortraitUrls.value = portraitUrls;
-    syncPortraitIndex();
-    restartPortraitCarousel();
-    // 预解码前两张写真，减少首次显示时的解码卡顿
-    portraitUrls.slice(0, 2).forEach(preDecodePortrait);
-  } catch {
-    singerPortraitCache.set(lyricHash, []);
-    if (requestId !== artistBackdropRequestId) return;
-    clearArtistBackdrop();
-  }
-};
 
 watch(
   () => lyricStore.currentIndex,
@@ -631,96 +335,18 @@ watch(
   },
 );
 
-// ── 写真模式歌词自动收起 ──
-const isLyricCollapsed = ref(false);
-const wasCollapsed = ref(false);
-let collapseTimer: number | null = null;
-let wasCollapsedTimer: number | null = null;
+// 歌词自动收起
+const {
+  isLyricCollapsed,
+  wasCollapsed,
+  scheduleCollapse,
+  handleUserActivity,
+  dispose: disposeCollapse,
+} = useLyricCollapse({ hasPortraitGallery, settingStore, scrollToCurrentLine });
 
-const clearCollapseTimer = () => {
-  if (collapseTimer !== null) {
-    window.clearTimeout(collapseTimer);
-    collapseTimer = null;
-  }
-};
-
-const scheduleCollapse = () => {
-  clearCollapseTimer();
-  if (!hasPortraitGallery.value || !settingStore.lyricAutoCollapseEnabled) return;
-  const delay = Math.max(settingStore.lyricAutoCollapseDelay || 5, 5) * 1000;
-  collapseTimer = window.setTimeout(() => {
-    collapseTimer = null;
-    if (hasPortraitGallery.value) {
-      isLyricCollapsed.value = true;
-      // 等底部控制栏隐藏动画（500ms）完成后再滚动到底部位置
-      window.setTimeout(() => {
-        scrollToCurrentLine(false);
-      }, 520);
-    }
-  }, delay);
-};
-
-const handleUserActivity = () => {
-  if (isLyricCollapsed.value) {
-    isLyricCollapsed.value = false;
-    wasCollapsed.value = true;
-    // 恢复动画结束后清除 wasCollapsed，避免后续正常切歌词行时带 transition
-    if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
-    wasCollapsedTimer = window.setTimeout(() => {
-      wasCollapsed.value = false;
-      wasCollapsedTimer = null;
-    }, 700);
-    nextTick(() => scrollToCurrentLine(true));
-  }
-  scheduleCollapse();
-};
-
-const handleLyricViewMouseMove = () => {
+const handleLyricViewMouseMove = useThrottleFn(() => {
   handleUserActivity();
-};
-
-watch(
-  hasPortraitGallery,
-  (active) => {
-    if (active) {
-      scheduleCollapse();
-    } else {
-      clearCollapseTimer();
-      isLyricCollapsed.value = false;
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => settingStore.lyricAutoCollapseDelay,
-  () => {
-    if (hasPortraitGallery.value && !isLyricCollapsed.value) {
-      scheduleCollapse();
-    }
-  },
-);
-
-watch(
-  () => settingStore.lyricAutoCollapseEnabled,
-  (enabled) => {
-    if (enabled) {
-      scheduleCollapse();
-    } else {
-      clearCollapseTimer();
-      if (isLyricCollapsed.value) {
-        isLyricCollapsed.value = false;
-        wasCollapsed.value = true;
-        if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
-        wasCollapsedTimer = window.setTimeout(() => {
-          wasCollapsed.value = false;
-          wasCollapsedTimer = null;
-        }, 700);
-        nextTick(() => scrollToCurrentLine(true));
-      }
-    }
-  },
-);
+}, 200);
 
 const closeLyricPage = () => {
   playerStore.toggleLyricView(false);
@@ -746,15 +372,18 @@ const playSeekMs = ref(0);
 let seekBaseMs = 0;
 let seekAnchorTick = 0;
 
-const { pause: pauseSeekRaf, resume: resumeSeekRaf } = useRafFn(() => {
-  if (playerStore.isPlaying) {
-    playSeekMs.value = seekBaseMs + (performance.now() - seekAnchorTick);
-  }
-  // 用 RAF 插值时间驱动歌词行索引更新，避免依赖 playerStore.currentTime 的 watch 频率
-  if (!isProgressDragging.value) {
-    lyricStore.updateCurrentIndex(playSeekMs.value / 1000, true);
-  }
-});
+const { pause: pauseSeekRaf, resume: resumeSeekRaf } = useRafFn(
+  () => {
+    if (playerStore.isPlaying) {
+      playSeekMs.value = seekBaseMs + (performance.now() - seekAnchorTick);
+    }
+    // 用 RAF 插值时间驱动歌词行索引更新
+    if (!isProgressDragging.value) {
+      lyricStore.updateCurrentIndex(playSeekMs.value / 1000, true);
+    }
+  },
+  { immediate: false },
+);
 
 const syncSeekAnchor = () => {
   seekBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
@@ -811,11 +440,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   pauseSeekRaf();
-  artistBackdropRequestId += 1;
+  disposePortrait();
+  disposeCollapse();
   clearUserScrollResumeTimer();
-  stopPortraitCarousel();
-  clearCollapseTimer();
-  if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
   window.removeEventListener('keydown', handleKeydown);
 });
 </script>
@@ -1486,7 +1113,7 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     type="button"
-                    class="p-1.5 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                    class="p-1.5 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40"
                     @click="handleOpenAddToPlaylist"
                   >
                     <Icon :icon="iconPlaylistAdd" width="20" height="20" />
@@ -1499,7 +1126,7 @@ onUnmounted(() => {
                     variant="unstyled"
                     size="none"
                     type="button"
-                    class="p-1.5 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white"
+                    class="p-1.5 transition-all hover:scale-110 active:scale-90 text-black/40 dark:text-white/40"
                     @click="isCommentDrawerOpen = true"
                   >
                     <Icon :icon="iconMessageCircle" width="20" height="20" />
@@ -1820,12 +1447,6 @@ body:has(.lyric-view) .drawer-panel {
 .lyric-tool-chip:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.48);
-  color: var(--color-primary) !important;
-}
-
-.lyric-icon-btn:hover *,
-.lyric-tool-chip:hover * {
-  color: var(--color-primary) !important;
 }
 
 .lyric-tool-chip {
@@ -1952,12 +1573,6 @@ body:has(.lyric-view) .drawer-panel {
 .dark .lyric-icon-btn:hover,
 .dark .lyric-tool-chip:hover {
   background: rgba(36, 48, 70, 0.82);
-  color: var(--color-primary) !important;
-}
-
-.dark .lyric-icon-btn:hover *,
-.dark .lyric-tool-chip:hover * {
-  color: var(--color-primary) !important;
 }
 
 .dark .lyric-tool-chip:disabled,
@@ -2022,11 +1637,7 @@ body:has(.lyric-view) .drawer-panel {
   padding: 0 10px 0;
 }
 
-/* 非写真模式：控制栏按钮 hover 时应用主题色 */
-.lyric-controls-surface button:hover,
-.lyric-controls-surface button:hover * {
-  color: var(--color-primary) !important;
-}
+/* 非写真模式：控制栏按钮 hover 时不变色 */
 
 .lyric-main-play-btn {
   background: rgba(255, 255, 255, 0.38);
@@ -2401,7 +2012,7 @@ body:has(.lyric-view) .drawer-panel {
   background-color: #1a1d22 !important;
 }
 
-/* ── 写真模式：分区亮度自适应 + hover 主题色 ── */
+/* ── 写真模式：分区亮度自适应 ── */
 .portrait-mode {
   --pt-fg: rgba(255, 255, 255, 0.9);
   --pt-fg-hover: var(--color-primary);
@@ -2415,6 +2026,10 @@ body:has(.lyric-view) .drawer-panel {
   --pb-btn-bg: rgba(245, 245, 247, 0.12);
   --pb-btn-border: rgba(255, 255, 255, 0.06);
   --pb-card-bg: rgba(10, 14, 20, 0.52);
+  --ps-fg: rgba(255, 255, 255, 0.9);
+  --ps-fg-muted: rgba(255, 255, 255, 0.6);
+  --ps-card-bg: rgba(0, 0, 0, 0.45);
+  --ps-card-border: rgba(255, 255, 255, 0.08);
 }
 
 .portrait-mode .lyric-icon-btn,
@@ -2428,7 +2043,6 @@ body:has(.lyric-view) .drawer-panel {
 .portrait-mode .lyric-icon-btn:hover,
 .portrait-mode .lyric-tool-chip:hover {
   background: var(--pt-btn-bg-hover);
-  color: var(--pt-fg-hover);
 }
 
 .portrait-mode .lyric-tool-group {
@@ -2458,18 +2072,18 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .portrait-mode .lyric-photo-song-info {
-  background: var(--pb-card-bg);
+  background: var(--ps-card-bg);
   backdrop-filter: blur(16px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
-  border: 1px solid var(--pb-btn-border);
+  border: 1px solid var(--ps-card-border);
 }
 
 .portrait-mode .lyric-photo-song-title {
-  color: var(--color-primary);
+  color: var(--ps-fg);
 }
 
 .portrait-mode .lyric-photo-song-artist {
-  color: var(--color-primary);
+  color: var(--ps-fg);
   opacity: 0.85;
 }
 
@@ -2488,7 +2102,7 @@ body:has(.lyric-view) .drawer-panel {
 
 .portrait-mode .lyric-controls-surface button:not(.lyric-main-play-btn):hover .iconify,
 .portrait-mode .lyric-controls-surface button:not(.lyric-main-play-btn):hover svg {
-  color: var(--pb-fg-hover) !important;
+  color: var(--pb-fg) !important;
 }
 
 /* 播放按钮图标颜色独立控制，不受通配覆盖 */

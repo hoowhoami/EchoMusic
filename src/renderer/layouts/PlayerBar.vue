@@ -443,7 +443,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.togglePlay"
-            class="player-toggle w-[38px] h-[38px] rounded-full bg-black/4 flex items-center justify-center hover:scale-110 active:scale-95 transition-all border border-black/5"
+            class="player-toggle w-[38px] h-[38px] rounded-full bg-black/4 flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border border-black/5"
           >
             <Icon v-if="!player.isPlaying" :icon="iconPlay" width="16" height="16" class="ml-0.5" />
             <Icon v-else :icon="iconPause" width="20" height="20" />

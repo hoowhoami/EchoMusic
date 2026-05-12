@@ -68,6 +68,8 @@ impl MpvPlayer {
         player.set_option("audio-client-name", "EchoMusic");
         player.set_option("audio-samplerate", "0");
         player.set_option("audio-channels", "stereo");
+        // 播放结束后保持音频设备占用，避免多设备同步抢占
+        player.set_option("keep-open", "always");
 
         let rc = (player.lib.mpv_initialize)(player.handle);
         if rc < 0 {

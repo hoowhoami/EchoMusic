@@ -516,6 +516,7 @@ export const createPlaybackManager = (
     return indices;
   };
 
+  // 预加载下一首歌曲的音频 URL，减少切歌时的空隙
   return {
     applyFailedPlaybackState,
     clearAutoNextTimer,

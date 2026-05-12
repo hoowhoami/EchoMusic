@@ -164,6 +164,16 @@ fn handle_property_change(
                 .unwrap_or_default();
             call_callback(callback, PlayerEvent::audio_device_list_changed(devices));
         }
+        "eof-reached" => {
+            // keep-open=always 模式下，文件播完不触发 end-file 事件
+            // 而是通过 eof-reached 属性变为 true 来通知
+            if prop.format == MPV_FORMAT_FLAG {
+                let flag = unsafe { *(prop.data as *const i32) };
+                if flag != 0 {
+                    call_callback(callback, PlayerEvent::playback_end("eof"));
+                }
+            }
+        }
         _ => {}
     }
 }
