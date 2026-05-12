@@ -454,25 +454,16 @@ export const useLyricStore = defineStore('lyric', {
 
       const currentTimeMs = Math.round(currentTime * 1000);
       let nextIndex = -1;
-      const startSearchIndex =
-        this.currentIndex >= 0 && currentTime >= this.lines[this.currentIndex].time
-          ? this.currentIndex
-          : 0;
 
-      for (let index = startSearchIndex; index < this.lines.length; index += 1) {
+      // 与桌面歌词保持一致：找到最后一个 startTime <= currentTimeMs 的行
+      for (let index = 0; index < this.lines.length; index += 1) {
         const currentLine = this.lines[index];
-        const nextLine = this.lines[index + 1];
         const start = currentLine.characters[0]?.startTime ?? Math.round(currentLine.time * 1000);
-        const nextStart = nextLine?.characters[0]?.startTime ?? Number.POSITIVE_INFINITY;
-
-        if (currentTimeMs >= start && currentTimeMs < nextStart) {
+        if (currentTimeMs >= start) {
           nextIndex = index;
+        } else {
           break;
         }
-      }
-
-      if (nextIndex === -1 && currentTimeMs >= (this.lines[0]?.characters[0]?.startTime ?? 0)) {
-        nextIndex = this.lines.length - 1;
       }
 
       if (this.currentIndex !== nextIndex) {

@@ -583,8 +583,7 @@ watch(
   (value) => {
     if (isProgressDragging.value) return;
     progressValue.value = value;
-    // 歌词页打开时自驱动歌词行索引和逐字高亮
-    lyricStore.updateCurrentIndex(value, true);
+    // 歌词行索引更新已移至 RAF 中驱动，这里只同步进度条
   },
   { immediate: true },
 );
@@ -750,6 +749,10 @@ let seekAnchorTick = 0;
 const { pause: pauseSeekRaf, resume: resumeSeekRaf } = useRafFn(() => {
   if (playerStore.isPlaying) {
     playSeekMs.value = seekBaseMs + (performance.now() - seekAnchorTick);
+  }
+  // 用 RAF 插值时间驱动歌词行索引更新，避免依赖 playerStore.currentTime 的 watch 频率
+  if (!isProgressDragging.value) {
+    lyricStore.updateCurrentIndex(playSeekMs.value / 1000, true);
   }
 });
 
@@ -1286,11 +1289,14 @@ onUnmounted(() => {
                           </template>
                           <template v-else>
                             <span
-                              v-if="effectiveUnplayedColor"
-                              :style="{ color: effectiveUnplayedColor }"
+                              :style="{
+                                color:
+                                  currentIndex === index
+                                    ? effectivePlayedColor
+                                    : effectiveUnplayedColor,
+                              }"
                               >{{ line.text }}</span
                             >
-                            <template v-else>{{ line.text }}</template>
                           </template>
                         </span>
                         <!-- both 模式：翻译和音译分行显示 -->
