@@ -4,7 +4,7 @@
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
-    "email": ""
+    "email": "hoowhoami@qq.com"
   },
   "main": "dist-electron/main/index.js",
   "scripts": {
