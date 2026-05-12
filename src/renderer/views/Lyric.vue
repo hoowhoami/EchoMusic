@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { useRafFn, useClipboard, useThrottleFn } from '@vueuse/core';
+import { useClipboard, useThrottleFn } from '@vueuse/core';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import OverlayHeader from '@/layouts/OverlayHeader.vue';
@@ -368,48 +368,116 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // ── 逐字歌词实时进度（毫秒） ──
 const LYRIC_LOOKAHEAD = 150;
-const playSeekMs = ref(0);
 let seekBaseMs = 0;
 let seekAnchorTick = 0;
 
-const { pause: pauseSeekRaf, resume: resumeSeekRaf } = useRafFn(
-  () => {
-    if (playerStore.isPlaying) {
-      playSeekMs.value = seekBaseMs + (performance.now() - seekAnchorTick);
+// 获取当前播放时间（毫秒），非响应式
+const getNowMs = () => {
+  if (playerStore.isPlaying) {
+    return seekBaseMs + (performance.now() - seekAnchorTick);
+  }
+  return seekBaseMs;
+};
+
+// 直接操作 DOM 更新逐字歌词样式，绕过 Vue 响应式
+let cachedYrcOverlays: HTMLElement[] = [];
+let cachedYrcLineIndex = -1;
+
+const updateYrcDom = () => {
+  const lineIndex = lyricStore.currentIndex;
+  const line = lyricStore.lines[lineIndex];
+  if (!line?.characters?.length) {
+    cachedYrcOverlays = [];
+    cachedYrcLineIndex = -1;
+    return;
+  }
+
+  // 行切换或缓存为空或数量不匹配时重新查找 DOM
+  if (
+    lineIndex !== cachedYrcLineIndex ||
+    cachedYrcOverlays.length === 0 ||
+    cachedYrcOverlays.length !== line.characters.length
+  ) {
+    const scrollContainer = lyricListRef.value;
+    if (!scrollContainer) {
+      cachedYrcOverlays = [];
+      return;
     }
-    // 用 RAF 插值时间驱动歌词行索引更新
-    if (!isProgressDragging.value) {
-      lyricStore.updateCurrentIndex(playSeekMs.value / 1000, true);
+    const lineEl = scrollContainer.querySelector<HTMLElement>(
+      `[data-lyric-index="${lineIndex}"] .lyric-yrc-line-wrap`,
+    );
+    if (!lineEl) {
+      cachedYrcOverlays = [];
+      return;
     }
-  },
-  { immediate: false },
-);
+    cachedYrcOverlays = Array.from(lineEl.querySelectorAll<HTMLElement>('.lyric-yrc-char'));
+    cachedYrcLineIndex = lineIndex;
+  }
+
+  if (!cachedYrcOverlays.length) return;
+
+  const seekMs = getNowMs() + LYRIC_LOOKAHEAD;
+  const characters = line.characters;
+
+  for (let i = 0; i < cachedYrcOverlays.length; i++) {
+    const char = characters[i];
+    if (!char) continue;
+
+    const charStart = char.startTime || 0;
+    const charEnd = char.endTime || 0;
+
+    let pos: string;
+    if (seekMs >= charEnd) {
+      pos = '0%';
+    } else if (seekMs <= charStart) {
+      pos = '100%';
+    } else {
+      const duration = charEnd - charStart;
+      const progress = (seekMs - charStart) / duration;
+      pos = `${100 - progress * 100}%`;
+    }
+    cachedYrcOverlays[i].style.backgroundPositionX = pos;
+  }
+};
+
+// 手动 30fps 循环
+let seekRafId: number | null = null;
+let seekLastTime = 0;
+
+const seekLoop = () => {
+  seekRafId = requestAnimationFrame((timestamp) => {
+    if (timestamp - seekLastTime >= 33) {
+      seekLastTime = timestamp;
+      if (!isProgressDragging.value) {
+        lyricStore.updateCurrentIndex(getNowMs() / 1000, true);
+      }
+      updateYrcDom();
+    }
+    seekLoop();
+  });
+};
+
+const resumeSeekRaf = () => {
+  if (seekRafId !== null) return;
+  seekLastTime = performance.now();
+  seekLoop();
+};
+
+const pauseSeekRaf = () => {
+  if (seekRafId !== null) {
+    cancelAnimationFrame(seekRafId);
+    seekRafId = null;
+  }
+};
 
 const syncSeekAnchor = () => {
   seekBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
   seekAnchorTick = performance.now();
-  playSeekMs.value = seekBaseMs;
 };
 
 // 已播/未播颜色（用于逐字渐变）
 const yrcPlayedColor = computed(() => effectivePlayedColor.value);
 const yrcUnplayedColor = computed(() => effectiveUnplayedColor.value);
-
-const getYrcStyle = (char: { startTime: number; endTime: number }, lineIndex: number) => {
-  const line = lyricStore.lines[lineIndex];
-  if (!line?.characters?.length) return { backgroundPositionX: '100%' };
-  const seekMs = playSeekMs.value + LYRIC_LOOKAHEAD;
-  const lineStart = line.characters[0].startTime;
-  const lineEnd = line.characters[line.characters.length - 1].endTime;
-  const isLineActive =
-    (seekMs >= lineStart && seekMs < lineEnd) || currentIndex.value === lineIndex;
-  if (!isLineActive) {
-    return { backgroundPositionX: seekMs >= (char.endTime || 0) ? '0%' : '100%' };
-  }
-  const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
-  const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
-  return { backgroundPositionX: `${100 - progress * 100}%` };
-};
 
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
 
@@ -901,18 +969,17 @@ onUnmounted(() => {
                           }"
                         >
                           <template v-if="currentIndex === index && isYrcLine(line)">
-                            <span
-                              v-for="(char, ci) in line.characters"
-                              :key="ci"
-                              class="lyric-yrc-char"
-                              :style="[
-                                {
+                            <span class="lyric-yrc-line-wrap">
+                              <span
+                                v-for="(char, ci) in line.characters"
+                                :key="ci"
+                                class="lyric-yrc-char"
+                                :style="{
                                   backgroundImage: `linear-gradient(to right, ${yrcPlayedColor} 50%, ${yrcUnplayedColor} 50%)`,
-                                },
-                                getYrcStyle(char, index),
-                              ]"
-                              >{{ char.text }}</span
-                            >
+                                }"
+                                >{{ char.text }}</span
+                              >
+                            </span>
                           </template>
                           <template v-else>
                             <span
@@ -1870,7 +1937,12 @@ body:has(.lyric-view) .drawer-panel {
   background-size: 200% 100%;
   background-repeat: no-repeat;
   background-position-x: 100%;
-  will-change: background-position-x;
+}
+
+.lyric-yrc-line-wrap {
+  display: inline;
+  contain: layout paint;
+  isolation: isolate;
 }
 
 .lyric-character {
