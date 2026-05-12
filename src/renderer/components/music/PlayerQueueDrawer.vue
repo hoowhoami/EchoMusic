@@ -1257,6 +1257,10 @@ onBeforeUnmount(() => {
     transform 0.2s ease;
 }
 
+.queue-play:hover {
+  background: transparent !important;
+}
+
 .queue-row:hover .queue-play,
 .queue-row.is-current .queue-play {
   opacity: 1;
