@@ -129,7 +129,7 @@ onUnmounted(() => {
 <template>
   <!-- 吸顶容器：始终保持 bg-bg-main 确保不透明 -->
   <div
-    class="sliver-header-root sticky top-0 z-[100] w-full bg-bg-main"
+    class="sliver-header-root sticky top-0 z-100 w-full bg-bg-main"
     :style="{ height: `${props.collapsedHeight}px` }"
   >
     <!-- 展开背景层：不再使用 opacity 变化，仅随滚动上移 -->
