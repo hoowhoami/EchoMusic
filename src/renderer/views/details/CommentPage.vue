@@ -739,7 +739,7 @@ watch(total, (value) => {
             :model-value="mainTab"
             @update:model-value="mainTab = $event as 'detail' | 'comment'"
           >
-            <div class="comment-main-tabs sticky z-[120] bg-bg-main" :style="{ top: '56px' }">
+            <div class="comment-main-tabs sticky z-120 bg-bg-main" :style="{ top: '56px' }">
               <TabsList class="comment-main-tab-list">
                 <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
                 <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>
@@ -961,11 +961,11 @@ watch(total, (value) => {
 }
 
 .comment-main-tab-list {
-  @apply !h-auto gap-7 bg-transparent p-0 border-0;
+  @apply h-auto! gap-7 bg-transparent p-0 border-0;
 }
 
 .comment-main-tab-trigger {
-  @apply !h-auto !pb-2 text-[15px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
+  @apply h-auto! pb-2! text-[15px] font-semibold text-text-main/55 data-[state=active]:text-text-main;
 }
 
 .comment-song-header {

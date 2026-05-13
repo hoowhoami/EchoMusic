@@ -314,21 +314,21 @@ onUnmounted(() => {
   >
     <!-- 装饰背景 -->
     <div
-      class="absolute inset-0 bg-gradient-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"
+      class="absolute inset-0 bg-linear-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"
     ></div>
     <div
-      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/[0.03] blur-[120px] pointer-events-none z-0"
+      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/3 blur-[120px] pointer-events-none z-0"
     ></div>
 
     <OverlayHeader />
 
     <div class="flex-1 relative overflow-hidden flex items-center justify-center p-6 z-10">
-      <div class="absolute top-12 left-6 z-[100]">
+      <div class="absolute top-12 left-6 z-100">
         <Button
           @click="closeLoginPage"
           variant="unstyled"
           size="none"
-          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-black/[0.05] dark:bg-white/[0.1] hover:bg-black/[0.1] dark:hover:bg-white/[0.2]"
+          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20"
         >
           <Icon :icon="iconChevronLeft" width="24" height="24" />
         </Button>
@@ -338,14 +338,14 @@ onUnmounted(() => {
       <div class="w-full max-w-[420px] max-h-full flex flex-col items-center">
         <!-- 首次使用提示横幅 -->
         <div
-          class="tip-banner mb-4 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-center gap-2 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
+          class="tip-banner mb-4 px-4 py-2 rounded-full bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-center gap-2 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
         >
           <div class="tip-banner-icon shrink-0 relative w-5 h-5 flex items-center justify-center">
             <span
               class="absolute inset-0 rounded-full bg-amber-500/25 dark:bg-amber-400/30 tip-banner-glow"
             ></span>
             <span
-              class="relative w-full h-full rounded-full bg-gradient-to-br from-amber-400 to-amber-500 dark:from-amber-300 dark:to-amber-500 text-white flex items-center justify-center shadow-[0_3px_8px_rgba(251,191,36,0.35)]"
+              class="relative w-full h-full rounded-full bg-linear-to-br from-amber-400 to-amber-500 dark:from-amber-300 dark:to-amber-500 text-white flex items-center justify-center shadow-[0_3px_8px_rgba(251,191,36,0.35)]"
             >
               <Icon :icon="iconInfo" width="12" height="12" />
             </span>
@@ -360,7 +360,7 @@ onUnmounted(() => {
 
         <Tabs v-model="activeTab" activationMode="manual" class="w-full">
           <div
-            class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/[0.05] dark:border-white/[0.05] rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-[510px]"
+            class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/5 dark:border-white/5 rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-[510px]"
           >
             <div class="px-10 pt-8 flex-1 flex flex-col items-center justify-center">
               <!-- 1. 扫码登录 -->
@@ -372,7 +372,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]"
+                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="qrUrl" class="w-full h-full rounded-xl" />
                   <div
@@ -462,7 +462,7 @@ onUnmounted(() => {
                   </p>
                 </div>
                 <div
-                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/[0.02]"
+                  class="relative w-48 h-48 bg-white p-3.5 rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.06)] border border-black/2"
                 >
                   <Image :src="wxQr.url" class="w-full h-full rounded-xl" />
                   <div
@@ -510,15 +510,15 @@ onUnmounted(() => {
             <!-- 底部：其他方式 -->
             <div class="px-10 pb-8">
               <div
-                class="pt-6 border-t border-black/[0.03] dark:border-white/[0.03] flex flex-col items-center space-y-4"
+                class="pt-6 border-t border-black/3 dark:border-white/3 flex flex-col items-center space-y-4"
               >
                 <span class="text-[12px] font-black opacity-50 uppercase tracking-[4px]"
                   >其他登录方式</span
                 >
-                <TabsList class="gap-10 !h-auto items-center">
+                <TabsList class="gap-10 h-auto! items-center">
                   <TabsTrigger
                     value="0"
-                    class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
                       class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
@@ -528,7 +528,7 @@ onUnmounted(() => {
                   </TabsTrigger>
                   <TabsTrigger
                     value="1"
-                    class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
                       class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
@@ -538,7 +538,7 @@ onUnmounted(() => {
                   </TabsTrigger>
                   <TabsTrigger
                     value="2"
-                    class="group !h-auto !pb-0 items-center data-[state=active]:hidden [&_.active-line]:hidden"
+                    class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
                       class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5"

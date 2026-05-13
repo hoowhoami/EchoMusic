@@ -188,7 +188,7 @@ onUnmounted(() => {
   >
     <OverlayHeader />
 
-    <div class="absolute inset-0 bg-gradient-to-b from-bg-sidebar to-bg-main opacity-50"></div>
+    <div class="absolute inset-0 bg-linear-to-b from-bg-sidebar to-bg-main opacity-50"></div>
 
     <div
       class="absolute -top-[100px] -right-[100px] w-[300px] h-[300px] rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
@@ -238,8 +238,7 @@ onUnmounted(() => {
     </main>
 
     <footer class="absolute bottom-10 left-0 right-0 text-center">
-      <span
-        class="text-[12px] font-bold text-text-main/40 uppercase tracking-[1.5px] tracking-widest"
+      <span class="text-[12px] font-bold text-text-main/40 uppercase tracking-[1.5px]"
         >EchoMusic • 音为你而生</span
       >
     </footer>

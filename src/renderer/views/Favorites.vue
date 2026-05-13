@@ -364,7 +364,7 @@ watch(isLoggedIn, (value) => {
       <!-- 已登录 -->
       <template v-else>
         <!-- 吸顶头部卡片 -->
-        <div class="favorites-header sticky top-0 z-[120] bg-bg-main">
+        <div class="favorites-header sticky top-0 z-120 bg-bg-main">
           <div class="px-6 py-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div
@@ -382,7 +382,7 @@ watch(isLoggedIn, (value) => {
 
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <!-- Sticky Tabs -->
-          <div class="song-list-sticky sticky top-[64px] z-[110] bg-bg-main">
+          <div class="song-list-sticky sticky top-[64px] z-110 bg-bg-main">
             <div class="px-6 border-b border-border-light/10">
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">
@@ -420,7 +420,7 @@ watch(isLoggedIn, (value) => {
                       v-model="searchQuery"
                       type="text"
                       placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"

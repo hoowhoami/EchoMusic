@@ -858,7 +858,7 @@ onUnmounted(() => {
 <template>
   <PageScrollContainer class="search-view-container">
     <div class="search-view relative pb-10">
-      <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-[140]">
+      <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-140">
         <div class="px-10 py-1.5">
           <CustomTabBar
             v-model="activeTabIndex"
@@ -1045,7 +1045,7 @@ onUnmounted(() => {
       <div v-else class="px-10 pt-4">
         <div v-if="activeTabIndex === 0">
           <div
-            class="search-song-toolbar sticky z-[120] bg-bg-main"
+            class="search-song-toolbar sticky z-120 bg-bg-main"
             :style="{ top: `${songToolbarOffset}px` }"
           >
             <div class="search-song-toolbar-inner">
@@ -1070,7 +1070,7 @@ onUnmounted(() => {
           />
 
           <div
-            class="song-list-sticky sticky z-[110] bg-bg-main"
+            class="song-list-sticky sticky z-110 bg-bg-main"
             :style="{ top: `${songListHeaderOffset}px` }"
           >
             <div class="border-b border-border-light/10">
@@ -1086,7 +1086,7 @@ onUnmounted(() => {
                       v-model="songSearchQuery"
                       type="text"
                       placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -1253,7 +1253,7 @@ onUnmounted(() => {
 
         <div v-else-if="activeTabIndex === 4">
           <div
-            class="search-song-toolbar sticky z-[120] bg-bg-main"
+            class="search-song-toolbar sticky z-120 bg-bg-main"
             :style="{ top: `${songToolbarOffset}px` }"
           >
             <div class="search-song-toolbar-inner">
@@ -1278,7 +1278,7 @@ onUnmounted(() => {
           />
 
           <div
-            class="song-list-sticky sticky z-[110] bg-bg-main"
+            class="song-list-sticky sticky z-110 bg-bg-main"
             :style="{ top: `${songListHeaderOffset}px` }"
           >
             <SongListHeader

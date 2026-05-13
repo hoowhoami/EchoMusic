@@ -683,7 +683,7 @@ const filteredArtistCards = computed(() => {
       </div>
 
       <div v-else-if="activeTabIndex === 1" class="mt-0">
-        <div class="rank-toolbar sticky z-[120] bg-bg-main">
+        <div class="rank-toolbar sticky z-120 bg-bg-main">
           <div class="rank-toolbar-inner">
             <CustomSelector :label="rankLabel" @click="showRankPicker = true" />
             <div class="rank-toolbar-actions">
@@ -697,7 +697,7 @@ const filteredArtistCards = computed(() => {
         <BatchActionDrawer v-model:open="showRankBatchDrawer" :songs="rankSongs" source-id="rank" />
 
         <div
-          class="song-list-sticky sticky z-[110] bg-bg-main"
+          class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${rankToolbarOffset}px` }"
         >
           <div class="border-b border-border-light/10">
@@ -713,7 +713,7 @@ const filteredArtistCards = computed(() => {
                     v-model="rankSearchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -797,7 +797,7 @@ const filteredArtistCards = computed(() => {
       </div>
 
       <div v-else-if="activeTabIndex === 3" class="mt-0">
-        <div class="new-song-toolbar sticky z-[120] bg-bg-main">
+        <div class="new-song-toolbar sticky z-120 bg-bg-main">
           <div class="new-song-toolbar-inner">
             <div class="new-song-title-wrap">
               <div class="new-song-badge-icon">
@@ -822,7 +822,7 @@ const filteredArtistCards = computed(() => {
         />
 
         <div
-          class="song-list-sticky sticky z-[110] bg-bg-main"
+          class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${newSongToolbarOffset}px` }"
         >
           <div class="border-b border-border-light/10">
@@ -838,7 +838,7 @@ const filteredArtistCards = computed(() => {
                     v-model="newSongSearchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
