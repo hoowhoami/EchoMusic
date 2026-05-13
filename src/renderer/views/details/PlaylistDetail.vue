@@ -642,7 +642,7 @@ const sortedSongs = computed(() => {
 
         <!-- 2. Sticky Tabs + 表头 -->
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
-          <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
+          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
             <div class="px-6 border-b border-border-light/10">
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">
@@ -663,7 +663,7 @@ const sortedSongs = computed(() => {
                       v-model="searchQuery"
                       type="text"
                       placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
