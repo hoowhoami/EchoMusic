@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'loading-page' });
 import { onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';

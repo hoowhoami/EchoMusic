@@ -1,5 +1,6 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 
 interface Props {
   items: T[];
@@ -16,7 +17,6 @@ interface Props {
   overscan?: number;
   paddingTop?: number;
   paddingBottom?: number;
-  scrollTargetSelector?: string;
   keyField?: Extract<keyof T, string>;
 }
 
@@ -34,7 +34,6 @@ const props = withDefaults(defineProps<Props>(), {
   overscan: 2,
   paddingTop: 0,
   paddingBottom: 0,
-  scrollTargetSelector: '.view-port',
   keyField: 'id' as Extract<keyof T, string>,
 });
 
@@ -147,10 +146,9 @@ const visibleItems = computed<VisibleGridItem[]>(() => {
   });
 });
 
-const getScrollContainer = (): HTMLElement | null =>
-  props.scrollTargetSelector
-    ? (document.querySelector(props.scrollTargetSelector) as HTMLElement | null)
-    : null;
+const injectedScrollContainer = useScrollContainer();
+
+const getScrollContainer = (): HTMLElement | null => injectedScrollContainer.value;
 
 const updateVisibleRange = () => {
   const totalRows = rowCount.value;
@@ -160,7 +158,7 @@ const updateVisibleRange = () => {
     return;
   }
 
-  const scrollContainer = scrollContainerRef.value ?? getScrollContainer();
+  const scrollContainer = getScrollContainer();
   const containerEl = containerRef.value;
 
   if (!scrollContainer || !containerEl) {
@@ -268,6 +266,12 @@ watch(
 );
 
 watch(columnCount, () => {
+  scheduleMeasure();
+});
+
+// 响应注入的滚动容器变化
+watch(injectedScrollContainer, () => {
+  bindScrollContainer();
   scheduleMeasure();
 });
 

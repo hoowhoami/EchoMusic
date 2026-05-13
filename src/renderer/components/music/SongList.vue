@@ -13,6 +13,7 @@ import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
 import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 
 interface Props {
   songs: Song[];
@@ -182,8 +183,9 @@ const handleTogglePlay = async (song: Song) => {
   await queueAndPlaySong(playlistStore, playerStore, target, props.queueOptions);
 };
 
-const getScrollContainer = (): HTMLElement | null =>
-  document.querySelector('.view-port') as HTMLElement | null;
+const scrollContainerRef = useScrollContainer();
+
+const getScrollContainer = (): HTMLElement | null => scrollContainerRef.value;
 
 const updateVisibleRange = () => {
   const totalCount = filteredSongs.value.length;
@@ -372,6 +374,12 @@ watch(
   },
   { flush: 'post' },
 );
+
+// 响应注入的滚动容器变化
+watch(scrollContainerRef, () => {
+  bindScrollContainer();
+  scheduleMeasure();
+});
 
 onMounted(async () => {
   await nextTick();

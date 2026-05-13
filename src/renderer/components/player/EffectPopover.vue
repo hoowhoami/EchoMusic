@@ -8,7 +8,7 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { iconSlidersHorizontal } from '@/icons';
-import { usePlayerControls } from '@/utils/usePlayerControls';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 import type { AudioEffectValue } from '@/types';
 
 const { player, settingStore, currentTrack, audioEffectButtonBadge, setAudioEffect } =

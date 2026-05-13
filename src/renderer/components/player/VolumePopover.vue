@@ -4,7 +4,7 @@ import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconVolume2, iconVolume1, iconVolume3 } from '@/icons';
-import { usePlayerControls } from '@/utils/usePlayerControls';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const { player, handleVolumeChange, toggleMute } = usePlayerControls();
 

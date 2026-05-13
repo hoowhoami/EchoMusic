@@ -2,7 +2,7 @@
 import { reactive } from 'vue';
 import { iconMessageCircle, iconThumbsUp, iconChevronUp } from '@/icons';
 import type { Comment } from '@/models/comment';
-import type { CommentResourceType } from '@/utils/useComments';
+import type { CommentResourceType } from '@/composables/useComments';
 import Button from '@/components/ui/Button.vue';
 import { getFloorComments } from '@/api/comment';
 import { mapCommentItem } from '@/utils/mappers';

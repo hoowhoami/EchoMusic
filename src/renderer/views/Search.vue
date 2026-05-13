@@ -24,9 +24,10 @@ import PlaylistCard from '@/components/music/PlaylistCard.vue';
 import AlbumCard from '@/components/music/AlbumCard.vue';
 import ArtistCard from '@/components/music/ArtistCard.vue';
 import MvCard from '@/components/music/MvCard.vue';
-import BackToTop from '@/components/ui/BackToTop.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 import {
   iconChevronRight,
   iconClock,
@@ -169,6 +170,7 @@ const songListHeaderOffset = computed(() => songToolbarOffset.value + songToolba
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 let debounceTimer: number | null = null;
+const scrollContainerRef = useScrollContainer();
 let scrollTarget: HTMLElement | null = null;
 
 const searchHistory = computed(() => settingStore.searchHistory ?? []);
@@ -373,7 +375,7 @@ const handleScroll = () => {
 
 const attachScrollTarget = async () => {
   await nextTick();
-  scrollTarget = document.querySelector('.view-port') as HTMLElement | null;
+  scrollTarget = scrollContainerRef.value;
   if (scrollTarget) {
     scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
@@ -854,285 +856,322 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="search-view relative pb-10">
-    <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-[140]">
-      <div class="px-10 py-1.5">
-        <CustomTabBar
-          v-model="activeTabIndex"
-          :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
-        />
-      </div>
-    </div>
-
-    <div v-show="!showPinnedTabs" class="px-10 pt-4">
-      <div class="text-[22px] font-semibold text-text-main tracking-tight">搜索</div>
-
-      <div class="search-input-shell mt-6" :class="{ 'has-suggestions': showSuggestions }">
-        <div class="search-input-wrap">
-          <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
-          <input
-            ref="searchInputRef"
-            v-model="searchInput"
-            type="text"
-            class="search-input"
-            :placeholder="defaultKeyword ? `搜索: ${defaultKeyword}` : '搜索音乐、歌手、专辑'"
-            @focus="handleInputFocus"
-            @blur="handleInputBlur"
-            @input="handleSearchChanged(searchInput)"
-            @keydown.enter.prevent="runSearch()"
+  <PageScrollContainer class="search-view-container">
+    <div class="search-view relative pb-10">
+      <div v-if="showPinnedTabs" class="search-pinned-tabs sticky top-0 z-[140]">
+        <div class="px-10 py-1.5">
+          <CustomTabBar
+            v-model="activeTabIndex"
+            :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
           />
-          <Button
-            variant="unstyled"
-            size="none"
-            v-if="searchInput"
-            type="button"
-            class="search-clear-btn"
-            @mousedown.prevent
-            @click="
-              searchInput = '';
-              handleSearchChanged('');
-              searchInputRef?.focus();
-            "
-          >
-            <Icon :icon="iconX" width="16" height="16" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="search-submit-btn"
-            @click="runSearch()"
-            >搜索</Button
-          >
         </div>
+      </div>
 
-        <div v-if="showSuggestions" class="search-suggestions-panel">
-          <div
-            v-if="isLoadingSuggestions && suggestionCategories.length === 0"
-            class="search-suggestions-empty"
-          >
-            加载中...
+      <div v-show="!showPinnedTabs" class="px-10 pt-4">
+        <div class="text-[22px] font-semibold text-text-main tracking-tight">搜索</div>
+
+        <div class="search-input-shell mt-6" :class="{ 'has-suggestions': showSuggestions }">
+          <div class="search-input-wrap">
+            <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
+            <input
+              ref="searchInputRef"
+              v-model="searchInput"
+              type="text"
+              class="search-input"
+              :placeholder="defaultKeyword ? `搜索: ${defaultKeyword}` : '搜索音乐、歌手、专辑'"
+              @focus="handleInputFocus"
+              @blur="handleInputBlur"
+              @input="handleSearchChanged(searchInput)"
+              @keydown.enter.prevent="runSearch()"
+            />
+            <Button
+              variant="unstyled"
+              size="none"
+              v-if="searchInput"
+              type="button"
+              class="search-clear-btn"
+              @mousedown.prevent
+              @click="
+                searchInput = '';
+                handleSearchChanged('');
+                searchInputRef?.focus();
+              "
+            >
+              <Icon :icon="iconX" width="16" height="16" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="search-submit-btn"
+              @click="runSearch()"
+              >搜索</Button
+            >
           </div>
-          <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
-            暂无建议
-          </div>
-          <Scrollbar v-else class="search-suggestions-list">
-            <div class="search-suggestions-list-inner">
-              <div
-                v-for="category in suggestionCategories"
-                :key="category.label"
-                class="search-suggestion-group"
-              >
-                <div class="search-suggestion-title">{{ category.label }}</div>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  v-for="record in category.records"
-                  :key="`${category.label}-${record.text}`"
-                  type="button"
-                  class="search-suggestion-item"
-                  @mousedown.prevent
-                  @click="runSearch(record.text)"
+
+          <div v-if="showSuggestions" class="search-suggestions-panel">
+            <div
+              v-if="isLoadingSuggestions && suggestionCategories.length === 0"
+              class="search-suggestions-empty"
+            >
+              加载中...
+            </div>
+            <div v-else-if="suggestionCategories.length === 0" class="search-suggestions-empty">
+              暂无建议
+            </div>
+            <Scrollbar v-else class="search-suggestions-list">
+              <div class="search-suggestions-list-inner">
+                <div
+                  v-for="category in suggestionCategories"
+                  :key="category.label"
+                  class="search-suggestion-group"
                 >
-                  <span class="search-suggestion-leading">
-                    <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
-                  </span>
-                  <span class="search-suggestion-text truncate">{{ record.text }}</span>
-                  <span class="search-suggestion-trailing">
-                    <Icon :icon="iconChevronRight" width="13" height="13" />
-                  </span>
-                </Button>
-              </div>
-            </div>
-          </Scrollbar>
-        </div>
-      </div>
-
-      <div v-if="hasSearched" class="mt-6">
-        <CustomTabBar
-          v-model="activeTabIndex"
-          :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
-        />
-      </div>
-    </div>
-
-    <div v-if="!hasSearched" class="px-10 pt-4">
-      <div v-if="isLoadingHot" class="search-placeholder">加载中...</div>
-      <template v-else>
-        <div v-if="searchHistory.length > 0" class="search-section">
-          <div class="search-section-header">
-            <div class="search-section-title">历史搜索</div>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="search-history-clear"
-              @click="settingStore.clearSearchHistory()"
-            >
-              <Icon :icon="iconTrash" width="16" height="16" />
-            </Button>
-          </div>
-          <div class="search-chip-wrap">
-            <Button
-              variant="unstyled"
-              size="none"
-              v-for="keyword in searchHistory"
-              :key="keyword"
-              type="button"
-              class="history-chip"
-              @click="runSearch(keyword)"
-            >
-              <span class="history-chip-icon">
-                <Icon :icon="iconClock" width="11" height="11" />
-              </span>
-              <span class="truncate">{{ keyword }}</span>
-              <span
-                class="history-chip-close"
-                @click.stop="settingStore.removeFromSearchHistory(keyword)"
-              >
-                <Icon :icon="iconX" width="10" height="10" />
-              </span>
-            </Button>
-          </div>
-        </div>
-
-        <div class="search-section">
-          <div class="search-section-title">热门搜索</div>
-          <div v-if="hotSearchCategories.length > 0" class="search-hot-tabs">
-            <Button
-              variant="unstyled"
-              size="none"
-              v-for="(category, index) in hotSearchCategories"
-              :key="category.name"
-              type="button"
-              class="search-hot-tab"
-              :class="{ active: selectedHotCategoryIndex === index }"
-              @click="selectedHotCategoryIndex = index"
-            >
-              {{ category.name }}
-            </Button>
-          </div>
-          <div class="search-chip-wrap mt-5">
-            <Button
-              variant="unstyled"
-              size="none"
-              v-for="item in currentHotKeywords"
-              :key="`${item.keyword}-${item.reason}`"
-              type="button"
-              class="hot-chip"
-              @click="runSearch(item.keyword)"
-            >
-              <span>{{ item.keyword }}</span>
-              <template v-if="item.reason && item.reason !== item.keyword">
-                <span class="opacity-40">•</span>
-                <span class="hot-chip-reason">{{ item.reason }}</span>
-              </template>
-            </Button>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <div v-else-if="isLoading" class="search-loading-wrap">
-      <div
-        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-      ></div>
-    </div>
-
-    <div v-else class="px-10 pt-4">
-      <div v-if="activeTabIndex === 0">
-        <div
-          class="search-song-toolbar sticky z-[120] bg-bg-main"
-          :style="{ top: `${songToolbarOffset}px` }"
-        >
-          <div class="search-song-toolbar-inner">
-            <div class="search-song-title-wrap">
-              <div class="search-song-badge-icon">
-                <Icon :icon="iconSparkles" width="16" height="16" />
-              </div>
-              <div class="text-[15px] font-semibold text-text-main leading-none">热门单曲</div>
-            </div>
-            <div class="search-song-toolbar-actions">
-              <div class="overflow-x-auto">
-                <ActionRow @play="playSearchSongs" @batch="openSongBatchDrawer" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <BatchActionDrawer
-          v-model:open="showSongBatchDrawer"
-          :songs="songResults"
-          source-id="search"
-        />
-
-        <div
-          class="song-list-sticky sticky z-[110] bg-bg-main"
-          :style="{ top: `${songListHeaderOffset}px` }"
-        >
-          <div class="border-b border-border-light/10">
-            <div class="flex items-center justify-between h-14">
-              <div class="rank-song-tab">
-                <span class="rank-song-label relative">歌曲 <Badge :count="songCountLabel" /></span>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="relative">
-                  <input
-                    v-model="songSearchQuery"
-                    type="text"
-                    placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                  />
-                  <Icon
-                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                    :icon="iconSearch"
-                    width="14"
-                    height="14"
-                  />
+                  <div class="search-suggestion-title">{{ category.label }}</div>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    v-for="record in category.records"
+                    :key="`${category.label}-${record.text}`"
+                    type="button"
+                    class="search-suggestion-item"
+                    @mousedown.prevent
+                    @click="runSearch(record.text)"
+                  >
+                    <span class="search-suggestion-leading">
+                      <Icon :icon="iconSearch" width="14" height="14" class="opacity-60" />
+                    </span>
+                    <span class="search-suggestion-text truncate">{{ record.text }}</span>
+                    <span class="search-suggestion-trailing">
+                      <Icon :icon="iconChevronRight" width="13" height="13" />
+                    </span>
+                  </Button>
                 </div>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  @click="handleSongLocate"
-                  class="song-locate-btn p-2 rounded-lg"
-                  title="定位当前播放"
+              </div>
+            </Scrollbar>
+          </div>
+        </div>
+
+        <div v-if="hasSearched" class="mt-6">
+          <CustomTabBar
+            v-model="activeTabIndex"
+            :tabs="['单曲', '歌单', '专辑', '歌手', '歌词', 'MV']"
+          />
+        </div>
+      </div>
+
+      <div v-if="!hasSearched" class="px-10 pt-4">
+        <div v-if="isLoadingHot" class="search-placeholder">加载中...</div>
+        <template v-else>
+          <div v-if="searchHistory.length > 0" class="search-section">
+            <div class="search-section-header">
+              <div class="search-section-title">历史搜索</div>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="search-history-clear"
+                @click="settingStore.clearSearchHistory()"
+              >
+                <Icon :icon="iconTrash" width="16" height="16" />
+              </Button>
+            </div>
+            <div class="search-chip-wrap">
+              <Button
+                variant="unstyled"
+                size="none"
+                v-for="keyword in searchHistory"
+                :key="keyword"
+                type="button"
+                class="history-chip"
+                @click="runSearch(keyword)"
+              >
+                <span class="history-chip-icon">
+                  <Icon :icon="iconClock" width="11" height="11" />
+                </span>
+                <span class="truncate">{{ keyword }}</span>
+                <span
+                  class="history-chip-close"
+                  @click.stop="settingStore.removeFromSearchHistory(keyword)"
                 >
-                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
-                </Button>
+                  <Icon :icon="iconX" width="10" height="10" />
+                </span>
+              </Button>
+            </div>
+          </div>
+
+          <div class="search-section">
+            <div class="search-section-title">热门搜索</div>
+            <div v-if="hotSearchCategories.length > 0" class="search-hot-tabs">
+              <Button
+                variant="unstyled"
+                size="none"
+                v-for="(category, index) in hotSearchCategories"
+                :key="category.name"
+                type="button"
+                class="search-hot-tab"
+                :class="{ active: selectedHotCategoryIndex === index }"
+                @click="selectedHotCategoryIndex = index"
+              >
+                {{ category.name }}
+              </Button>
+            </div>
+            <div class="search-chip-wrap mt-5">
+              <Button
+                variant="unstyled"
+                size="none"
+                v-for="item in currentHotKeywords"
+                :key="`${item.keyword}-${item.reason}`"
+                type="button"
+                class="hot-chip"
+                @click="runSearch(item.keyword)"
+              >
+                <span>{{ item.keyword }}</span>
+                <template v-if="item.reason && item.reason !== item.keyword">
+                  <span class="opacity-40">•</span>
+                  <span class="hot-chip-reason">{{ item.reason }}</span>
+                </template>
+              </Button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div v-else-if="isLoading" class="search-loading-wrap">
+        <div
+          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+        ></div>
+      </div>
+
+      <div v-else class="px-10 pt-4">
+        <div v-if="activeTabIndex === 0">
+          <div
+            class="search-song-toolbar sticky z-[120] bg-bg-main"
+            :style="{ top: `${songToolbarOffset}px` }"
+          >
+            <div class="search-song-toolbar-inner">
+              <div class="search-song-title-wrap">
+                <div class="search-song-badge-icon">
+                  <Icon :icon="iconSparkles" width="16" height="16" />
+                </div>
+                <div class="text-[15px] font-semibold text-text-main leading-none">热门单曲</div>
+              </div>
+              <div class="search-song-toolbar-actions">
+                <div class="overflow-x-auto">
+                  <ActionRow @play="playSearchSongs" @batch="openSongBatchDrawer" />
+                </div>
               </div>
             </div>
           </div>
 
-          <SongListHeader
-            :sortField="songSortField"
-            :sortOrder="songSortOrder"
-            :showCover="true"
-            paddingClass="px-0"
-            @sort="handleSongSort"
+          <BatchActionDrawer
+            v-model:open="showSongBatchDrawer"
+            :songs="songResults"
+            source-id="search"
           />
+
+          <div
+            class="song-list-sticky sticky z-[110] bg-bg-main"
+            :style="{ top: `${songListHeaderOffset}px` }"
+          >
+            <div class="border-b border-border-light/10">
+              <div class="flex items-center justify-between h-14">
+                <div class="rank-song-tab">
+                  <span class="rank-song-label relative"
+                    >歌曲 <Badge :count="songCountLabel"
+                  /></span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="songSearchQuery"
+                      type="text"
+                      placeholder="搜索歌曲..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    @click="handleSongLocate"
+                    class="song-locate-btn p-2 rounded-lg"
+                    title="定位当前播放"
+                  >
+                    <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <SongListHeader
+              :sortField="songSortField"
+              :sortOrder="songSortOrder"
+              :showCover="true"
+              paddingClass="px-0"
+              @sort="handleSongSort"
+            />
+          </div>
+
+          <div class="pb-12">
+            <SongList
+              ref="songListRef"
+              class="search-song-list"
+              :songs="sortedSongResults"
+              :searchQuery="songSearchQuery"
+              :activeId="activeSongId"
+              :showCover="true"
+              :queueOptions="{
+                queueId: `queue:search:${currentSearchKeyword.trim() || 'default'}`,
+                title: '搜索结果',
+                subtitle: currentSearchSubtitle,
+                type: 'search',
+                dynamic: false,
+              }"
+              :enableDefaultDoubleTapPlay="true"
+              :onSongDoubleTapPlay="
+                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+              "
+              rowPaddingClass="px-0"
+            />
+            <div
+              v-if="activePagination.loadingMore || activePagination.hasMore"
+              class="search-load-more-status"
+            >
+              {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+            </div>
+            <div
+              v-else-if="songResults.length > 0"
+              class="search-load-more-status search-load-more-status--end"
+            >
+              没有更多结果了
+            </div>
+          </div>
         </div>
 
-        <div class="pb-12">
-          <SongList
-            ref="songListRef"
-            class="search-song-list"
-            :songs="sortedSongResults"
-            :searchQuery="songSearchQuery"
-            :activeId="activeSongId"
-            :showCover="true"
-            :queueOptions="{
-              queueId: `queue:search:${currentSearchKeyword.trim() || 'default'}`,
-              title: '搜索结果',
-              subtitle: currentSearchSubtitle,
-              type: 'search',
-              dynamic: false,
-            }"
-            :enableDefaultDoubleTapPlay="true"
-            :onSongDoubleTapPlay="
-              settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
-            "
-            rowPaddingClass="px-0"
-          />
+        <div v-else-if="activeTabIndex === 1">
+          <VirtualGrid
+            class="pb-6"
+            :items="playlistCards"
+            :loading="paginationState.special.loading && !paginationState.special.loaded"
+            :active="activeTabIndex === 1"
+            :itemMinWidth="180"
+            :itemAspectRatio="1"
+            :itemChromeHeight="66"
+            :gap="20"
+            :overscan="3"
+            :stateMinHeight="320"
+            emptyText="暂无搜索结果"
+            keyField="id"
+          >
+            <template #default="{ item }">
+              <PlaylistCard v-bind="item" layout="grid" />
+            </template>
+          </VirtualGrid>
           <div
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
@@ -1140,170 +1179,32 @@ onUnmounted(() => {
             {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
           </div>
           <div
-            v-else-if="songResults.length > 0"
+            v-else-if="playlistResults.length > 0"
             class="search-load-more-status search-load-more-status--end"
           >
             没有更多结果了
           </div>
         </div>
-      </div>
 
-      <div v-else-if="activeTabIndex === 1">
-        <VirtualGrid
-          class="pb-6"
-          :items="playlistCards"
-          :loading="paginationState.special.loading && !paginationState.special.loaded"
-          :active="activeTabIndex === 1"
-          :itemMinWidth="180"
-          :itemAspectRatio="1"
-          :itemChromeHeight="66"
-          :gap="20"
-          :overscan="3"
-          :stateMinHeight="320"
-          emptyText="暂无搜索结果"
-          keyField="id"
-        >
-          <template #default="{ item }">
-            <PlaylistCard v-bind="item" layout="grid" />
-          </template>
-        </VirtualGrid>
-        <div
-          v-if="activePagination.loadingMore || activePagination.hasMore"
-          class="search-load-more-status"
-        >
-          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
-        </div>
-        <div
-          v-else-if="playlistResults.length > 0"
-          class="search-load-more-status search-load-more-status--end"
-        >
-          没有更多结果了
-        </div>
-      </div>
-
-      <div v-else-if="activeTabIndex === 2">
-        <VirtualGrid
-          class="pb-6"
-          :items="albumCards"
-          :loading="paginationState.album.loading && !paginationState.album.loaded"
-          :active="activeTabIndex === 2"
-          :itemMinWidth="180"
-          :itemAspectRatio="1"
-          :itemChromeHeight="66"
-          :gap="20"
-          :overscan="3"
-          :stateMinHeight="320"
-          emptyText="暂无搜索结果"
-          keyField="id"
-        >
-          <template #default="{ item }">
-            <AlbumCard v-bind="item" />
-          </template>
-        </VirtualGrid>
-        <div
-          v-if="activePagination.loadingMore || activePagination.hasMore"
-          class="search-load-more-status"
-        >
-          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
-        </div>
-        <div
-          v-else-if="albumResults.length > 0"
-          class="search-load-more-status search-load-more-status--end"
-        >
-          没有更多结果了
-        </div>
-      </div>
-
-      <div v-else-if="activeTabIndex === 3">
-        <VirtualGrid
-          class="pb-6"
-          :items="artistCards"
-          :loading="paginationState.author.loading && !paginationState.author.loaded"
-          :active="activeTabIndex === 3"
-          :itemMinWidth="180"
-          :itemHeight="218"
-          :gap="20"
-          :overscan="3"
-          :stateMinHeight="320"
-          emptyText="暂无搜索结果"
-          keyField="id"
-        >
-          <template #default="{ item }">
-            <ArtistCard v-bind="item" />
-          </template>
-        </VirtualGrid>
-        <div
-          v-if="activePagination.loadingMore || activePagination.hasMore"
-          class="search-load-more-status"
-        >
-          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
-        </div>
-        <div
-          v-else-if="artistResults.length > 0"
-          class="search-load-more-status search-load-more-status--end"
-        >
-          没有更多结果了
-        </div>
-      </div>
-
-      <div v-else-if="activeTabIndex === 4">
-        <div
-          class="search-song-toolbar sticky z-[120] bg-bg-main"
-          :style="{ top: `${songToolbarOffset}px` }"
-        >
-          <div class="search-song-toolbar-inner">
-            <div class="search-song-title-wrap">
-              <div class="search-song-badge-icon">
-                <Icon :icon="iconSparkles" width="16" height="16" />
-              </div>
-              <div class="text-[15px] font-semibold text-text-main leading-none">歌词搜索</div>
-            </div>
-            <div class="search-song-toolbar-actions">
-              <div class="overflow-x-auto">
-                <ActionRow @play="playLyricSearchSongs" @batch="openLyricBatchDrawer" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <BatchActionDrawer
-          v-model:open="showLyricBatchDrawer"
-          :songs="lyricResults"
-          source-id="search-lyric"
-        />
-
-        <div
-          class="song-list-sticky sticky z-[110] bg-bg-main"
-          :style="{ top: `${songListHeaderOffset}px` }"
-        >
-          <SongListHeader
-            :sortField="lyricSortField"
-            :sortOrder="lyricSortOrder"
-            :showCover="true"
-            :lyricColumn="true"
-            albumLabel="歌词"
-            paddingClass="px-0"
-            @sort="handleLyricSort"
-          />
-        </div>
-
-        <div class="pb-12">
-          <SongList
-            class="search-song-list"
-            :songs="sortedLyricResults"
-            :activeId="activeSongId"
-            :showCover="true"
-            :showLyricColumn="true"
-            :queueOptions="{
-              queueId: `queue:search-lyric:${currentSearchKeyword.trim() || 'default'}`,
-              title: '歌词搜索',
-              subtitle: currentSearchSubtitle,
-              type: 'search',
-              dynamic: false,
-            }"
-            :enableDefaultDoubleTapPlay="true"
-            rowPaddingClass="px-0"
-          />
+        <div v-else-if="activeTabIndex === 2">
+          <VirtualGrid
+            class="pb-6"
+            :items="albumCards"
+            :loading="paginationState.album.loading && !paginationState.album.loaded"
+            :active="activeTabIndex === 2"
+            :itemMinWidth="180"
+            :itemAspectRatio="1"
+            :itemChromeHeight="66"
+            :gap="20"
+            :overscan="3"
+            :stateMinHeight="320"
+            emptyText="暂无搜索结果"
+            keyField="id"
+          >
+            <template #default="{ item }">
+              <AlbumCard v-bind="item" />
+            </template>
+          </VirtualGrid>
           <div
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
@@ -1311,50 +1212,153 @@ onUnmounted(() => {
             {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
           </div>
           <div
-            v-else-if="lyricResults.length > 0"
+            v-else-if="albumResults.length > 0"
             class="search-load-more-status search-load-more-status--end"
           >
             没有更多结果了
           </div>
         </div>
-      </div>
 
-      <div v-else>
-        <VirtualGrid
-          class="pb-6"
-          :items="mvCards"
-          :loading="paginationState.mv.loading && !paginationState.mv.loaded"
-          :active="activeTabIndex === 5"
-          :itemMinWidth="220"
-          :itemAspectRatio="1.78"
-          :itemChromeHeight="50"
-          :gap="20"
-          :overscan="3"
-          :stateMinHeight="320"
-          emptyText="暂无搜索结果"
-          keyField="videoId"
-        >
-          <template #default="{ item }">
-            <MvCard v-bind="item" />
-          </template>
-        </VirtualGrid>
-        <div
-          v-if="activePagination.loadingMore || activePagination.hasMore"
-          class="search-load-more-status"
-        >
-          {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+        <div v-else-if="activeTabIndex === 3">
+          <VirtualGrid
+            class="pb-6"
+            :items="artistCards"
+            :loading="paginationState.author.loading && !paginationState.author.loaded"
+            :active="activeTabIndex === 3"
+            :itemMinWidth="180"
+            :itemHeight="218"
+            :gap="20"
+            :overscan="3"
+            :stateMinHeight="320"
+            emptyText="暂无搜索结果"
+            keyField="id"
+          >
+            <template #default="{ item }">
+              <ArtistCard v-bind="item" />
+            </template>
+          </VirtualGrid>
+          <div
+            v-if="activePagination.loadingMore || activePagination.hasMore"
+            class="search-load-more-status"
+          >
+            {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+          </div>
+          <div
+            v-else-if="artistResults.length > 0"
+            class="search-load-more-status search-load-more-status--end"
+          >
+            没有更多结果了
+          </div>
         </div>
-        <div
-          v-else-if="mvResults.length > 0"
-          class="search-load-more-status search-load-more-status--end"
-        >
-          没有更多结果了
+
+        <div v-else-if="activeTabIndex === 4">
+          <div
+            class="search-song-toolbar sticky z-[120] bg-bg-main"
+            :style="{ top: `${songToolbarOffset}px` }"
+          >
+            <div class="search-song-toolbar-inner">
+              <div class="search-song-title-wrap">
+                <div class="search-song-badge-icon">
+                  <Icon :icon="iconSparkles" width="16" height="16" />
+                </div>
+                <div class="text-[15px] font-semibold text-text-main leading-none">歌词搜索</div>
+              </div>
+              <div class="search-song-toolbar-actions">
+                <div class="overflow-x-auto">
+                  <ActionRow @play="playLyricSearchSongs" @batch="openLyricBatchDrawer" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <BatchActionDrawer
+            v-model:open="showLyricBatchDrawer"
+            :songs="lyricResults"
+            source-id="search-lyric"
+          />
+
+          <div
+            class="song-list-sticky sticky z-[110] bg-bg-main"
+            :style="{ top: `${songListHeaderOffset}px` }"
+          >
+            <SongListHeader
+              :sortField="lyricSortField"
+              :sortOrder="lyricSortOrder"
+              :showCover="true"
+              :lyricColumn="true"
+              albumLabel="歌词"
+              paddingClass="px-0"
+              @sort="handleLyricSort"
+            />
+          </div>
+
+          <div class="pb-12">
+            <SongList
+              class="search-song-list"
+              :songs="sortedLyricResults"
+              :activeId="activeSongId"
+              :showCover="true"
+              :showLyricColumn="true"
+              :queueOptions="{
+                queueId: `queue:search-lyric:${currentSearchKeyword.trim() || 'default'}`,
+                title: '歌词搜索',
+                subtitle: currentSearchSubtitle,
+                type: 'search',
+                dynamic: false,
+              }"
+              :enableDefaultDoubleTapPlay="true"
+              rowPaddingClass="px-0"
+            />
+            <div
+              v-if="activePagination.loadingMore || activePagination.hasMore"
+              class="search-load-more-status"
+            >
+              {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+            </div>
+            <div
+              v-else-if="lyricResults.length > 0"
+              class="search-load-more-status search-load-more-status--end"
+            >
+              没有更多结果了
+            </div>
+          </div>
+        </div>
+
+        <div v-else>
+          <VirtualGrid
+            class="pb-6"
+            :items="mvCards"
+            :loading="paginationState.mv.loading && !paginationState.mv.loaded"
+            :active="activeTabIndex === 5"
+            :itemMinWidth="220"
+            :itemAspectRatio="1.78"
+            :itemChromeHeight="50"
+            :gap="20"
+            :overscan="3"
+            :stateMinHeight="320"
+            emptyText="暂无搜索结果"
+            keyField="videoId"
+          >
+            <template #default="{ item }">
+              <MvCard v-bind="item" />
+            </template>
+          </VirtualGrid>
+          <div
+            v-if="activePagination.loadingMore || activePagination.hasMore"
+            class="search-load-more-status"
+          >
+            {{ activePagination.loadingMore ? '加载更多中...' : '继续下滑加载更多' }}
+          </div>
+          <div
+            v-else-if="mvResults.length > 0"
+            class="search-load-more-status search-load-more-status--end"
+          >
+            没有更多结果了
+          </div>
         </div>
       </div>
     </div>
-
-    <BackToTop target-selector=".view-port" />
-  </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

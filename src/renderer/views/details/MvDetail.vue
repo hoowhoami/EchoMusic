@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'mv-detail' });
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { getSongMv, getVideoDetail, getVideoPrivilege, getVideoUrl } from '@/api/video';
@@ -14,6 +15,7 @@ import {
   mergeVideoSources,
 } from '@/utils/mappers/video';
 import { usePlayerStore } from '@/stores/player';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 const route = useRoute();
 const toastStore = useToastStore();
@@ -262,138 +264,140 @@ watch(
 </script>
 
 <template>
-  <div class="mv-page bg-bg-main min-h-full">
-    <div class="mv-player-wrap">
-      <div class="mv-player-box">
-        <video
-          ref="videoRef"
-          class="mv-video"
-          controls
-          preload="metadata"
-          playsinline
-          :poster="cover"
-          @play="handleVideoPlay"
-          @error="handleVideoError"
-        >
-          <source v-if="currentVideoUrl" :src="currentVideoUrl" />
-        </video>
+  <PageScrollContainer class="mv-detail-page">
+    <div class="mv-page bg-bg-main min-h-full">
+      <div class="mv-player-wrap">
+        <div class="mv-player-box">
+          <video
+            ref="videoRef"
+            class="mv-video"
+            controls
+            preload="metadata"
+            playsinline
+            :poster="cover"
+            @play="handleVideoPlay"
+            @error="handleVideoError"
+          >
+            <source v-if="currentVideoUrl" :src="currentVideoUrl" />
+          </video>
 
-        <div v-if="loading || sourceLoading" class="mv-overlay-state">
-          <div class="mv-loading-spinner"></div>
-          <span>{{ sourceLoading ? '正在切换片源...' : '正在加载 MV ...' }}</span>
-        </div>
+          <div v-if="loading || sourceLoading" class="mv-overlay-state">
+            <div class="mv-loading-spinner"></div>
+            <span>{{ sourceLoading ? '正在切换片源...' : '正在加载 MV ...' }}</span>
+          </div>
 
-        <div v-else-if="!currentVideoUrl" class="mv-overlay-state">
-          <span>{{ playbackError || '暂无可播放的视频' }}</span>
+          <div v-else-if="!currentVideoUrl" class="mv-overlay-state">
+            <span>{{ playbackError || '暂无可播放的视频' }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="mv-detail-wrap">
-      <section class="card-block card-block--hero">
-        <div class="mv-main-head">
-          <div class="mv-cover-thumb">
-            <Image :src="cover" :alt="title" class="mv-cover-img" />
-          </div>
-          <div class="mv-title-block">
-            <div v-if="meta?.recommend" class="mv-recommend">推荐版本</div>
-            <h1 class="mv-title">{{ title }}</h1>
-            <div class="mv-meta-line">
-              <Image
-                v-if="primaryAuthor?.avatar"
-                :src="primaryAuthor.avatar"
-                :alt="authorLine"
-                class="mv-inline-author-avatar"
-              />
-              <span class="mv-author">{{ authorLine }}</span>
-              <span class="mv-meta-separator">·</span>
-              <span class="mv-submeta">发布于 {{ publishText }}</span>
+      <div class="mv-detail-wrap">
+        <section class="card-block card-block--hero">
+          <div class="mv-main-head">
+            <div class="mv-cover-thumb">
+              <Image :src="cover" :alt="title" class="mv-cover-img" />
+            </div>
+            <div class="mv-title-block">
+              <div v-if="meta?.recommend" class="mv-recommend">推荐版本</div>
+              <h1 class="mv-title">{{ title }}</h1>
+              <div class="mv-meta-line">
+                <Image
+                  v-if="primaryAuthor?.avatar"
+                  :src="primaryAuthor.avatar"
+                  :alt="authorLine"
+                  class="mv-inline-author-avatar"
+                />
+                <span class="mv-author">{{ authorLine }}</span>
+                <span class="mv-meta-separator">·</span>
+                <span class="mv-submeta">发布于 {{ publishText }}</span>
+              </div>
+            </div>
+
+            <div v-if="mvVersions.length > 1" class="mv-version-switcher">
+              <button
+                type="button"
+                class="mv-version-button"
+                :disabled="!hasPrevVersion"
+                @click="switchVersion(-1)"
+              >
+                上一版
+              </button>
+              <div class="mv-version-index">
+                {{ currentVersionIndex + 1 }} / {{ mvVersions.length }}
+              </div>
+              <button
+                type="button"
+                class="mv-version-button"
+                :disabled="!hasNextVersion"
+                @click="switchVersion(1)"
+              >
+                下一版
+              </button>
             </div>
           </div>
 
-          <div v-if="mvVersions.length > 1" class="mv-version-switcher">
-            <button
-              type="button"
-              class="mv-version-button"
-              :disabled="!hasPrevVersion"
-              @click="switchVersion(-1)"
-            >
-              上一版
-            </button>
-            <div class="mv-version-index">
-              {{ currentVersionIndex + 1 }} / {{ mvVersions.length }}
+          <div class="mv-stat-grid">
+            <div v-for="item in stats" :key="item.label" class="mv-stat-item">
+              <div class="mv-stat-label">{{ item.label }}</div>
+              <div class="mv-stat-value">{{ item.value }}</div>
             </div>
+          </div>
+
+          <div v-if="editionList.length" class="mv-tags mv-tags--edition">
+            <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{
+              item
+            }}</span>
+          </div>
+
+          <div v-if="tagList.length" class="mv-tags">
+            <span v-for="tag in tagList" :key="tag" class="mv-tag">{{ tag }}</span>
+          </div>
+
+          <div v-if="hasDescription" class="mv-description">{{ meta?.description }}</div>
+        </section>
+
+        <section class="card-block">
+          <div class="section-title">视频片源</div>
+          <div class="mv-source-list">
             <button
+              v-for="source in sourceList"
+              :key="source.hash"
               type="button"
-              class="mv-version-button"
-              :disabled="!hasNextVersion"
-              @click="switchVersion(1)"
+              class="mv-source-card"
+              :class="{ 'is-active': source.hash === currentSourceHash }"
+              @click="changeSource(source.hash)"
             >
-              下一版
-            </button>
-          </div>
-        </div>
-
-        <div class="mv-stat-grid">
-          <div v-for="item in stats" :key="item.label" class="mv-stat-item">
-            <div class="mv-stat-label">{{ item.label }}</div>
-            <div class="mv-stat-value">{{ item.value }}</div>
-          </div>
-        </div>
-
-        <div v-if="editionList.length" class="mv-tags mv-tags--edition">
-          <span v-for="item in editionList" :key="item" class="mv-tag mv-tag--edition">{{
-            item
-          }}</span>
-        </div>
-
-        <div v-if="tagList.length" class="mv-tags">
-          <span v-for="tag in tagList" :key="tag" class="mv-tag">{{ tag }}</span>
-        </div>
-
-        <div v-if="hasDescription" class="mv-description">{{ meta?.description }}</div>
-      </section>
-
-      <section class="card-block">
-        <div class="section-title">视频片源</div>
-        <div class="mv-source-list">
-          <button
-            v-for="source in sourceList"
-            :key="source.hash"
-            type="button"
-            class="mv-source-card"
-            :class="{ 'is-active': source.hash === currentSourceHash }"
-            @click="changeSource(source.hash)"
-          >
-            <div class="mv-source-row">
-              <div class="mv-source-main">
-                <div class="mv-source-copy">
-                  <div class="mv-source-title">{{ source.label }}</div>
-                  <div class="mv-source-badges">
-                    <span v-if="source.codec" class="mv-source-badge">{{ source.codec }}</span>
-                    <span v-if="source.width && source.height" class="mv-source-badge"
-                      >{{ source.width }}×{{ source.height }}</span
-                    >
-                    <span v-if="source.bitrate" class="mv-source-badge"
-                      >{{ Math.round(source.bitrate / 1000) }} kbps</span
-                    >
-                    <span v-if="source.size" class="mv-source-badge"
-                      >{{ (source.size / 1024 / 1024).toFixed(1) }} MB</span
-                    >
+              <div class="mv-source-row">
+                <div class="mv-source-main">
+                  <div class="mv-source-copy">
+                    <div class="mv-source-title">{{ source.label }}</div>
+                    <div class="mv-source-badges">
+                      <span v-if="source.codec" class="mv-source-badge">{{ source.codec }}</span>
+                      <span v-if="source.width && source.height" class="mv-source-badge"
+                        >{{ source.width }}×{{ source.height }}</span
+                      >
+                      <span v-if="source.bitrate" class="mv-source-badge"
+                        >{{ Math.round(source.bitrate / 1000) }} kbps</span
+                      >
+                      <span v-if="source.size" class="mv-source-badge"
+                        >{{ (source.size / 1024 / 1024).toFixed(1) }} MB</span
+                      >
+                    </div>
                   </div>
                 </div>
+                <div class="mv-source-status">
+                  {{ source.hash === currentSourceHash ? '当前播放' : '切换' }}
+                </div>
               </div>
-              <div class="mv-source-status">
-                {{ source.hash === currentSourceHash ? '当前播放' : '切换' }}
-              </div>
-            </div>
-          </button>
+            </button>
 
-          <div v-if="!sourceList.length && !loading" class="mv-empty-hint">暂无更多片源</div>
-        </div>
-      </section>
+            <div v-if="!sourceList.length && !loading" class="mv-empty-hint">暂无更多片源</div>
+          </div>
+        </section>
+      </div>
     </div>
-  </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

@@ -19,6 +19,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
 import { useToastStore } from '@/stores/toast';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -245,163 +246,167 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="history-view bg-bg-main min-h-full">
-    <div
-      v-if="!isLoggedIn"
-      class="history-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
-    >
+  <PageScrollContainer class="history-view-container">
+    <div class="history-view bg-bg-main min-h-full">
       <div
-        class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+        v-if="!isLoggedIn"
+        class="history-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
       >
-        <Icon :icon="iconClock" width="32" height="32" />
-      </div>
-      <div class="text-[22px] font-semibold text-text-main">登录后查看播放历史</div>
-    </div>
-
-    <template v-else>
-      <SliverHeader
-        typeLabel="HISTORY"
-        title="最近播放"
-        :coverUrl="historyCoverUrl"
-        :hasDetails="true"
-        :expandedHeight="176"
-        :collapsedHeight="56"
-      >
-        <template #details>
-          <div class="flex flex-col gap-2">
-            <div class="text-[13px] font-semibold text-text-secondary">历史记录仅供参考</div>
-            <div
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
-            >
-              <div class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconPlay" width="12" height="12" />
-                <span>{{ displayedCountLabel }}</span>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <template #actions>
-          <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
-        </template>
-
-        <template #collapsed-actions>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="handlePlayAll"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="openBatchDrawer"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="history" />
-
-      <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: '56px' }">
-        <div class="px-6 border-b border-border-light/10">
-          <div class="flex items-center justify-between h-14">
-            <div class="text-[14px] font-semibold text-text-main relative">
-              歌曲 <Badge :count="displayedCountLabel" />
-            </div>
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="搜索歌曲..."
-                  class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                />
-                <Icon
-                  class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                  :icon="iconSearch"
-                  width="14"
-                  height="14"
-                />
-              </div>
-              <Button
-                variant="unstyled"
-                size="none"
-                @click="handleLocate"
-                class="song-locate-btn p-2 rounded-lg"
-                title="定位当前播放"
-              >
-                <Icon :icon="iconCurrentLocation" width="16" height="16" />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <SongListHeader
-          :sortField="sortField"
-          :sortOrder="sortOrder"
-          :showCover="true"
-          paddingClass="px-6"
-          @sort="handleSort"
-        />
-      </div>
-
-      <div class="px-6 pb-12">
-        <div v-if="loading" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
         <div
-          v-else-if="songs.length === 0"
-          class="history-empty flex flex-col items-center justify-center py-24 text-center"
+          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
         >
-          <div
-            class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
-          >
-            <Icon :icon="iconClock" width="28" height="28" />
-          </div>
-          <div class="text-[18px] font-semibold text-text-main">暂无播放历史</div>
-          <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
-            最近播放的歌曲会展示在这里
-          </div>
+          <Icon :icon="iconClock" width="32" height="32" />
         </div>
-        <SongList
-          v-else
-          ref="songListRef"
-          :songs="sortedSongs"
-          itemKeyField="historyKey"
-          :searchQuery="searchQuery"
-          :activeId="activeSongId"
-          :showCover="true"
-          :queueOptions="{
-            queueId: 'queue:history',
-            title: '播放历史',
-            subtitle: '最近播放记录',
-            type: 'history',
-            dynamic: false,
-          }"
-          :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
-        />
-        <div v-if="!loading && hasMore" class="flex justify-center pt-4">
-          <Button
-            variant="unstyled"
-            size="none"
-            class="px-4 h-9 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-[12px] font-semibold text-text-main/75 hover:text-text-main transition-colors"
-            :disabled="loadingMore"
-            @click="handleLoadMore"
-          >
-            {{ loadingMore ? '加载中...' : '加载更多' }}
-          </Button>
-        </div>
+        <div class="text-[22px] font-semibold text-text-main">登录后查看播放历史</div>
       </div>
-    </template>
-  </div>
+
+      <template v-else>
+        <SliverHeader
+          typeLabel="HISTORY"
+          title="最近播放"
+          :coverUrl="historyCoverUrl"
+          :hasDetails="true"
+          :expandedHeight="176"
+          :collapsedHeight="56"
+        >
+          <template #details>
+            <div class="flex flex-col gap-2">
+              <div class="text-[13px] font-semibold text-text-secondary">历史记录仅供参考</div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              >
+                <div class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPlay" width="12" height="12" />
+                  <span>{{ displayedCountLabel }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template #actions>
+            <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
+          </template>
+
+          <template #collapsed-actions>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+          </template>
+        </SliverHeader>
+
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="history" />
+
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: '56px' }">
+          <div class="px-6 border-b border-border-light/10">
+            <div class="flex items-center justify-between h-14">
+              <div class="text-[14px] font-semibold text-text-main relative">
+                歌曲 <Badge :count="displayedCountLabel" />
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="searchQuery"
+                    type="text"
+                    placeholder="搜索歌曲..."
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                  />
+                  <Icon
+                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                    :icon="iconSearch"
+                    width="14"
+                    height="14"
+                  />
+                </div>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleLocate"
+                  class="song-locate-btn p-2 rounded-lg"
+                  title="定位当前播放"
+                >
+                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <SongListHeader
+            :sortField="sortField"
+            :sortOrder="sortOrder"
+            :showCover="true"
+            paddingClass="px-6"
+            @sort="handleSort"
+          />
+        </div>
+
+        <div class="px-6 pb-12">
+          <div v-if="loading" class="flex items-center justify-center py-20">
+            <div
+              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+            ></div>
+          </div>
+          <div
+            v-else-if="songs.length === 0"
+            class="history-empty flex flex-col items-center justify-center py-24 text-center"
+          >
+            <div
+              class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+            >
+              <Icon :icon="iconClock" width="28" height="28" />
+            </div>
+            <div class="text-[18px] font-semibold text-text-main">暂无播放历史</div>
+            <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+              最近播放的歌曲会展示在这里
+            </div>
+          </div>
+          <SongList
+            v-else
+            ref="songListRef"
+            :songs="sortedSongs"
+            itemKeyField="historyKey"
+            :searchQuery="searchQuery"
+            :activeId="activeSongId"
+            :showCover="true"
+            :queueOptions="{
+              queueId: 'queue:history',
+              title: '播放历史',
+              subtitle: '最近播放记录',
+              type: 'history',
+              dynamic: false,
+            }"
+            :enableDefaultDoubleTapPlay="true"
+            :onSongDoubleTapPlay="
+              settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+            "
+          />
+          <div v-if="!loading && hasMore" class="flex justify-center pt-4">
+            <Button
+              variant="unstyled"
+              size="none"
+              class="px-4 h-9 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] text-[12px] font-semibold text-text-main/75 hover:text-text-main transition-colors"
+              :disabled="loadingMore"
+              @click="handleLoadMore"
+            >
+              {{ loadingMore ? '加载中...' : '加载更多' }}
+            </Button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

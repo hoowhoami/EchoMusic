@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.4-beta.6",
+  "version": "2.2.4-beta.7",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -37,7 +37,8 @@
     "shazam-api": "^0.3.0",
     "sortablejs": "^1.15.7",
     "vue": "^3.5.30",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "yzs-keep-alive-v3": "^0.1.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",

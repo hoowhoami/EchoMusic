@@ -1,11 +1,12 @@
 <script setup lang="ts">
+defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { usePlayerStore } from '@/stores/player';
 import { useThemeStore, type AccentMode } from '@/stores/theme';
 import { ACCENT_PRESETS } from '@/utils/color';
-import { useLyricColorPicker } from '@/utils/useLyricColorPicker';
+import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import { useLyricStore } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import type {
@@ -29,6 +30,7 @@ import ColorPickerDialog from '@/components/ui/ColorPickerDialog.vue';
 import DisclaimerDialog from '@/components/app/DisclaimerDialog.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
 import PageLyricIcon from '@/components/ui/PageLyricIcon.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 import { marked } from 'marked';
 import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
@@ -65,19 +67,6 @@ const accentPresets = ACCENT_PRESETS;
 const showAccentPicker = ref(false);
 const accentPresetValues = accentPresets.map((item) => item.color);
 
-// ── 页面缓存候选列表 ──
-const keepAliveOptions = [
-  { label: '为您推荐', value: 'home' },
-  { label: '每日推荐', value: 'recommend-songs' },
-  { label: '排行榜', value: 'ranking' },
-  { label: '探索发现', value: 'explore' },
-  { label: '搜索', value: 'search-page' },
-  { label: '我的云盘', value: 'cloud' },
-  { label: '我最喜爱', value: 'favorites' },
-  { label: '歌单详情', value: 'playlist-detail' },
-  { label: '歌手详情', value: 'artist-detail' },
-  { label: '专辑详情', value: 'album-detail' },
-];
 const activeDesktopLyricColorField = ref<'playedColor' | 'unplayedColor' | null>(null);
 
 // ── 页面歌词颜色选择器 ──
@@ -494,1099 +483,1117 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="settings-view w-full min-h-full px-8 pt-4 pb-8 space-y-12 transition-colors duration-300"
-  >
-    <header>
-      <h1 class="text-[22px] font-black tracking-tight text-text-main">偏好设置</h1>
-    </header>
+  <PageScrollContainer class="settings-view-container">
+    <div
+      class="settings-view w-full min-h-full px-8 pt-4 pb-8 space-y-12 transition-colors duration-300"
+    >
+      <header>
+        <h1 class="text-[22px] font-black tracking-tight text-text-main">偏好设置</h1>
+      </header>
 
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconPalette" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">外观与界面</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">主题模式</h3>
-            <p class="text-sm text-text-secondary">选择您喜欢的主题外观</p>
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconPalette" width="18" height="18" />
           </div>
-          <Select
-            class="w-[180px]"
-            :model-value="settingStore.theme"
-            :options="themeOptions"
-            @update:model-value="settingStore.setTheme($event as ThemeMode)"
-          />
+          <h2 class="text-lg font-bold">外观与界面</h2>
         </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">主题色来源</h3>
-            <p class="text-sm text-text-secondary">切歌自动跟随封面，或固定为预设 / 自定义颜色</p>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">主题模式</h3>
+              <p class="text-sm text-text-secondary">选择您喜欢的主题外观</p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="settingStore.theme"
+              :options="themeOptions"
+              @update:model-value="settingStore.setTheme($event as ThemeMode)"
+            />
           </div>
-          <Select
-            class="w-[180px]"
-            :model-value="themeStore.accentMode"
-            :options="accentModeOptions"
-            @update:model-value="themeStore.setMode($event as AccentMode)"
-          />
-        </div>
-        <div v-if="themeStore.accentMode === 'preset'" class="settings-item items-start">
-          <div class="space-y-1">
-            <h3 class="font-semibold">预设主题色</h3>
-            <p class="text-sm text-text-secondary">挑一个贴合心情的配色</p>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">主题色来源</h3>
+              <p class="text-sm text-text-secondary">切歌自动跟随封面，或固定为预设 / 自定义颜色</p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="themeStore.accentMode"
+              :options="accentModeOptions"
+              @update:model-value="themeStore.setMode($event as AccentMode)"
+            />
           </div>
-          <div class="flex gap-2 flex-nowrap">
+          <div v-if="themeStore.accentMode === 'preset'" class="settings-item items-start">
+            <div class="space-y-1">
+              <h3 class="font-semibold">预设主题色</h3>
+              <p class="text-sm text-text-secondary">挑一个贴合心情的配色</p>
+            </div>
+            <div class="flex gap-2 flex-nowrap">
+              <button
+                v-for="preset in accentPresets"
+                :key="preset.id"
+                type="button"
+                class="accent-preset-swatch"
+                :class="{ 'is-active': themeStore.presetId === preset.id }"
+                :style="{ backgroundColor: preset.color }"
+                :title="preset.name"
+                @click="themeStore.setPreset(preset.id)"
+              ></button>
+            </div>
+          </div>
+          <div v-if="themeStore.accentMode === 'custom'" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">自定义主题色</h3>
+              <p class="text-sm text-text-secondary">从色盘中选一种颜色固定为主题色</p>
+            </div>
             <button
-              v-for="preset in accentPresets"
-              :key="preset.id"
               type="button"
-              class="accent-preset-swatch"
-              :class="{ 'is-active': themeStore.presetId === preset.id }"
-              :style="{ backgroundColor: preset.color }"
-              :title="preset.name"
-              @click="themeStore.setPreset(preset.id)"
+              class="settings-color-swatch"
+              :style="{ backgroundColor: themeStore.customColor }"
+              @click="showAccentPicker = true"
             ></button>
           </div>
-        </div>
-        <div v-if="themeStore.accentMode === 'custom'" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">自定义主题色</h3>
-            <p class="text-sm text-text-secondary">从色盘中选一种颜色固定为主题色</p>
-          </div>
-          <button
-            type="button"
-            class="settings-color-swatch"
-            :style="{ backgroundColor: themeStore.customColor }"
-            @click="showAccentPicker = true"
-          ></button>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">全局主题色</h3>
-            <p class="text-sm text-text-secondary">关闭后仅播放栏与歌词页跟随主题色</p>
-          </div>
-          <Switch
-            :model-value="themeStore.globalAccent"
-            @update:model-value="themeStore.setGlobalAccent(Boolean($event))"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌词字色跟随主题</h3>
-            <p class="text-sm text-text-secondary">歌词已播色自动跟随主题色，手动设置的颜色优先</p>
-          </div>
-          <Switch
-            :model-value="themeStore.lyricAccentSync"
-            @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">记住窗口大小</h3>
-            <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
-          </div>
-          <Switch v-model="settingStore.rememberWindowSize" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">音质音效徽标</h3>
-            <p class="text-sm text-text-secondary">在播放器音质按钮上显示当前实际音质或音效标识</p>
-          </div>
-          <Switch v-model="settingStore.showAudioQualityBadge" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">播放列表计数</h3>
-            <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
-          </div>
-          <Switch v-model="settingStore.showPlaylistCount" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">关闭行为</h3>
-            <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
-          </div>
-          <Select
-            class="w-[180px]"
-            :model-value="settingStore.closeBehavior"
-            :options="closeBehaviorOptions"
-            @update:model-value="
-              settingStore.closeBehavior = $event as CloseBehavior;
-              settingStore.syncCloseBehavior();
-            "
-          />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <FontIcon :size="18" />
-        </div>
-        <h2 class="text-lg font-bold">字体设置</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">全局字体</h3>
-            <p class="text-sm text-text-secondary">应用到软件内所有区域的字体</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              v-if="settingStore.globalFont !== 'system-ui'"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
-              @click="settingStore.globalFont = 'system-ui'"
-            >
-              重置
-            </button>
-            <Select
-              filterable
-              class="w-[180px]"
-              :model-value="settingStore.globalFont"
-              :options="globalFontOptions"
-              @update:model-value="settingStore.globalFont = String($event)"
-            />
-          </div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">页面歌词字体</h3>
-            <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              v-if="settingStore.lyricFont !== 'follow'"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
-              @click="settingStore.lyricFont = 'follow'"
-            >
-              重置
-            </button>
-            <Select
-              filterable
-              class="w-[180px]"
-              :model-value="settingStore.lyricFont"
-              :options="lyricFontOptions"
-              @update:model-value="settingStore.lyricFont = String($event)"
-            />
-          </div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">桌面歌词字体</h3>
-            <p class="text-sm text-text-secondary">桌面歌词窗口使用的字体，跟随全局或单独指定</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              v-if="desktopLyricFontName !== 'follow'"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
-              @click="applyDesktopLyricFont('follow')"
-            >
-              重置
-            </button>
-            <Select
-              filterable
-              class="w-[180px]"
-              :model-value="desktopLyricFontName"
-              :options="lyricFontOptions"
-              @update:model-value="applyDesktopLyricFont(String($event))"
-            />
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconPlayerPlay" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">播放体验</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">播放替换队列</h3>
-            <p class="text-sm text-text-secondary">双击播放单曲时用当前列表替换播放队列</p>
-          </div>
-          <Switch v-model="settingStore.replacePlaylist" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">淡入淡出播放</h3>
-            <p class="text-sm text-text-secondary">启用歌曲切换时的过渡效果</p>
-          </div>
-          <Switch v-model="settingStore.volumeFade" />
-        </div>
-        <div v-if="settingStore.volumeFade" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">淡入淡出时长</h3>
-            <p class="text-sm text-text-secondary">调整歌曲切换时的过渡时长</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="settingStore.volumeFadeTime"
-            :min="500"
-            :max="3000"
-            :step="100"
-            show-value
-            :value-suffix="'ms'"
-            @update:model-value="settingStore.volumeFadeTime = $event"
-            @value-commit="settingStore.volumeFadeTime = $event"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">音量均衡</h3>
-            <p class="text-sm text-text-secondary">自动调整不同歌曲的音量，使播放响度保持一致</p>
-          </div>
-          <Switch
-            :model-value="settingStore.volumeNormalization"
-            @update:model-value="handleVolumeNormalizationChange"
-          />
-        </div>
-        <div v-if="settingStore.volumeNormalization" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">参考响度</h3>
-            <p class="text-sm text-text-secondary">数值越高整体音量越大，越低越安静</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="settingStore.volumeNormalizationLufs"
-            :min="-20"
-            :max="-8"
-            :step="1"
-            show-value
-            :value-suffix="' LUFS'"
-            @update:model-value="handleReferenceLufsSlider($event)"
-            @value-commit="handleReferenceLufsSlider($event)"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">自动跳过错误</h3>
-            <p class="text-sm text-text-secondary">
-              播放失败时停留在当前歌曲，并按设定延迟自动尝试下一首
-            </p>
-          </div>
-          <Switch v-model="settingStore.autoNext" />
-        </div>
-        <div v-if="settingStore.autoNext" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">失败后切换延迟</h3>
-            <p class="text-sm text-text-secondary">给用户留出确认失败状态的时间，再自动切换</p>
-          </div>
-          <InputNumber
-            class="w-[180px]"
-            :model-value="autoNextDelayInput"
-            :min="0"
-            :max="600"
-            :step="1"
-            placeholder="0"
-            suffix="秒"
-            @update:model-value="autoNextDelayInput = $event"
-          />
-        </div>
-        <div v-if="settingStore.autoNext" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">最大自动切换次数</h3>
-            <p class="text-sm text-text-secondary">连续失败时最多自动尝试的次数，避免无限跳歌</p>
-          </div>
-          <InputNumber
-            class="w-[180px]"
-            :model-value="autoNextMaxAttemptsInput"
-            :min="1"
-            :max="999"
-            :step="1"
-            placeholder="10"
-            suffix="次"
-            @update:model-value="autoNextMaxAttemptsInput = $event"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">播放恢复超时</h3>
-            <p class="text-sm text-text-secondary">
-              长时间暂停后恢复播放可能卡住，超时后自动重新加载音频源。设为 0 禁用
-            </p>
-          </div>
-          <InputNumber
-            class="w-[180px]"
-            :model-value="String(settingStore.playResumeTimeout ?? 5)"
-            :min="0"
-            :max="30"
-            :step="1"
-            placeholder="5"
-            suffix="秒"
-            @update:model-value="
-              settingStore.playResumeTimeout = Math.max(0, Math.min(30, Number($event) || 0))
-            "
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">防止系统休眠</h3>
-            <p class="text-sm text-text-secondary">播放音乐时阻止系统进入睡眠</p>
-          </div>
-          <Switch v-model="settingStore.preventSleep" />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconVolume2" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">播放音质</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">默认音质</h3>
-            <p class="text-sm text-text-secondary">
-              新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
-            </p>
-          </div>
-          <Select
-            class="w-[180px]"
-            :model-value="settingStore.defaultAudioQuality"
-            :options="audioQualityOptions"
-            @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">智能兼容模式</h3>
-            <p class="text-sm text-text-secondary">首选音质不可用时自动尝试备选</p>
-          </div>
-          <Switch v-model="settingStore.compatibilityMode" />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <PageLyricIcon :size="18" />
-        </div>
-        <h2 class="text-lg font-bold">页面歌词</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">显示翻译</h3>
-            <p class="text-sm text-text-secondary">有翻译时在歌词页面中显示翻译行</p>
-          </div>
-          <Switch v-model="lyricStore.wantTranslation" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">显示音译</h3>
-            <p class="text-sm text-text-secondary">有音译时在歌词页面中显示音译行</p>
-          </div>
-          <Switch v-model="lyricStore.wantRomanization" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">字体大小</h3>
-            <p class="text-sm text-text-secondary">调整歌词页面的文字大小</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="lyricStore.fontScale"
-            :min="0.7"
-            :max="1.4"
-            :step="0.1"
-            show-value
-            :format-value="() => lyricFontSizeLabel"
-            @update:model-value="lyricStore.updateFontScale($event)"
-            @value-commit="lyricStore.updateFontScale($event)"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">字体字重</h3>
-            <p class="text-sm text-text-secondary">调整歌词页面的文字粗细</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="lyricStore.fontWeightIndex"
-            :min="0"
-            :max="8"
-            :step="1"
-            show-value
-            :format-value="() => lyricFontWeightLabel"
-            @update:model-value="lyricStore.updateFontWeight($event)"
-            @value-commit="lyricStore.updateFontWeight($event)"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item items-start">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌词颜色</h3>
-            <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
-          </div>
-          <div class="flex items-center gap-5 pt-1">
-            <div class="flex items-center gap-2.5">
-              <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
-              <button
-                type="button"
-                class="settings-color-swatch"
-                :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
-                @click="lyricColorPicker.open('playedColor')"
-              ></button>
-            </div>
-            <div class="flex items-center gap-2.5">
-              <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
-              <button
-                type="button"
-                class="settings-color-swatch"
-                :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
-                @click="lyricColorPicker.open('unplayedColor')"
-              ></button>
-            </div>
-            <button
-              v-if="lyricStore.playedColor || lyricStore.unplayedColor"
-              type="button"
-              class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors"
-              @click="lyricColorPicker.reset"
-            >
-              重置
-            </button>
-          </div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌手写真背景</h3>
-            <p class="text-sm text-text-secondary">
-              优先使用歌手写真作为背景，获取失败时回退到专辑封面
-            </p>
-          </div>
-          <Switch v-model="settingStore.lyricArtistBackdrop" />
-        </div>
-        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">写真背景透明度</h3>
-            <p class="text-sm text-text-secondary">调节歌词页写真模式下的背景透明度</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="settingStore.lyricBackdropOpacity"
-            :min="10"
-            :max="100"
-            :step="5"
-            show-value
-            :value-suffix="'%'"
-            @update:model-value="settingStore.lyricBackdropOpacity = $event"
-            @value-commit="settingStore.lyricBackdropOpacity = $event"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">写真自动轮播</h3>
-            <p class="text-sm text-text-secondary">多张写真时自动切换</p>
-          </div>
-          <Switch v-model="settingStore.lyricCarouselEnabled" />
-        </div>
-        <div
-          v-if="settingStore.lyricArtistBackdrop && settingStore.lyricCarouselEnabled"
-          class="settings-item"
-        >
-          <div class="space-y-1">
-            <h3 class="font-semibold">轮播间隔</h3>
-            <p class="text-sm text-text-secondary">每张写真的展示时间</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="settingStore.lyricCarouselInterval"
-            :min="5"
-            :max="60"
-            :step="5"
-            show-value
-            :value-suffix="'s'"
-            @update:model-value="settingStore.lyricCarouselInterval = $event"
-            @value-commit="settingStore.lyricCarouselInterval = $event"
-          />
-        </div>
-        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">歌词自动收起</h3>
-            <p class="text-sm text-text-secondary">写真模式下无操作后歌词自动收起到底部两行</p>
-          </div>
-          <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
-        </div>
-        <div
-          v-if="settingStore.lyricArtistBackdrop && settingStore.lyricAutoCollapseEnabled"
-          class="settings-item"
-        >
-          <div class="space-y-1">
-            <h3 class="font-semibold">收起延迟</h3>
-            <p class="text-sm text-text-secondary">无操作后等待多久自动收起</p>
-          </div>
-          <Slider
-            class="w-48"
-            :model-value="settingStore.lyricAutoCollapseDelay"
-            :min="5"
-            :max="60"
-            :step="1"
-            show-value
-            :value-suffix="'s'"
-            @update:model-value="settingStore.lyricAutoCollapseDelay = $event"
-            @value-commit="settingStore.lyricAutoCollapseDelay = $event"
-          />
-        </div>
-        <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">写真模式颜色自适应</h3>
-            <p class="text-sm text-text-secondary">根据写真背景亮度自动切换按钮和控件的深浅配色</p>
-          </div>
-          <Switch v-model="settingStore.lyricAdaptiveColor" />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconTypography" :width="18" :height="18" />
-        </div>
-        <h2 class="text-lg font-bold">桌面歌词</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">置顶显示</h3>
-            <p class="text-sm text-text-secondary">
-              关闭后桌面歌词不会固定显示在其他窗口或全屏应用之上
-            </p>
-          </div>
-          <Switch
-            :model-value="desktopLyricStore.settings.alwaysOnTop"
-            @update:model-value="commitDesktopLyricSettings({ alwaysOnTop: Boolean($event) })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">双行显示</h3>
-            <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
-          </div>
-          <Switch
-            :model-value="desktopLyricStore.settings.doubleLine"
-            @update:model-value="commitDesktopLyricSettings({ doubleLine: Boolean($event) })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">显示翻译</h3>
-            <p class="text-sm text-text-secondary">有翻译时在桌面歌词中显示翻译行</p>
-          </div>
-          <Switch
-            :model-value="desktopLyricStore.settings.wantTranslation"
-            @update:model-value="commitDesktopLyricSettings({ wantTranslation: Boolean($event) })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">显示音译</h3>
-            <p class="text-sm text-text-secondary">有音译时在桌面歌词中显示音译行</p>
-          </div>
-          <Switch
-            :model-value="desktopLyricStore.settings.wantRomanization"
-            @update:model-value="commitDesktopLyricSettings({ wantRomanization: Boolean($event) })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">文字对齐</h3>
-            <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
-          </div>
-          <Select
-            class="w-[180px]"
-            :model-value="desktopLyricStore.settings.alignment"
-            :options="desktopLyricAlignOptions"
-            @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">文字粗体</h3>
-            <p class="text-sm text-text-secondary">歌词使用更高字重显示</p>
-          </div>
-          <Switch
-            :model-value="desktopLyricStore.settings.bold"
-            @update:model-value="commitDesktopLyricSettings({ bold: Boolean($event) })"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item items-start">
-          <div class="space-y-1">
-            <h3 class="font-semibold">文字颜色</h3>
-            <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
-          </div>
-          <div class="flex items-center gap-5 pt-1">
-            <div class="flex items-center gap-2.5">
-              <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
-              <button
-                type="button"
-                class="settings-color-swatch"
-                :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
-                @click="openDesktopLyricColorPicker('playedColor')"
-              ></button>
-            </div>
-            <div class="flex items-center gap-2.5">
-              <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
-              <button
-                type="button"
-                class="settings-color-swatch"
-                :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
-                @click="openDesktopLyricColorPicker('unplayedColor')"
-              ></button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <ColorPickerDialog
-      :open="activeDesktopLyricColorField !== null"
-      :title="activeDesktopLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
-      :value="activeDesktopLyricColorValue"
-      :presets="desktopLyricColorPresets"
-      @update:open="(open) => !open && closeDesktopLyricColorPicker()"
-      @confirm="applyDesktopLyricColor"
-    />
-
-    <ColorPickerDialog
-      :open="lyricColorPicker.isOpen.value"
-      :title="lyricColorPicker.activeTitle.value"
-      :value="lyricColorPicker.activeValue.value"
-      :presets="lyricColorPicker.presets"
-      @update:open="(open) => !open && lyricColorPicker.close()"
-      @confirm="lyricColorPicker.apply"
-    />
-
-    <ColorPickerDialog
-      :open="showAccentPicker"
-      title="选择主题色"
-      :value="themeStore.customColor"
-      :presets="accentPresetValues"
-      @update:open="(open) => (showAccentPicker = open)"
-      @confirm="(color: string) => themeStore.setCustomColor(color)"
-    />
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconKeyboard" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">快捷键设置</h2>
-      </div>
-      <div class="settings-card">
-        <div class="shortcut-grid-header">
-          <div>功能说明</div>
-          <div class="shortcut-col-title">快捷键</div>
-          <div class="shortcut-col-title">全局快捷键</div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="shortcut-list">
-          <div v-for="item in shortcutItems" :key="item.command" class="shortcut-grid-row">
-            <div class="space-y-1">
-              <h3 class="font-semibold">{{ item.title }}</h3>
-              <p class="text-sm text-text-secondary">{{ item.desc }}</p>
-            </div>
-            <div class="shortcut-cell shortcut-cell-offset">
-              <input
-                class="shortcut-input"
-                :class="{ recording: isRecording(item.command, 'local') }"
-                :value="getShortcutValue(item.command, 'local')"
-                :placeholder="getShortcutPlaceholder(item.command, 'local')"
-                readonly
-                @click="startRecording(item.command, 'local')"
-                @focus="startRecording(item.command, 'local')"
-              />
-            </div>
-            <div class="shortcut-cell shortcut-cell-offset">
-              <input
-                class="shortcut-input"
-                :class="{
-                  recording: isRecording(item.command, 'global'),
-                  'shortcut-input-disabled': !settingStore.globalShortcutsEnabled,
-                }"
-                :value="getShortcutValue(item.command, 'global')"
-                :placeholder="getShortcutPlaceholder(item.command, 'global')"
-                :disabled="!settingStore.globalShortcutsEnabled"
-                readonly
-                @click="startRecording(item.command, 'global')"
-                @focus="startRecording(item.command, 'global')"
-              />
-            </div>
-          </div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">启用全局快捷键</h3>
-            <p class="text-sm text-text-secondary">允许应用在后台响应系统级快捷键</p>
-          </div>
-          <Switch v-model="settingStore.globalShortcutsEnabled" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">恢复默认</h3>
-            <p class="text-sm text-text-secondary">恢复所有快捷键为默认</p>
-          </div>
-          <Button variant="outline" size="xs" class="settings-button" @click="resetAllShortcuts"
-            >恢复默认</Button
-          >
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconDeviceSpeaker" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">音频设备</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">输出设备</h3>
-            <p class="text-sm text-text-secondary">选择音频播放输出设备</p>
-            <p class="text-xs text-text-secondary/80">当前使用：{{ currentOutputDeviceLabel }}</p>
-          </div>
-          <Select
-            class="w-[180px]"
-            :model-value="settingStore.outputDevice"
-            :options="outputDeviceOptions"
-            @update:model-value="handleOutputDeviceChange($event as string)"
-          />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">独占音频设备</h3>
-            <p class="text-sm text-text-secondary">
-              绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音
-            </p>
-          </div>
-          <Switch v-model="settingStore.exclusiveAudioDevice" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">设备断开后的行为</h3>
-            <p class="text-sm text-text-secondary">
-              当前所选输出设备断开时，选择暂停播放或临时切换到系统默认设备
-            </p>
-          </div>
-          <Select
-            class="w-[180px]"
-            :model-value="settingStore.outputDeviceDisconnectBehavior"
-            :options="outputDeviceDisconnectBehaviorOptions"
-            @update:model-value="
-              settingStore.outputDeviceDisconnectBehavior = $event as OutputDeviceDisconnectBehavior
-            "
-          />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconFlask" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">实验性功能</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">自动领取 VIP</h3>
-            <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
-          </div>
-          <Switch v-model="settingStore.autoReceiveVip" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">页面缓存</h3>
-            <p class="text-sm text-text-secondary">
-              缓存已访问的页面，返回时无需重新加载，关闭后所有页面不缓存
-            </p>
-          </div>
-          <Switch v-model="settingStore.keepAliveEnabled" />
-        </div>
-        <template v-if="settingStore.keepAliveEnabled">
           <div class="settings-divider"></div>
           <div class="settings-item">
             <div class="space-y-1">
-              <h3 class="font-semibold">缓存页面</h3>
-              <p class="text-sm text-text-secondary">选择需要缓存的页面</p>
+              <h3 class="font-semibold">全局主题色</h3>
+              <p class="text-sm text-text-secondary">关闭后仅播放栏与歌词页跟随主题色</p>
             </div>
-            <Select
-              multiple
-              class="w-[180px]"
-              :model-value="settingStore.keepAliveRoutes"
-              :options="keepAliveOptions"
-              placeholder="选择页面"
-              @update:model-value="settingStore.keepAliveRoutes = $event as string[]"
+            <Switch
+              :model-value="themeStore.globalAccent"
+              @update:model-value="themeStore.setGlobalAccent(Boolean($event))"
             />
           </div>
           <div class="settings-divider"></div>
           <div class="settings-item">
             <div class="space-y-1">
-              <h3 class="font-semibold">最大缓存页面数</h3>
+              <h3 class="font-semibold">歌词字色跟随主题</h3>
               <p class="text-sm text-text-secondary">
-                超出后自动释放最早缓存的页面，避免占用过多内存
+                歌词已播色自动跟随主题色，手动设置的颜色优先
+              </p>
+            </div>
+            <Switch
+              :model-value="themeStore.lyricAccentSync"
+              @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">记住窗口大小</h3>
+              <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
+            </div>
+            <Switch v-model="settingStore.rememberWindowSize" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">音质音效徽标</h3>
+              <p class="text-sm text-text-secondary">
+                在播放器音质按钮上显示当前实际音质或音效标识
+              </p>
+            </div>
+            <Switch v-model="settingStore.showAudioQualityBadge" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">播放列表计数</h3>
+              <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
+            </div>
+            <Switch v-model="settingStore.showPlaylistCount" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">关闭行为</h3>
+              <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="settingStore.closeBehavior"
+              :options="closeBehaviorOptions"
+              @update:model-value="
+                settingStore.closeBehavior = $event as CloseBehavior;
+                settingStore.syncCloseBehavior();
+              "
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <FontIcon :size="18" />
+          </div>
+          <h2 class="text-lg font-bold">字体设置</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">全局字体</h3>
+              <p class="text-sm text-text-secondary">应用到软件内所有区域的字体</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="settingStore.globalFont !== 'system-ui'"
+                type="button"
+                class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+                @click="settingStore.globalFont = 'system-ui'"
+              >
+                重置
+              </button>
+              <Select
+                filterable
+                class="w-[180px]"
+                :model-value="settingStore.globalFont"
+                :options="globalFontOptions"
+                @update:model-value="settingStore.globalFont = String($event)"
+              />
+            </div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">页面歌词字体</h3>
+              <p class="text-sm text-text-secondary">歌词页面使用的字体，跟随全局或单独指定</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="settingStore.lyricFont !== 'follow'"
+                type="button"
+                class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+                @click="settingStore.lyricFont = 'follow'"
+              >
+                重置
+              </button>
+              <Select
+                filterable
+                class="w-[180px]"
+                :model-value="settingStore.lyricFont"
+                :options="lyricFontOptions"
+                @update:model-value="settingStore.lyricFont = String($event)"
+              />
+            </div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">桌面歌词字体</h3>
+              <p class="text-sm text-text-secondary">桌面歌词窗口使用的字体，跟随全局或单独指定</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="desktopLyricFontName !== 'follow'"
+                type="button"
+                class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+                @click="applyDesktopLyricFont('follow')"
+              >
+                重置
+              </button>
+              <Select
+                filterable
+                class="w-[180px]"
+                :model-value="desktopLyricFontName"
+                :options="lyricFontOptions"
+                @update:model-value="applyDesktopLyricFont(String($event))"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconPlayerPlay" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">播放体验</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">播放替换队列</h3>
+              <p class="text-sm text-text-secondary">双击播放单曲时用当前列表替换播放队列</p>
+            </div>
+            <Switch v-model="settingStore.replacePlaylist" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">淡入淡出播放</h3>
+              <p class="text-sm text-text-secondary">启用歌曲切换时的过渡效果</p>
+            </div>
+            <Switch v-model="settingStore.volumeFade" />
+          </div>
+          <div v-if="settingStore.volumeFade" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">淡入淡出时长</h3>
+              <p class="text-sm text-text-secondary">调整歌曲切换时的过渡时长</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="settingStore.volumeFadeTime"
+              :min="500"
+              :max="3000"
+              :step="100"
+              show-value
+              :value-suffix="'ms'"
+              @update:model-value="settingStore.volumeFadeTime = $event"
+              @value-commit="settingStore.volumeFadeTime = $event"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">音量均衡</h3>
+              <p class="text-sm text-text-secondary">自动调整不同歌曲的音量，使播放响度保持一致</p>
+            </div>
+            <Switch
+              :model-value="settingStore.volumeNormalization"
+              @update:model-value="handleVolumeNormalizationChange"
+            />
+          </div>
+          <div v-if="settingStore.volumeNormalization" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">参考响度</h3>
+              <p class="text-sm text-text-secondary">数值越高整体音量越大，越低越安静</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="settingStore.volumeNormalizationLufs"
+              :min="-20"
+              :max="-8"
+              :step="1"
+              show-value
+              :value-suffix="' LUFS'"
+              @update:model-value="handleReferenceLufsSlider($event)"
+              @value-commit="handleReferenceLufsSlider($event)"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">自动跳过错误</h3>
+              <p class="text-sm text-text-secondary">
+                播放失败时停留在当前歌曲，并按设定延迟自动尝试下一首
+              </p>
+            </div>
+            <Switch v-model="settingStore.autoNext" />
+          </div>
+          <div v-if="settingStore.autoNext" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">失败后切换延迟</h3>
+              <p class="text-sm text-text-secondary">给用户留出确认失败状态的时间，再自动切换</p>
+            </div>
+            <InputNumber
+              class="w-[180px]"
+              :model-value="autoNextDelayInput"
+              :min="0"
+              :max="600"
+              :step="1"
+              placeholder="0"
+              suffix="秒"
+              @update:model-value="autoNextDelayInput = $event"
+            />
+          </div>
+          <div v-if="settingStore.autoNext" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">最大自动切换次数</h3>
+              <p class="text-sm text-text-secondary">连续失败时最多自动尝试的次数，避免无限跳歌</p>
+            </div>
+            <InputNumber
+              class="w-[180px]"
+              :model-value="autoNextMaxAttemptsInput"
+              :min="1"
+              :max="999"
+              :step="1"
+              placeholder="10"
+              suffix="次"
+              @update:model-value="autoNextMaxAttemptsInput = $event"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">播放恢复超时</h3>
+              <p class="text-sm text-text-secondary">
+                长时间暂停后恢复播放可能卡住，超时后自动重新加载音频源。设为 0 禁用
               </p>
             </div>
             <InputNumber
               class="w-[180px]"
-              :model-value="String(settingStore.keepAliveMax)"
-              :min="3"
+              :model-value="String(settingStore.playResumeTimeout ?? 5)"
+              :min="0"
               :max="30"
               :step="1"
-              placeholder="20"
+              placeholder="5"
+              suffix="秒"
               @update:model-value="
-                (val) => {
-                  const parsed = Number.parseInt(String(val), 10);
-                  settingStore.keepAliveMax = Number.isNaN(parsed)
-                    ? 20
-                    : Math.max(3, Math.min(parsed, 30));
+                settingStore.playResumeTimeout = Math.max(0, Math.min(30, Number($event) || 0))
+              "
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">防止系统休眠</h3>
+              <p class="text-sm text-text-secondary">播放音乐时阻止系统进入睡眠</p>
+            </div>
+            <Switch v-model="settingStore.preventSleep" />
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconVolume2" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">播放音质</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">默认音质</h3>
+              <p class="text-sm text-text-secondary">
+                新歌曲默认按此音质解析，播放器中可临时覆盖当前歌曲
+              </p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="settingStore.defaultAudioQuality"
+              :options="audioQualityOptions"
+              @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">智能兼容模式</h3>
+              <p class="text-sm text-text-secondary">首选音质不可用时自动尝试备选</p>
+            </div>
+            <Switch v-model="settingStore.compatibilityMode" />
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <PageLyricIcon :size="18" />
+          </div>
+          <h2 class="text-lg font-bold">页面歌词</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">显示翻译</h3>
+              <p class="text-sm text-text-secondary">有翻译时在歌词页面中显示翻译行</p>
+            </div>
+            <Switch v-model="lyricStore.wantTranslation" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">显示音译</h3>
+              <p class="text-sm text-text-secondary">有音译时在歌词页面中显示音译行</p>
+            </div>
+            <Switch v-model="lyricStore.wantRomanization" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">字体大小</h3>
+              <p class="text-sm text-text-secondary">调整歌词页面的文字大小</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="lyricStore.fontScale"
+              :min="0.7"
+              :max="1.4"
+              :step="0.1"
+              show-value
+              :format-value="() => lyricFontSizeLabel"
+              @update:model-value="lyricStore.updateFontScale($event)"
+              @value-commit="lyricStore.updateFontScale($event)"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">字体字重</h3>
+              <p class="text-sm text-text-secondary">调整歌词页面的文字粗细</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="lyricStore.fontWeightIndex"
+              :min="0"
+              :max="8"
+              :step="1"
+              show-value
+              :format-value="() => lyricFontWeightLabel"
+              @update:model-value="lyricStore.updateFontWeight($event)"
+              @value-commit="lyricStore.updateFontWeight($event)"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item items-start">
+            <div class="space-y-1">
+              <h3 class="font-semibold">歌词颜色</h3>
+              <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
+            </div>
+            <div class="flex items-center gap-5 pt-1">
+              <div class="flex items-center gap-2.5">
+                <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+                <button
+                  type="button"
+                  class="settings-color-swatch"
+                  :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
+                  @click="lyricColorPicker.open('playedColor')"
+                ></button>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+                <button
+                  type="button"
+                  class="settings-color-swatch"
+                  :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
+                  @click="lyricColorPicker.open('unplayedColor')"
+                ></button>
+              </div>
+              <button
+                v-if="lyricStore.playedColor || lyricStore.unplayedColor"
+                type="button"
+                class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors"
+                @click="lyricColorPicker.reset"
+              >
+                重置
+              </button>
+            </div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">歌手写真背景</h3>
+              <p class="text-sm text-text-secondary">
+                优先使用歌手写真作为背景，获取失败时回退到专辑封面
+              </p>
+            </div>
+            <Switch v-model="settingStore.lyricArtistBackdrop" />
+          </div>
+          <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">写真背景透明度</h3>
+              <p class="text-sm text-text-secondary">调节歌词页写真模式下的背景透明度</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="settingStore.lyricBackdropOpacity"
+              :min="10"
+              :max="100"
+              :step="5"
+              show-value
+              :value-suffix="'%'"
+              @update:model-value="settingStore.lyricBackdropOpacity = $event"
+              @value-commit="settingStore.lyricBackdropOpacity = $event"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">写真自动轮播</h3>
+              <p class="text-sm text-text-secondary">多张写真时自动切换</p>
+            </div>
+            <Switch v-model="settingStore.lyricCarouselEnabled" />
+          </div>
+          <div
+            v-if="settingStore.lyricArtistBackdrop && settingStore.lyricCarouselEnabled"
+            class="settings-item"
+          >
+            <div class="space-y-1">
+              <h3 class="font-semibold">轮播间隔</h3>
+              <p class="text-sm text-text-secondary">每张写真的展示时间</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="settingStore.lyricCarouselInterval"
+              :min="5"
+              :max="60"
+              :step="5"
+              show-value
+              :value-suffix="'s'"
+              @update:model-value="settingStore.lyricCarouselInterval = $event"
+              @value-commit="settingStore.lyricCarouselInterval = $event"
+            />
+          </div>
+          <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">歌词自动收起</h3>
+              <p class="text-sm text-text-secondary">写真模式下无操作后歌词自动收起到底部两行</p>
+            </div>
+            <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
+          </div>
+          <div
+            v-if="settingStore.lyricArtistBackdrop && settingStore.lyricAutoCollapseEnabled"
+            class="settings-item"
+          >
+            <div class="space-y-1">
+              <h3 class="font-semibold">收起延迟</h3>
+              <p class="text-sm text-text-secondary">无操作后等待多久自动收起</p>
+            </div>
+            <Slider
+              class="w-48"
+              :model-value="settingStore.lyricAutoCollapseDelay"
+              :min="5"
+              :max="60"
+              :step="1"
+              show-value
+              :value-suffix="'s'"
+              @update:model-value="settingStore.lyricAutoCollapseDelay = $event"
+              @value-commit="settingStore.lyricAutoCollapseDelay = $event"
+            />
+          </div>
+          <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">写真模式颜色自适应</h3>
+              <p class="text-sm text-text-secondary">
+                根据写真背景亮度自动切换按钮和控件的深浅配色
+              </p>
+            </div>
+            <Switch v-model="settingStore.lyricAdaptiveColor" />
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconTypography" :width="18" :height="18" />
+          </div>
+          <h2 class="text-lg font-bold">桌面歌词</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">置顶显示</h3>
+              <p class="text-sm text-text-secondary">
+                关闭后桌面歌词不会固定显示在其他窗口或全屏应用之上
+              </p>
+            </div>
+            <Switch
+              :model-value="desktopLyricStore.settings.alwaysOnTop"
+              @update:model-value="commitDesktopLyricSettings({ alwaysOnTop: Boolean($event) })"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">双行显示</h3>
+              <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
+            </div>
+            <Switch
+              :model-value="desktopLyricStore.settings.doubleLine"
+              @update:model-value="commitDesktopLyricSettings({ doubleLine: Boolean($event) })"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">显示翻译</h3>
+              <p class="text-sm text-text-secondary">有翻译时在桌面歌词中显示翻译行</p>
+            </div>
+            <Switch
+              :model-value="desktopLyricStore.settings.wantTranslation"
+              @update:model-value="commitDesktopLyricSettings({ wantTranslation: Boolean($event) })"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">显示音译</h3>
+              <p class="text-sm text-text-secondary">有音译时在桌面歌词中显示音译行</p>
+            </div>
+            <Switch
+              :model-value="desktopLyricStore.settings.wantRomanization"
+              @update:model-value="
+                commitDesktopLyricSettings({ wantRomanization: Boolean($event) })
+              "
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">文字对齐</h3>
+              <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="desktopLyricStore.settings.alignment"
+              :options="desktopLyricAlignOptions"
+              @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">文字粗体</h3>
+              <p class="text-sm text-text-secondary">歌词使用更高字重显示</p>
+            </div>
+            <Switch
+              :model-value="desktopLyricStore.settings.bold"
+              @update:model-value="commitDesktopLyricSettings({ bold: Boolean($event) })"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item items-start">
+            <div class="space-y-1">
+              <h3 class="font-semibold">文字颜色</h3>
+              <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
+            </div>
+            <div class="flex items-center gap-5 pt-1">
+              <div class="flex items-center gap-2.5">
+                <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+                <button
+                  type="button"
+                  class="settings-color-swatch"
+                  :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
+                  @click="openDesktopLyricColorPicker('playedColor')"
+                ></button>
+              </div>
+              <div class="flex items-center gap-2.5">
+                <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+                <button
+                  type="button"
+                  class="settings-color-swatch"
+                  :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
+                  @click="openDesktopLyricColorPicker('unplayedColor')"
+                ></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <ColorPickerDialog
+        :open="activeDesktopLyricColorField !== null"
+        :title="activeDesktopLyricColorField === 'unplayedColor' ? '选择未播字色' : '选择已播字色'"
+        :value="activeDesktopLyricColorValue"
+        :presets="desktopLyricColorPresets"
+        @update:open="(open) => !open && closeDesktopLyricColorPicker()"
+        @confirm="applyDesktopLyricColor"
+      />
+
+      <ColorPickerDialog
+        :open="lyricColorPicker.isOpen.value"
+        :title="lyricColorPicker.activeTitle.value"
+        :value="lyricColorPicker.activeValue.value"
+        :presets="lyricColorPicker.presets"
+        @update:open="(open) => !open && lyricColorPicker.close()"
+        @confirm="lyricColorPicker.apply"
+      />
+
+      <ColorPickerDialog
+        :open="showAccentPicker"
+        title="选择主题色"
+        :value="themeStore.customColor"
+        :presets="accentPresetValues"
+        @update:open="(open) => (showAccentPicker = open)"
+        @confirm="(color: string) => themeStore.setCustomColor(color)"
+      />
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconKeyboard" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">快捷键设置</h2>
+        </div>
+        <div class="settings-card">
+          <div class="shortcut-grid-header">
+            <div>功能说明</div>
+            <div class="shortcut-col-title">快捷键</div>
+            <div class="shortcut-col-title">全局快捷键</div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="shortcut-list">
+            <div v-for="item in shortcutItems" :key="item.command" class="shortcut-grid-row">
+              <div class="space-y-1">
+                <h3 class="font-semibold">{{ item.title }}</h3>
+                <p class="text-sm text-text-secondary">{{ item.desc }}</p>
+              </div>
+              <div class="shortcut-cell shortcut-cell-offset">
+                <input
+                  class="shortcut-input"
+                  :class="{ recording: isRecording(item.command, 'local') }"
+                  :value="getShortcutValue(item.command, 'local')"
+                  :placeholder="getShortcutPlaceholder(item.command, 'local')"
+                  readonly
+                  @click="startRecording(item.command, 'local')"
+                  @focus="startRecording(item.command, 'local')"
+                />
+              </div>
+              <div class="shortcut-cell shortcut-cell-offset">
+                <input
+                  class="shortcut-input"
+                  :class="{
+                    recording: isRecording(item.command, 'global'),
+                    'shortcut-input-disabled': !settingStore.globalShortcutsEnabled,
+                  }"
+                  :value="getShortcutValue(item.command, 'global')"
+                  :placeholder="getShortcutPlaceholder(item.command, 'global')"
+                  :disabled="!settingStore.globalShortcutsEnabled"
+                  readonly
+                  @click="startRecording(item.command, 'global')"
+                  @focus="startRecording(item.command, 'global')"
+                />
+              </div>
+            </div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">启用全局快捷键</h3>
+              <p class="text-sm text-text-secondary">允许应用在后台响应系统级快捷键</p>
+            </div>
+            <Switch v-model="settingStore.globalShortcutsEnabled" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">恢复默认</h3>
+              <p class="text-sm text-text-secondary">恢复所有快捷键为默认</p>
+            </div>
+            <Button variant="outline" size="xs" class="settings-button" @click="resetAllShortcuts"
+              >恢复默认</Button
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconDeviceSpeaker" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">音频设备</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">输出设备</h3>
+              <p class="text-sm text-text-secondary">选择音频播放输出设备</p>
+              <p class="text-xs text-text-secondary/80">当前使用：{{ currentOutputDeviceLabel }}</p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="settingStore.outputDevice"
+              :options="outputDeviceOptions"
+              @update:model-value="handleOutputDeviceChange($event as string)"
+            />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">独占音频设备</h3>
+              <p class="text-sm text-text-secondary">
+                绕过系统混音器直接输出，可获得更高音质，但开启后其他应用将无法播放声音
+              </p>
+            </div>
+            <Switch v-model="settingStore.exclusiveAudioDevice" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">设备断开后的行为</h3>
+              <p class="text-sm text-text-secondary">
+                当前所选输出设备断开时，选择暂停播放或临时切换到系统默认设备
+              </p>
+            </div>
+            <Select
+              class="w-[180px]"
+              :model-value="settingStore.outputDeviceDisconnectBehavior"
+              :options="outputDeviceDisconnectBehaviorOptions"
+              @update:model-value="
+                settingStore.outputDeviceDisconnectBehavior =
+                  $event as OutputDeviceDisconnectBehavior
+              "
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconFlask" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">实验性功能</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">自动领取 VIP</h3>
+              <p class="text-sm text-text-secondary">每次启动自动领取每日 VIP</p>
+            </div>
+            <Switch v-model="settingStore.autoReceiveVip" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">页面缓存</h3>
+              <p class="text-sm text-text-secondary">
+                缓存已访问的页面，返回时无需重新加载，关闭后所有页面不缓存
+              </p>
+            </div>
+            <Switch v-model="settingStore.keepAliveEnabled" />
+          </div>
+          <template v-if="settingStore.keepAliveEnabled">
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+              <div class="space-y-1">
+                <h3 class="font-semibold">最大缓存页面数</h3>
+                <p class="text-sm text-text-secondary">
+                  超出后自动释放最早缓存的页面，避免占用过多内存
+                </p>
+              </div>
+              <InputNumber
+                class="w-[180px]"
+                :model-value="String(settingStore.keepAliveMax)"
+                :min="3"
+                :max="30"
+                :step="1"
+                placeholder="20"
+                @update:model-value="
+                  (val) => {
+                    const parsed = Number.parseInt(String(val), 10);
+                    settingStore.keepAliveMax = Number.isNaN(parsed)
+                      ? 20
+                      : Math.max(3, Math.min(parsed, 30));
+                  }
+                "
+              />
+            </div>
+          </template>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">禁用 GPU 加速</h3>
+              <p class="text-sm text-text-secondary">
+                遇到界面花屏等渲染异常时可尝试开启，重启后生效
+              </p>
+            </div>
+            <Switch
+              :model-value="settingStore.disableGpuAcceleration"
+              @update:model-value="
+                (v: boolean) => {
+                  settingStore.disableGpuAcceleration = v;
+                  settingStore.syncDisableGpuAcceleration();
                 }
               "
             />
           </div>
-        </template>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">禁用 GPU 加速</h3>
-            <p class="text-sm text-text-secondary">
-              遇到界面花屏等渲染异常时可尝试开启，重启后生效
-            </p>
-          </div>
-          <Switch
-            :model-value="settingStore.disableGpuAcceleration"
-            @update:model-value="
-              (v: boolean) => {
-                settingStore.disableGpuAcceleration = v;
-                settingStore.syncDisableGpuAcceleration();
-              }
-            "
-          />
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconShield" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">数据与安全</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">查看运行日志</h3>
-            <p class="text-sm text-text-secondary">打开本地日志目录以供排查问题</p>
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconShield" width="18" height="18" />
           </div>
+          <h2 class="text-lg font-bold">数据与安全</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">查看运行日志</h3>
+              <p class="text-sm text-text-secondary">打开本地日志目录以供排查问题</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="settings-button"
+              @click="settingStore.openLogDirectory()"
+              >立即查看</Button
+            >
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">清除应用数据</h3>
+              <p class="text-sm text-text-secondary">移除所有持久化设置及缓存信息</p>
+            </div>
+            <Button
+              variant="danger"
+              size="xs"
+              class="settings-button danger"
+              @click="showConfirmClear = true"
+              >立即清除</Button
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="space-y-6">
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <Icon :icon="iconInfo" width="18" height="18" />
+          </div>
+          <h2 class="text-lg font-bold">关于 EchoMusic</h2>
+        </div>
+        <div class="settings-card">
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">自动检查更新</h3>
+              <p class="text-sm text-text-secondary">启动时自动检查是否有新版本</p>
+            </div>
+            <Switch v-model="settingStore.autoCheckUpdate" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">检查预发布版本</h3>
+              <p class="text-sm text-text-secondary">开启后可收到 Alpha/Beta/RC 版本更新推送</p>
+            </div>
+            <Switch v-model="settingStore.checkPrerelease" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">静默安装</h3>
+              <p class="text-sm text-text-secondary">更新安装时不弹出安装向导，后台自动完成</p>
+            </div>
+            <Switch v-model="settingStore.silentUpdate" />
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">当前版本</h3>
+              <p class="text-sm text-text-secondary">
+                Version v{{ versionLabel }} {{ releaseChannelLabel }}
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="xs"
+                class="text-text-secondary text-sm font-semibold"
+                @click="handleShowChangelog"
+                >更新日志</Button
+              >
+              <Button
+                variant="ghost"
+                size="xs"
+                class="text-primary text-sm font-semibold"
+                :disabled="isCheckingUpdate"
+                @click="handleCheckUpdates"
+                >{{ isCheckingUpdate ? '检查中...' : '检查更新' }}</Button
+              >
+            </div>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">项目源码</h3>
+              <p class="text-sm text-text-secondary">开源共享于 GitHub</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-text-secondary h-10 w-10 min-w-0 p-0"
+              @click="settingStore.openRepo()"
+            >
+              <Icon :icon="iconExternalLink" width="20" height="20" />
+            </Button>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-item">
+            <div class="space-y-1">
+              <h3 class="font-semibold">免责声明</h3>
+              <p class="text-sm text-text-secondary">查看法律条款与免责声明</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-text-secondary h-10 w-10 min-w-0 p-0"
+              @click="showDisclaimer = true"
+            >
+              <Icon :icon="iconChevronRight" width="20" height="20" />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <Dialog
+        v-model:open="showConfirmClear"
+        title="清除应用数据"
+        description="此操作将移除所有持久化设置与缓存，无法撤销。"
+      >
+        <template #footer>
           <Button
-            variant="ghost"
-            size="xs"
             class="settings-button"
-            @click="settingStore.openLogDirectory()"
-            >立即查看</Button
+            variant="outline"
+            size="sm"
+            @click="showConfirmClear = false"
+            >取消</Button
           >
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">清除应用数据</h3>
-            <p class="text-sm text-text-secondary">移除所有持久化设置及缓存信息</p>
-          </div>
           <Button
-            variant="danger"
-            size="xs"
             class="settings-button danger"
-            @click="showConfirmClear = true"
-            >立即清除</Button
+            variant="danger"
+            size="sm"
+            @click="
+              settingStore.clearAppData();
+              showConfirmClear = false;
+            "
+            >确认清除</Button
           >
-        </div>
-      </div>
-    </section>
+        </template>
+      </Dialog>
 
-    <section class="space-y-6">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Icon :icon="iconInfo" width="18" height="18" />
-        </div>
-        <h2 class="text-lg font-bold">关于 EchoMusic</h2>
-      </div>
-      <div class="settings-card">
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">自动检查更新</h3>
-            <p class="text-sm text-text-secondary">启动时自动检查是否有新版本</p>
-          </div>
-          <Switch v-model="settingStore.autoCheckUpdate" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">检查预发布版本</h3>
-            <p class="text-sm text-text-secondary">开启后可收到 Alpha/Beta/RC 版本更新推送</p>
-          </div>
-          <Switch v-model="settingStore.checkPrerelease" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">静默安装</h3>
-            <p class="text-sm text-text-secondary">更新安装时不弹出安装向导，后台自动完成</p>
-          </div>
-          <Switch v-model="settingStore.silentUpdate" />
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">当前版本</h3>
-            <p class="text-sm text-text-secondary">
-              Version v{{ versionLabel }} {{ releaseChannelLabel }}
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="xs"
-              class="text-text-secondary text-sm font-semibold"
-              @click="handleShowChangelog"
-              >更新日志</Button
-            >
-            <Button
-              variant="ghost"
-              size="xs"
-              class="text-primary text-sm font-semibold"
-              :disabled="isCheckingUpdate"
-              @click="handleCheckUpdates"
-              >{{ isCheckingUpdate ? '检查中...' : '检查更新' }}</Button
-            >
-          </div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">项目源码</h3>
-            <p class="text-sm text-text-secondary">开源共享于 GitHub</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="text-text-secondary h-10 w-10 min-w-0 p-0"
-            @click="settingStore.openRepo()"
-          >
-            <Icon :icon="iconExternalLink" width="20" height="20" />
-          </Button>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-item">
-          <div class="space-y-1">
-            <h3 class="font-semibold">免责声明</h3>
-            <p class="text-sm text-text-secondary">查看法律条款与免责声明</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="text-text-secondary h-10 w-10 min-w-0 p-0"
-            @click="showDisclaimer = true"
-          >
-            <Icon :icon="iconChevronRight" width="20" height="20" />
-          </Button>
-        </div>
-      </div>
-    </section>
+      <UpdateDialog v-model:open="showUpdateResult" :result="updateResult" />
 
-    <Dialog
-      v-model:open="showConfirmClear"
-      title="清除应用数据"
-      description="此操作将移除所有持久化设置与缓存，无法撤销。"
-    >
-      <template #footer>
-        <Button
-          class="settings-button"
-          variant="outline"
-          size="sm"
-          @click="showConfirmClear = false"
-          >取消</Button
-        >
-        <Button
-          class="settings-button danger"
-          variant="danger"
-          size="sm"
-          @click="
-            settingStore.clearAppData();
-            showConfirmClear = false;
-          "
-          >确认清除</Button
-        >
-      </template>
-    </Dialog>
+      <Dialog
+        v-model:open="showChangelog"
+        :title="`更新日志`"
+        showClose
+        noScroll
+        :content-style="{ width: '520px' }"
+      >
+        <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
+          <div class="changelog-content" v-html="changelogHtml"></div>
+        </Scrollbar>
+        <template #footer>
+          <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
+        </template>
+      </Dialog>
 
-    <UpdateDialog v-model:open="showUpdateResult" :result="updateResult" />
-
-    <Dialog
-      v-model:open="showChangelog"
-      :title="`更新日志`"
-      showClose
-      noScroll
-      :content-style="{ width: '520px' }"
-    >
-      <Scrollbar class="settings-update-changelog" :content-props="{ class: 'px-4 py-3' }">
-        <div class="changelog-content" v-html="changelogHtml"></div>
-      </Scrollbar>
-      <template #footer>
-        <Button variant="ghost" size="sm" @click="showChangelog = false">关闭</Button>
-      </template>
-    </Dialog>
-
-    <DisclaimerDialog v-model:open="showDisclaimer" />
-  </div>
+      <DisclaimerDialog v-model:open="showDisclaimer" />
+    </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

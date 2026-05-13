@@ -7,7 +7,7 @@ import Scrollbar from '@/components/ui/Scrollbar.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconX } from '@/icons';
-import { useComments, type CommentResourceType } from '@/utils/useComments';
+import { useComments, type CommentResourceType } from '@/composables/useComments';
 
 interface Props {
   open?: boolean;

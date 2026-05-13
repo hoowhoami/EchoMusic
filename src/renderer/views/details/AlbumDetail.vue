@@ -3,7 +3,7 @@ defineOptions({ name: 'album-detail' });
 import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';
-import { useRouteId } from '@/utils/useRouteId';
+import { useRouteId } from '@/composables/useRouteId';
 import {
   getAlbumDetail,
   getAlbumSongs,
@@ -43,6 +43,7 @@ import {
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { isRecord, toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 
@@ -505,244 +506,246 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 </script>
 
 <template>
-  <div class="album-detail-container bg-bg-main min-h-full">
-    <div v-if="loading && !album" class="flex items-center justify-center py-40">
-      <div
-        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-      ></div>
-    </div>
-
-    <template v-else-if="album">
-      <!-- 1. Sliver Header -->
-      <SliverHeader
-        ref="sliverHeaderRef"
-        typeLabel="ALBUM"
-        :title="album.name"
-        :coverUrl="album.pic"
-        :hasDetails="true"
-        :expandedHeight="196"
-      >
-        <template #details>
-          <div class="flex flex-col gap-1.5 text-text-main/60">
-            <div class="album-artist-line">
-              <template
-                v-for="(artistItem, index) in albumArtists"
-                :key="`${artistItem.name}-${index}`"
-              >
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  type="button"
-                  class="album-singer-link"
-                  :class="{ 'is-link': isAlbumArtistClickable(artistItem) }"
-                  :disabled="!isAlbumArtistClickable(artistItem)"
-                  @click="openAlbumArtist(artistItem)"
-                >
-                  {{ artistItem.name }}
-                </Button>
-                <span v-if="index < albumArtists.length - 1" class="album-artist-separator">
-                  /
-                </span>
-              </template>
-            </div>
-            <div class="text-[11px] font-semibold text-text-secondary">
-              {{ album.publishTime }} • {{ albumSongCount }} 首歌曲
-            </div>
-            <div
-              v-if="album.type || album.language"
-              class="text-[11px] font-semibold text-text-secondary"
-            >
-              <span v-if="album.type">{{ album.type }}</span>
-              <span v-if="album.type && album.language"> • </span>
-              <span v-if="album.language">{{ album.language }}</span>
-            </div>
-          </div>
-        </template>
-
-        <template #actions>
-          <ActionRow
-            :secondaryActions="secondaryActions"
-            @play="handlePlayAll"
-            @batch="openBatchDrawer"
-          />
-        </template>
-
-        <template #collapsed-actions>
-          <Button
-            v-if="userStore.isLoggedIn"
-            variant="unstyled"
-            size="none"
-            @click="toggleFavoriteAlbum"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
-          >
-            <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="handlePlayAll"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="openBatchDrawer"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
-
-      <div v-if="album.intro" class="px-6 pt-[6px] pb-[6px]">
-        <div class="text-[15px] font-semibold text-text-main">专辑介绍</div>
-        <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
-          {{ album.intro }}
-        </div>
-        <Button
-          variant="unstyled"
-          size="none"
-          type="button"
-          class="mt-[2px] text-[11px] font-semibold text-primary"
-          @click="showIntroDialog = true"
-        >
-          查看详情
-        </Button>
+  <PageScrollContainer class="album-detail-page">
+    <div class="album-detail-container bg-bg-main min-h-full">
+      <div v-if="loading && !album" class="flex items-center justify-center py-40">
+        <div
+          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+        ></div>
       </div>
 
-      <!-- 2. Sticky Tabs + 表头 -->
-      <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
-        <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
-          <div class="px-6 border-b border-border-light/10">
-            <div class="flex items-center justify-between h-14">
-              <TabsList class="bg-transparent border-none gap-8">
-                <TabsTrigger value="songs">
-                  <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
-                </TabsTrigger>
-                <TabsTrigger value="comments">
-                  <span class="relative">
-                    评论
-                    <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
-                  </span>
-                </TabsTrigger>
-              </TabsList>
-
-              <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                <div class="relative">
-                  <input
-                    v-model="searchQuery"
-                    type="text"
-                    placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                  />
-                  <Icon
-                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                    :icon="iconSearch"
-                    width="14"
-                    height="14"
-                  />
-                </div>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  @click="handleLocate"
-                  class="song-locate-btn p-2 rounded-lg"
-                  title="定位当前播放"
+      <template v-else-if="album">
+        <!-- 1. Sliver Header -->
+        <SliverHeader
+          ref="sliverHeaderRef"
+          typeLabel="ALBUM"
+          :title="album.name"
+          :coverUrl="album.pic"
+          :hasDetails="true"
+          :expandedHeight="196"
+        >
+          <template #details>
+            <div class="flex flex-col gap-1.5 text-text-main/60">
+              <div class="album-artist-line">
+                <template
+                  v-for="(artistItem, index) in albumArtists"
+                  :key="`${artistItem.name}-${index}`"
                 >
-                  <Icon :icon="iconCurrentLocation" width="18" height="18" />
-                </Button>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    class="album-singer-link"
+                    :class="{ 'is-link': isAlbumArtistClickable(artistItem) }"
+                    :disabled="!isAlbumArtistClickable(artistItem)"
+                    @click="openAlbumArtist(artistItem)"
+                  >
+                    {{ artistItem.name }}
+                  </Button>
+                  <span v-if="index < albumArtists.length - 1" class="album-artist-separator">
+                    /
+                  </span>
+                </template>
+              </div>
+              <div class="text-[11px] font-semibold text-text-secondary">
+                {{ album.publishTime }} • {{ albumSongCount }} 首歌曲
+              </div>
+              <div
+                v-if="album.type || album.language"
+                class="text-[11px] font-semibold text-text-secondary"
+              >
+                <span v-if="album.type">{{ album.type }}</span>
+                <span v-if="album.type && album.language"> • </span>
+                <span v-if="album.language">{{ album.language }}</span>
               </div>
             </div>
+          </template>
+
+          <template #actions>
+            <ActionRow
+              :secondaryActions="secondaryActions"
+              @play="handlePlayAll"
+              @batch="openBatchDrawer"
+            />
+          </template>
+
+          <template #collapsed-actions>
+            <Button
+              v-if="userStore.isLoggedIn"
+              variant="unstyled"
+              size="none"
+              @click="toggleFavoriteAlbum"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
+            >
+              <Icon :icon="isFavoriteAlbum ? iconHeartFilled : iconHeart" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+          </template>
+        </SliverHeader>
+
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
+
+        <div v-if="album.intro" class="px-6 pt-[6px] pb-[6px]">
+          <div class="text-[15px] font-semibold text-text-main">专辑介绍</div>
+          <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
+            {{ album.intro }}
+          </div>
+          <Button
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="mt-[2px] text-[11px] font-semibold text-primary"
+            @click="showIntroDialog = true"
+          >
+            查看详情
+          </Button>
+        </div>
+
+        <!-- 2. Sticky Tabs + 表头 -->
+        <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
+          <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
+            <div class="px-6 border-b border-border-light/10">
+              <div class="flex items-center justify-between h-14">
+                <TabsList class="bg-transparent border-none gap-8">
+                  <TabsTrigger value="songs">
+                    <span class="relative">歌曲 <Badge :count="loadedSongCount" /></span>
+                  </TabsTrigger>
+                  <TabsTrigger value="comments">
+                    <span class="relative">
+                      评论
+                      <Badge v-if="commentTotal > 0" :count="commentTotal" class="-right-6" />
+                    </span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="searchQuery"
+                      type="text"
+                      placeholder="搜索歌曲..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    @click="handleLocate"
+                    class="song-locate-btn p-2 rounded-lg"
+                    title="定位当前播放"
+                  >
+                    <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <SongListHeader
+              v-if="activeTab === 'songs'"
+              :sortField="sortField"
+              :sortOrder="sortOrder"
+              :showCover="true"
+              paddingClass="px-6"
+              @sort="handleSort"
+            />
           </div>
 
-          <SongListHeader
-            v-if="activeTab === 'songs'"
-            :sortField="sortField"
-            :sortOrder="sortOrder"
-            :showCover="true"
-            paddingClass="px-6"
-            @sort="handleSort"
-          />
-        </div>
-
-        <div class="pb-12">
-          <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
-            <SongList
-              ref="songListRef"
-              :songs="sortedSongs"
-              :loading="loadingSongs"
-              :active="activeTab === 'songs'"
-              :searchQuery="searchQuery"
-              :activeId="activeSongId"
-              :showCover="true"
-              :queueOptions="{
-                queueId: `queue:album:${album?.id ?? getAlbumId()}`,
-                title: album?.albumname || '专辑',
-                subtitle: album?.singerName || '',
-                type: 'album',
-              }"
-              :enableDefaultDoubleTapPlay="true"
-              :onSongDoubleTapPlay="
-                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
-              "
-            />
-          </TabsContent>
-
-          <TabsContent value="comments" class="px-6 pt-5 pb-10">
-            <div class="w-full">
-              <div
-                v-if="hotComments.length"
-                class="text-[12px] font-semibold text-text-secondary mt-2 mb-3"
-              >
-                热门评论
-              </div>
-              <CommentList
-                :comments="hotComments"
-                :loading="loadingComments"
-                resourceType="album"
-                :fallbackMixSongId="String(currentId)"
-                compact
-                hide-empty
-              />
-              <CommentList
-                :comments="comments"
-                :loading="loadingComments"
-                :total="commentTotal"
-                resourceType="album"
-                :fallbackMixSongId="String(currentId)"
-                compact
-                :hide-empty="hotComments.length > 0"
-              />
-
-              <div
-                v-if="
-                  loadingComments ||
-                  ((hotComments.length > 0 || comments.length > 0) && !hasMoreComments)
+          <div class="pb-12">
+            <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
+              <SongList
+                ref="songListRef"
+                :songs="sortedSongs"
+                :loading="loadingSongs"
+                :active="activeTab === 'songs'"
+                :searchQuery="searchQuery"
+                :activeId="activeSongId"
+                :showCover="true"
+                :queueOptions="{
+                  queueId: `queue:album:${album?.id ?? getAlbumId()}`,
+                  title: album?.albumname || '专辑',
+                  subtitle: album?.singerName || '',
+                  type: 'album',
+                }"
+                :enableDefaultDoubleTapPlay="true"
+                :onSongDoubleTapPlay="
+                  settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
                 "
-                class="flex justify-center mt-8"
-              >
-                <div class="text-[12px] font-semibold text-text-secondary">
-                  {{ loadingComments ? '加载中...' : '已加载全部评论' }}
+              />
+            </TabsContent>
+
+            <TabsContent value="comments" class="px-6 pt-5 pb-10">
+              <div class="w-full">
+                <div
+                  v-if="hotComments.length"
+                  class="text-[12px] font-semibold text-text-secondary mt-2 mb-3"
+                >
+                  热门评论
+                </div>
+                <CommentList
+                  :comments="hotComments"
+                  :loading="loadingComments"
+                  resourceType="album"
+                  :fallbackMixSongId="String(currentId)"
+                  compact
+                  hide-empty
+                />
+                <CommentList
+                  :comments="comments"
+                  :loading="loadingComments"
+                  :total="commentTotal"
+                  resourceType="album"
+                  :fallbackMixSongId="String(currentId)"
+                  compact
+                  :hide-empty="hotComments.length > 0"
+                />
+
+                <div
+                  v-if="
+                    loadingComments ||
+                    ((hotComments.length > 0 || comments.length > 0) && !hasMoreComments)
+                  "
+                  class="flex justify-center mt-8"
+                >
+                  <div class="text-[12px] font-semibold text-text-secondary">
+                    {{ loadingComments ? '加载中...' : '已加载全部评论' }}
+                  </div>
                 </div>
               </div>
-            </div>
-          </TabsContent>
-        </div>
-      </Tabs>
-      <Dialog
-        v-model:open="showIntroDialog"
-        title="专辑介绍"
-        :description="album.intro"
-        contentClass="detail-intro-dialog max-w-[720px]"
-        descriptionClass="text-[13px]"
-        showClose
-      />
-    </template>
-  </div>
+            </TabsContent>
+          </div>
+        </Tabs>
+        <Dialog
+          v-model:open="showIntroDialog"
+          title="专辑介绍"
+          :description="album.intro"
+          contentClass="detail-intro-dialog max-w-[720px]"
+          descriptionClass="text-[13px]"
+          showClose
+        />
+      </template>
+    </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

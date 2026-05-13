@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'comment-page' });
 import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -21,7 +22,7 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
 import CommentList from '@/components/music/CommentList.vue';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
-import BackToTop from '@/components/ui/BackToTop.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import Button from '@/components/ui/Button.vue';
 import { useToastStore } from '@/stores/toast';
 
@@ -670,261 +671,264 @@ watch(total, (value) => {
 </script>
 
 <template>
-  <div class="comment-page bg-bg-main min-h-full">
-    <SliverHeader
-      :typeLabel="headerTypeLabel"
-      :title="headerTitle"
-      :coverUrl="resourceCover"
-      :hasDetails="true"
-      :expandedHeight="164"
-      :collapsedHeight="56"
-      :contentPaddingX="0"
-      :contentGap="10"
-      :coverBaseSize="124"
-      :titleFontSize="20"
-      :detailsGap="6"
-      :detailsMarginTop="6"
-    >
-      <template #details>
-        <div class="comment-song-header">
-          <Button
-            variant="unstyled"
-            size="none"
-            v-if="songArtist"
-            type="button"
-            class="comment-song-subtitle"
-            :class="{ 'is-link': canOpenArtist }"
-            :disabled="!canOpenArtist"
-            @click="openArtistDetail"
-          >
-            {{ songArtist }}
-          </Button>
-          <div v-if="isMusicType" class="comment-song-meta-row">
+  <PageScrollContainer class="comment-page-container" :back-to-top-threshold="360">
+    <div class="comment-page bg-bg-main min-h-full">
+      <SliverHeader
+        :typeLabel="headerTypeLabel"
+        :title="headerTitle"
+        :coverUrl="resourceCover"
+        :hasDetails="true"
+        :expandedHeight="164"
+        :collapsedHeight="56"
+        :contentPaddingX="0"
+        :contentGap="10"
+        :coverBaseSize="124"
+        :titleFontSize="20"
+        :detailsGap="6"
+        :detailsMarginTop="6"
+      >
+        <template #details>
+          <div class="comment-song-header">
             <Button
               variant="unstyled"
               size="none"
+              v-if="songArtist"
               type="button"
-              class="comment-song-meta"
-              :class="{ 'is-link': canOpenAlbum }"
-              :disabled="!canOpenAlbum"
-              @click="openAlbumDetail"
+              class="comment-song-subtitle"
+              :class="{ 'is-link': canOpenArtist }"
+              :disabled="!canOpenArtist"
+              @click="openArtistDetail"
             >
-              <span class="comment-song-meta-label">专辑</span>
-              <span class="comment-song-meta-value">{{ songAlbum || '单曲' }}</span>
+              {{ songArtist }}
             </Button>
-          </div>
-          <div v-if="isMusicType" class="comment-song-meta-row">
-            <div class="comment-song-meta">
-              <span class="comment-song-meta-label">语言</span>
-              <span class="comment-song-meta-value">{{ songLanguage }}</span>
+            <div v-if="isMusicType" class="comment-song-meta-row">
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="comment-song-meta"
+                :class="{ 'is-link': canOpenAlbum }"
+                :disabled="!canOpenAlbum"
+                @click="openAlbumDetail"
+              >
+                <span class="comment-song-meta-label">专辑</span>
+                <span class="comment-song-meta-value">{{ songAlbum || '单曲' }}</span>
+              </Button>
             </div>
-            <div class="comment-song-meta">
-              <span class="comment-song-meta-label">累计收藏</span>
-              <span class="comment-song-meta-value">{{ formatCount(favoriteCount) }}</span>
-            </div>
-            <div class="comment-song-meta">
-              <span class="comment-song-meta-label">评论</span>
-              <span class="comment-song-meta-value">{{ formatCount(commentCount) }}</span>
-            </div>
-          </div>
-        </div>
-      </template>
-    </SliverHeader>
-
-    <div class="comment-content-wrap comment-content-wrap--music">
-      <template v-if="isMusicType">
-        <Tabs :model-value="mainTab" @update:model-value="mainTab = $event as 'detail' | 'comment'">
-          <div class="comment-main-tabs sticky z-[120] bg-bg-main" :style="{ top: '56px' }">
-            <TabsList class="comment-main-tab-list">
-              <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
-              <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>
-            </TabsList>
-          </div>
-
-          <TabsContent value="detail">
-            <div
-              v-if="
-                !detailLoading &&
-                (qualityTags.length || effectTags.length || rankingInfo.length || rankingSummary)
-              "
-              class="detail-section detail-section--plain"
-            >
-              <div v-if="qualityTags.length" class="detail-block">
-                <div class="detail-title">可选音质</div>
-                <div class="detail-tags">
-                  <span v-for="tag in qualityTags" :key="tag" class="detail-tag">{{ tag }}</span>
-                </div>
+            <div v-if="isMusicType" class="comment-song-meta-row">
+              <div class="comment-song-meta">
+                <span class="comment-song-meta-label">语言</span>
+                <span class="comment-song-meta-value">{{ songLanguage }}</span>
               </div>
-              <div v-if="effectTags.length" class="detail-block">
-                <div class="detail-title">可用音效</div>
-                <div class="detail-tags">
-                  <span v-for="tag in effectTags" :key="tag" class="detail-tag">{{ tag }}</span>
-                </div>
+              <div class="comment-song-meta">
+                <span class="comment-song-meta-label">累计收藏</span>
+                <span class="comment-song-meta-value">{{ formatCount(favoriteCount) }}</span>
               </div>
-              <div v-if="rankingSummary || rankingInfo.length" class="detail-block">
-                <div class="detail-title">榜单成就</div>
-                <div v-if="rankingSummary" class="detail-summary">• {{ rankingSummary }}</div>
-                <div v-if="rankingInfo.length" class="ranking-list">
-                  <div v-for="(rank, index) in rankingInfo" :key="index" class="ranking-card">
-                    <div class="ranking-card-header">
-                      <div class="ranking-title">{{ rank.platform_name || '未知平台' }}</div>
-                      <div class="ranking-rank">第 {{ rank.ranking_num || 0 }} 名</div>
-                    </div>
-                    <div class="ranking-meta">
-                      <span>累计上榜：{{ rank.ranking_times || 0 }}次</span>
-                      <span>最近上榜：{{ rank.last_time || '未知' }}</span>
-                    </div>
-                  </div>
-                </div>
+              <div class="comment-song-meta">
+                <span class="comment-song-meta-label">评论</span>
+                <span class="comment-song-meta-value">{{ formatCount(commentCount) }}</span>
               </div>
             </div>
-          </TabsContent>
-
-          <TabsContent value="comment">
-            <div class="comment-tabs-shell">
-              <div class="comment-sub-tabs">
-                <CustomTabBar
-                  v-model="activeCommentTabIndex"
-                  class="comment-sub-tabbar"
-                  :tabs="['全部评论', '分类评论', '热词评论']"
-                />
-              </div>
-
-              <template v-if="activeCommentTab === 'all'">
-                <div class="comment-list-wrap">
-                  <div v-if="singerComments.length" class="comment-section-title">歌手说</div>
-                  <CommentList
-                    v-if="singerComments.length"
-                    :comments="singerComments"
-                    :loading="false"
-                    :resourceType="type"
-                    :fallbackMixSongId="songMixSongId || id"
-                    compact
-                    hide-empty
-                  />
-                  <div v-if="singerComments.length" class="comment-singer-divider"></div>
-                  <CommentList
-                    :comments="comments"
-                    :loading="isLoadingComments"
-                    :resourceType="type"
-                    :fallbackMixSongId="songMixSongId || id"
-                    compact
-                  />
-                  <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
-                    <div v-if="isLoadingComments" class="comment-loading-inline">
-                      <div class="comment-loading-spinner"></div>
-                      <span>加载中...</span>
-                    </div>
-                    <div v-else class="comment-end-hint">已加载全部评论</div>
-                  </div>
-                </div>
-              </template>
-
-              <template v-else-if="activeCommentTab === 'classify'">
-                <div class="comment-list-wrap">
-                  <div ref="classifyChipRowRef" class="comment-chip-row">
-                    <Button
-                      variant="unstyled"
-                      size="none"
-                      v-for="item in classifyList"
-                      :key="item.id"
-                      :class="['comment-chip', selectedClassify === item.id && 'is-active']"
-                      @click="
-                        selectedClassify = item.id;
-                        void fetchClassifyComments(true);
-                      "
-                    >
-                      {{ item.name
-                      }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
-                    </Button>
-                  </div>
-                  <CommentList
-                    :comments="classifyComments"
-                    :loading="isLoadingClassify"
-                    :resourceType="type"
-                    :fallbackMixSongId="songMixSongId || id"
-                    compact
-                    empty-text="该分类下暂无评论"
-                  />
-                  <div v-if="isLoadingClassify || showClassifyEnd" class="comment-load-more">
-                    <div v-if="isLoadingClassify" class="comment-loading-inline">
-                      <div class="comment-loading-spinner"></div>
-                      <span>加载中...</span>
-                    </div>
-                    <div v-else class="comment-end-hint">已加载全部评论</div>
-                  </div>
-                </div>
-              </template>
-
-              <template v-else>
-                <div class="comment-list-wrap">
-                  <div ref="hotwordChipRowRef" class="comment-chip-row">
-                    <Button
-                      variant="unstyled"
-                      size="none"
-                      v-for="item in hotwordList"
-                      :key="item.content"
-                      :class="['comment-chip', selectedHotword === item.content && 'is-active']"
-                      @click="
-                        selectedHotword = item.content;
-                        void fetchHotwordComments(true);
-                      "
-                    >
-                      {{ item.content
-                      }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
-                    </Button>
-                  </div>
-                  <CommentList
-                    :comments="hotwordComments"
-                    :loading="isLoadingHotword"
-                    :resourceType="type"
-                    :fallbackMixSongId="songMixSongId || id"
-                    compact
-                    empty-text="该热词下暂无评论"
-                  />
-                  <div v-if="isLoadingHotword || showHotwordEnd" class="comment-load-more">
-                    <div v-if="isLoadingHotword" class="comment-loading-inline">
-                      <div class="comment-loading-spinner"></div>
-                      <span>加载中...</span>
-                    </div>
-                    <div v-else class="comment-end-hint">已加载全部评论</div>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </template>
-
-      <template v-else>
-        <div v-if="hotComments.length" class="comment-section-title">热门评论</div>
-        <CommentList
-          :comments="hotComments"
-          :loading="isLoadingComments"
-          :resourceType="type"
-          :fallbackMixSongId="songMixSongId || id"
-          compact
-          hide-empty
-        />
-        <CommentList
-          :comments="comments"
-          :loading="isLoadingComments"
-          :resourceType="type"
-          :fallbackMixSongId="songMixSongId || id"
-          compact
-        />
-        <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
-          <div v-if="isLoadingComments" class="comment-loading-inline">
-            <div class="comment-loading-spinner"></div>
-            <span>加载中...</span>
           </div>
-          <div v-else class="comment-end-hint">已加载全部评论</div>
-        </div>
-      </template>
+        </template>
+      </SliverHeader>
+
+      <div class="comment-content-wrap comment-content-wrap--music">
+        <template v-if="isMusicType">
+          <Tabs
+            :model-value="mainTab"
+            @update:model-value="mainTab = $event as 'detail' | 'comment'"
+          >
+            <div class="comment-main-tabs sticky z-[120] bg-bg-main" :style="{ top: '56px' }">
+              <TabsList class="comment-main-tab-list">
+                <TabsTrigger value="detail" class="comment-main-tab-trigger">详情</TabsTrigger>
+                <TabsTrigger value="comment" class="comment-main-tab-trigger">评论</TabsTrigger>
+              </TabsList>
+            </div>
+
+            <TabsContent value="detail">
+              <div
+                v-if="
+                  !detailLoading &&
+                  (qualityTags.length || effectTags.length || rankingInfo.length || rankingSummary)
+                "
+                class="detail-section detail-section--plain"
+              >
+                <div v-if="qualityTags.length" class="detail-block">
+                  <div class="detail-title">可选音质</div>
+                  <div class="detail-tags">
+                    <span v-for="tag in qualityTags" :key="tag" class="detail-tag">{{ tag }}</span>
+                  </div>
+                </div>
+                <div v-if="effectTags.length" class="detail-block">
+                  <div class="detail-title">可用音效</div>
+                  <div class="detail-tags">
+                    <span v-for="tag in effectTags" :key="tag" class="detail-tag">{{ tag }}</span>
+                  </div>
+                </div>
+                <div v-if="rankingSummary || rankingInfo.length" class="detail-block">
+                  <div class="detail-title">榜单成就</div>
+                  <div v-if="rankingSummary" class="detail-summary">• {{ rankingSummary }}</div>
+                  <div v-if="rankingInfo.length" class="ranking-list">
+                    <div v-for="(rank, index) in rankingInfo" :key="index" class="ranking-card">
+                      <div class="ranking-card-header">
+                        <div class="ranking-title">{{ rank.platform_name || '未知平台' }}</div>
+                        <div class="ranking-rank">第 {{ rank.ranking_num || 0 }} 名</div>
+                      </div>
+                      <div class="ranking-meta">
+                        <span>累计上榜：{{ rank.ranking_times || 0 }}次</span>
+                        <span>最近上榜：{{ rank.last_time || '未知' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="comment">
+              <div class="comment-tabs-shell">
+                <div class="comment-sub-tabs">
+                  <CustomTabBar
+                    v-model="activeCommentTabIndex"
+                    class="comment-sub-tabbar"
+                    :tabs="['全部评论', '分类评论', '热词评论']"
+                  />
+                </div>
+
+                <template v-if="activeCommentTab === 'all'">
+                  <div class="comment-list-wrap">
+                    <div v-if="singerComments.length" class="comment-section-title">歌手说</div>
+                    <CommentList
+                      v-if="singerComments.length"
+                      :comments="singerComments"
+                      :loading="false"
+                      :resourceType="type"
+                      :fallbackMixSongId="songMixSongId || id"
+                      compact
+                      hide-empty
+                    />
+                    <div v-if="singerComments.length" class="comment-singer-divider"></div>
+                    <CommentList
+                      :comments="comments"
+                      :loading="isLoadingComments"
+                      :resourceType="type"
+                      :fallbackMixSongId="songMixSongId || id"
+                      compact
+                    />
+                    <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
+                      <div v-if="isLoadingComments" class="comment-loading-inline">
+                        <div class="comment-loading-spinner"></div>
+                        <span>加载中...</span>
+                      </div>
+                      <div v-else class="comment-end-hint">已加载全部评论</div>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else-if="activeCommentTab === 'classify'">
+                  <div class="comment-list-wrap">
+                    <div ref="classifyChipRowRef" class="comment-chip-row">
+                      <Button
+                        variant="unstyled"
+                        size="none"
+                        v-for="item in classifyList"
+                        :key="item.id"
+                        :class="['comment-chip', selectedClassify === item.id && 'is-active']"
+                        @click="
+                          selectedClassify = item.id;
+                          void fetchClassifyComments(true);
+                        "
+                      >
+                        {{ item.name
+                        }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
+                      </Button>
+                    </div>
+                    <CommentList
+                      :comments="classifyComments"
+                      :loading="isLoadingClassify"
+                      :resourceType="type"
+                      :fallbackMixSongId="songMixSongId || id"
+                      compact
+                      empty-text="该分类下暂无评论"
+                    />
+                    <div v-if="isLoadingClassify || showClassifyEnd" class="comment-load-more">
+                      <div v-if="isLoadingClassify" class="comment-loading-inline">
+                        <div class="comment-loading-spinner"></div>
+                        <span>加载中...</span>
+                      </div>
+                      <div v-else class="comment-end-hint">已加载全部评论</div>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="comment-list-wrap">
+                    <div ref="hotwordChipRowRef" class="comment-chip-row">
+                      <Button
+                        variant="unstyled"
+                        size="none"
+                        v-for="item in hotwordList"
+                        :key="item.content"
+                        :class="['comment-chip', selectedHotword === item.content && 'is-active']"
+                        @click="
+                          selectedHotword = item.content;
+                          void fetchHotwordComments(true);
+                        "
+                      >
+                        {{ item.content
+                        }}<span v-if="item.count" class="comment-chip-count">{{ item.count }}</span>
+                      </Button>
+                    </div>
+                    <CommentList
+                      :comments="hotwordComments"
+                      :loading="isLoadingHotword"
+                      :resourceType="type"
+                      :fallbackMixSongId="songMixSongId || id"
+                      compact
+                      empty-text="该热词下暂无评论"
+                    />
+                    <div v-if="isLoadingHotword || showHotwordEnd" class="comment-load-more">
+                      <div v-if="isLoadingHotword" class="comment-loading-inline">
+                        <div class="comment-loading-spinner"></div>
+                        <span>加载中...</span>
+                      </div>
+                      <div v-else class="comment-end-hint">已加载全部评论</div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </template>
+
+        <template v-else>
+          <div v-if="hotComments.length" class="comment-section-title">热门评论</div>
+          <CommentList
+            :comments="hotComments"
+            :loading="isLoadingComments"
+            :resourceType="type"
+            :fallbackMixSongId="songMixSongId || id"
+            compact
+            hide-empty
+          />
+          <CommentList
+            :comments="comments"
+            :loading="isLoadingComments"
+            :resourceType="type"
+            :fallbackMixSongId="songMixSongId || id"
+            compact
+          />
+          <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
+            <div v-if="isLoadingComments" class="comment-loading-inline">
+              <div class="comment-loading-spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <div v-else class="comment-end-hint">已加载全部评论</div>
+          </div>
+        </template>
+      </div>
     </div>
-
-    <BackToTop target-selector=".comment-content-wrap" :threshold="360" />
-  </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

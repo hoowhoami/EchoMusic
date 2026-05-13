@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
   iconMicrophone,
   iconDeviceSpeaker,
@@ -277,7 +277,7 @@ onUnmounted(() => stopRecording());
 </script>
 
 <template>
-  <Scrollbar class="h-full">
+  <PageScrollContainer class="recognize-page-container">
     <div class="rec-page">
       <!-- 页面标题 -->
       <h1 class="rec-page-title">听歌识曲</h1>
@@ -432,39 +432,39 @@ onUnmounted(() => stopRecording());
         </div>
       </Transition>
     </div>
-  </Scrollbar>
 
-  <!-- 添加到歌单弹窗 -->
-  <Dialog
-    v-model:open="showPlaylistDialog"
-    title="添加到歌单"
-    contentClass="max-w-[420px]"
-    showClose
-  >
-    <div class="flex flex-col gap-3">
-      <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
-        加载歌单中...
+    <!-- 添加到歌单弹窗 -->
+    <Dialog
+      v-model:open="showPlaylistDialog"
+      title="添加到歌单"
+      contentClass="max-w-[420px]"
+      showClose
+    >
+      <div class="flex flex-col gap-3">
+        <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
+          加载歌单中...
+        </div>
+        <div
+          v-else-if="selectablePlaylists.length === 0"
+          class="py-6 text-center text-text-secondary text-[12px]"
+        >
+          暂无可用歌单
+        </div>
+        <Button
+          v-for="entry in selectablePlaylists"
+          :key="entry.listid ?? entry.id"
+          type="button"
+          class="rec-playlist-item"
+          variant="ghost"
+          size="sm"
+          @click="handleSelectPlaylist(entry.listid ?? entry.id)"
+        >
+          <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
+          <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
+        </Button>
       </div>
-      <div
-        v-else-if="selectablePlaylists.length === 0"
-        class="py-6 text-center text-text-secondary text-[12px]"
-      >
-        暂无可用歌单
-      </div>
-      <Button
-        v-for="entry in selectablePlaylists"
-        :key="entry.listid ?? entry.id"
-        type="button"
-        class="rec-playlist-item"
-        variant="ghost"
-        size="sm"
-        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
-      >
-        <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
-        <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
-      </Button>
-    </div>
-  </Dialog>
+    </Dialog>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

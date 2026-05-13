@@ -4,7 +4,7 @@ import Tag from '@/components/ui/Tag.vue';
 import Badge from '@/components/ui/Badge.vue';
 import AudioWaveIcon from '@/components/ui/AudioWaveIcon.vue';
 import Button from '@/components/ui/Button.vue';
-import { usePlayerControls } from '@/utils/usePlayerControls';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const {
   player,

@@ -3,7 +3,7 @@ import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import Popover from '@/components/ui/Popover.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconSpeedometer } from '@/icons';
-import { usePlayerControls } from '@/utils/usePlayerControls';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const {
   player,

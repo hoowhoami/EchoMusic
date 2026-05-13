@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'error-page' });
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';

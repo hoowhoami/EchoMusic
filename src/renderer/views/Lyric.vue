@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'lyric-page' });
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useClipboard, useThrottleFn } from '@vueuse/core';
 import { useLyricStore } from '@/stores/lyric';
@@ -40,11 +41,11 @@ import {
   iconTypography,
   iconMessageCircle,
 } from '@/icons';
-import { usePlayerControls } from '@/utils/usePlayerControls';
-import { useLyricColorPicker } from '@/utils/useLyricColorPicker';
-import { useLyricPortrait } from '@/utils/useLyricPortrait';
-import { useLyricLuminance } from '@/utils/useLyricLuminance';
-import { useLyricCollapse } from '@/utils/useLyricCollapse';
+import { usePlayerControls } from '@/composables/usePlayerControls';
+import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
+import { useLyricPortrait } from '@/composables/useLyricPortrait';
+import { useLyricLuminance } from '@/composables/useLyricLuminance';
+import { useLyricCollapse } from '@/composables/useLyricCollapse';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import VolumePopover from '@/components/player/VolumePopover.vue';
 

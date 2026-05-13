@@ -1,43 +1,56 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
 import { iconArrowUp } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 
 const props = defineProps<{
-  targetSelector?: string;
+  scrollContainer?: HTMLElement | null;
   threshold?: number;
 }>();
 
 const visible = ref(false);
-let scrollTarget: HTMLElement | null = null;
+let currentTarget: HTMLElement | null = null;
 
 const handleScroll = () => {
-  if (!scrollTarget) return;
-  visible.value = scrollTarget.scrollTop > (props.threshold || 300);
+  if (!currentTarget) return;
+  visible.value = currentTarget.scrollTop > (props.threshold || 300);
 };
 
 const scrollToTop = () => {
-  if (!scrollTarget) return;
-  scrollTarget.scrollTo({
+  if (!currentTarget) return;
+  currentTarget.scrollTo({
     top: 0,
     behavior: 'smooth',
   });
 };
 
-onMounted(() => {
-  scrollTarget = props.targetSelector
-    ? document.querySelector(props.targetSelector)
-    : document.querySelector('.view-port');
-
-  if (scrollTarget) {
-    scrollTarget.addEventListener('scroll', handleScroll);
+const unbind = () => {
+  if (currentTarget) {
+    currentTarget.removeEventListener('scroll', handleScroll);
+    currentTarget = null;
   }
-});
+  visible.value = false;
+};
+
+const bind = (el: HTMLElement | null) => {
+  unbind();
+  if (!el) return;
+  currentTarget = el;
+  currentTarget.addEventListener('scroll', handleScroll, { passive: true });
+  handleScroll();
+};
+
+// 响应式监听 scrollContainer 变化
+watch(
+  () => props.scrollContainer,
+  (el) => {
+    bind(el ?? null);
+  },
+  { immediate: true },
+);
 
 onUnmounted(() => {
-  if (scrollTarget) {
-    scrollTarget.removeEventListener('scroll', handleScroll);
-  }
+  unbind();
 });
 </script>
 
@@ -49,7 +62,7 @@ onUnmounted(() => {
       v-if="visible"
       @click="scrollToTop"
       class="fixed right-8 bottom-32 z-50 p-3 rounded-full back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
-      aria-label="Back to top"
+      aria-label="回到顶部"
     >
       <Icon
         class="transition-transform group-hover:-translate-y-1"

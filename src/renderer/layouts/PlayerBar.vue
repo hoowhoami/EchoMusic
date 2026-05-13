@@ -34,7 +34,7 @@ import {
   iconPlaylistAdd,
   iconTypography,
 } from '@/icons';
-import { usePlayerControls } from '@/utils/usePlayerControls';
+import { usePlayerControls } from '@/composables/usePlayerControls';
 
 const router = useRouter();
 
@@ -148,9 +148,8 @@ const toggleFavoritePB = (e: Event) => {
 };
 
 const updateDrawerWidth = () => {
-  const content = document.querySelector('.view-port') as HTMLElement | null;
-  const fallback = document.querySelector('.main-content') as HTMLElement | null;
-  const target = content ?? fallback;
+  const content = document.querySelector('.main-content') as HTMLElement | null;
+  const target = content;
   if (target) {
     const rect = target.getBoundingClientRect();
     const width = Math.floor(target.clientWidth);

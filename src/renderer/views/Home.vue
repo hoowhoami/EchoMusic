@@ -13,6 +13,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import { iconPlay, iconSparkles } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import UserAgreementDialog from '@/components/app/UserAgreementDialog.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 interface RecommendSectionState {
   loading: boolean;
@@ -141,89 +142,91 @@ const handleRejectAgreement = () => {
 </script>
 
 <template>
-  <div class="home-view px-10 pt-4 pb-10">
-    <div class="home-header">
-      <div class="text-[22px] font-semibold tracking-tight text-text-main">{{ greeting }}</div>
-      <div class="text-[12px] text-text-secondary/80 mt-1">由此开启好心情 ~</div>
+  <PageScrollContainer class="home-view-container">
+    <div class="home-view px-10 pt-4 pb-10">
+      <div class="home-header">
+        <div class="text-[22px] font-semibold tracking-tight text-text-main">{{ greeting }}</div>
+        <div class="text-[12px] text-text-secondary/80 mt-1">由此开启好心情 ~</div>
+      </div>
+
+      <div class="home-feature-row">
+        <Button variant="unstyled" size="none" class="home-feature-card" @click="openRecommend">
+          <div class="feature-icon gradient-primary">{{ todayLabel }}</div>
+          <div class="feature-meta">
+            <div class="feature-title">每日推荐</div>
+            <div class="feature-sub">为你量身定制</div>
+          </div>
+          <div class="feature-action">
+            <Icon :icon="iconPlay" width="14" height="14" />
+          </div>
+        </Button>
+        <Button variant="unstyled" size="none" class="home-feature-card" @click="openRanking">
+          <div class="feature-icon gradient-secondary">TOP</div>
+          <div class="feature-meta">
+            <div class="feature-title">排行榜</div>
+            <div class="feature-sub">实时热门趋势</div>
+          </div>
+          <div class="feature-action">
+            <Icon :icon="iconSparkles" width="14" height="14" />
+          </div>
+        </Button>
+      </div>
+
+      <section class="home-section">
+        <div class="section-header">
+          <div class="section-title">推荐歌单</div>
+        </div>
+        <div v-if="recommendState.loading" class="section-placeholder">加载中...</div>
+        <div v-else-if="recommendState.error" class="section-placeholder">
+          {{ recommendState.error }}
+        </div>
+        <VirtualGrid
+          v-else
+          class="playlist-grid"
+          :items="recommendedPlaylistCards"
+          :itemMinWidth="180"
+          :itemAspectRatio="1"
+          :itemChromeHeight="66"
+          :gap="20"
+          :overscan="3"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <PlaylistCard v-bind="item" layout="grid" />
+          </template>
+        </VirtualGrid>
+      </section>
+
+      <section class="home-section">
+        <div class="section-header">
+          <div class="section-title">编辑精选</div>
+        </div>
+        <div v-if="topIpState.loading" class="section-placeholder">加载中...</div>
+        <div v-else-if="topIpState.error" class="section-placeholder">{{ topIpState.error }}</div>
+        <VirtualGrid
+          v-else
+          class="playlist-grid"
+          :items="topIpPlaylistCards"
+          :itemMinWidth="180"
+          :itemAspectRatio="1"
+          :itemChromeHeight="66"
+          :gap="20"
+          :overscan="3"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <PlaylistCard v-bind="item" layout="grid" />
+          </template>
+        </VirtualGrid>
+      </section>
     </div>
 
-    <div class="home-feature-row">
-      <Button variant="unstyled" size="none" class="home-feature-card" @click="openRecommend">
-        <div class="feature-icon gradient-primary">{{ todayLabel }}</div>
-        <div class="feature-meta">
-          <div class="feature-title">每日推荐</div>
-          <div class="feature-sub">为你量身定制</div>
-        </div>
-        <div class="feature-action">
-          <Icon :icon="iconPlay" width="14" height="14" />
-        </div>
-      </Button>
-      <Button variant="unstyled" size="none" class="home-feature-card" @click="openRanking">
-        <div class="feature-icon gradient-secondary">TOP</div>
-        <div class="feature-meta">
-          <div class="feature-title">排行榜</div>
-          <div class="feature-sub">实时热门趋势</div>
-        </div>
-        <div class="feature-action">
-          <Icon :icon="iconSparkles" width="14" height="14" />
-        </div>
-      </Button>
-    </div>
-
-    <section class="home-section">
-      <div class="section-header">
-        <div class="section-title">推荐歌单</div>
-      </div>
-      <div v-if="recommendState.loading" class="section-placeholder">加载中...</div>
-      <div v-else-if="recommendState.error" class="section-placeholder">
-        {{ recommendState.error }}
-      </div>
-      <VirtualGrid
-        v-else
-        class="playlist-grid"
-        :items="recommendedPlaylistCards"
-        :itemMinWidth="180"
-        :itemAspectRatio="1"
-        :itemChromeHeight="66"
-        :gap="20"
-        :overscan="3"
-        keyField="id"
-      >
-        <template #default="{ item }">
-          <PlaylistCard v-bind="item" layout="grid" />
-        </template>
-      </VirtualGrid>
-    </section>
-
-    <section class="home-section">
-      <div class="section-header">
-        <div class="section-title">编辑精选</div>
-      </div>
-      <div v-if="topIpState.loading" class="section-placeholder">加载中...</div>
-      <div v-else-if="topIpState.error" class="section-placeholder">{{ topIpState.error }}</div>
-      <VirtualGrid
-        v-else
-        class="playlist-grid"
-        :items="topIpPlaylistCards"
-        :itemMinWidth="180"
-        :itemAspectRatio="1"
-        :itemChromeHeight="66"
-        :gap="20"
-        :overscan="3"
-        keyField="id"
-      >
-        <template #default="{ item }">
-          <PlaylistCard v-bind="item" layout="grid" />
-        </template>
-      </VirtualGrid>
-    </section>
-  </div>
-
-  <UserAgreementDialog
-    v-model:open="showUserAgreement"
-    @accept="handleAcceptAgreement"
-    @reject="handleRejectAgreement"
-  />
+    <UserAgreementDialog
+      v-model:open="showUserAgreement"
+      @accept="handleAcceptAgreement"
+      @reject="handleRejectAgreement"
+    />
+  </PageScrollContainer>
 </template>
 
 <style scoped>

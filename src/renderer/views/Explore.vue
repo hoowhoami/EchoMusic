@@ -45,6 +45,7 @@ import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue
 import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 interface ExplorePlaylistCardProps {
   id: string | number;
@@ -644,294 +645,30 @@ const filteredArtistCards = computed(() => {
 </script>
 
 <template>
-  <div
-    class="explore-view px-10 pt-4 pb-10"
-    :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
-  >
-    <div class="explore-header">
-      <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
-      <div class="mt-4">
-        <CustomTabBar
-          v-model="activeTabIndex"
-          :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']"
-        />
-      </div>
-    </div>
-
-    <div v-if="activeTabIndex === 0" class="mt-0">
-      <div class="explore-toolbar">
-        <CustomSelector :label="playlistCategoryLabel" @click="showPlaylistPicker = true" />
-      </div>
-      <VirtualGrid
-        class="mt-1"
-        :items="recommendedPlaylistCards"
-        :loading="loadingPlaylists"
-        :active="activeTabIndex === 0"
-        :itemMinWidth="180"
-        :itemHeight="230"
-        :gap="20"
-        :overscan="3"
-        :stateMinHeight="220"
-        keyField="id"
-      >
-        <template #default="{ item }">
-          <PlaylistCard v-bind="item" :coverRadius="14" :showShadow="true" layout="grid" />
-        </template>
-      </VirtualGrid>
-    </div>
-
-    <div v-else-if="activeTabIndex === 1" class="mt-0">
-      <div class="rank-toolbar sticky z-[120] bg-bg-main">
-        <div class="rank-toolbar-inner">
-          <CustomSelector :label="rankLabel" @click="showRankPicker = true" />
-          <div class="rank-toolbar-actions">
-            <div class="rank-action-scroll">
-              <ActionRow @play="playRankSongs" @batch="openRankBatchDrawer" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <BatchActionDrawer v-model:open="showRankBatchDrawer" :songs="rankSongs" source-id="rank" />
-
-      <div
-        class="song-list-sticky sticky z-[110] bg-bg-main"
-        :style="{ top: `${rankToolbarOffset}px` }"
-      >
-        <div class="border-b border-border-light/10">
-          <div class="flex items-center justify-between h-14">
-            <div class="rank-song-tab">
-              <span class="rank-song-label relative"
-                >歌曲 <Badge :count="rankSongCountLabel"
-              /></span>
-            </div>
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <input
-                  v-model="rankSearchQuery"
-                  type="text"
-                  placeholder="搜索歌曲..."
-                  class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                />
-                <Icon
-                  class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                  :icon="iconSearch"
-                  width="14"
-                  height="14"
-                />
-              </div>
-              <Button
-                variant="unstyled"
-                size="none"
-                @click="handleRankLocate"
-                class="song-locate-btn p-2 rounded-lg"
-                title="定位当前播放"
-              >
-                <Icon :icon="iconCurrentLocation" width="16" height="16" />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <SongListHeader
-          :sortField="rankSortField"
-          :sortOrder="rankSortOrder"
-          :showCover="true"
-          paddingClass="px-0"
-          @sort="handleRankSort"
-        />
-      </div>
-
-      <div class="pb-12">
-        <div v-if="loadingRankSongs" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
-        <SongList
-          v-else
-          ref="rankSongListRef"
-          :songs="sortedRankSongs"
-          :searchQuery="rankSearchQuery"
-          :activeId="activeSongId"
-          :showCover="true"
-          :queueOptions="{
-            queueId: `queue:explore:rank:${rankId ?? 'default'}`,
-            title: ranks.find((r: RankMeta) => r.id === rankId)?.name || '排行榜',
-            subtitle: ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
-            type: 'ranking',
-            dynamic: false,
-          }"
-          :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="
-            settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined
-          "
-          rowPaddingClass="px-0"
-        />
-      </div>
-    </div>
-
-    <div v-else-if="activeTabIndex === 2" class="mt-0">
-      <div class="explore-toolbar">
-        <CustomSelector :label="albumTypeLabel" @click="showAlbumPicker = true" />
-      </div>
-      <VirtualGrid
-        :items="albumCards"
-        :loading="loadingAlbums"
-        :active="activeTabIndex === 2"
-        :itemMinWidth="180"
-        :itemHeight="230"
-        :gap="20"
-        :overscan="3"
-        :stateMinHeight="230"
-        emptyText="暂无专辑"
-        keyField="id"
-      >
-        <template #default="{ item }">
-          <AlbumCard v-bind="item" />
-        </template>
-      </VirtualGrid>
-    </div>
-
-    <div v-else-if="activeTabIndex === 3" class="mt-0">
-      <div class="new-song-toolbar sticky z-[120] bg-bg-main">
-        <div class="new-song-toolbar-inner">
-          <div class="new-song-title-wrap">
-            <div class="new-song-badge-icon">
-              <Icon :icon="iconSparkles" width="16" height="16" />
-            </div>
-            <div class="min-w-0">
-              <div class="text-[15px] font-semibold text-text-main leading-none">新歌速递</div>
-            </div>
-          </div>
-          <div class="new-song-toolbar-actions">
-            <div class="rank-action-scroll">
-              <ActionRow @play="playNewSongs" @batch="openNewSongBatchDrawer" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <BatchActionDrawer
-        v-model:open="showNewSongBatchDrawer"
-        :songs="newSongs"
-        source-id="new-song"
-      />
-
-      <div
-        class="song-list-sticky sticky z-[110] bg-bg-main"
-        :style="{ top: `${newSongToolbarOffset}px` }"
-      >
-        <div class="border-b border-border-light/10">
-          <div class="flex items-center justify-between h-14">
-            <div class="rank-song-tab">
-              <span class="rank-song-label relative"
-                >歌曲 <Badge :count="newSongCountLabel"
-              /></span>
-            </div>
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <input
-                  v-model="newSongSearchQuery"
-                  type="text"
-                  placeholder="搜索歌曲..."
-                  class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                />
-                <Icon
-                  class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                  :icon="iconSearch"
-                  width="14"
-                  height="14"
-                />
-              </div>
-              <Button
-                variant="unstyled"
-                size="none"
-                @click="handleNewSongLocate"
-                class="song-locate-btn p-2 rounded-lg"
-                title="定位当前播放"
-              >
-                <Icon :icon="iconCurrentLocation" width="16" height="16" />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <SongListHeader
-          :sortField="newSongSortField"
-          :sortOrder="newSongSortOrder"
-          :showCover="true"
-          paddingClass="px-0"
-          @sort="handleNewSongSort"
-        />
-      </div>
-
-      <div class="pb-12">
-        <div v-if="loadingNewSongs" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
-        <SongList
-          v-else
-          ref="newSongListRef"
-          :songs="sortedNewSongs"
-          :searchQuery="newSongSearchQuery"
-          :activeId="activeSongId"
-          :showCover="true"
-          :queueOptions="{
-            queueId: 'queue:explore:new-songs',
-            title: '新歌速递',
-            subtitle: albumTypeLabel,
-            type: 'default',
-            dynamic: false,
-          }"
-          :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="
-            settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined
-          "
-          rowPaddingClass="px-0"
-        />
-      </div>
-    </div>
-
-    <div v-else-if="activeTabIndex === 4" class="mt-0">
-      <div class="explore-toolbar">
-        <div class="flex items-center gap-2">
-          <CustomSelector :label="`性别: ${artistSexLabel}`" @click="showArtistSexPicker = true" />
-          <CustomSelector
-            :label="`类型: ${artistTypeLabel}`"
-            @click="showArtistTypePicker = true"
+  <PageScrollContainer class="explore-view-container">
+    <div
+      class="explore-view px-10 pt-4 pb-10"
+      :style="{ '--explore-header-height': `${exploreHeaderHeight}px` }"
+    >
+      <div class="explore-header">
+        <div class="text-[24px] font-semibold text-text-main tracking-tight">探索发现</div>
+        <div class="mt-4">
+          <CustomTabBar
+            v-model="activeTabIndex"
+            :tabs="['歌单', '排行榜', '新碟上架', '新歌速递', '歌手']"
           />
         </div>
       </div>
 
-      <div v-if="loadingArtists" class="flex items-center justify-center py-20">
-        <div
-          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-        ></div>
-      </div>
-
-      <template v-else-if="filteredArtistCards.length > 0">
-        <div class="artist-letter-bar">
-          <span
-            :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
-            @click="scrollToArtistGroup('全部')"
-            >全部</span
-          >
-          <span
-            v-for="letter in artistLetters"
-            :key="letter"
-            :class="['artist-letter-item', activeArtistLetter === letter ? 'is-active' : '']"
-            @click="scrollToArtistGroup(letter)"
-            >{{ letter }}</span
-          >
+      <div v-if="activeTabIndex === 0" class="mt-0">
+        <div class="explore-toolbar">
+          <CustomSelector :label="playlistCategoryLabel" @click="showPlaylistPicker = true" />
         </div>
-
         <VirtualGrid
-          :items="filteredArtistCards"
-          :loading="false"
-          :active="activeTabIndex === 4"
+          class="mt-1"
+          :items="recommendedPlaylistCards"
+          :loading="loadingPlaylists"
+          :active="activeTabIndex === 0"
           :itemMinWidth="180"
           :itemHeight="230"
           :gap="20"
@@ -940,57 +677,327 @@ const filteredArtistCards = computed(() => {
           keyField="id"
         >
           <template #default="{ item }">
-            <ArtistCard v-bind="item" />
+            <PlaylistCard v-bind="item" :coverRadius="14" :showShadow="true" layout="grid" />
           </template>
         </VirtualGrid>
-      </template>
+      </div>
 
-      <div v-else class="py-20 text-center opacity-50 text-[14px] italic">暂无歌手</div>
+      <div v-else-if="activeTabIndex === 1" class="mt-0">
+        <div class="rank-toolbar sticky z-[120] bg-bg-main">
+          <div class="rank-toolbar-inner">
+            <CustomSelector :label="rankLabel" @click="showRankPicker = true" />
+            <div class="rank-toolbar-actions">
+              <div class="rank-action-scroll">
+                <ActionRow @play="playRankSongs" @batch="openRankBatchDrawer" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <BatchActionDrawer v-model:open="showRankBatchDrawer" :songs="rankSongs" source-id="rank" />
+
+        <div
+          class="song-list-sticky sticky z-[110] bg-bg-main"
+          :style="{ top: `${rankToolbarOffset}px` }"
+        >
+          <div class="border-b border-border-light/10">
+            <div class="flex items-center justify-between h-14">
+              <div class="rank-song-tab">
+                <span class="rank-song-label relative"
+                  >歌曲 <Badge :count="rankSongCountLabel"
+                /></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="rankSearchQuery"
+                    type="text"
+                    placeholder="搜索歌曲..."
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                  />
+                  <Icon
+                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                    :icon="iconSearch"
+                    width="14"
+                    height="14"
+                  />
+                </div>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleRankLocate"
+                  class="song-locate-btn p-2 rounded-lg"
+                  title="定位当前播放"
+                >
+                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <SongListHeader
+            :sortField="rankSortField"
+            :sortOrder="rankSortOrder"
+            :showCover="true"
+            paddingClass="px-0"
+            @sort="handleRankSort"
+          />
+        </div>
+
+        <div class="pb-12">
+          <div v-if="loadingRankSongs" class="flex items-center justify-center py-20">
+            <div
+              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+            ></div>
+          </div>
+          <SongList
+            v-else
+            ref="rankSongListRef"
+            :songs="sortedRankSongs"
+            :searchQuery="rankSearchQuery"
+            :activeId="activeSongId"
+            :showCover="true"
+            :queueOptions="{
+              queueId: `queue:explore:rank:${rankId ?? 'default'}`,
+              title: ranks.find((r: RankMeta) => r.id === rankId)?.name || '排行榜',
+              subtitle:
+                ranks.find((r: RankMeta) => r.id === rankId)?.rankTypeName || '实时热门趋势',
+              type: 'ranking',
+              dynamic: false,
+            }"
+            :enableDefaultDoubleTapPlay="true"
+            :onSongDoubleTapPlay="
+              settingStore.replacePlaylist ? handleRankSongDoubleTapPlay : undefined
+            "
+            rowPaddingClass="px-0"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 2" class="mt-0">
+        <div class="explore-toolbar">
+          <CustomSelector :label="albumTypeLabel" @click="showAlbumPicker = true" />
+        </div>
+        <VirtualGrid
+          :items="albumCards"
+          :loading="loadingAlbums"
+          :active="activeTabIndex === 2"
+          :itemMinWidth="180"
+          :itemHeight="230"
+          :gap="20"
+          :overscan="3"
+          :stateMinHeight="230"
+          emptyText="暂无专辑"
+          keyField="id"
+        >
+          <template #default="{ item }">
+            <AlbumCard v-bind="item" />
+          </template>
+        </VirtualGrid>
+      </div>
+
+      <div v-else-if="activeTabIndex === 3" class="mt-0">
+        <div class="new-song-toolbar sticky z-[120] bg-bg-main">
+          <div class="new-song-toolbar-inner">
+            <div class="new-song-title-wrap">
+              <div class="new-song-badge-icon">
+                <Icon :icon="iconSparkles" width="16" height="16" />
+              </div>
+              <div class="min-w-0">
+                <div class="text-[15px] font-semibold text-text-main leading-none">新歌速递</div>
+              </div>
+            </div>
+            <div class="new-song-toolbar-actions">
+              <div class="rank-action-scroll">
+                <ActionRow @play="playNewSongs" @batch="openNewSongBatchDrawer" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <BatchActionDrawer
+          v-model:open="showNewSongBatchDrawer"
+          :songs="newSongs"
+          source-id="new-song"
+        />
+
+        <div
+          class="song-list-sticky sticky z-[110] bg-bg-main"
+          :style="{ top: `${newSongToolbarOffset}px` }"
+        >
+          <div class="border-b border-border-light/10">
+            <div class="flex items-center justify-between h-14">
+              <div class="rank-song-tab">
+                <span class="rank-song-label relative"
+                  >歌曲 <Badge :count="newSongCountLabel"
+                /></span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="newSongSearchQuery"
+                    type="text"
+                    placeholder="搜索歌曲..."
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                  />
+                  <Icon
+                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                    :icon="iconSearch"
+                    width="14"
+                    height="14"
+                  />
+                </div>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleNewSongLocate"
+                  class="song-locate-btn p-2 rounded-lg"
+                  title="定位当前播放"
+                >
+                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <SongListHeader
+            :sortField="newSongSortField"
+            :sortOrder="newSongSortOrder"
+            :showCover="true"
+            paddingClass="px-0"
+            @sort="handleNewSongSort"
+          />
+        </div>
+
+        <div class="pb-12">
+          <div v-if="loadingNewSongs" class="flex items-center justify-center py-20">
+            <div
+              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+            ></div>
+          </div>
+          <SongList
+            v-else
+            ref="newSongListRef"
+            :songs="sortedNewSongs"
+            :searchQuery="newSongSearchQuery"
+            :activeId="activeSongId"
+            :showCover="true"
+            :queueOptions="{
+              queueId: 'queue:explore:new-songs',
+              title: '新歌速递',
+              subtitle: albumTypeLabel,
+              type: 'default',
+              dynamic: false,
+            }"
+            :enableDefaultDoubleTapPlay="true"
+            :onSongDoubleTapPlay="
+              settingStore.replacePlaylist ? handleNewSongDoubleTapPlay : undefined
+            "
+            rowPaddingClass="px-0"
+          />
+        </div>
+      </div>
+
+      <div v-else-if="activeTabIndex === 4" class="mt-0">
+        <div class="explore-toolbar">
+          <div class="flex items-center gap-2">
+            <CustomSelector
+              :label="`性别: ${artistSexLabel}`"
+              @click="showArtistSexPicker = true"
+            />
+            <CustomSelector
+              :label="`类型: ${artistTypeLabel}`"
+              @click="showArtistTypePicker = true"
+            />
+          </div>
+        </div>
+
+        <div v-if="loadingArtists" class="flex items-center justify-center py-20">
+          <div
+            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+          ></div>
+        </div>
+
+        <template v-else-if="filteredArtistCards.length > 0">
+          <div class="artist-letter-bar">
+            <span
+              :class="['artist-letter-item', activeArtistLetter === '全部' ? 'is-active' : '']"
+              @click="scrollToArtistGroup('全部')"
+              >全部</span
+            >
+            <span
+              v-for="letter in artistLetters"
+              :key="letter"
+              :class="['artist-letter-item', activeArtistLetter === letter ? 'is-active' : '']"
+              @click="scrollToArtistGroup(letter)"
+              >{{ letter }}</span
+            >
+          </div>
+
+          <VirtualGrid
+            :items="filteredArtistCards"
+            :loading="false"
+            :active="activeTabIndex === 4"
+            :itemMinWidth="180"
+            :itemHeight="230"
+            :gap="20"
+            :overscan="3"
+            :stateMinHeight="220"
+            keyField="id"
+          >
+            <template #default="{ item }">
+              <ArtistCard v-bind="item" />
+            </template>
+          </VirtualGrid>
+        </template>
+
+        <div v-else class="py-20 text-center opacity-50 text-[14px] italic">暂无歌手</div>
+      </div>
+
+      <CustomPicker
+        v-model:open="showArtistSexPicker"
+        title="性别筛选"
+        :options="artistSexTypes"
+        :selectedId="artistSexId"
+        @select="handleSelectArtistSex"
+        :maxWidth="360"
+      />
+
+      <CustomPicker
+        v-model:open="showArtistTypePicker"
+        title="类型筛选"
+        :options="artistTypes"
+        :selectedId="artistTypeId"
+        @select="handleSelectArtistType"
+        :maxWidth="360"
+      />
+
+      <CustomPicker
+        v-model:open="showPlaylistPicker"
+        title="歌单分类"
+        :options="playlistCategories"
+        :selectedId="playlistCategoryId"
+        @select="handleSelectPlaylistCategory"
+      />
+
+      <CustomPicker
+        v-model:open="showRankPicker"
+        title="排行榜选择"
+        :options="ranks.map((rank) => ({ id: String(rank.id), name: rank.name }))"
+        :selectedId="rankId ? String(rankId) : ''"
+        @select="handleSelectRank"
+      />
+
+      <CustomPicker
+        v-model:open="showAlbumPicker"
+        title="专辑类型"
+        :options="albumTypes"
+        :selectedId="albumTypeId"
+        @select="handleSelectAlbumType"
+        :maxWidth="360"
+      />
     </div>
-
-    <CustomPicker
-      v-model:open="showArtistSexPicker"
-      title="性别筛选"
-      :options="artistSexTypes"
-      :selectedId="artistSexId"
-      @select="handleSelectArtistSex"
-      :maxWidth="360"
-    />
-
-    <CustomPicker
-      v-model:open="showArtistTypePicker"
-      title="类型筛选"
-      :options="artistTypes"
-      :selectedId="artistTypeId"
-      @select="handleSelectArtistType"
-      :maxWidth="360"
-    />
-
-    <CustomPicker
-      v-model:open="showPlaylistPicker"
-      title="歌单分类"
-      :options="playlistCategories"
-      :selectedId="playlistCategoryId"
-      @select="handleSelectPlaylistCategory"
-    />
-
-    <CustomPicker
-      v-model:open="showRankPicker"
-      title="排行榜选择"
-      :options="ranks.map((rank) => ({ id: String(rank.id), name: rank.name }))"
-      :selectedId="rankId ? String(rankId) : ''"
-      @select="handleSelectRank"
-    />
-
-    <CustomPicker
-      v-model:open="showAlbumPicker"
-      title="专辑类型"
-      :options="albumTypes"
-      :selectedId="albumTypeId"
-      @select="handleSelectAlbumType"
-      :maxWidth="360"
-    />
-  </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

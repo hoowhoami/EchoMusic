@@ -18,6 +18,7 @@ import { iconCloud, iconCurrentLocation, iconList, iconPlay, iconSearch } from '
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import Badge from '@/components/ui/Badge.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
 const PAGE_SIZE = 100;
 
@@ -281,180 +282,186 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="cloud-view bg-bg-main min-h-full">
-    <div
-      v-if="!isLoggedIn"
-      class="cloud-login-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
-    >
+  <PageScrollContainer class="cloud-view-container">
+    <div class="cloud-view bg-bg-main min-h-full">
       <div
-        class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+        v-if="!isLoggedIn"
+        class="cloud-login-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
       >
-        <Icon :icon="iconCloud" width="32" height="32" />
+        <div
+          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+        >
+          <Icon :icon="iconCloud" width="32" height="32" />
+        </div>
+        <div class="text-[22px] font-semibold text-text-main">登录后查看云盘</div>
       </div>
-      <div class="text-[22px] font-semibold text-text-main">登录后查看云盘</div>
-    </div>
 
-    <template v-else>
-      <SliverHeader
-        typeLabel="CLOUD"
-        title="音乐云盘"
-        :coverUrl="cloudCoverUrl"
-        :hasDetails="true"
-        :expandedHeight="176"
-        :collapsedHeight="56"
-      >
-        <template #details>
-          <div class="flex flex-col gap-2">
-            <div class="text-[12px] font-medium text-text-secondary/75">
-              支持基础浏览、播放与容量查看
+      <template v-else>
+        <SliverHeader
+          typeLabel="CLOUD"
+          title="音乐云盘"
+          :coverUrl="cloudCoverUrl"
+          :hasDetails="true"
+          :expandedHeight="176"
+          :collapsedHeight="56"
+        >
+          <template #details>
+            <div class="flex flex-col gap-2">
+              <div class="text-[12px] font-medium text-text-secondary/75">
+                支持基础浏览、播放与容量查看
+              </div>
+              <div
+                class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              >
+                <div class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconPlay" width="12" height="12" />
+                  <span>{{ displaySongCount }}</span>
+                </div>
+                <div class="inline-flex items-center gap-1.5">
+                  <Icon :icon="iconCloud" width="12" height="12" />
+                  <span>{{ formatBytes(cloudCapacity) }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <template #actions>
+            <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
+          </template>
+
+          <template #collapsed-actions>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+          </template>
+        </SliverHeader>
+
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="cloud" />
+
+        <div class="px-6 pt-[10px] pb-1">
+          <div class="cloud-info-card">
+            <div class="flex items-center justify-between">
+              <div class="text-[13px] font-semibold text-text-main">云盘容量</div>
+              <div class="text-[11px] font-semibold text-primary">
+                {{ (usageRatio * 100).toFixed(1) }}%
+              </div>
+            </div>
+            <div class="cloud-progress-track">
+              <div class="cloud-progress-value" :style="{ width: `${usageRatio * 100}%` }"></div>
             </div>
             <div
-              class="flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] font-semibold text-text-secondary/80"
+              class="flex items-center justify-between text-[11px] font-medium text-text-secondary/80"
             >
-              <div class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconPlay" width="12" height="12" />
-                <span>{{ displaySongCount }}</span>
+              <span>{{ formatBytes(usedCapacity) }} / {{ formatBytes(cloudCapacity) }}</span>
+              <span>可用 {{ formatBytes(cloudAvailable) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: '56px' }">
+          <div class="px-6 border-b border-border-light/10">
+            <div class="flex items-center justify-between h-14">
+              <div class="text-[14px] font-semibold text-text-main relative">
+                歌曲 <Badge :count="displaySongCount" />
               </div>
-              <div class="inline-flex items-center gap-1.5">
-                <Icon :icon="iconCloud" width="12" height="12" />
-                <span>{{ formatBytes(cloudCapacity) }}</span>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <input
+                    v-model="searchQuery"
+                    type="text"
+                    placeholder="搜索歌曲..."
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                  />
+                  <Icon
+                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                    :icon="iconSearch"
+                    width="14"
+                    height="14"
+                  />
+                </div>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  @click="handleLocate"
+                  class="song-locate-btn p-2 rounded-lg"
+                  title="定位当前播放"
+                >
+                  <Icon :icon="iconCurrentLocation" width="16" height="16" />
+                </Button>
               </div>
             </div>
           </div>
-        </template>
 
-        <template #actions>
-          <ActionRow @play="handlePlayAll" @batch="openBatchDrawer" />
-        </template>
+          <SongListHeader
+            :sortField="sortField"
+            :sortOrder="sortOrder"
+            :showCover="true"
+            paddingClass="px-6"
+            @sort="handleSort"
+          />
+        </div>
 
-        <template #collapsed-actions>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="handlePlayAll"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="openBatchDrawer"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="cloud" />
-
-      <div class="px-6 pt-[10px] pb-1">
-        <div class="cloud-info-card">
-          <div class="flex items-center justify-between">
-            <div class="text-[13px] font-semibold text-text-main">云盘容量</div>
-            <div class="text-[11px] font-semibold text-primary">
-              {{ (usageRatio * 100).toFixed(1) }}%
-            </div>
-          </div>
-          <div class="cloud-progress-track">
-            <div class="cloud-progress-value" :style="{ width: `${usageRatio * 100}%` }"></div>
+        <div class="px-6 pb-12">
+          <div v-if="loading" class="flex items-center justify-center py-20">
+            <div
+              class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+            ></div>
           </div>
           <div
-            class="flex items-center justify-between text-[11px] font-medium text-text-secondary/80"
+            v-else-if="songs.length === 0"
+            class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
           >
-            <span>{{ formatBytes(usedCapacity) }} / {{ formatBytes(cloudCapacity) }}</span>
-            <span>可用 {{ formatBytes(cloudAvailable) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: '56px' }">
-        <div class="px-6 border-b border-border-light/10">
-          <div class="flex items-center justify-between h-14">
-            <div class="text-[14px] font-semibold text-text-main relative">
-              歌曲 <Badge :count="displaySongCount" />
+            <div
+              class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
+            >
+              <Icon :icon="iconCloud" width="28" height="28" />
             </div>
-            <div class="flex items-center gap-2">
-              <div class="relative">
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="搜索歌曲..."
-                  class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                />
-                <Icon
-                  class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
-                  :icon="iconSearch"
-                  width="14"
-                  height="14"
-                />
-              </div>
-              <Button
-                variant="unstyled"
-                size="none"
-                @click="handleLocate"
-                class="song-locate-btn p-2 rounded-lg"
-                title="定位当前播放"
-              >
-                <Icon :icon="iconCurrentLocation" width="16" height="16" />
-              </Button>
+            <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
+            <div class="mt-2 text-[13px] font-medium text-text-secondary/75">
+              上传后会展示在这里
+            </div>
+          </div>
+          <SongList
+            v-else
+            ref="songListRef"
+            :songs="sortedSongs"
+            :searchQuery="searchQuery"
+            :activeId="activeSongId"
+            :showCover="true"
+            :queueOptions="{
+              queueId: 'queue:cloud',
+              title: '云盘音乐',
+              subtitle: '你的云盘收藏',
+              type: 'cloud',
+              dynamic: false,
+            }"
+            :enableDefaultDoubleTapPlay="true"
+            :onSongDoubleTapPlay="
+              settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+            "
+          />
+          <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
+            <div class="text-[12px] font-semibold text-text-secondary/70">
+              正在后台补全剩余云盘歌曲...
             </div>
           </div>
         </div>
-
-        <SongListHeader
-          :sortField="sortField"
-          :sortOrder="sortOrder"
-          :showCover="true"
-          paddingClass="px-6"
-          @sort="handleSort"
-        />
-      </div>
-
-      <div class="px-6 pb-12">
-        <div v-if="loading" class="flex items-center justify-center py-20">
-          <div
-            class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-          ></div>
-        </div>
-        <div
-          v-else-if="songs.length === 0"
-          class="cloud-empty flex flex-col items-center justify-center py-24 text-center"
-        >
-          <div
-            class="w-16 h-16 rounded-[18px] bg-primary/10 text-primary flex items-center justify-center mb-4"
-          >
-            <Icon :icon="iconCloud" width="28" height="28" />
-          </div>
-          <div class="text-[18px] font-semibold text-text-main">云盘暂无歌曲</div>
-          <div class="mt-2 text-[13px] font-medium text-text-secondary/75">上传后会展示在这里</div>
-        </div>
-        <SongList
-          v-else
-          ref="songListRef"
-          :songs="sortedSongs"
-          :searchQuery="searchQuery"
-          :activeId="activeSongId"
-          :showCover="true"
-          :queueOptions="{
-            queueId: 'queue:cloud',
-            title: '云盘音乐',
-            subtitle: '你的云盘收藏',
-            type: 'cloud',
-            dynamic: false,
-          }"
-          :enableDefaultDoubleTapPlay="true"
-          :onSongDoubleTapPlay="settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined"
-        />
-        <div v-if="!loading && isBackgroundResolving" class="flex justify-center pt-4">
-          <div class="text-[12px] font-semibold text-text-secondary/70">
-            正在后台补全剩余云盘歌曲...
-          </div>
-        </div>
-      </div>
-    </template>
-  </div>
+      </template>
+    </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

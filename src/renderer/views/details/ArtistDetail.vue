@@ -2,7 +2,7 @@
 defineOptions({ name: 'artist-detail' });
 import { ref, shallowRef, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useRouteId } from '@/utils/useRouteId';
+import { useRouteId } from '@/composables/useRouteId';
 import {
   getArtistDetail,
   getArtistSongs,
@@ -25,9 +25,11 @@ import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
+import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { mapAlbumMeta, mapArtistDetailMeta, mapArtistSong } from '@/utils/mappers';
+import { useScrollContainer } from '@/composables/usePageScroll';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
@@ -458,9 +460,11 @@ const fetchMoreAlbums = async () => {
   }
 };
 
+const scrollContainerRef = useScrollContainer();
+
 onMounted(() => {
   void fetchData();
-  const viewport = document.querySelector('.view-port');
+  const viewport = scrollContainerRef.value;
   viewport?.addEventListener('scroll', onViewportScroll);
 });
 
@@ -476,7 +480,7 @@ watch(activeTab, (tab) => {
 
 // 滚动加载更多 MV 和专辑
 const onViewportScroll = () => {
-  const viewport = document.querySelector('.view-port');
+  const viewport = scrollContainerRef.value;
   if (!viewport) return;
   const { scrollTop, scrollHeight, clientHeight } = viewport;
   if (scrollHeight - scrollTop - clientHeight > 300) return;
@@ -490,248 +494,250 @@ const onViewportScroll = () => {
 };
 
 onUnmounted(() => {
-  const viewport = document.querySelector('.view-port');
+  const viewport = scrollContainerRef.value;
   viewport?.removeEventListener('scroll', onViewportScroll);
 });
 </script>
 
 <template>
-  <div class="artist-detail-container bg-bg-main min-h-full">
-    <div v-if="loading && !artist" class="flex items-center justify-center py-40">
-      <div
-        class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
-      ></div>
-    </div>
-
-    <template v-else-if="artist">
-      <SliverHeader
-        ref="sliverHeaderRef"
-        typeLabel="ARTIST"
-        :title="artist.name"
-        :coverUrl="artist.pic"
-        :hasDetails="true"
-        :expandedHeight="196"
-      >
-        <template #details>
-          <div class="flex flex-col gap-1.5 text-text-main/60">
-            <div class="text-[13px] font-semibold text-primary">
-              {{ artist.songCount || songs.length }} 歌曲 •
-              {{ artist.albumCount || albums.length }} 专辑
-              <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV</template>
-            </div>
-            <div class="flex items-center gap-3 text-[12px] text-text-secondary">
-              <span v-if="artist.fansCount" class="flex items-center gap-1">
-                <span class="font-semibold text-text-main/80">{{
-                  formatFansCount(artist.fansCount)
-                }}</span>
-                粉丝
-              </span>
-              <span v-if="artist.birthday">🎂 {{ artist.birthday }}</span>
-            </div>
-          </div>
-        </template>
-
-        <template #actions>
-          <ActionRow
-            :secondaryActions="secondaryActions"
-            @play="handlePlayAll"
-            @batch="openBatchDrawer"
-          />
-        </template>
-
-        <template #collapsed-actions>
-          <Button
-            v-if="userStore.isLoggedIn"
-            variant="unstyled"
-            size="none"
-            @click="toggleArtistFollow"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
-          >
-            <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="handlePlayAll"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
-          >
-            <Icon :icon="iconPlay" width="20" height="20" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            @click="openBatchDrawer"
-            class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
-          >
-            <Icon :icon="iconList" width="18" height="18" />
-          </Button>
-        </template>
-      </SliverHeader>
-
-      <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
-
-      <div v-if="artist.intro" class="px-6 pt-[6px] pb-[6px]">
-        <div class="text-[15px] font-semibold text-text-main">歌手介绍</div>
-        <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
-          {{ artist.intro }}
-        </div>
-        <Button
-          variant="unstyled"
-          size="none"
-          type="button"
-          class="mt-[2px] text-[11px] font-semibold text-primary"
-          @click="showIntroDialog = true"
-        >
-          查看详情
-        </Button>
+  <PageScrollContainer class="artist-detail-page">
+    <div class="artist-detail-container bg-bg-main min-h-full">
+      <div v-if="loading && !artist" class="flex items-center justify-center py-40">
+        <div
+          class="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
+        ></div>
       </div>
 
-      <Tabs v-model="activeTab" class="w-full">
-        <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
-          <div class="px-6 border-b border-border-light/10">
-            <div class="flex items-center justify-between h-14">
-              <TabsList class="bg-transparent border-none gap-8">
-                <TabsTrigger value="songs">
-                  <span class="relative"
-                    >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
-                  /></span>
-                </TabsTrigger>
-                <TabsTrigger value="albums">
-                  <span class="relative"
-                    >专辑 <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
-                  /></span>
-                </TabsTrigger>
-                <TabsTrigger value="mvs">
-                  <span class="relative"
-                    >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
-                  /></span>
-                </TabsTrigger>
-              </TabsList>
-
-              <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
-                <div class="relative">
-                  <input
-                    v-model="searchQuery"
-                    type="text"
-                    placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
-                  />
-                  <Icon
-                    class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
-                    :icon="iconSearch"
-                    width="14"
-                    height="14"
-                  />
-                </div>
-                <Button
-                  variant="unstyled"
-                  size="none"
-                  @click="handleLocate"
-                  class="song-locate-btn p-2 rounded-lg"
-                  title="定位当前播放"
-                >
-                  <Icon :icon="iconCurrentLocation" width="18" height="18" />
-                </Button>
+      <template v-else-if="artist">
+        <SliverHeader
+          ref="sliverHeaderRef"
+          typeLabel="ARTIST"
+          :title="artist.name"
+          :coverUrl="artist.pic"
+          :hasDetails="true"
+          :expandedHeight="196"
+        >
+          <template #details>
+            <div class="flex flex-col gap-1.5 text-text-main/60">
+              <div class="text-[13px] font-semibold text-primary">
+                {{ artist.songCount || songs.length }} 歌曲 •
+                {{ artist.albumCount || albums.length }} 专辑
+                <template v-if="artist.mvCount"> • {{ artist.mvCount }} MV</template>
+              </div>
+              <div class="flex items-center gap-3 text-[12px] text-text-secondary">
+                <span v-if="artist.fansCount" class="flex items-center gap-1">
+                  <span class="font-semibold text-text-main/80">{{
+                    formatFansCount(artist.fansCount)
+                  }}</span>
+                  粉丝
+                </span>
+                <span v-if="artist.birthday">🎂 {{ artist.birthday }}</span>
               </div>
             </div>
+          </template>
+
+          <template #actions>
+            <ActionRow
+              :secondaryActions="secondaryActions"
+              @play="handlePlayAll"
+              @batch="openBatchDrawer"
+            />
+          </template>
+
+          <template #collapsed-actions>
+            <Button
+              v-if="userStore.isLoggedIn"
+              variant="unstyled"
+              size="none"
+              @click="toggleArtistFollow"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
+            >
+              <Icon :icon="isFollowed ? iconHeartFilled : iconHeart" width="18" height="18" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="handlePlayAll"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+            >
+              <Icon :icon="iconPlay" width="20" height="20" />
+            </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              @click="openBatchDrawer"
+              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+            >
+              <Icon :icon="iconList" width="18" height="18" />
+            </Button>
+          </template>
+        </SliverHeader>
+
+        <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
+
+        <div v-if="artist.intro" class="px-6 pt-[6px] pb-[6px]">
+          <div class="text-[15px] font-semibold text-text-main">歌手介绍</div>
+          <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
+            {{ artist.intro }}
+          </div>
+          <Button
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="mt-[2px] text-[11px] font-semibold text-primary"
+            @click="showIntroDialog = true"
+          >
+            查看详情
+          </Button>
+        </div>
+
+        <Tabs v-model="activeTab" class="w-full">
+          <div class="song-list-sticky sticky z-[110] bg-bg-main" :style="{ top: `${tabsTop}px` }">
+            <div class="px-6 border-b border-border-light/10">
+              <div class="flex items-center justify-between h-14">
+                <TabsList class="bg-transparent border-none gap-8">
+                  <TabsTrigger value="songs">
+                    <span class="relative"
+                      >歌曲 <Badge v-if="loadedSongCount > 0" :count="loadedSongCount"
+                    /></span>
+                  </TabsTrigger>
+                  <TabsTrigger value="albums">
+                    <span class="relative"
+                      >专辑 <Badge v-if="albumFetched && albums.length > 0" :count="albums.length"
+                    /></span>
+                  </TabsTrigger>
+                  <TabsTrigger value="mvs">
+                    <span class="relative"
+                      >MV <Badge v-if="mvFetched && mvs.length > 0" :count="mvs.length"
+                    /></span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="searchQuery"
+                      type="text"
+                      placeholder="搜索歌曲..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/[0.08] dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    @click="handleLocate"
+                    class="song-locate-btn p-2 rounded-lg"
+                    title="定位当前播放"
+                  >
+                    <Icon :icon="iconCurrentLocation" width="18" height="18" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <SongListHeader
+              v-if="activeTab === 'songs'"
+              :sortField="sortField"
+              :sortOrder="sortOrder"
+              :showCover="true"
+              paddingClass="px-6"
+              @sort="handleSort"
+            />
           </div>
 
-          <SongListHeader
-            v-if="activeTab === 'songs'"
-            :sortField="sortField"
-            :sortOrder="sortOrder"
-            :showCover="true"
-            paddingClass="px-6"
-            @sort="handleSort"
-          />
-        </div>
+          <div class="pb-12">
+            <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
+              <SongList
+                ref="songListRef"
+                :songs="sortedSongs"
+                :searchQuery="searchQuery"
+                :loading="loadingSongs"
+                :active="activeTab === 'songs'"
+                :showCover="true"
+                :queueOptions="{
+                  queueId: `queue:artist:${artist?.id ?? getArtistId()}`,
+                  title: artist?.name || '歌手',
+                  subtitle: '热门歌曲',
+                  type: 'artist',
+                }"
+                :enableDefaultDoubleTapPlay="true"
+                :onSongDoubleTapPlay="
+                  settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
+                "
+              />
+            </TabsContent>
 
-        <div class="pb-12">
-          <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
-            <SongList
-              ref="songListRef"
-              :songs="sortedSongs"
-              :searchQuery="searchQuery"
-              :loading="loadingSongs"
-              :active="activeTab === 'songs'"
-              :showCover="true"
-              :queueOptions="{
-                queueId: `queue:artist:${artist?.id ?? getArtistId()}`,
-                title: artist?.name || '歌手',
-                subtitle: '热门歌曲',
-                type: 'artist',
-              }"
-              :enableDefaultDoubleTapPlay="true"
-              :onSongDoubleTapPlay="
-                settingStore.replacePlaylist ? handleSongDoubleTapPlay : undefined
-              "
-            />
-          </TabsContent>
+            <TabsContent value="albums" class="mt-4 px-6">
+              <VirtualGrid
+                class="px-2"
+                :items="albumCards"
+                :loading="loadingAlbums && albums.length === 0"
+                :active="activeTab === 'albums'"
+                :itemMinWidth="180"
+                :itemHeight="230"
+                :gap="20"
+                :overscan="3"
+                keyField="id"
+              >
+                <template #default="{ item }">
+                  <AlbumCard v-bind="item" />
+                </template>
+              </VirtualGrid>
+            </TabsContent>
 
-          <TabsContent value="albums" class="mt-4 px-6">
-            <VirtualGrid
-              class="px-2"
-              :items="albumCards"
-              :loading="loadingAlbums && albums.length === 0"
-              :active="activeTab === 'albums'"
-              :itemMinWidth="180"
-              :itemHeight="230"
-              :gap="20"
-              :overscan="3"
-              keyField="id"
-            >
-              <template #default="{ item }">
-                <AlbumCard v-bind="item" />
-              </template>
-            </VirtualGrid>
-          </TabsContent>
-
-          <TabsContent value="mvs" class="mt-4 px-6">
-            <div class="flex items-center gap-3 mb-4 px-2">
-              <div class="flex items-center gap-1.5">
-                <Button
-                  v-for="opt in mvTagOptions"
-                  :key="opt.value"
-                  variant="unstyled"
-                  size="none"
-                  :class="['mv-tag-btn', mvTag === opt.value ? 'is-active' : '']"
-                  @click="switchMvTag(opt.value)"
-                >
-                  {{ opt.label }}
-                </Button>
+            <TabsContent value="mvs" class="mt-4 px-6">
+              <div class="flex items-center gap-3 mb-4 px-2">
+                <div class="flex items-center gap-1.5">
+                  <Button
+                    v-for="opt in mvTagOptions"
+                    :key="opt.value"
+                    variant="unstyled"
+                    size="none"
+                    :class="['mv-tag-btn', mvTag === opt.value ? 'is-active' : '']"
+                    @click="switchMvTag(opt.value)"
+                  >
+                    {{ opt.label }}
+                  </Button>
+                </div>
+                <span v-if="mvFetched" class="text-[11px] text-text-secondary/60 ml-auto">
+                  共 {{ mvTotal }} 个
+                </span>
               </div>
-              <span v-if="mvFetched" class="text-[11px] text-text-secondary/60 ml-auto">
-                共 {{ mvTotal }} 个
-              </span>
-            </div>
-            <VirtualGrid
-              class="px-2"
-              :items="mvs"
-              :loading="loadingMvs && mvs.length === 0"
-              :active="activeTab === 'mvs'"
-              :itemMinWidth="200"
-              :itemHeight="180"
-              :gap="20"
-              :overscan="3"
-              keyField="videoId"
-            >
-              <template #default="{ item }">
-                <MvCard v-bind="item" />
-              </template>
-            </VirtualGrid>
-          </TabsContent>
-        </div>
-      </Tabs>
-      <Dialog
-        v-model:open="showIntroDialog"
-        title="歌手介绍"
-        :description="artist.intro"
-        contentClass="detail-intro-dialog max-w-[720px]"
-        descriptionClass="text-[13px]"
-        showClose
-      />
-    </template>
-  </div>
+              <VirtualGrid
+                class="px-2"
+                :items="mvs"
+                :loading="loadingMvs && mvs.length === 0"
+                :active="activeTab === 'mvs'"
+                :itemMinWidth="200"
+                :itemHeight="180"
+                :gap="20"
+                :overscan="3"
+                keyField="videoId"
+              >
+                <template #default="{ item }">
+                  <MvCard v-bind="item" />
+                </template>
+              </VirtualGrid>
+            </TabsContent>
+          </div>
+        </Tabs>
+        <Dialog
+          v-model:open="showIntroDialog"
+          title="歌手介绍"
+          :description="artist.intro"
+          contentClass="detail-intro-dialog max-w-[720px]"
+          descriptionClass="text-[13px]"
+          showClose
+        />
+      </template>
+    </div>
+  </PageScrollContainer>
 </template>
 
 <style scoped>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 
 interface Props {
   typeLabel: string;
@@ -71,24 +72,57 @@ const rightColumnHeight = computed(() => {
 
 defineExpose({ currentHeight });
 
+const scrollContainerRef = useScrollContainer();
+
 const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   scrollY.value = target.scrollTop;
 };
 
-onMounted(() => {
-  const scrollContainer = document.querySelector('.view-port');
+const syncScrollPosition = () => {
+  const scrollContainer = scrollContainerRef.value;
+  if (scrollContainer) {
+    scrollY.value = scrollContainer.scrollTop;
+  }
+};
+
+const bindScroll = () => {
+  const scrollContainer = scrollContainerRef.value;
   if (scrollContainer) {
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     scrollY.value = scrollContainer.scrollTop;
   }
-});
+};
 
-onUnmounted(() => {
-  const scrollContainer = document.querySelector('.view-port');
+const unbindScroll = () => {
+  const scrollContainer = scrollContainerRef.value;
   if (scrollContainer) {
     scrollContainer.removeEventListener('scroll', handleScroll);
   }
+};
+
+// 响应注入的滚动容器变化
+watch(scrollContainerRef, (newEl, oldEl) => {
+  if (oldEl) {
+    oldEl.removeEventListener('scroll', handleScroll);
+  }
+  if (newEl) {
+    newEl.addEventListener('scroll', handleScroll, { passive: true });
+    scrollY.value = newEl.scrollTop;
+  }
+});
+
+onMounted(() => {
+  bindScroll();
+});
+
+// KeepAlive 激活时重新同步滚动位置
+onActivated(() => {
+  syncScrollPosition();
+});
+
+onUnmounted(() => {
+  unbindScroll();
 });
 </script>
 
