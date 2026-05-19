@@ -48,7 +48,7 @@ const keepAliveMax = computed(() =>
 );
 </script>
 
-<<template>
+<template>
   <div
     class="main-layout h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
   >
