@@ -219,7 +219,7 @@ onUnmounted(() => {
 
     <!-- 1. 左侧：导航按钮 -->
     <div class="flex items-center gap-1 no-drag pl-6 relative z-10">
-      <!-- 侧边栏折叠按钮（新增） -->
+      <!-- 侧边栏折叠按钮 -->
       <Button
         variant="unstyled"
         size="none"
@@ -384,7 +384,7 @@ onUnmounted(() => {
             </div>
           </Scrollbar>
 
-          <!-- 推荐词条：输入为空且无建议时显示-->
+          <!-- 推荐词条：输入为空且无建议时显示 -->
           <div v-else-if="!searchQuery.trim() && defaultAds.length > 0" class="tb-suggestions">
             <div class="tb-suggestions-inner">
               <div class="tb-suggest-group">
