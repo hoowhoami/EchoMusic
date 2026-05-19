@@ -92,23 +92,62 @@
    ```bash
    git clone https://github.com/hoowhoami/EchoMusic.git
    cd EchoMusic
+   git submodule update --init --recursive
    ```
 
 2. **安装依赖**
 
    ```bash
    pnpm install
-   cd server
-   npm install
-   cd ..
+   cd server && npm install && cd ..
+   ```
+   
+   在Linux下，可能会出现如下报错:
+   ```bash
+   Error: ENOENT: no such file or directory, open '/home/tzgml/Projects/Work/EchoMusic/node_modules/electron/path.txt'
+   ```
+   需手动下载并解压Electron到对应目录：
+   ```bash
+   cd node_modules/.pnpm/electron@42.0.1/node_modules/electron/   
+   mkdir -p dist   
+   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v42.0.1/electron-v42.0.1-linux-x64.zip"   
+   unzip -o /tmp/electron.zip -d dist/   
+   printf '%s' './electron' > path.txt   
+   ```
+   
+
+3. **编译Rust原生模块**
+
+    倘若出现如下报错:
+    ```bash
+    Error: Cannot find module '/home/myname/EchoMusic/native/echo-mpv-player/echo-mpv-player.node'
+    [error] [MpvController] Failed to load echo-mpv-player addon
+    ```
+
+    需要手动编译rust原生模块，因为*.node文件在.gitignore中被排除：
+   ```bash
+     cd native/echo-mpv-player
+     cargo build --release
+     cp target/release/libecho_mpv_player.so echo-mpv-player.node
+     
+     cd ../echo-media-controls
+     cargo build --release
+     cp target/release/libecho_media_controls.so echo-media-controls.node
+     
+     cd ../..
    ```
 
-3. **启动应用**
+
+4. **启动本地开发服务器**
+
    ```bash
    pnpm dev
    ```
 
+
 > 开发模式下会由 Electron 主进程自动拉起本地服务端。
+
+
 
 ## 🏗️ 编译发布
 
