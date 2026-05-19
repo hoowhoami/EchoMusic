@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getSearchSuggest, getSearchDefault } from '@/api/search';
+import { getSearchSuggest } from '@/api/search';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
@@ -14,12 +14,21 @@ import {
   iconSearch,
   iconMicrophone,
   iconFullscreen,
+  iconPanelLeft,
 } from '@/icons';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const titleBarRef = ref<HTMLElement | null>(null);
+
+const props = defineProps<{
+  isSidebarCollapsed?: boolean;
+}>();
+
+const emit = defineEmits<{
+  toggleSidebar: [];
+}>();
 
 const canGoBack = ref(false);
 const canGoForward = ref(false);
@@ -32,8 +41,6 @@ const searchContainerRef = ref<HTMLElement | null>(null);
 const showSuggestions = ref(false);
 const suggestions = ref<{ label: string; records: { text: string }[] }[]>([]);
 const isLoadingSuggestions = ref(false);
-const defaultKeyword = ref('');
-const defaultAds = ref<{ mainTitle: string; subTitle: string; title: string }[]>([]);
 let suggestTimer: number | null = null;
 
 const updateNavState = () => {
@@ -124,7 +131,7 @@ const handleSearchInput = (value: string) => {
 };
 
 const submitSearch = (keyword?: string) => {
-  const q = (keyword ?? searchQuery.value).trim() || defaultKeyword.value;
+  const q = (keyword ?? searchQuery.value).trim();
   if (!q) return;
   collapseSearch();
   router.push({ name: 'search', query: { q } });
@@ -170,26 +177,6 @@ watch(
 onMounted(() => {
   window.addEventListener('popstate', updateNavState);
   document.addEventListener('pointerdown', handleGlobalPointerDown, true);
-  // 获取默认搜索词
-  getSearchDefault()
-    .then((res: any) => {
-      const ads = res?.data?.ads ?? res?.ads ?? [];
-      if (!Array.isArray(ads) || ads.length === 0) return;
-      // 第一个广告的 main_title 作为 placeholder
-      const first = ads[0];
-      if (first?.main_title) {
-        defaultKeyword.value = String(first.main_title).trim();
-      }
-      // 保存所有广告作为推荐词条
-      defaultAds.value = ads
-        .filter((ad: any) => ad?.sub_title || ad?.main_title)
-        .map((ad: any) => ({
-          mainTitle: String(ad.main_title ?? '').trim(),
-          subTitle: String(ad.sub_title ?? '').trim(),
-          title: String(ad.title ?? '').trim(),
-        }));
-    })
-    .catch(() => {});
 });
 
 onUnmounted(() => {
@@ -204,11 +191,26 @@ onUnmounted(() => {
     ref="titleBarRef"
     class="title-bar flex items-center shrink-0 select-none transition-colors duration-300 z-200 bg-transparent relative"
   >
-    <!-- 拖动层：绝对定位铺满标题栏 -->
     <div class="drag-region"></div>
 
     <!-- 1. 左侧：导航按钮 -->
     <div class="flex items-center gap-1 no-drag pl-6 relative z-10">
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="emit('toggleSidebar')"
+        class="nav-btn group"
+        :title="props.isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+      >
+        <Icon
+          :icon="iconPanelLeft"
+          width="20"
+          height="20"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
+          :class="{ 'rotate-180': props.isSidebarCollapsed }"
+        />
+      </Button>
+
       <Button
         variant="unstyled"
         size="none"
@@ -299,7 +301,7 @@ onUnmounted(() => {
               v-model="searchQuery"
               type="text"
               class="tb-search-input"
-              :placeholder="defaultKeyword || '搜索音乐、歌手、专辑'"
+              placeholder="搜索音乐、歌手、专辑"
               @input="handleSearchInput(searchQuery)"
               @keydown.enter.prevent="submitSearch()"
               @keydown="handleSearchKeydown"
@@ -356,29 +358,6 @@ onUnmounted(() => {
               </div>
             </div>
           </Scrollbar>
-
-          <!-- 推荐词条：输入为空且无建议时显示 -->
-          <div v-else-if="!searchQuery.trim() && defaultAds.length > 0" class="tb-suggestions">
-            <div class="tb-suggestions-inner">
-              <div class="tb-suggest-group">
-                <div class="tb-suggest-title">热门推荐</div>
-                <Button
-                  v-for="(ad, idx) in defaultAds"
-                  :key="idx"
-                  variant="unstyled"
-                  size="none"
-                  class="tb-suggest-item"
-                  :title="ad.title"
-                  @mousedown.prevent
-                  @click="submitSearch(ad.subTitle || ad.mainTitle)"
-                >
-                  <Icon :icon="iconSearch" width="13" height="13" class="tb-suggest-item-icon" />
-                  <span class="truncate">{{ ad.subTitle || ad.mainTitle }}</span>
-                  <span v-if="ad.title" class="tb-suggest-item-desc truncate">{{ ad.title }}</span>
-                </Button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -660,13 +639,5 @@ onUnmounted(() => {
 .tb-suggest-item-icon {
   flex-shrink: 0;
   opacity: 0.4;
-}
-
-.tb-suggest-item-desc {
-  margin-left: auto;
-  font-size: 11px;
-  opacity: 0.45;
-  flex-shrink: 1;
-  min-width: 0;
 }
 </style>
