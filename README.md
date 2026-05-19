@@ -92,21 +92,36 @@
    ```bash
    git clone https://github.com/hoowhoami/EchoMusic.git
    cd EchoMusic
+   git submodule update --init --recursive
    ```
 
 2. **安装依赖**
 
    ```bash
    pnpm install
-   cd server
-   npm install
-   cd ..
+   cd server && npm install && cd ..
    ```
 
-3. **启动应用**
+3. **编译Rust原生模块**
+   ```bash
+   cd native/echo-mpv-player
+   cargo build --release
+   cp target/release/libecho_mpv_player.so ../echo-mpv-player.node
+
+   cd ../echo-media-controls
+   cargo build --release
+   cp target/release/libecho_media_controls.so ../echo-media-controls.node
+
+   cd ../..
+   ```
+
+
+4. **启动本地开发服务器**
+
    ```bash
    pnpm dev
    ```
+
 
 > 开发模式下会由 Electron 主进程自动拉起本地服务端。
 
