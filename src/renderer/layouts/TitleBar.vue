@@ -22,7 +22,7 @@ const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const titleBarRef = ref<HTMLElement | null>(null);
 
-// 侧边栏折叠 props/emit
+// 侧边栏折叠
 const props = defineProps<{
   isSidebarCollapsed?: boolean;
 }>();
@@ -342,7 +342,7 @@ onUnmounted(() => {
               @click="
                 searchQuery = '';
                 suggestions = [];
-                showSuggestions.value = false;
+                showSuggestions = false;
                 searchInputRef?.focus();
               "
             >
@@ -384,7 +384,7 @@ onUnmounted(() => {
             </div>
           </Scrollbar>
 
-          <!-- 推荐词条：输入为空且无建议时显示（原版功能） -->
+          <!-- 推荐词条：输入为空且无建议时显示-->
           <div v-else-if="!searchQuery.trim() && defaultAds.length > 0" class="tb-suggestions">
             <div class="tb-suggestions-inner">
               <div class="tb-suggest-group">
