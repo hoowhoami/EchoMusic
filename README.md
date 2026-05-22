@@ -160,3 +160,9 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 ## ⚖️ 开源协议
 
 基于 [MIT License](LICENSE) 协议发布。
+
+### 第三方依赖声明
+
+本项目使用了多个第三方开源组件，其许可证信息详见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
+**特别说明**：本项目动态链接至 [mpv](https://mpv.io/) 媒体播放器库（LGPL-2.1+ / GPL-2.0+ 双许可证）。用户在使用本软件时需遵守 mpv 的许可证条款。
