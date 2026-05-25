@@ -90,6 +90,9 @@ const syncMacWorkspaceVisibility = (alwaysOnTop: boolean, force = false) => {
 export const syncWindowPresentation = (alwaysOnTop = true, forceWorkspaceSync = false) => {
   if (!desktopLyricWindow || desktopLyricWindow.isDestroyed()) return;
   desktopLyricWindow.setBackgroundColor(getBackgroundColor());
+  // Linux 下使用 type: 'toolbar' 配合 setAlwaysOnTop 实现置顶控制。
+  // 注意：Wayland 原生模式下 setAlwaysOnTop 无效（协议限制），
+  // 但 Electron 默认使用 XWayland，此时 setAlwaysOnTop 正常工作。
   desktopLyricWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? 'screen-saver' : 'normal');
   desktopLyricWindow.setSkipTaskbar(true);
   syncMacWorkspaceVisibility(alwaysOnTop, forceWorkspaceSync);
@@ -122,7 +125,7 @@ export const createDesktopLyricWindow = () => {
   const bounds = resolveInitialBounds();
   const settings = getDesktopLyricSettings();
 
-  desktopLyricWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     title: 'EchoMusic Desktop Lyric',
     ...(!app.isPackaged ? { icon: join(process.cwd(), 'build/icons/icon.png') } : {}),
     width: bounds.width,
@@ -139,7 +142,11 @@ export const createDesktopLyricWindow = () => {
     show: false,
     resizable: true,
     movable: true,
-    ...(process.platform === 'darwin' ? { type: 'panel', acceptFirstMouse: false } : {}),
+    ...(process.platform === 'darwin'
+      ? { type: 'panel', acceptFirstMouse: false }
+      : process.platform === 'linux'
+        ? { type: 'toolbar' }
+        : {}),
     hasShadow: false,
     hiddenInMissionControl: process.platform === 'darwin',
     skipTaskbar: true,
@@ -160,22 +167,34 @@ export const createDesktopLyricWindow = () => {
     },
   });
 
-  desktopLyricWindow.webContents.on('did-finish-load', () => {
-    desktopLyricWindow?.webContents.setZoomFactor(1.0);
+  desktopLyricWindow = win;
+
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(1.0);
+  });
+
+  win.once('ready-to-show', () => {
+    // 只有在内容准备就绪后才显示，避免灰色/黑色闪烁
+    if (win.isMinimized()) {
+      if (typeof win.restore === 'function') win.restore();
+      win.showInactive();
+    } else {
+      win.showInactive();
+    }
   });
 
   // Windows 上用 moved/resized 事件保存位置（仅在操作结束后触发一次），
   // 避免 move/resize 高频触发时 DPI 缩放导致的坐标舍入偏移累积。
   // macOS/Linux 保持 move/resize（macOS 的 moved 行为不一致，Linux 不支持 moved）。
   if (process.platform === 'win32') {
-    desktopLyricWindow.on('moved', persistWindowBounds);
-    desktopLyricWindow.on('resized', persistWindowBounds);
+    win.on('moved', persistWindowBounds);
+    win.on('resized', persistWindowBounds);
   } else {
-    desktopLyricWindow.on('move', persistWindowBounds);
-    desktopLyricWindow.on('resize', persistWindowBounds);
+    win.on('move', persistWindowBounds);
+    win.on('resize', persistWindowBounds);
   }
 
-  return desktopLyricWindow;
+  return win;
 };
 
 export const loadDesktopLyricWindow = async () => {

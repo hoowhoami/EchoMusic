@@ -6,6 +6,7 @@ import { YzsKeepAlive } from 'yzs-keep-alive-v3';
 import Sidebar from './Sidebar.vue';
 import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
+import SettingsDialog from '@/components/app/SettingsDialog.vue';
 
 const route = useRoute();
 const settingStore = useSettingStore();
@@ -20,7 +21,6 @@ const excludeFromCache = [
   'comment-page',
   'mv-detail',
   'profile',
-  'settings-page',
 ];
 
 const keepAliveMax = computed(() =>
@@ -49,6 +49,8 @@ const keepAliveMax = computed(() =>
 
       <PlayerBar />
     </div>
+
+    <SettingsDialog />
   </div>
 </template>
 

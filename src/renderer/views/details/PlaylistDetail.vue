@@ -45,6 +45,7 @@ import { useToastStore } from '@/stores/toast';
 import { toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -180,14 +181,19 @@ const fetchComments = async (reset = false) => {
       }
       comments.value = reset ? mapped : [...comments.value, ...mapped];
 
-      const totalRaw =
-        data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
-      const totalValue = parseIntSafe(totalRaw);
-      if (totalValue > 0) {
-        commentTotal.value = totalValue;
-        hasMoreComments.value = comments.value.length < totalValue;
+      // 如果本页没有返回任何有效评论（非 reset），说明已到末尾
+      if (!reset && mapped.length === 0) {
+        hasMoreComments.value = false;
       } else {
-        hasMoreComments.value = mapped.length > 0;
+        const totalRaw =
+          data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
+        const totalValue = parseIntSafe(totalRaw);
+        if (totalValue > 0) {
+          commentTotal.value = totalValue;
+          hasMoreComments.value = comments.value.length < totalValue;
+        } else {
+          hasMoreComments.value = mapped.length > 0;
+        }
       }
 
       if (hasMoreComments.value) {
@@ -236,21 +242,41 @@ const handleTabChange = (value: string | number) => {
   }
 };
 
-// 滚动加载更多评论
-const maybeFetchMoreComments = () => {
-  if (activeTab.value !== 'comments') return;
-  if (loadingComments.value || !hasMoreComments.value) return;
+// 滚动加载更多评论（使用 IntersectionObserver）
+const scrollContainerRef = useScrollContainer();
+const commentSentinelRef = ref<HTMLElement | null>(null);
+let commentObserver: IntersectionObserver | null = null;
 
-  const scrollTop =
-    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
-
-  // 距离底部 400px 时触发加载
-  if (fullHeight - scrollTop - viewportHeight <= 400) {
-    fetchComments();
+const setupCommentObserver = () => {
+  commentObserver?.disconnect();
+  const root = scrollContainerRef.value ?? null;
+  commentObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      if (activeTab.value !== 'comments') return;
+      if (loadingComments.value || !hasMoreComments.value) return;
+      fetchComments();
+    },
+    { root, rootMargin: '0px 0px 400px 0px' },
+  );
+  if (commentSentinelRef.value) {
+    commentObserver.observe(commentSentinelRef.value);
   }
 };
+
+watch(commentSentinelRef, (el) => {
+  if (!commentObserver) {
+    setupCommentObserver();
+    return;
+  }
+  commentObserver.disconnect();
+  if (el) commentObserver.observe(el);
+});
+
+watch(scrollContainerRef, () => {
+  setupCommentObserver();
+});
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
@@ -342,7 +368,7 @@ const fetchData = async () => {
 
 onMounted(() => {
   fetchData();
-  window.addEventListener('scroll', maybeFetchMoreComments, { passive: true });
+  setupCommentObserver();
 });
 
 // id 变化时重置数据（仅同路由间切换，如歌单A→歌单B）
@@ -367,7 +393,8 @@ onIdChange(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', maybeFetchMoreComments);
+  commentObserver?.disconnect();
+  commentObserver = null;
 });
 
 watch(
@@ -747,6 +774,8 @@ const sortedSongs = computed(() => {
                   compact
                   :hide-empty="hotComments.length > 0"
                 />
+
+                <div v-if="hasMoreComments" ref="commentSentinelRef" class="h-1" />
 
                 <div
                   v-if="

@@ -212,25 +212,32 @@ const showHotwordEnd = computed(
 );
 
 const resolveCommentCountFromHeaderStats = (): number | null => {
-  const data = commentCountData.value;
+  const raw = commentCountData.value;
   const hash = songHash.value;
 
-  if (!data || !hash) return null;
+  if (!raw || !hash) return null;
 
-  const exact = data[hash];
-  if (typeof exact === 'number') return exact;
-  if (typeof exact === 'string') {
-    const parsed = Number(exact);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
+  // 尝试在顶层和嵌套 data 中查找
+  const sources = [raw, raw.data as Record<string, unknown> | undefined].filter(
+    (s): s is Record<string, unknown> => typeof s === 'object' && s !== null,
+  );
 
-  const lowerHash = hash.toLowerCase();
-  for (const [key, value] of Object.entries(data)) {
-    if (key.toLowerCase() !== lowerHash) continue;
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : null;
+  for (const source of sources) {
+    const exact = source[hash];
+    if (typeof exact === 'number') return exact;
+    if (typeof exact === 'string') {
+      const parsed = Number(exact);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+
+    const lowerHash = hash.toLowerCase();
+    for (const [key, value] of Object.entries(source)) {
+      if (key.toLowerCase() !== lowerHash) continue;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+      }
     }
   }
 
@@ -243,13 +250,14 @@ const scrollChipRowToActive = (container: HTMLElement | null) => {
   activeChip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
 };
 
-const maybeFetchByScroll = () => {
-  const scrollTop =
-    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
-  if (fullHeight - scrollTop - viewportHeight > 400) return;
+// 使用 IntersectionObserver 替代 window scroll 检测加载更多
+import { useScrollContainer } from '@/composables/usePageScroll';
 
+const scrollContainerRef = useScrollContainer();
+const commentSentinelRef = ref<HTMLElement | null>(null);
+let commentLoadMoreObserver: IntersectionObserver | null = null;
+
+const triggerLoadMore = () => {
   if (type !== 'music') {
     if (!isLoadingComments.value && hasMore.value) void fetchComments();
     return;
@@ -269,6 +277,35 @@ const maybeFetchByScroll = () => {
     void fetchComments();
   }
 };
+
+const setupCommentLoadMoreObserver = () => {
+  commentLoadMoreObserver?.disconnect();
+  const root = scrollContainerRef.value ?? null;
+  commentLoadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      triggerLoadMore();
+    },
+    { root, rootMargin: '0px 0px 400px 0px' },
+  );
+  if (commentSentinelRef.value) {
+    commentLoadMoreObserver.observe(commentSentinelRef.value);
+  }
+};
+
+watch(commentSentinelRef, (el) => {
+  if (!commentLoadMoreObserver) {
+    setupCommentLoadMoreObserver();
+    return;
+  }
+  commentLoadMoreObserver.disconnect();
+  if (el) commentLoadMoreObserver.observe(el);
+});
+
+watch(scrollContainerRef, () => {
+  setupCommentLoadMoreObserver();
+});
 
 const formatCount = (value: number) => {
   if (!Number.isFinite(value)) return '--';
@@ -393,8 +430,12 @@ const fetchMusicComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value =
-        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      if (!reset && payload.list.length === 0) {
+        hasMore.value = false;
+      } else {
+        hasMore.value =
+          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      }
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -432,8 +473,12 @@ const fetchPlaylistComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value =
-        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      if (!reset && payload.list.length === 0) {
+        hasMore.value = false;
+      } else {
+        hasMore.value =
+          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      }
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -471,8 +516,12 @@ const fetchAlbumComments = async (reset = false) => {
         ? payload.list
         : [...comments.value, ...payload.list.map((item) => ({ ...item, isHot: false }))];
       total.value = payload.total;
-      hasMore.value =
-        total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      if (!reset && payload.list.length === 0) {
+        hasMore.value = false;
+      } else {
+        hasMore.value =
+          total.value > 0 ? comments.value.length < total.value : payload.list.length >= 30;
+      }
       if (hasMore.value) page.value += 1;
     }
   } catch {
@@ -509,8 +558,12 @@ const fetchClassifyComments = async (reset = false) => {
       classifyComments.value = reset ? payload.list : [...classifyComments.value, ...payload.list];
       const selectedItem = classifyList.value.find((item) => item.id === selectedClassify.value);
       const totalCount = payload.total || selectedItem?.count || 0;
-      hasMoreClassify.value =
-        totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30;
+      if (!reset && payload.list.length === 0) {
+        hasMoreClassify.value = false;
+      } else {
+        hasMoreClassify.value =
+          totalCount > 0 ? classifyComments.value.length < totalCount : payload.list.length >= 30;
+      }
       if (hasMoreClassify.value) classifyPage.value += 1;
     }
   } catch {
@@ -547,8 +600,12 @@ const fetchHotwordComments = async (reset = false) => {
       hotwordComments.value = reset ? payload.list : [...hotwordComments.value, ...payload.list];
       const selectedItem = hotwordList.value.find((item) => item.content === selectedHotword.value);
       const totalCount = payload.total || selectedItem?.count || 0;
-      hasMoreHotword.value =
-        totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30;
+      if (!reset && payload.list.length === 0) {
+        hasMoreHotword.value = false;
+      } else {
+        hasMoreHotword.value =
+          totalCount > 0 ? hotwordComments.value.length < totalCount : payload.list.length >= 30;
+      }
       if (hasMoreHotword.value) hotwordPage.value += 1;
     }
   } catch {
@@ -575,7 +632,7 @@ const handleCommentTabChange = (value: string | number) => {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   // 延迟检查，等待 DOM 更新完成
   setTimeout(() => {
-    maybeFetchByScroll();
+    triggerLoadMore();
   }, 100);
 };
 
@@ -637,7 +694,7 @@ const fetchDetailData = async () => {
 onMounted(async () => {
   mainTab.value =
     String(route.query.tab ?? route.query.mainTab ?? 'detail') === 'comment' ? 'comment' : 'detail';
-  window.addEventListener('scroll', maybeFetchByScroll, { passive: true });
+  setupCommentLoadMoreObserver();
   await fetchComments(true);
   if (isMusicType.value) {
     void fetchHeaderStats();
@@ -646,13 +703,12 @@ onMounted(async () => {
   void nextTick(() => {
     scrollChipRowToActive(classifyChipRowRef.value);
     scrollChipRowToActive(hotwordChipRowRef.value);
-    // 首屏内容不足时主动加载更多
-    maybeFetchByScroll();
   });
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', maybeFetchByScroll);
+  commentLoadMoreObserver?.disconnect();
+  commentLoadMoreObserver = null;
 });
 
 watch(selectedClassify, () => {
@@ -664,7 +720,7 @@ watch(selectedHotword, () => {
 });
 
 watch(total, (value) => {
-  if (!commentCount.value && value > 0) {
+  if (value > commentCount.value) {
     commentCount.value = value;
   }
 });
@@ -815,6 +871,7 @@ watch(total, (value) => {
                       :fallbackMixSongId="songMixSongId || id"
                       compact
                     />
+                    <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
                       <div v-if="isLoadingComments" class="comment-loading-inline">
                         <div class="comment-loading-spinner"></div>
@@ -851,6 +908,7 @@ watch(total, (value) => {
                       compact
                       empty-text="该分类下暂无评论"
                     />
+                    <div v-if="hasMoreClassify" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingClassify || showClassifyEnd" class="comment-load-more">
                       <div v-if="isLoadingClassify" class="comment-loading-inline">
                         <div class="comment-loading-spinner"></div>
@@ -887,6 +945,7 @@ watch(total, (value) => {
                       compact
                       empty-text="该热词下暂无评论"
                     />
+                    <div v-if="hasMoreHotword" ref="commentSentinelRef" class="h-1" />
                     <div v-if="isLoadingHotword || showHotwordEnd" class="comment-load-more">
                       <div v-if="isLoadingHotword" class="comment-loading-inline">
                         <div class="comment-loading-spinner"></div>
@@ -918,6 +977,7 @@ watch(total, (value) => {
             :fallbackMixSongId="songMixSongId || id"
             compact
           />
+          <div v-if="hasMore" ref="commentSentinelRef" class="h-1" />
           <div v-if="isLoadingComments || showCommentsEnd" class="comment-load-more">
             <div v-if="isLoadingComments" class="comment-loading-inline">
               <div class="comment-loading-spinner"></div>

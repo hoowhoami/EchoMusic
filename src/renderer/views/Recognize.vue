@@ -1,11 +1,12 @@
 <script setup lang="ts">
 defineOptions({ name: 'recognize-page' });
 
-import { ref, computed, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Popover from '@/components/ui/Popover.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import {
   iconMicrophone,
@@ -17,12 +18,14 @@ import {
   iconSearch,
   iconInfo,
   iconPlaylistAdd,
+  iconChevronDown,
 } from '@/icons';
 import { search } from '@/api/search';
 import { mapSearchSong } from '@/utils/mappers';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
 import { queueAndPlaySong } from '@/utils/playback';
 import { isSameSong } from '@/utils/song';
 import type { Song } from '@/models/song';
@@ -34,11 +37,13 @@ const router = useRouter();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
+const settingStore = useSettingStore();
 
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 
 const audioSource = ref<AudioSource>('mic');
+const sourceMenuOpen = ref(false);
 const status = ref<RecognizeStatus>('idle');
 const shazamResult = ref<ShazamResult | null>(null);
 const matchedSong = ref<Song | null>(null);
@@ -51,6 +56,33 @@ let recordingTimer: ReturnType<typeof setInterval> | null = null;
 
 const isActive = computed(() => status.value === 'recording' || status.value === 'recognizing');
 
+// 麦克风设备列表
+const micDevices = ref<{ label: string; value: string }[]>([
+  { label: '系统默认', value: 'default' },
+]);
+
+async function fetchMicDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+    micDevices.value = [
+      { label: '系统默认', value: 'default' },
+      ...audioInputs
+        .filter((d) => d.deviceId && d.deviceId !== 'default')
+        .map((d) => ({
+          label: d.label || `麦克风 (${d.deviceId.slice(0, 6)})`,
+          value: d.deviceId,
+        })),
+    ];
+    // 如果之前选择的设备已不存在，回退到默认
+    if (!micDevices.value.some((d) => d.value === settingStore.inputDevice)) {
+      settingStore.inputDevice = 'default';
+    }
+  } catch {
+    micDevices.value = [{ label: '系统默认', value: 'default' }];
+  }
+}
+
 const isFavorite = computed(() => {
   if (!matchedSong.value) return false;
   return playlistStore.favorites.some((item) => isSameSong(item, matchedSong.value!));
@@ -59,7 +91,12 @@ const isFavorite = computed(() => {
 const sourceIcon = computed(() =>
   audioSource.value === 'mic' ? iconMicrophone : iconDeviceSpeaker,
 );
-const sourceLabel = computed(() => (audioSource.value === 'mic' ? '麦克风' : '系统音频'));
+
+const currentSourceLabel = computed(() => {
+  if (audioSource.value === 'system') return '系统音频';
+  const matched = micDevices.value.find((d) => d.value === settingStore.inputDevice);
+  return matched?.label || '麦克风';
+});
 
 const displayTitle = computed(() => matchedSong.value?.title || shazamResult.value?.title || '');
 const displayArtist = computed(() => matchedSong.value?.artist || shazamResult.value?.artist || '');
@@ -139,8 +176,10 @@ async function recognizeAudio(stream: MediaStream) {
 }
 
 async function getMicStream(): Promise<MediaStream> {
+  const deviceId = settingStore.inputDevice !== 'default' ? settingStore.inputDevice : undefined;
   return navigator.mediaDevices.getUserMedia({
     audio: {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       sampleRate: 44100,
       channelCount: 1,
       echoCancellation: false,
@@ -209,9 +248,17 @@ function handleMainButton() {
   else if (status.value !== 'recognizing') startRecording();
 }
 
-function toggleSource() {
+function selectMicDevice(deviceId: string) {
   if (isActive.value) return;
-  audioSource.value = audioSource.value === 'mic' ? 'system' : 'mic';
+  audioSource.value = 'mic';
+  settingStore.inputDevice = deviceId;
+  sourceMenuOpen.value = false;
+}
+
+function selectSystemAudio() {
+  if (isActive.value) return;
+  audioSource.value = 'system';
+  sourceMenuOpen.value = false;
 }
 
 async function handlePlay() {
@@ -273,7 +320,16 @@ async function handleSelectPlaylist(listId: string | number) {
   showPlaylistDialog.value = false;
 }
 
-onUnmounted(() => stopRecording());
+onMounted(() => {
+  fetchMicDevices();
+  // 监听设备变化（插拔麦克风）
+  navigator.mediaDevices.addEventListener('devicechange', fetchMicDevices);
+});
+
+onUnmounted(() => {
+  stopRecording();
+  navigator.mediaDevices.removeEventListener('devicechange', fetchMicDevices);
+});
 </script>
 
 <template>
@@ -413,12 +469,55 @@ onUnmounted(() => stopRecording());
             </button>
           </div>
 
-          <!-- 音源切换 -->
-          <button class="rec-source-toggle" :disabled="isActive" @click="toggleSource">
-            <Icon :icon="sourceIcon" width="14" height="14" />
-            {{ sourceLabel }}
-            <span class="rec-source-hint">点击切换</span>
-          </button>
+          <!-- 音源选择下拉菜单 -->
+          <div class="rec-source-row">
+            <Popover
+              v-model:open="sourceMenuOpen"
+              trigger="click"
+              side="bottom"
+              :sideOffset="6"
+              :showArrow="false"
+              :disabled="isActive"
+              contentClass="rec-source-dropdown"
+            >
+              <template #trigger>
+                <button class="rec-source-toggle" :disabled="isActive">
+                  <Icon :icon="sourceIcon" width="14" height="14" />
+                  <span class="rec-source-toggle-label">{{ currentSourceLabel }}</span>
+                  <Icon :icon="iconChevronDown" width="12" height="12" class="rec-source-arrow" />
+                </button>
+              </template>
+              <div class="rec-source-menu">
+                <div class="rec-source-menu-group-label">系统</div>
+                <button
+                  type="button"
+                  class="rec-source-menu-item"
+                  :class="{ 'is-active': audioSource === 'system' }"
+                  @click="selectSystemAudio"
+                >
+                  <Icon :icon="iconDeviceSpeaker" width="13" height="13" />
+                  系统音频
+                </button>
+                <div class="rec-source-menu-divider" />
+                <div class="rec-source-menu-group-label">麦克风</div>
+                <div class="rec-source-menu-mic-list">
+                  <button
+                    v-for="device in micDevices"
+                    :key="device.value"
+                    type="button"
+                    class="rec-source-menu-item"
+                    :class="{
+                      'is-active':
+                        audioSource === 'mic' && settingStore.inputDevice === device.value,
+                    }"
+                    @click="selectMicDevice(device.value)"
+                  >
+                    {{ device.label }}
+                  </button>
+                </div>
+              </div>
+            </Popover>
+          </div>
 
           <Button
             v-if="status === 'failed'"
@@ -630,6 +729,7 @@ onUnmounted(() => stopRecording());
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 220px;
   padding: 6px 14px;
   border-radius: 999px;
   font-size: 12px;
@@ -639,6 +739,13 @@ onUnmounted(() => stopRecording());
   border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.rec-source-toggle-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
 }
 
 .rec-source-toggle:hover:not(:disabled) {
@@ -651,10 +758,97 @@ onUnmounted(() => stopRecording());
   cursor: not-allowed;
 }
 
-.rec-source-hint {
-  font-size: 10px;
+/* 音源选择行 */
+.rec-source-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.rec-source-arrow {
   opacity: 0.5;
   margin-left: 2px;
+  transition: transform 0.2s ease;
+}
+
+/* 音源选择下拉菜单 */
+:global(.rec-source-dropdown) {
+  width: 220px;
+}
+
+.rec-source-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.rec-source-menu-group-label {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  user-select: none;
+}
+
+.rec-source-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-source-menu-item:hover {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.rec-source-menu-item.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.rec-source-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+}
+
+.rec-source-menu-mic-list {
+  max-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.rec-source-menu-mic-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.rec-source-menu-mic-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rec-source-menu-mic-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-main) 15%, transparent);
+  border-radius: 2px;
+}
+
+.rec-source-menu-mic-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-text-main) 25%, transparent);
 }
 
 /* === 结果状态 === */

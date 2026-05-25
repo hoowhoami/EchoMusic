@@ -131,16 +131,21 @@ const resolveItemKey = (item: T, index: number): string | number => {
 const visibleItems = computed<VisibleGridItem[]>(() => {
   if (!props.active || props.loading || props.items.length === 0) return [];
 
-  const startIndex = visibleStartRow.value * columnCount.value;
-  const endIndex = Math.min(props.items.length, visibleEndRow.value * columnCount.value);
+  const startRow = visibleStartRow.value;
+  const endRow = visibleEndRow.value;
+  const cols = columnCount.value;
+  const startIndex = startRow * cols;
+  const endIndex = Math.min(props.items.length, endRow * cols);
+
+  if (startIndex >= endIndex) return [];
 
   return props.items.slice(startIndex, endIndex).map((item, offset) => {
     const index = startIndex + offset;
     return {
       item,
       index,
-      row: Math.floor(index / columnCount.value),
-      column: index % columnCount.value,
+      row: Math.floor(index / cols),
+      column: index % cols,
       key: resolveItemKey(item, index),
     };
   });
@@ -150,11 +155,18 @@ const injectedScrollContainer = useScrollContainer();
 
 const getScrollContainer = (): HTMLElement | null => injectedScrollContainer.value;
 
+// 性能优化：缓存容器尺寸与偏移，避免滚动时频繁触发 Layout Sync
+const cachedOffsets = {
+  listContentTop: -1,
+  viewportHeight: -1,
+  isDirty: true,
+};
+
 const updateVisibleRange = () => {
   const totalRows = rowCount.value;
   if (!props.active || props.loading || totalRows === 0) {
-    visibleStartRow.value = 0;
-    visibleEndRow.value = 0;
+    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
+    if (visibleEndRow.value !== 0) visibleEndRow.value = 0;
     return;
   }
 
@@ -162,21 +174,31 @@ const updateVisibleRange = () => {
   const containerEl = containerRef.value;
 
   if (!scrollContainer || !containerEl) {
-    visibleStartRow.value = 0;
-    visibleEndRow.value = Math.min(totalRows, props.overscan * 4);
+    const fallbackEnd = Math.min(totalRows, props.overscan * 4);
+    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
+    if (visibleEndRow.value !== fallbackEnd) visibleEndRow.value = fallbackEnd;
     return;
   }
 
-  const scrollContainerRect = scrollContainer.getBoundingClientRect();
-  const containerRect = containerEl.getBoundingClientRect();
-  const listTop = containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
+  // 仅在必要时测量尺寸（Layout Sync）
+  if (cachedOffsets.isDirty || cachedOffsets.listContentTop < 0) {
+    const scrollContainerRect = scrollContainer.getBoundingClientRect();
+    const containerRect = containerEl.getBoundingClientRect();
+    // 列表相对于滚动容器内容的绝对偏移
+    cachedOffsets.listContentTop =
+      containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
+    cachedOffsets.viewportHeight = scrollContainer.clientHeight;
+    cachedOffsets.isDirty = false;
+  }
+
+  const listTop = cachedOffsets.listContentTop;
   const listBottom = listTop + totalHeight.value;
   const viewportTop = scrollContainer.scrollTop;
-  const viewportBottom = viewportTop + scrollContainer.clientHeight;
+  const viewportBottom = viewportTop + cachedOffsets.viewportHeight;
 
   if (viewportBottom <= listTop || viewportTop >= listBottom) {
-    visibleStartRow.value = 0;
-    visibleEndRow.value = 0;
+    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
+    if (visibleEndRow.value !== 0) visibleEndRow.value = 0;
     return;
   }
 
@@ -188,12 +210,14 @@ const updateVisibleRange = () => {
   );
   const nextStart = Math.max(0, Math.floor(relativeTop / rowStride.value) - props.overscan);
   const nextEnd = Math.min(totalRows, Math.ceil(relativeBottom / rowStride.value) + props.overscan);
+  const resolvedEnd = Math.max(nextStart, nextEnd);
 
-  visibleStartRow.value = nextStart;
-  visibleEndRow.value = Math.max(nextStart, nextEnd);
+  if (visibleStartRow.value !== nextStart) visibleStartRow.value = nextStart;
+  if (visibleEndRow.value !== resolvedEnd) visibleEndRow.value = resolvedEnd;
 };
 
-const scheduleMeasure = () => {
+const scheduleMeasure = (forceDirty = false) => {
+  if (forceDirty) cachedOffsets.isDirty = true;
   if (measureFrame) cancelAnimationFrame(measureFrame);
   measureFrame = requestAnimationFrame(() => {
     measureFrame = 0;
@@ -209,7 +233,7 @@ const syncContainerWidth = (nextWidth: number) => {
   const normalizedWidth = Math.max(0, Math.round(nextWidth));
   if (normalizedWidth === containerWidth.value) return;
   containerWidth.value = normalizedWidth;
-  scheduleMeasure();
+  scheduleMeasure(true);
 };
 
 const bindScrollContainer = () => {
@@ -220,6 +244,7 @@ const bindScrollContainer = () => {
   }
   scrollContainerRef.value = nextContainer;
   scrollContainerRef.value?.addEventListener('scroll', handleScroll, { passive: true });
+  cachedOffsets.isDirty = true;
 };
 
 const connectResizeObserver = () => {
@@ -245,7 +270,7 @@ watch(
   () => props.items,
   async () => {
     await nextTick();
-    scheduleMeasure();
+    scheduleMeasure(true);
   },
   { flush: 'post' },
 );
@@ -260,28 +285,31 @@ watch(
     }
     await nextTick();
     bindScrollContainer();
-    scheduleMeasure();
+    scheduleMeasure(true);
   },
   { flush: 'post' },
 );
 
 watch(columnCount, () => {
-  scheduleMeasure();
+  scheduleMeasure(true);
 });
 
 // 响应注入的滚动容器变化
 watch(injectedScrollContainer, () => {
   bindScrollContainer();
-  scheduleMeasure();
+  scheduleMeasure(true);
 });
+
+// 修复：保存函数引用以确保 add/remove 使用同一引用
+const handleResize = () => scheduleMeasure(true);
 
 onMounted(async () => {
   await nextTick();
   bindScrollContainer();
   syncContainerWidth(containerRef.value?.clientWidth ?? 0);
   connectResizeObserver();
-  window.addEventListener('resize', scheduleMeasure, { passive: true });
-  scheduleMeasure();
+  window.addEventListener('resize', handleResize, { passive: true });
+  scheduleMeasure(true);
 });
 
 onBeforeUnmount(() => {
@@ -289,7 +317,7 @@ onBeforeUnmount(() => {
   if (resizeFrame) cancelAnimationFrame(resizeFrame);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  window.removeEventListener('resize', scheduleMeasure);
+  window.removeEventListener('resize', handleResize);
   scrollContainerRef.value?.removeEventListener('scroll', handleScroll);
 });
 
@@ -305,7 +333,7 @@ defineExpose({
       :style="wrapperStyle"
       class="virtual-grid-wrapper"
     >
-      <div :style="visibleBlockStyle">
+      <div :style="visibleBlockStyle" class="will-change-transform">
         <div :style="visibleGridStyle" class="virtual-grid-inner">
           <div
             v-for="entry in visibleItems"
@@ -336,6 +364,7 @@ defineExpose({
 <style scoped>
 .virtual-grid {
   width: 100%;
+  contain: layout style;
 }
 
 .virtual-grid-wrapper {
@@ -348,6 +377,8 @@ defineExpose({
 
 .virtual-grid-item {
   min-width: 0;
+  contain: layout style;
+  background: transparent;
 }
 
 .virtual-grid-state {
@@ -389,5 +420,9 @@ defineExpose({
   to {
     transform: rotate(360deg);
   }
+}
+
+.will-change-transform {
+  will-change: transform;
 }
 </style>

@@ -139,12 +139,9 @@ export function getFloorComments(params: {
  * 获取评论数
  */
 export function getCommentCount(hash: string, specialId?: string) {
-  return request.get('/comment/count', {
-    params: {
-      hash,
-      special_id: specialId,
-    },
-  });
+  const params: Record<string, string> = { hash };
+  if (specialId) params.special_id = specialId;
+  return request.get('/comment/count', { params });
 }
 
 /**

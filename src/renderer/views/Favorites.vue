@@ -275,40 +275,45 @@ const fetchVideos = async (reset = false) => {
 };
 
 // ========== 滚动加载 ==========
-const LOAD_MORE_THRESHOLD = 240;
 const scrollContainerRef = useScrollContainer();
-let scrollTarget: HTMLElement | null = null;
+const loadMoreSentinelRef = ref<HTMLElement | null>(null);
+let loadMoreObserver: IntersectionObserver | null = null;
 
-const handleScroll = () => {
-  if (!scrollTarget) return;
-  const distanceToBottom =
-    scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight;
-  if (distanceToBottom < LOAD_MORE_THRESHOLD) {
-    if (
-      activeTab.value === 'videos' &&
-      videosLoaded.value &&
-      !videosLoading.value &&
-      videosHasMore.value
-    ) {
-      void fetchVideos();
-    }
+const setupLoadMoreObserver = () => {
+  loadMoreObserver?.disconnect();
+  const root = scrollContainerRef.value ?? null;
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      if (
+        activeTab.value === 'videos' &&
+        videosLoaded.value &&
+        !videosLoading.value &&
+        videosHasMore.value
+      ) {
+        void fetchVideos();
+      }
+    },
+    { root, rootMargin: '0px 0px 240px 0px' },
+  );
+  if (loadMoreSentinelRef.value) {
+    loadMoreObserver.observe(loadMoreSentinelRef.value);
   }
 };
 
-const attachScrollTarget = async () => {
-  await nextTick();
-  scrollTarget = scrollContainerRef.value;
-  if (scrollTarget) {
-    scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
+watch(loadMoreSentinelRef, (el) => {
+  if (!loadMoreObserver) {
+    setupLoadMoreObserver();
+    return;
   }
-};
+  loadMoreObserver.disconnect();
+  if (el) loadMoreObserver.observe(el);
+});
 
-const detachScrollTarget = () => {
-  if (scrollTarget) {
-    scrollTarget.removeEventListener('scroll', handleScroll);
-    scrollTarget = null;
-  }
-};
+watch(scrollContainerRef, () => {
+  setupLoadMoreObserver();
+});
 
 // ========== Tab 切换懒加载 ==========
 const handleTabChange = (value: string | number) => {
@@ -329,11 +334,13 @@ onMounted(async () => {
       void playlistStore.fetchLikedPlaylistSongs();
     }
   }
-  await attachScrollTarget();
+  await nextTick();
+  setupLoadMoreObserver();
 });
 
 onUnmounted(() => {
-  detachScrollTarget();
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
 });
 
 watch(isLoggedIn, (value) => {
@@ -569,10 +576,11 @@ watch(isLoggedIn, (value) => {
                 </template>
               </VirtualGrid>
               <div
-                v-if="videosLoading && videosLoaded"
+                ref="loadMoreSentinelRef"
+                v-if="videosHasMore && videosLoaded"
                 class="flex justify-center py-6 text-[12px] text-text-secondary"
               >
-                加载更多中...
+                {{ videosLoading ? '加载更多中...' : '继续下滑加载更多' }}
               </div>
               <div
                 v-else-if="videosLoaded && !videosHasMore && videos.length > 0"

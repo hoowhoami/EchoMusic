@@ -151,12 +151,35 @@ const setQueueVirtualRange = (queueId: string, range: VirtualRange) => {
   virtualRanges.value[queueId] = range;
 };
 
+// 性能优化：缓存每个队列的虚拟列表项，避免范围未变时重建数组
+const virtualItemsCache = new Map<
+  string,
+  { start: number; end: number; songs: Song[]; items: Array<{ data: Song; index: number }> }
+>();
+
 const getQueueVirtualItems = (queue: QueueLike) => {
   const range = getQueueVirtualRange(queue.id);
-  return queue.songs.slice(range.start, range.end).map((data, i) => ({
+  const cached = virtualItemsCache.get(queue.id);
+  // 范围和数据源都未变化时直接返回缓存
+  if (
+    cached &&
+    cached.start === range.start &&
+    cached.end === range.end &&
+    cached.songs === queue.songs
+  ) {
+    return cached.items;
+  }
+  const items = queue.songs.slice(range.start, range.end).map((data, i) => ({
     data,
     index: range.start + i,
   }));
+  virtualItemsCache.set(queue.id, {
+    start: range.start,
+    end: range.end,
+    songs: queue.songs,
+    items,
+  });
+  return items;
 };
 
 const getQueueVirtualWrapperStyle = (queue: QueueLike) => ({
@@ -929,7 +952,6 @@ onBeforeUnmount(() => {
                         :payType="entry.data.payType"
                         :oldCpy="entry.data.oldCpy"
                         :relateGoods="entry.data.relateGoods"
-                        :queueContext="queue.songs"
                         :showCover="true"
                         :showAlbum="false"
                         :showDuration="false"
@@ -1215,6 +1237,7 @@ onBeforeUnmount(() => {
   transition: background-color 0.2s ease;
   user-select: none;
   -webkit-user-select: none;
+  contain: layout style paint;
 }
 
 .queue-row.is-current,

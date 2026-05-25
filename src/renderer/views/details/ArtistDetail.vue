@@ -461,11 +461,46 @@ const fetchMoreAlbums = async () => {
 };
 
 const scrollContainerRef = useScrollContainer();
+const loadMoreSentinelRef = ref<HTMLElement | null>(null);
+let loadMoreObserver: IntersectionObserver | null = null;
+
+const setupLoadMoreObserver = () => {
+  loadMoreObserver?.disconnect();
+  const root = scrollContainerRef.value ?? null;
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      if (activeTab.value === 'mvs' && mvHasMore.value && !loadingMvs.value) {
+        void fetchMvs(mvPage.value + 1);
+      }
+      if (activeTab.value === 'albums' && albumHasMore.value && !loadingAlbums.value) {
+        void fetchMoreAlbums();
+      }
+    },
+    { root, rootMargin: '0px 0px 300px 0px' },
+  );
+  if (loadMoreSentinelRef.value) {
+    loadMoreObserver.observe(loadMoreSentinelRef.value);
+  }
+};
+
+watch(loadMoreSentinelRef, (el) => {
+  if (!loadMoreObserver) {
+    setupLoadMoreObserver();
+    return;
+  }
+  loadMoreObserver.disconnect();
+  if (el) loadMoreObserver.observe(el);
+});
+
+watch(scrollContainerRef, () => {
+  setupLoadMoreObserver();
+});
 
 onMounted(() => {
   void fetchData();
-  const viewport = scrollContainerRef.value;
-  viewport?.addEventListener('scroll', onViewportScroll);
+  setupLoadMoreObserver();
 });
 
 // 切换到 MV/专辑 tab 时懒加载
@@ -478,24 +513,9 @@ watch(activeTab, (tab) => {
   }
 });
 
-// 滚动加载更多 MV 和专辑
-const onViewportScroll = () => {
-  const viewport = scrollContainerRef.value;
-  if (!viewport) return;
-  const { scrollTop, scrollHeight, clientHeight } = viewport;
-  if (scrollHeight - scrollTop - clientHeight > 300) return;
-
-  if (activeTab.value === 'mvs' && mvHasMore.value && !loadingMvs.value) {
-    void fetchMvs(mvPage.value + 1);
-  }
-  if (activeTab.value === 'albums' && albumHasMore.value && !loadingAlbums.value) {
-    void fetchMoreAlbums();
-  }
-};
-
 onUnmounted(() => {
-  const viewport = scrollContainerRef.value;
-  viewport?.removeEventListener('scroll', onViewportScroll);
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
 });
 </script>
 
@@ -689,6 +709,13 @@ onUnmounted(() => {
                   <AlbumCard v-bind="item" />
                 </template>
               </VirtualGrid>
+              <div
+                v-if="albumHasMore"
+                ref="loadMoreSentinelRef"
+                class="flex justify-center py-4 text-[12px] text-text-secondary"
+              >
+                {{ loadingAlbums ? '加载中...' : '' }}
+              </div>
             </TabsContent>
 
             <TabsContent value="mvs" class="mt-4 px-6">
@@ -724,6 +751,13 @@ onUnmounted(() => {
                   <MvCard v-bind="item" />
                 </template>
               </VirtualGrid>
+              <div
+                v-if="mvHasMore"
+                ref="loadMoreSentinelRef"
+                class="flex justify-center py-4 text-[12px] text-text-secondary"
+              >
+                {{ loadingMvs ? '加载中...' : '' }}
+              </div>
             </TabsContent>
           </div>
         </Tabs>

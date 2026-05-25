@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'album-detail' });
-import { ref, shallowRef, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, shallowRef, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
 import { useRoute, useRouter } from 'vue-router';
 import { useRouteId } from '@/composables/useRouteId';
@@ -44,6 +44,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { useScrollContainer } from '@/composables/usePageScroll';
 import { isRecord, toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
 
@@ -301,12 +302,17 @@ const fetchComments = async (reset = false) => {
       }
       comments.value = reset ? mapped : [...comments.value, ...mapped];
 
-      const totalRaw =
-        data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
-      const totalValue = parseIntSafe(totalRaw);
-      hasMoreComments.value =
-        mapped.length > 0 &&
-        (totalValue > 0 ? comments.value.length < totalValue : mapped.length >= 30);
+      // 如果本页没有返回任何有效评论（非 reset），说明已到末尾
+      if (!reset && mapped.length === 0) {
+        hasMoreComments.value = false;
+      } else {
+        const totalRaw =
+          data.total ?? data.count ?? record.total ?? record.count ?? commentTotal.value;
+        const totalValue = parseIntSafe(totalRaw);
+        hasMoreComments.value =
+          mapped.length > 0 &&
+          (totalValue > 0 ? comments.value.length < totalValue : mapped.length >= 30);
+      }
 
       if (hasMoreComments.value) {
         commentPage.value += 1;
@@ -335,21 +341,41 @@ const handleTabChange = (value: string | number) => {
   }
 };
 
-// 滚动加载更多评论
-const maybeFetchMoreComments = () => {
-  if (activeTab.value !== 'comments') return;
-  if (loadingComments.value || !hasMoreComments.value) return;
+// 滚动加载更多评论（使用 IntersectionObserver）
+const scrollContainerRef = useScrollContainer();
+const commentSentinelRef = ref<HTMLElement | null>(null);
+let commentObserver: IntersectionObserver | null = null;
 
-  const scrollTop =
-    window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  const fullHeight = document.documentElement.scrollHeight || document.body.scrollHeight || 0;
-
-  // 距离底部 400px 时触发加载
-  if (fullHeight - scrollTop - viewportHeight <= 400) {
-    fetchComments();
+const setupCommentObserver = () => {
+  commentObserver?.disconnect();
+  const root = scrollContainerRef.value ?? null;
+  commentObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      if (activeTab.value !== 'comments') return;
+      if (loadingComments.value || !hasMoreComments.value) return;
+      fetchComments();
+    },
+    { root, rootMargin: '0px 0px 400px 0px' },
+  );
+  if (commentSentinelRef.value) {
+    commentObserver.observe(commentSentinelRef.value);
   }
 };
+
+watch(commentSentinelRef, (el) => {
+  if (!commentObserver) {
+    setupCommentObserver();
+    return;
+  }
+  commentObserver.disconnect();
+  if (el) commentObserver.observe(el);
+});
+
+watch(scrollContainerRef, () => {
+  setupCommentObserver();
+});
 
 const fetchData = async () => {
   loading.value = true;
@@ -426,11 +452,12 @@ const fetchData = async () => {
 
 onMounted(() => {
   fetchData();
-  window.addEventListener('scroll', maybeFetchMoreComments, { passive: true });
+  setupCommentObserver();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', maybeFetchMoreComments);
+  commentObserver?.disconnect();
+  commentObserver = null;
 });
 
 // id 变化时重置数据（仅同路由间切换，如专辑A→专辑B）
@@ -719,6 +746,8 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
                   compact
                   :hide-empty="hotComments.length > 0"
                 />
+
+                <div v-if="hasMoreComments" ref="commentSentinelRef" class="h-1" />
 
                 <div
                   v-if="

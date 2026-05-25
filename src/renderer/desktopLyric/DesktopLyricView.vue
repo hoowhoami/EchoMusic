@@ -20,11 +20,7 @@ import {
   iconChevronUpDown,
   iconX,
 } from '@/icons';
-import type {
-  DesktopLyricSnapshot,
-  LyricLinePayload,
-  LyricCharacterPayload,
-} from '../../shared/desktop-lyric';
+import type { DesktopLyricSnapshot, LyricLinePayload } from '../../shared/desktop-lyric';
 import { buildFontFamily } from '../../shared/font';
 
 // ── 渲染行类型 ──
@@ -45,17 +41,121 @@ let disposeSnapshotListener: (() => void) | null = null;
 let baseMs = 0;
 let anchorTick = 0;
 
-// 实时播放进度（毫秒）
-const playSeekMs = ref(0);
+// 实时播放进度（毫秒） - 非响应式以提升性能
+let playSeekMsRaw = 0;
+const activeLineIndex = ref(-1);
+
+// 缓存 DOM 引用
+let cachedYrcElements: HTMLElement[] = [];
+let cachedYrcLineKey = '';
+
+const calculateCurrentIndex = (seekMs: number) => {
+  const lines = lyrics.value;
+  if (lines.length === 0) return -1;
+  let idx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const start = lines[i].characters?.[0]?.startTime ?? Math.round(lines[i].time * 1000);
+    if (seekMs >= start) {
+      idx = i;
+    } else {
+      break;
+    }
+  }
+  return idx;
+};
 
 // 每帧推进播放游标
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
   if (snapshot.value?.playback?.isPlaying) {
-    playSeekMs.value = baseMs + (performance.now() - anchorTick);
+    playSeekMsRaw = baseMs + (performance.now() - anchorTick);
   } else {
-    playSeekMs.value = baseMs;
+    playSeekMsRaw = baseMs;
   }
+
+  // 更新 currentIndexRef (触发 Vue 更新行)
+  const nextIndex = calculateCurrentIndex(playSeekMsRaw);
+  if (nextIndex !== activeLineIndex.value) {
+    activeLineIndex.value = nextIndex;
+  }
+
+  // 手动更新 DOM
+  updateYrcDomManual();
+  updateScrollManual();
 });
+
+const updateYrcDomManual = () => {
+  const idx = activeLineIndex.value;
+  const renderLines = renderLyricLines.value;
+  // 查找当前活跃的渲染行（逐字层）
+  const activeRenderLine = renderLines.find((l) => l.active && l.index === idx);
+
+  if (!activeRenderLine || !isYrcLine(activeRenderLine.line)) {
+    cachedYrcElements = [];
+    cachedYrcLineKey = '';
+    return;
+  }
+
+  const key = activeRenderLine.key;
+  if (key !== cachedYrcLineKey) {
+    // 重新查找 DOM
+    const container = lineRefs.get(key);
+    if (container) {
+      cachedYrcElements = Array.from(container.querySelectorAll('.word'));
+      cachedYrcLineKey = key;
+    } else {
+      cachedYrcElements = [];
+      cachedYrcLineKey = '';
+    }
+  }
+
+  if (cachedYrcElements.length === 0) return;
+
+  const seekMs = playSeekMsRaw + LYRIC_LOOKAHEAD;
+  const characters = activeRenderLine.line.characters;
+
+  for (let i = 0; i < cachedYrcElements.length; i++) {
+    const char = characters[i];
+    const el = cachedYrcElements[i];
+    if (!char || !el) continue;
+
+    const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
+    const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
+    el.style.backgroundPositionX = `${100 - progress * 100}%`;
+  }
+};
+
+const updateScrollManual = () => {
+  renderLyricLines.value.forEach((line) => {
+    const container = lineRefs.get(line.key);
+    const content = contentRefs.get(line.key);
+    if (!container || !content || !line.line) return;
+
+    const overflow = Math.max(0, content.scrollWidth - container.clientWidth);
+    if (overflow <= 0) {
+      content.style.transform = 'translateX(0px)';
+      return;
+    }
+
+    const seekMs = playSeekMsRaw;
+    const chars = line.line.characters;
+    if (!chars?.length) return;
+
+    const start = chars[0].startTime;
+    const endRaw = chars[chars.length - 1].endTime;
+    if (!endRaw || endRaw <= start) return;
+
+    const end = Math.max(start + 0.001, endRaw - 2000);
+    const duration = Math.max(end - start, 0.001);
+    const progress = Math.max(Math.min((seekMs - start) / duration, 1), 0);
+
+    let tx = 0;
+    if (progress > 0.3) {
+      const ratio = (progress - 0.3) / 0.7;
+      tx = -Math.round(overflow * ratio);
+    }
+    content.style.transform = `translateX(${tx}px)`;
+  });
+};
 
 // 逐字高亮提前量（毫秒）
 const LYRIC_LOOKAHEAD = 150;
@@ -69,21 +169,7 @@ const lyrics = computed(() => snapshot.value?.lyrics ?? []);
 const isLocked = computed(() => settings.value?.locked ?? false);
 
 // 本地计算 currentIndex，不再依赖主窗口传来的值
-const currentIndex = computed(() => {
-  const lines = lyrics.value;
-  if (lines.length === 0) return -1;
-  const seekMs = playSeekMs.value;
-  let idx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const start = lines[i].characters?.[0]?.startTime ?? Math.round(lines[i].time * 1000);
-    if (seekMs >= start) {
-      idx = i;
-    } else {
-      break;
-    }
-  }
-  return idx;
-});
+const currentIndex = computed(() => activeLineIndex.value);
 const isPlaying = computed(() => playback.value?.isPlaying ?? false);
 const songName = computed(() => playback.value?.title || 'EchoMusic');
 const artistName = computed(() => playback.value?.artist || '');
@@ -279,30 +365,10 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   }
   return result;
 });
-
-// 逐字歌词样式
-
-const getYrcStyle = (char: LyricCharacterPayload, lineIndex: number) => {
-  const line = lyrics.value[lineIndex];
-  if (!line?.characters?.length) return { backgroundPositionX: '100%' };
-  const seekMs = playSeekMs.value + LYRIC_LOOKAHEAD;
-  const lineStart = line.characters[0].startTime;
-  const lineEnd = line.characters[line.characters.length - 1].endTime;
-  const isLineActive =
-    (seekMs >= lineStart && seekMs < lineEnd) || currentIndex.value === lineIndex;
-  if (!isLineActive) {
-    return { backgroundPositionX: seekMs >= (char.endTime || 0) ? '0%' : '100%' };
-  }
-  const duration = Math.max((char.endTime || 0) - (char.startTime || 0), 0.001);
-  const progress = Math.max(Math.min((seekMs - (char.startTime || 0)) / duration, 1), 0);
-  return { backgroundPositionX: `${100 - progress * 100}%` };
-};
-
 // 判断行是否有逐字数据
 const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 1;
 
-// 歌词行滚动
-
+// 歌词行引用管理 (用于手动 DOM 补丁)
 const lineRefs = new Map<string, HTMLElement>();
 const contentRefs = new Map<string, HTMLElement>();
 const setLineRef = (el: Element | ComponentPublicInstance | null, key: string) => {
@@ -314,28 +380,7 @@ const setContentRef = (el: Element | ComponentPublicInstance | null, key: string
   else contentRefs.delete(key);
 };
 
-const getScrollStyle = (line: RenderLine) => {
-  const container = lineRefs.get(line.key);
-  const content = contentRefs.get(line.key);
-  if (!container || !content || !line.line) return {};
-  const overflow = Math.max(0, content.scrollWidth - container.clientWidth);
-  if (overflow <= 0) return { transform: 'translateX(0px)' };
-  const seekMs = playSeekMs.value;
-  const chars = line.line.characters;
-  if (!chars?.length) return { transform: 'translateX(0px)' };
-  const start = chars[0].startTime;
-  const endRaw = chars[chars.length - 1].endTime;
-  if (!endRaw || endRaw <= start) return { transform: 'translateX(0px)' };
-  const end = Math.max(start + 0.001, endRaw - 2000);
-  const duration = Math.max(end - start, 0.001);
-  const progress = Math.max(Math.min((seekMs - start) / duration, 1), 0);
-  if (progress <= 0.3) return { transform: 'translateX(0px)' };
-  const ratio = (progress - 0.3) / 0.7;
-  return { transform: `translateX(-${Math.round(overflow * ratio)}px)`, willChange: 'transform' };
-};
-
 // 拖拽
-
 // EchoMusic 的 preload send 只接受 (channel, data)，多参数包装成数组
 const sendToMain = (channel: string, ...args: any[]) => {
   window.electron?.ipcRenderer?.send(channel, ...args);
@@ -389,10 +434,24 @@ const dragState = reactive({
 
 const isResizing = ref(false);
 
-const onDocPointerDown = (event: PointerEvent) => {
+const onDocPointerDown = async (event: PointerEvent) => {
   if (isLocked.value || event.button !== 0) return;
   const target = event.target as HTMLElement | null;
   if (target?.closest('.menu-btn')) return;
+
+  // 同步获取最新窗口位置，避免缓存过时导致瞬移
+  try {
+    const winBounds = await window.electron.ipcRenderer.invoke('desktop-lyric:get-bounds');
+    if (winBounds) {
+      cachedBounds.x = winBounds.x;
+      cachedBounds.y = winBounds.y;
+      cachedBounds.width = winBounds.width;
+      cachedBounds.height = winBounds.height;
+    }
+  } catch {
+    // 获取失败时使用缓存值
+  }
+
   const safeWidth = cachedBounds.width > 0 ? cachedBounds.width : 800;
   const safeHeight = cachedBounds.height > 0 ? cachedBounds.height : 180;
   dragState.isDragging = true;
@@ -408,8 +467,11 @@ const onDocPointerDown = (event: PointerEvent) => {
     height: safeHeight,
     fixed: true,
   });
+  // 捕获 pointer，确保触摸拖拽时手指移出窗口边界后仍能收到事件
+  (event.target as HTMLElement)?.setPointerCapture?.(event.pointerId);
   document.addEventListener('pointermove', onDocPointerMove);
   document.addEventListener('pointerup', onDocPointerUp);
+  document.addEventListener('pointercancel', onDocPointerUp);
   event.preventDefault();
 };
 
@@ -425,11 +487,16 @@ const onDocPointerMove = useThrottleFn(
   false,
 );
 
-const onDocPointerUp = () => {
+const onDocPointerUp = (event?: PointerEvent | Event) => {
   if (!dragState.isDragging) return;
   dragState.isDragging = false;
+  // 释放 pointer capture
+  if (event && 'pointerId' in event) {
+    (event.target as HTMLElement)?.releasePointerCapture?.((event as PointerEvent).pointerId);
+  }
   document.removeEventListener('pointermove', onDocPointerMove);
   document.removeEventListener('pointerup', onDocPointerUp);
+  document.removeEventListener('pointercancel', onDocPointerUp);
   requestAnimationFrame(() => {
     sendToMain('desktop-lyric:resize', dragState.winWidth, dragState.winHeight);
     const height = fontSizeToHeight(localFontSize.value);
@@ -582,10 +649,10 @@ const syncAnchor = (force = false) => {
   const newBaseMs = Math.round((state.currentTime || 0) * 1000);
   const ipcDelay = performance.now() - (state.updatedAt || performance.now());
   const compensated = ipcDelay > 0 && ipcDelay < 1000 ? newBaseMs + ipcDelay : newBaseMs;
-  if (force || Math.abs(compensated - playSeekMs.value) > SYNC_THRESHOLD) {
+  if (force || Math.abs(compensated - playSeekMsRaw) > SYNC_THRESHOLD) {
     baseMs = compensated;
     anchorTick = performance.now();
-    playSeekMs.value = compensated;
+    playSeekMsRaw = compensated;
   }
   if (!state.isPlaying) {
     baseMs = newBaseMs;
@@ -613,7 +680,7 @@ onMounted(async () => {
       if (next.playback?.isPlaying) {
         resumeSeek();
       } else {
-        baseMs = playSeekMs.value;
+        baseMs = playSeekMsRaw;
         anchorTick = performance.now();
         pauseSeek();
       }
@@ -741,13 +808,9 @@ onBeforeUnmount(() => {
         }"
         :ref="(el) => setLineRef(el, line.key)"
       >
-        <!-- 逐字歌词 -->
-        <template v-if="line.active && isYrcLine(line.line)">
-          <span
-            class="scroll-content"
-            :style="getScrollStyle(line)"
-            :ref="(el) => setContentRef(el, line.key)"
-          >
+        <!-- 逐字歌词 (如果存在逐字数据则始终渲染 YRC 结构，以便手动补丁 DOM) -->
+        <template v-if="isYrcLine(line.line)">
+          <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">
             <span class="content">
               <span
                 v-for="(char, ci) in line.line.characters"
@@ -759,14 +822,16 @@ onBeforeUnmount(() => {
               >
                 <span
                   class="word"
-                  :style="[
-                    {
-                      backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
-                      textShadow: 'none',
-                      filter: `drop-shadow(0 1px 1px rgba(0,0,0,0.2))`,
-                    },
-                    getYrcStyle(char, line.index),
-                  ]"
+                  :style="
+                    line.active
+                      ? {
+                          backgroundImage: `linear-gradient(to right, ${playedColor} 50%, ${unplayedColor} 50%)`,
+                          textShadow: 'none',
+                          filter: `drop-shadow(0 1px 1px rgba(0,0,0,0.2))`,
+                          backgroundPositionX: '100%',
+                        }
+                      : undefined
+                  "
                   >{{ char.text }}</span
                 >
               </span>
@@ -775,12 +840,9 @@ onBeforeUnmount(() => {
         </template>
         <!-- 普通歌词 -->
         <template v-else>
-          <span
-            class="scroll-content"
-            :style="getScrollStyle(line)"
-            :ref="(el) => setContentRef(el, line.key)"
-            >{{ line.line.text || '' }}</span
-          >
+          <span class="scroll-content" :ref="(el) => setContentRef(el, line.key)">{{
+            line.line.text || ''
+          }}</span>
         </template>
       </div>
       <!-- 占位 -->
@@ -806,6 +868,8 @@ onBeforeUnmount(() => {
   overflow: hidden;
   transition: background-color 0.3s;
   cursor: default;
+  touch-action: none;
+  user-select: none;
 }
 
 /* 顶部工具栏 */

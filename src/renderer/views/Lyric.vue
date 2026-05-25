@@ -482,6 +482,66 @@ const yrcUnplayedColor = computed(() => effectiveUnplayedColor.value);
 
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
 
+// ── 虚拟列表优化：仅渲染视口附近的歌词行 ──
+
+const VIRTUAL_OVERSCAN_BEFORE = 15;
+const VIRTUAL_OVERSCAN_AFTER = 25;
+
+const getEstimatedLineHeight = (line: (typeof lyricStore.lines)[0]) => {
+  const scale = lyricStore.fontScale;
+  const isCollapsed = isLyricCollapsed.value;
+  let base = 36;
+  if (lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled) {
+    base = 72;
+  } else if (lyricStore.lineSecondaryText(line)) {
+    base = 56;
+  }
+  const padding = isCollapsed ? 4 : 32;
+  // 这里的估值应尽可能接近实际 DOM 高度以减少滚动跳变
+  return base * scale + padding;
+};
+
+const visibleRange = computed(() => {
+  const lines = lyricStore.lines;
+  if (lines.length === 0) return { start: 0, end: 0 };
+  const index = lyricStore.currentIndex;
+  if (index < 0) return { start: 0, end: Math.min(lines.length, VIRTUAL_OVERSCAN_AFTER) };
+
+  const start = Math.max(0, index - VIRTUAL_OVERSCAN_BEFORE);
+  const end = Math.min(lines.length, index + VIRTUAL_OVERSCAN_AFTER);
+  return { start, end };
+});
+
+const visibleLines = computed(() => {
+  const { start, end } = visibleRange.value;
+  return lyricStore.lines.slice(start, end).map((line, offset) => ({
+    line,
+    index: start + offset,
+  }));
+});
+
+const beforeSpacerHeight = computed(() => {
+  const { start } = visibleRange.value;
+  if (start <= 0) return 0;
+  let total = 0;
+  const lines = lyricStore.lines;
+  for (let i = 0; i < start; i++) {
+    total += getEstimatedLineHeight(lines[i]);
+  }
+  return total;
+});
+
+const afterSpacerHeight = computed(() => {
+  const { end } = visibleRange.value;
+  const lines = lyricStore.lines;
+  if (end >= lines.length) return 0;
+  let total = 0;
+  for (let i = end; i < lines.length; i++) {
+    total += getEstimatedLineHeight(lines[i]);
+  }
+  return total;
+});
+
 watch(
   () => playerStore.currentTime,
   () => syncSeekAnchor(),
@@ -928,11 +988,14 @@ onUnmounted(() => {
                       paddingBottom: '40vh',
                     }"
                   >
+                    <!-- 上方虚拟占位层 -->
+                    <div :style="{ height: `${beforeSpacerHeight}px` }"></div>
+
                     <div
-                      v-for="(line, index) in lyricStore.lines"
-                      :key="line.time"
+                      v-for="entry in visibleLines"
+                      :key="entry.line.time"
                       class="lyric-row"
-                      :data-lyric-index="index"
+                      :data-lyric-index="entry.index"
                       :style="{
                         minHeight:
                           (lyricStore.lyricsMode === 'both'
@@ -946,9 +1009,9 @@ onUnmounted(() => {
                         paddingTop: isLyricCollapsed ? '2px' : '16px',
                         paddingBottom: isLyricCollapsed ? '2px' : '16px',
                         opacity: isLyricCollapsed
-                          ? index === currentIndex ||
-                            index === currentIndex + 1 ||
-                            (currentIndex < 0 && index <= 1)
+                          ? entry.index === currentIndex ||
+                            entry.index === currentIndex + 1 ||
+                            (currentIndex < 0 && entry.index <= 1)
                             ? 1
                             : 0
                           : undefined,
@@ -959,8 +1022,11 @@ onUnmounted(() => {
                       }"
                     >
                       <div
-                        :class="['lyric-line', currentIndex === index ? 'is-current' : 'is-idle']"
-                        @dblclick.prevent.stop="handleLyricLineClick(line.time)"
+                        :class="[
+                          'lyric-line',
+                          currentIndex === entry.index ? 'is-current' : 'is-idle',
+                        ]"
+                        @dblclick.prevent.stop="handleLyricLineClick(entry.line.time)"
                       >
                         <span
                           class="block leading-[1.24] tracking-[0.01em]"
@@ -969,10 +1035,10 @@ onUnmounted(() => {
                             fontWeight: String(lyricStore.fontWeightValue),
                           }"
                         >
-                          <template v-if="currentIndex === index && isYrcLine(line)">
+                          <template v-if="currentIndex === entry.index && isYrcLine(entry.line)">
                             <span class="lyric-yrc-line-wrap">
                               <span
-                                v-for="(char, ci) in line.characters"
+                                v-for="(char, ci) in entry.line.characters"
                                 :key="ci"
                                 class="lyric-yrc-char"
                                 :style="{
@@ -986,11 +1052,11 @@ onUnmounted(() => {
                             <span
                               :style="{
                                 color:
-                                  currentIndex === index
+                                  currentIndex === entry.index
                                     ? effectivePlayedColor
                                     : effectiveUnplayedColor,
                               }"
-                              >{{ line.text }}</span
+                              >{{ entry.line.text }}</span
                             >
                           </template>
                         </span>
@@ -999,12 +1065,12 @@ onUnmounted(() => {
                           v-if="lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled"
                         >
                           <span
-                            v-if="line.translated?.trim()"
+                            v-if="entry.line.translated?.trim()"
                             class="lyric-subline mt-1 block max-w-full truncate"
                             :style="{
                               fontSize: secondaryFontSize,
                               fontWeight: String(
-                                currentIndex === index
+                                currentIndex === entry.index
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
@@ -1012,15 +1078,15 @@ onUnmounted(() => {
                               opacity: effectiveUnplayedColor ? 0.7 : undefined,
                             }"
                           >
-                            {{ line.translated.trim() }}
+                            {{ entry.line.translated.trim() }}
                           </span>
                           <span
-                            v-if="line.romanized?.trim()"
+                            v-if="entry.line.romanized?.trim()"
                             class="lyric-subline mt-1 block max-w-full truncate"
                             :style="{
                               fontSize: romanizationFontSize,
                               fontWeight: String(
-                                currentIndex === index
+                                currentIndex === entry.index
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
@@ -1028,18 +1094,18 @@ onUnmounted(() => {
                               opacity: effectiveUnplayedColor ? 0.55 : 0.72,
                             }"
                           >
-                            {{ line.romanized.trim() }}
+                            {{ entry.line.romanized.trim() }}
                           </span>
                         </template>
                         <!-- 单一翻译/音译模式 -->
                         <template v-else>
                           <span
-                            v-if="lyricStore.lineSecondaryText(line)"
+                            v-if="lyricStore.lineSecondaryText(entry.line)"
                             class="lyric-subline mt-1 block max-w-full truncate"
                             :style="{
                               fontSize: secondaryFontSize,
                               fontWeight: String(
-                                currentIndex === index
+                                currentIndex === entry.index
                                   ? Math.max(500, lyricStore.fontWeightValue - 200)
                                   : 400,
                               ),
@@ -1047,11 +1113,14 @@ onUnmounted(() => {
                               opacity: effectiveUnplayedColor ? 0.7 : undefined,
                             }"
                           >
-                            {{ lyricStore.lineSecondaryText(line) }}
+                            {{ lyricStore.lineSecondaryText(entry.line) }}
                           </span>
                         </template>
                       </div>
                     </div>
+
+                    <!-- 下方虚拟占位层 -->
+                    <div :style="{ height: `${afterSpacerHeight}px` }"></div>
                   </div>
                 </template>
 
