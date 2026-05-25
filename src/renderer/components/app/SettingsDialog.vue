@@ -505,7 +505,7 @@ async function fetchInputDevices() {
   }
 }
 
-const handleInputDeviceChange = (value: string | number | boolean | null | undefined) => {
+const handleInputDeviceChange = (value: string | number) => {
   settingStore.inputDevice = String(value ?? 'default');
 };
 
@@ -1527,7 +1527,7 @@ onUnmounted(() => {
                           class="w-[180px]"
                           :model-value="settingStore.inputDevice"
                           :options="inputDeviceOptions"
-                          @update:model-value="handleInputDeviceChange"
+                          @update:model-value="handleInputDeviceChange($event as string)"
                         />
                       </div>
                       <div class="settings-divider"></div>
