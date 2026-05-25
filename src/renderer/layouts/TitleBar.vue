@@ -14,12 +14,22 @@ import {
   iconSearch,
   iconMicrophone,
   iconFullscreen,
+  iconPanelLeft,
 } from '@/icons';
 
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const titleBarRef = ref<HTMLElement | null>(null);
+
+// 侧边栏折叠
+const props = defineProps<{
+  isSidebarCollapsed?: boolean;
+}>();
+
+const emit = defineEmits<{
+  toggleSidebar: [];
+}>();
 
 const canGoBack = ref(false);
 const canGoForward = ref(false);
@@ -209,6 +219,23 @@ onUnmounted(() => {
 
     <!-- 1. 左侧：导航按钮 -->
     <div class="flex items-center gap-1 no-drag pl-6 relative z-10">
+      <!-- 侧边栏折叠按钮 -->
+      <Button
+        variant="unstyled"
+        size="none"
+        @click="emit('toggleSidebar')"
+        class="nav-btn group"
+        :title="props.isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+      >
+        <Icon
+          :icon="iconPanelLeft"
+          width="20"
+          height="20"
+          class="text-text-main opacity-60 group-hover:opacity-100 transition-opacity"
+          :class="{ 'rotate-180': props.isSidebarCollapsed }"
+        />
+      </Button>
+
       <Button
         variant="unstyled"
         size="none"
