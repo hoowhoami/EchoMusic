@@ -34,6 +34,12 @@ impl WindowsMediaControls {
         updater: &windows::Media::SystemMediaTransportControlsDisplayUpdater,
         data: &[u8],
     ) -> Result<(), String> {
+        // 如果已经是 JPEG 格式，直接使用，跳过转换
+        if data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+            tracing::info!("Image is already JPEG, using directly");
+            return Self::write_to_stream(updater, data);
+        }
+
         // 使用 image crate 验证并转换图片格式
         let img = ImageReader::new(Cursor::new(data))
             .with_guessed_format()
@@ -56,12 +62,19 @@ impl WindowsMediaControls {
 
         tracing::info!("Image re-encoded as JPEG: {} bytes", output.len());
 
+        Self::write_to_stream(updater, &output)
+    }
+
+    fn write_to_stream(
+        updater: &windows::Media::SystemMediaTransportControlsDisplayUpdater,
+        data: &[u8],
+    ) -> Result<(), String> {
         let stream =
             InMemoryRandomAccessStream::new().map_err(|e| format!("Failed to create stream: {e}"))?;
         let writer =
             DataWriter::CreateDataWriter(&stream).map_err(|e| format!("Failed to create writer: {e}"))?;
         writer
-            .WriteBytes(&output)
+            .WriteBytes(data)
             .map_err(|e| format!("Failed to write data: {e}"))?;
         writer
             .StoreAsync()
