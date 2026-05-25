@@ -29,6 +29,7 @@ import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { useSettingsDialog } from '@/composables/useSettingsDialog';
 
 defineOptions({
   inheritAttrs: false,
@@ -40,6 +41,7 @@ const attrs = useAttrs();
 const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
 const toastStore = useToastStore();
+const settingsDialog = useSettingsDialog();
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const isLoggedIn = computed(() => userStore.isLoggedIn);
@@ -420,7 +422,7 @@ watch(
           variant="unstyled"
           size="none"
           class="sidebar-settings-btn p-2 mr-1 rounded-[14px] text-text-secondary transition-all active:scale-90"
-          @click="navigateTo('/main/settings')"
+          @click="settingsDialog.open()"
         >
           <Icon :icon="iconSettings" width="19" height="19" />
         </Button>

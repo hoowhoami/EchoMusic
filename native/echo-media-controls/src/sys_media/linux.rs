@@ -2,7 +2,7 @@ use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, Timelin
 use super::{EventCallback, SystemMediaControls};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use std::sync::{Arc, Mutex};
-use mpris_server::{Metadata, PlaybackStatus, Player, Time, Uri};
+use mpris_server::{Metadata, PlaybackStatus, Player, Time, TrackId, Uri};
 use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
 
 /// 通过回调发送媒体控制事件
@@ -25,7 +25,9 @@ enum MprisCommand {
         cover_url: Option<String>,
     },
     UpdatePlayState(PlaybackStatus),
-    UpdateTimeline(i64),
+    /// 更新播放位置（微秒）
+    /// 如果与上次 position 差距超过阈值，自动发送 Seeked 信号
+    UpdatePosition { position_us: i64, total_us: i64 },
     Shutdown,
 }
 
@@ -112,6 +114,11 @@ async fn run_mpris_loop(
 
     setup_signals(&player, callback);
 
+    // 用于生成稳定的 track id
+    let mut track_counter: u64 = 0;
+    // 上次已知的 position，用于检测 seek 跳变
+    let mut last_position_us: i64 = 0;
+
     // pin server_task 以便在 select! 中使用
     let server_task = player.run();
     tokio::pin!(server_task);
@@ -130,7 +137,13 @@ async fn run_mpris_loop(
                     MprisCommand::UpdateMetadata {
                         title, artist, album, duration_ms, cover_data, cover_url,
                     } => {
+                        track_counter += 1;
+                        let track_path = format!("/org/mpris/MediaPlayer2/Track/{}", track_counter);
+                        let track_id = TrackId::try_from(track_path.as_str())
+                            .unwrap_or_else(|_| TrackId::NO_TRACK);
+
                         let mut meta = Metadata::builder()
+                            .trackid(track_id)
                             .title(title)
                             .artist([artist])
                             .album(album);
@@ -150,12 +163,26 @@ async fn run_mpris_loop(
                             meta = meta.art_url(Uri::from(url.as_str()));
                         }
                         player.set_metadata(meta.build()).await.ok();
+                        // 切歌时重置 position 为 0
+                        player.set_position(Time::ZERO);
+                        last_position_us = 0;
                     }
                     MprisCommand::UpdatePlayState(status) => {
                         player.set_playback_status(status).await.ok();
                     }
-                    MprisCommand::UpdateTimeline(position_us) => {
-                        player.seeked(Time::from_micros(position_us)).await.ok();
+                    MprisCommand::UpdatePosition { position_us, total_us: _ } => {
+                        // 检测 seek 跳变：position 变化超过 3 秒视为用户主动 seek
+                        let delta = (position_us - last_position_us).abs();
+                        let is_seek = delta > 3_000_000; // 3 秒 = 3,000,000 微秒
+
+                        player.set_position(Time::from_micros(position_us));
+
+                        if is_seek && last_position_us > 0 {
+                            // 发送 Seeked 信号通知外部工具（如 Waylyrics）
+                            player.seeked(Time::from_micros(position_us)).await.ok();
+                        }
+
+                        last_position_us = position_us;
                     }
                     MprisCommand::Shutdown => break,
                 }
@@ -226,7 +253,8 @@ impl SystemMediaControls for LinuxMediaControls {
     fn update_timeline(&self, payload: &TimelinePayload) {
         if let Some(ref tx) = self.command_tx {
             let position_us = (payload.current_time_ms * 1000.0) as i64;
-            let _ = tx.send(MprisCommand::UpdateTimeline(position_us));
+            let total_us = (payload.total_time_ms * 1000.0) as i64;
+            let _ = tx.send(MprisCommand::UpdatePosition { position_us, total_us });
         }
     }
 

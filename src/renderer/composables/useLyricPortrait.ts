@@ -4,7 +4,6 @@ import { getAudioImages, type AudioImageAuthor, type AudioImagePortrait } from '
 // 写真图片获取、轮播、预解码逻辑
 
 interface PortraitOptions {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentTrack: ComputedRef<Record<string, any> | null | undefined>;
   currentTrackLyricHash: ComputedRef<string>;
   settingStore: {

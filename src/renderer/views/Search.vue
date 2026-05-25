@@ -132,7 +132,6 @@ const lyricResults = ref<Song[]>([]);
 const mvResults = ref<SearchMvCardProps[]>([]);
 
 const SEARCH_PAGE_SIZE = 30;
-const SEARCH_LOAD_MORE_THRESHOLD = 240;
 const TAB_SEARCH_TYPES = ['song', 'special', 'album', 'author', 'lyric', 'mv'] as const;
 
 const createSearchPaginationState = (): SearchPaginationState => ({
@@ -364,20 +363,45 @@ const extractSuggestionCategories = (payload: unknown): SearchSuggestionCategory
 const handleScroll = () => {
   const scrollTop = scrollTarget?.scrollTop ?? 0;
   showPinnedTabs.value = hasSearched.value && activeTabIndex.value !== 0 && scrollTop > 80;
-  if (!scrollTarget || isLoading.value || !hasSearched.value) return;
-  if (!activePagination.value.loaded || activePagination.value.loading) return;
-  const distanceToBottom =
-    scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight;
-  if (distanceToBottom < SEARCH_LOAD_MORE_THRESHOLD) {
-    void loadMoreActiveResults();
+};
+
+// 使用 IntersectionObserver 检测"加载更多"元素进入视口，比 scroll 距离检测更可靠
+const loadMoreSentinelRef = ref<HTMLElement | null>(null);
+let loadMoreObserver: IntersectionObserver | null = null;
+
+const setupLoadMoreObserver = () => {
+  loadMoreObserver?.disconnect();
+  const root = scrollTarget ?? scrollContainerRef.value ?? null;
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (!entry?.isIntersecting) return;
+      if (isLoading.value || !hasSearched.value) return;
+      if (!activePagination.value.loaded || activePagination.value.loading) return;
+      void loadMoreActiveResults();
+    },
+    { root, rootMargin: '0px 0px 240px 0px' },
+  );
+  if (loadMoreSentinelRef.value) {
+    loadMoreObserver.observe(loadMoreSentinelRef.value);
   }
 };
+
+watch(loadMoreSentinelRef, (el) => {
+  if (!loadMoreObserver) {
+    setupLoadMoreObserver();
+    return;
+  }
+  loadMoreObserver.disconnect();
+  if (el) loadMoreObserver.observe(el);
+});
 
 const attachScrollTarget = async () => {
   await nextTick();
   scrollTarget = scrollContainerRef.value;
   if (scrollTarget) {
     scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
+    setupLoadMoreObserver();
     handleScroll();
   }
 };
@@ -387,6 +411,8 @@ const detachScrollTarget = () => {
     scrollTarget.removeEventListener('scroll', handleScroll);
     scrollTarget = null;
   }
+  loadMoreObserver?.disconnect();
+  loadMoreObserver = null;
 };
 
 const loadHotSearches = async () => {
@@ -846,6 +872,18 @@ watch(
   },
 );
 
+// 响应滚动容器变化（PageScrollContainer 延迟 provide 时重新绑定）
+watch(scrollContainerRef, () => {
+  detachScrollTarget();
+  scrollTarget = scrollContainerRef.value;
+  if (scrollTarget) {
+    scrollTarget.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
+  }
+  // root 变了，需要重建 observer
+  setupLoadMoreObserver();
+});
+
 onUnmounted(() => {
   if (debounceTimer) {
     window.clearTimeout(debounceTimer);
@@ -1139,6 +1177,7 @@ onUnmounted(() => {
               rowPaddingClass="px-0"
             />
             <div
+              ref="loadMoreSentinelRef"
               v-if="activePagination.loadingMore || activePagination.hasMore"
               class="search-load-more-status"
             >
@@ -1173,6 +1212,7 @@ onUnmounted(() => {
             </template>
           </VirtualGrid>
           <div
+            ref="loadMoreSentinelRef"
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
           >
@@ -1206,6 +1246,7 @@ onUnmounted(() => {
             </template>
           </VirtualGrid>
           <div
+            ref="loadMoreSentinelRef"
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
           >
@@ -1238,6 +1279,7 @@ onUnmounted(() => {
             </template>
           </VirtualGrid>
           <div
+            ref="loadMoreSentinelRef"
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
           >
@@ -1310,6 +1352,7 @@ onUnmounted(() => {
               rowPaddingClass="px-0"
             />
             <div
+              ref="loadMoreSentinelRef"
               v-if="activePagination.loadingMore || activePagination.hasMore"
               class="search-load-more-status"
             >
@@ -1344,6 +1387,7 @@ onUnmounted(() => {
             </template>
           </VirtualGrid>
           <div
+            ref="loadMoreSentinelRef"
             v-if="activePagination.loadingMore || activePagination.hasMore"
             class="search-load-more-status"
           >

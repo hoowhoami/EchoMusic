@@ -353,15 +353,21 @@ export const usePlaylistStore = defineStore('playlist', {
         null;
 
       if (!activeQueue) {
-        this.defaultList = [];
+        if (this.defaultList.length > 0) this.defaultList = [];
         this.queueFilteredInvalidCount = 0;
-        this.queuedNextTrackIds = [];
+        if (this.queuedNextTrackIds.length > 0) this.queuedNextTrackIds = [];
         return;
       }
 
-      this.defaultList = activeQueue.songs.slice();
+      // 仅在引用不同时才赋值，避免触发不必要的响应式更新
+      // 注意：songs 数组在 store 内部修改后引用会变化，此处直接引用即可
+      if (this.defaultList !== activeQueue.songs) {
+        this.defaultList = activeQueue.songs;
+      }
       this.queueFilteredInvalidCount = Math.max(0, activeQueue.filteredInvalidCount);
-      this.queuedNextTrackIds = activeQueue.queuedNextTrackIds.slice();
+      if (this.queuedNextTrackIds !== activeQueue.queuedNextTrackIds) {
+        this.queuedNextTrackIds = activeQueue.queuedNextTrackIds;
+      }
       this.markLastNonFmQueue(activeQueue.id);
     },
     trimPlaybackQueues(limit = MAX_PLAYBACK_QUEUE_COUNT) {

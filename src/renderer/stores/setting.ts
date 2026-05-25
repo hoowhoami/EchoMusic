@@ -91,6 +91,8 @@ export const useSettingStore = defineStore('setting', {
     // 字体设置
     globalFont: 'system-ui',
     lyricFont: 'follow',
+    // 输入设备（麦克风）
+    inputDevice: 'default',
   }),
   actions: {
     setTheme(theme: ThemeMode) {

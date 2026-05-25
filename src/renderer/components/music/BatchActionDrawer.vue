@@ -399,7 +399,6 @@ const confirmRemoveFromPlaylist = async () => {
                 :payType="entry.data.payType"
                 :oldCpy="entry.data.oldCpy"
                 :relateGoods="entry.data.relateGoods"
-                :queueContext="props.songs"
                 :showCover="true"
                 :showAlbum="false"
                 :showDuration="false"
@@ -614,12 +613,11 @@ const confirmRemoveFromPlaylist = async () => {
   gap: 12px;
   padding: 0;
   border-radius: 8px;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease;
+  transition: background-color 0.15s ease;
   cursor: default;
   user-select: none;
   -webkit-user-select: none;
+  contain: layout style paint;
 }
 
 .batch-row.text-primary {

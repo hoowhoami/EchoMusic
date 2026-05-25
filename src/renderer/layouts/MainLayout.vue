@@ -8,6 +8,7 @@ import TitleBar from './TitleBar.vue';
 import PlayerBar from './PlayerBar.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconPanelLeft } from '@/icons';
+import SettingsDialog from '@/components/app/SettingsDialog.vue';
 
 const route = useRoute();
 const settingStore = useSettingStore();
@@ -40,7 +41,6 @@ const excludeFromCache = [
   'comment-page',
   'mv-detail',
   'profile',
-  'settings-page',
 ];
 
 const keepAliveMax = computed(() =>
@@ -93,6 +93,8 @@ const keepAliveMax = computed(() =>
 
       <PlayerBar />
     </div>
+
+    <SettingsDialog />
   </div>
 </template>
 

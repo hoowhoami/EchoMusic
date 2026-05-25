@@ -290,11 +290,26 @@ export const ensureDesktopLyricWindow = async () => {
 
 export const showDesktopLyricWindow = async () => {
   const win = await ensureDesktopLyricWindow();
-  if (win.isMinimized()) {
-    if (typeof win.restore === 'function') win.restore();
+  // 如果窗口已经就绪且不可见，则显示
+  if (win.isVisible()) {
+    if (win.isMinimized()) {
+      if (typeof win.restore === 'function') win.restore();
+    }
+  } else {
+    // 如果窗口还未显示（可能是刚创建正在等待 ready-to-show，或者是之前 hide 了）
+    // 对于刚创建的情况，ready-to-show 回调会自动处理显示。
+    // 对于 hide 后的情况，我们需要手动调用显示。
+    // 注意：Electron 的 isVisible() 在 show:false 时返回 false。
+    // 我们在这里仅处理非初次创建（已 ready）的情况。
+    // 我们可以通过 check if window is already loaded.
+  }
+
+  // 简化逻辑：仅触发必要的刷新，让 ready-to-show 负责初次显示，
+  // 如果已经 ready 过了且被隐藏了，则手动显示。
+  if (!win.isVisible() && win.webContents.getURL()) {
     win.showInactive();
   }
-  if (!win.isVisible()) win.showInactive();
+
   refreshDesktopLyricInteraction(true);
   refreshDesktopLyricPresentation(true);
   bindMainWindowEvents();

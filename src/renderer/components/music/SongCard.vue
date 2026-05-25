@@ -1,27 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Cover from '@/components/ui/Cover.vue';
 import Tag from '@/components/ui/Tag.vue';
-import {
-  ContextMenuRoot,
-  ContextMenuTrigger,
-  ContextMenuPortal,
-  ContextMenuContent,
-  ContextMenuItem,
-} from 'reka-ui';
 import { formatDuration } from '@/utils/format';
 import type { Song, SongArtist, SongRelateGood } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
-import { useUserStore } from '@/stores/user';
-import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { iconMessageCircle, iconHeart, iconHeartFilled } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
 import { isSameSong } from '@/utils/song';
-import { addSongToPlayNext, playSongInContext, queueAndPlaySong } from '@/utils/playback';
+import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
 interface Props {
@@ -90,9 +81,6 @@ const route = useRoute();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 // const settingStore = useSettingStore();
-const userStore = useUserStore();
-const showPlaylistDialog = ref(false);
-const isPlaylistLoading = ref(false);
 
 const baseClass = computed(() =>
   props.variant === 'list'
@@ -147,10 +135,6 @@ const isFavorite = computed(() =>
   playlistStore.favorites.some(
     (item) => isSameSong(item, songState.value) || String(item.id) === String(props.id),
   ),
-);
-
-const selectablePlaylists = computed(() =>
-  playlistStore.getCreatedPlaylists(userStore.info?.userid),
 );
 
 const artistList = computed(() => {
@@ -325,35 +309,6 @@ const handleDoubleClick = async () => {
   await handleQueueAndPlayCurrentSong();
 };
 
-const handlePlayNext = () => {
-  if (!isPlayable.value) return;
-  addSongToPlayNext(playlistStore, playerStore, buildSongPayload());
-};
-
-const handleAddToPlaylist = async () => {
-  showPlaylistDialog.value = true;
-  if (playlistStore.userPlaylists.length === 0) {
-    isPlaylistLoading.value = true;
-    await playlistStore.fetchUserPlaylists();
-    isPlaylistLoading.value = false;
-  }
-};
-
-const handleSelectPlaylist = async (listId: string | number) => {
-  await playlistStore.addToPlaylist(String(listId), buildSongPayload());
-  showPlaylistDialog.value = false;
-};
-
-const handleRemoveFromPlaylist = async () => {
-  if (!props.parentPlaylistId) return;
-  if (!playlistStore.isOwnedPlaylist(props.parentPlaylistId, userStore.info?.userid)) return;
-  const song = buildSongPayload();
-  const success = await playlistStore.removeFromPlaylist(String(props.parentPlaylistId), song);
-  if (success) {
-    props.onRemovedFromPlaylist?.(song);
-  }
-};
-
 const handleFavorite = () => {
   if (isFavorite.value) {
     void playlistStore.removeFavoriteSong(buildSongPayload());
@@ -365,180 +320,114 @@ const handleFavorite = () => {
 </script>
 
 <template>
-  <ContextMenuRoot>
-    <ContextMenuTrigger as-child>
-      <div :class="[baseClass, props.class]" @dblclick="handleDoubleClick">
-        <!-- 封面 -->
-        <div
-          v-if="showCover"
-          class="relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
-          :style="{ opacity: contentOpacity }"
-        >
-          <Cover :url="coverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
-        </div>
+  <div :class="[baseClass, props.class]" @dblclick="handleDoubleClick">
+    <!-- 封面 -->
+    <div
+      v-if="showCover"
+      class="relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
+      :style="{ opacity: contentOpacity }"
+    >
+      <Cover :url="coverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
+    </div>
 
-        <!-- 信息 -->
-        <div
-          class="song-content flex-1 min-w-0 flex flex-col gap-0.5"
-          :style="{ opacity: contentOpacity }"
+    <!-- 信息 -->
+    <div
+      class="song-content flex-1 min-w-0 flex flex-col gap-0.5"
+      :style="{ opacity: contentOpacity }"
+    >
+      <div class="song-title-row flex items-center min-w-0 gap-1.5">
+        <h3
+          class="song-title text-[13px] font-semibold truncate"
+          :class="props.active ? 'text-primary' : 'text-text-main'"
         >
-          <div class="song-title-row flex items-center min-w-0 gap-1.5">
-            <h3
-              class="song-title text-[13px] font-semibold truncate"
-              :class="props.active ? 'text-primary' : 'text-text-main'"
-            >
-              {{ title }}
-            </h3>
-            <Tag v-for="tag in privilegeTags" :key="tag.label" class="song-tag" :color="tag.color">
-              {{ tag.label }}
-            </Tag>
-            <Tag v-if="qualityTag && showQuality" class="song-tag" color="#06B6D4">
-              {{ qualityTag }}
-            </Tag>
-            <Tag v-if="isOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
-          </div>
-          <div
-            class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
-            :class="props.active ? 'text-primary/70' : 'text-text-secondary'"
-          >
-            <span class="song-artist-list">
-              <span
-                v-for="(artistItem, index) in artistList"
-                :key="`${artistItem.name}-${index}`"
-                :class="isArtistClickable(artistItem) ? 'song-artist song-link' : 'song-artist'"
-                @click.stop="isArtistClickable(artistItem) && goToArtist(artistItem)"
-              >
-                {{ artistItem.name }}
-                <span v-if="index < artistList.length - 1" class="mx-1 opacity-50">/</span>
-              </span>
-            </span>
-            <Button
-              variant="unstyled"
-              size="none"
-              v-if="showAlbum && album"
-              type="button"
-              :class="
-                isAlbumClickable ? 'song-album song-link opacity-60' : 'song-album opacity-60'
-              "
-              @click.stop="isAlbumClickable && goToAlbum()"
-            >
-              • {{ album }}
-            </Button>
-          </div>
-        </div>
-
-        <!-- 详情及评论 / 收藏 -->
-        <div v-if="showMore" class="song-actions ml-3 mr-[10px]" @click.stop>
-          <Button
-            v-if="hasMv"
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="song-action song-action-hover-only"
-            title="播放 MV"
-            @click.stop="goToMvDetail"
-          >
-            <MvIcon class="w-4 h-4" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="song-action song-action-hover-only"
-            title="详情及评论"
-            @click.stop="goToSongDetail"
-          >
-            <Icon :icon="iconMessageCircle" width="16" height="16" />
-          </Button>
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="song-action song-action-favorite"
-            :class="{ 'is-active': isFavorite }"
-            :title="isFavorite ? '已收藏' : '收藏'"
-            :aria-pressed="isFavorite"
-            @click.stop="handleFavorite"
-          >
-            <Icon
-              :icon="isFavorite ? iconHeartFilled : iconHeart"
-              width="16"
-              height="16"
-              class="text-red-500"
-            />
-          </Button>
-        </div>
-
-        <!-- 时长 -->
-        <div
-          v-if="showDuration && duration"
-          class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 transition-opacity"
-        >
-          {{ formatDuration(duration) }}
-        </div>
-      </div>
-    </ContextMenuTrigger>
-    <ContextMenuPortal>
-      <ContextMenuContent
-        class="song-context-menu"
-        side="bottom"
-        :side-offset="4"
-        :side-flip="true"
-        :align-flip="true"
-        :collision-padding="{ top: 8, right: 8, bottom: 96, left: 8 }"
-        align="start"
-      >
-        <ContextMenuItem class="song-context-item" @select="handlePlayNow">
-          立即播放
-        </ContextMenuItem>
-        <ContextMenuItem class="song-context-item" @select="handlePlayNext">
-          下一首播放
-        </ContextMenuItem>
-        <ContextMenuItem class="song-context-item" @select="handleAddToPlaylist">
-          添加到歌单
-        </ContextMenuItem>
-        <div v-if="props.enableRemoveFromPlaylist" class="song-context-separator"></div>
-        <ContextMenuItem
-          v-if="props.enableRemoveFromPlaylist"
-          class="song-context-item text-red-500"
-          @select="handleRemoveFromPlaylist"
-        >
-          从歌单删除
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenuPortal>
-  </ContextMenuRoot>
-
-  <Dialog
-    v-model:open="showPlaylistDialog"
-    title="添加到歌单"
-    contentClass="max-w-[420px]"
-    showClose
-  >
-    <div class="flex flex-col gap-3">
-      <div v-if="isPlaylistLoading" class="py-6 text-center text-text-secondary text-[12px]">
-        加载歌单中...
+          {{ title }}
+        </h3>
+        <Tag v-for="tag in privilegeTags" :key="tag.label" class="song-tag" :color="tag.color">
+          {{ tag.label }}
+        </Tag>
+        <Tag v-if="qualityTag && showQuality" class="song-tag" color="#06B6D4">
+          {{ qualityTag }}
+        </Tag>
+        <Tag v-if="isOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
       </div>
       <div
-        v-else-if="selectablePlaylists.length === 0"
-        class="py-6 text-center text-text-secondary text-[12px]"
+        class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
+        :class="props.active ? 'text-primary/70' : 'text-text-secondary'"
       >
-        暂无可用歌单
+        <span class="song-artist-list">
+          <span
+            v-for="(artistItem, index) in artistList"
+            :key="`${artistItem.name}-${index}`"
+            :class="isArtistClickable(artistItem) ? 'song-artist song-link' : 'song-artist'"
+            @click.stop="isArtistClickable(artistItem) && goToArtist(artistItem)"
+          >
+            {{ artistItem.name }}
+            <span v-if="index < artistList.length - 1" class="mx-1 opacity-50">/</span>
+          </span>
+        </span>
+        <Button
+          variant="unstyled"
+          size="none"
+          v-if="showAlbum && album"
+          type="button"
+          :class="isAlbumClickable ? 'song-album song-link opacity-60' : 'song-album opacity-60'"
+          @click.stop="isAlbumClickable && goToAlbum()"
+        >
+          • {{ album }}
+        </Button>
       </div>
+    </div>
+
+    <!-- 详情及评论 / 收藏 -->
+    <div v-if="showMore" class="song-actions ml-3 mr-[10px]" @click.stop>
       <Button
-        v-for="entry in selectablePlaylists"
-        :key="entry.listid ?? entry.id"
+        v-if="hasMv"
+        variant="unstyled"
+        size="none"
         type="button"
-        class="playlist-picker-item"
-        variant="ghost"
-        size="sm"
-        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
+        class="song-action song-action-hover-only"
+        title="播放 MV"
+        @click.stop="goToMvDetail"
       >
-        <span class="text-[13px] font-semibold text-text-main truncate">{{ entry.name }}</span>
-        <span class="text-[11px] text-text-secondary/60">{{ entry.count ?? 0 }} 首</span>
+        <MvIcon class="w-4 h-4" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        type="button"
+        class="song-action song-action-hover-only"
+        title="详情及评论"
+        @click.stop="goToSongDetail"
+      >
+        <Icon :icon="iconMessageCircle" width="16" height="16" />
+      </Button>
+      <Button
+        variant="unstyled"
+        size="none"
+        type="button"
+        class="song-action song-action-favorite"
+        :class="{ 'is-active': isFavorite }"
+        :title="isFavorite ? '已收藏' : '收藏'"
+        :aria-pressed="isFavorite"
+        @click.stop="handleFavorite"
+      >
+        <Icon
+          :icon="isFavorite ? iconHeartFilled : iconHeart"
+          width="16"
+          height="16"
+          class="text-red-500"
+        />
       </Button>
     </div>
-  </Dialog>
+
+    <!-- 时长 -->
+    <div
+      v-if="showDuration && duration"
+      class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 transition-opacity"
+    >
+      {{ formatDuration(duration) }}
+    </div>
+  </div>
 </template>
 
 <style scoped>

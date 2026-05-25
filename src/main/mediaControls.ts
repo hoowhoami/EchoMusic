@@ -44,7 +44,16 @@ function loadNativeModule(): NativeMediaControls | null {
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       return require('../../native/echo-media-controls') as NativeMediaControls;
-    } catch {
+    } catch (err2) {
+      log.error(
+        '[MediaControls] All load attempts failed. ' +
+          'MPRIS/SMTC will be unavailable. ' +
+          'This usually means the native addon was not compiled for this platform/arch. ' +
+          'Primary error:',
+        err,
+        'Fallback error:',
+        err2,
+      );
       return null;
     }
   }
