@@ -24,6 +24,7 @@ import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import {
   iconChevronDown,
+  iconChevronUp,
   iconChevronLeft,
   iconChevronRight,
   iconCopy,
@@ -40,6 +41,11 @@ import {
   iconTriangleAlert,
   iconTypography,
   iconMessageCircle,
+  iconEye,
+  iconEyeOff,
+  iconArrowBarToDown,
+  iconArrowBarDown,
+  iconArrowBarToUp,
 } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
@@ -52,6 +58,15 @@ import VolumePopover from '@/components/player/VolumePopover.vue';
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 const { copy } = useClipboard();
+
+// 安全获取平台信息
+const isMac = computed(() => {
+  try {
+    return window.electron?.platform === 'darwin';
+  } catch {
+    return false;
+  }
+});
 
 const {
   player: playerStore,
@@ -235,6 +250,10 @@ const copySongInfo = async () => {
 
 const handleLyricLineClick = (time: number) => {
   playerStore.seek(time);
+  // 如果歌词处于收起状态，双击歌词行也展开歌词
+  if (isLyricCollapsed.value) {
+    handleClick();
+  }
 };
 
 const handleTranslationToggle = (enabled: boolean) => {
@@ -341,14 +360,16 @@ const {
   isLyricCollapsed,
   wasCollapsed,
   scheduleCollapse,
-  handleUserActivity,
+  handleMouseActivity,
+  handleClick,
+  handleWheel,
   dispose: disposeCollapse,
 } = useLyricCollapse({ hasPortraitGallery, settingStore, scrollToCurrentLine });
 
 const hideControlsWhenCollapsed = computed(() => settingStore.lyricCollapseHideControls);
 
 const handleLyricViewMouseMove = useThrottleFn(() => {
-  handleUserActivity();
+  handleMouseActivity();
 }, 200);
 
 const closeLyricPage = () => {
@@ -585,8 +606,7 @@ onUnmounted(() => {
       'portrait-mode': hasPortraitGallery,
     }"
     @mousemove="handleLyricViewMouseMove"
-    @click="handleUserActivity"
-    @wheel.passive="handleUserActivity"
+    @wheel.passive="handleWheel"
   >
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div
@@ -621,283 +641,312 @@ onUnmounted(() => {
     <OverlayHeader />
 
     <div class="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col overflow-hidden">
-      <div
-        class="px-6 pb-3 no-drag transition-opacity duration-500"
-        :style="{
-          opacity: isLyricCollapsed ? 0 : 1,
-          pointerEvents: isLyricCollapsed ? 'none' : undefined,
-        }"
-      >
+      <div class="px-6 pb-3 no-drag">
         <div class="flex h-12 items-center">
-          <Button
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="lyric-icon-btn"
-            title="返回"
-            @click="closeLyricPage"
+          <div
+            class="flex-1 transition-opacity duration-500"
+            :style="{
+              opacity: isLyricCollapsed ? 0 : 1,
+              pointerEvents: isLyricCollapsed ? 'none' : undefined,
+            }"
           >
-            <Icon :icon="iconChevronDown" width="22" height="22" />
-          </Button>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="lyric-icon-btn"
+              title="返回"
+              @click="closeLyricPage"
+            >
+              <Icon :icon="iconChevronDown" width="22" height="22" />
+            </Button>
+          </div>
 
-          <div class="ml-auto flex items-center gap-2">
+          <div class="flex items-center gap-2">
+            <!-- 工具按钮区域 - 折叠时隐藏 -->
             <div
-              v-if="hasPortraitGallery && artistPortraitUrls.length > 1"
-              class="lyric-tool-group"
-              title="切换歌手写真"
+              class="flex items-center gap-2 transition-opacity duration-500"
+              :style="{
+                opacity: isLyricCollapsed ? 0 : 1,
+                pointerEvents: isLyricCollapsed ? 'none' : undefined,
+              }"
             >
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="lyric-tool-chip-main"
-                @click="showPreviousPortrait"
+              <div
+                v-if="hasPortraitGallery && artistPortraitUrls.length > 1"
+                class="lyric-tool-group"
+                title="切换歌手写真"
               >
-                <Icon :icon="iconChevronLeft" width="14" height="14" />
-              </Button>
-              <div class="lyric-photo-chip">
-                <span>{{ portraitCounterLabel }}</span>
-              </div>
-              <Button
-                variant="unstyled"
-                size="none"
-                type="button"
-                class="lyric-tool-chip-main"
-                @click="showNextPortrait"
-              >
-                <Icon :icon="iconChevronRight" width="14" height="14" />
-              </Button>
-            </div>
-            <Popover
-              v-if="hasPortraitGallery"
-              trigger="hover"
-              align="end"
-              :side-offset="8"
-              content-class="lyric-popover w-[240px] p-4"
-            >
-              <template #trigger>
                 <Button
                   variant="unstyled"
                   size="none"
                   type="button"
-                  class="lyric-tool-chip"
-                  title="背景透明度"
+                  class="lyric-tool-chip-main"
+                  @click="showPreviousPortrait"
                 >
-                  <Icon :icon="iconImage" width="14" height="14" />
-                  <span>{{ backdropOpacityLabel }}</span>
+                  <Icon :icon="iconChevronLeft" width="14" height="14" />
                 </Button>
-              </template>
-              <div class="flex flex-col gap-2 text-black dark:text-white">
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">背景透明度</span>
-                  <span class="font-mono">{{ backdropOpacityLabel }}</span>
+                <div class="lyric-photo-chip">
+                  <span>{{ portraitCounterLabel }}</span>
                 </div>
-                <Slider
-                  :model-value="settingStore.lyricBackdropOpacity"
-                  :min="10"
-                  :max="100"
-                  :step="5"
-                  @update:model-value="(v) => (settingStore.lyricBackdropOpacity = v)"
-                  class="lyric-popover-slider h-1 w-full"
-                  track-class="bg-black/15 dark:bg-white/30"
-                  range-class="bg-black dark:bg-white"
-                  thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
-                />
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">自动轮播</span>
-                  <Switch v-model="settingStore.lyricCarouselEnabled" />
-                </div>
-                <template v-if="settingStore.lyricCarouselEnabled">
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="lyric-tool-chip-main"
+                  @click="showNextPortrait"
+                >
+                  <Icon :icon="iconChevronRight" width="14" height="14" />
+                </Button>
+              </div>
+              <Popover
+                v-if="hasPortraitGallery"
+                trigger="hover"
+                align="end"
+                :side-offset="8"
+                content-class="lyric-popover w-[240px] p-4"
+              >
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    class="lyric-tool-chip"
+                    title="背景透明度"
+                  >
+                    <Icon :icon="iconImage" width="14" height="14" />
+                    <span>{{ backdropOpacityLabel }}</span>
+                  </Button>
+                </template>
+                <div class="flex flex-col gap-2 text-black dark:text-white">
                   <div class="flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">轮播间隔</span>
-                    <span class="font-mono">{{ settingStore.lyricCarouselInterval }}s</span>
+                    <span class="text-black/60 dark:text-white/60">背景透明度</span>
+                    <span class="font-mono">{{ backdropOpacityLabel }}</span>
                   </div>
                   <Slider
-                    :model-value="settingStore.lyricCarouselInterval"
-                    :min="5"
-                    :max="60"
+                    :model-value="settingStore.lyricBackdropOpacity"
+                    :min="10"
+                    :max="100"
                     :step="5"
-                    @update:model-value="(v) => (settingStore.lyricCarouselInterval = v)"
-                    class="lyric-popover-slider h-1 w-full"
-                    track-class="bg-black/15 dark:bg-white/30"
-                    range-class="bg-black dark:bg-white"
-                    thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
-                  />
-                </template>
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">歌词自动收起</span>
-                  <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
-                </div>
-                <template v-if="settingStore.lyricAutoCollapseEnabled">
-                  <div class="flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">收起延迟</span>
-                    <span class="font-mono">{{ settingStore.lyricAutoCollapseDelay }}s</span>
-                  </div>
-                  <Slider
-                    :model-value="settingStore.lyricAutoCollapseDelay"
-                    :min="5"
-                    :max="60"
-                    :step="1"
-                    @update:model-value="(v) => (settingStore.lyricAutoCollapseDelay = v)"
+                    @update:model-value="(v) => (settingStore.lyricBackdropOpacity = v)"
                     class="lyric-popover-slider h-1 w-full"
                     track-class="bg-black/15 dark:bg-white/30"
                     range-class="bg-black dark:bg-white"
                     thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
                   />
                   <div class="flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">收起时隐藏控件</span>
-                    <Switch v-model="settingStore.lyricCollapseHideControls" />
+                    <span class="text-black/60 dark:text-white/60">自动轮播</span>
+                    <Switch v-model="settingStore.lyricCarouselEnabled" />
                   </div>
+                  <template v-if="settingStore.lyricCarouselEnabled">
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">轮播间隔</span>
+                      <span class="font-mono">{{ settingStore.lyricCarouselInterval }}s</span>
+                    </div>
+                    <Slider
+                      :model-value="settingStore.lyricCarouselInterval"
+                      :min="5"
+                      :max="60"
+                      :step="5"
+                      @update:model-value="(v) => (settingStore.lyricCarouselInterval = v)"
+                      class="lyric-popover-slider h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
+                    />
+                  </template>
+                  <div class="flex items-center justify-between text-[13px] font-semibold">
+                    <span class="text-black/60 dark:text-white/60">歌词自动收起</span>
+                    <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
+                  </div>
+                  <template v-if="settingStore.lyricAutoCollapseEnabled">
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">收起延迟</span>
+                      <span class="font-mono">{{ settingStore.lyricAutoCollapseDelay }}s</span>
+                    </div>
+                    <Slider
+                      :model-value="settingStore.lyricAutoCollapseDelay"
+                      :min="5"
+                      :max="60"
+                      :step="1"
+                      @update:model-value="(v) => (settingStore.lyricAutoCollapseDelay = v)"
+                      class="lyric-popover-slider h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
+                    />
+                    <div class="flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">收起时隐藏控件</span>
+                      <Switch v-model="settingStore.lyricCollapseHideControls" />
+                    </div>
+                  </template>
+                  <div class="flex items-center justify-between text-[13px] font-semibold">
+                    <span class="text-black/60 dark:text-white/60">颜色自适应</span>
+                    <Switch v-model="settingStore.lyricAdaptiveColor" />
+                  </div>
+                </div>
+              </Popover>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="lyric-tool-chip"
+                :class="{ 'is-active': settingStore.lyricArtistBackdrop }"
+                title="写真模式"
+                @click="settingStore.lyricArtistBackdrop = !settingStore.lyricArtistBackdrop"
+              >
+                <Icon :icon="iconImage" width="14" height="14" />
+                <span>{{ settingStore.lyricArtistBackdrop ? '封面' : '写真' }}</span>
+              </Button>
+              <Popover
+                trigger="hover"
+                align="end"
+                :side-offset="8"
+                content-class="lyric-popover w-[260px] p-4"
+              >
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
+                    <FontIcon :size="14" />
+                    <span>字体</span>
+                  </Button>
                 </template>
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">颜色自适应</span>
-                  <Switch v-model="settingStore.lyricAdaptiveColor" />
-                </div>
-              </div>
-            </Popover>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="lyric-tool-chip"
-              :class="{ 'is-active': settingStore.lyricArtistBackdrop }"
-              title="写真模式"
-              @click="settingStore.lyricArtistBackdrop = !settingStore.lyricArtistBackdrop"
-            >
-              <Icon :icon="iconImage" width="14" height="14" />
-              <span>{{ settingStore.lyricArtistBackdrop ? '封面' : '写真' }}</span>
-            </Button>
-            <Popover
-              trigger="hover"
-              align="end"
-              :side-offset="8"
-              content-class="lyric-popover w-[260px] p-4"
-            >
-              <template #trigger>
-                <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
-                  <FontIcon :size="14" />
-                  <span>字体</span>
-                </Button>
-              </template>
-              <div class="space-y-4 text-black dark:text-white">
-                <div>
-                  <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">字体大小</span>
-                    <span class="font-mono">{{ fontSizeLabel }}</span>
-                  </div>
-                  <Slider
-                    :model-value="lyricStore.fontScale"
-                    :min="0.7"
-                    :max="1.4"
-                    :step="0.1"
-                    @update:model-value="(v) => lyricStore.updateFontScale(v)"
-                    class="h-1 w-full"
-                    track-class="bg-black/15 dark:bg-white/30"
-                    range-class="bg-black dark:bg-white"
-                    thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
-                  />
-                </div>
-                <div>
-                  <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">字体字重</span>
-                    <span class="font-mono">{{ fontWeightLabel }}</span>
-                  </div>
-                  <Slider
-                    :model-value="lyricStore.fontWeightIndex"
-                    :min="0"
-                    :max="8"
-                    :step="1"
-                    @update:model-value="(v) => lyricStore.updateFontWeight(v)"
-                    class="h-1 w-full"
-                    track-class="bg-black/15 dark:bg-white/30"
-                    range-class="bg-black dark:bg-white"
-                    thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
-                  />
-                </div>
-                <div>
-                  <div class="mb-3 flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">歌词颜色</span>
-                    <button
-                      v-if="lyricStore.playedColor || lyricStore.unplayedColor"
-                      type="button"
-                      class="text-[11px] font-semibold text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
-                      @click="lyricColorPicker.reset"
-                    >
-                      重置
-                    </button>
-                  </div>
-                  <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-2">
-                      <span class="text-[12px] font-semibold text-black/50 dark:text-white/50"
-                        >已播</span
-                      >
-                      <button
-                        type="button"
-                        class="lyric-color-swatch"
-                        :style="{ backgroundColor: effectivePlayedColor }"
-                        @click="lyricColorPicker.open('playedColor')"
-                      ></button>
+                <div class="space-y-4 text-black dark:text-white">
+                  <div>
+                    <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">字体大小</span>
+                      <span class="font-mono">{{ fontSizeLabel }}</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-[12px] font-semibold text-black/50 dark:text-white/50"
-                        >未播</span
-                      >
+                    <Slider
+                      :model-value="lyricStore.fontScale"
+                      :min="0.7"
+                      :max="1.4"
+                      :step="0.1"
+                      @update:model-value="(v) => lyricStore.updateFontScale(v)"
+                      class="h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-2 flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">字体字重</span>
+                      <span class="font-mono">{{ fontWeightLabel }}</span>
+                    </div>
+                    <Slider
+                      :model-value="lyricStore.fontWeightIndex"
+                      :min="0"
+                      :max="8"
+                      :step="1"
+                      @update:model-value="(v) => lyricStore.updateFontWeight(v)"
+                      class="h-1 w-full"
+                      track-class="bg-black/15 dark:bg-white/30"
+                      range-class="bg-black dark:bg-white"
+                      thumb-class="h-3.5 w-3.5 bg-black dark:bg-white shadow-md"
+                    />
+                  </div>
+                  <div>
+                    <div class="mb-3 flex items-center justify-between text-[13px] font-semibold">
+                      <span class="text-black/60 dark:text-white/60">歌词颜色</span>
                       <button
+                        v-if="lyricStore.playedColor || lyricStore.unplayedColor"
                         type="button"
-                        class="lyric-color-swatch"
-                        :style="{
-                          backgroundColor: effectiveUnplayedColor,
-                        }"
-                        @click="lyricColorPicker.open('unplayedColor')"
-                      ></button>
+                        class="text-[11px] font-semibold text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors"
+                        @click="lyricColorPicker.reset"
+                      >
+                        重置
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-4">
+                      <div class="flex items-center gap-2">
+                        <span class="text-[12px] font-semibold text-black/50 dark:text-white/50"
+                          >已播</span
+                        >
+                        <button
+                          type="button"
+                          class="lyric-color-swatch"
+                          :style="{ backgroundColor: effectivePlayedColor }"
+                          @click="lyricColorPicker.open('playedColor')"
+                        ></button>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-[12px] font-semibold text-black/50 dark:text-white/50"
+                          >未播</span
+                        >
+                        <button
+                          type="button"
+                          class="lyric-color-swatch"
+                          :style="{
+                            backgroundColor: effectiveUnplayedColor,
+                          }"
+                          @click="lyricColorPicker.open('unplayedColor')"
+                        ></button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </Popover>
-            <Popover
-              trigger="hover"
-              align="end"
-              :side-offset="8"
-              content-class="lyric-popover w-[220px] p-4"
-            >
-              <template #trigger>
-                <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
-                  <Icon :icon="iconLanguage" width="14" height="14" />
-                  <span class="lyric-tool-chip-label" v-text="displayLabel"></span>
-                </Button>
-              </template>
-              <div class="space-y-3 text-black dark:text-white">
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">翻译</span>
-                  <Switch
-                    :model-value="lyricStore.wantTranslation"
-                    :disabled="!lyricStore.hasTranslation"
-                    @update:model-value="handleTranslationToggle"
-                  />
+              </Popover>
+              <Popover
+                trigger="hover"
+                align="end"
+                :side-offset="8"
+                content-class="lyric-popover w-[220px] p-4"
+              >
+                <template #trigger>
+                  <Button variant="unstyled" size="none" type="button" class="lyric-tool-chip">
+                    <Icon :icon="iconLanguage" width="14" height="14" />
+                    <span class="lyric-tool-chip-label" v-text="displayLabel"></span>
+                  </Button>
+                </template>
+                <div class="space-y-3 text-black dark:text-white">
+                  <div class="flex items-center justify-between text-[13px] font-semibold">
+                    <span class="text-black/60 dark:text-white/60">翻译</span>
+                    <Switch
+                      :model-value="lyricStore.wantTranslation"
+                      :disabled="!lyricStore.hasTranslation"
+                      @update:model-value="handleTranslationToggle"
+                    />
+                  </div>
+                  <div class="flex items-center justify-between text-[13px] font-semibold">
+                    <span class="text-black/60 dark:text-white/60">音译</span>
+                    <Switch
+                      :model-value="lyricStore.wantRomanization"
+                      :disabled="!lyricStore.hasRomanization"
+                      @update:model-value="handleRomanizationToggle"
+                    />
+                  </div>
                 </div>
-                <div class="flex items-center justify-between text-[13px] font-semibold">
-                  <span class="text-black/60 dark:text-white/60">音译</span>
-                  <Switch
-                    :model-value="lyricStore.wantRomanization"
-                    :disabled="!lyricStore.hasRomanization"
-                    @update:model-value="handleRomanizationToggle"
-                  />
-                </div>
-              </div>
-            </Popover>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="lyric-tool-chip"
-              :disabled="!hasLyrics"
-              @click="copyLyrics"
-            >
-              <Icon :icon="iconCopy" width="14" height="14" />
-              <span>复制</span>
-            </Button>
+              </Popover>
+              <Button
+                variant="unstyled"
+                size="none"
+                type="button"
+                class="lyric-tool-chip"
+                :disabled="!hasLyrics"
+                @click="copyLyrics"
+              >
+                <Icon :icon="iconCopy" width="14" height="14" />
+                <span>复制</span>
+              </Button>
+            </div>
+            <!-- 写真切换按钮组结束 -->
           </div>
+          <!-- 工具按钮区域结束 -->
+          <!-- 展开折叠按钮 - 写真模式下始终可见 -->
+          <Button
+            v-if="hasPortraitGallery"
+            variant="unstyled"
+            size="none"
+            type="button"
+            class="lyric-tool-chip rounded-full ml-2"
+            @click="handleClick"
+            :title="isLyricCollapsed ? '展开歌词' : '收起歌词'"
+          >
+            <Icon
+              :icon="isLyricCollapsed ? iconArrowBarToUp : iconArrowBarDown"
+              width="14"
+              height="14"
+            />
+          </Button>
         </div>
       </div>
 
@@ -981,6 +1030,17 @@ onUnmounted(() => {
                 transition: 'bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
               }"
             >
+              <!-- 点击上半部分触发展开歌词 -->
+              <div
+                class="lyric-expand-trigger absolute left-0 right-0 cursor-pointer transition-opacity duration-300"
+                :style="{
+                  top: 0,
+                  height: '50%',
+                  opacity: isLyricCollapsed ? 0 : 0,
+                  pointerEvents: isLyricCollapsed ? 'auto' : 'none',
+                }"
+                @click="handleClick"
+              ></div>
               <div
                 ref="lyricListRef"
                 class="lyric-scroll absolute inset-0"
@@ -1716,6 +1776,18 @@ body:has(.lyric-view) .drawer-panel {
 .dark .lyric-icon-btn:hover,
 .dark .lyric-tool-chip:hover {
   background: rgba(36, 48, 70, 0.82);
+}
+
+/* 展开折叠按钮始终可见 */
+.lyric-collapse-toggle {
+  position: relative;
+  z-index: 10;
+}
+
+/* 当歌词折叠时，确保展开折叠按钮始终可见 */
+:deep(.lyric-collapsed) .lyric-collapse-toggle {
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 .dark .lyric-tool-chip:disabled,

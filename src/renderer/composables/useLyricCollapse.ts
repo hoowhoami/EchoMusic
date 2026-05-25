@@ -7,6 +7,7 @@ interface CollapseOptions {
   settingStore: {
     lyricAutoCollapseEnabled: boolean;
     lyricAutoCollapseDelay: number;
+    lyricCollapseHideControls: boolean;
   };
   scrollToCurrentLine: (smooth: boolean) => void;
 }
@@ -42,7 +43,13 @@ export function useLyricCollapse(options: CollapseOptions) {
     }, delay);
   };
 
-  const handleUserActivity = () => {
+  const handleMouseActivity = () => {
+    // 鼠标移动只重置收起计时器，不触发展开歌词
+    scheduleCollapse();
+  };
+
+  const handleWheel = () => {
+    // 滚轮触发展开歌词
     if (isLyricCollapsed.value) {
       isLyricCollapsed.value = false;
       wasCollapsed.value = true;
@@ -52,6 +59,25 @@ export function useLyricCollapse(options: CollapseOptions) {
         wasCollapsedTimer = null;
       }, 700);
       nextTick(() => scrollToCurrentLine(true));
+    }
+    scheduleCollapse();
+  };
+
+  const handleClick = () => {
+    // 点击切换歌词收起/展开状态
+    if (isLyricCollapsed.value) {
+      // 当前收起，点击展开
+      isLyricCollapsed.value = false;
+      wasCollapsed.value = true;
+      if (wasCollapsedTimer) window.clearTimeout(wasCollapsedTimer);
+      wasCollapsedTimer = window.setTimeout(() => {
+        wasCollapsed.value = false;
+        wasCollapsedTimer = null;
+      }, 700);
+      nextTick(() => scrollToCurrentLine(true));
+    } else {
+      // 当前展开，点击收起
+      isLyricCollapsed.value = true;
     }
     scheduleCollapse();
   };
@@ -108,7 +134,9 @@ export function useLyricCollapse(options: CollapseOptions) {
     isLyricCollapsed,
     wasCollapsed,
     scheduleCollapse,
-    handleUserActivity,
+    handleMouseActivity,
+    handleWheel,
+    handleClick,
     dispose,
   };
 }

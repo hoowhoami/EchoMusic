@@ -343,7 +343,15 @@ body.accent-scoped .main-layout .player-bar-container {
 .profile-page,
 .dialog-scroll-area,
 .comment-floor-body,
-.lyric-scroll,
+.lyric-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: none !important;
+}
+
+.lyric-scroll::-webkit-scrollbar {
+  display: none !important;
+}
+
 .queue-slides,
 .comment-chip-row,
 .settings-update-changelog {
