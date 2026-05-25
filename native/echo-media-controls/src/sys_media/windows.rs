@@ -1,6 +1,8 @@
 use crate::model::{MediaControlEvent, MetadataPayload, PlayStatePayload, TimelinePayload};
 use super::{EventCallback, SystemMediaControls};
+use image::ImageReader;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
+use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use windows::Media::Playback::{MediaPlayer, MediaPlayerAudioCategory};
 use windows::Media::{
@@ -32,12 +34,34 @@ impl WindowsMediaControls {
         updater: &windows::Media::SystemMediaTransportControlsDisplayUpdater,
         data: &[u8],
     ) -> Result<(), String> {
+        // 使用 image crate 验证并转换图片格式
+        let img = ImageReader::new(Cursor::new(data))
+            .with_guessed_format()
+            .map_err(|e| format!("Failed to guess image format: {e}"))?
+            .decode()
+            .map_err(|e| format!("Failed to decode image: {e}"))?;
+
+        tracing::info!(
+            "Image decoded: width={}, height={}, color_type={:?}",
+            img.width(),
+            img.height(),
+            img.color()
+        );
+
+        // 重新编码为标准 JPEG，确保 Windows SMTC 可以识别
+        let mut output = Vec::new();
+        let mut cursor = Cursor::new(&mut output);
+        img.write_to(&mut cursor, image::ImageFormat::Jpeg)
+            .map_err(|e| format!("Failed to re-encode image: {e}"))?;
+
+        tracing::info!("Image re-encoded as JPEG: {} bytes", output.len());
+
         let stream =
             InMemoryRandomAccessStream::new().map_err(|e| format!("Failed to create stream: {e}"))?;
         let writer =
             DataWriter::CreateDataWriter(&stream).map_err(|e| format!("Failed to create writer: {e}"))?;
         writer
-            .WriteBytes(data)
+            .WriteBytes(&output)
             .map_err(|e| format!("Failed to write data: {e}"))?;
         writer
             .StoreAsync()

@@ -11,6 +11,7 @@ napi = { version = "3", features = ["tokio_rt", "napi9"] }
 napi-derive = "3"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
+image = "0.25"
 
 [build-dependencies]
 napi-build = "2"

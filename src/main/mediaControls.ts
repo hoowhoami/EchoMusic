@@ -1,4 +1,4 @@
-import { ipcMain, net } from 'electron';
+import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { app } from 'electron';
 import path from 'path';
@@ -62,53 +62,41 @@ function loadNativeModule(): NativeMediaControls | null {
 /** 下载图片为 Buffer */
 async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Buffer | null> {
   if (!url) return null;
+
   try {
-    return await new Promise<Buffer | null>((resolve) => {
-      if (signal?.aborted) {
-        resolve(null);
-        return;
-      }
-      const request = net.request(url);
-      const chunks: Buffer[] = [];
-      let aborted = false;
+    log.info('[MediaControls] Starting cover download', { url });
 
-      const onAbort = () => {
-        aborted = true;
-        request.abort();
-        resolve(null);
-      };
-      signal?.addEventListener('abort', onAbort, { once: true });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
 
-      request.on('response', (response) => {
-        if (aborted) return;
-        response.on('data', (chunk) => {
-          if (!aborted) chunks.push(chunk);
-        });
-        response.on('end', () => {
-          signal?.removeEventListener('abort', onAbort);
-          if (aborted) return;
-          resolve(Buffer.concat(chunks));
-        });
-        response.on('error', () => {
-          signal?.removeEventListener('abort', onAbort);
-          resolve(null);
-        });
-      });
-      request.on('error', () => {
-        signal?.removeEventListener('abort', onAbort);
-        resolve(null);
-      });
-      // 超时 5 秒
-      setTimeout(() => {
-        if (!aborted) {
-          aborted = true;
-          request.abort();
-          resolve(null);
-        }
-      }, 5000);
-      request.end();
+    if (signal) {
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'image/jpeg,image/png,image/webp,*/*;q=0.8',
+        Referer: 'https://www.kugou.com/',
+      },
     });
-  } catch {
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      log.warn('[MediaControls] Cover download failed', { status: response.status, url });
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    log.info('[MediaControls] Cover download completed', { size: buffer.length, url });
+    return buffer;
+  } catch (err) {
+    log.warn('[MediaControls] Cover download exception:', err);
     return null;
   }
 }
@@ -172,10 +160,12 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
 
       let coverData: Buffer | null = null;
       if (payload.coverUrl) {
+        log.info('[MediaControls] Starting cover download', { url: payload.coverUrl });
         coverData = await downloadCoverImage(payload.coverUrl, coverAbortController.signal);
         log.info('[MediaControls] Cover download result', {
           success: !!coverData,
           size: coverData?.length ?? 0,
+          url: payload.coverUrl,
         });
       }
 

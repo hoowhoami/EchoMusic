@@ -20,6 +20,7 @@ export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   toggleFavorite: '⌘L',
   togglePlayMode: '⌘P',
   toggleWindow: '⌘W',
+  toggleSidebar: '⌘B',
 };
 
 export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
@@ -34,6 +35,7 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
   toggleFavorite: '⌘⇧L',
   togglePlayMode: '⌘⇧P',
   toggleWindow: '⌥⌘S',
+  toggleSidebar: '⌘⇧B',
 };
 
 export const useSettingStore = defineStore('setting', {
@@ -44,6 +46,7 @@ export const useSettingStore = defineStore('setting', {
     autoPlay: true,
     rememberWindowSize: true,
     showPlaylistCount: true,
+    searchDefaultEnabled: false,
     closeBehavior: 'tray' as CloseBehavior,
     replacePlaylist: false,
     volumeFade: true,
@@ -54,6 +57,7 @@ export const useSettingStore = defineStore('setting', {
     lyricCarouselInterval: 15,
     lyricAutoCollapseDelay: 5,
     lyricAutoCollapseEnabled: true,
+    lyricCollapseHideControls: true,
     lyricAdaptiveColor: true,
     autoNext: false,
     autoNextDelaySeconds: 3,
@@ -66,6 +70,8 @@ export const useSettingStore = defineStore('setting', {
     globalShortcutBindings: {} as Record<string, string>,
     defaultShortcutLabels: { ...DEFAULT_SHORTCUT_LABELS } as Record<string, string>,
     defaultGlobalShortcutLabels: { ...DEFAULT_GLOBAL_SHORTCUT_LABELS } as Record<string, string>,
+    sidebarCollapsed: false,
+    sidebarCollapseEnabled: false,
     outputDevice: 'default',
     outputDevices: [{ label: '系统默认', value: 'default' }] as OutputDeviceOption[],
     outputDeviceType: 'default' as 'default' | 'wasapi',

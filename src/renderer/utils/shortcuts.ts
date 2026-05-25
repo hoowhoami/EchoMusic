@@ -233,6 +233,7 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     toggleFavorite: labelToAccelerator(bindings.toggleFavorite ?? defaults.toggleFavorite ?? ''),
     togglePlayMode: labelToAccelerator(bindings.togglePlayMode ?? defaults.togglePlayMode ?? ''),
     toggleWindow: labelToAccelerator(bindings.toggleWindow ?? defaults.toggleWindow ?? ''),
+    toggleSidebar: labelToAccelerator(bindings.toggleSidebar ?? defaults.toggleSidebar ?? ''),
   };
 };
 
@@ -251,6 +252,7 @@ const getShortcutCommandLabel = (command: ShortcutCommand) => {
     toggleFavorite: '收藏当前歌曲',
     togglePlayMode: '切换播放模式',
     toggleWindow: '显示 / 隐藏窗口',
+    toggleSidebar: '侧边栏开关',
   };
   return labels[command] ?? command;
 };
@@ -273,7 +275,7 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
   const playerStore = usePlayerStore();
   const playlistStore = usePlaylistStore();
   const lyricStore = useLyricStore();
-  // const settingStore = useSettingStore();
+  const settingStore = useSettingStore();
   const desktopLyricStore = useDesktopLyricStore();
 
   if (command === 'togglePlayback') {
@@ -331,6 +333,10 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
     playerStore.setPlayMode(nextMode);
   } else if (command === 'toggleWindow') {
     window.electron?.ipcRenderer?.send('window-toggle', null);
+  } else if (command === 'toggleSidebar') {
+    if (settingStore.sidebarCollapseEnabled) {
+      settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
+    }
   }
 };
 

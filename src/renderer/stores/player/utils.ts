@@ -5,20 +5,38 @@ import type { AudioEffectValue, AudioQualityValue } from '../../types';
 import type { TrackLoudness } from '@/utils/player';
 import type { PlaybackNotice } from './types';
 
+import logger from '@/utils/logger';
 import { getCoverUrl } from '@/utils/cover';
 import type { MediaSessionMeta, MediaSessionState } from '@/utils/player';
 
 export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null => {
   if (!track) return null;
+
+  // 调试日志：打印原始封面 URL
+  logger.info('MediaSession', 'buildMediaMeta - original coverUrl:', track.coverUrl);
+
+  const artwork = [96, 128, 192, 256, 384, 512].map((size) => {
+    const url = getCoverUrl(track.coverUrl, size);
+    return {
+      src: url,
+      sizes: `${size}x${size}`,
+      type: 'image/jpeg',
+    };
+  });
+
+  // 调试日志：打印处理后的最大尺寸封面 URL
+  logger.info('MediaSession', 'buildMediaMeta - processed artwork[0]:', artwork[0]?.src);
+  logger.info(
+    'MediaSession',
+    'buildMediaMeta - processed artwork[last]:',
+    artwork[artwork.length - 1]?.src,
+  );
+
   return {
     title: track.title,
     artist: track.artist || '未知歌手',
     album: track.album ?? '',
-    artwork: [96, 128, 192, 256, 384, 512].map((size) => ({
-      src: getCoverUrl(track.coverUrl, size),
-      sizes: `${size}x${size}`,
-      type: 'image/jpeg',
-    })),
+    artwork,
   };
 };
 

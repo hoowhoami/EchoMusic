@@ -345,6 +345,8 @@ const {
   dispose: disposeCollapse,
 } = useLyricCollapse({ hasPortraitGallery, settingStore, scrollToCurrentLine });
 
+const hideControlsWhenCollapsed = computed(() => settingStore.lyricCollapseHideControls);
+
 const handleLyricViewMouseMove = useThrottleFn(() => {
   handleUserActivity();
 }, 200);
@@ -742,6 +744,10 @@ onUnmounted(() => {
                     range-class="bg-black dark:bg-white"
                     thumb-class="h-3 w-3 bg-black dark:bg-white shadow-md"
                   />
+                  <div class="flex items-center justify-between text-[13px] font-semibold">
+                    <span class="text-black/60 dark:text-white/60">收起时隐藏控件</span>
+                    <Switch v-model="settingStore.lyricCollapseHideControls" />
+                  </div>
                 </template>
                 <div class="flex items-center justify-between text-[13px] font-semibold">
                   <span class="text-black/60 dark:text-white/60">颜色自适应</span>
@@ -971,7 +977,7 @@ onUnmounted(() => {
             <div
               class="lyric-stage absolute inset-0"
               :style="{
-                bottom: isLyricCollapsed ? '-120px' : '0',
+                bottom: isLyricCollapsed && hideControlsWhenCollapsed ? '-120px' : '0',
                 transition: 'bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
               }"
             >
@@ -1140,8 +1146,8 @@ onUnmounted(() => {
       <div
         class="px-6 pb-1 pt-0 no-drag transition-opacity duration-500"
         :style="{
-          opacity: isLyricCollapsed ? 0 : 1,
-          pointerEvents: isLyricCollapsed ? 'none' : undefined,
+          opacity: isLyricCollapsed && hideControlsWhenCollapsed ? 0 : 1,
+          pointerEvents: isLyricCollapsed && hideControlsWhenCollapsed ? 'none' : undefined,
         }"
       >
         <div class="lyric-controls-surface mx-auto flex w-full max-w-[820px] flex-col gap-0.5">

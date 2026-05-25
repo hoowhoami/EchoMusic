@@ -224,6 +224,7 @@ const shortcutItems: ShortcutItem[] = [
     desc: '在列表循环、单曲循环、随机播放之间切换',
   },
   { command: 'toggleWindow', title: '显示 / 隐藏窗口', desc: '切换主窗口的显示和隐藏状态' },
+  { command: 'toggleSidebar', title: '侧边栏开关', desc: '展开或收起侧边栏' },
   { command: 'toggleMainLyric', title: '页面歌词开关', desc: '打开或关闭页面歌词' },
   { command: 'toggleDesktopLyric', title: '桌面歌词开关', desc: '打开或关闭桌面歌词窗口' },
 ];
@@ -792,6 +793,25 @@ onUnmounted(() => {
                         </div>
                         <Switch v-model="settingStore.showPlaylistCount" />
                       </div>
+                      <div class="settings-item">
+                        <div class="space-y-1">
+                          <h3 class="font-semibold">搜索框默认推荐词</h3>
+                          <p class="text-sm text-text-secondary">
+                            在搜索框显示默认推荐词，可能有广告
+                          </p>
+                        </div>
+                        <Switch v-model="settingStore.searchDefaultEnabled" />
+                      </div>
+                      <div class="settings-divider"></div>
+                      <div class="settings-item">
+                        <div class="space-y-1">
+                          <h3 class="font-semibold">侧边栏折叠</h3>
+                          <p class="text-sm text-text-secondary">
+                            启用后可通过快捷键或标题栏按钮折叠侧边栏
+                          </p>
+                        </div>
+                        <Switch v-model="settingStore.sidebarCollapseEnabled" />
+                      </div>
                       <div class="settings-divider"></div>
                       <div class="settings-item">
                         <div class="space-y-1">
@@ -1266,6 +1286,18 @@ onUnmounted(() => {
                           @update:model-value="settingStore.lyricAutoCollapseDelay = $event"
                           @value-commit="settingStore.lyricAutoCollapseDelay = $event"
                         />
+                      </div>
+                      <div
+                        v-if="
+                          settingStore.lyricArtistBackdrop && settingStore.lyricAutoCollapseEnabled
+                        "
+                        class="settings-item"
+                      >
+                        <div class="space-y-1">
+                          <h3 class="font-semibold">收起时隐藏底部控件</h3>
+                          <p class="text-sm text-text-secondary">歌词收起时隐藏底部控制按钮</p>
+                        </div>
+                        <Switch v-model="settingStore.lyricCollapseHideControls" />
                       </div>
                       <div v-if="settingStore.lyricArtistBackdrop" class="settings-item">
                         <div class="space-y-1">
@@ -1837,7 +1869,7 @@ onUnmounted(() => {
 @reference "@/style.css";
 
 .settings-overlay {
-  @apply fixed inset-0 bg-black/30 backdrop-blur-[1px] z-1400;
+  @apply fixed inset-0 bg-black/30 z-1400;
   opacity: 0;
   transition: opacity 0.16s ease-out;
 }

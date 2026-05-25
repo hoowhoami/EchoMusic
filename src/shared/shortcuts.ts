@@ -11,7 +11,8 @@ export type ShortcutCommand =
   | 'toggleMute'
   | 'toggleFavorite'
   | 'togglePlayMode'
-  | 'toggleWindow';
+  | 'toggleWindow'
+  | 'toggleSidebar';
 
 export type ShortcutMap = Record<ShortcutCommand, string>;
 

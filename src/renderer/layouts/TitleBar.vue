@@ -2,6 +2,7 @@
 import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
+import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
@@ -20,7 +21,7 @@ import {
 const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
-const titleBarRef = ref<HTMLElement | null>(null);
+const settingStore = useSettingStore();
 
 // 侧边栏折叠
 const props = defineProps<{
@@ -177,20 +178,27 @@ watch(
   { immediate: true },
 );
 
-onMounted(() => {
-  window.addEventListener('popstate', updateNavState);
-  document.addEventListener('pointerdown', handleGlobalPointerDown, true);
-  // 获取默认搜索词
+watch(
+  () => settingStore.searchDefaultEnabled,
+  (enabled) => {
+    if (enabled) {
+      fetchDefaultSearch();
+    } else {
+      defaultKeyword.value = '';
+      defaultAds.value = [];
+    }
+  },
+);
+
+const fetchDefaultSearch = () => {
   getSearchDefault()
     .then((res: any) => {
       const ads = res?.data?.ads ?? res?.ads ?? [];
       if (!Array.isArray(ads) || ads.length === 0) return;
-      // 第一个广告的 main_title 作为 placeholder
       const first = ads[0];
       if (first?.main_title) {
         defaultKeyword.value = String(first.main_title).trim();
       }
-      // 保存所有广告作为推荐词条
       defaultAds.value = ads
         .filter((ad: any) => ad?.sub_title || ad?.main_title)
         .map((ad: any) => ({
@@ -200,6 +208,15 @@ onMounted(() => {
         }));
     })
     .catch(() => {});
+};
+
+onMounted(() => {
+  window.addEventListener('popstate', updateNavState);
+  document.addEventListener('pointerdown', handleGlobalPointerDown, true);
+  // 获取默认搜索词
+  if (settingStore.searchDefaultEnabled) {
+    fetchDefaultSearch();
+  }
 });
 
 onUnmounted(() => {
@@ -218,9 +235,15 @@ onUnmounted(() => {
     <div class="drag-region"></div>
 
     <!-- 1. 左侧：导航按钮 -->
-    <div class="flex items-center gap-1 no-drag pl-6 relative z-10">
+    <div
+      class="flex items-center gap-1 no-drag relative z-10"
+      :class="
+        isMac && settingStore.sidebarCollapseEnabled && props.isSidebarCollapsed ? 'pl-20' : 'pl-6'
+      "
+    >
       <!-- 侧边栏折叠按钮 -->
       <Button
+        v-if="settingStore.sidebarCollapseEnabled"
         variant="unstyled"
         size="none"
         @click="emit('toggleSidebar')"
