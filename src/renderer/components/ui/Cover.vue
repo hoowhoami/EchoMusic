@@ -59,7 +59,7 @@ const containerStyle = computed(() => {
 <template>
   <div
     :class="[
-      'cover-container relative overflow-hidden bg-black/[0.03] dark:bg-white/[0.03] flex items-center justify-center',
+      'cover-container relative overflow-hidden bg-black/3 dark:bg-white/3 flex items-center justify-center',
       showShadow ? 'shadow-xl shadow-black/20' : '',
       props.class,
     ]"
@@ -88,7 +88,7 @@ const containerStyle = computed(() => {
     <!-- 3. 错误占位 -->
     <div
       v-if="status === 'error'"
-      class="absolute inset-0 flex items-center justify-center bg-black/[0.02] dark:bg-white/[0.02]"
+      class="absolute inset-0 flex items-center justify-center bg-black/2 dark:bg-white/2"
     >
       <Icon :icon="iconMusic" width="40%" height="40%" class="opacity-10" />
     </div>
