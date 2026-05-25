@@ -24,7 +24,6 @@ import QualityPopover from '@/components/player/QualityPopover.vue';
 import EffectPopover from '@/components/player/EffectPopover.vue';
 import {
   iconChevronDown,
-  iconChevronUp,
   iconChevronLeft,
   iconChevronRight,
   iconCopy,
@@ -41,9 +40,6 @@ import {
   iconTriangleAlert,
   iconTypography,
   iconMessageCircle,
-  iconEye,
-  iconEyeOff,
-  iconArrowBarToDown,
   iconArrowBarDown,
   iconArrowBarToUp,
 } from '@/icons';
@@ -58,15 +54,6 @@ import VolumePopover from '@/components/player/VolumePopover.vue';
 const lyricStore = useLyricStore();
 const toastStore = useToastStore();
 const { copy } = useClipboard();
-
-// 安全获取平台信息
-const isMac = computed(() => {
-  try {
-    return window.electron?.platform === 'darwin';
-  } catch {
-    return false;
-  }
-});
 
 const {
   player: playerStore,

@@ -308,7 +308,7 @@ export class PlayerEngine {
   /** 更新系统媒体控制的歌曲元数据 */
   updateMediaMetadata(meta: MediaSessionMeta): void {
     const coverUrl = meta.artwork?.[meta.artwork.length - 1]?.src;
-    
+
     // 调试日志：打印发送给主进程的封面 URL
     logger.info('MediaSession', 'updateMediaMetadata:', {
       title: meta.title,
@@ -316,7 +316,7 @@ export class PlayerEngine {
       coverUrl,
       artworkCount: meta.artwork?.length,
     });
-    
+
     mediaControls?.updateMetadata({
       title: meta.title,
       artist: meta.artist,
