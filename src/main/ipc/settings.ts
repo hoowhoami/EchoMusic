@@ -156,16 +156,106 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         return;
       }
 
-      // 配置 GitHub 加速代理
+      // 配置更新源
       if (githubProxyUrl) {
         const proxyBase = githubProxyUrl.endsWith('/') ? githubProxyUrl : `${githubProxyUrl}/`;
-        const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/latest/download`;
-        log.info(`[Updater] Using proxy feed URL: ${feedUrl}`);
-        autoUpdater.setFeedURL({
-          provider: 'generic',
-          url: feedUrl,
-        });
+
+        if (prerelease) {
+          // 预发布 + 代理：先通过 GitHub API 查询最新 prerelease 的 tag，再用代理下载
+          log.info('[Updater] Fetching latest prerelease tag via GitHub API...');
+          import('https')
+            .then((https) => {
+              const apiUrl = 'https://api.github.com/repos/hoowhoami/EchoMusic/releases?per_page=1';
+              const req = https.get(
+                apiUrl,
+                { headers: { 'User-Agent': 'EchoMusic-Updater', Accept: 'application/json' } },
+                (res) => {
+                  let data = '';
+                  res.on('data', (chunk: string) => (data += chunk));
+                  res.on('end', () => {
+                    try {
+                      const releases = JSON.parse(data);
+                      const latest = releases[0];
+                      if (!latest?.tag_name) {
+                        log.warn('[Updater] No prerelease found, falling back to github provider');
+                        autoUpdater.setFeedURL({
+                          provider: 'github',
+                          owner: 'hoowhoami',
+                          repo: 'EchoMusic',
+                        });
+                      } else {
+                        const tag = latest.tag_name;
+                        const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/download/${tag}`;
+                        log.info(`[Updater] Using proxy feed URL for prerelease: ${feedUrl}`);
+                        autoUpdater.setFeedURL({
+                          provider: 'generic',
+                          url: feedUrl,
+                        });
+                      }
+                    } catch {
+                      log.warn('[Updater] Failed to parse API response, falling back');
+                      autoUpdater.setFeedURL({
+                        provider: 'github',
+                        owner: 'hoowhoami',
+                        repo: 'EchoMusic',
+                      });
+                    }
+                    autoUpdater.allowPrerelease = prerelease;
+                    (autoUpdater as any)._echoSilent = silent;
+                    autoUpdater.checkForUpdates().catch((error) => {
+                      log.error('[Updater] Check failed:', error);
+                      sendToRenderer('update-check-result', {
+                        status: 'error',
+                        currentVersion: getAppInfo().version,
+                        message: error?.message || '更新检查失败，请稍后重试。',
+                        silent,
+                      } satisfies UpdateCheckResult);
+                    });
+                  });
+                },
+              );
+              req.on('error', (error) => {
+                log.warn('[Updater] API request failed, falling back to github provider:', error);
+                autoUpdater.setFeedURL({
+                  provider: 'github',
+                  owner: 'hoowhoami',
+                  repo: 'EchoMusic',
+                });
+                autoUpdater.allowPrerelease = prerelease;
+                (autoUpdater as any)._echoSilent = silent;
+                autoUpdater.checkForUpdates().catch((err) => {
+                  log.error('[Updater] Check failed:', err);
+                  sendToRenderer('update-check-result', {
+                    status: 'error',
+                    currentVersion: getAppInfo().version,
+                    message: err?.message || '更新检查失败，请稍后重试。',
+                    silent,
+                  } satisfies UpdateCheckResult);
+                });
+              });
+            })
+            .catch(() => {
+              autoUpdater.setFeedURL({
+                provider: 'github',
+                owner: 'hoowhoami',
+                repo: 'EchoMusic',
+              });
+              autoUpdater.allowPrerelease = prerelease;
+              (autoUpdater as any)._echoSilent = silent;
+              autoUpdater.checkForUpdates();
+            });
+          return;
+        } else {
+          // 正式版 + 代理：直接用 releases/latest/download
+          const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/latest/download`;
+          log.info(`[Updater] Using proxy feed URL: ${feedUrl}`);
+          autoUpdater.setFeedURL({
+            provider: 'generic',
+            url: feedUrl,
+          });
+        }
       } else {
+        // 无代理：用 github provider 直连
         autoUpdater.setFeedURL({
           provider: 'github',
           owner: 'hoowhoami',

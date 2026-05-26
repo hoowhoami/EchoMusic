@@ -277,9 +277,26 @@ const ensureLyricsForCurrentTrack = () => {
 };
 
 // 亮度检测
-const { portraitImgRef, onPortraitImageLoad } = useLyricLuminance({
+const { portraitImgRef, onPortraitImageLoad: _onPortraitImageLoad } = useLyricLuminance({
   hasPortraitGallery,
   settingStore,
+});
+
+// 亮度计算是 CPU 密集操作，延迟到入场动画结束后再执行
+let pendingLuminanceUpdate = false;
+const onPortraitImageLoad = () => {
+  if (isViewReady.value) {
+    _onPortraitImageLoad();
+  } else {
+    pendingLuminanceUpdate = true;
+  }
+};
+
+watch(isViewReady, (ready) => {
+  if (ready && pendingLuminanceUpdate) {
+    pendingLuminanceUpdate = false;
+    _onPortraitImageLoad();
+  }
 });
 
 watch(
@@ -305,10 +322,7 @@ watch(
   () => [currentTrack.value?.id, playerStore.isPlaying],
   async ([id]) => {
     ensureLyricsForCurrentTrack();
-    // 写真加载延迟到页面动画结束后
-    if (isViewReady.value) {
-      void ensureArtistBackdropForCurrentTrack();
-    }
+    void ensureArtistBackdropForCurrentTrack();
     if (id) {
       isUserScrollingLyrics.value = false;
       clearUserScrollResumeTimer();
@@ -322,9 +336,7 @@ watch(
 watch(
   () => settingStore.lyricArtistBackdrop,
   (enabled) => {
-    if (isViewReady.value) {
-      void ensureArtistBackdropForCurrentTrack();
-    }
+    void ensureArtistBackdropForCurrentTrack();
     if (!enabled) stopPortraitCarousel();
   },
   { immediate: true },
@@ -593,10 +605,12 @@ onMounted(() => {
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
 
-  // 延迟加载写真：等页面打开动画结束（350ms）后再加载图片和计算颜色
+  // 立即开始加载写真（异步不阻塞），页面入场动画 + 写真 fade-in 会遮盖加载过程
+  void ensureArtistBackdropForCurrentTrack();
+
+  // 延迟标记 ready：等入场动画结束后再启用亮度计算等重计算
   setTimeout(() => {
     isViewReady.value = true;
-    void ensureArtistBackdropForCurrentTrack();
     if (hasPortraitGallery.value) scheduleCollapse();
   }, 350);
 });
@@ -623,7 +637,7 @@ onUnmounted(() => {
     <div class="absolute inset-0 overflow-hidden pointer-events-none">
       <div
         v-if="hasPortraitGallery"
-        class="lyric-portrait-backdrop-wrap absolute inset-0"
+        class="lyric-portrait-backdrop-wrap absolute inset-0 lyric-portrait-fade-in"
         :style="backdropOpacityStyle"
       >
         <img
@@ -635,17 +649,20 @@ onUnmounted(() => {
         />
       </div>
       <div
-        v-else
+        v-else-if="!settingStore.lyricArtistBackdrop"
         class="lyric-ambient-photo absolute inset-[-20px] bg-cover bg-center transition-all duration-500"
         :style="{ backgroundImage: coverBackgroundUrl ? `url(${coverBackgroundUrl})` : undefined }"
       ></div>
-      <div v-if="!hasPortraitGallery" class="lyric-atmosphere absolute inset-0"></div>
+      <div
+        v-if="!hasPortraitGallery && !settingStore.lyricArtistBackdrop"
+        class="lyric-atmosphere absolute inset-0"
+      ></div>
       <div
         v-if="hasPortraitGallery"
         class="lyric-portrait-overlay absolute inset-0 transition-colors duration-500"
       ></div>
       <div
-        v-if="!hasPortraitGallery"
+        v-if="!hasPortraitGallery && !settingStore.lyricArtistBackdrop"
         class="absolute inset-0 bg-[#04070b]/40 transition-colors duration-500 dark:bg-[#04070b]/50"
       ></div>
     </div>
@@ -1614,6 +1631,20 @@ body:has(.lyric-view) .drawer-panel {
 
 .lyric-portrait-backdrop-wrap {
   overflow: hidden;
+}
+
+/* 写真背景淡入动画：遮盖加载过程 */
+.lyric-portrait-fade-in {
+  animation: portrait-fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes portrait-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .lyric-portrait-backdrop {
