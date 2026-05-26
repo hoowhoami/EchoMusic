@@ -35,7 +35,7 @@ const handleClear = () => {
       :type="type"
       :placeholder="placeholder"
       :class="[
-        'w-full h-14 pl-6 pr-12 bg-black/[0.03] dark:bg-white/[0.03] border border-transparent rounded-2xl outline-none transition-all font-medium text-[15px] placeholder:opacity-50',
+        'w-full h-14 pl-6 pr-12 bg-black/3 dark:bg-white/3 border border-transparent rounded-2xl outline-none transition-all font-medium text-[15px] placeholder:opacity-50',
         props.inputClass,
       ]"
     />

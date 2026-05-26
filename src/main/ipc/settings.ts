@@ -140,9 +140,10 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
 
   ipcMain.on(
     'check-for-updates',
-    (_event, payload?: { prerelease?: boolean; silent?: boolean }) => {
+    (_event, payload?: { prerelease?: boolean; silent?: boolean; githubProxyUrl?: string }) => {
       const silent = Boolean(payload?.silent);
       const prerelease = Boolean(payload?.prerelease);
+      const githubProxyUrl = payload?.githubProxyUrl?.trim() || '';
 
       if (isDev) {
         sendToRenderer('update-check-result', {
@@ -153,6 +154,23 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
           silent,
         } satisfies UpdateCheckResult);
         return;
+      }
+
+      // 配置 GitHub 加速代理
+      if (githubProxyUrl) {
+        const proxyBase = githubProxyUrl.endsWith('/') ? githubProxyUrl : `${githubProxyUrl}/`;
+        const feedUrl = `${proxyBase}https://github.com/hoowhoami/EchoMusic/releases/latest/download`;
+        log.info(`[Updater] Using proxy feed URL: ${feedUrl}`);
+        autoUpdater.setFeedURL({
+          provider: 'generic',
+          url: feedUrl,
+        });
+      } else {
+        autoUpdater.setFeedURL({
+          provider: 'github',
+          owner: 'hoowhoami',
+          repo: 'EchoMusic',
+        });
       }
 
       autoUpdater.allowPrerelease = prerelease;

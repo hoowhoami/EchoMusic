@@ -83,6 +83,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Profile.vue'),
       },
       {
+        path: 'settings',
+        name: 'settings',
+        component: () => import('@/views/Settings.vue'),
+        meta: { title: '偏好设置' },
+      },
+      {
         path: 'playlist/:id',
         name: 'playlist-detail',
         component: () => import('@/views/details/PlaylistDetail.vue'),

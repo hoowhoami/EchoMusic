@@ -89,6 +89,7 @@ export const useSettingStore = defineStore('setting', {
     silentUpdate: true,
     autoCheckUpdate: true,
     checkPrerelease: false,
+    githubProxyUrl: '',
     appVersion: '',
     isPrerelease: false,
     searchHistory: [] as string[],
@@ -133,6 +134,7 @@ export const useSettingStore = defineStore('setting', {
         window.electron.ipcRenderer.send('check-for-updates', {
           prerelease: this.checkPrerelease,
           silent,
+          githubProxyUrl: this.githubProxyUrl,
         });
       }
     },
