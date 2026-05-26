@@ -355,8 +355,20 @@ const {
 
 const hideControlsWhenCollapsed = computed(() => settingStore.lyricCollapseHideControls);
 
+// 鼠标活动状态：用于控制折叠按钮在折叠时的可见性
+const isMouseActive = ref(false);
+let mouseActiveTimer: number | null = null;
+
 const handleLyricViewMouseMove = useThrottleFn(() => {
   handleMouseActivity();
+  // 鼠标移动时显示折叠按钮
+  isMouseActive.value = true;
+  if (mouseActiveTimer) window.clearTimeout(mouseActiveTimer);
+  const delay = Math.max(settingStore.lyricAutoCollapseDelay || 5, 5) * 1000;
+  mouseActiveTimer = window.setTimeout(() => {
+    isMouseActive.value = false;
+    mouseActiveTimer = null;
+  }, delay);
 }, 200);
 
 const closeLyricPage = () => {
@@ -582,6 +594,7 @@ onUnmounted(() => {
   disposePortrait();
   disposeCollapse();
   clearUserScrollResumeTimer();
+  if (mouseActiveTimer) window.clearTimeout(mouseActiveTimer);
   window.removeEventListener('keydown', handleKeydown);
 });
 </script>
@@ -625,27 +638,44 @@ onUnmounted(() => {
       ></div>
     </div>
 
-    <OverlayHeader />
+    <OverlayHeader>
+      <template #left>
+        <Button
+          variant="unstyled"
+          size="none"
+          type="button"
+          class="lyric-header-close-btn no-drag"
+          title="返回"
+          @click="closeLyricPage"
+        >
+          <Icon :icon="iconChevronDown" width="20" height="20" />
+        </Button>
+      </template>
+    </OverlayHeader>
 
     <div class="absolute inset-x-0 bottom-0 top-14 z-10 flex flex-col overflow-hidden">
       <div class="px-6 pb-3 no-drag">
         <div class="flex h-12 items-center">
-          <div
-            class="flex-1 transition-opacity duration-500"
-            :style="{
-              opacity: isLyricCollapsed ? 0 : 1,
-              pointerEvents: isLyricCollapsed ? 'none' : undefined,
-            }"
-          >
+          <div class="flex-1">
+            <!-- 写真模式：圆形展开折叠按钮 -->
             <Button
+              v-if="hasPortraitGallery"
               variant="unstyled"
               size="none"
               type="button"
-              class="lyric-icon-btn"
-              title="返回"
-              @click="closeLyricPage"
+              class="lyric-collapse-circle-btn transition-opacity duration-500"
+              :style="{
+                opacity: isLyricCollapsed && !isMouseActive ? 0 : 1,
+                pointerEvents: isLyricCollapsed && !isMouseActive ? 'none' : undefined,
+              }"
+              @click="handleClick"
+              :title="isLyricCollapsed ? '展开歌词' : '收起歌词'"
             >
-              <Icon :icon="iconChevronDown" width="22" height="22" />
+              <Icon
+                :icon="isLyricCollapsed ? iconArrowBarToUp : iconArrowBarDown"
+                width="18"
+                height="18"
+              />
             </Button>
           </div>
 
@@ -918,22 +948,6 @@ onUnmounted(() => {
             <!-- 写真切换按钮组结束 -->
           </div>
           <!-- 工具按钮区域结束 -->
-          <!-- 展开折叠按钮 - 写真模式下始终可见 -->
-          <Button
-            v-if="hasPortraitGallery"
-            variant="unstyled"
-            size="none"
-            type="button"
-            class="lyric-tool-chip rounded-full ml-2"
-            @click="handleClick"
-            :title="isLyricCollapsed ? '展开歌词' : '收起歌词'"
-          >
-            <Icon
-              :icon="isLyricCollapsed ? iconArrowBarToUp : iconArrowBarDown"
-              width="14"
-              height="14"
-            />
-          </Button>
         </div>
       </div>
 
@@ -1639,6 +1653,40 @@ body:has(.lyric-view) .drawer-panel {
   background: rgba(255, 255, 255, 0.48);
 }
 
+.lyric-collapse-circle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 10px 30px rgba(148, 163, 184, 0.12);
+  transition: all 0.2s ease;
+}
+
+.lyric-collapse-circle-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.lyric-header-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: transparent;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.lyric-header-close-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .lyric-tool-chip {
   display: flex;
   align-items: center;
@@ -1725,7 +1773,8 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .dark .lyric-tool-chip,
-.dark .lyric-icon-btn {
+.dark .lyric-icon-btn,
+.dark .lyric-collapse-circle-btn {
   background: rgba(22, 30, 44, 0.72);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1761,8 +1810,18 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .dark .lyric-icon-btn:hover,
-.dark .lyric-tool-chip:hover {
+.dark .lyric-tool-chip:hover,
+.dark .lyric-collapse-circle-btn:hover {
   background: rgba(36, 48, 70, 0.82);
+}
+
+.dark .lyric-header-close-btn {
+  color: white;
+}
+
+.dark .lyric-header-close-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* 展开折叠按钮始终可见 */
@@ -2240,7 +2299,8 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .portrait-mode .lyric-icon-btn,
-.portrait-mode .lyric-tool-chip {
+.portrait-mode .lyric-tool-chip,
+.portrait-mode .lyric-collapse-circle-btn {
   background: var(--pt-btn-bg);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--pt-btn-border);
@@ -2248,8 +2308,18 @@ body:has(.lyric-view) .drawer-panel {
 }
 
 .portrait-mode .lyric-icon-btn:hover,
-.portrait-mode .lyric-tool-chip:hover {
+.portrait-mode .lyric-tool-chip:hover,
+.portrait-mode .lyric-collapse-circle-btn:hover {
   background: var(--pt-btn-bg-hover);
+}
+
+.portrait-mode .lyric-header-close-btn {
+  color: var(--pt-fg);
+  opacity: 0.8;
+}
+
+.portrait-mode .lyric-header-close-btn:hover {
+  opacity: 1;
 }
 
 .portrait-mode .lyric-tool-group {

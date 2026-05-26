@@ -16,6 +16,15 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
     <!-- 拖动层 -->
     <div class="drag-region"></div>
 
+    <!-- 左侧插槽（macOS 避开红绿灯） -->
+    <div
+      v-if="$slots.left"
+      class="overlay-header-left no-drag relative z-10"
+      :class="{ 'mac-offset': isMac }"
+    >
+      <slot name="left" />
+    </div>
+
     <div v-if="!isMac" class="overlay-header-controls no-drag relative z-10">
       <Button
         variant="unstyled"
@@ -76,6 +85,20 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
   height: 100%;
   display: flex;
   align-items: center;
+}
+
+.overlay-header-left {
+  position: absolute;
+  top: 0;
+  left: 16px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+.overlay-header-left.mac-offset {
+  left: 80px;
 }
 
 .overlay-control-btn {
