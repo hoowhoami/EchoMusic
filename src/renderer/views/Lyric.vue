@@ -102,6 +102,8 @@ const isProgressDragging = ref(false);
 const isHoveringProgress = ref(false);
 const isUserScrollingLyrics = ref(false);
 const isCommentDrawerOpen = ref(false);
+// 延迟加载标志：等页面打开动画结束后再加载写真和计算颜色，避免卡顿
+const isViewReady = ref(false);
 let userScrollResumeTimer: number | null = null;
 
 const coverBackgroundUrl = computed(() => getCoverUrl(currentTrack.value?.coverUrl, 900));
@@ -303,7 +305,10 @@ watch(
   () => [currentTrack.value?.id, playerStore.isPlaying],
   async ([id]) => {
     ensureLyricsForCurrentTrack();
-    void ensureArtistBackdropForCurrentTrack();
+    // 写真加载延迟到页面动画结束后
+    if (isViewReady.value) {
+      void ensureArtistBackdropForCurrentTrack();
+    }
     if (id) {
       isUserScrollingLyrics.value = false;
       clearUserScrollResumeTimer();
@@ -317,7 +322,9 @@ watch(
 watch(
   () => settingStore.lyricArtistBackdrop,
   (enabled) => {
-    void ensureArtistBackdropForCurrentTrack();
+    if (isViewReady.value) {
+      void ensureArtistBackdropForCurrentTrack();
+    }
     if (!enabled) stopPortraitCarousel();
   },
   { immediate: true },
@@ -583,10 +590,15 @@ onMounted(() => {
   if (playerStore.isPlaying) resumeSeekRaf();
   else pauseSeekRaf();
   ensureLyricsForCurrentTrack();
-  void ensureArtistBackdropForCurrentTrack();
   void nextTick(() => scrollToCurrentLine(false));
   window.addEventListener('keydown', handleKeydown);
-  if (hasPortraitGallery.value) scheduleCollapse();
+
+  // 延迟加载写真：等页面打开动画结束（350ms）后再加载图片和计算颜色
+  setTimeout(() => {
+    isViewReady.value = true;
+    void ensureArtistBackdropForCurrentTrack();
+    if (hasPortraitGallery.value) scheduleCollapse();
+  }, 350);
 });
 
 onUnmounted(() => {
@@ -1558,8 +1570,7 @@ body:has(.lyric-view) .drawer-panel {
   z-index: 2100;
   border-radius: 16px;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
   color: black;
   user-select: none;
@@ -1568,7 +1579,7 @@ body:has(.lyric-view) .drawer-panel {
 
 .dark .lyric-popover {
   border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.88);
   color: white;
 }
 
@@ -2350,7 +2361,6 @@ body:has(.lyric-view) .drawer-panel {
 
 .portrait-mode .lyric-photo-song-info {
   background: var(--ps-card-bg);
-  backdrop-filter: blur(16px);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   border: 1px solid var(--ps-card-border);
 }

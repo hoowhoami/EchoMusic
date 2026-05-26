@@ -117,7 +117,7 @@ const handleClose = () => {
     :title="title"
     :description="description"
     showClose
-    noScroll
+    :noScroll="Boolean(bodyHtml)"
     :content-style="{ width: '520px' }"
   >
     <Scrollbar v-if="bodyHtml" class="update-changelog" :content-props="{ class: 'px-4 py-3' }">
@@ -145,12 +145,14 @@ const handleClose = () => {
       </div>
       <div
         v-else-if="result?.status === 'available' && downloadStatus === 'error'"
-        class="flex-1 min-w-0 mr-3 flex items-center gap-2"
+        class="flex-1 min-w-0 mr-3 flex items-center gap-2 overflow-hidden"
       >
-        <span class="text-xs text-red-500 truncate">
+        <span class="text-xs text-red-500 truncate min-w-0 flex-1">
           下载失败：{{ downloadError || '未知错误' }}
         </span>
-        <Button variant="ghost" size="sm" @click="handleOpenRelease">前往下载</Button>
+        <Button variant="ghost" size="sm" class="shrink-0" @click="handleOpenRelease"
+          >前往下载</Button
+        >
       </div>
       <div v-else class="flex-1"></div>
 

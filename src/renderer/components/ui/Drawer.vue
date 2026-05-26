@@ -76,7 +76,6 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(1px);
   z-index: 1400;
   opacity: 0;
   pointer-events: none;
@@ -116,7 +115,7 @@ onUnmounted(() => {
   right: 0;
   bottom: var(--drawer-bottom-offset, 96px);
   width: min(380px, 88vw);
-  border-radius: 18px 0 0 18px;
+  border-radius: 10px 0 0 10px;
   transform: translateX(24px);
   box-shadow: none;
 }

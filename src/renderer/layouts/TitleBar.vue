@@ -37,6 +37,7 @@ const canGoForward = ref(false);
 
 // 搜索状态
 const isSearchExpanded = ref(false);
+const isCollapsing = ref(false);
 const searchQuery = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const searchContainerRef = ref<HTMLElement | null>(null);
@@ -99,6 +100,7 @@ const extractSuggestions = (payload: unknown) => {
 
 const expandSearch = async () => {
   isSearchExpanded.value = true;
+  isCollapsing.value = false;
   await nextTick();
   searchInputRef.value?.focus();
 };
@@ -107,7 +109,12 @@ const collapseSearch = () => {
   showSuggestions.value = false;
   searchQuery.value = '';
   suggestions.value = [];
-  isSearchExpanded.value = false;
+  isCollapsing.value = true;
+  // 等收起动画结束后再真正隐藏
+  window.setTimeout(() => {
+    isSearchExpanded.value = false;
+    isCollapsing.value = false;
+  }, 200);
 };
 
 const handleSearchInput = (value: string) => {
@@ -321,10 +328,14 @@ onUnmounted(() => {
       </Button>
 
       <!-- 搜索 -->
-      <div ref="searchContainerRef" class="tb-search" :class="{ 'is-expanded': isSearchExpanded }">
+      <div
+        ref="searchContainerRef"
+        class="tb-search"
+        :class="{ 'is-expanded': isSearchExpanded && !isCollapsing }"
+      >
         <!-- 收起状态：搜索图标按钮 -->
         <Button
-          v-if="!isSearchExpanded"
+          v-if="!isSearchExpanded && !isCollapsing"
           variant="unstyled"
           size="none"
           class="nav-btn group"
@@ -341,7 +352,11 @@ onUnmounted(() => {
         </Button>
 
         <!-- 展开状态：搜索输入框 -->
-        <div v-else class="tb-search-expanded">
+        <div
+          v-if="isSearchExpanded || isCollapsing"
+          class="tb-search-expanded"
+          :class="{ 'is-collapsing': isCollapsing }"
+        >
           <div class="tb-search-input-wrap">
             <Icon :icon="iconSearch" width="15" height="15" class="tb-search-icon" />
             <input
@@ -534,12 +549,18 @@ onUnmounted(() => {
 /* 搜索区域 */
 .tb-search {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .tb-search-expanded {
   position: relative;
   width: 320px;
   animation: tb-search-expand 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tb-search-expanded.is-collapsing {
+  animation: tb-search-collapse 0.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 @keyframes tb-search-expand {
@@ -550,6 +571,17 @@ onUnmounted(() => {
   to {
     width: 320px;
     opacity: 1;
+  }
+}
+
+@keyframes tb-search-collapse {
+  from {
+    width: 320px;
+    opacity: 1;
+  }
+  to {
+    width: 80px;
+    opacity: 0;
   }
 }
 
@@ -619,8 +651,8 @@ onUnmounted(() => {
 }
 
 .tb-search-goto {
-  height: 26px;
-  padding: 0 10px;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;

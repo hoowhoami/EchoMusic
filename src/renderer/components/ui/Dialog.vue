@@ -152,7 +152,7 @@ const handleInteractOutside = (event: Event) => {
 @reference "@/style.css";
 
 :global(.dialog-overlay) {
-  @apply fixed inset-0 bg-black/30 backdrop-blur-[1px] z-1400;
+  @apply fixed inset-0 bg-black/30 z-1400;
   opacity: 0;
   transition: opacity 0.16s ease-out;
 }

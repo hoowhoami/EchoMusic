@@ -112,6 +112,24 @@ const scrollAnchorIntoView = (id: string) => {
   anchorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 };
 
+// 滑动指示条样式
+const indicatorReady = ref(false);
+const indicatorStyle = computed(() => {
+  // 依赖 indicatorReady 确保 mounted 后重新计算
+  if (!indicatorReady.value) return { opacity: '0' };
+  const anchorEl = anchorRefs.get(activeSection.value);
+  if (!anchorEl || !anchorListRef.value) {
+    return { opacity: '0' };
+  }
+  const left = anchorEl.offsetLeft;
+  const width = anchorEl.offsetWidth;
+  return {
+    transform: `translateX(${left}px)`,
+    width: `${width}px`,
+    opacity: '1',
+  };
+});
+
 // 当前激活的锚点
 const activeSection = ref('appearance');
 
@@ -250,6 +268,9 @@ const initSettings = async () => {
 onMounted(() => {
   initSettings();
   window.electron?.ipcRenderer?.on('update-check-result', handleUpdateCheckResult);
+  nextTick(() => {
+    indicatorReady.value = true;
+  });
 });
 
 const desktopLyricAlignOptions = [
@@ -701,6 +722,8 @@ const handleScroll = () => {
         >
           <span class="settings-anchor-label">{{ item.label }}</span>
         </button>
+        <!-- 滑动指示条 -->
+        <div class="settings-anchor-indicator" :style="indicatorStyle"></div>
       </div>
     </div>
 
@@ -723,7 +746,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['appearance'].label }}
             </h2>
           </div>
@@ -887,7 +910,9 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">{{ sectionTitles['font'].label }}</h2>
+            <h2 class="text-[15px] font-semibold text-text-main">
+              {{ sectionTitles['font'].label }}
+            </h2>
           </div>
           <div class="settings-card">
             <div class="settings-item">
@@ -977,7 +1002,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['playback'].label }}
             </h2>
           </div>
@@ -1143,7 +1168,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['quality'].label }}
             </h2>
           </div>
@@ -1177,7 +1202,7 @@ const handleScroll = () => {
         <section data-section="pageLyric" class="settings-section">
           <div class="flex items-center gap-3 mb-4">
             <PageLyricIcon :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['pageLyric'].label }}
             </h2>
           </div>
@@ -1388,7 +1413,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['desktopLyric'].label }}
             </h2>
           </div>
@@ -1511,7 +1536,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['shortcuts'].label }}
             </h2>
           </div>
@@ -1606,7 +1631,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['audioDevice'].label }}
             </h2>
           </div>
@@ -1681,7 +1706,7 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">
+            <h2 class="text-[15px] font-semibold text-text-main">
               {{ sectionTitles['experimental'].label }}
             </h2>
           </div>
@@ -1762,7 +1787,9 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">{{ sectionTitles['data'].label }}</h2>
+            <h2 class="text-[15px] font-semibold text-text-main">
+              {{ sectionTitles['data'].label }}
+            </h2>
           </div>
           <div class="settings-card">
             <div class="settings-item">
@@ -1806,7 +1833,9 @@ const handleScroll = () => {
               class="text-primary"
             />
             <FontIcon v-else :size="20" class="text-primary" />
-            <h2 class="text-lg font-semibold text-text-main">{{ sectionTitles['about'].label }}</h2>
+            <h2 class="text-[15px] font-semibold text-text-main">
+              {{ sectionTitles['about'].label }}
+            </h2>
           </div>
           <div class="settings-card">
             <div class="settings-item">
@@ -2006,7 +2035,7 @@ const handleScroll = () => {
 }
 
 .settings-anchor-list {
-  @apply flex-1 flex items-center gap-0 overflow-x-auto;
+  @apply flex-1 flex items-center gap-0 overflow-x-auto relative;
   scrollbar-width: none;
 }
 
@@ -2015,12 +2044,7 @@ const handleScroll = () => {
 }
 
 .settings-anchor-item {
-  @apply relative flex items-center px-2.5 py-1.5 text-[13px] font-medium text-text-secondary transition-all duration-200 cursor-pointer shrink-0 rounded-md;
-}
-
-.settings-anchor-item::after {
-  content: '';
-  @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-0 h-[2px] rounded-full bg-primary transition-all duration-200;
+  @apply relative flex items-center px-2.5 py-1.5 text-[13px] font-medium text-text-secondary transition-colors duration-200 cursor-pointer shrink-0 rounded-md;
 }
 
 .settings-anchor-item:hover {
@@ -2031,8 +2055,12 @@ const handleScroll = () => {
   @apply text-primary font-semibold;
 }
 
-.settings-anchor-item.is-active::after {
-  @apply w-4/5;
+.settings-anchor-indicator {
+  @apply absolute bottom-0 left-0 h-[2px] rounded-full bg-primary;
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
 }
 
 .settings-anchor-label {
@@ -2057,7 +2085,16 @@ const handleScroll = () => {
 
 .settings-card {
   @apply bg-bg-sidebar rounded-2xl p-5 space-y-5 transition-all duration-300 border border-border-light/40 overflow-visible;
+  font-size: 13px;
   box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
+}
+
+.settings-card h3 {
+  font-size: 13px;
+}
+
+.settings-card p {
+  font-size: 12px;
 }
 
 .settings-item {
