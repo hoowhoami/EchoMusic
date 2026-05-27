@@ -4,6 +4,7 @@ import { useThrottleFn } from '@vueuse/core';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricPortrait } from '@/composables/useLyricPortrait';
+import { useLyricBackground } from './composables/useLyricBackground';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
@@ -12,6 +13,10 @@ const settingStore = useSettingStore();
 const currentTrackLyricHash = computed(() =>
   String(currentTrack.value?.hash ?? currentTrack.value?.id ?? '').trim(),
 );
+
+// 背景主题色（无写真时使用）
+const coverUrl = computed(() => currentTrack.value?.coverUrl);
+const { backgroundColor } = useLyricBackground(coverUrl);
 
 // 写真
 const {
@@ -119,22 +124,17 @@ defineExpose({
 <template>
   <div class="portrait-mode" @mousemove="handleMouseMove" @wheel.passive="handleWheel">
     <!-- 写真背景 -->
-    <div class="portrait-backdrop">
+    <div class="portrait-backdrop" :style="{ backgroundColor: backgroundColor || '#1a1d22' }">
       <img
         v-if="activePortraitUrl"
         :src="activePortraitUrl"
         :alt="`${currentTrack?.artist || '歌手'}写真`"
         class="portrait-img"
       />
-      <div
-        v-else-if="currentTrack?.coverUrl"
-        class="portrait-fallback"
-        :style="{ backgroundImage: `url(${currentTrack.coverUrl})` }"
-      ></div>
     </div>
 
-    <!-- 遮罩层 -->
-    <div class="portrait-overlay"></div>
+    <!-- 遮罩层（仅有写真时需要压暗） -->
+    <div v-if="activePortraitUrl" class="portrait-overlay"></div>
 
     <!-- 歌词区域 -->
     <div class="portrait-lyric-area">
@@ -161,7 +161,6 @@ defineExpose({
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
-  background: #000;
 }
 
 .portrait-img {
@@ -170,15 +169,6 @@ defineExpose({
   object-fit: cover;
   object-position: center;
   user-select: none;
-}
-
-.portrait-fallback {
-  width: 100%;
-  height: 100%;
-  background-size: cover;
-  background-position: center;
-  filter: blur(40px) saturate(0.8) brightness(0.6);
-  transform: scale(1.1);
 }
 
 .portrait-overlay {

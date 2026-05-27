@@ -27,6 +27,10 @@ import {
   iconSettings,
   iconArrowBarDown,
   iconArrowBarToUp,
+  iconRotateCcw,
+  iconRotateCw,
+  iconRefreshCw,
+  iconCopy,
 } from '@/icons';
 
 const playerStore = usePlayerStore();
@@ -89,10 +93,42 @@ const handlePageMouseMove = () => {
   }, 3000);
 };
 
+// 内容区域 hover 状态（控制工具按钮显隐）
+const isContentHovered = ref(false);
+
+const handleContentEnter = () => {
+  isContentHovered.value = true;
+};
+
+const handleContentLeave = () => {
+  isContentHovered.value = false;
+};
+
 // 收起状态快捷计算
 const isCollapsed = computed(
   () => viewMode.value === 'portrait' && !!portraitModeRef.value?.isLyricCollapsed,
 );
+
+// 歌词工具按钮
+const hasLyrics = computed(() => lyricStore.lines.length > 0);
+
+const handleOffsetAdjust = (deltaMs: number) => {
+  const newOffset = lyricStore.adjustTimeOffset(deltaMs);
+  const sign = newOffset >= 0 ? '+' : '';
+  toastStore.success(`歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
+};
+
+const handleOffsetReset = () => {
+  lyricStore.resetTimeOffset();
+  toastStore.success('歌词偏移已重置');
+};
+
+const handleCopyLyrics = async () => {
+  const text = lyricStore.copyableText.trim();
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  toastStore.success('歌词已复制');
+};
 
 // 确保歌词加载
 const currentTrackLyricHash = computed(() =>
@@ -191,6 +227,9 @@ onUnmounted(() => {
       </template>
     </OverlayHeader>
 
+    <!-- 顶部渐变遮罩：确保按钮在亮色背景上可见 -->
+    <div class="lyric-page-top-gradient"></div>
+
     <!-- 顶部工具栏：左（展开按钮）、中（轮播切换）、右（播放器模式） -->
     <div class="lyric-page-toolbar no-drag">
       <!-- 左侧：展开/折叠按钮 -->
@@ -273,7 +312,11 @@ onUnmounted(() => {
 
     <!-- 主内容区域 -->
     <div class="lyric-page-body">
-      <div class="lyric-page-content">
+      <div
+        class="lyric-page-content"
+        @mouseenter="handleContentEnter"
+        @mouseleave="handleContentLeave"
+      >
         <CoverMode v-if="viewMode === 'cover'" />
         <PortraitMode v-else-if="viewMode === 'portrait'" ref="portraitModeRef" />
         <LyricMode v-else />
@@ -299,6 +342,61 @@ onUnmounted(() => {
         @open-comment="isCommentDrawerOpen = true"
         @open-add-to-playlist="handleOpenAddToPlaylist"
       />
+    </div>
+
+    <!-- 歌词工具按钮：固定在右侧中间 -->
+    <div
+      v-if="hasLyrics && !isCollapsed"
+      class="lyric-page-tools no-drag"
+      :style="{
+        opacity: isContentHovered ? 1 : 0,
+        pointerEvents: isContentHovered ? 'auto' : 'none',
+      }"
+      @mouseenter="handleContentEnter"
+      @mouseleave="handleContentLeave"
+    >
+      <!-- 上组：时间调整 -->
+      <div class="lyric-page-tools-group">
+        <button class="lyric-page-tool-btn" title="歌词后退 0.5s" @click="handleOffsetAdjust(-500)">
+          <Icon :icon="iconRotateCcw" width="15" height="15" />
+        </button>
+        <button class="lyric-page-tool-btn" title="歌词前进 0.5s" @click="handleOffsetAdjust(500)">
+          <Icon :icon="iconRotateCw" width="15" height="15" />
+        </button>
+        <button
+          class="lyric-page-tool-btn"
+          :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
+          title="重置偏移"
+          @click="handleOffsetReset"
+        >
+          <Icon :icon="iconRefreshCw" width="14" height="14" />
+        </button>
+      </div>
+
+      <!-- 下组：翻译/音译/复制 -->
+      <div class="lyric-page-tools-group">
+        <button
+          v-if="lyricStore.hasTranslation"
+          class="lyric-page-tool-btn"
+          :class="{ active: lyricStore.wantTranslation }"
+          title="翻译"
+          @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
+        >
+          译
+        </button>
+        <button
+          v-if="lyricStore.hasRomanization"
+          class="lyric-page-tool-btn"
+          :class="{ active: lyricStore.wantRomanization }"
+          title="音译"
+          @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
+        >
+          音
+        </button>
+        <button class="lyric-page-tool-btn" title="复制歌词" @click="handleCopyLyrics">
+          <Icon :icon="iconCopy" width="14" height="14" />
+        </button>
+      </div>
     </div>
 
     <!-- 设置 Drawer -->
@@ -367,6 +465,18 @@ onUnmounted(() => {
 <style scoped>
 .lyric-page {
   color: white;
+  background-color: #1a1d22;
+}
+
+.lyric-page-top-gradient {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 50;
 }
 
 .close-btn {
@@ -483,6 +593,58 @@ onUnmounted(() => {
   overflow: hidden;
   position: relative;
   z-index: 2;
+}
+
+/* 歌词工具按钮 */
+.lyric-page-tools {
+  position: fixed;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 180px;
+  align-items: center;
+  transition: opacity 0.2s ease;
+}
+
+.lyric-page-tools-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyric-page-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  font-weight: 700;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lyric-page-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+}
+
+.lyric-page-tool-btn.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 .add-playlist-body {

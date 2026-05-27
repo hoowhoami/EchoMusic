@@ -3,11 +3,10 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
-import { useToastStore } from '@/stores/toast';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { formatDuration } from '@/utils/format';
-import { iconRotateCcw, iconRotateCw, iconCopy, iconRefreshCw } from '@/icons';
+import { iconPlay } from '@/icons';
 
 interface Props {
   collapsed?: boolean;
@@ -39,27 +38,6 @@ const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
 
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
-
-// 歌词时间偏移
-const toastStore = useToastStore();
-
-const handleOffsetAdjust = (deltaMs: number) => {
-  const newOffset = lyricStore.adjustTimeOffset(deltaMs);
-  const sign = newOffset >= 0 ? '+' : '';
-  toastStore.success(`歌词偏移: ${sign}${(newOffset / 1000).toFixed(1)}s`);
-};
-
-const handleOffsetReset = () => {
-  lyricStore.resetTimeOffset();
-  toastStore.success('歌词偏移已重置');
-};
-
-const handleCopyLyrics = async () => {
-  const text = lyricStore.copyableText.trim();
-  if (!text) return;
-  await navigator.clipboard.writeText(text);
-  toastStore.success('歌词已复制');
-};
 
 const handleLineClick = (time: number) => {
   playerStore.seek(time);
@@ -366,55 +344,9 @@ watch(
       class="lyric-time-tag-fixed"
       @click.stop="handleLineClick(lyricStore.lines[scrollHighlightIndex]?.time ?? 0)"
     >
-      <span class="lyric-time-tag-icon">▶</span>
+      <Icon :icon="iconPlay" width="9" height="9" class="lyric-time-tag-icon" />
       <span>{{ formatDuration(lyricStore.lines[scrollHighlightIndex]?.time ?? 0) }}</span>
     </button>
-
-    <!-- 工具按钮：hover 歌词区域时显示在右侧，上下分组，中间留给时间按钮 -->
-    <div v-if="hasLyrics && !props.collapsed" class="lyric-tools">
-      <!-- 上组：时间调整 -->
-      <div class="lyric-tools-group">
-        <button class="lyric-tool-btn" title="歌词后退 0.5s" @click="handleOffsetAdjust(-500)">
-          <Icon :icon="iconRotateCcw" width="15" height="15" />
-        </button>
-        <button class="lyric-tool-btn" title="歌词前进 0.5s" @click="handleOffsetAdjust(500)">
-          <Icon :icon="iconRotateCw" width="15" height="15" />
-        </button>
-        <button
-          class="lyric-tool-btn"
-          :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
-          title="重置偏移"
-          @click="handleOffsetReset"
-        >
-          <Icon :icon="iconRefreshCw" width="14" height="14" />
-        </button>
-      </div>
-
-      <!-- 下组：翻译/音译/复制 -->
-      <div class="lyric-tools-group">
-        <button
-          v-if="lyricStore.hasTranslation"
-          class="lyric-tool-btn"
-          :class="{ active: lyricStore.wantTranslation }"
-          title="翻译"
-          @click="lyricStore.wantTranslation = !lyricStore.wantTranslation"
-        >
-          译
-        </button>
-        <button
-          v-if="lyricStore.hasRomanization"
-          class="lyric-tool-btn"
-          :class="{ active: lyricStore.wantRomanization }"
-          title="音译"
-          @click="lyricStore.wantRomanization = !lyricStore.wantRomanization"
-        >
-          音
-        </button>
-        <button class="lyric-tool-btn" title="复制歌词" @click="handleCopyLyrics">
-          <Icon :icon="iconCopy" width="14" height="14" />
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -471,12 +403,11 @@ watch(
   text-align: center;
 }
 
-.lyric-line:hover {
+.lyric-line > span {
   cursor: pointer;
 }
 
-.is-collapsed .lyric-line,
-.is-collapsed .lyric-line:hover {
+.is-collapsed .lyric-line > span {
   cursor: default;
 }
 
@@ -519,69 +450,6 @@ watch(
 .lyric-time-tag-fixed:hover {
   background: rgba(255, 255, 255, 0.22);
   color: white;
-}
-
-.lyric-time-tag-icon {
-  font-size: 9px;
-}
-
-.lyric-tools {
-  position: fixed;
-  top: 50%;
-  right: 16px;
-  transform: translateY(-50%);
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  gap: 180px;
-  align-items: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
-.lyric-scroller-wrap:hover .lyric-tools {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.lyric-tools-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.lyric-tool-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.lyric-tool-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
-  color: white;
-}
-
-.lyric-tool-btn.active {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.3);
-}
-
-.lyric-tool-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
 }
 
 .lyric-yrc-char {
