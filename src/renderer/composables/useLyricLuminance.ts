@@ -4,7 +4,6 @@ import { ref, type ComputedRef } from 'vue';
 
 interface LuminanceOptions {
   hasPortraitGallery: ComputedRef<boolean>;
-  settingStore: { lyricAdaptiveColor: boolean };
 }
 
 interface LuminanceEntry {
@@ -88,7 +87,7 @@ const applyContrastVars = (
 };
 
 export function useLyricLuminance(options: LuminanceOptions) {
-  const { hasPortraitGallery, settingStore } = options;
+  const { hasPortraitGallery } = options;
 
   const portraitImgRef = ref<HTMLImageElement | null>(null);
   const luminanceCache = new Map<string, LuminanceEntry>();
@@ -97,7 +96,6 @@ export function useLyricLuminance(options: LuminanceOptions) {
   let luminanceSeq = 0;
 
   const analyzeRenderedImage = (img: HTMLImageElement) => {
-    if (!settingStore.lyricAdaptiveColor) return;
     const root = img.closest('.lyric-view') as HTMLElement | null;
     if (!root) return;
 

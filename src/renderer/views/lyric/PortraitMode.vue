@@ -4,7 +4,6 @@ import { useThrottleFn } from '@vueuse/core';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricPortrait } from '@/composables/useLyricPortrait';
-import { useLyricLuminance } from '@/composables/useLyricLuminance';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
@@ -27,12 +26,6 @@ const {
   stopPortraitCarousel,
   dispose: disposePortrait,
 } = useLyricPortrait({ currentTrack, currentTrackLyricHash, settingStore });
-
-// 亮度检测
-const { portraitImgRef, onPortraitImageLoad } = useLyricLuminance({
-  hasPortraitGallery: computed(() => true),
-  settingStore,
-});
 
 // ── 收起逻辑 ──
 const isLyricCollapsed = ref(false);
@@ -129,11 +122,9 @@ defineExpose({
     <div class="portrait-backdrop">
       <img
         v-if="activePortraitUrl"
-        ref="portraitImgRef"
         :src="activePortraitUrl"
         :alt="`${currentTrack?.artist || '歌手'}写真`"
         class="portrait-img"
-        @load="onPortraitImageLoad"
       />
       <div
         v-else-if="currentTrack?.coverUrl"

@@ -1389,15 +1389,6 @@ const handleScroll = () => {
                 </div>
               </template>
               <div class="settings-divider"></div>
-              <div class="settings-item">
-                <div class="space-y-1">
-                  <h3 class="font-semibold">写真模式颜色自适应</h3>
-                  <p class="text-sm text-text-secondary">
-                    根据写真背景亮度自动切换按钮和控件的深浅配色
-                  </p>
-                </div>
-                <Switch v-model="settingStore.lyricAdaptiveColor" />
-              </div>
             </template>
           </div>
         </section>

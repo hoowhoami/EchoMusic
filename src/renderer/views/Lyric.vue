@@ -279,7 +279,6 @@ const ensureLyricsForCurrentTrack = () => {
 // 亮度检测
 const { portraitImgRef, onPortraitImageLoad: _onPortraitImageLoad } = useLyricLuminance({
   hasPortraitGallery,
-  settingStore,
 });
 
 // 亮度计算是 CPU 密集操作，延迟到入场动画结束后再执行
@@ -825,10 +824,6 @@ onUnmounted(() => {
                       <Switch v-model="settingStore.lyricCollapseHideControls" />
                     </div>
                   </template>
-                  <div class="flex items-center justify-between text-[13px] font-semibold">
-                    <span class="text-black/60 dark:text-white/60">颜色自适应</span>
-                    <Switch v-model="settingStore.lyricAdaptiveColor" />
-                  </div>
                 </div>
               </Popover>
               <Button
