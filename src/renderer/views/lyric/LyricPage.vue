@@ -227,9 +227,6 @@ onUnmounted(() => {
       </template>
     </OverlayHeader>
 
-    <!-- 顶部渐变遮罩：确保按钮在亮色背景上可见 -->
-    <div class="lyric-page-top-gradient"></div>
-
     <!-- 顶部工具栏：左（展开按钮）、中（轮播切换）、右（播放器模式） -->
     <div class="lyric-page-toolbar no-drag">
       <!-- 左侧：展开/折叠按钮 -->
@@ -331,7 +328,10 @@ onUnmounted(() => {
             portraitModeRef?.isLyricCollapsed && settingStore.lyricCollapseHideControls
               ? '0px'
               : '200px',
-          overflow: 'hidden',
+          overflow:
+            portraitModeRef?.isLyricCollapsed && settingStore.lyricCollapseHideControls
+              ? 'hidden'
+              : 'visible',
           pointerEvents:
             portraitModeRef?.isLyricCollapsed && settingStore.lyricCollapseHideControls
               ? 'none'
@@ -468,15 +468,18 @@ onUnmounted(() => {
   background-color: #1a1d22;
 }
 
-.lyric-page-top-gradient {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 80px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
-  pointer-events: none;
-  z-index: 50;
+/* 强制 OverlayHeader 控制按钮为白色 */
+.lyric-page :deep(.overlay-control-btn) {
+  color: white;
+}
+
+.lyric-page :deep(.overlay-control-btn:hover) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.lyric-page :deep(.overlay-control-btn--close:hover) {
+  background: #ff3b30;
+  color: white;
 }
 
 .close-btn {

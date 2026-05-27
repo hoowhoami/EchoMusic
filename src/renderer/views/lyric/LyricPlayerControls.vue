@@ -102,16 +102,7 @@ const formatTime = (seconds: number) => {
 <template>
   <footer class="lyric-bar">
     <!-- 进度条：横跨控制栏顶部，左右贴边 -->
-    <div
-      class="bar-progress-top"
-      :title="
-        formatTime(
-          isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : playerStore.currentTime,
-        ) +
-        ' / ' +
-        formatTime(playerStore.duration)
-      "
-    >
+    <div class="bar-progress-top">
       <SliderRoot
         :model-value="progressValue"
         :max="playerStore.duration || 100"
@@ -148,6 +139,21 @@ const formatTime = (seconds: number) => {
           :class="[isHoveringProgress ? 'opacity-100 scale-125' : 'opacity-0 scale-50']"
         />
       </SliderRoot>
+      <!-- 时间 tooltip -->
+      <div
+        v-if="isHoveringProgress || isDraggingSeek"
+        class="bar-progress-tooltip"
+        :style="{
+          left: `${((isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : playerStore.currentTime) / Math.max(playerStore.duration, 1)) * 100}%`,
+        }"
+      >
+        {{
+          formatTime(
+            isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : playerStore.currentTime,
+          )
+        }}
+        / {{ formatTime(playerStore.duration) }}
+      </div>
     </div>
 
     <!-- 主控制区域 -->
@@ -342,6 +348,26 @@ const formatTime = (seconds: number) => {
 /* 顶部进度条 */
 .bar-progress-top {
   width: 100%;
+  position: relative;
+  overflow: visible;
+  z-index: 10;
+}
+
+.bar-progress-tooltip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
 }
 
 .bar-slider-top {
@@ -352,6 +378,7 @@ const formatTime = (seconds: number) => {
   touch-action: none;
   width: 100%;
   height: 16px;
+  cursor: pointer;
 }
 
 .bar-slider-track-top {

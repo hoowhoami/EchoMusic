@@ -133,8 +133,12 @@ defineExpose({
       />
     </div>
 
-    <!-- 遮罩层（仅有写真时需要压暗） -->
-    <div v-if="activePortraitUrl" class="portrait-overlay"></div>
+    <!-- 遮罩层（仅有写真时需要压暗，透明度由设置控制） -->
+    <div
+      v-if="activePortraitUrl"
+      class="portrait-overlay"
+      :style="{ opacity: 1 - settingStore.lyricBackdropOpacity / 100 }"
+    ></div>
 
     <!-- 歌词区域 -->
     <div class="portrait-lyric-area">
@@ -174,7 +178,7 @@ defineExpose({
 .portrait-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: black;
   pointer-events: none;
   z-index: 1;
 }
