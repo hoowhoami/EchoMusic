@@ -181,8 +181,15 @@ export const useLyricStore = defineStore('lyric', {
     accentPlayedColor: '',
     requestSerial: 0,
     detailResolved: false,
+    // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
+    timeOffsetMap: {} as Record<string, number>,
   }),
   getters: {
+    // 当前歌曲的歌词时间偏移（毫秒）
+    currentTimeOffset: (state): number => {
+      if (!state.loadedHash) return 0;
+      return state.timeOffsetMap[state.loadedHash] ?? 0;
+    },
     // 有效歌词颜色（用户自定义 > 主题色同步 > 默认值）
     effectivePlayedColor: (state) =>
       state.playedColor || state.accentPlayedColor || DEFAULT_LYRIC_PLAYED_COLOR,
@@ -276,6 +283,19 @@ export const useLyricStore = defineStore('lyric', {
     },
     updateFontWeight(index: number) {
       this.fontWeightIndex = clamp(Math.round(index), 0, 8);
+    },
+    // 调整当前歌曲的歌词时间偏移（毫秒）
+    adjustTimeOffset(deltaMs: number): number {
+      if (!this.loadedHash) return 0;
+      const current = this.timeOffsetMap[this.loadedHash] ?? 0;
+      const next = clamp(current + deltaMs, -10000, 10000);
+      this.timeOffsetMap[this.loadedHash] = next;
+      return next;
+    },
+    // 重置当前歌曲的歌词时间偏移
+    resetTimeOffset() {
+      if (!this.loadedHash) return;
+      delete this.timeOffsetMap[this.loadedHash];
     },
     setLyric(content: string, hash = '') {
       this.parseLyricContent({ decodeContent: content }, hash, { detailResolved: false });
@@ -452,7 +472,9 @@ export const useLyricStore = defineStore('lyric', {
         return;
       }
 
-      const currentTimeMs = Math.round(currentTime * 1000);
+      // 加上当前歌曲的时间偏移
+      const offsetMs = this.timeOffsetMap[this.loadedHash] || 0;
+      const currentTimeMs = Math.round(currentTime * 1000) + offsetMs;
       let nextIndex = -1;
 
       // 与桌面歌词保持一致：找到最后一个 startTime <= currentTimeMs 的行
@@ -581,6 +603,7 @@ export const useLyricStore = defineStore('lyric', {
       'fontWeightIndex',
       'playedColor',
       'unplayedColor',
+      'timeOffsetMap',
     ],
   },
 });

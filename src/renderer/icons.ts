@@ -80,6 +80,8 @@ import arrowBarUp from '@iconify/icons-tabler/arrow-bar-up';
 import arrowBarToUp from '@iconify/icons-tabler/arrow-bar-to-up';
 import eye from '@iconify/icons-tabler/eye';
 import eyeOff from '@iconify/icons-tabler/eye-off';
+import rotateCcw from '@iconify/icons-tabler/rotate-2';
+import rotateCw from '@iconify/icons-tabler/rotate-clockwise-2';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -164,3 +166,5 @@ export const iconArrowBarUp = arrowBarUp as IconifyIcon;
 export const iconArrowBarToUp = arrowBarToUp as IconifyIcon;
 export const iconEye = eye as IconifyIcon;
 export const iconEyeOff = eyeOff as IconifyIcon;
+export const iconRotateCcw = rotateCcw as IconifyIcon;
+export const iconRotateCw = rotateCw as IconifyIcon;

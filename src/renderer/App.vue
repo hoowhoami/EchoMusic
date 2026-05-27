@@ -11,7 +11,7 @@ import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { getCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
-import LyricView from '@/views/Lyric.vue';
+import LyricView from '@/views/lyric/LyricPage.vue';
 
 const player = usePlayerStore();
 const settings = useSettingStore();

@@ -182,7 +182,6 @@ watch(
   padding: 0;
   box-shadow: none;
   bottom: 0;
-  border-radius: 18px 0 0 18px;
   width: min(460px, 88vw);
   font-size: 13px;
 }
