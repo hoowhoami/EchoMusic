@@ -63,13 +63,23 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
   autoUpdater.on('update-available', (info) => {
     const { version: currentVersion } = getAppInfo();
     const silent = (autoUpdater as any)._echoSilent ?? false;
+
+    // releaseNotes 可能是 string 或 Array<{ version: string; note: string | null }>
+    // 只展示最新版本的更新内容
+    let body = '';
+    if (typeof info.releaseNotes === 'string') {
+      body = info.releaseNotes.slice(0, 4000);
+    } else if (Array.isArray(info.releaseNotes) && info.releaseNotes.length > 0) {
+      body = (info.releaseNotes[0].note || '').trim().slice(0, 4000);
+    }
+
     const result: UpdateCheckResult = {
       status: 'available',
       currentVersion,
       latestVersion: info.version,
       releaseName: info.releaseName || `v${info.version}`,
       releaseUrl: `https://github.com/hoowhoami/EchoMusic/releases/tag/v${info.version}`,
-      body: typeof info.releaseNotes === 'string' ? info.releaseNotes.slice(0, 2000) : '',
+      body,
       silent,
     };
     sendToRenderer('update-check-result', result);

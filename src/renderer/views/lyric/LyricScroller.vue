@@ -75,6 +75,14 @@ const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length 
 
 const handleLineClick = (time: number) => {
   playerStore.seek(time);
+  if (!playerStore.isPlaying) {
+    playerStore.togglePlay();
+  }
+  // seek 后立即更新当前行索引并滚动到对应位置
+  nextTick(() => {
+    lyricStore.updateCurrentIndex(time, true);
+    scrollToLine(lyricStore.currentIndex, true);
+  });
 };
 
 // 判断歌词行是否被过滤（如制作人信息、版权声明等）
