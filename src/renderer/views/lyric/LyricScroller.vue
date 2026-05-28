@@ -3,6 +3,7 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
+import { testLyricFilter } from '@/stores/lyric';
 import { useLyricScroll } from './composables/useLyricScroll';
 import { useYrcAnimation } from './composables/useYrcAnimation';
 import { formatDuration } from '@/utils/format';
@@ -31,7 +32,35 @@ const { getNowMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(lyricListRef)
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
-const currentIndex = computed(() => lyricStore.currentIndex);
+const currentIndex = computed(() => {
+  const idx = lyricStore.currentIndex;
+  if (idx < 0) return idx;
+  // 如果当前行被过滤，回退到上一个未被过滤的行
+  const lines = lyricStore.lines;
+  if (
+    settingStore.lyricFilterEnabled &&
+    lines[idx] &&
+    testLyricFilter(
+      lines[idx].text,
+      settingStore.lyricFilterEnabled,
+      settingStore.lyricFilterPattern,
+    )
+  ) {
+    for (let i = idx - 1; i >= 0; i--) {
+      if (
+        !testLyricFilter(
+          lines[i].text,
+          settingStore.lyricFilterEnabled,
+          settingStore.lyricFilterPattern,
+        )
+      ) {
+        return i;
+      }
+    }
+    return -1;
+  }
+  return idx;
+});
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
 const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
@@ -46,6 +75,15 @@ const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length 
 
 const handleLineClick = (time: number) => {
   playerStore.seek(time);
+};
+
+// 判断歌词行是否被过滤（如制作人信息、版权声明等）
+const isLineFilteredForPage = (line: { text: string }) => {
+  return testLyricFilter(
+    line.text,
+    settingStore.lyricFilterEnabled,
+    settingStore.lyricFilterPattern,
+  );
 };
 
 const handleLyricWheel = () => {
@@ -215,6 +253,7 @@ watch(
           <div
             v-for="entry in visibleLines"
             :key="entry.line.time"
+            v-show="!isLineFilteredForPage(entry.line)"
             class="lyric-row"
             :data-lyric-index="entry.index"
             :style="{

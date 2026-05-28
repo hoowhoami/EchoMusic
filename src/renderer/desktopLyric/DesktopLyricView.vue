@@ -850,9 +850,7 @@ onBeforeUnmount(() => {
     </TransitionGroup>
 
     <!-- 歌词同步警告 -->
-    <div v-if="lyricSyncWarning" class="sync-warning">
-      播放时长与原曲存在差异，歌词可能不同步，可能不是完整的音效/歌曲
-    </div>
+    <div v-if="lyricSyncWarning" class="sync-warning">播放时长与原曲存在差异，歌词可能不同步</div>
   </div>
 </template>
 

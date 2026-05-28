@@ -276,10 +276,16 @@ onUnmounted(() => {
         </Button>
       </div>
 
-      <!-- 中间：轮播切换按钮（收起时始终隐藏） -->
+      <!-- 中间：轮播切换按钮 或 歌曲信息（歌词模式） -->
       <div class="toolbar-center">
+        <div v-if="viewMode === 'lyric'" class="toolbar-song-info">
+          <span class="toolbar-song-title">{{ currentTrack?.title || '未在播放' }}</span>
+          <span v-if="currentTrack?.artist" class="toolbar-song-artist">{{
+            currentTrack.artist
+          }}</span>
+        </div>
         <div
-          v-if="
+          v-else-if="
             viewMode === 'portrait' &&
             portraitModeRef &&
             portraitModeRef.artistPortraitUrls.length > 1
@@ -341,6 +347,11 @@ onUnmounted(() => {
         <CoverMode v-if="viewMode === 'cover'" />
         <PortraitMode v-else-if="viewMode === 'portrait'" ref="portraitModeRef" />
         <LyricMode v-else />
+      </div>
+
+      <!-- 歌词同步警告 -->
+      <div v-if="lyricStore.lyricSyncWarning" class="lyric-sync-warning">
+        播放时长与原曲存在差异，歌词可能不同步
       </div>
 
       <!-- 底部控制栏 -->
@@ -561,6 +572,56 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   align-items: center;
+}
+
+.toolbar-song-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.toolbar-song-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+}
+
+.toolbar-song-artist {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+
+.toolbar-sync-warning {
+  font-size: 11px;
+  color: rgba(255, 200, 50, 0.85);
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 200, 50, 0.1);
+  white-space: nowrap;
+}
+
+.lyric-sync-warning {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  font-size: 11px;
+  color: rgba(255, 200, 50, 0.85);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(255, 200, 50, 0.1);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .toolbar-center {

@@ -198,6 +198,15 @@ const close = () => {
           </div>
         </div>
 
+        <!-- 过滤 -->
+        <div class="settings-section">
+          <div class="section-title">过滤</div>
+          <div class="setting-row">
+            <span class="setting-label">歌词过滤</span>
+            <Switch v-model="settingStore.lyricFilterEnabled" />
+          </div>
+        </div>
+
         <!-- 写真模式专属设置 -->
         <template v-if="currentMode === 'portrait'">
           <div class="settings-section">

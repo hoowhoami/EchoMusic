@@ -1,7 +1,8 @@
 import { watch, type WatchStopHandle } from 'vue';
 import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
-import { useLyricStore } from '@/stores/lyric';
+import { useLyricStore, testLyricFilter } from '@/stores/lyric';
+import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from './store';
 import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared/desktop-lyric';
 
@@ -74,7 +75,38 @@ export const initDesktopLyricSync = async () => {
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let progressSyncQueued = false;
 
-  const buildLyricsPayload = () => lines.value.map(normalizeLinePayload);
+  const buildLyricsPayload = () => {
+    const settingStore = useSettingStore();
+    const enabled = settingStore.desktopLyricFilterEnabled;
+    const pattern = settingStore.desktopLyricFilterPattern;
+    const raw = lines.value.map(normalizeLinePayload);
+    if (!enabled) return raw;
+
+    // 被过滤的行替换为上一个有效行的内容（保持时间索引不变）
+    let lastValidLine: LyricLinePayload | null = null;
+    const playerStore = usePlayerStore();
+    const track = playerStore.currentTrackSnapshot;
+    const fallbackText = track
+      ? `${track.title || '未知歌曲'} - ${track.artist || '未知歌手'}`
+      : '';
+
+    return raw.map((line) => {
+      if (testLyricFilter(line.text, enabled, pattern)) {
+        // 被过滤：用上一个有效行替代，保留时间
+        if (lastValidLine) {
+          return { ...lastValidLine, time: line.time, characters: lastValidLine.characters };
+        }
+        // 首行即过滤：显示歌曲标题
+        return {
+          time: line.time,
+          text: fallbackText,
+          characters: [{ text: fallbackText, startTime: 0, endTime: 0 }],
+        };
+      }
+      lastValidLine = line;
+      return line;
+    });
+  };
 
   const syncPlaybackSnapshot = async () => {
     const playback = buildPlaybackPayload();
@@ -160,6 +192,17 @@ export const initDesktopLyricSync = async () => {
         void syncLyricsSnapshot();
       },
       { immediate: true, deep: true },
+    ),
+  );
+
+  // 桌面歌词过滤设置变化时重新同步歌词
+  const settingStore = useSettingStore();
+  stops.push(
+    watch(
+      () => [settingStore.desktopLyricFilterEnabled, settingStore.desktopLyricFilterPattern],
+      () => {
+        void syncLyricsSnapshot();
+      },
     ),
   );
 

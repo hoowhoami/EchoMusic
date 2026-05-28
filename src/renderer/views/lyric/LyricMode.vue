@@ -1,24 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { usePlayerControls } from '@/composables/usePlayerControls';
-import { useLyricStore } from '@/stores/lyric';
 import LyricScroller from './LyricScroller.vue';
-
-const { currentTrack } = usePlayerControls();
-const lyricStore = useLyricStore();
 </script>
 
 <template>
   <div class="lyric-mode">
-    <!-- 顶部歌曲信息 -->
-    <div class="song-header">
-      <h1 class="song-title">{{ currentTrack?.title || '未在播放' }}</h1>
-      <p class="song-artist">{{ currentTrack?.artist || '' }}</p>
-      <p v-if="lyricStore.lyricSyncWarning" class="sync-warning">
-        播放时长与原曲存在差异，歌词可能不同步
-      </p>
-    </div>
-
     <!-- 全屏歌词 -->
     <div class="lyric-area">
       <LyricScroller />
@@ -67,6 +52,9 @@ const lyricStore = useLyricStore();
   border-radius: 999px;
   background: rgba(255, 200, 50, 0.1);
   display: inline-block;
+  align-self: center;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 .lyric-area {

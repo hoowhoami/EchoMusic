@@ -161,6 +161,26 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
 export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
 
+// 歌词过滤默认正则表达式
+export const DEFAULT_LYRIC_FILTER_PATTERN =
+  '^(作词|作曲|编曲|制作人|录音|混音|母带|出品|发行|企划|监制|和声|吉他|贝斯|鼓|键盘|弦乐|词|曲|编|唱片|OP|SP|原唱|翻唱|许可|音乐人|纯音乐|宣推|协作推广|策划|统筹|营销|推广|制作|配唱|和音|弦乐编写|人声录音|人声编辑)[：:]|^(Lyrics|Composed|Produced|Written|Arranged|Mixed|Mastered|Recorded|Performed) by[：:]|^[『「【].*[』」】]$|未经著作权人许可|不得翻唱|翻录或使用|听歌就在';
+
+/**
+ * 测试歌词行是否应被过滤
+ * @param text 歌词文本
+ * @param enabled 是否启用过滤
+ * @param pattern 用户自定义正则表达式（为空时使用默认）
+ */
+export function testLyricFilter(text: string, enabled: boolean, pattern: string): boolean {
+  if (!enabled || !text) return false;
+  const effectivePattern = pattern.trim() || DEFAULT_LYRIC_FILTER_PATTERN;
+  try {
+    return new RegExp(effectivePattern).test(text);
+  } catch {
+    return false;
+  }
+}
+
 export const useLyricStore = defineStore('lyric', {
   state: () => ({
     lines: [] as LyricLine[],

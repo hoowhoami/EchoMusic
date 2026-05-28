@@ -8,6 +8,7 @@ import { useThemeStore, type AccentMode } from '@/stores/theme';
 import { ACCENT_PRESETS } from '@/utils/color';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import { useLyricStore } from '@/stores/lyric';
+import { DEFAULT_LYRIC_FILTER_PATTERN } from '@/stores/lyric';
 import { useToastStore } from '@/stores/toast';
 import type {
   AudioQualityValue,
@@ -1306,6 +1307,41 @@ const handleScroll = () => {
             <div class="settings-divider"></div>
             <div class="settings-item">
               <div class="space-y-1">
+                <h3 class="font-semibold">歌词过滤</h3>
+                <p class="text-sm text-text-secondary">
+                  过滤非歌词内容（如制作人信息、版权声明等）
+                </p>
+              </div>
+              <Switch v-model="settingStore.lyricFilterEnabled" />
+            </div>
+            <template v-if="settingStore.lyricFilterEnabled">
+              <div class="settings-divider"></div>
+              <div class="settings-item items-start">
+                <div class="space-y-1">
+                  <h3 class="font-semibold">过滤表达式</h3>
+                  <p class="text-sm text-text-secondary">正则表达式，匹配的行将被隐藏</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    v-if="settingStore.lyricFilterPattern"
+                    type="button"
+                    class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+                    @click="settingStore.lyricFilterPattern = ''"
+                  >
+                    恢复默认
+                  </button>
+                  <input
+                    v-model="settingStore.lyricFilterPattern"
+                    type="text"
+                    class="settings-input w-64"
+                    :placeholder="DEFAULT_LYRIC_FILTER_PATTERN"
+                  />
+                </div>
+              </div>
+            </template>
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+              <div class="space-y-1">
                 <h3 class="font-semibold">歌手写真背景</h3>
                 <p class="text-sm text-text-secondary">
                   优先使用歌手写真作为背景，获取失败时回退到专辑封面
@@ -1522,10 +1558,43 @@ const handleScroll = () => {
                 </div>
               </div>
             </div>
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+              <div class="space-y-1">
+                <h3 class="font-semibold">歌词过滤</h3>
+                <p class="text-sm text-text-secondary">
+                  过滤非歌词内容（如制作人信息、版权声明等）
+                </p>
+              </div>
+              <Switch v-model="settingStore.desktopLyricFilterEnabled" />
+            </div>
+            <template v-if="settingStore.desktopLyricFilterEnabled">
+              <div class="settings-divider"></div>
+              <div class="settings-item items-start">
+                <div class="space-y-1">
+                  <h3 class="font-semibold">过滤表达式</h3>
+                  <p class="text-sm text-text-secondary">正则表达式，匹配的行将被替换</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button
+                    v-if="settingStore.desktopLyricFilterPattern"
+                    type="button"
+                    class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap"
+                    @click="settingStore.desktopLyricFilterPattern = ''"
+                  >
+                    恢复默认
+                  </button>
+                  <input
+                    v-model="settingStore.desktopLyricFilterPattern"
+                    type="text"
+                    class="settings-input w-64"
+                    :placeholder="DEFAULT_LYRIC_FILTER_PATTERN"
+                  />
+                </div>
+              </div>
+            </template>
           </div>
         </section>
-
-        <!-- 快捷键 -->
         <section data-section="shortcuts" class="settings-section">
           <div class="flex items-center gap-3 mb-4">
             <Icon
@@ -2190,6 +2259,18 @@ const handleScroll = () => {
 .settings-back-to-top.visible {
   opacity: 1;
   visibility: visible;
+}
+
+.settings-input {
+  @apply px-3 py-1.5 text-[12px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main transition-all;
+}
+
+.settings-input:hover {
+  @apply border-primary/50;
+}
+
+.settings-input:focus {
+  @apply border-primary outline-none ring-1 ring-primary/30;
 }
 
 .settings-back-to-top:hover {

@@ -19,9 +19,6 @@ const lyricStore = useLyricStore();
       <div class="song-info">
         <h1 class="song-title">{{ currentTrack?.title || '未在播放' }}</h1>
         <p class="song-artist">{{ currentTrack?.artist || '' }}</p>
-        <p v-if="lyricStore.lyricSyncWarning" class="sync-warning">
-          播放时长与原曲存在差异，歌词可能不同步
-        </p>
       </div>
     </section>
 
