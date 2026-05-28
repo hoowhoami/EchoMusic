@@ -155,13 +155,6 @@ const injectedScrollContainer = useScrollContainer();
 
 const getScrollContainer = (): HTMLElement | null => injectedScrollContainer.value;
 
-// 性能优化：缓存容器尺寸与偏移，避免滚动时频繁触发 Layout Sync
-const cachedOffsets = {
-  listContentTop: -1,
-  viewportHeight: -1,
-  isDirty: true,
-};
-
 const updateVisibleRange = () => {
   const totalRows = rowCount.value;
   if (!props.active || props.loading || totalRows === 0) {
@@ -180,21 +173,17 @@ const updateVisibleRange = () => {
     return;
   }
 
-  // 仅在必要时测量尺寸（Layout Sync）
-  if (cachedOffsets.isDirty || cachedOffsets.listContentTop < 0) {
-    const scrollContainerRect = scrollContainer.getBoundingClientRect();
-    const containerRect = containerEl.getBoundingClientRect();
-    // 列表相对于滚动容器内容的绝对偏移
-    cachedOffsets.listContentTop =
-      containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
-    cachedOffsets.viewportHeight = scrollContainer.clientHeight;
-    cachedOffsets.isDirty = false;
-  }
+  // 每次都重新测量偏移，getBoundingClientRect 开销很小，
+  // 避免因兄弟元素高度变化导致缓存的 listContentTop 过期
+  const scrollContainerRect = scrollContainer.getBoundingClientRect();
+  const containerRect = containerEl.getBoundingClientRect();
+  const listContentTop = containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
+  const viewportHeight = scrollContainer.clientHeight;
 
-  const listTop = cachedOffsets.listContentTop;
+  const listTop = listContentTop;
   const listBottom = listTop + totalHeight.value;
   const viewportTop = scrollContainer.scrollTop;
-  const viewportBottom = viewportTop + cachedOffsets.viewportHeight;
+  const viewportBottom = viewportTop + viewportHeight;
 
   if (viewportBottom <= listTop || viewportTop >= listBottom) {
     if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
@@ -216,8 +205,7 @@ const updateVisibleRange = () => {
   if (visibleEndRow.value !== resolvedEnd) visibleEndRow.value = resolvedEnd;
 };
 
-const scheduleMeasure = (forceDirty = false) => {
-  if (forceDirty) cachedOffsets.isDirty = true;
+const scheduleMeasure = () => {
   if (measureFrame) cancelAnimationFrame(measureFrame);
   measureFrame = requestAnimationFrame(() => {
     measureFrame = 0;
@@ -233,7 +221,7 @@ const syncContainerWidth = (nextWidth: number) => {
   const normalizedWidth = Math.max(0, Math.round(nextWidth));
   if (normalizedWidth === containerWidth.value) return;
   containerWidth.value = normalizedWidth;
-  scheduleMeasure(true);
+  scheduleMeasure();
 };
 
 const bindScrollContainer = () => {
@@ -244,7 +232,6 @@ const bindScrollContainer = () => {
   }
   scrollContainerRef.value = nextContainer;
   scrollContainerRef.value?.addEventListener('scroll', handleScroll, { passive: true });
-  cachedOffsets.isDirty = true;
 };
 
 const connectResizeObserver = () => {
@@ -270,7 +257,11 @@ watch(
   () => props.items,
   async () => {
     await nextTick();
-    scheduleMeasure(true);
+    // 数据到达时容器宽度可能还未被 ResizeObserver 回调同步，主动读取一次
+    if (containerWidth.value <= 0 && containerRef.value) {
+      syncContainerWidth(containerRef.value.clientWidth);
+    }
+    scheduleMeasure();
   },
   { flush: 'post' },
 );
@@ -285,23 +276,23 @@ watch(
     }
     await nextTick();
     bindScrollContainer();
-    scheduleMeasure(true);
+    scheduleMeasure();
   },
   { flush: 'post' },
 );
 
 watch(columnCount, () => {
-  scheduleMeasure(true);
+  scheduleMeasure();
 });
 
 // 响应注入的滚动容器变化
 watch(injectedScrollContainer, () => {
   bindScrollContainer();
-  scheduleMeasure(true);
+  scheduleMeasure();
 });
 
 // 修复：保存函数引用以确保 add/remove 使用同一引用
-const handleResize = () => scheduleMeasure(true);
+const handleResize = () => scheduleMeasure();
 
 onMounted(async () => {
   await nextTick();
@@ -309,7 +300,7 @@ onMounted(async () => {
   syncContainerWidth(containerRef.value?.clientWidth ?? 0);
   connectResizeObserver();
   window.addEventListener('resize', handleResize, { passive: true });
-  scheduleMeasure(true);
+  scheduleMeasure();
 });
 
 onBeforeUnmount(() => {
