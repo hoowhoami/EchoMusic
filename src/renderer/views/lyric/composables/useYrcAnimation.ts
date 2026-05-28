@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onUnmounted, computed, type Ref } from 'vue';
+import { watch, onMounted, onUnmounted, type Ref } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore } from '@/stores/lyric';
 
@@ -29,7 +29,7 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   };
 
   // 直接操作 DOM 更新逐字歌词样式
-  const updateYrcDom = (playedColor: string, unplayedColor: string) => {
+  const updateYrcDom = () => {
     const lineIndex = lyricStore.currentIndex;
     const line = lyricStore.lines[lineIndex];
     if (!line?.characters?.length) {

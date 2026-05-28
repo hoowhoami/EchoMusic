@@ -121,7 +121,7 @@ const rafLoop = () => {
     if (timestamp - lastRafTime >= 33) {
       lastRafTime = timestamp;
       lyricStore.updateCurrentIndex(getNowMs() / 1000, true);
-      updateYrcDom(effectivePlayedColor.value, effectiveUnplayedColor.value);
+      updateYrcDom();
     }
     rafLoop();
   });
