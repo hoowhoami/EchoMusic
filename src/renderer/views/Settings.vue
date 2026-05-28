@@ -1296,6 +1296,16 @@ const handleScroll = () => {
             <div class="settings-divider"></div>
             <div class="settings-item">
               <div class="space-y-1">
+                <h3 class="font-semibold">封面模糊背景</h3>
+                <p class="text-sm text-text-secondary">
+                  将封面图片模糊化作为歌词页背景，关闭时使用主题色纯色背景
+                </p>
+              </div>
+              <Switch v-model="settingStore.lyricPageBackgroundBlur" />
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+              <div class="space-y-1">
                 <h3 class="font-semibold">歌手写真背景</h3>
                 <p class="text-sm text-text-secondary">
                   优先使用歌手写真作为背景，获取失败时回退到专辑封面
@@ -1388,7 +1398,6 @@ const handleScroll = () => {
                   <Switch v-model="settingStore.lyricCollapseHideControls" />
                 </div>
               </template>
-              <div class="settings-divider"></div>
             </template>
           </div>
         </section>

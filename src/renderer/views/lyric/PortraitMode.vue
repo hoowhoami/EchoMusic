@@ -18,6 +18,13 @@ const currentTrackLyricHash = computed(() =>
 const coverUrl = computed(() => currentTrack.value?.coverUrl);
 const { backgroundColor } = useLyricBackground(coverUrl);
 
+// 模糊封面背景（无写真时的备选背景）
+const blurCoverUrl = computed(() => {
+  if (!settingStore.lyricPageBackgroundBlur || !coverUrl.value) return '';
+  const url = coverUrl.value;
+  return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
+});
+
 // 写真
 const {
   artistPortraitUrls,
@@ -131,6 +138,11 @@ defineExpose({
         :alt="`${currentTrack?.artist || '歌手'}写真`"
         class="portrait-img"
       />
+      <!-- 无写真时显示模糊封面背景 -->
+      <template v-else-if="blurCoverUrl">
+        <img :src="blurCoverUrl" class="portrait-blur-img" />
+        <div class="portrait-blur-overlay"></div>
+      </template>
     </div>
 
     <!-- 遮罩层（仅有写真时需要压暗，透明度由设置控制） -->
@@ -173,6 +185,21 @@ defineExpose({
   object-fit: cover;
   object-position: center;
   user-select: none;
+}
+
+.portrait-blur-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(40px);
+  transform: scale(1.2);
+  user-select: none;
+}
+
+.portrait-blur-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .portrait-overlay {

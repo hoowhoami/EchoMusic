@@ -315,13 +315,13 @@ const renderLyricLines = computed<RenderLine[]>(() => {
     const mode = lyricsMode.value;
     let secondaryText = '';
     if (mode === 'both') {
-      secondaryText = [tran, roman].filter(Boolean).join(' / ');
+      secondaryText = [roman, tran].filter(Boolean).join(' / ');
     } else if (mode === 'translation') {
       secondaryText = tran;
     } else if (mode === 'romanization') {
       secondaryText = roman;
     } else {
-      secondaryText = [tran, roman].filter(Boolean).join(' / ');
+      secondaryText = [roman, tran].filter(Boolean).join(' / ');
     }
     if (secondaryText) {
       return [

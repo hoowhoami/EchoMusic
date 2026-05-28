@@ -189,6 +189,15 @@ const close = () => {
           </div>
         </div>
 
+        <!-- 背景 -->
+        <div class="settings-section">
+          <div class="section-title">背景</div>
+          <div class="setting-row">
+            <span class="setting-label">封面模糊背景</span>
+            <Switch v-model="settingStore.lyricPageBackgroundBlur" />
+          </div>
+        </div>
+
         <!-- 写真模式专属设置 -->
         <template v-if="currentMode === 'portrait'">
           <div class="settings-section">

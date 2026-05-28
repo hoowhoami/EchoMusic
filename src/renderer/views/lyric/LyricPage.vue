@@ -58,11 +58,26 @@ const { backgroundColor } = useLyricBackground(coverUrl);
 // 当前模式
 const viewMode = computed(() => settingStore.lyricViewMode);
 
+// 模糊背景封面 URL（用较小尺寸节省内存）
+const blurCoverUrl = computed(() => {
+  if (!settingStore.lyricPageBackgroundBlur || !coverUrl.value) return '';
+  const url = coverUrl.value;
+  // 替换尺寸参数为 400（模糊后不需要高分辨率）
+  return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
+});
+
 // 背景样式
 const backgroundStyle = computed(() => {
   if (viewMode.value === 'portrait') {
-    // 写真模式不设背景色，让写真图片完整透出
+    // 写真模式：模糊背景启用时用黑色底色，否则不设（让写真图片透出）
+    if (settingStore.lyricPageBackgroundBlur && blurCoverUrl.value) {
+      return { backgroundColor: '#000000' };
+    }
     return {};
+  }
+  // 启用模糊背景时使用深色底色（图片叠加在上面）
+  if (settingStore.lyricPageBackgroundBlur && blurCoverUrl.value) {
+    return { backgroundColor: '#000000' };
   }
   // 封面/歌词模式使用主题色
   if (backgroundColor.value) {
@@ -211,6 +226,15 @@ onUnmounted(() => {
     :style="backgroundStyle"
     @mousemove="handlePageMouseMove"
   >
+    <!-- 模糊封面背景层 -->
+    <div
+      v-if="settingStore.lyricPageBackgroundBlur && blurCoverUrl && viewMode !== 'portrait'"
+      class="lyric-blur-bg"
+    >
+      <img :src="blurCoverUrl" class="lyric-blur-bg-img" />
+      <div class="lyric-blur-bg-overlay"></div>
+    </div>
+
     <!-- 头部（仅关闭按钮） -->
     <OverlayHeader>
       <template #left>
@@ -466,6 +490,30 @@ onUnmounted(() => {
 .lyric-page {
   color: white;
   background-color: #1a1d22;
+}
+
+/* 模糊封面背景 */
+.lyric-blur-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.lyric-blur-bg-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(40px);
+  transform: scale(1.2);
+  transition: opacity 0.8s ease;
+}
+
+.lyric-blur-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 /* 强制 OverlayHeader 控制按钮为白色 */

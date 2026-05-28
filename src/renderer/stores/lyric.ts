@@ -15,6 +15,10 @@ export interface LyricLine {
   translated?: string;
   romanized?: string;
   characters: LyricCharacter[];
+  // 音译逐字字符（与主歌词 characters 一一映射时间）
+  romanizedCharacters?: LyricCharacter[];
+  // 翻译逐字字符（按字符比例均分时间）
+  translatedCharacters?: LyricCharacter[];
 }
 
 export type LyricsMode = 'none' | 'translation' | 'romanization' | 'both';
@@ -445,6 +449,10 @@ export const useLyricStore = defineStore('lyric', {
           }
         };
 
+        // 保存原始时间范围（stripText 会修改 line.characters）
+        const origLineStart = line.characters[0]?.startTime ?? 0;
+        const origLineEnd = line.characters[line.characters.length - 1]?.endTime ?? origLineStart;
+
         stripText(translated);
         stripText(romanized);
 
@@ -455,12 +463,61 @@ export const useLyricStore = defineStore('lyric', {
             .trim();
         }
 
+        // 构建音译逐字字符（一一映射主歌词时间）
+        let romanizedCharacters: LyricCharacter[] | undefined;
+        if (romanized && Array.isArray(romanizationLine) && romanizationLine.length > 0) {
+          const chars = line.characters;
+          if (romanizationLine.length === chars.length) {
+            // 一一映射：音译元素数 === 主歌词字符数
+            romanizedCharacters = romanizationLine.map((text: string, i: number) => ({
+              text: String(text ?? ''),
+              startTime: chars[i]?.startTime ?? 0,
+              endTime: chars[i]?.endTime ?? 0,
+              highlighted: false,
+            }));
+          } else {
+            // 数量不一致时按比例均分
+            const lineStart = chars[0]?.startTime ?? 0;
+            const lineEnd = chars[chars.length - 1]?.endTime ?? lineStart;
+            const totalDuration = lineEnd - lineStart;
+            const totalLen = romanizationLine.reduce(
+              (sum: number, t: string) => sum + String(t ?? '').length,
+              0,
+            );
+            let offset = 0;
+            romanizedCharacters = romanizationLine.map((text: string) => {
+              const t = String(text ?? '');
+              const ratio = totalLen > 0 ? t.length / totalLen : 0;
+              const start = lineStart + Math.round(offset * totalDuration);
+              offset += ratio;
+              const end = lineStart + Math.round(offset * totalDuration);
+              return { text: t, startTime: start, endTime: end, highlighted: false };
+            });
+          }
+        }
+
+        // 构建翻译逐字字符（按字符比例均分时间，使用原始时间范围）
+        let translatedCharacters: LyricCharacter[] | undefined;
+        if (translated) {
+          const totalDuration = Math.max(origLineEnd - origLineStart, translated.length * 120);
+          const chars = translated.split('');
+          const totalLen = chars.length;
+          translatedCharacters = chars.map((char, i) => ({
+            text: char,
+            startTime: origLineStart + Math.round((i / totalLen) * totalDuration),
+            endTime: origLineStart + Math.round(((i + 1) / totalLen) * totalDuration),
+            highlighted: false,
+          }));
+        }
+
         return {
           time: line.time,
           text: line.text,
           characters: line.characters,
           translated: translated || undefined,
           romanized: romanized || undefined,
+          romanizedCharacters,
+          translatedCharacters,
         };
       });
 

@@ -36,6 +36,11 @@ const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
 const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
+// 副歌词逐字渐变背景（已播色 → 半透明未播色）
+const subYrcBgStyle = computed(
+  () =>
+    `linear-gradient(to right, ${effectivePlayedColor.value} 50%, ${effectiveUnplayedColor.value} 50%)`,
+);
 
 const isYrcLine = (line: { characters: unknown[] }) => (line.characters?.length ?? 0) > 1;
 
@@ -267,24 +272,8 @@ watch(
                 </template>
               </span>
 
-              <!-- 翻译/音译 -->
+              <!-- 音译/翻译 -->
               <template v-if="lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled">
-                <span
-                  v-if="entry.line.translated?.trim()"
-                  class="lyric-subline mt-1 block max-w-full truncate"
-                  :style="{
-                    fontSize: secondaryFontSize,
-                    fontWeight: String(
-                      currentIndex === entry.index
-                        ? Math.max(500, lyricStore.fontWeightValue - 200)
-                        : 400,
-                    ),
-                    color: effectiveUnplayedColor,
-                    opacity: 0.7,
-                  }"
-                >
-                  {{ entry.line.translated.trim() }}
-                </span>
                 <span
                   v-if="entry.line.romanized?.trim()"
                   class="lyric-subline mt-1 block max-w-full truncate"
@@ -295,11 +284,79 @@ watch(
                         ? Math.max(500, lyricStore.fontWeightValue - 200)
                         : 400,
                     ),
-                    color: effectiveUnplayedColor,
+                    color:
+                      currentIndex === entry.index && !isYrcLine(entry.line)
+                        ? effectivePlayedColor
+                        : effectiveUnplayedColor,
+                    opacity: 0.7,
+                  }"
+                >
+                  <!-- 音译逐字高亮 -->
+                  <template
+                    v-if="
+                      currentIndex === entry.index &&
+                      isYrcLine(entry.line) &&
+                      entry.line.romanizedCharacters &&
+                      entry.line.romanizedCharacters.length > 1
+                    "
+                  >
+                    <span class="lyric-yrc-sub-wrap">
+                      <span
+                        v-for="(char, ci) in entry.line.romanizedCharacters"
+                        :key="ci"
+                        class="lyric-yrc-sub-char"
+                        :style="{
+                          backgroundImage: subYrcBgStyle,
+                        }"
+                        >{{ char.text }}</span
+                      >
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ entry.line.romanized.trim() }}
+                  </template>
+                </span>
+                <span
+                  v-if="entry.line.translated?.trim()"
+                  class="lyric-subline mt-1 block max-w-full truncate"
+                  :style="{
+                    fontSize: secondaryFontSize,
+                    fontWeight: String(
+                      currentIndex === entry.index
+                        ? Math.max(500, lyricStore.fontWeightValue - 200)
+                        : 400,
+                    ),
+                    color:
+                      currentIndex === entry.index && !isYrcLine(entry.line)
+                        ? effectivePlayedColor
+                        : effectiveUnplayedColor,
                     opacity: 0.55,
                   }"
                 >
-                  {{ entry.line.romanized.trim() }}
+                  <!-- 翻译逐字高亮 -->
+                  <template
+                    v-if="
+                      currentIndex === entry.index &&
+                      isYrcLine(entry.line) &&
+                      entry.line.translatedCharacters &&
+                      entry.line.translatedCharacters.length > 1
+                    "
+                  >
+                    <span class="lyric-yrc-sub-wrap">
+                      <span
+                        v-for="(char, ci) in entry.line.translatedCharacters"
+                        :key="ci"
+                        class="lyric-yrc-sub-char"
+                        :style="{
+                          backgroundImage: subYrcBgStyle,
+                        }"
+                        >{{ char.text }}</span
+                      >
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ entry.line.translated.trim() }}
+                  </template>
                 </span>
               </template>
               <template v-else>
@@ -313,11 +370,60 @@ watch(
                         ? Math.max(500, lyricStore.fontWeightValue - 200)
                         : 400,
                     ),
-                    color: effectiveUnplayedColor,
+                    color:
+                      currentIndex === entry.index && !isYrcLine(entry.line)
+                        ? effectivePlayedColor
+                        : effectiveUnplayedColor,
                     opacity: 0.7,
                   }"
                 >
-                  {{ lyricStore.lineSecondaryText(entry.line) }}
+                  <!-- 单模式逐字高亮（音译） -->
+                  <template
+                    v-if="
+                      currentIndex === entry.index &&
+                      isYrcLine(entry.line) &&
+                      lyricStore.lyricsMode === 'romanization' &&
+                      entry.line.romanizedCharacters &&
+                      entry.line.romanizedCharacters.length > 1
+                    "
+                  >
+                    <span class="lyric-yrc-sub-wrap">
+                      <span
+                        v-for="(char, ci) in entry.line.romanizedCharacters"
+                        :key="ci"
+                        class="lyric-yrc-sub-char"
+                        :style="{
+                          backgroundImage: subYrcBgStyle,
+                        }"
+                        >{{ char.text }}</span
+                      >
+                    </span>
+                  </template>
+                  <!-- 单模式逐字高亮（翻译） -->
+                  <template
+                    v-else-if="
+                      currentIndex === entry.index &&
+                      isYrcLine(entry.line) &&
+                      lyricStore.lyricsMode === 'translation' &&
+                      entry.line.translatedCharacters &&
+                      entry.line.translatedCharacters.length > 1
+                    "
+                  >
+                    <span class="lyric-yrc-sub-wrap">
+                      <span
+                        v-for="(char, ci) in entry.line.translatedCharacters"
+                        :key="ci"
+                        class="lyric-yrc-sub-char"
+                        :style="{
+                          backgroundImage: subYrcBgStyle,
+                        }"
+                        >{{ char.text }}</span
+                      >
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ lyricStore.lineSecondaryText(entry.line) }}
+                  </template>
                 </span>
               </template>
             </div>
@@ -463,6 +569,22 @@ watch(
 }
 
 .lyric-yrc-line-wrap {
+  display: inline;
+  contain: layout paint;
+  isolation: isolate;
+}
+
+.lyric-yrc-sub-char {
+  display: inline;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  background-position-x: 100%;
+}
+
+.lyric-yrc-sub-wrap {
   display: inline;
   contain: layout paint;
   isolation: isolate;

@@ -59,6 +59,7 @@ export const useSettingStore = defineStore('setting', {
     lyricAutoCollapseDelay: 5,
     lyricAutoCollapseEnabled: true,
     lyricCollapseHideControls: false,
+    lyricPageBackgroundBlur: false,
     autoNext: false,
     autoNextDelaySeconds: 3,
     autoNextMaxAttempts: 10,
