@@ -105,6 +105,10 @@ export const useSettingStore = defineStore('setting', {
     lyricFont: 'follow',
     // 输入设备（麦克风）
     inputDevice: 'default',
+    // 侧边栏板块折叠状态
+    sidebarSectionCollapsed: { discover: false, library: false } as Record<string, boolean>,
+    // 歌单排序方式
+    playlistSortOrder: 'default' as 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc',
   }),
   actions: {
     setTheme(theme: ThemeMode) {

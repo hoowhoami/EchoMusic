@@ -225,6 +225,34 @@ const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean => {
   return true;
 };
 
+// 歌单排序工具
+export type PlaylistSortOrder = 'default' | 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc';
+
+export const sortPlaylists = (
+  playlists: PlaylistMeta[],
+  order: PlaylistSortOrder,
+): PlaylistMeta[] => {
+  if (order === 'default' || !order) return playlists;
+  const sorted = playlists.slice();
+  const compareText = (a: string, b: string) =>
+    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
+  switch (order) {
+    case 'time-desc':
+      sorted.sort((a, b) => (b.createTime ?? 0) - (a.createTime ?? 0));
+      break;
+    case 'time-asc':
+      sorted.sort((a, b) => (a.createTime ?? 0) - (b.createTime ?? 0));
+      break;
+    case 'name-asc':
+      sorted.sort((a, b) => compareText(a.name || '', b.name || ''));
+      break;
+    case 'name-desc':
+      sorted.sort((a, b) => compareText(b.name || '', a.name || ''));
+      break;
+  }
+  return sorted;
+};
+
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
     defaultList: [] as Song[],

@@ -24,11 +24,15 @@ import {
   iconSettings,
   iconSparkles,
   iconTrash,
+  iconChevronDown,
+  iconArrowsSort,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
-import { usePlaylistStore } from '@/stores/playlist';
+import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
+import type { PlaylistSortOrder } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
+import { useSettingStore } from '@/stores/setting';
 defineOptions({
   inheritAttrs: false,
 });
@@ -39,6 +43,7 @@ const attrs = useAttrs();
 const userStore = useUserStore();
 const playlistStore = usePlaylistStore();
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const isLoggedIn = computed(() => userStore.isLoggedIn);
@@ -49,6 +54,7 @@ const showCreateDialog = ref(false);
 const showRemoveDialog = ref(false);
 const showImportDialog = ref(false);
 const showCreateMenu = ref(false);
+const showSortMenu = ref(false);
 const isCreatingPlaylist = ref(false);
 const isRemovingPlaylist = ref(false);
 const newPlaylistName = ref('');
@@ -66,6 +72,7 @@ const currentUserIdNumber = computed<number | undefined>(() => {
 
 const menuGroups = [
   {
+    key: 'discover',
     title: '发现音乐',
     items: [
       { name: '为您推荐', path: '/main/home', icon: 'sparkles' },
@@ -73,6 +80,7 @@ const menuGroups = [
     ],
   },
   {
+    key: 'library',
     title: '我的乐库',
     items: [
       { name: '我最喜爱', path: '/main/favorites', icon: 'heart' },
@@ -82,6 +90,27 @@ const menuGroups = [
     ],
   },
 ] as const;
+
+const isSectionCollapsed = (key: string) => settingStore.sidebarSectionCollapsed[key] ?? false;
+const toggleSection = (key: string) => {
+  settingStore.sidebarSectionCollapsed = {
+    ...settingStore.sidebarSectionCollapsed,
+    [key]: !isSectionCollapsed(key),
+  };
+};
+
+const sortOptions: Array<{ value: PlaylistSortOrder; label: string }> = [
+  { value: 'default', label: '默认顺序' },
+  { value: 'time-asc', label: '时间正序' },
+  { value: 'time-desc', label: '时间倒序' },
+  { value: 'name-asc', label: '字母正序' },
+  { value: 'name-desc', label: '字母倒序' },
+];
+
+const handleSortChange = (order: PlaylistSortOrder) => {
+  settingStore.playlistSortOrder = order;
+  showSortMenu.value = false;
+};
 
 const iconMap = {
   sparkles: iconSparkles,
@@ -126,17 +155,30 @@ const isDefaultPlaylist = (playlist: PlaylistMeta): boolean => {
 
 const canRemovePlaylist = (playlist: PlaylistMeta): boolean => !isDefaultPlaylist(playlist);
 
-const createdPlaylists = computed(() =>
-  playlistStore.userPlaylists.filter(
+const createdPlaylists = computed(() => {
+  const all = playlistStore.userPlaylists.filter(
     (playlist) => playlist.source !== 2 && isOwnerPlaylist(playlist),
-  ),
-);
+  );
+  // 分离置顶歌单（默认收藏 + 我喜欢）和普通歌单
+  const pinned: PlaylistMeta[] = [];
+  const normal: PlaylistMeta[] = [];
+  for (const playlist of all) {
+    if (isDefaultPlaylist(playlist) || isLikedPlaylist(playlist)) {
+      pinned.push(playlist);
+    } else {
+      normal.push(playlist);
+    }
+  }
+  const sorted = sortPlaylists(normal, settingStore.playlistSortOrder as PlaylistSortOrder);
+  return { pinned, normal: sorted };
+});
 
-const favoritedPlaylists = computed(() =>
-  playlistStore.userPlaylists.filter(
+const favoritedPlaylists = computed(() => {
+  const all = playlistStore.userPlaylists.filter(
     (playlist) => playlist.source !== 2 && !isLikedPlaylist(playlist) && !isOwnerPlaylist(playlist),
-  ),
-);
+  );
+  return sortPlaylists(all, settingStore.playlistSortOrder as PlaylistSortOrder);
+});
 
 const activePlaylistRouteId = computed(() => {
   return route.name === 'playlist-detail' ? String(route.params.id ?? '') : '';
@@ -429,46 +471,59 @@ watch(
     <div class="px-4 shrink-0 no-drag">
       <div v-for="group in menuGroups" :key="group.title" class="mb-4">
         <h2
-          class="px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2"
+          class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 cursor-pointer select-none"
+          @click="toggleSection(group.key)"
         >
           {{ group.title }}
+          <Icon
+            :icon="iconChevronDown"
+            width="10"
+            height="10"
+            class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
+            :class="{ '-rotate-90': isSectionCollapsed(group.key) }"
+          />
         </h2>
-        <nav class="space-y-0.5">
-          <Button
-            v-for="item in group.items"
-            :key="item.path"
-            variant="unstyled"
-            size="none"
-            :disabled="isMenuItemDisabled(item)"
-            :class="[
-              'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
-              isMenuItemDisabled(item)
-                ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
-                : isMenuItemActive(item)
-                  ? 'is-active cursor-pointer bg-primary/12 text-primary'
-                  : 'cursor-pointer text-text-main/90',
-            ]"
-            @click="handleMenuClick(item)"
-          >
-            <Icon
-              :icon="iconMap[item.icon as keyof typeof iconMap]"
-              width="18"
-              height="18"
+        <nav
+          class="sidebar-section-body"
+          :class="{ 'is-collapsed': isSectionCollapsed(group.key) }"
+        >
+          <div class="space-y-0.5">
+            <Button
+              v-for="item in group.items"
+              :key="item.path"
+              variant="unstyled"
+              size="none"
+              :disabled="isMenuItemDisabled(item)"
               :class="[
+                'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
                 isMenuItemDisabled(item)
-                  ? 'text-text-main opacity-40'
+                  ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
                   : isMenuItemActive(item)
-                    ? 'text-primary'
-                    : 'text-text-main opacity-60 group-hover:opacity-100',
+                    ? 'is-active cursor-pointer bg-primary/12 text-primary'
+                    : 'cursor-pointer text-text-main/90',
               ]"
-            />
-            <span
-              class="text-[14px]"
-              :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+              @click="handleMenuClick(item)"
             >
-              {{ item.name }}
-            </span>
-          </Button>
+              <Icon
+                :icon="iconMap[item.icon as keyof typeof iconMap]"
+                width="18"
+                height="18"
+                :class="[
+                  isMenuItemDisabled(item)
+                    ? 'text-text-main opacity-40'
+                    : isMenuItemActive(item)
+                      ? 'text-primary'
+                      : 'text-text-main opacity-60 group-hover:opacity-100',
+                ]"
+              />
+              <span
+                class="text-[14px]"
+                :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+              >
+                {{ item.name }}
+              </span>
+            </Button>
+          </div>
         </nav>
       </div>
     </div>
@@ -504,6 +559,73 @@ watch(
         </Button>
       </div>
       <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
+        <Popover
+          v-model:open="showSortMenu"
+          trigger="click"
+          side="bottom"
+          align="end"
+          :side-offset="6"
+          :show-arrow="false"
+          content-class="sidebar-sort-menu"
+        >
+          <template #trigger>
+            <Button
+              variant="unstyled"
+              size="none"
+              type="button"
+              class="sidebar-section-action sidebar-icon-btn"
+              title="歌单排序"
+              :class="{ 'text-primary opacity-100': settingStore.playlistSortOrder !== 'default' }"
+            >
+              <Icon :icon="iconArrowsSort" width="12" height="12" />
+            </Button>
+          </template>
+          <div class="sidebar-sort-menu-list">
+            <div class="sidebar-sort-menu-title">排序方式</div>
+            <button
+              type="button"
+              class="sidebar-sort-menu-item"
+              :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
+              @click="handleSortChange('default')"
+            >
+              默认顺序
+            </button>
+            <div class="sidebar-sort-menu-divider"></div>
+            <button
+              type="button"
+              class="sidebar-sort-menu-item"
+              :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
+              @click="handleSortChange('time-asc')"
+            >
+              时间正序
+            </button>
+            <button
+              type="button"
+              class="sidebar-sort-menu-item"
+              :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
+              @click="handleSortChange('time-desc')"
+            >
+              时间倒序
+            </button>
+            <div class="sidebar-sort-menu-divider"></div>
+            <button
+              type="button"
+              class="sidebar-sort-menu-item"
+              :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
+              @click="handleSortChange('name-asc')"
+            >
+              字母正序
+            </button>
+            <button
+              type="button"
+              class="sidebar-sort-menu-item"
+              :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
+              @click="handleSortChange('name-desc')"
+            >
+              字母倒序
+            </button>
+          </div>
+        </Popover>
         <Button
           variant="unstyled"
           size="none"
@@ -513,7 +635,7 @@ watch(
           :disabled="!isLoggedIn"
           @click="refreshUserPlaylists"
         >
-          <RefreshIcon width="15" height="15" />
+          <RefreshIcon width="13" height="13" />
         </Button>
         <div class="sidebar-section-action-slot">
           <Popover
@@ -534,7 +656,7 @@ watch(
                 class="sidebar-section-action sidebar-icon-btn"
                 title="添加歌单"
               >
-                <Icon :icon="iconPlus" width="14" height="14" />
+                <Icon :icon="iconPlus" width="12" height="12" />
               </Button>
             </template>
             <div class="sidebar-create-menu-list">
@@ -588,8 +710,45 @@ watch(
     >
       <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
         <template v-if="activePlaylistTab === 0">
+          <!-- 置顶歌单（默认收藏 + 我喜欢） -->
           <div
-            v-for="playlist in createdPlaylists"
+            v-for="playlist in createdPlaylists.pinned"
+            :key="playlist.listid || playlist.id"
+            :class="[
+              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
+              isActivePlaylist(playlist)
+                ? 'is-active bg-primary/12 text-primary'
+                : 'text-text-main/90',
+            ]"
+            @click="navigateToPlaylist(playlist)"
+          >
+            <Cover
+              :url="playlist.pic"
+              :size="100"
+              :width="28"
+              :height="28"
+              :borderRadius="6"
+              class="shrink-0"
+            />
+            <div class="sidebar-playlist-label-wrap">
+              <span
+                :class="[
+                  'text-[13px] truncate w-full font-medium tracking-tight',
+                  isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                ]"
+              >
+                {{ playlist.name }}
+              </span>
+            </div>
+          </div>
+          <!-- 分隔线 -->
+          <div
+            v-if="createdPlaylists.pinned.length > 0 && createdPlaylists.normal.length > 0"
+            class="sidebar-playlist-divider"
+          ></div>
+          <!-- 普通歌单（受排序影响） -->
+          <div
+            v-for="playlist in createdPlaylists.normal"
             :key="playlist.listid || playlist.id"
             :class="[
               'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
@@ -635,7 +794,7 @@ watch(
             </Button>
           </div>
           <div
-            v-if="createdPlaylists.length === 0"
+            v-if="createdPlaylists.pinned.length === 0 && createdPlaylists.normal.length === 0"
             class="py-8 text-center opacity-40 text-[12px] italic"
           >
             暂无自建歌单
@@ -808,7 +967,7 @@ watch(
 }
 
 .sidebar-tab-divider {
-  @apply shrink-0 mx-1 w-px h-3 rounded-full bg-text-main/22;
+  @apply shrink-0 mx-px w-px h-3 rounded-full bg-text-main/22;
 }
 
 .dark .sidebar-tab-divider {
@@ -853,11 +1012,11 @@ watch(
 }
 
 .sidebar-section-action-slot {
-  @apply h-6.5 w-6.5 shrink-0;
+  @apply h-6 w-6 shrink-0;
 }
 
 .sidebar-section-action {
-  @apply h-6.5 w-6.5 min-w-0 shrink-0 rounded-lg flex items-center justify-center;
+  @apply h-6 w-6 min-w-0 shrink-0 rounded-md flex items-center justify-center;
   @apply text-text-main opacity-60 transition-all disabled:opacity-30;
 }
 
@@ -926,6 +1085,100 @@ watch(
 
 .sidebar-create-menu-desc {
   @apply text-[11px] text-text-secondary/75 leading-tight mt-0.5;
+}
+
+.sidebar-section-body {
+  overflow: hidden;
+  max-height: 500px;
+  transition:
+    max-height 0.25s ease,
+    opacity 0.2s ease;
+  opacity: 1;
+}
+
+.sidebar-section-body.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-section-header {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sidebar-collapse-arrow {
+  opacity: 0.5;
+}
+
+.sidebar-playlist-divider {
+  height: 1px;
+  margin: 6px 14px;
+  background: color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-radius: 1px;
+}
+
+.dark .sidebar-playlist-divider {
+  background: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+}
+
+:deep(.sidebar-sort-menu) {
+  padding: 6px;
+  border-radius: 12px;
+  min-width: 140px;
+}
+
+.sidebar-sort-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-sort-menu-title {
+  padding: 4px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-sort-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.sidebar-sort-menu-item:hover {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.sidebar-sort-menu-item.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  font-weight: 600;
+}
+
+.sidebar-sort-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+}
+
+.sidebar-sort-menu-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .no-scrollbar::-webkit-scrollbar {

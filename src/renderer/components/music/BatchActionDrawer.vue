@@ -10,6 +10,9 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
+import { sortPlaylists } from '@/stores/playlist';
+import type { PlaylistSortOrder } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
 import { useVirtualList } from '@vueuse/core';
@@ -39,6 +42,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
 
 const selectedKeys = ref<Set<string>>(new Set());
 const showPlaylistDialog = ref(false);
@@ -129,7 +133,12 @@ const { list, containerProps, wrapperProps } = useVirtualList(
   },
 );
 
-const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
+const createdPlaylists = computed(() =>
+  sortPlaylists(
+    playlistStore.getCreatedPlaylists(userStore.info?.userid),
+    settingStore.playlistSortOrder as PlaylistSortOrder,
+  ),
+);
 
 const addToPlaybackQueues = computed(() =>
   playlistStore.playbackQueueList.filter(

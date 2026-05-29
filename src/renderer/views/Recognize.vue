@@ -22,7 +22,8 @@ import {
 } from '@/icons';
 import { search } from '@/api/search';
 import { mapSearchSong } from '@/utils/mappers';
-import { usePlaylistStore } from '@/stores/playlist';
+import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
+import type { PlaylistSortOrder } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
@@ -302,7 +303,10 @@ function goToDetail() {
 }
 
 const selectablePlaylists = computed(() =>
-  playlistStore.getCreatedPlaylists(userStore.info?.userid),
+  sortPlaylists(
+    playlistStore.getCreatedPlaylists(userStore.info?.userid),
+    settingStore.playlistSortOrder as PlaylistSortOrder,
+  ),
 );
 
 async function handleAddToPlaylist() {
