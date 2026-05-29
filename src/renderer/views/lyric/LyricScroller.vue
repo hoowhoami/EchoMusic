@@ -25,13 +25,6 @@ const lyricListRef = ref<HTMLElement | null>(null);
 
 const collapsedRef = computed(() => props.collapsed);
 
-const { isUserScrolling, scrollHighlightIndex, scrollToLine, handleWheel, dispose } =
-  useLyricScroll(() => lyricListRef.value, collapsedRef);
-
-const { getNowMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(lyricListRef);
-
-const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
-const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
 const currentIndex = computed(() => {
   const idx = lyricStore.currentIndex;
   if (idx < 0) return idx;
@@ -61,6 +54,16 @@ const currentIndex = computed(() => {
   }
   return idx;
 });
+const { scrollHighlightIndex, scrollToLine, handleWheel, dispose } = useLyricScroll(
+  () => lyricListRef.value,
+  collapsedRef,
+  currentIndex,
+);
+
+const { getNowMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(lyricListRef);
+
+const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
+const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
 const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
@@ -81,7 +84,7 @@ const handleLineClick = (time: number) => {
   // seek 后立即更新当前行索引并滚动到对应位置
   nextTick(() => {
     lyricStore.updateCurrentIndex(time, true);
-    scrollToLine(lyricStore.currentIndex, true);
+    scrollToLine(currentIndex.value, true);
   });
 };
 
@@ -98,65 +101,12 @@ const handleLyricWheel = () => {
   handleWheel();
 };
 
-// 虚拟列表优化
-const VIRTUAL_OVERSCAN_BEFORE = 15;
-const VIRTUAL_OVERSCAN_AFTER = 25;
-
-const getEstimatedLineHeight = (line: (typeof lyricStore.lines)[0]) => {
-  const scale = lyricStore.fontScale;
-  let base = 36;
-  if (lyricStore.lyricsMode === 'both' && lyricStore.secondaryEnabled) {
-    base = 72;
-  } else if (lyricStore.lineSecondaryText(line)) {
-    base = 56;
-  }
-  return base * scale + 32;
-};
-
-const visibleRange = computed(() => {
-  const lines = lyricStore.lines;
-  if (lines.length === 0) return { start: 0, end: 0 };
-  // 用户滚动期间以 scrollHighlightIndex 为锚点，避免播放进度导致跳动
-  const anchor =
-    isUserScrolling.value && scrollHighlightIndex.value >= 0
-      ? scrollHighlightIndex.value
-      : lyricStore.currentIndex;
-  const index = anchor;
-  if (index < 0) return { start: 0, end: Math.min(lines.length, VIRTUAL_OVERSCAN_AFTER) };
-  const start = Math.max(0, index - VIRTUAL_OVERSCAN_BEFORE);
-  const end = Math.min(lines.length, index + VIRTUAL_OVERSCAN_AFTER);
-  return { start, end };
-});
-
-const visibleLines = computed(() => {
-  const { start, end } = visibleRange.value;
-  return lyricStore.lines.slice(start, end).map((line, offset) => ({
+const lyricEntries = computed(() =>
+  lyricStore.lines.map((line, index) => ({
     line,
-    index: start + offset,
-  }));
-});
-
-const beforeSpacerHeight = computed(() => {
-  const { start } = visibleRange.value;
-  if (start <= 0) return 0;
-  let total = 0;
-  const lines = lyricStore.lines;
-  for (let i = 0; i < start; i++) {
-    total += getEstimatedLineHeight(lines[i]);
-  }
-  return total;
-});
-
-const afterSpacerHeight = computed(() => {
-  const { end } = visibleRange.value;
-  const lines = lyricStore.lines;
-  if (end >= lines.length) return 0;
-  let total = 0;
-  for (let i = end; i < lines.length; i++) {
-    total += getEstimatedLineHeight(lines[i]);
-  }
-  return total;
-});
+    index,
+  })),
+);
 
 // 逐字歌词 RAF 更新
 let rafId: number | null = null;
@@ -203,7 +153,7 @@ watch(
 onMounted(() => {
   syncSeekAnchor();
   if (playerStore.isPlaying) startRaf();
-  nextTick(() => scrollToLine(lyricStore.currentIndex, false));
+  nextTick(() => scrollToLine(currentIndex.value, false));
 });
 
 onUnmounted(() => {
@@ -211,21 +161,12 @@ onUnmounted(() => {
   dispose();
 });
 
-// 切歌时重置滚动
-watch(
-  () => playerStore.currentTrackSnapshot?.id,
-  async () => {
-    await nextTick();
-    scrollToLine(lyricStore.currentIndex, false);
-  },
-);
-
 // 收起/展开时重新定位（瞬间跳转，不用动画）
 watch(
   () => props.collapsed,
   (collapsed) => {
     nextTick(() => {
-      scrollToLine(lyricStore.currentIndex, false, collapsed);
+      scrollToLine(currentIndex.value, false, collapsed);
     });
   },
 );
@@ -234,7 +175,7 @@ watch(
   () => lyricStore.lyricsMode,
   async () => {
     await nextTick();
-    scrollToLine(lyricStore.currentIndex, false);
+    scrollToLine(currentIndex.value, false);
   },
 );
 </script>
@@ -255,13 +196,10 @@ watch(
             paddingBottom: props.collapsed ? '10px' : '40vh',
           }"
         >
-          <!-- 上方虚拟占位 -->
-          <div :style="{ height: `${beforeSpacerHeight}px` }"></div>
-
           <div
-            v-for="entry in visibleLines"
+            v-for="entry in lyricEntries"
             :key="entry.line.time"
-            v-show="!isLineFilteredForPage(entry.line)"
+            :hidden="isLineFilteredForPage(entry.line)"
             class="lyric-row"
             :data-lyric-index="entry.index"
             :style="{
@@ -475,9 +413,6 @@ watch(
               </template>
             </div>
           </div>
-
-          <!-- 下方虚拟占位 -->
-          <div :style="{ height: `${afterSpacerHeight}px` }"></div>
         </div>
       </template>
 

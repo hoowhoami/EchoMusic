@@ -8,7 +8,11 @@ import { usePlayerStore } from '@/stores/player';
  * - 用户滚轮滚动时暂停跟随
  * - 滚动结束后自动高亮对应时间行并恢复跟随
  */
-export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed?: Ref<boolean>) {
+export function useLyricScroll(
+  lyricListRef: () => HTMLElement | null,
+  collapsed?: Ref<boolean>,
+  activeIndex?: Ref<number>,
+) {
   const lyricStore = useLyricStore();
   const playerStore = usePlayerStore();
 
@@ -16,6 +20,7 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
   const scrollHighlightIndex = ref(-1); // 滚轮停止后高亮的行索引
   let userScrollResumeTimer: number | null = null;
   let scrollEndTimer: number | null = null;
+  let scrollRafId: number | null = null;
 
   const clearUserScrollTimer = () => {
     if (userScrollResumeTimer !== null) {
@@ -31,11 +36,13 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
     }
   };
 
-  const scrollToLine = (index: number, smooth: boolean, collapsed = false) => {
+  const scrollToLineNow = (index: number, smooth: boolean, collapsed = false) => {
     const container = lyricListRef();
     if (!container || index < 0) return;
 
-    const target = container.querySelector<HTMLElement>(`[data-lyric-index="${index}"]`);
+    const target = container.querySelector<HTMLElement>(
+      `[data-lyric-index="${index}"]:not([hidden])`,
+    );
     if (!target) return;
 
     const containerRect = container.getBoundingClientRect();
@@ -43,7 +50,9 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
 
     if (collapsed) {
       // 收起模式：将当前行和下一行定位到容器底部
-      const nextTarget = container.querySelector<HTMLElement>(`[data-lyric-index="${index + 1}"]`);
+      const nextTarget = container.querySelector<HTMLElement>(
+        `[data-lyric-index="${index + 1}"]:not([hidden])`,
+      );
       const twoLineHeight = nextTarget
         ? nextTarget.getBoundingClientRect().bottom - targetRect.top
         : targetRect.height;
@@ -69,6 +78,16 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
     container.scrollTo({ top: Math.max(0, offset), behavior: smooth ? 'smooth' : 'auto' });
   };
 
+  const scrollToLine = (index: number, smooth: boolean, collapsed = false) => {
+    if (scrollRafId !== null) {
+      cancelAnimationFrame(scrollRafId);
+    }
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      scrollToLineNow(index, smooth, collapsed);
+    });
+  };
+
   // 根据当前滚动位置找到对应的歌词行
   const findLineAtScrollPosition = (): number => {
     const container = lyricListRef();
@@ -78,7 +97,9 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
     const centerY = containerRect.top + containerRect.height * 0.42;
 
     // 找到最接近中心的歌词行
-    const lines = Array.from(container.querySelectorAll<HTMLElement>('[data-lyric-index]'));
+    const lines = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-lyric-index]:not([hidden])'),
+    );
     let closestIndex = -1;
     let closestDistance = Infinity;
 
@@ -121,13 +142,13 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
       userScrollResumeTimer = null;
       isUserScrolling.value = false;
       scrollHighlightIndex.value = -1;
-      scrollToLine(lyricStore.currentIndex, true);
+      scrollToLine(activeIndex?.value ?? lyricStore.currentIndex, true);
     }, 5000);
   };
 
   // 监听歌词行变化，自动滚动
   watch(
-    () => lyricStore.currentIndex,
+    () => activeIndex?.value ?? lyricStore.currentIndex,
     async (index, previous) => {
       if (index === previous) return;
       // 如果用户正在滚动，不自动跟随
@@ -145,11 +166,15 @@ export function useLyricScroll(lyricListRef: () => HTMLElement | null, collapsed
       scrollHighlightIndex.value = -1;
       clearUserScrollTimer();
       clearScrollEndTimer();
-      nextTick(() => scrollToLine(lyricStore.currentIndex, false));
+      nextTick(() => scrollToLine(activeIndex?.value ?? lyricStore.currentIndex, false));
     },
   );
 
   const dispose = () => {
+    if (scrollRafId !== null) {
+      cancelAnimationFrame(scrollRafId);
+      scrollRafId = null;
+    }
     clearUserScrollTimer();
     clearScrollEndTimer();
   };

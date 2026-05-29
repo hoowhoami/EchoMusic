@@ -438,12 +438,12 @@ const formatTime = (seconds: number) => {
 
 /* 1. 左侧 */
 .bar-left {
-  flex: 1;
+  flex: 1.15;
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 120px;
-  max-width: 320px;
+  max-width: 450px;
   overflow: hidden;
 }
 
@@ -462,9 +462,14 @@ const formatTime = (seconds: number) => {
   gap: 4px;
   overflow: hidden;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .bar-song-title {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 16px);
   font-size: 14px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.95);
@@ -479,8 +484,12 @@ const formatTime = (seconds: number) => {
 }
 
 .bar-song-artist {
+  display: block;
+  flex: 1 10 auto;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.6);
+  min-width: 0;
+  max-width: 52%;
   overflow: hidden;
   text-overflow: ellipsis;
 }

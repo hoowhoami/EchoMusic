@@ -474,9 +474,7 @@ const handleFavorite = () => {
 
 .song-artist {
   white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
+  display: inline;
 }
 
 .song-subline {
@@ -484,21 +482,25 @@ const handleFavorite = () => {
 }
 
 .song-artist-list {
-  display: inline-flex;
+  display: block;
   flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .song-subline .song-artist {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
 }
 
 .song-album {
   white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .song-link {

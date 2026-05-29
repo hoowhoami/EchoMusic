@@ -572,6 +572,7 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .toolbar-song-info {
@@ -579,25 +580,30 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 0;
+  width: min(400px, calc(100vw - 160px));
   overflow: hidden;
 }
 
 .toolbar-song-title {
+  display: block;
   font-size: 18px;
   font-weight: 700;
   color: white;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 400px;
+  max-width: 100%;
 }
 
 .toolbar-song-artist {
+  display: block;
   font-size: 13px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.6);
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toolbar-sync-warning {
@@ -635,6 +641,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .top-right-btn {

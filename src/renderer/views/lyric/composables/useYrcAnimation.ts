@@ -11,6 +11,8 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   const lyricStore = useLyricStore();
 
   const LYRIC_LOOKAHEAD = 150;
+  const CLOCK_SYNC_TOLERANCE_MS = 300;
+  const RECENT_SEEK_SYNC_WINDOW_MS = 800;
   let seekBaseMs = 0;
   let seekAnchorTick = 0;
   let seekRafId: number | null = null;
@@ -245,9 +247,21 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
     }
   };
 
-  const syncSeekAnchor = () => {
-    seekBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
-    seekAnchorTick = performance.now();
+  const syncSeekAnchor = (force = false) => {
+    const nextBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
+    const now = performance.now();
+
+    if (playerStore.isPlaying && !force) {
+      const predictedMs = seekBaseMs + (now - seekAnchorTick);
+      const driftMs = nextBaseMs - predictedMs;
+      const recentSeek = Date.now() - (playerStore.seekTimestamp || 0) < RECENT_SEEK_SYNC_WINDOW_MS;
+
+      // 播放器上报时间可能有轻微回退/抖动，播放中用本地单调时钟更稳。
+      if (!recentSeek && Math.abs(driftMs) < CLOCK_SYNC_TOLERANCE_MS) return;
+    }
+
+    seekBaseMs = nextBaseMs;
+    seekAnchorTick = now;
   };
 
   watch(
@@ -258,14 +272,14 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   watch(
     () => playerStore.isPlaying,
     (playing) => {
-      syncSeekAnchor();
+      syncSeekAnchor(true);
       if (playing) resumeSeekRaf();
       else pauseSeekRaf();
     },
   );
 
   onMounted(() => {
-    syncSeekAnchor();
+    syncSeekAnchor(true);
     if (playerStore.isPlaying) resumeSeekRaf();
     else pauseSeekRaf();
   });
