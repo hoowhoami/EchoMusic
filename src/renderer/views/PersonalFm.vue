@@ -90,13 +90,10 @@ const personalFmPresentation = computed(() =>
 const personalFmSongPoolPresentation = computed(() =>
   getPersonalFmSongPoolPresentation(selectedPersonalFmSongPoolId.value),
 );
-const personalFmCurrentTrackCapsuleLabel = computed(
-  () => `${personalFmPresentation.value.title} 实时推荐`,
-);
 const personalFmCurrentTrackReason = computed(() => {
   const track = personalFmCurrentDisc.value;
   if (!track) return '';
-  return track.recDesc || `${personalFmPresentation.value.title} 实时推荐`;
+  return track.recDesc || '';
 });
 const personalFmCurrentTrackAlbum = computed(() => {
   const track = personalFmCurrentDisc.value;
@@ -393,9 +390,6 @@ onActivated(() => {
               </button>
             </div>
           </div>
-          <div class="fm-toolbar-note">
-            {{ personalFmPresentation.title }} · {{ personalFmSongPoolPresentation.label }}
-          </div>
         </div>
 
         <div class="radio-hero">
@@ -498,9 +492,6 @@ onActivated(() => {
         <section class="fm-panel fm-now-panel">
           <div class="fm-panel-header">
             <div class="fm-panel-title">当前播放</div>
-            <div v-if="personalFmCurrentDisc" class="fm-now-capsule">
-              {{ personalFmCurrentTrackCapsuleLabel }}
-            </div>
           </div>
           <div v-if="personalFmCurrentDisc" class="fm-now-card">
             <Cover
@@ -517,7 +508,9 @@ onActivated(() => {
               <div v-if="personalFmCurrentTrackAlbum" class="fm-now-album">
                 {{ personalFmCurrentTrackAlbum }}
               </div>
-              <div class="fm-now-reason">{{ personalFmCurrentTrackReason }}</div>
+              <div v-if="personalFmCurrentTrackReason" class="fm-now-reason">
+                {{ personalFmCurrentTrackReason }}
+              </div>
               <div v-if="personalFmCurrentTrackInfoChips.length" class="fm-now-info-chips">
                 <span
                   v-for="item in personalFmCurrentTrackInfoChips"
@@ -600,12 +593,6 @@ onActivated(() => {
   text-transform: uppercase;
 }
 
-.fm-toolbar-note {
-  font-size: 13px;
-  color: color-mix(in srgb, var(--color-text-main) 64%, transparent);
-  white-space: nowrap;
-}
-
 .fm-empty {
   min-height: 420px;
 }
@@ -637,8 +624,13 @@ onActivated(() => {
   border-radius: 22px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 16% 18%, rgba(112, 213, 255, 0.24), transparent 30%),
-    linear-gradient(160deg, #0d3951 0%, #0f5a7a 56%, #0b1620 100%);
+    radial-gradient(circle at 16% 18%, rgba(var(--color-primary-rgb), 0.28), transparent 30%),
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--color-primary) 30%, #0b1620) 0%,
+      color-mix(in srgb, var(--color-primary) 40%, #0b1620) 56%,
+      #0b1620 100%
+    );
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 18px 34px rgba(5, 12, 20, 0.18),
@@ -717,11 +709,11 @@ onActivated(() => {
 }
 
 .radio-strategy-btn.is-active {
-  background: linear-gradient(135deg, #0d8fff, #2fb4ff);
+  background: var(--color-primary);
   color: #fff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.24),
-    0 10px 20px rgba(13, 143, 255, 0.22);
+    0 10px 20px rgba(var(--color-primary-rgb), 0.22);
 }
 
 .radio-subtitle {
@@ -813,11 +805,11 @@ onActivated(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0d8fff, #2fb4ff);
+  background: var(--color-primary);
   color: #fff;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 14px 30px rgba(2, 118, 198, 0.35);
+    0 14px 30px rgba(var(--color-primary-rgb), 0.35);
 }
 
 .radio-play.is-loading {
@@ -971,23 +963,6 @@ onActivated(() => {
   gap: 14px;
   min-width: 0;
   min-height: 180px;
-}
-
-.fm-now-capsule {
-  display: inline-flex;
-  align-items: center;
-  width: auto;
-  min-height: 36px;
-  max-width: 100%;
-  padding: 0 16px;
-  border-radius: 14px;
-  background: #ffffff;
-  color: #1677ff;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
-  white-space: nowrap;
 }
 
 .fm-now-heading {
