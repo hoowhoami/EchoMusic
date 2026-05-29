@@ -7,6 +7,8 @@ import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { useUserStore } from '@/stores/user';
+import { useThemeStore } from '@/stores/theme';
+import { getAccentGradientPair } from '@/utils/color';
 import SliverHeader from '@/components/music/DetailPageSliverHeader.vue';
 import ActionRow from '@/components/music/DetailPageActionRow.vue';
 import SongList from '@/components/music/SongList.vue';
@@ -26,6 +28,7 @@ const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
+const themeStore = useThemeStore();
 
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -73,12 +76,13 @@ const mergeHistorySongs = (current: Song[], incoming: Song[]): Song[] => {
 };
 
 const historyCoverUrl = computed(() => {
+  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
       <defs>
         <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#5AC8FA" />
-          <stop offset="100%" stop-color="#0071E3" />
+          <stop offset="0%" stop-color="${to}" />
+          <stop offset="100%" stop-color="${from}" />
         </linearGradient>
       </defs>
       <rect width="400" height="400" rx="60" fill="url(#g)" />

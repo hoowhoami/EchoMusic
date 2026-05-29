@@ -321,3 +321,19 @@ export const applyAccentToRoot = (hex: string, isDark: boolean) => {
 export const getNormalizedAccent = (hex: string, isDark: boolean): string => {
   return normalizeAccent(hex, isDark);
 };
+
+// 根据主题色生成 SVG 封面渐变色对（主色 + 亮色变体）
+export const getAccentGradientPair = (sourceHex: string): { from: string; to: string } => {
+  const rgb = hexToRgb(sourceHex);
+  if (!rgb) return { from: '#0071E3', to: '#5AC8FA' };
+  const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  // 主色：保持原色但确保在合理范围
+  const fromL = Math.min(0.5, Math.max(0.35, l));
+  const fromRgb = hslToRgb(h, Math.min(0.9, s), fromL);
+  const from = rgbToHex(fromRgb.r, fromRgb.g, fromRgb.b);
+  // 亮色变体：色相偏移 +20°，提高亮度和降低饱和度
+  const toH = (h + 20) % 360;
+  const toRgb = hslToRgb(toH, Math.min(0.7, s * 0.75), Math.min(0.7, fromL + 0.2));
+  const to = rgbToHex(toRgb.r, toRgb.g, toRgb.b);
+  return { from, to };
+};

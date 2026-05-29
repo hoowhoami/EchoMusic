@@ -14,6 +14,8 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
+import { useThemeStore } from '@/stores/theme';
+import { getAccentGradientPair } from '@/utils/color';
 import { mapRankMeta, mapRankSong } from '@/utils/mappers';
 import type { RankMeta } from '@/models/rank';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
@@ -27,6 +29,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const toastStore = useToastStore();
 const settingStore = useSettingStore();
+const themeStore = useThemeStore();
 
 const loadingRanks = ref(true);
 const loadingSongs = ref(false);
@@ -78,12 +81,13 @@ const activeGroupRanks = computed(() => {
 
 const todayRankCover = computed(() => {
   const dayText = 'TOP';
+  const { from, to } = getAccentGradientPair(themeStore.sourceColor);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
       <defs>
         <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="#0071E3" />
-          <stop offset="100%" stop-color="#5AC8FA" />
+          <stop offset="0%" stop-color="${from}" />
+          <stop offset="100%" stop-color="${to}" />
         </linearGradient>
       </defs>
       <rect width="400" height="400" rx="60" fill="url(#g)" />
