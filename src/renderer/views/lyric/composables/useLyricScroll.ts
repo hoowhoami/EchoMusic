@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, computed, type Ref } from 'vue';
+import { ref, watch, nextTick, type Ref } from 'vue';
 import { useLyricStore } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
 
