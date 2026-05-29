@@ -758,7 +758,7 @@ const handleScroll = () => {
                 <p class="text-sm text-text-secondary">选择您喜欢的主题外观</p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.theme"
                 :options="themeOptions"
                 @update:model-value="settingStore.setTheme($event as ThemeMode)"
@@ -773,7 +773,7 @@ const handleScroll = () => {
                 </p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="themeStore.accentMode"
                 :options="accentModeOptions"
                 @update:model-value="themeStore.setMode($event as AccentMode)"
@@ -819,7 +819,7 @@ const handleScroll = () => {
             <div class="settings-item">
               <div class="space-y-1">
                 <h3 class="font-semibold">全局主题色</h3>
-                <p class="text-sm text-text-secondary">关闭后仅播放栏与歌词页跟随主题色</p>
+                <p class="text-sm text-text-secondary">关闭后仅播放栏跟随主题色</p>
               </div>
               <Switch
                 :model-value="themeStore.globalAccent"
@@ -875,7 +875,7 @@ const handleScroll = () => {
                 <p class="text-sm text-text-secondary">点击窗口关闭按钮时的应用行为</p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.closeBehavior"
                 :options="closeBehaviorOptions"
                 @update:model-value="
@@ -919,7 +919,7 @@ const handleScroll = () => {
                 </button>
                 <Select
                   filterable
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="settingStore.globalFont"
                   :options="globalFontOptions"
                   @update:model-value="settingStore.globalFont = String($event)"
@@ -943,7 +943,7 @@ const handleScroll = () => {
                 </button>
                 <Select
                   filterable
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="settingStore.lyricFont"
                   :options="lyricFontOptions"
                   @update:model-value="settingStore.lyricFont = String($event)"
@@ -969,7 +969,7 @@ const handleScroll = () => {
                 </button>
                 <Select
                   filterable
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="desktopLyricFontName"
                   :options="lyricFontOptions"
                   @update:model-value="applyDesktopLyricFont(String($event))"
@@ -1083,7 +1083,7 @@ const handleScroll = () => {
                   </p>
                 </div>
                 <InputNumber
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="autoNextDelayInput"
                   :min="0"
                   :max="600"
@@ -1102,7 +1102,7 @@ const handleScroll = () => {
                   </p>
                 </div>
                 <InputNumber
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="autoNextMaxAttemptsInput"
                   :min="1"
                   :max="999"
@@ -1122,7 +1122,7 @@ const handleScroll = () => {
                 </p>
               </div>
               <InputNumber
-                class="w-[180px]"
+                class="w-45"
                 :model-value="String(settingStore.playResumeTimeout ?? 5)"
                 :min="0"
                 :max="30"
@@ -1169,7 +1169,7 @@ const handleScroll = () => {
                 </p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.defaultAudioQuality"
                 :options="audioQualityOptions"
                 @update:model-value="settingStore.defaultAudioQuality = $event as AudioQualityValue"
@@ -1501,7 +1501,7 @@ const handleScroll = () => {
                 <p class="text-sm text-text-secondary">歌词文字的排版位置</p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="desktopLyricStore.settings.alignment"
                 :options="desktopLyricAlignOptions"
                 @update:model-value="commitDesktopLyricSettings({ alignment: $event as any })"
@@ -1698,7 +1698,7 @@ const handleScroll = () => {
                 <p class="text-sm text-text-secondary">用于听歌识曲等需要录音的功能</p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.inputDevice"
                 :options="inputDeviceOptions"
                 @update:model-value="handleInputDeviceChange($event as string)"
@@ -1714,7 +1714,7 @@ const handleScroll = () => {
                 </p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.outputDevice"
                 :options="outputDeviceOptions"
                 @update:model-value="handleOutputDeviceChange($event as string)"
@@ -1739,7 +1739,7 @@ const handleScroll = () => {
                 </p>
               </div>
               <Select
-                class="w-[180px]"
+                class="w-45"
                 :model-value="settingStore.outputDeviceDisconnectBehavior"
                 :options="outputDeviceDisconnectBehaviorOptions"
                 @update:model-value="
@@ -1794,7 +1794,7 @@ const handleScroll = () => {
                   </p>
                 </div>
                 <InputNumber
-                  class="w-[180px]"
+                  class="w-45"
                   :model-value="String(settingStore.keepAliveMax)"
                   :min="3"
                   :max="30"
@@ -1918,7 +1918,7 @@ const handleScroll = () => {
               <Input
                 v-model="settingStore.githubProxyUrl"
                 placeholder="https://ghfast.top"
-                class="w-[240px]! rounded-lg"
+                class="w-60! rounded-lg"
                 input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
               />
             </div>

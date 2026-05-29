@@ -99,14 +99,6 @@ const toggleSection = (key: string) => {
   };
 };
 
-const sortOptions: Array<{ value: PlaylistSortOrder; label: string }> = [
-  { value: 'default', label: '默认顺序' },
-  { value: 'time-asc', label: '时间正序' },
-  { value: 'time-desc', label: '时间倒序' },
-  { value: 'name-asc', label: '字母正序' },
-  { value: 'name-desc', label: '字母倒序' },
-];
-
 const handleSortChange = (order: PlaylistSortOrder) => {
   settingStore.playlistSortOrder = order;
   showSortMenu.value = false;

@@ -31,6 +31,7 @@ type LyricSearchCandidate = {
   contenttype?: number;
   score?: number;
   duration?: number;
+  product_from?: string;
 };
 
 type LyricSearchResponse = {
@@ -93,7 +94,9 @@ const normalizeSearchPayload = (payload: unknown): LyricSearchResponse | null =>
  * 从多个歌词候选中优选一条最可能包含翻译+音译的歌词
  * content_format 含义：1=纯原歌词, 2=音译(krctype2格式), 3=只有音译, 4=翻译+音译
  * 优先级：content_format=4 > content_format=3 > content_format=2 > content_format=1
- * 同 content_format 下：krctype=1 优于 krctype=2，score 高优先
+ * contenttype 含义：1=KRC格式(有时间戳), 2=纯文本(无时间戳) - 有时间戳的必须优先
+ * krctype 含义：1=逐字歌词, 2=普通歌词
+ * 同 content_format 下：contenttype=1(有时间戳) 优先 > product_from=官方推荐歌词 优先 > krctype=1 优于 krctype=2 > score 高优先
  */
 const selectBestCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null => {
   if (candidates.length === 0) return null;
@@ -101,15 +104,18 @@ const selectBestCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCan
 
   const scored = candidates.map((c) => {
     let priority = 0;
-    // content_format=4 包含翻译+音译，最优
+    // content_format=4 最优
     if (c.content_format === 4) priority += 200;
-    // content_format=3 只有音译
+    // content_format=3 优先
     else if (c.content_format === 3) priority += 100;
-    // content_format=2 可能有音译
+    // content_format=2 优先
     else if (c.content_format === 2) priority += 50;
-    // content_format=1 纯原歌词，不加分
+    // content_format=1 不加分
 
-    // krctype=1（逐字歌词）优于 krctype=2
+    // product_from = 官方推荐歌词 优先
+    if (c.product_from === '官方推荐歌词') priority += 80;
+
+    // krctype=1 优于 krctype=2
     if (c.krctype === 1) priority += 10;
     // 原始 score 作为次要排序依据
     priority += (c.score ?? 0) / 100;
