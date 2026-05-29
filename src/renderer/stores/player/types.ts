@@ -16,4 +16,6 @@ export type ResolvedAudioSource = {
   quality: AudioQualityValue | null;
   effect: AudioEffectValue;
   loudness: TrackLoudness | null;
+  /** song/url 接口返回的歌曲时长（毫秒） */
+  timeLength: number;
 };

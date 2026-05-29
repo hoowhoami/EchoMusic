@@ -829,19 +829,6 @@ const handleScroll = () => {
             <div class="settings-divider"></div>
             <div class="settings-item">
               <div class="space-y-1">
-                <h3 class="font-semibold">歌词字色跟随主题</h3>
-                <p class="text-sm text-text-secondary">
-                  歌词已播色自动跟随主题色，手动设置的颜色优先
-                </p>
-              </div>
-              <Switch
-                :model-value="themeStore.lyricAccentSync"
-                @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
-              />
-            </div>
-            <div class="settings-divider"></div>
-            <div class="settings-item">
-              <div class="space-y-1">
                 <h3 class="font-semibold">记住窗口大小</h3>
                 <p class="text-sm text-text-secondary">在下次启动时自动恢复窗口大小和位置</p>
               </div>

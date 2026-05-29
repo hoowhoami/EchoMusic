@@ -77,6 +77,7 @@ const containerStyle = computed(() => {
       :alt="alt"
       loading="lazy"
       decoding="async"
+      draggable="false"
       @load="handleLoad"
       @error="handleError"
       :class="[

@@ -5,7 +5,6 @@ import { Icon } from '@iconify/vue';
 import App from './App.vue';
 import router from './router';
 import { logger } from '@/utils/logger';
-import { schedulePreloadLyric } from './utils/preloadLyric';
 import './style.css';
 
 const app = createApp(App);
@@ -93,6 +92,3 @@ app.use(pinia);
 app.use(router);
 app.component('Icon', Icon);
 app.mount('#app');
-
-// 预加载歌词组件,避免首次打开时的白屏
-schedulePreloadLyric();

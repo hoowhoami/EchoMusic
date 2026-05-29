@@ -70,11 +70,15 @@ export async function getCloudSongUrl(hash: string): Promise<string | null> {
 
 /**
  * 搜索歌词
+ * @param hash 歌曲 hash
+ * @param duration 歌曲时长（毫秒），来自 song/url 接口的 timeLength
  */
-export function searchLyric(hash: string) {
+export function searchLyric(hash: string, duration?: number) {
   return request.get('/search/lyric', {
     params: {
       hash,
+      man: 'yes',
+      ...(duration ? { duration } : {}),
     },
   });
 }

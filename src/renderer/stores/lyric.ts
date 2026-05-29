@@ -26,6 +26,11 @@ export type LyricsMode = 'none' | 'translation' | 'romanization' | 'both';
 type LyricSearchCandidate = {
   id?: string | number;
   accesskey?: string;
+  krctype?: number;
+  content_format?: number;
+  contenttype?: number;
+  score?: number;
+  duration?: number;
 };
 
 type LyricSearchResponse = {
@@ -82,6 +87,37 @@ const normalizeSearchPayload = (payload: unknown): LyricSearchResponse | null =>
     : [];
   if (candidates.length === 0 && info.length === 0) return null;
   return { candidates, info };
+};
+
+/**
+ * 从多个歌词候选中优选一条最可能包含翻译+音译的歌词
+ * content_format 含义：1=纯原歌词, 2=音译(krctype2格式), 3=只有音译, 4=翻译+音译
+ * 优先级：content_format=4 > content_format=3 > content_format=2 > content_format=1
+ * 同 content_format 下：krctype=1 优于 krctype=2，score 高优先
+ */
+const selectBestCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null => {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const scored = candidates.map((c) => {
+    let priority = 0;
+    // content_format=4 包含翻译+音译，最优
+    if (c.content_format === 4) priority += 200;
+    // content_format=3 只有音译
+    else if (c.content_format === 3) priority += 100;
+    // content_format=2 可能有音译
+    else if (c.content_format === 2) priority += 50;
+    // content_format=1 纯原歌词，不加分
+
+    // krctype=1（逐字歌词）优于 krctype=2
+    if (c.krctype === 1) priority += 10;
+    // 原始 score 作为次要排序依据
+    priority += (c.score ?? 0) / 100;
+    return { candidate: c, priority };
+  });
+
+  scored.sort((a, b) => b.priority - a.priority);
+  return scored[0].candidate;
 };
 
 const decodeLanguageLine = (
@@ -201,8 +237,6 @@ export const useLyricStore = defineStore('lyric', {
     fontWeightIndex: 8,
     playedColor: '',
     unplayedColor: '',
-    // 由主题色 store 同步的已播色（不持久化）；用户自定义的 playedColor 优先级更高
-    accentPlayedColor: '',
     requestSerial: 0,
     detailResolved: false,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
@@ -214,9 +248,8 @@ export const useLyricStore = defineStore('lyric', {
       if (!state.loadedHash) return 0;
       return state.timeOffsetMap[state.loadedHash] ?? 0;
     },
-    // 有效歌词颜色（用户自定义 > 主题色同步 > 默认值）
-    effectivePlayedColor: (state) =>
-      state.playedColor || state.accentPlayedColor || DEFAULT_LYRIC_PLAYED_COLOR,
+    // 有效歌词颜色（用户自定义 > 默认值）
+    effectivePlayedColor: (state) => state.playedColor || DEFAULT_LYRIC_PLAYED_COLOR,
     effectiveUnplayedColor: (state) => state.unplayedColor || DEFAULT_LYRIC_UNPLAYED_COLOR,
     // 兼容旧代码
     secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,
@@ -587,7 +620,7 @@ export const useLyricStore = defineStore('lyric', {
         }
       });
     },
-    async fetchLyrics(hash: string, options?: { preserveCurrent?: boolean }) {
+    async fetchLyrics(hash: string, options?: { preserveCurrent?: boolean; duration?: number }) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) {
         this.clear('', '暂无歌词');
@@ -618,12 +651,14 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       try {
-        const searchResult = normalizeSearchPayload(await searchLyric(normalizedHash));
+        const searchResult = normalizeSearchPayload(
+          await searchLyric(normalizedHash, options?.duration),
+        );
         if (requestSerial !== this.requestSerial) return;
 
         const target =
           (Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
-            ? searchResult.candidates[0]
+            ? selectBestCandidate(searchResult.candidates)
             : Array.isArray(searchResult?.info) && searchResult.info.length > 0
               ? searchResult.info[0]
               : null) ?? null;

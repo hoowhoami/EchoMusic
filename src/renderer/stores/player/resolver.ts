@@ -11,6 +11,7 @@ import type { PlayerState } from './state';
 import {
   normalizeEffect,
   normalizeQuality,
+  resolveTimeLength,
   resolveTrackLoudness,
   resolveUrlFromResponse,
   summarizeSong,
@@ -127,7 +128,7 @@ export const createResolver = (
         'Resolve audio url skipped because track hash is missing',
         summarizeSong(track),
       );
-      return { url: '', quality: null, effect: 'none', loudness: null };
+      return { url: '', quality: null, effect: 'none', loudness: null, timeLength: 0 };
     }
     const canReuseCurrentSource =
       !!track.audioUrl &&
@@ -142,6 +143,7 @@ export const createResolver = (
         quality: state.currentResolvedAudioQuality,
         effect: state.currentResolvedAudioEffect,
         loudness: null,
+        timeLength: 0,
       };
     }
 
@@ -156,7 +158,7 @@ export const createResolver = (
       } catch (error) {
         logger.error('PlayerResolver', 'Fetch cloud track audio url error:', error);
       }
-      return { url: cloudUrl ?? '', quality: null, effect: 'none', loudness: null };
+      return { url: cloudUrl ?? '', quality: null, effect: 'none', loudness: null, timeLength: 0 };
     }
 
     const relateGoods = await ensureTrackRelateGoods(track, { forceRefresh: true });
@@ -181,6 +183,7 @@ export const createResolver = (
               quality: audioQuality,
               effect: audioEffect,
               loudness: resolveTrackLoudness(effectRes),
+              timeLength: resolveTimeLength(effectRes),
             };
           }
         } catch (error) {
@@ -199,7 +202,13 @@ export const createResolver = (
         const res = await getSongUrl(matched.hash, quality);
         const url = resolveUrlFromResponse(res);
         if (url) {
-          return { url, quality, effect: 'none', loudness: resolveTrackLoudness(res) };
+          return {
+            url,
+            quality,
+            effect: 'none',
+            loudness: resolveTrackLoudness(res),
+            timeLength: resolveTimeLength(res),
+          };
         }
       } catch (error) {
         logger.warn('PlayerResolver', 'Fetch quality url failed:', error);
@@ -216,6 +225,7 @@ export const createResolver = (
             quality: getResolvedAudioQuality(track),
             effect: 'none',
             loudness: resolveTrackLoudness(res),
+            timeLength: resolveTimeLength(res),
           };
         }
       } catch (error) {
@@ -232,13 +242,14 @@ export const createResolver = (
           quality: getResolvedAudioQuality(track),
           effect: 'none',
           loudness: resolveTrackLoudness(res),
+          timeLength: resolveTimeLength(res),
         };
       }
     } catch (error) {
       logger.warn('PlayerResolver', 'Fetch fallback with ppage_id failed:', error);
     }
 
-    return { url: '', quality: null, effect: 'none', loudness: null };
+    return { url: '', quality: null, effect: 'none', loudness: null, timeLength: 0 };
   };
 
   const fetchClimaxMarks = async (track: Song) => {

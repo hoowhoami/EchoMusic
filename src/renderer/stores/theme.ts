@@ -4,9 +4,7 @@ import {
   DEFAULT_ACCENT,
   applyAccentToRoot,
   extractDominantColor,
-  getNormalizedAccent,
 } from '@/utils/color';
-import { useLyricStore } from './lyric';
 
 export type AccentMode = 'cover' | 'preset' | 'custom';
 
@@ -23,8 +21,6 @@ export const useThemeStore = defineStore('theme', {
     customColor: DEFAULT_ACCENT,
     // 全局主题色：true 时影响整个 App，false 时仅影响播放相关区域
     globalAccent: true,
-    // 歌词已播字色是否跟随主题色
-    lyricAccentSync: false,
     // 当前生效的主题色源（未归一化，用于重算）
     sourceColor: DEFAULT_ACCENT,
   }),
@@ -47,7 +43,6 @@ export const useThemeStore = defineStore('theme', {
       this.sourceColor = source;
       applyAccentToRoot(source, isDarkMode());
       this.syncGlobalScope();
-      this.syncLyricAccent();
     },
     // 切换模式
     setMode(mode: AccentMode) {
@@ -77,11 +72,6 @@ export const useThemeStore = defineStore('theme', {
       this.globalAccent = enabled;
       this.syncGlobalScope();
     },
-    // 切换歌词跟随主题色
-    setLyricAccentSync(enabled: boolean) {
-      this.lyricAccentSync = enabled;
-      this.syncLyricAccent();
-    },
     // 从封面提取主色（仅在 cover 模式下有效）
     async refreshFromCover(coverUrl: string) {
       if (this.accentMode !== 'cover') return;
@@ -90,12 +80,10 @@ export const useThemeStore = defineStore('theme', {
       const next = extracted || DEFAULT_ACCENT;
       this.sourceColor = next;
       applyAccentToRoot(next, isDarkMode());
-      this.syncLyricAccent();
     },
     // 明暗切换时重新应用归一化
     onThemeChange() {
       applyAccentToRoot(this.sourceColor || DEFAULT_ACCENT, isDarkMode());
-      this.syncLyricAccent();
     },
     // 同步全局作用范围：通过 body 上的 class 控制 CSS 作用域
     syncGlobalScope() {
@@ -108,18 +96,8 @@ export const useThemeStore = defineStore('theme', {
         body.classList.add('accent-scoped');
       }
     },
-    // 把主题色同步到歌词 store，用于歌词已播色
-    syncLyricAccent() {
-      const lyricStore = useLyricStore();
-      if (!this.lyricAccentSync) {
-        lyricStore.accentPlayedColor = '';
-        return;
-      }
-      const normalized = getNormalizedAccent(this.sourceColor || DEFAULT_ACCENT, isDarkMode());
-      lyricStore.accentPlayedColor = normalized;
-    },
   },
   persist: {
-    pick: ['accentMode', 'presetId', 'customColor', 'globalAccent', 'lyricAccentSync'],
+    pick: ['accentMode', 'presetId', 'customColor', 'globalAccent'],
   },
 });

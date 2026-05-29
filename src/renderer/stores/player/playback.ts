@@ -192,13 +192,6 @@ export const createPlaybackManager = (
     } else {
       lyricStore.clear(lyricHash, '歌词加载中...');
     }
-    if (lyricHash) {
-      void lyricStore.fetchLyrics(lyricHash, {
-        preserveCurrent: Boolean(track.lyric),
-      });
-    } else if (!track.lyric) {
-      lyricStore.clear('', '暂无歌词');
-    }
 
     const pendingMediaMeta = buildMediaMeta(track);
     if (pendingMediaMeta) {
@@ -212,6 +205,16 @@ export const createPlaybackManager = (
 
     const resolved = await resolver.resolveAudioUrl(track);
     if (requestSeq !== state.playbackRequestSeq) return;
+
+    // resolve 完成后用 song/url 返回的 timeLength 发起歌词搜索
+    if (lyricHash) {
+      void lyricStore.fetchLyrics(lyricHash, {
+        preserveCurrent: Boolean(track.lyric),
+        duration: resolved.timeLength || 0,
+      });
+    } else if (!track.lyric) {
+      lyricStore.clear('', '暂无歌词');
+    }
     if (!resolved.url) {
       state.lastError = 'audio-url-unavailable';
       state.currentTrackSnapshot = track;

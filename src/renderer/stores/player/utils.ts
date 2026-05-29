@@ -159,6 +159,21 @@ export const resolveTrackLoudness = (payload: unknown): TrackLoudness | null => 
   return { lufs, gain, peak: Math.max(0, peak) };
 };
 
+/** 从 song/url API 响应中提取歌曲时长（毫秒） */
+export const resolveTimeLength = (payload: unknown): number => {
+  if (!payload || typeof payload !== 'object') return 0;
+  const record = payload as Record<string, unknown>;
+  const source =
+    typeof record.timeLength === 'number'
+      ? record
+      : typeof record.data === 'object' && record.data !== null
+        ? (record.data as Record<string, unknown>)
+        : null;
+  if (!source) return 0;
+  const timeLength = Number(source.timeLength ?? source.timelength ?? 0);
+  return Number.isFinite(timeLength) && timeLength > 0 ? timeLength : 0;
+};
+
 export const findTrackById = (
   id: string | null,
   list: Song[] | null | undefined,

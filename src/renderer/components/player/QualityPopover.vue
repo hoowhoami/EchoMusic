@@ -160,12 +160,12 @@ withDefaults(defineProps<Props>(), {
 }
 
 .pm-item.is-active {
-  background: rgba(0, 113, 227, 0.1);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   opacity: 1;
 }
 
 .dark .pm-item.is-active {
-  background: rgba(0, 113, 227, 0.2);
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .pm-item.is-disabled {
