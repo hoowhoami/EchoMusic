@@ -6,7 +6,6 @@
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
-import { useThemeStore } from '@/stores/theme';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import Drawer from '@/components/ui/Drawer.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
@@ -28,7 +27,6 @@ const emit = defineEmits<{
 
 const settingStore = useSettingStore();
 const lyricStore = useLyricStore();
-const themeStore = useThemeStore();
 const lyricColorPicker = useLyricColorPicker();
 
 const currentMode = computed({
@@ -41,6 +39,10 @@ const currentMode = computed({
 const fontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const fontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
 const backdropOpacityLabel = computed(() => `${settingStore.lyricBackdropOpacity}%`);
+const carouselIntervalLabel = computed(() => `${settingStore.lyricCarouselInterval}s`);
+const hasCustomLyricColors = computed(() =>
+  Boolean(lyricStore.playedColor || lyricStore.unplayedColor),
+);
 
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
@@ -75,7 +77,10 @@ const close = () => {
     <div class="settings-drawer">
       <!-- 头部 -->
       <div class="settings-header">
-        <h2 class="settings-title">播放器设置</h2>
+        <div class="settings-title-group">
+          <h2 class="settings-title">歌词页设置</h2>
+          <p class="settings-subtitle">调整当前歌词页的显示、颜色与写真行为</p>
+        </div>
         <Button variant="unstyled" size="none" class="settings-close-btn" @click="close">
           <Icon :icon="iconX" width="18" height="18" />
         </Button>
@@ -100,9 +105,9 @@ const close = () => {
         </div>
 
         <!-- 字体设置 -->
-        <div class="settings-section">
-          <div class="section-title">字体</div>
-          <div class="setting-row">
+        <div class="settings-section settings-card">
+          <div class="section-title">文字</div>
+          <div class="setting-row setting-row-compact">
             <span class="setting-label">大小</span>
             <span class="setting-value">{{ fontSizeLabel }}</span>
           </div>
@@ -119,7 +124,7 @@ const close = () => {
             </SliderTrack>
             <SliderThumb class="settings-slider-thumb" />
           </SliderRoot>
-          <div class="setting-row">
+          <div class="setting-row setting-row-compact">
             <span class="setting-label">字重</span>
             <span class="setting-value">{{ fontWeightLabel }}</span>
           </div>
@@ -139,20 +144,14 @@ const close = () => {
         </div>
 
         <!-- 歌词颜色 -->
-        <div class="settings-section">
-          <div class="setting-row">
-            <span class="section-title">歌词颜色</span>
-            <button
-              v-if="lyricStore.playedColor || lyricStore.unplayedColor"
-              class="reset-btn"
-              @click="lyricColorPicker.reset"
-            >
-              重置
-            </button>
-          </div>
+        <div class="settings-section settings-card">
+          <div class="section-title">歌词颜色</div>
           <div class="color-row">
             <div class="color-item">
-              <span class="color-label">已播</span>
+              <div class="color-text">
+                <span class="color-label">已播字色</span>
+                <span class="color-hint">设置当前歌词已播颜色</span>
+              </div>
               <button
                 class="color-swatch"
                 :style="{ backgroundColor: effectivePlayedColor }"
@@ -160,7 +159,10 @@ const close = () => {
               ></button>
             </div>
             <div class="color-item">
-              <span class="color-label">未播</span>
+              <div class="color-text">
+                <span class="color-label">未播字色</span>
+                <span class="color-hint">设置当前歌词未播颜色</span>
+              </div>
               <button
                 class="color-swatch"
                 :style="{ backgroundColor: effectiveUnplayedColor }"
@@ -168,23 +170,25 @@ const close = () => {
               ></button>
             </div>
           </div>
-          <div class="setting-row">
-            <div class="setting-text">
-              <span class="setting-label">已播字色跟随主题</span>
-              <span class="setting-hint">仅封面和歌词模式生效，手动已播字色优先</span>
-            </div>
-            <Switch
-              :model-value="themeStore.lyricAccentSync"
-              @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
-            />
+          <div class="color-actions">
+            <button
+              class="reset-btn"
+              :class="{ invisible: !hasCustomLyricColors }"
+              @click="lyricColorPicker.reset"
+            >
+              重置
+            </button>
           </div>
         </div>
 
         <!-- 翻译/音译 -->
-        <div class="settings-section">
+        <div class="settings-section settings-card">
           <div class="section-title">翻译</div>
           <div class="setting-row">
-            <span class="setting-label">翻译</span>
+            <div class="setting-text">
+              <span class="setting-label">翻译</span>
+              <span class="setting-hint">有翻译时显示翻译</span>
+            </div>
             <Switch
               :model-value="lyricStore.wantTranslation"
               :disabled="!lyricStore.hasTranslation"
@@ -192,7 +196,10 @@ const close = () => {
             />
           </div>
           <div class="setting-row">
-            <span class="setting-label">音译</span>
+            <div class="setting-text">
+              <span class="setting-label">音译</span>
+              <span class="setting-hint">有音译时显示音译</span>
+            </div>
             <Switch
               :model-value="lyricStore.wantRomanization"
               :disabled="!lyricStore.hasRomanization"
@@ -202,28 +209,29 @@ const close = () => {
         </div>
 
         <!-- 背景 -->
-        <div class="settings-section">
-          <div class="section-title">背景</div>
+        <div class="settings-section settings-card">
+          <div class="section-title">显示</div>
           <div class="setting-row">
-            <span class="setting-label">封面模糊背景</span>
+            <div class="setting-text">
+              <span class="setting-label">封面模糊背景</span>
+              <span class="setting-hint">使用封面作为沉浸式背景</span>
+            </div>
             <Switch v-model="settingStore.lyricPageBackgroundBlur" />
           </div>
-        </div>
-
-        <!-- 过滤 -->
-        <div class="settings-section">
-          <div class="section-title">过滤</div>
           <div class="setting-row">
-            <span class="setting-label">歌词过滤</span>
+            <div class="setting-text">
+              <span class="setting-label">歌词过滤</span>
+              <span class="setting-hint">隐藏制作信息与版权声明</span>
+            </div>
             <Switch v-model="settingStore.lyricFilterEnabled" />
           </div>
         </div>
 
         <!-- 写真模式专属设置 -->
         <template v-if="currentMode === 'portrait'">
-          <div class="settings-section">
+          <div class="settings-section settings-card portrait-card">
             <div class="section-title">写真设置</div>
-            <div class="setting-row">
+            <div class="setting-row setting-row-compact">
               <span class="setting-label">背景透明度</span>
               <span class="setting-value">{{ backdropOpacityLabel }}</span>
             </div>
@@ -241,13 +249,16 @@ const close = () => {
               <SliderThumb class="settings-slider-thumb" />
             </SliderRoot>
             <div class="setting-row">
-              <span class="setting-label">自动轮播</span>
+              <div class="setting-text">
+                <span class="setting-label">自动轮播</span>
+                <span class="setting-hint">多张写真时自动切换</span>
+              </div>
               <Switch v-model="settingStore.lyricCarouselEnabled" />
             </div>
             <template v-if="settingStore.lyricCarouselEnabled">
-              <div class="setting-row">
+              <div class="setting-row setting-row-compact">
                 <span class="setting-label">轮播间隔</span>
-                <span class="setting-value">{{ settingStore.lyricCarouselInterval }}s</span>
+                <span class="setting-value">{{ carouselIntervalLabel }}</span>
               </div>
               <SliderRoot
                 :model-value="[settingStore.lyricCarouselInterval]"
@@ -266,11 +277,17 @@ const close = () => {
               </SliderRoot>
             </template>
             <div class="setting-row">
-              <span class="setting-label">歌词自动收起</span>
+              <div class="setting-text">
+                <span class="setting-label">歌词自动收起</span>
+                <span class="setting-hint">无操作后收起到底部两行</span>
+              </div>
               <Switch v-model="settingStore.lyricAutoCollapseEnabled" />
             </div>
             <div class="setting-row">
-              <span class="setting-label">收起时隐藏控制栏</span>
+              <div class="setting-text">
+                <span class="setting-label">收起时隐藏控制栏</span>
+                <span class="setting-hint">让写真画面更干净</span>
+              </div>
               <Switch v-model="settingStore.lyricCollapseHideControls" />
             </div>
           </div>
@@ -285,6 +302,7 @@ const close = () => {
     :title="lyricColorPicker.activeTitle.value"
     :value="lyricColorPicker.activeValue.value"
     :presets="lyricColorPicker.presets"
+    :dynamic-option="lyricColorPicker.dynamicOption.value"
     @update:open="(open: boolean) => !open && lyricColorPicker.close()"
     @confirm="lyricColorPicker.apply"
   />
@@ -295,7 +313,7 @@ const close = () => {
 .lyric-settings-panel {
   top: 0 !important;
   bottom: 0 !important;
-  width: min(320px, 85vw) !important;
+  width: min(360px, 90vw) !important;
   background: var(--color-bg-card) !important;
   border-color: rgba(0, 0, 0, 0.08) !important;
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12) !important;
@@ -318,21 +336,37 @@ const close = () => {
   height: 100%;
   overflow: hidden;
   color: var(--color-text-main);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .settings-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding: 20px 20px 16px;
   border-bottom: 1px solid var(--color-border-light);
   flex-shrink: 0;
+  gap: 16px;
+}
+
+.settings-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .settings-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   color: var(--color-text-main);
+}
+
+.settings-subtitle {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
 }
 
 .settings-close-btn {
@@ -355,10 +389,10 @@ const close = () => {
 .settings-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 20px 24px;
+  padding: 16px 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
   scrollbar-width: none;
 }
 
@@ -370,6 +404,13 @@ const close = () => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.settings-card {
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-text-main) 5%, var(--color-bg-card) 95%);
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
 }
 
 .section-title {
@@ -384,8 +425,16 @@ const close = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 28px;
-  gap: 12px;
+  min-height: 32px;
+  gap: 14px;
+}
+
+.setting-row-compact {
+  min-height: 24px;
+}
+
+.setting-row .setting-text {
+  flex: 1;
 }
 
 .setting-text {
@@ -412,6 +461,10 @@ const close = () => {
   font-weight: 600;
   font-family: monospace;
   color: var(--color-text-secondary);
+}
+
+.settings-card .settings-slider-root {
+  margin: 2px 0 4px;
 }
 
 .setting-slider {
@@ -463,13 +516,13 @@ const close = () => {
   gap: 4px;
   padding: 3px;
   background: color-mix(in srgb, var(--color-text-main) 8%, var(--color-bg-card) 92%);
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .mode-option {
   flex: 1;
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -489,26 +542,43 @@ const close = () => {
 }
 
 .color-row {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  gap: 12px;
 }
 
 .color-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-text-main) 5%, var(--color-bg-card) 95%);
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
+}
+
+.color-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .color-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.color-hint {
+  font-size: 11px;
   color: var(--color-text-secondary);
 }
 
 .color-swatch {
-  width: 36px;
-  height: 22px;
-  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
   border: 1px solid var(--color-border-light);
   cursor: pointer;
   transition: transform 0.15s ease;
@@ -519,7 +589,15 @@ const close = () => {
   transform: scale(1.08);
 }
 
+.color-actions {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 18px;
+  padding-top: 2px;
+}
+
 .reset-btn {
+  min-height: 18px;
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);

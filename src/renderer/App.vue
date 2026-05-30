@@ -102,10 +102,6 @@ onUnmounted(() => {
 watch(() => settings.theme, updateTheme);
 watch(() => settings.globalFont, applyGlobalFont);
 watch(
-  () => settings.lyricViewMode,
-  () => themeStore.syncLyricAccent(),
-);
-watch(
   () => settings.rememberWindowSize,
   () => settings.syncRememberWindowSize(),
 );
@@ -132,9 +128,14 @@ watch(
 watch(
   () => player.currentTrackSnapshot?.coverUrl,
   (coverUrl) => {
-    if (!coverUrl) return;
+    if (!coverUrl) {
+      void themeStore.refreshCoverColor('');
+      return;
+    }
+    const normalizedCoverUrl = getCoverUrl(coverUrl, 300);
+    void themeStore.refreshCoverColor(normalizedCoverUrl);
     if (themeStore.accentMode !== 'cover') return;
-    void themeStore.refreshFromCover(getCoverUrl(coverUrl, 300));
+    void themeStore.refreshFromCover(normalizedCoverUrl);
   },
   { immediate: true },
 );

@@ -18,6 +18,7 @@ import type {
   ShortcutScope,
 } from '@/types';
 import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
+import { DEFAULT_DESKTOP_LYRIC_SETTINGS } from '../../shared/desktop-lyric';
 import type { CloseBehavior, ThemeMode, UpdateCheckResult } from '../../shared/app';
 import type { ShortcutCommand } from '../../shared/shortcuts';
 import Select from '@/components/ui/Select.vue';
@@ -189,6 +190,14 @@ const lyricColorPicker = useLyricColorPicker();
 
 const lyricFontSizeLabel = computed(() => `${Math.round(lyricStore.fontScale * 100)}%`);
 const lyricFontWeightLabel = computed(() => `W${lyricStore.fontWeightValue}`);
+const hasCustomLyricColors = computed(() =>
+  Boolean(lyricStore.playedColor || lyricStore.unplayedColor),
+);
+const hasCustomDesktopLyricColors = computed(
+  () =>
+    desktopLyricStore.settings.playedColor !== DEFAULT_DESKTOP_LYRIC_SETTINGS.playedColor ||
+    desktopLyricStore.settings.unplayedColor !== DEFAULT_DESKTOP_LYRIC_SETTINGS.unplayedColor,
+);
 
 const desktopLyricColorPresets = [
   '#31cfa1',
@@ -1252,47 +1261,38 @@ const handleScroll = () => {
                 <h3 class="font-semibold">歌词颜色</h3>
                 <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
               </div>
-              <div class="flex items-center gap-5 pt-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+              <div class="settings-color-stack">
+                <div class="settings-color-grid">
+                  <div class="settings-color-item">
+                    <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+                    <button
+                      type="button"
+                      class="settings-color-swatch"
+                      :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
+                      @click="lyricColorPicker.open('playedColor')"
+                    ></button>
+                  </div>
+                  <div class="settings-color-item">
+                    <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+                    <button
+                      type="button"
+                      class="settings-color-swatch"
+                      :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
+                      @click="lyricColorPicker.open('unplayedColor')"
+                    ></button>
+                  </div>
+                </div>
+                <div class="settings-color-actions">
                   <button
                     type="button"
-                    class="settings-color-swatch"
-                    :style="{ backgroundColor: lyricStore.effectivePlayedColor }"
-                    @click="lyricColorPicker.open('playedColor')"
-                  ></button>
+                    class="settings-color-reset"
+                    :class="{ invisible: !hasCustomLyricColors }"
+                    @click="lyricColorPicker.reset"
+                  >
+                    重置
+                  </button>
                 </div>
-                <div class="flex items-center gap-2.5">
-                  <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
-                  <button
-                    type="button"
-                    class="settings-color-swatch"
-                    :style="{ backgroundColor: lyricStore.effectiveUnplayedColor }"
-                    @click="lyricColorPicker.open('unplayedColor')"
-                  ></button>
-                </div>
-                <button
-                  v-if="lyricStore.playedColor || lyricStore.unplayedColor"
-                  type="button"
-                  class="text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors"
-                  @click="lyricColorPicker.reset"
-                >
-                  重置
-                </button>
               </div>
-            </div>
-            <div class="settings-divider"></div>
-            <div class="settings-item">
-              <div class="space-y-1">
-                <h3 class="font-semibold">已播字色跟随主题</h3>
-                <p class="text-sm text-text-secondary">
-                  仅封面和歌词模式生效，手动设置的已播字色优先
-                </p>
-              </div>
-              <Switch
-                :model-value="themeStore.lyricAccentSync"
-                @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
-              />
             </div>
             <div class="settings-divider"></div>
             <div class="settings-item">
@@ -1537,24 +1537,41 @@ const handleScroll = () => {
                 <h3 class="font-semibold">文字颜色</h3>
                 <p class="text-sm text-text-secondary">设置逐字歌词的已播颜色与未播颜色</p>
               </div>
-              <div class="flex items-center gap-5 pt-1">
-                <div class="flex items-center gap-2.5">
-                  <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
-                  <button
-                    type="button"
-                    class="settings-color-swatch"
-                    :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
-                    @click="openDesktopLyricColorPicker('playedColor')"
-                  ></button>
+              <div class="settings-color-stack">
+                <div class="settings-color-grid">
+                  <div class="settings-color-item">
+                    <span class="text-[13px] font-semibold text-text-secondary">已播字色</span>
+                    <button
+                      type="button"
+                      class="settings-color-swatch"
+                      :style="{ backgroundColor: desktopLyricStore.settings.playedColor }"
+                      @click="openDesktopLyricColorPicker('playedColor')"
+                    ></button>
+                  </div>
+                  <div class="settings-color-item">
+                    <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+                    <button
+                      type="button"
+                      class="settings-color-swatch"
+                      :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
+                      @click="openDesktopLyricColorPicker('unplayedColor')"
+                    ></button>
+                  </div>
                 </div>
-                <div class="flex items-center gap-2.5">
-                  <span class="text-[13px] font-semibold text-text-secondary">未播字色</span>
+                <div class="settings-color-actions">
                   <button
                     type="button"
-                    class="settings-color-swatch"
-                    :style="{ backgroundColor: desktopLyricStore.settings.unplayedColor }"
-                    @click="openDesktopLyricColorPicker('unplayedColor')"
-                  ></button>
+                    class="settings-color-reset"
+                    :class="{ invisible: !hasCustomDesktopLyricColors }"
+                    @click="
+                      commitDesktopLyricSettings({
+                        playedColor: DEFAULT_DESKTOP_LYRIC_SETTINGS.playedColor,
+                        unplayedColor: DEFAULT_DESKTOP_LYRIC_SETTINGS.unplayedColor,
+                      })
+                    "
+                  >
+                    重置
+                  </button>
                 </div>
               </div>
             </div>
@@ -2073,6 +2090,7 @@ const handleScroll = () => {
       :title="lyricColorPicker.activeTitle.value"
       :value="lyricColorPicker.activeValue.value"
       :presets="lyricColorPicker.presets"
+      :dynamic-option="lyricColorPicker.dynamicOption.value"
       @update:open="(open) => !open && lyricColorPicker.close()"
       @confirm="lyricColorPicker.apply"
     />
@@ -2171,7 +2189,12 @@ const handleScroll = () => {
 }
 
 .settings-divider {
-  @apply h-px bg-border-light/50;
+  @apply h-px shrink-0;
+  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
+}
+
+:global(.dark) .settings-divider {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .settings-button {
@@ -2184,6 +2207,26 @@ const handleScroll = () => {
 
 .settings-color-swatch {
   @apply w-8 h-8 rounded-full border-2 border-white/20 shadow-sm cursor-pointer transition-all duration-200 active:scale-95;
+}
+
+.settings-color-stack {
+  @apply flex flex-col gap-2 w-full max-w-[360px] pt-1;
+}
+
+.settings-color-grid {
+  @apply grid grid-cols-2 gap-3 w-full max-w-[360px];
+}
+
+.settings-color-item {
+  @apply flex items-center justify-between gap-3 rounded-xl border border-border-light/50 bg-bg-main/60 px-3 py-2;
+}
+
+.settings-color-actions {
+  @apply flex items-center justify-end min-h-5 px-1;
+}
+
+.settings-color-reset {
+  @apply text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap;
 }
 
 .settings-color-swatch:hover {

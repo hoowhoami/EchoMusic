@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import { getLyric, searchLyric } from '@/api/music';
 import logger from '@/utils/logger';
+import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
+import { useThemeStore } from './theme';
 
 export interface LyricCharacter {
   text: string;
@@ -202,6 +204,17 @@ const getSecondaryText = (line: LyricLine, mode: LyricsMode): string => {
 // 页面歌词默认颜色
 export const DEFAULT_LYRIC_PLAYED_COLOR = '#31cfa1';
 export const DEFAULT_LYRIC_UNPLAYED_COLOR = '#ffffff';
+export const LYRIC_COVER_COLOR_VALUE = '__cover__';
+
+const isDarkMode = (): boolean => document.documentElement.classList.contains('dark');
+
+const resolveLyricColor = (value: string, fallback: string): string => {
+  if (value === LYRIC_COVER_COLOR_VALUE) {
+    const themeStore = useThemeStore();
+    return getNormalizedAccent(themeStore.coverColor || DEFAULT_ACCENT, isDarkMode());
+  }
+  return value || fallback;
+};
 
 // 歌词过滤默认正则表达式
 export const DEFAULT_LYRIC_FILTER_PATTERN =
@@ -243,8 +256,6 @@ export const useLyricStore = defineStore('lyric', {
     fontWeightIndex: 8,
     playedColor: '',
     unplayedColor: '',
-    // 由主题色 store 同步的已播色（不持久化）；用户自定义 playedColor 优先级更高
-    accentPlayedColor: '',
     requestSerial: 0,
     detailResolved: false,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
@@ -256,10 +267,10 @@ export const useLyricStore = defineStore('lyric', {
       if (!state.loadedHash) return 0;
       return state.timeOffsetMap[state.loadedHash] ?? 0;
     },
-    // 有效歌词颜色（用户自定义 > 主题色同步 > 默认值）
     effectivePlayedColor: (state) =>
-      state.playedColor || state.accentPlayedColor || DEFAULT_LYRIC_PLAYED_COLOR,
-    effectiveUnplayedColor: (state) => state.unplayedColor || DEFAULT_LYRIC_UNPLAYED_COLOR,
+      resolveLyricColor(state.playedColor, DEFAULT_LYRIC_PLAYED_COLOR),
+    effectiveUnplayedColor: (state) =>
+      resolveLyricColor(state.unplayedColor, DEFAULT_LYRIC_UNPLAYED_COLOR),
     // 兼容旧代码
     secondaryEnabled: (state) => state.wantTranslation || state.wantRomanization,
     canShowSecondary: (state) => state.hasTranslation || state.hasRomanization,

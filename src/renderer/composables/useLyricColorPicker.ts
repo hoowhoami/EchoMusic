@@ -2,8 +2,11 @@ import { computed, ref } from 'vue';
 import {
   DEFAULT_LYRIC_PLAYED_COLOR,
   DEFAULT_LYRIC_UNPLAYED_COLOR,
+  LYRIC_COVER_COLOR_VALUE,
   useLyricStore,
 } from '@/stores/lyric';
+import { useThemeStore } from '@/stores/theme';
+import { DEFAULT_ACCENT, getNormalizedAccent } from '@/utils/color';
 
 // 歌词颜色预设（用于页面歌词的颜色选择器）
 export const LYRIC_COLOR_PRESETS = [
@@ -26,6 +29,7 @@ type LyricColorField = 'playedColor' | 'unplayedColor';
 // 页面歌词颜色选择器的公共状态与操作
 export const useLyricColorPicker = () => {
   const lyricStore = useLyricStore();
+  const themeStore = useThemeStore();
   const activeField = ref<LyricColorField | null>(null);
 
   const activeValue = computed(() => {
@@ -43,6 +47,19 @@ export const useLyricColorPicker = () => {
   const activeTitle = computed(() =>
     activeField.value === 'unplayedColor' ? '选择未播字色' : '选择已播字色',
   );
+
+  const coverColor = computed(() =>
+    getNormalizedAccent(
+      themeStore.coverColor || DEFAULT_ACCENT,
+      document.documentElement.classList.contains('dark'),
+    ),
+  );
+
+  const dynamicOption = computed(() => ({
+    label: '跟随封面取色',
+    value: LYRIC_COVER_COLOR_VALUE,
+    color: coverColor.value,
+  }));
 
   const open = (field: LyricColorField) => {
     activeField.value = field;
@@ -68,6 +85,7 @@ export const useLyricColorPicker = () => {
     activeValue,
     activeTitle,
     isOpen,
+    dynamicOption,
     presets: LYRIC_COLOR_PRESETS,
     open,
     close,
