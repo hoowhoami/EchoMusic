@@ -3,6 +3,7 @@ import { quitApplication } from './window';
 import { join } from 'path';
 import type { PlayMode } from '../shared/playback';
 import type { TrayCommand, TrayPlaybackPayload } from '../shared/tray';
+import log from './logger';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
@@ -46,7 +47,7 @@ const createTrayImage = () => {
   try {
     const image = nativeImage.createFromPath(iconPath);
     if (image.isEmpty()) {
-      console.warn('[Tray] Icon image is empty:', iconPath);
+      log.warn('[Tray] Icon image is empty:', iconPath);
       return nativeImage.createEmpty();
     }
     if (process.platform === 'darwin') {
@@ -57,7 +58,7 @@ const createTrayImage = () => {
     }
     return image;
   } catch (e) {
-    console.error('[Tray] Failed to create tray image:', e);
+    log.error('[Tray] Failed to create tray image:', e);
     return nativeImage.createEmpty();
   }
 };

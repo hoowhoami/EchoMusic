@@ -32,6 +32,7 @@ import type { Comment } from '@/models/comment';
 import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
+import { logger } from '@/utils/logger';
 import {
   iconCurrentLocation,
   iconSearch,
@@ -321,7 +322,7 @@ const fetchComments = async (reset = false) => {
       hasMoreComments.value = false;
     }
   } catch (e) {
-    console.error('Fetch album comments error:', e);
+    logger.error('AlbumDetail', 'Fetch album comments error', e);
     hasMoreComments.value = false;
     toastStore.loadFailed('专辑评论');
   } finally {
@@ -395,7 +396,7 @@ const fetchData = async () => {
       loading.value = false;
     })
     .catch((e) => {
-      console.error('Fetch album detail error:', e);
+      logger.error('AlbumDetail', 'Fetch album detail error', e);
       loading.value = false;
     });
 

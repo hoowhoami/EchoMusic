@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { usePlayerControls } from '@/composables/usePlayerControls';
-import { useLyricStore } from '@/stores/lyric';
 import Cover from '@/components/ui/Cover.vue';
 import LyricScroller from './LyricScroller.vue';
 
 const { currentTrack } = usePlayerControls();
-const lyricStore = useLyricStore();
 </script>
 
 <template>

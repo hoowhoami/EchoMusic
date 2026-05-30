@@ -34,6 +34,7 @@ import {
   updateWindowHeight,
   withDesktopLyricWindow,
 } from './desktopLyric/window';
+import log from './logger';
 
 export { getDesktopLyricWindow } from './desktopLyric/window';
 
@@ -224,7 +225,7 @@ const destroyDesktopLyricWindowFromFailure = (reason: 'unresponsive' | 'render-p
   const win = getDesktopLyricWindow();
   if (!win || win.isDestroyed() || desktopLyricClosingFromFailure) return;
   desktopLyricClosingFromFailure = true;
-  console.error(`[DesktopLyric] Window destroyed due to ${reason}`);
+  log.error('[DesktopLyric]', `Window destroyed due to ${reason}`);
   win.destroy();
 };
 

@@ -15,6 +15,8 @@ export default [
       '**/*.d.ts',
       'public/**',
       'server/**',
+      '.gitignore',
+      '.DS_Store',
     ],
   },
   ...pluginVue.configs['flat/essential'],
@@ -32,6 +34,12 @@ export default [
       ],
       'vue/multi-word-component-names': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['build/**/*.js', 'scripts/**/*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 ];

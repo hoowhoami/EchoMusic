@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
+import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { useThemeStore } from './stores/theme';
@@ -100,7 +101,10 @@ onUnmounted(() => {
 
 watch(() => settings.theme, updateTheme);
 watch(() => settings.globalFont, applyGlobalFont);
-watch(() => settings.lyricViewMode, () => themeStore.syncLyricAccent());
+watch(
+  () => settings.lyricViewMode,
+  () => themeStore.syncLyricAccent(),
+);
 watch(
   () => settings.rememberWindowSize,
   () => settings.syncRememberWindowSize(),
@@ -148,9 +152,11 @@ watch(
 </script>
 
 <template>
-  <RouterView v-slot="{ Component }">
+  <RouterView v-slot="{ Component, route }">
     <transition name="page" mode="out-in">
-      <component :is="Component" />
+      <RouteErrorBoundary :route="route">
+        <component :is="Component" />
+      </RouteErrorBoundary>
     </transition>
   </RouterView>
   <Teleport to="body">

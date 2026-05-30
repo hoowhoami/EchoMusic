@@ -13,7 +13,6 @@ const {
   effectiveAudioQuality,
   isAudioQualityDisabled,
   audioQualityButtonBadge,
-  currentAudioQualityBadgeColor,
   getAudioQualityTagColor,
   setAudioQuality,
 } = usePlayerControls();

@@ -4,6 +4,38 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
+import { mkdirSync, writeFileSync } from 'fs';
+
+const analyzeBundle = process.env.ANALYZE_BUNDLE === '1';
+const bundleAnalysisPlugin = () => ({
+  name: 'echo-bundle-analysis',
+  generateBundle(
+    _options: unknown,
+    bundle: Record<string, { type: string; code?: string; source?: unknown }>,
+  ) {
+    if (!analyzeBundle) return;
+
+    const assets = Object.entries(bundle)
+      .map(([fileName, item]) => {
+        const size =
+          item.type === 'chunk'
+            ? Buffer.byteLength(item.code ?? '', 'utf8')
+            : typeof item.source === 'string'
+              ? Buffer.byteLength(item.source, 'utf8')
+              : item.source instanceof Uint8Array
+                ? item.source.byteLength
+                : 0;
+        return { fileName, type: item.type, size };
+      })
+      .sort((a, b) => b.size - a.size);
+
+    mkdirSync('release', { recursive: true });
+    writeFileSync(
+      'release/bundle-report.json',
+      JSON.stringify({ generatedAt: new Date().toISOString(), assets }, null, 2),
+    );
+  },
+});
 
 export default defineConfig({
   build: {
@@ -17,6 +49,7 @@ export default defineConfig({
   plugins: [
     vue(),
     tailwindcss(),
+    bundleAnalysisPlugin(),
     electron([
       {
         entry: 'src/main/index.ts',
@@ -28,7 +61,14 @@ export default defineConfig({
             outDir: 'dist-electron/main',
             emptyOutDir: true,
             rollupOptions: {
-              external: ['electron', 'font-list', 'shazam-api', 'electron-audio-loopback'],
+              external: [
+                'electron',
+                'font-list',
+                'shazam-api',
+                'electron-audio-loopback',
+                '../../native/echo-media-controls',
+                '../../native/echo-mpv-player',
+              ],
             },
           },
         },
@@ -47,7 +87,7 @@ export default defineConfig({
       },
     ]),
     renderer(),
-  ],
+  ].filter(Boolean),
   server: {
     // dev 模式下 API 请求通过 IPC 直连 main 进程，不再需要 HTTP proxy
   },

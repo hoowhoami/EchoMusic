@@ -49,7 +49,7 @@ const triggerAutoReceiveVipAfterLogin = () => {
     .then(() => userStore.autoReceiveVipIfNeeded())
     .catch((e) => {
       // 登录后自动领取失败不影响正常使用
-      console.warn('triggerAutoReceiveVipAfterLogin failed:', e);
+      logger.warn('Login', 'triggerAutoReceiveVipAfterLogin failed', e);
     });
 };
 
@@ -317,7 +317,7 @@ onUnmounted(() => {
       class="absolute inset-0 bg-linear-to-br from-bg-sidebar via-bg-main to-bg-sidebar opacity-60 z-0"
     ></div>
     <div
-      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full bg-primary/3 blur-[120px] pointer-events-none z-0"
+      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-200 h-200 rounded-full bg-primary/3 blur-[120px] pointer-events-none z-0"
     ></div>
 
     <OverlayHeader />
@@ -335,7 +335,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 设置 activationMode="manual" 防止焦点自动切换导致意外 Tab 跳转 -->
-      <div class="w-full max-w-[420px] max-h-full flex flex-col items-center">
+      <div class="w-full max-w-105 max-h-full flex flex-col items-center">
         <!-- 首次使用提示横幅 -->
         <div
           class="tip-banner mb-4 px-4 py-2 rounded-full bg-linear-to-r from-amber-500/15 via-amber-400/10 to-amber-500/5 dark:from-amber-400/15 dark:via-amber-400/10 dark:to-amber-300/5 border border-amber-500/25 dark:border-amber-400/25 backdrop-blur-xl inline-flex items-center gap-2 shadow-[0_6px_18px_rgba(251,191,36,0.08)]"
@@ -360,7 +360,7 @@ onUnmounted(() => {
 
         <Tabs v-model="activeTab" activationMode="manual" class="w-full">
           <div
-            class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/5 dark:border-white/5 rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-[510px]"
+            class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/5 dark:border-white/5 rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-127.5"
           >
             <div class="px-10 pt-8 flex-1 flex flex-col items-center justify-center">
               <!-- 1. 扫码登录 -->

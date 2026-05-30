@@ -30,6 +30,7 @@ import type { SortField, SortOrder } from '@/components/music/SongListHeader.vue
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
+import { logger } from '@/utils/logger';
 import {
   iconCurrentLocation,
   iconSearch,
@@ -203,7 +204,7 @@ const fetchComments = async (reset = false) => {
       hasMoreComments.value = false;
     }
   } catch (e) {
-    console.error('Fetch playlist comments error:', e);
+    logger.error('PlaylistDetail', 'Fetch playlist comments error', e);
     hasMoreComments.value = false;
   } finally {
     loadingComments.value = false;

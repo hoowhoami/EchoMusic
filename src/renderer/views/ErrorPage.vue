@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';
 import Button from '@/components/ui/Button.vue';
+import { logger } from '@/utils/logger';
 
 const route = useRoute();
 const router = useRouter();
@@ -45,7 +46,7 @@ const handleCopyError = async () => {
       copied.value = false;
     }, 2000);
   } catch (err) {
-    console.error('Failed to copy error info:', err);
+    logger.error('ErrorPage', 'Failed to copy error info', err);
   }
 };
 </script>

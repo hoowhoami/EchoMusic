@@ -28,6 +28,7 @@ import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import { queueAndPlaySong } from '@/utils/playback';
+import { logger } from '@/utils/logger';
 import { isSameSong } from '@/utils/song';
 import type { Song } from '@/models/song';
 import type { RecognizeStatus, ShazamResult } from '../../shared/shazam';
@@ -166,7 +167,7 @@ async function recognizeAudio(stream: MediaStream) {
     } catch (err) {
       status.value = 'failed';
       errorMsg.value = '识别过程出错';
-      console.error('[Recognize]', err);
+      logger.error('Recognize', '识别过程出错', err);
     }
   };
   mediaRecorder.start(500);
