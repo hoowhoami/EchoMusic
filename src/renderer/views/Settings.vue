@@ -1284,6 +1284,19 @@ const handleScroll = () => {
             <div class="settings-divider"></div>
             <div class="settings-item">
               <div class="space-y-1">
+                <h3 class="font-semibold">已播字色跟随主题</h3>
+                <p class="text-sm text-text-secondary">
+                  仅封面和歌词模式生效，手动设置的已播字色优先
+                </p>
+              </div>
+              <Switch
+                :model-value="themeStore.lyricAccentSync"
+                @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
+              />
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-item">
+              <div class="space-y-1">
                 <h3 class="font-semibold">封面模糊背景</h3>
                 <p class="text-sm text-text-secondary">
                   将封面图片模糊化作为歌词页背景，关闭时使用主题色纯色背景

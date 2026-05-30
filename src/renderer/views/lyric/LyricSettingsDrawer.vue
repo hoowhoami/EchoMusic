@@ -6,6 +6,7 @@
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useLyricStore } from '@/stores/lyric';
+import { useThemeStore } from '@/stores/theme';
 import { useLyricColorPicker } from '@/composables/useLyricColorPicker';
 import Drawer from '@/components/ui/Drawer.vue';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
@@ -27,6 +28,7 @@ const emit = defineEmits<{
 
 const settingStore = useSettingStore();
 const lyricStore = useLyricStore();
+const themeStore = useThemeStore();
 const lyricColorPicker = useLyricColorPicker();
 
 const currentMode = computed({
@@ -165,6 +167,16 @@ const close = () => {
                 @click="lyricColorPicker.open('unplayedColor')"
               ></button>
             </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
+              <span class="setting-label">已播字色跟随主题</span>
+              <span class="setting-hint">仅封面和歌词模式生效，手动已播字色优先</span>
+            </div>
+            <Switch
+              :model-value="themeStore.lyricAccentSync"
+              @update:model-value="themeStore.setLyricAccentSync(Boolean($event))"
+            />
           </div>
         </div>
 
@@ -373,12 +385,26 @@ const close = () => {
   align-items: center;
   justify-content: space-between;
   min-height: 28px;
+  gap: 12px;
+}
+
+.setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .setting-label {
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text-main);
+}
+
+.setting-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--color-text-secondary);
 }
 
 .setting-value {

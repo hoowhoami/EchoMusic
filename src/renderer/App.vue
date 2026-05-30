@@ -100,6 +100,7 @@ onUnmounted(() => {
 
 watch(() => settings.theme, updateTheme);
 watch(() => settings.globalFont, applyGlobalFont);
+watch(() => settings.lyricViewMode, () => themeStore.syncLyricAccent());
 watch(
   () => settings.rememberWindowSize,
   () => settings.syncRememberWindowSize(),
