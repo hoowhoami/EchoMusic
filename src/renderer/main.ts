@@ -71,14 +71,23 @@ app.config.errorHandler = (err: unknown, instance, info) => {
 
 window.addEventListener('error', (event) => {
   const errorMessage = event.error?.message ?? event.message ?? '';
+  const filename = event.filename ?? '';
 
   // Skip benign browser warnings that don't affect functionality
   const ignoredErrors = [
     'ResizeObserver loop completed with undelivered notifications',
     'ResizeObserver loop limit exceeded',
+    'Non-Error promise rejection captured',
+    'Script error.', // Cross-origin script errors
   ];
 
-  if (ignoredErrors.some((ignored) => errorMessage.includes(ignored))) {
+  // Skip errors from browser extensions
+  const extensionPrefixes = ['chrome-extension://', 'moz-extension://', 'safari-extension://'];
+
+  if (
+    ignoredErrors.some((ignored) => errorMessage.includes(ignored)) ||
+    extensionPrefixes.some((prefix) => filename.includes(prefix))
+  ) {
     logger.warn('App', 'Ignored benign window error', errorMessage);
     return;
   }
@@ -97,6 +106,20 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 router.onError((error) => {
+  const errorMessage = error.message ?? '';
+
+  // Skip benign router errors
+  const ignoredRouterErrors = [
+    'Navigation cancelled',
+    'Avoided redundant navigation',
+    'NavigationDuplicated',
+  ];
+
+  if (ignoredRouterErrors.some((ignored) => errorMessage.includes(ignored))) {
+    logger.warn('App', 'Ignored benign router error', errorMessage);
+    return;
+  }
+
   logger.error('App', 'Router error', error);
   void navigateToErrorPage(error, 'Route Error');
 });

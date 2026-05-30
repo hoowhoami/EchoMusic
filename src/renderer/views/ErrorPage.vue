@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({ name: 'error-page' });
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { iconTriangleAlert } from '@/icons';
 import Button from '@/components/ui/Button.vue';
@@ -12,8 +12,41 @@ const errorMessage = computed(() => (route.query.message as string) || '发生�
 const errorStatus = computed(() => (route.query.status as string) || 'App Error');
 const errorSource = computed(() => (route.query.from as string) || '当前页面');
 
+const copied = ref(false);
+
 const handleGoHome = () => {
   router.replace('/main/home');
+};
+
+const handleGoBack = () => {
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    handleGoHome();
+  }
+};
+
+const handleReload = () => {
+  const from = route.query.from as string;
+  if (from && from !== '/main/error') {
+    router.replace(from);
+  } else {
+    handleGoHome();
+  }
+};
+
+const handleCopyError = async () => {
+  const errorInfo = `错误状态: ${errorStatus.value}\n错误信息: ${errorMessage.value}\n来源页面: ${errorSource.value}\n时间: ${new Date().toLocaleString('zh-CN')}`;
+
+  try {
+    await navigator.clipboard.writeText(errorInfo);
+    copied.value = true;
+    setTimeout(() => {
+      copied.value = false;
+    }, 2000);
+  } catch (err) {
+    console.error('Failed to copy error info:', err);
+  }
 };
 </script>
 
@@ -56,9 +89,22 @@ const handleGoHome = () => {
       </div>
 
       <div class="error-actions">
-        <Button variant="primary" size="sm" class="error-home-btn" @click="handleGoHome">
+        <Button variant="primary" size="sm" class="error-action-btn" @click="handleGoHome">
           回到首页
         </Button>
+        <Button variant="secondary" size="sm" class="error-action-btn" @click="handleGoBack">
+          返回上页
+        </Button>
+        <Button variant="secondary" size="sm" class="error-action-btn" @click="handleReload">
+          重新加载
+        </Button>
+      </div>
+
+      <div class="error-footer">
+        <button class="error-copy-btn" @click="handleCopyError">
+          <span v-if="!copied">复制错误信息</span>
+          <span v-else class="error-copy-success">✓ 已复制</span>
+        </button>
       </div>
     </section>
   </div>
@@ -245,11 +291,45 @@ const handleGoHome = () => {
 
 .error-actions {
   margin-top: 24px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.error-home-btn {
-  min-width: 116px;
+.error-action-btn {
+  min-width: 100px;
   border-radius: 14px;
+}
+
+.error-footer {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 50%, transparent);
+}
+
+.error-copy-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 12%, transparent);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-copy-btn:hover {
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+}
+
+.error-copy-btn:active {
+  transform: scale(0.98);
+}
+
+.error-copy-success {
+  color: #10b981;
 }
 
 .error-footnote {
