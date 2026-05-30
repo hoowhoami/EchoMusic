@@ -47,6 +47,7 @@ const isLoadingSuggestions = ref(false);
 const defaultKeyword = ref('');
 const defaultAds = ref<{ mainTitle: string; subTitle: string; title: string }[]>([]);
 let suggestTimer: number | null = null;
+let collapseTimer: number | null = null;
 
 const updateNavState = () => {
   if (typeof window === 'undefined') return;
@@ -106,14 +107,20 @@ const expandSearch = async () => {
 };
 
 const collapseSearch = () => {
+  if (!isSearchExpanded.value || isCollapsing.value) return;
   showSuggestions.value = false;
   searchQuery.value = '';
   suggestions.value = [];
   isCollapsing.value = true;
+  if (collapseTimer) {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = null;
+  }
   // 等收起动画结束后再真正隐藏
-  window.setTimeout(() => {
+  collapseTimer = window.setTimeout(() => {
     isSearchExpanded.value = false;
     isCollapsing.value = false;
+    collapseTimer = null;
   }, 200);
 };
 
@@ -230,6 +237,7 @@ onUnmounted(() => {
   window.removeEventListener('popstate', updateNavState);
   document.removeEventListener('pointerdown', handleGlobalPointerDown, true);
   if (suggestTimer) window.clearTimeout(suggestTimer);
+  if (collapseTimer) window.clearTimeout(collapseTimer);
 });
 </script>
 

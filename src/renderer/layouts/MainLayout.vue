@@ -72,7 +72,7 @@ const keepAliveMax = computed(() =>
             <YzsKeepAlive v-if="keepAliveMax > 0" :exclude="excludeFromCache" :max="keepAliveMax">
               <component :is="Component" :key="routeViewKey" />
             </YzsKeepAlive>
-            <component v-else :is="Component" />
+            <component v-else :is="Component" :key="routeViewKey" />
           </router-view>
         </div>
       </main>
