@@ -70,6 +70,19 @@ app.config.errorHandler = (err: unknown, instance, info) => {
 };
 
 window.addEventListener('error', (event) => {
+  const errorMessage = event.error?.message ?? event.message ?? '';
+
+  // Skip benign browser warnings that don't affect functionality
+  const ignoredErrors = [
+    'ResizeObserver loop completed with undelivered notifications',
+    'ResizeObserver loop limit exceeded',
+  ];
+
+  if (ignoredErrors.some((ignored) => errorMessage.includes(ignored))) {
+    logger.warn('App', 'Ignored benign window error', errorMessage);
+    return;
+  }
+
   logger.error('App', 'Window error event', event.error ?? event.message, {
     filename: event.filename,
     lineno: event.lineno,
