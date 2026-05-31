@@ -47,6 +47,7 @@ import {
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
 import { extractFirstObject, extractList } from '@/utils/extractors';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 interface ArtistAlbumCardProps {
   id: string | number;
@@ -134,32 +135,12 @@ const handleSort = (field: SortField) => {
   }
 };
 
-const sortedSongs = computed(() => {
-  const data = songs.value;
-  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
-
-  if (sortField.value === 'index') {
-    return sortOrder.value === 'asc' ? data : [...data].reverse();
-  }
-
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-
-  // 仅在需要排序时创建副本
-  return [...data].sort((a, b) => {
-    switch (sortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      default:
-        return 0;
-    }
-  });
-});
+const sortedSongs = computed(() =>
+  sortSongs(songs.value, sortField.value, sortOrder.value, {
+    indexSource: songs.value,
+  }),
+);
+const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
@@ -675,8 +656,10 @@ onUnmounted(() => {
             <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
               <SongList
                 ref="songListRef"
-                :songs="sortedSongs"
+                :songs="displayedSongs"
+                :contextSongs="sortedSongs"
                 :searchQuery="searchQuery"
+                :disableInternalFilter="true"
                 :loading="loadingSongs"
                 :active="activeTab === 'songs'"
                 :showCover="true"

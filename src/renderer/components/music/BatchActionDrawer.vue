@@ -15,12 +15,12 @@ import { sortPlaylists } from '@/stores/playlist';
 import type { PlaylistSortOrder } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
-import { useVirtualList } from '@vueuse/core';
 import { isPlayableSong } from '@/utils/song';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import { iconList, iconPlay, iconPlus, iconTrash, iconX } from '@/icons';
 import { MANUAL_PLAYBACK_QUEUE_ID, PERSONAL_FM_QUEUE_ID } from '@/stores/playlist';
+import { useVirtualList } from '@/composables/useVirtualList';
 
 interface Props {
   open?: boolean;
@@ -126,12 +126,39 @@ watch(
 );
 
 const itemHeight = 56;
-const { list, containerProps, wrapperProps } = useVirtualList(
-  computed(() => props.songs),
-  {
-    itemHeight,
-  },
-);
+const scrollContainerRef = ref<HTMLElement | null>(null);
+const {
+  containerRef,
+  visibleStart,
+  visibleEnd,
+  totalSize: totalHeight,
+  offset: visibleOffset,
+} = useVirtualList({
+  itemCount: computed(() => props.songs.length),
+  itemSize: itemHeight,
+  overscan: 8,
+  scrollContainer: scrollContainerRef,
+  active: computed(() => open.value),
+});
+
+const list = computed(() => {
+  const start = visibleStart.value;
+  const end = visibleEnd.value;
+  if (start >= end) return [] as Array<{ data: Song; index: number }>;
+  return props.songs.slice(start, end).map((data, index) => ({
+    data,
+    index: start + index,
+  }));
+});
+
+const wrapperStyle = computed(() => ({
+  height: `${totalHeight.value}px`,
+  position: 'relative' as const,
+}));
+
+const visibleBlockStyle = computed(() => ({
+  transform: `translateY(${visibleOffset.value}px)`,
+}));
 
 const createdPlaylists = computed(() =>
   sortPlaylists(
@@ -367,58 +394,47 @@ const confirmRemoveFromPlaylist = async () => {
     </div>
 
     <div class="batch-list">
-      <Scrollbar class="flex-1 min-h-0" :scrollbar-inset="4" :content-props="containerProps">
-        <div v-bind="wrapperProps" class="batch-list-inner">
-          <div
-            v-for="entry in list"
-            :key="entry.data.id"
-            class="batch-row"
-            :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
-            :style="{ height: `${itemHeight}px` }"
-            @click="toggleSong(entry.data)"
-          >
-            <div class="batch-leading" @click.stop>
-              <CheckboxRoot
-                class="batch-checkbox"
-                :model-value="selectedKeys.has(String(entry.data.id))"
-                @update:model-value="setSongChecked(entry.data, $event)"
-              >
-                <CheckboxIndicator as-child>
-                  <span class="batch-checkbox-indicator"></span>
-                </CheckboxIndicator>
-              </CheckboxRoot>
+      <Scrollbar
+        class="flex-1 min-h-0"
+        :scrollbar-inset="4"
+        :content-props="{ ref: scrollContainerRef }"
+      >
+        <div ref="containerRef" :style="wrapperStyle" class="batch-list-inner">
+          <div :style="visibleBlockStyle">
+            <div
+              v-for="entry in list"
+              :key="entry.data.id"
+              class="batch-row"
+              :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
+              :style="{ height: `${itemHeight}px` }"
+              @click="toggleSong(entry.data)"
+            >
+              <div class="batch-leading" @click.stop>
+                <CheckboxRoot
+                  class="batch-checkbox"
+                  :model-value="selectedKeys.has(String(entry.data.id))"
+                  @update:model-value="setSongChecked(entry.data, $event)"
+                >
+                  <CheckboxIndicator as-child>
+                    <span class="batch-checkbox-indicator"></span>
+                  </CheckboxIndicator>
+                </CheckboxRoot>
+              </div>
+              <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
+                <SongCard
+                  :song="entry.data"
+                  :showCover="true"
+                  :showAlbum="false"
+                  :showDuration="false"
+                  :active="false"
+                  :showMore="false"
+                  :disableLinks="true"
+                  variant="list"
+                />
+              </div>
+              <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
+              <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
             </div>
-            <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
-              <SongCard
-                :id="entry.data.id"
-                :hash="entry.data.hash"
-                :title="entry.data.title"
-                :artist="entry.data.artist"
-                :artists="entry.data.artists"
-                :album="entry.data.album"
-                :albumId="entry.data.albumId"
-                :coverUrl="entry.data.coverUrl"
-                :duration="entry.data.duration"
-                :audioUrl="entry.data.audioUrl"
-                :source="entry.data.source"
-                :mvHash="entry.data.mvHash"
-                :mixSongId="entry.data.mixSongId"
-                :fileId="entry.data.fileId"
-                :privilege="entry.data.privilege"
-                :payType="entry.data.payType"
-                :oldCpy="entry.data.oldCpy"
-                :relateGoods="entry.data.relateGoods"
-                :showCover="true"
-                :showAlbum="false"
-                :showDuration="false"
-                :active="false"
-                :showMore="false"
-                :disableLinks="true"
-                variant="list"
-              />
-            </div>
-            <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
-            <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
           </div>
         </div>
 

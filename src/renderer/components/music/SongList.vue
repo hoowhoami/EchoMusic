@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, shallowRef } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch, shallowRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useResizeObserver } from '@vueuse/core';
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
@@ -25,9 +24,11 @@ import {
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useVirtualList } from '@/composables/useVirtualList';
 
 interface Props {
   songs: Song[];
+  contextSongs?: Song[];
   loading?: boolean;
   showIndex?: boolean;
   showCover?: boolean;
@@ -47,6 +48,7 @@ interface Props {
   queueFilteredInvalidCount?: number;
   showLyricColumn?: boolean;
   stickySelector?: string;
+  disableInternalFilter?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -65,6 +67,8 @@ const props = withDefaults(defineProps<Props>(), {
   queueFilteredInvalidCount: 0,
   showLyricColumn: false,
   stickySelector: '',
+  contextSongs: undefined,
+  disableInternalFilter: false,
 });
 
 // const emit = defineEmits<{
@@ -76,6 +80,13 @@ const playlistStore = usePlaylistStore();
 const settingStore = useSettingStore();
 const router = useRouter();
 const route = useRoute();
+
+const readString = (value: unknown, fallback = ''): string => {
+  if (value === undefined || value === null) return fallback;
+  return String(value);
+};
+
+const getSongIdText = (song: Song) => readString(song.id);
 
 // 缓存播放状态，避免每次渲染都访问 store
 const isPlaying = ref(playerStore.isPlaying);
@@ -89,13 +100,16 @@ const updatePlayingState = () => {
 };
 
 const filteredSongsRef = shallowRef<Song[]>([]);
+const queueContextSongs = computed(() => props.contextSongs ?? props.songs);
+const normalizedSearchQuery = computed(() => props.searchQuery.trim().toLowerCase());
+const hasSearchQuery = computed(() => normalizedSearchQuery.value.length > 0);
 
 const updateFilteredSongs = () => {
-  if (!props.searchQuery.trim()) {
+  if (props.disableInternalFilter || !hasSearchQuery.value) {
     filteredSongsRef.value = props.songs;
     return;
   }
-  const q = props.searchQuery.toLowerCase();
+  const q = normalizedSearchQuery.value;
   filteredSongsRef.value = props.songs.filter(
     (s) =>
       s.title.toLowerCase().includes(q) ||
@@ -104,26 +118,91 @@ const updateFilteredSongs = () => {
   );
 };
 
-watch(() => [props.songs, props.searchQuery], updateFilteredSongs, { immediate: true });
+watch(
+  [() => props.songs, () => props.searchQuery, () => props.disableInternalFilter],
+  updateFilteredSongs,
+  { immediate: true },
+);
+
+const sourceSongsById = computed(() => {
+  const map = new Map<string, Song>();
+  props.songs.forEach((song) => {
+    map.set(getSongIdText(song), song);
+  });
+  return map;
+});
+
+const contextSongsById = computed(() => {
+  if (queueContextSongs.value === props.songs) return sourceSongsById.value;
+  const map = new Map<string, Song>();
+  queueContextSongs.value.forEach((song) => {
+    map.set(getSongIdText(song), song);
+  });
+  return map;
+});
+
+const filteredSongsById = computed(() => {
+  const map = new Map<string, Song>();
+  filteredSongsRef.value.forEach((song) => {
+    map.set(getSongIdText(song), song);
+  });
+  return map;
+});
+
+const filteredSongIndexMap = computed(() => {
+  const map = new Map<string, number>();
+  filteredSongsRef.value.forEach((song, index) => {
+    map.set(getSongIdText(song), index);
+  });
+  return map;
+});
 
 const itemHeight = 60;
 const overscan = 10;
-const containerRef = ref<HTMLElement | null>(null);
-const visibleStart = ref(0);
-const visibleEnd = ref(0);
-let measureFrame = 0;
-
-const totalHeight = computed(() => filteredSongsRef.value.length * itemHeight);
+const scrollContainerRef = useScrollContainer();
+const {
+  containerRef,
+  visibleStart,
+  visibleEnd,
+  totalSize: totalHeight,
+  offset: visibleOffset,
+  scrollToIndex,
+} = useVirtualList({
+  itemCount: computed(() => filteredSongsRef.value.length),
+  itemSize: itemHeight,
+  overscan,
+  active: computed(() => props.active),
+  loading: computed(() => props.loading),
+  scrollContainer: scrollContainerRef,
+  cacheOffsets: true,
+});
 
 const list = computed(() => {
-  if (!props.active) return [] as Array<{ data: Song; index: number }>;
+  if (!props.active)
+    return [] as Array<{
+      data: Song;
+      index: number;
+      idText: string;
+      isActive: boolean;
+      opacity: number;
+    }>;
   const start = visibleStart.value;
   const end = visibleEnd.value;
   const source = filteredSongsRef.value;
-  if (start === end || source.length === 0) return [] as Array<{ data: Song; index: number }>;
+  if (start === end || source.length === 0)
+    return [] as Array<{
+      data: Song;
+      index: number;
+      idText: string;
+      isActive: boolean;
+      opacity: number;
+    }>;
   return source.slice(start, end).map((data, index) => ({
     data,
     index: start + index,
+    idText: getSongIdText(data),
+    isActive: getSongIdText(data) === activeIdText.value,
+    opacity: rowOpacity(data),
   }));
 });
 
@@ -133,7 +212,7 @@ const wrapperStyle = computed(() => ({
 }));
 
 const visibleBlockStyle = computed(() => ({
-  transform: `translateY(${visibleStart.value * itemHeight}px)`,
+  transform: `translateY(${visibleOffset.value}px)`,
 }));
 
 const rowGridTemplate = computed(() =>
@@ -148,11 +227,6 @@ const rowGridTemplate = computed(() =>
 const isSongPlayable = (song: Song) => isPlayableSong(song);
 
 const rowOpacity = (song: Song) => (isSongPlayable(song) ? 1 : 0.45);
-
-const readString = (value: unknown, fallback = ''): string => {
-  if (value === undefined || value === null) return fallback;
-  return String(value);
-};
 
 const activeIdText = computed(() => readString(props.activeId));
 const isActiveSong = (song: Song) => readString(song.id) === activeIdText.value;
@@ -190,13 +264,13 @@ const handleTogglePlay = async (song: Song) => {
     return;
   }
 
-  const target = props.songs.find((item) => String(item.id) === String(song.id)) ?? song;
-  if ((props.songs?.length ?? 0) > 0 && props.queueOptions?.queueId) {
+  const target = sourceSongsById.value.get(getSongIdText(song)) ?? song;
+  if ((queueContextSongs.value.length ?? 0) > 0 && props.queueOptions?.queueId) {
     await playSongInContext(
       playlistStore,
       playerStore,
       target,
-      props.songs,
+      queueContextSongs.value,
       props.queueFilteredInvalidCount ?? 0,
       props.queueOptions,
     );
@@ -205,124 +279,59 @@ const handleTogglePlay = async (song: Song) => {
   await queueAndPlaySong(playlistStore, playerStore, target, props.queueOptions);
 };
 
-const scrollContainerRef = useScrollContainer();
-
 const getScrollContainer = (): HTMLElement | null => scrollContainerRef.value;
 
-// 性能优化：缓存容器尺寸与偏移，避免滚动时频繁触发 Layout Sync
-const cachedOffsets = {
-  listContentTop: -1,
-  viewportHeight: -1,
-  isDirty: true,
-};
+let cachedStickyContainer: HTMLElement | null = null;
+let cachedStickySelector = '';
+let cachedStickyNodes: HTMLElement[] = [];
+let cachedStickyOffset = 0;
+let stickyOffsetFrame = 0;
+let stickyOffsetDirty = true;
 
-const updateVisibleRange = () => {
-  const totalCount = filteredSongsRef.value.length;
-  if (!props.active || props.loading || totalCount === 0) {
-    if (visibleStart.value !== 0) visibleStart.value = 0;
-    if (visibleEnd.value !== 0) visibleEnd.value = 0;
-    return;
-  }
-
-  const scrollContainer = getScrollContainer();
-  const containerEl = containerRef.value;
-
-  if (!scrollContainer || !containerEl) {
-    const fallbackEnd = Math.min(totalCount, overscan * 4);
-    if (visibleStart.value !== 0) visibleStart.value = 0;
-    if (visibleEnd.value !== fallbackEnd) visibleEnd.value = fallbackEnd;
-    return;
-  }
-
-  // 仅在必要时测量尺寸（Layout Sync）
-  if (cachedOffsets.isDirty || cachedOffsets.listContentTop < 0) {
-    const scrollContainerRect = scrollContainer.getBoundingClientRect();
-    const containerRect = containerEl.getBoundingClientRect();
-    // 列表相对于滚动容器内容的绝对偏移
-    cachedOffsets.listContentTop =
-      containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
-    cachedOffsets.viewportHeight = scrollContainer.clientHeight;
-    cachedOffsets.isDirty = false;
-  }
-
-  const listTop = cachedOffsets.listContentTop;
-  const listBottom = listTop + totalHeight.value;
-  const viewportTop = scrollContainer.scrollTop;
-  const viewportBottom = viewportTop + cachedOffsets.viewportHeight;
-
-  if (viewportBottom <= listTop || viewportTop >= listBottom) {
-    if (visibleStart.value !== 0) visibleStart.value = 0;
-    if (visibleEnd.value !== 0) visibleEnd.value = 0;
-    return;
-  }
-
-  const relativeTop = Math.max(0, viewportTop - listTop);
-  const relativeBottom = Math.max(0, Math.min(totalHeight.value, viewportBottom - listTop));
-  const nextStart = Math.max(0, Math.floor(relativeTop / itemHeight) - overscan);
-  const nextEnd = Math.min(totalCount, Math.ceil(relativeBottom / itemHeight) + overscan);
-
-  if (visibleStart.value !== nextStart) visibleStart.value = nextStart;
-  if (visibleEnd.value !== Math.max(nextStart, nextEnd))
-    visibleEnd.value = Math.max(nextStart, nextEnd);
-};
-
-const scheduleMeasure = (forceDirty = false) => {
-  if (forceDirty) cachedOffsets.isDirty = true;
-  if (measureFrame) cancelAnimationFrame(measureFrame);
-  measureFrame = requestAnimationFrame(() => {
-    measureFrame = 0;
-    updateVisibleRange();
-  });
-};
-
-const handleScroll = () => {
-  scheduleMeasure();
-};
-
-let boundContainer: HTMLElement | null = null;
-
-const bindScrollContainer = () => {
-  const nextContainer = getScrollContainer();
-  if (boundContainer === nextContainer) return;
-  if (boundContainer) {
-    boundContainer.removeEventListener('scroll', handleScroll);
-  }
-  boundContainer = nextContainer;
-  boundContainer?.addEventListener('scroll', handleScroll, { passive: true });
-  cachedOffsets.isDirty = true;
-};
-
-const scrollToIndex = (index: number, behavior: ScrollBehavior = 'auto') => {
-  const scrollContainer = getScrollContainer();
-  const containerEl = containerRef.value;
-  if (!scrollContainer || !containerEl) return;
-
-  // 使用缓存避免强制 Layout
-  if (cachedOffsets.isDirty || cachedOffsets.listContentTop < 0) {
-    const scrollContainerRect = scrollContainer.getBoundingClientRect();
-    const containerRect = containerEl.getBoundingClientRect();
-    cachedOffsets.listContentTop =
-      containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
-    cachedOffsets.viewportHeight = scrollContainer.clientHeight;
-    cachedOffsets.isDirty = false;
-  }
-
-  const targetTop = cachedOffsets.listContentTop + index * itemHeight;
-  scrollContainer.scrollTo({ top: Math.max(0, targetTop), behavior });
-  scheduleMeasure();
+const clearStickyOffsetCache = () => {
+  cachedStickyContainer = null;
+  cachedStickySelector = '';
+  cachedStickyNodes = [];
+  cachedStickyOffset = 0;
+  stickyOffsetDirty = true;
 };
 
 const getStickyOffset = (scrollContainer: HTMLElement): number => {
-  const containerTop = scrollContainer.getBoundingClientRect().top;
   const baseSelector = '.sliver-header-root, .song-list-sticky';
   const selector = props.stickySelector ? `${baseSelector}, ${props.stickySelector}` : baseSelector;
-  const stickyNodes = Array.from(scrollContainer.querySelectorAll<HTMLElement>(selector));
-  if (stickyNodes.length === 0) return 0;
-  const bottoms = stickyNodes
-    .map((node) => node.getBoundingClientRect().bottom - containerTop)
-    .filter((value) => Number.isFinite(value) && value > 0);
-  if (bottoms.length === 0) return 0;
-  return Math.max(...bottoms);
+  if (cachedStickyContainer !== scrollContainer || cachedStickySelector !== selector) {
+    cachedStickyContainer = scrollContainer;
+    cachedStickySelector = selector;
+    cachedStickyNodes = Array.from(scrollContainer.querySelectorAll<HTMLElement>(selector));
+    stickyOffsetDirty = true;
+  }
+  if (!stickyOffsetDirty) return cachedStickyOffset;
+  if (cachedStickyNodes.length === 0) {
+    cachedStickyOffset = 0;
+    stickyOffsetDirty = false;
+    return cachedStickyOffset;
+  }
+  const containerTop = scrollContainer.getBoundingClientRect().top;
+  let maxBottom = 0;
+  cachedStickyNodes = cachedStickyNodes.filter((node) => node.isConnected);
+  cachedStickyNodes.forEach((node) => {
+    const bottom = node.getBoundingClientRect().bottom - containerTop;
+    if (Number.isFinite(bottom) && bottom > maxBottom) {
+      maxBottom = bottom;
+    }
+  });
+  cachedStickyOffset = maxBottom;
+  stickyOffsetDirty = false;
+  return cachedStickyOffset;
+};
+
+const scheduleStickyOffsetRefresh = () => {
+  stickyOffsetDirty = true;
+  if (stickyOffsetFrame) return;
+  stickyOffsetFrame = requestAnimationFrame(() => {
+    stickyOffsetFrame = 0;
+    stickyOffsetDirty = true;
+  });
 };
 
 const adjustActiveIntoView = (smooth = false) => {
@@ -366,8 +375,8 @@ const isActiveVisible = (): boolean => {
 const scrollToActive = async () => {
   if (!activeIdText.value) return;
   if (isActiveVisible()) return;
-  const index = filteredSongsRef.value.findIndex((s) => readString(s.id) === activeIdText.value);
-  if (index === -1) return;
+  const index = filteredSongIndexMap.value.get(activeIdText.value);
+  if (index === undefined) return;
   scrollToIndex(index);
   await nextTick();
   const scrollContainer = getScrollContainer();
@@ -392,64 +401,12 @@ watch(
     updatePlayingState();
   },
 );
-
-watch(
-  filteredSongsRef,
-  () => {
-    scheduleMeasure(true);
-  },
-  { flush: 'post' },
-);
-
-watch(
-  () => props.loading,
-  () => {
-    scheduleMeasure(true);
-  },
-  { flush: 'post' },
-);
-
-watch(
-  () => props.active,
-  async (active) => {
-    if (!active) {
-      visibleStart.value = 0;
-      visibleEnd.value = 0;
-      return;
-    }
-    await nextTick();
-    bindScrollContainer();
-    scheduleMeasure(true);
-  },
-  { flush: 'post' },
-);
-
-// 响应注入的滚动容器变化
-watch(scrollContainerRef, () => {
-  bindScrollContainer();
-  scheduleMeasure(true);
-});
-
-// 修复：保存函数引用以确保 add/remove 使用同一引用
-const handleResize = () => scheduleMeasure(true);
-
-onMounted(async () => {
-  await nextTick();
-  bindScrollContainer();
-  window.addEventListener('resize', handleResize, { passive: true });
-  scheduleMeasure(true);
-  isPlaying.value = playerStore.isPlaying;
-});
+isPlaying.value = playerStore.isPlaying;
 
 onBeforeUnmount(() => {
-  if (measureFrame) cancelAnimationFrame(measureFrame);
   if (playingStateTimer) clearTimeout(playingStateTimer);
-  window.removeEventListener('resize', handleResize);
-  boundContainer?.removeEventListener('scroll', handleScroll);
-});
-
-useResizeObserver(containerRef, () => {
-  scheduleMeasure(true);
+  if (stickyOffsetFrame) cancelAnimationFrame(stickyOffsetFrame);
+  clearStickyOffsetCache();
 });
 
 // ── 单例右键菜单 ──
@@ -484,7 +441,10 @@ const handleContextMenu = (event: MouseEvent) => {
     contextMenuOpen.value = false;
     return;
   }
-  const song = props.songs.find((s) => String(s.id) === songId);
+  const song =
+    filteredSongsById.value.get(songId) ??
+    sourceSongsById.value.get(songId) ??
+    contextSongsById.value.get(songId);
   if (!song) {
     contextMenuOpen.value = false;
     return;
@@ -496,12 +456,12 @@ const handleContextMenu = (event: MouseEvent) => {
 const ctxPlayNow = async () => {
   const song = contextMenuTarget.value;
   if (!song || !isPlayableSong(song)) return;
-  if ((props.songs?.length ?? 0) > 0 && props.queueOptions?.queueId) {
+  if ((queueContextSongs.value.length ?? 0) > 0 && props.queueOptions?.queueId) {
     await playSongInContext(
       playlistStore,
       playerStore,
       song,
-      props.songs,
+      queueContextSongs.value,
       props.queueFilteredInvalidCount ?? 0,
       props.queueOptions,
     );
@@ -553,6 +513,19 @@ watch(contextMenuOpen, (isOpen) => {
   }
 });
 
+watch([() => props.stickySelector, scrollContainerRef], () => {
+  clearStickyOffsetCache();
+  scheduleStickyOffsetRefresh();
+});
+
+watch(
+  () => [props.active, props.loading, filteredSongsRef.value.length],
+  () => {
+    scheduleStickyOffsetRefresh();
+  },
+  { flush: 'post' },
+);
+
 defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.value.length) });
 </script>
 
@@ -578,14 +551,13 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
                   : entry.data.id
               "
               class="song-list-row group rounded-lg cursor-default content-visibility-auto"
-              :style="{ height: `${itemHeight}px`, opacity: rowOpacity(entry.data) }"
+              :style="{ height: `${itemHeight}px`, opacity: entry.opacity }"
               :class="{
-                'is-active': isActiveSong(entry.data),
-                'is-context-target':
-                  contextMenuOpen && contextMenuTargetId === readString(entry.data.id),
+                'is-active': entry.isActive,
+                'is-context-target': contextMenuOpen && contextMenuTargetId === entry.idText,
               }"
               :data-song-row="true"
-              :data-song-id="readString(entry.data.id)"
+              :data-song-id="entry.idText"
             >
               <div
                 class="song-list-row-inner grid items-center w-full h-full"
@@ -594,7 +566,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
               >
                 <div v-if="showIndex" class="flex items-center justify-start pl-2">
                   <div class="relative w-4 h-4">
-                    <template v-if="isActiveSong(entry.data)">
+                    <template v-if="entry.isActive">
                       <div
                         v-show="isPlaying"
                         class="absolute inset-0 flex items-center justify-center text-primary cursor-pointer"
@@ -629,31 +601,13 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
 
                 <div class="min-w-0">
                   <SongCard
-                    :id="entry.data.id"
-                    :hash="entry.data.hash"
-                    :title="entry.data.title"
-                    :artist="entry.data.artist"
-                    :artists="entry.data.artists"
-                    :album="entry.data.album"
-                    :albumId="entry.data.albumId"
-                    :coverUrl="entry.data.coverUrl"
-                    :duration="entry.data.duration"
-                    :audioUrl="entry.data.audioUrl"
-                    :source="entry.data.source"
-                    :mvHash="entry.data.mvHash"
-                    :isOriginal="entry.data.isOriginal"
-                    :mixSongId="entry.data.mixSongId"
-                    :fileId="entry.data.fileId"
-                    :privilege="entry.data.privilege"
-                    :payType="entry.data.payType"
-                    :oldCpy="entry.data.oldCpy"
-                    :relateGoods="entry.data.relateGoods"
+                    :song="entry.data"
                     :showCover="showCover"
                     :showAlbum="false"
                     :showDuration="false"
                     :showMore="true"
-                    :active="isActiveSong(entry.data)"
-                    :queueContext="props.songs"
+                    :active="entry.isActive"
+                    :queueContext="queueContextSongs"
                     :queueOptions="props.queueOptions"
                     :queueFilteredInvalidCount="props.queueFilteredInvalidCount"
                     :onDoubleTapPlay="props.onSongDoubleTapPlay"
@@ -705,7 +659,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
           v-else-if="filteredSongsRef.length === 0"
           class="py-20 text-center opacity-50 text-[14px] italic"
         >
-          {{ props.searchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
+          {{ hasSearchQuery ? '未找到相关歌曲' : '暂无歌曲' }}
         </div>
 
         <!-- 单例右键菜单（整个列表共享一个实例） -->

@@ -87,7 +87,7 @@ async function fetchMicDevices() {
 
 const isFavorite = computed(() => {
   if (!matchedSong.value) return false;
-  return playlistStore.favorites.some((item) => isSameSong(item, matchedSong.value!));
+  return playlistStore.isFavoriteSong(matchedSong.value);
 });
 
 const sourceIcon = computed(() =>

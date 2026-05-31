@@ -24,6 +24,7 @@ import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import Badge from '@/components/ui/Badge.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -114,31 +115,11 @@ const handleSort = (field: SortField) => {
 };
 
 const sortedSongs = computed(() => {
-  const base = songs.value.slice();
-  if (!sortField.value || !sortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  songs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
-
-  return base.sort((a, b) => {
-    switch (sortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(songs.value, sortField.value, sortOrder.value, {
+    indexSource: songs.value,
   });
 });
+const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
@@ -395,8 +376,10 @@ watch(
           <SongList
             v-else
             ref="songListRef"
-            :songs="sortedSongs"
+            :songs="displayedSongs"
+            :contextSongs="sortedSongs"
             :searchQuery="searchQuery"
+            :disableInternalFilter="true"
             :activeId="activeSongId"
             :showCover="true"
             :queueOptions="{

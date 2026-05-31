@@ -204,6 +204,13 @@ const resolveSongNumericId = (song: Song | null | undefined): string => {
   return String(song.id ?? '');
 };
 
+const resolveFavoriteSongKey = (song: Song | null | undefined): string => {
+  if (!song) return '';
+  const queueKey = resolveSongQueueKey(song);
+  if (queueKey) return queueKey;
+  return `id:${String(song.id ?? '')}`;
+};
+
 const mergeQueueSongs = (existing: Song[], incoming: Song[]): Song[] => {
   if (incoming.length === 0) return existing.slice();
   const seen = new Set(existing.map((song) => resolveSongQueueKey(song)));
@@ -317,6 +324,9 @@ export const usePlaylistStore = defineStore('playlist', {
       const playlist = this.likedPlaylist;
       if (!playlist?.listid) return null;
       return playlist.listid;
+    },
+    favoriteSongKeySet(state): Set<string> {
+      return new Set(state.favorites.map((song) => resolveFavoriteSongKey(song)).filter(Boolean));
     },
   },
   actions: {
@@ -847,9 +857,8 @@ export const usePlaylistStore = defineStore('playlist', {
       };
     },
     isFavoriteSong(song: Song) {
-      return this.favorites.some(
-        (item) => isSameSong(item, song) || String(item.id) === String(song.id),
-      );
+      const key = resolveFavoriteSongKey(song);
+      return key ? this.favoriteSongKeySet.has(key) : false;
     },
     findPlaylistByIdentity(id: string | number | null | undefined) {
       if (id === undefined || id === null || String(id) === '') return undefined;

@@ -31,6 +31,7 @@ import Button from '@/components/ui/Button.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { iconCurrentLocation, iconHeart, iconSearch } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
@@ -51,27 +52,11 @@ const sortOrder = ref<SortOrder>(null);
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const sortedSongs = computed(() => {
-  const data = songs.value;
-  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
-  if (sortField.value === 'index') {
-    return sortOrder.value === 'asc' ? data : [...data].reverse();
-  }
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  return [...data].sort((a, b) => {
-    switch (sortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(songs.value, sortField.value, sortOrder.value, {
+    indexSource: songs.value,
   });
 });
+const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
 
 const handleSort = (field: SortField) => {
   if (sortField.value === field) {
@@ -467,10 +452,12 @@ watch(isLoggedIn, (value) => {
             <TabsContent value="songs" class="px-6">
               <SongList
                 ref="songListRef"
-                :songs="sortedSongs"
+                :songs="displayedSongs"
+                :contextSongs="sortedSongs"
                 :loading="false"
                 :active="activeTab === 'songs'"
                 :searchQuery="searchQuery"
+                :disableInternalFilter="true"
                 :activeId="activeSongId"
                 :showCover="true"
                 :queueOptions="{

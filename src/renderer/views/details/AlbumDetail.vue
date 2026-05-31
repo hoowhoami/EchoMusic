@@ -48,6 +48,7 @@ import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { isRecord, toRecord } from '../../../shared/object';
 import { PagedSongLoader } from '@/utils/PagedSongLoader';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -242,30 +243,12 @@ const handleSort = (field: SortField) => {
   }
 };
 
-const sortedSongs = computed(() => {
-  const data = songs.value;
-  if (!sortField.value || !sortOrder.value || data.length === 0) return data;
-  if (sortField.value === 'index') {
-    return sortOrder.value === 'asc' ? data : [...data].reverse();
-  }
-
-  const direction = sortOrder.value === 'asc' ? 1 : -1;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-
-  return [...data].sort((a, b) => {
-    switch (sortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      default:
-        return 0;
-    }
-  });
-});
+const sortedSongs = computed(() =>
+  sortSongs(songs.value, sortField.value, sortOrder.value, {
+    indexSource: songs.value,
+  }),
+);
+const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
 
 const fetchComments = async (reset = false) => {
   if (loadingComments.value) return;
@@ -703,10 +686,12 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
             <TabsContent value="songs" class="px-6 flex flex-col flex-1 min-h-0">
               <SongList
                 ref="songListRef"
-                :songs="sortedSongs"
+                :songs="displayedSongs"
+                :contextSongs="sortedSongs"
                 :loading="loadingSongs"
                 :active="activeTab === 'songs'"
                 :searchQuery="searchQuery"
+                :disableInternalFilter="true"
                 :activeId="activeSongId"
                 :showCover="true"
                 :queueOptions="{

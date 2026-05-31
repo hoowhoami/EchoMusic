@@ -46,6 +46,7 @@ import { iconCurrentLocation, iconSearch, iconSparkles } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import { useToastStore } from '@/stores/toast';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 interface ExplorePlaylistCardProps {
   id: string | number;
@@ -139,31 +140,13 @@ const newSongToolbarOffset = exploreHeaderHeight + 46;
 
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 const sortedRankSongs = computed(() => {
-  const base = rankSongs.value.slice();
-  if (!rankSortField.value || !rankSortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  rankSongs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = rankSortOrder.value === 'asc' ? 1 : -1;
-
-  return base.sort((a, b) => {
-    switch (rankSortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(rankSongs.value, rankSortField.value, rankSortOrder.value, {
+    indexSource: rankSongs.value,
   });
 });
+const filteredRankSongs = computed(() =>
+  filterSongsByQuery(sortedRankSongs.value, rankSearchQuery.value),
+);
 
 const newSongSearchQuery = ref('');
 const newSongListRef = ref<{ scrollToActive?: () => void } | null>(null);
@@ -171,31 +154,13 @@ const newSongSortField = ref<SortField | null>(null);
 const newSongSortOrder = ref<SortOrder>(null);
 const showNewSongBatchDrawer = ref(false);
 const sortedNewSongs = computed(() => {
-  const base = newSongs.value.slice();
-  if (!newSongSortField.value || !newSongSortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  newSongs.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = newSongSortOrder.value === 'asc' ? 1 : -1;
-
-  return base.sort((a, b) => {
-    switch (newSongSortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(newSongs.value, newSongSortField.value, newSongSortOrder.value, {
+    indexSource: newSongs.value,
   });
 });
+const filteredNewSongs = computed(() =>
+  filterSongsByQuery(sortedNewSongs.value, newSongSearchQuery.value),
+);
 
 const albums = computed<AlbumMeta[]>(() => {
   const map = albumPayload.value;
@@ -213,15 +178,7 @@ const albums = computed<AlbumMeta[]>(() => {
 });
 
 const rankFilteredCount = computed(() => {
-  const query = rankSearchQuery.value.trim().toLowerCase();
-  if (!query) return sortedRankSongs.value.length;
-  return sortedRankSongs.value.filter((song) => {
-    return (
-      song.title.toLowerCase().includes(query) ||
-      song.artist.toLowerCase().includes(query) ||
-      song.album?.toLowerCase().includes(query)
-    );
-  }).length;
+  return filteredRankSongs.value.length;
 });
 
 const rankSongCountLabel = computed(() => {
@@ -231,15 +188,7 @@ const rankSongCountLabel = computed(() => {
 });
 
 const newSongFilteredCount = computed(() => {
-  const query = newSongSearchQuery.value.trim().toLowerCase();
-  if (!query) return sortedNewSongs.value.length;
-  return sortedNewSongs.value.filter((song) => {
-    return (
-      song.title.toLowerCase().includes(query) ||
-      song.artist.toLowerCase().includes(query) ||
-      song.album?.toLowerCase().includes(query)
-    );
-  }).length;
+  return filteredNewSongs.value.length;
 });
 
 const newSongCountLabel = computed(() => {
@@ -753,8 +702,10 @@ const filteredArtistCards = computed(() => {
           <SongList
             v-else
             ref="rankSongListRef"
-            :songs="sortedRankSongs"
+            :songs="filteredRankSongs"
+            :contextSongs="sortedRankSongs"
             :searchQuery="rankSearchQuery"
+            :disableInternalFilter="true"
             :activeId="activeSongId"
             :showCover="true"
             :queueOptions="{
@@ -878,8 +829,10 @@ const filteredArtistCards = computed(() => {
           <SongList
             v-else
             ref="newSongListRef"
-            :songs="sortedNewSongs"
+            :songs="filteredNewSongs"
+            :contextSongs="sortedNewSongs"
             :searchQuery="newSongSearchQuery"
+            :disableInternalFilter="true"
             :activeId="activeSongId"
             :showCover="true"
             :queueOptions="{

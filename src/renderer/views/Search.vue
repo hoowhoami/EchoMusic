@@ -39,6 +39,7 @@ import {
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Badge from '@/components/ui/Badge.vue';
+import { filterSongsByQuery, sortSongs } from '@/utils/songList';
 
 interface SearchHotKeyword {
   keyword: string;
@@ -181,69 +182,23 @@ const currentSearchSubtitle = computed(() => currentSearchKeyword.value.trim() |
 const activePagination = computed(() => paginationState[activeSearchType.value]);
 
 const sortedSongResults = computed(() => {
-  const base = songResults.value.slice();
-  if (!songSortField.value || !songSortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  songResults.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = songSortOrder.value === 'asc' ? 1 : -1;
-
-  return base.sort((a, b) => {
-    switch (songSortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.album ?? '', b.album ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(songResults.value, songSortField.value, songSortOrder.value, {
+    indexSource: songResults.value,
   });
 });
+const filteredSongResults = computed(() =>
+  filterSongsByQuery(sortedSongResults.value, songSearchQuery.value),
+);
 
 const sortedLyricResults = computed(() => {
-  const base = lyricResults.value.slice();
-  if (!lyricSortField.value || !lyricSortOrder.value) return base;
-  const compareText = (a: string, b: string) =>
-    a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base' });
-  const indexMap = new Map<string, number>();
-  lyricResults.value.forEach((song, index) => {
-    indexMap.set(song.id, index);
-  });
-  const direction = lyricSortOrder.value === 'asc' ? 1 : -1;
-
-  return base.sort((a, b) => {
-    switch (lyricSortField.value) {
-      case 'title':
-        return compareText(a.title, b.title) * direction;
-      case 'album':
-        return compareText(a.lyricSnippet ?? '', b.lyricSnippet ?? '') * direction;
-      case 'duration':
-        return (a.duration - b.duration) * direction;
-      case 'index':
-        return ((indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0)) * direction;
-      default:
-        return 0;
-    }
+  return sortSongs(lyricResults.value, lyricSortField.value, lyricSortOrder.value, {
+    indexSource: lyricResults.value,
+    albumAccessor: (song) => song.lyricSnippet ?? '',
   });
 });
 
 const songFilteredCount = computed(() => {
-  const query = songSearchQuery.value.trim().toLowerCase();
-  if (!query) return sortedSongResults.value.length;
-  return sortedSongResults.value.filter((song) => {
-    return (
-      song.title.toLowerCase().includes(query) ||
-      song.artist.toLowerCase().includes(query) ||
-      song.album?.toLowerCase().includes(query)
-    );
-  }).length;
+  return filteredSongResults.value.length;
 });
 
 const songCountLabel = computed(() => {
@@ -1159,8 +1114,10 @@ onUnmounted(() => {
             <SongList
               ref="songListRef"
               class="search-song-list"
-              :songs="sortedSongResults"
+              :songs="filteredSongResults"
+              :contextSongs="sortedSongResults"
               :searchQuery="songSearchQuery"
+              :disableInternalFilter="true"
               :activeId="activeSongId"
               :showCover="true"
               :queueOptions="{

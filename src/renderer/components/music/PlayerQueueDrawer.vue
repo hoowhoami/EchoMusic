@@ -4,9 +4,8 @@ import type { ComponentPublicInstance } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Sortable from 'sortablejs';
 import Drawer from '@/components/ui/Drawer.vue';
-import SongCard from '@/components/music/SongCard.vue';
+import PlayerQueueVirtualList from '@/components/music/PlayerQueueVirtualList.vue';
 import Button from '@/components/ui/Button.vue';
-import Scrollbar from '@/components/ui/Scrollbar.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import type { Song } from '@/models/song';
@@ -40,11 +39,18 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 
 type QueueLike = NonNullable<ReturnType<typeof usePlaylistStore>['activeQueue']>;
-type VirtualRange = { start: number; end: number };
+type QueueVirtualListExposed = {
+  refresh: (forceDirty?: boolean) => void;
+  scrollToTop: () => void;
+  scrollToCurrent: (force?: boolean) => void;
+  isCurrentVisible: () => boolean;
+  getScroller: () => HTMLElement | null;
+  getVisibleStart: () => number;
+};
 
 const itemHeight = 56;
 const slidesRef = ref<HTMLElement | null>(null);
-const queueListRefs = ref<Record<string, HTMLElement | null>>({});
+const queueListRefs = ref<Record<string, QueueVirtualListExposed | null>>({});
 const previewQueueId = ref<string | null>(null);
 const canSwipeQueues = ref(false);
 
@@ -130,122 +136,6 @@ const isPreviewReadonly = computed(
 );
 const isMyQueue = computed(() => previewQueue.value?.id === playlistStore.customPlaybackQueue?.id);
 
-// 每个队列页都维护一份独立的虚拟滚动窗口
-const virtualOverscan = 10;
-const virtualRanges = ref<Record<string, VirtualRange>>({});
-let virtualMeasureFrame = 0;
-let virtualMeasureTimer = 0;
-const pendingVirtualMeasureQueueIds = new Set<string>();
-// 滚动节流间隔（毫秒）
-const VIRTUAL_SCROLL_THROTTLE_MS = 50;
-
-const getQueueVirtualRange = (queueId: string): VirtualRange =>
-  virtualRanges.value[queueId] ?? { start: 0, end: 0 };
-
-const setQueueVirtualRange = (queueId: string, range: VirtualRange) => {
-  // 直接修改对象，避免创建新对象触发不必要的响应式更新
-  const current = virtualRanges.value[queueId];
-  if (current && current.start === range.start && current.end === range.end) {
-    return; // 范围未变化，跳过更新
-  }
-  virtualRanges.value[queueId] = range;
-};
-
-// 性能优化：缓存每个队列的虚拟列表项，避免范围未变时重建数组
-const virtualItemsCache = new Map<
-  string,
-  { start: number; end: number; songs: Song[]; items: Array<{ data: Song; index: number }> }
->();
-
-const getQueueVirtualItems = (queue: QueueLike) => {
-  const range = getQueueVirtualRange(queue.id);
-  const cached = virtualItemsCache.get(queue.id);
-  // 范围和数据源都未变化时直接返回缓存
-  if (
-    cached &&
-    cached.start === range.start &&
-    cached.end === range.end &&
-    cached.songs === queue.songs
-  ) {
-    return cached.items;
-  }
-  const items = queue.songs.slice(range.start, range.end).map((data, i) => ({
-    data,
-    index: range.start + i,
-  }));
-  virtualItemsCache.set(queue.id, {
-    start: range.start,
-    end: range.end,
-    songs: queue.songs,
-    items,
-  });
-  return items;
-};
-
-const getQueueVirtualWrapperStyle = (queue: QueueLike) => ({
-  height: `${queue.songs.length * itemHeight}px`,
-  position: 'relative' as const,
-});
-
-const getQueueVirtualOffsetStyle = (queueId: string) => ({
-  transform: `translateY(${getQueueVirtualRange(queueId).start * itemHeight}px)`,
-});
-
-const updateVirtualRange = (queueId: string) => {
-  const queue = queueOptions.value.find((item) => item.id === queueId) ?? null;
-  if (!queue) {
-    delete virtualRanges.value[queueId];
-    return;
-  }
-  const scroller = queueListRefs.value[queue.id];
-  if (!scroller) {
-    setQueueVirtualRange(queue.id, {
-      start: 0,
-      end: Math.min(queue.songs.length, virtualOverscan * 4),
-    });
-    return;
-  }
-  const totalCount = queue.songs.length;
-  if (totalCount === 0) {
-    setQueueVirtualRange(queue.id, { start: 0, end: 0 });
-    return;
-  }
-  const scrollTop = scroller.scrollTop;
-  const clientHeight = scroller.clientHeight;
-  const nextStart = Math.max(0, Math.floor(scrollTop / itemHeight) - virtualOverscan);
-  const nextEnd = Math.min(
-    totalCount,
-    Math.ceil((scrollTop + clientHeight) / itemHeight) + virtualOverscan,
-  );
-  setQueueVirtualRange(queue.id, {
-    start: nextStart,
-    end: Math.max(nextStart, nextEnd),
-  });
-};
-
-const flushVirtualMeasure = () => {
-  virtualMeasureFrame = 0;
-  virtualMeasureTimer = 0;
-  const ids = Array.from(pendingVirtualMeasureQueueIds);
-  pendingVirtualMeasureQueueIds.clear();
-  ids.forEach((id) => updateVirtualRange(id));
-};
-
-const scheduleVirtualMeasure = (queueId?: string | null) => {
-  const targetIds = queueId ? [queueId] : queueOptions.value.map((queue) => queue.id);
-  targetIds.forEach((id) => pendingVirtualMeasureQueueIds.add(id));
-  // 使用定时器节流，避免高频滚动时过度更新
-  if (virtualMeasureTimer) return;
-  virtualMeasureTimer = window.setTimeout(() => {
-    virtualMeasureTimer = 0;
-    // 使用 rAF 确保在渲染帧内执行
-    if (virtualMeasureFrame) return;
-    virtualMeasureFrame = requestAnimationFrame(flushVirtualMeasure);
-  }, VIRTUAL_SCROLL_THROTTLE_MS);
-};
-
-const handleQueueListScroll = (queueId: string) => scheduleVirtualMeasure(queueId);
-
 const currentTrackId = computed(() => {
   if (!previewQueue.value) return null;
   if (previewQueue.value.id === currentPlaybackQueue.value?.id) return playerStore.currentTrackId;
@@ -290,7 +180,7 @@ const resolveResumeTrack = (queue: QueueLike | null | undefined) => {
 };
 
 const setQueueListRef = (queueId: string) => (target: Element | ComponentPublicInstance | null) => {
-  queueListRefs.value[queueId] = target instanceof HTMLElement ? target : null;
+  queueListRefs.value[queueId] = target as QueueVirtualListExposed | null;
 };
 
 const resolveQueueTypeLabel = (
@@ -333,7 +223,7 @@ const initSortable = async () => {
   if (!queue || queue.songs.length < 2) return;
   await nextTick();
   if (initToken !== sortableInitToken) return;
-  const listEl = queueListRefs.value[queue.id];
+  const listEl = queueListRefs.value[queue.id]?.getScroller() ?? null;
   if (!listEl || !listEl.isConnected) return;
   // sortable 挂载到虚拟滚动的内层偏移 div（包含实际行元素的容器）
   const el = listEl.querySelector<HTMLElement>('.queue-virtual-offset') ?? listEl;
@@ -351,10 +241,10 @@ const initSortable = async () => {
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt;
       if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
-      const range = getQueueVirtualRange(queue.id);
+      const visibleStart = queueListRefs.value[queue.id]?.getVisibleStart() ?? 0;
       // 局部索引转全局索引
-      const globalOld = oldIndex + range.start;
-      const globalNew = newIndex + range.start;
+      const globalOld = oldIndex + visibleStart;
+      const globalNew = newIndex + visibleStart;
       playlistStore.reorderPlaybackQueue(globalOld, globalNew, queue.id);
     },
   });
@@ -363,38 +253,20 @@ const initSortable = async () => {
 const scrollPreviewToTop = () => {
   const queue = previewQueue.value;
   if (!queue) return;
-  // 即时滚动，避免平滑滚动造成的渲染压力
-  queueListRefs.value[queue.id]?.scrollTo({ top: 0 });
-  scheduleVirtualMeasure(queue.id);
+  queueListRefs.value[queue.id]?.scrollToTop();
 };
 
 const isCurrentVisible = (): boolean => {
   const queue = previewQueue.value;
-  const targetId = String(currentTrackId.value ?? '');
-  if (!queue || !targetId) return false;
-  const scroller = queueListRefs.value[queue.id];
-  if (!scroller) return false;
-  const row = scroller.querySelector<HTMLElement>(`[data-queue-row][data-song-id="${targetId}"]`);
-  if (!row) return false;
-  const scrollerRect = scroller.getBoundingClientRect();
-  const rowRect = row.getBoundingClientRect();
-  return rowRect.top >= scrollerRect.top + 8 && rowRect.bottom <= scrollerRect.bottom - 8;
+  if (!queue) return false;
+  return queueListRefs.value[queue.id]?.isCurrentVisible() ?? false;
 };
 
 const scrollToCurrent = (force = true) => {
   const queue = previewQueue.value;
-  const targetId = String(currentTrackId.value ?? '');
-  if (!queue || !targetId) return;
+  if (!queue) return;
   if (!force && isCurrentVisible()) return;
-
-  const scroller = queueListRefs.value[queue.id];
-  if (!scroller) return;
-
-  const index = queue.songs.findIndex((song) => String(song.id) === targetId);
-  if (index < 0) return;
-  // 即时滚动，避免平滑滚动造成的渲染压力
-  scroller.scrollTo({ top: Math.max(0, index * itemHeight - 8) });
-  scheduleVirtualMeasure(queue.id);
+  queueListRefs.value[queue.id]?.scrollToCurrent(force);
 };
 
 const clearPageTransitionTimer = () => {
@@ -653,7 +525,6 @@ watch(
     animatePageTransition.value = false;
     await nextTick();
     await initSortable();
-    scheduleVirtualMeasure();
     // 只在打开抽屉且是当前播放队列时滚动到当前位置
     if (previewQueue.value?.id === currentPlaybackQueue.value?.id) {
       scrollToCurrent(false);
@@ -675,7 +546,6 @@ watch(
     if (!open.value) return;
     await initSortable();
     await nextTick();
-    scheduleVirtualMeasure(previewQueueId.value);
     // 移除这里的 scrollToCurrent 调用，避免切换队列时自动滚动
   },
 );
@@ -692,14 +562,9 @@ watch(
     if (!previewQueue.value) {
       previewQueueId.value = queueOptions.value[0]?.id ?? null;
     }
-    const validIds = new Set(queueOptions.value.map((queue) => queue.id));
-    virtualRanges.value = Object.fromEntries(
-      Object.entries(virtualRanges.value).filter(([queueId]) => validIds.has(queueId)),
-    );
     if (open.value) {
       await nextTick();
       await initSortable();
-      scheduleVirtualMeasure();
     }
   },
 );
@@ -709,7 +574,6 @@ watch(
   async () => {
     if (open.value) {
       await initSortable();
-      scheduleVirtualMeasure();
     }
   },
 );
@@ -728,8 +592,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   sortableInitToken += 1;
   destroySortable();
-  if (virtualMeasureFrame) cancelAnimationFrame(virtualMeasureFrame);
-  if (virtualMeasureTimer) clearTimeout(virtualMeasureTimer);
   if (playingStateTimer) clearTimeout(playingStateTimer);
   clearPageTransitionTimer();
   clearDragAnimationFrame();
@@ -872,124 +734,18 @@ onBeforeUnmount(() => {
               </span>
             </Button>
           </div>
-          <Scrollbar
-            :hide-scrollbar="false"
-            class="flex-1 min-h-0"
-            :content-props="{ ref: setQueueListRef(queue.id) }"
-            @scroll="handleQueueListScroll(queue.id)"
-          >
-            <div class="queue-list">
-              <div :style="getQueueVirtualWrapperStyle(queue)">
-                <div :style="getQueueVirtualOffsetStyle(queue.id)" class="queue-virtual-offset">
-                  <div
-                    v-for="entry in getQueueVirtualItems(queue)"
-                    :key="`${entry.data.historyKey ?? entry.data.id}:${entry.data.hash ?? ''}:${entry.index}`"
-                    class="queue-row"
-                    :data-queue-row="true"
-                    :data-song-id="String(entry.data.id)"
-                    :class="{
-                      'is-current':
-                        queue.id === previewQueue?.id &&
-                        String(entry.data.id) === String(currentTrackId ?? ''),
-                    }"
-                    :style="{ height: `${itemHeight}px` }"
-                  >
-                    <div class="queue-leading">
-                      <span class="queue-index">{{ entry.index + 1 }}</span>
-                      <Button
-                        v-if="queue.id === previewQueue?.id"
-                        type="button"
-                        class="queue-play"
-                        variant="ghost"
-                        size="xs"
-                        @click="handlePlay(entry.data)"
-                      >
-                        <Icon
-                          v-show="
-                            String(entry.data.id) !== String(currentTrackId ?? '') ||
-                            queue.id !== currentPlaybackQueue?.id ||
-                            !isPlayerPlaying
-                          "
-                          :icon="iconPlay"
-                          width="14"
-                          height="14"
-                        />
-                        <Icon
-                          v-show="
-                            !(
-                              String(entry.data.id) !== String(currentTrackId ?? '') ||
-                              queue.id !== currentPlaybackQueue?.id ||
-                              !isPlayerPlaying
-                            )
-                          "
-                          :icon="iconPause"
-                          width="14"
-                          height="14"
-                        />
-                      </Button>
-                    </div>
-
-                    <div
-                      class="queue-card"
-                      :style="{ opacity: isSongPlayable(entry.data) ? 1 : 0.45 }"
-                    >
-                      <SongCard
-                        :id="entry.data.id"
-                        :hash="entry.data.hash"
-                        :title="entry.data.title"
-                        :artist="entry.data.artist"
-                        :artists="entry.data.artists"
-                        :album="entry.data.album"
-                        :albumId="entry.data.albumId"
-                        :coverUrl="entry.data.coverUrl"
-                        :duration="entry.data.duration"
-                        :audioUrl="entry.data.audioUrl"
-                        :source="entry.data.source"
-                        :mvHash="entry.data.mvHash"
-                        :mixSongId="entry.data.mixSongId"
-                        :fileId="entry.data.fileId"
-                        :privilege="entry.data.privilege"
-                        :payType="entry.data.payType"
-                        :oldCpy="entry.data.oldCpy"
-                        :relateGoods="entry.data.relateGoods"
-                        :showCover="true"
-                        :showAlbum="false"
-                        :showDuration="false"
-                        :showQuality="false"
-                        :active="
-                          queue.id === previewQueue?.id &&
-                          String(entry.data.id) === String(currentTrackId ?? '')
-                        "
-                        :showMore="false"
-                        variant="list"
-                      />
-                    </div>
-
-                    <Button
-                      v-if="queue.id === previewQueue?.id"
-                      type="button"
-                      class="queue-remove"
-                      variant="unstyled"
-                      size="none"
-                      title="从队列移除"
-                      @click="handleRemove(entry.data)"
-                    >
-                      <Icon :icon="iconTrash" width="14" height="14" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div v-if="queue.songs.length === 0" class="queue-empty-container">
-                <div class="queue-empty">
-                  <div class="queue-empty-icon">
-                    <Icon :icon="iconList" width="36" height="36" />
-                  </div>
-                  <div>列表为空</div>
-                </div>
-              </div>
-            </div>
-          </Scrollbar>
+          <PlayerQueueVirtualList
+            :ref="setQueueListRef(queue.id)"
+            :queue="queue"
+            :itemHeight="itemHeight"
+            :currentTrackId="currentTrackId"
+            :isPreviewQueue="queue.id === previewQueue?.id"
+            :isCurrentPlaybackQueue="queue.id === currentPlaybackQueue?.id"
+            :isPlayerPlaying="isPlayerPlaying"
+            :readonly="queue.id !== currentPlaybackQueue?.id"
+            @play="handlePlay"
+            @remove="handleRemove"
+          />
         </section>
       </div>
     </div>

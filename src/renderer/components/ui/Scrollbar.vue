@@ -45,7 +45,6 @@ const isMouseInArea = ref(false);
 const autoHideTimer = ref<number | null>(null);
 let measureFrame = 0;
 let resizeObserver: ResizeObserver | null = null;
-let mutationObserver: MutationObserver | null = null;
 let observedChild: Element | null = null;
 
 const effectiveScrollbarInset = computed(() => Math.max(0, props.scrollbarInset));
@@ -148,9 +147,20 @@ const scheduleUpdate = () => {
 const disconnectObservers = () => {
   resizeObserver?.disconnect();
   resizeObserver = null;
-  mutationObserver?.disconnect();
-  mutationObserver = null;
   observedChild = null;
+};
+
+const rebindObservedChild = () => {
+  if (!resizeObserver || !wrapRef.value) return;
+  const nextChild = viewRef.value ?? wrapRef.value.firstElementChild ?? null;
+  if (nextChild === observedChild) return;
+  if (observedChild) {
+    resizeObserver.unobserve(observedChild);
+  }
+  if (nextChild) {
+    resizeObserver.observe(nextChild);
+  }
+  observedChild = nextChild;
 };
 
 const connectObservers = () => {
@@ -165,30 +175,7 @@ const connectObservers = () => {
     resizeObserver.observe(scrollAreaRef.value);
   }
 
-  observedChild = viewRef.value ?? wrapRef.value.firstElementChild;
-  if (observedChild) {
-    resizeObserver.observe(observedChild);
-  }
-
-  mutationObserver = new MutationObserver(() => {
-    const nextChild = viewRef.value ?? wrapRef.value?.firstElementChild ?? null;
-    if (resizeObserver && nextChild !== observedChild) {
-      if (observedChild) {
-        resizeObserver.unobserve(observedChild);
-      }
-      if (nextChild) {
-        resizeObserver.observe(nextChild);
-      }
-      observedChild = nextChild;
-    }
-    scheduleUpdate();
-  });
-  mutationObserver.observe(wrapRef.value, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    characterData: true,
-  });
+  rebindObservedChild();
 };
 
 const clearAutoHideTimer = () => {
@@ -333,14 +320,14 @@ watch(
 );
 
 watch(
-  () => props.contentProps,
+  () => props.contentProps?.ref,
   () => {
     void nextTick(() => {
+      rebindObservedChild();
       connectObservers();
       scheduleUpdate();
     });
   },
-  { deep: true },
 );
 </script>
 

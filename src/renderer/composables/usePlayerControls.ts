@@ -12,7 +12,7 @@ import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import type { AudioEffectValue, AudioQualityValue, PlayMode } from '@/types';
-import { hasSongQuality, isSameSong, resolveEffectiveSongQuality } from '@/utils/song';
+import { hasSongQuality, resolveEffectiveSongQuality } from '@/utils/song';
 import {
   iconRepeat,
   iconRepeatOff,
@@ -58,11 +58,7 @@ export function usePlayerControls() {
 
   // ── 收藏 ──
   const isFavorite = computed(() =>
-    currentTrack.value
-      ? playlist.favorites.some(
-          (s) => isSameSong(s, currentTrack.value as Song) || s.id === currentTrack.value?.id,
-        )
-      : false,
+    currentTrack.value ? playlist.isFavoriteSong(currentTrack.value as Song) : false,
   );
 
   const toggleFavorite = () => {

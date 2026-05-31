@@ -1,11 +1,13 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
+import { useVirtualGrid } from '@/composables/useVirtualGrid';
 
 interface Props {
   items: T[];
   loading?: boolean;
   active?: boolean;
+  virtualThreshold?: number;
   loadingText?: string;
   emptyText?: string;
   stateMinHeight?: number;
@@ -23,6 +25,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   loading: false,
   active: true,
+  virtualThreshold: 48,
   loadingText: '加载中...',
   emptyText: '暂无内容',
   stateMinHeight: 240,
@@ -37,283 +40,44 @@ const props = withDefaults(defineProps<Props>(), {
   keyField: 'id' as Extract<keyof T, string>,
 });
 
-interface VisibleGridItem {
-  item: T;
-  index: number;
-  row: number;
-  column: number;
-  key: string | number;
-}
-
 defineSlots<{
   default?: (props: { item: T; index: number; row: number; column: number }) => unknown;
   loading?: () => unknown;
   empty?: () => unknown;
 }>();
 
-const containerRef = ref<HTMLElement | null>(null);
-const scrollContainerRef = ref<HTMLElement | null>(null);
-const containerWidth = ref(0);
-const visibleStartRow = ref(0);
-const visibleEndRow = ref(0);
-let measureFrame = 0;
-let resizeFrame = 0;
-let resizeObserver: ResizeObserver | null = null;
-
-const columnCount = computed(() => {
-  const width = containerWidth.value;
-  if (width <= 0) return 1;
-  return Math.max(1, Math.floor((width + props.gap) / (props.itemMinWidth + props.gap)));
-});
-
-const resolvedItemWidth = computed(() => {
-  const columns = columnCount.value;
-  const width = containerWidth.value;
-  if (width <= 0) return props.itemMinWidth;
-  return Math.max(0, (width - props.gap * (columns - 1)) / columns);
-});
-
-const resolvedItemHeight = computed(() => {
-  if (typeof props.itemHeight === 'number' && props.itemHeight > 0) {
-    return props.itemHeight;
-  }
-  const aspectRatio = props.itemAspectRatio > 0 ? props.itemAspectRatio : 1;
-  return resolvedItemWidth.value / aspectRatio + props.itemChromeHeight;
-});
-
-const rowStride = computed(() => resolvedItemHeight.value + props.gap);
-
-const rowCount = computed(() => {
-  if (props.items.length === 0) return 0;
-  return Math.ceil(props.items.length / columnCount.value);
-});
-
-const totalHeight = computed(() => {
-  if (rowCount.value === 0) return 0;
-  return (
-    props.paddingTop +
-    props.paddingBottom +
-    rowCount.value * resolvedItemHeight.value +
-    Math.max(0, rowCount.value - 1) * props.gap
-  );
-});
-
-const wrapperStyle = computed(() => ({
-  height: `${totalHeight.value}px`,
-  position: 'relative' as const,
-}));
-
-const visibleBlockStyle = computed(() => ({
-  position: 'absolute' as const,
-  left: '0',
-  right: '0',
-  top: `${props.paddingTop + visibleStartRow.value * rowStride.value}px`,
-}));
-
-const visibleGridStyle = computed(() => ({
-  display: 'grid',
-  gridTemplateColumns: `repeat(${columnCount.value}, minmax(0, 1fr))`,
-  gap: `${props.gap}px`,
-}));
-
 const stateStyle = computed(() => ({
   minHeight: `${props.stateMinHeight}px`,
 }));
 
-const resolveItemKey = (item: T, index: number): string | number => {
-  if (props.keyField) {
-    const value = item[props.keyField];
-    if (typeof value === 'string' || typeof value === 'number') return value;
-  }
-  return index;
-};
-
-const visibleItems = computed<VisibleGridItem[]>(() => {
-  if (!props.active || props.loading || props.items.length === 0) return [];
-
-  const startRow = visibleStartRow.value;
-  const endRow = visibleEndRow.value;
-  const cols = columnCount.value;
-  const startIndex = startRow * cols;
-  const endIndex = Math.min(props.items.length, endRow * cols);
-
-  if (startIndex >= endIndex) return [];
-
-  return props.items.slice(startIndex, endIndex).map((item, offset) => {
-    const index = startIndex + offset;
-    return {
-      item,
-      index,
-      row: Math.floor(index / cols),
-      column: index % cols,
-      key: resolveItemKey(item, index),
-    };
-  });
-});
-
 const injectedScrollContainer = useScrollContainer();
-
-const getScrollContainer = (): HTMLElement | null => injectedScrollContainer.value;
-
-const updateVisibleRange = () => {
-  const totalRows = rowCount.value;
-  if (!props.active || props.loading || totalRows === 0) {
-    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
-    if (visibleEndRow.value !== 0) visibleEndRow.value = 0;
-    return;
-  }
-
-  const scrollContainer = getScrollContainer();
-  const containerEl = containerRef.value;
-
-  if (!scrollContainer || !containerEl) {
-    const fallbackEnd = Math.min(totalRows, props.overscan * 4);
-    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
-    if (visibleEndRow.value !== fallbackEnd) visibleEndRow.value = fallbackEnd;
-    return;
-  }
-
-  // 每次都重新测量偏移，getBoundingClientRect 开销很小，
-  // 避免因兄弟元素高度变化导致缓存的 listContentTop 过期
-  const scrollContainerRect = scrollContainer.getBoundingClientRect();
-  const containerRect = containerEl.getBoundingClientRect();
-  const listContentTop = containerRect.top - scrollContainerRect.top + scrollContainer.scrollTop;
-  const viewportHeight = scrollContainer.clientHeight;
-
-  const listTop = listContentTop;
-  const listBottom = listTop + totalHeight.value;
-  const viewportTop = scrollContainer.scrollTop;
-  const viewportBottom = viewportTop + viewportHeight;
-
-  if (viewportBottom <= listTop || viewportTop >= listBottom) {
-    if (visibleStartRow.value !== 0) visibleStartRow.value = 0;
-    if (visibleEndRow.value !== 0) visibleEndRow.value = 0;
-    return;
-  }
-
-  const contentTop = listTop + props.paddingTop;
-  const relativeTop = Math.max(0, viewportTop - contentTop);
-  const relativeBottom = Math.max(
-    0,
-    Math.min(listBottom - contentTop, viewportBottom - contentTop),
-  );
-  const nextStart = Math.max(0, Math.floor(relativeTop / rowStride.value) - props.overscan);
-  const nextEnd = Math.min(totalRows, Math.ceil(relativeBottom / rowStride.value) + props.overscan);
-  const resolvedEnd = Math.max(nextStart, nextEnd);
-
-  if (visibleStartRow.value !== nextStart) visibleStartRow.value = nextStart;
-  if (visibleEndRow.value !== resolvedEnd) visibleEndRow.value = resolvedEnd;
-};
-
-const scheduleMeasure = () => {
-  if (measureFrame) cancelAnimationFrame(measureFrame);
-  measureFrame = requestAnimationFrame(() => {
-    measureFrame = 0;
-    updateVisibleRange();
-  });
-};
-
-const handleScroll = () => {
-  scheduleMeasure();
-};
-
-const syncContainerWidth = (nextWidth: number) => {
-  const normalizedWidth = Math.max(0, Math.round(nextWidth));
-  if (normalizedWidth === containerWidth.value) return;
-  containerWidth.value = normalizedWidth;
-  scheduleMeasure();
-};
-
-const bindScrollContainer = () => {
-  const nextContainer = getScrollContainer();
-  if (scrollContainerRef.value === nextContainer) return;
-  if (scrollContainerRef.value) {
-    scrollContainerRef.value.removeEventListener('scroll', handleScroll);
-  }
-  scrollContainerRef.value = nextContainer;
-  scrollContainerRef.value?.addEventListener('scroll', handleScroll, { passive: true });
-};
-
-const connectResizeObserver = () => {
-  resizeObserver?.disconnect();
-  resizeObserver = null;
-
-  if (typeof ResizeObserver === 'undefined' || !containerRef.value) return;
-
-  resizeObserver = new ResizeObserver((entries) => {
-    const entry = entries[0];
-    const nextWidth = entry?.contentRect.width ?? containerRef.value?.clientWidth ?? 0;
-    if (resizeFrame) cancelAnimationFrame(resizeFrame);
-    resizeFrame = requestAnimationFrame(() => {
-      resizeFrame = 0;
-      syncContainerWidth(nextWidth);
-    });
-  });
-
-  resizeObserver.observe(containerRef.value);
-};
-
-watch(
-  () => props.items,
-  async () => {
-    await nextTick();
-    // 数据到达时容器宽度可能还未被 ResizeObserver 回调同步，主动读取一次
-    if (containerWidth.value <= 0 && containerRef.value) {
-      syncContainerWidth(containerRef.value.clientWidth);
-    }
-    scheduleMeasure();
-  },
-  { flush: 'post' },
-);
-
-watch(
-  () => [props.active, props.loading],
-  async ([active]) => {
-    if (!active) {
-      visibleStartRow.value = 0;
-      visibleEndRow.value = 0;
-      return;
-    }
-    await nextTick();
-    bindScrollContainer();
-    scheduleMeasure();
-  },
-  { flush: 'post' },
-);
-
-watch(columnCount, () => {
-  scheduleMeasure();
+const virtualGrid = useVirtualGrid<T>({
+  items: computed(() => props.items),
+  scrollContainer: injectedScrollContainer,
+  loading: computed(() => props.loading),
+  active: computed(() => props.active),
+  virtualThreshold: computed(() => props.virtualThreshold),
+  itemMinWidth: computed(() => props.itemMinWidth),
+  itemHeight: computed(() => props.itemHeight),
+  itemAspectRatio: computed(() => props.itemAspectRatio),
+  itemChromeHeight: computed(() => props.itemChromeHeight),
+  gap: computed(() => props.gap),
+  overscan: computed(() => props.overscan),
+  paddingTop: computed(() => props.paddingTop),
+  paddingBottom: computed(() => props.paddingBottom),
+  keyField: props.keyField,
 });
-
-// 响应注入的滚动容器变化
-watch(injectedScrollContainer, () => {
-  bindScrollContainer();
-  scheduleMeasure();
-});
-
-// 修复：保存函数引用以确保 add/remove 使用同一引用
-const handleResize = () => scheduleMeasure();
-
-onMounted(async () => {
-  await nextTick();
-  bindScrollContainer();
-  syncContainerWidth(containerRef.value?.clientWidth ?? 0);
-  connectResizeObserver();
-  window.addEventListener('resize', handleResize, { passive: true });
-  scheduleMeasure();
-});
-
-onBeforeUnmount(() => {
-  if (measureFrame) cancelAnimationFrame(measureFrame);
-  if (resizeFrame) cancelAnimationFrame(resizeFrame);
-  resizeObserver?.disconnect();
-  resizeObserver = null;
-  window.removeEventListener('resize', handleResize);
-  scrollContainerRef.value?.removeEventListener('scroll', handleScroll);
-});
+const {
+  containerRef,
+  visibleItems,
+  wrapperStyle,
+  visibleBlockStyle,
+  visibleGridStyle,
+  resolvedItemHeight,
+} = virtualGrid;
 
 defineExpose({
-  refresh: scheduleMeasure,
+  refresh: virtualGrid.refresh,
 });
 </script>
 

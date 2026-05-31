@@ -4,26 +4,18 @@ import { useRoute, useRouter } from 'vue-router';
 import Cover from '@/components/ui/Cover.vue';
 import Tag from '@/components/ui/Tag.vue';
 import { formatDuration } from '@/utils/format';
-import type { Song, SongArtist, SongRelateGood } from '@/models/song';
+import type { Song, SongArtist } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import Button from '@/components/ui/Button.vue';
 import { iconMessageCircle, iconHeart, iconHeartFilled } from '@/icons';
 import MvIcon from '@/components/ui/MvIcon.vue';
-import { isSameSong } from '@/utils/song';
 import { playSongInContext, queueAndPlaySong } from '@/utils/playback';
 import { getSongDerivedState } from '@/utils/song';
 
 interface Props {
-  id: string | number;
-  title: string;
-  artist: string;
-  hash?: string;
-  coverUrl: string;
-  audioUrl?: string;
-  album?: string;
-  duration?: number;
+  song: Song;
   class?: string;
   showAlbum?: boolean;
   showDuration?: boolean;
@@ -32,17 +24,6 @@ interface Props {
   showQuality?: boolean;
   active?: boolean;
   variant?: 'card' | 'list';
-  privilege?: number;
-  payType?: number;
-  oldCpy?: number;
-  relateGoods?: SongRelateGood[];
-  artists?: SongArtist[];
-  albumId?: string | number;
-  mixSongId?: string | number;
-  fileId?: string | number;
-  source?: string;
-  mvHash?: string;
-  isOriginal?: boolean;
   parentPlaylistId?: string | number;
   enableRemoveFromPlaylist?: boolean;
   disableLinks?: boolean;
@@ -55,13 +36,6 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  hash: '',
-  audioUrl: '',
-  mixSongId: '',
-  fileId: '',
-  source: '',
-  mvHash: '',
-  isOriginal: false,
   parentPlaylistId: '',
   enableRemoveFromPlaylist: false,
   showAlbum: true,
@@ -88,32 +62,21 @@ const baseClass = computed(() =>
     : 'song-card song-card-surface group flex items-center gap-3 p-2 rounded-xl transition-all duration-200 cursor-pointer',
 );
 
-const songState = computed<Song>(() => ({
-  id: String(props.id),
-  title: props.title,
-  name: props.title,
-  artist: props.artist,
-  artists: props.artists,
-  singers: props.artists,
-  album: props.album,
-  albumName: props.album,
-  albumId: props.albumId,
-  duration: props.duration ?? 0,
-  coverUrl: props.coverUrl,
-  cover: props.coverUrl,
-  audioUrl: props.audioUrl ?? '',
-  hash: props.hash,
-  mixSongId: props.mixSongId ?? '',
-  fileId: props.fileId,
-  source: props.source,
-  mvHash: props.mvHash,
-  privilege: props.privilege,
-  payType: props.payType,
-  oldCpy: props.oldCpy,
-  relateGoods: props.relateGoods,
-}));
+const songPayload = computed(() => props.song);
+const songId = computed(() => String(songPayload.value.id ?? ''));
+const songTitle = computed(() => songPayload.value.title || songPayload.value.name || '');
+const songArtistText = computed(() => songPayload.value.artist || '');
+const songArtists = computed(() => songPayload.value.artists ?? songPayload.value.singers ?? []);
+const songAlbum = computed(() => songPayload.value.album ?? songPayload.value.albumName ?? '');
+const songAlbumId = computed(() => songPayload.value.albumId);
+const songCoverUrl = computed(() => songPayload.value.coverUrl ?? songPayload.value.cover ?? '');
+const songDuration = computed(() => songPayload.value.duration ?? 0);
+const songHash = computed(() => songPayload.value.hash ?? '');
+const songMixSongId = computed(() => songPayload.value.mixSongId ?? songPayload.value.id ?? '');
+const songMvHash = computed(() => songPayload.value.mvHash ?? '');
+const songIsOriginal = computed(() => Boolean(songPayload.value.isOriginal));
 
-const derivedState = computed(() => getSongDerivedState(songState.value));
+const derivedState = computed(() => getSongDerivedState(songPayload.value));
 // const isVip = computed(() => derivedState.value.isVip);
 // const isPaid = computed(() => derivedState.value.isPaid);
 // const isNoCopyright = computed(() => derivedState.value.isNoCopyright);
@@ -127,25 +90,19 @@ const contentOpacity = computed(() => {
 
 const qualityTag = computed(() => derivedState.value.qualityTag);
 
-const privilegeTags = computed(() =>
-  derivedState.value.privilegeTags.map((tag) => ({ label: tag.label, color: tag.color })),
-);
+const privilegeTags = computed(() => derivedState.value.privilegeTags);
 
-const isFavorite = computed(() =>
-  playlistStore.favorites.some(
-    (item) => isSameSong(item, songState.value) || String(item.id) === String(props.id),
-  ),
-);
+const isFavorite = computed(() => playlistStore.isFavoriteSong(songPayload.value));
 
 const artistList = computed(() => {
-  if (props.artists && props.artists.length > 0) return props.artists;
-  if (!props.artist) return [] as SongArtist[];
-  const names = props.artist
+  if (songArtists.value && songArtists.value.length > 0) return songArtists.value;
+  if (!songArtistText.value) return [] as SongArtist[];
+  const names = songArtistText.value
     .split(/[,/，]/)
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
   if (names.length === 1) {
-    return [{ id: props.artists?.[0]?.id, name: names[0] }];
+    return [{ id: songArtists.value?.[0]?.id, name: names[0] }];
   }
   return names.map((name) => ({ name }));
 });
@@ -164,10 +121,10 @@ const isSameRoute = (name: string, id: string | number) => {
   return route.name === name && String(routeId) === String(id);
 };
 
-const albumDetailId = computed(() => resolveNumericId(props.albumId));
+const albumDetailId = computed(() => resolveNumericId(songAlbumId.value));
 const hasAlbumDetail = computed(() => {
   if (!albumDetailId.value) return false;
-  return Boolean((props.album ?? '').trim());
+  return Boolean(songAlbum.value.trim());
 });
 
 const isArtistClickable = (artist: SongArtist) => {
@@ -204,77 +161,51 @@ const goToAlbum = () => {
 
 const goToSongDetail = () => {
   const commentId =
-    resolveNumericId(props.mixSongId) ?? resolveNumericId(props.id) ?? String(props.id);
+    resolveNumericId(songMixSongId.value) ?? resolveNumericId(songId.value) ?? songId.value;
   router.push({
     name: 'comment',
     params: { id: String(commentId) },
     query: {
       mainTab: 'detail',
       type: 'music',
-      title: props.title,
-      artist: props.artist,
-      artistId: props.artists?.[0]?.id ?? '',
-      album: props.album ?? '',
-      cover: props.coverUrl ?? '',
-      albumId: props.albumId ?? '',
-      hash: props.hash ?? '',
-      mixSongId: props.mixSongId ?? props.id,
+      title: songTitle.value,
+      artist: songArtistText.value,
+      artistId: songArtists.value?.[0]?.id ?? '',
+      album: songAlbum.value,
+      cover: songCoverUrl.value,
+      albumId: songAlbumId.value ?? '',
+      hash: songHash.value,
+      mixSongId: songMixSongId.value,
     },
   });
 };
 
-const hasMv = computed(() => Boolean((props.mvHash ?? '').trim()));
+const hasMv = computed(() => Boolean(String(songMvHash.value ?? '').trim()));
 
 const goToMvDetail = () => {
-  const mvHash = String(props.mvHash ?? '').trim();
+  const mvHash = String(songMvHash.value ?? '').trim();
   if (!mvHash) return;
   const albumAudioId =
-    resolveNumericId(props.mixSongId) ?? resolveNumericId(props.id) ?? String(props.id);
+    resolveNumericId(songMixSongId.value) ?? resolveNumericId(songId.value) ?? songId.value;
   router.push({
     name: 'mv-detail',
     params: { id: mvHash },
     query: {
       hash: mvHash,
       albumAudioId: albumAudioId,
-      title: props.title,
-      artist: props.artist,
-      cover: props.coverUrl ?? '',
-      album: props.album ?? '',
-      songId: props.id,
-      mixSongId: props.mixSongId ?? props.id,
+      title: songTitle.value,
+      artist: songArtistText.value,
+      cover: songCoverUrl.value,
+      album: songAlbum.value,
+      songId: songId.value,
+      mixSongId: songMixSongId.value,
       from: router.currentRoute.value.fullPath,
     },
   });
 };
 
-const buildSongPayload = (): Song => ({
-  id: String(props.id),
-  title: props.title,
-  name: props.title,
-  artist: props.artist,
-  artists: props.artists,
-  singers: props.artists,
-  album: props.album,
-  albumName: props.album,
-  albumId: props.albumId,
-  duration: props.duration ?? 0,
-  coverUrl: props.coverUrl,
-  cover: props.coverUrl,
-  audioUrl: props.audioUrl,
-  hash: props.hash,
-  mixSongId: props.mixSongId ?? props.id,
-  fileId: props.fileId,
-  source: props.source,
-  mvHash: props.mvHash,
-  privilege: props.privilege,
-  payType: props.payType,
-  oldCpy: props.oldCpy,
-  relateGoods: props.relateGoods,
-});
-
-const handleQueueAndPlayCurrentSong = async () => {
+const handleQueueAndPlayCurrentSong = async (payload = songPayload.value) => {
   if (!isPlayable.value) return false;
-  const payload = buildSongPayload();
   if ((props.queueContext?.length ?? 0) > 0 && props.queueOptions?.queueId) {
     return playSongInContext(
       playlistStore,
@@ -288,13 +219,9 @@ const handleQueueAndPlayCurrentSong = async () => {
   return queueAndPlaySong(playlistStore, playerStore, payload, props.queueOptions);
 };
 
-const handlePlayNow = async () => {
-  await handleQueueAndPlayCurrentSong();
-};
-
 const handleDoubleClick = async () => {
   if (!isPlayable.value) return;
-  const payload = buildSongPayload();
+  const payload = songPayload.value;
 
   if (props.onDoubleTapPlay) {
     await props.onDoubleTapPlay(payload);
@@ -302,20 +229,21 @@ const handleDoubleClick = async () => {
   }
 
   if (props.enableDefaultDoubleTapPlay) {
-    await handlePlayNow();
+    await handleQueueAndPlayCurrentSong(payload);
     return;
   }
 
-  await handleQueueAndPlayCurrentSong();
+  await handleQueueAndPlayCurrentSong(payload);
 };
 
 const handleFavorite = () => {
+  const payload = songPayload.value;
   if (isFavorite.value) {
-    void playlistStore.removeFavoriteSong(buildSongPayload());
+    void playlistStore.removeFavoriteSong(payload);
     return;
   }
 
-  void playlistStore.addToFavorites(buildSongPayload());
+  void playlistStore.addToFavorites(payload);
 };
 </script>
 
@@ -327,7 +255,7 @@ const handleFavorite = () => {
       class="relative w-[46px] h-[46px] shrink-0 rounded-[12px] shadow-sm"
       :style="{ opacity: contentOpacity }"
     >
-      <Cover :url="coverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
+      <Cover :url="songCoverUrl" :size="160" :borderRadius="12" class="w-full h-full" />
     </div>
 
     <!-- 信息 -->
@@ -340,7 +268,7 @@ const handleFavorite = () => {
           class="song-title text-[13px] font-semibold truncate"
           :class="props.active ? 'text-primary' : 'text-text-main'"
         >
-          {{ title }}
+          {{ songTitle }}
         </h3>
         <Tag v-for="tag in privilegeTags" :key="tag.label" class="song-tag" :color="tag.color">
           {{ tag.label }}
@@ -348,7 +276,7 @@ const handleFavorite = () => {
         <Tag v-if="qualityTag && showQuality" class="song-tag" color="#06B6D4">
           {{ qualityTag }}
         </Tag>
-        <Tag v-if="isOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
+        <Tag v-if="songIsOriginal" class="song-tag" color="#F59E0B"> 原唱 </Tag>
       </div>
       <div
         class="song-subline text-[12px] flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap"
@@ -368,12 +296,12 @@ const handleFavorite = () => {
         <Button
           variant="unstyled"
           size="none"
-          v-if="showAlbum && album"
+          v-if="showAlbum && songAlbum"
           type="button"
           :class="isAlbumClickable ? 'song-album song-link opacity-60' : 'song-album opacity-60'"
           @click.stop="isAlbumClickable && goToAlbum()"
         >
-          • {{ album }}
+          • {{ songAlbum }}
         </Button>
       </div>
     </div>
@@ -422,10 +350,10 @@ const handleFavorite = () => {
 
     <!-- 时长 -->
     <div
-      v-if="showDuration && duration"
+      v-if="showDuration && songDuration"
       class="text-[11px] text-text-secondary opacity-60 px-2 group-hover:opacity-80 transition-opacity"
     >
-      {{ formatDuration(duration) }}
+      {{ formatDuration(songDuration) }}
     </div>
   </div>
 </template>
