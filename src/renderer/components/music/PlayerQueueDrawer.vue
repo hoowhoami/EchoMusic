@@ -89,10 +89,11 @@ const currentPlaybackQueue = computed(() => {
 
 const queueOptions = computed(() => {
   const list: QueueLike[] = [];
-  if (currentPlaybackQueue.value) list.push(currentPlaybackQueue.value);
+  if (currentPlaybackQueue.value?.songs.length) list.push(currentPlaybackQueue.value);
   if (
     playlistStore.customPlaybackQueue &&
-    playlistStore.customPlaybackQueue.id !== currentPlaybackQueue.value?.id
+    playlistStore.customPlaybackQueue.id !== currentPlaybackQueue.value?.id &&
+    playlistStore.customPlaybackQueue.songs.length > 0
   ) {
     list.push(playlistStore.customPlaybackQueue);
   }
@@ -107,8 +108,8 @@ const queueOptions = computed(() => {
 
 const previewQueue = computed(() => {
   const queueId = previewQueueId.value;
-  if (!queueId) return currentPlaybackQueue.value;
-  return queueOptions.value.find((queue) => queue.id === queueId) ?? currentPlaybackQueue.value;
+  if (!queueId) return queueOptions.value[0] ?? null;
+  return queueOptions.value.find((queue) => queue.id === queueId) ?? queueOptions.value[0] ?? null;
 });
 
 const previewIndex = computed(() => {
@@ -119,9 +120,11 @@ const previewIndex = computed(() => {
 
 const canSwitchToPrevQueue = computed(() => previewIndex.value > 0);
 const canSwitchToNextQueue = computed(() => previewIndex.value < queueOptions.value.length - 1);
-const queueSwitcherLabel = computed(
-  () => `${Math.max(1, previewIndex.value + 1)} / ${Math.max(1, queueOptions.value.length)}`,
-);
+const queueSwitcherLabel = computed(() => {
+  const total = queueOptions.value.length;
+  if (total === 0) return '0 / 0';
+  return `${previewIndex.value + 1} / ${total}`;
+});
 const queueSwitcherTitle = computed(() => {
   const queue = previewQueue.value;
   if (!queue) return '播放列表';
@@ -164,7 +167,7 @@ const updatePlayerPlayingState = () => {
 const headerTitle = computed(() => (previewIndex.value === 0 ? '播放队列' : '历史队列'));
 const headerSubtitle = computed(() => {
   const queue = previewQueue.value;
-  if (!queue) return '播放列表';
+  if (!queue) return '暂无队列';
   if (
     queue.id === playlistStore.customPlaybackQueue?.id &&
     queue.id !== currentPlaybackQueue.value?.id
@@ -174,7 +177,8 @@ const headerSubtitle = computed(() => {
   return queue.title || resolveQueueTypeLabel(queue);
 });
 const headerMeta = computed(() => {
-  const count = previewQueue.value?.songs.length ?? 0;
+  if (!previewQueue.value) return '0 首';
+  const count = previewQueue.value.songs.length;
   return `${count} 首`;
 });
 const canAddPreviewQueue = computed(
@@ -495,7 +499,7 @@ const handleClear = () => {
   if (!queue) return;
 
   if (queue.id === playlistStore.customPlaybackQueue?.id) {
-    playlistStore.clearPlaybackQueue();
+    playlistStore.clearPlaybackQueue(queue.id);
     if (queue.id === currentPlaybackQueue.value?.id) {
       playerStore.stop();
     }
@@ -508,7 +512,7 @@ const handleClear = () => {
     return;
   }
 
-  playlistStore.clearPlaybackQueue();
+  playlistStore.clearPlaybackQueue(queue.id);
   playerStore.stop();
 };
 
@@ -729,7 +733,6 @@ onBeforeUnmount(() => {
 
       <div class="queue-toolbar">
         <div
-          v-if="queueOptions.length > 1"
           class="queue-switcher"
           role="group"
           aria-label="队列切换"
@@ -775,7 +778,16 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div v-if="queueOptions.length === 0" class="queue-drawer-empty-state">
+      <div class="queue-empty">
+        <div class="queue-empty-icon">
+          <Icon :icon="iconPause" width="36" height="36" />
+        </div>
+        <div>当前暂无队列</div>
+      </div>
+    </div>
     <div
+      v-else
       ref="slidesRef"
       class="queue-slides"
       :class="{ 'is-dragging': isDraggingSlides }"
@@ -1162,6 +1174,14 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.queue-drawer-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
 .queue-panel-toolbar {

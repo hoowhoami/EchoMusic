@@ -1025,8 +1025,8 @@ export const usePlaylistStore = defineStore('playlist', {
       this.trimPlaybackQueues();
       this.syncLegacyPlaybackState();
     },
-    clearPlaybackQueue() {
-      const targetQueue = this.ensurePlaybackQueue();
+    clearPlaybackQueue(queueId?: string | number) {
+      const targetQueue = this.ensurePlaybackQueue(queueId != null ? String(queueId) : undefined);
       targetQueue.songs = [];
       targetQueue.filteredInvalidCount = 0;
       targetQueue.queuedNextTrackIds = [];
