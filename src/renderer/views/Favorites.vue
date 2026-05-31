@@ -354,10 +354,10 @@ watch(isLoggedIn, (value) => {
       <!-- 未登录状态 -->
       <div
         v-if="!isLoggedIn"
-        class="flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+        class="flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
         >
           <Icon :icon="iconHeart" width="32" height="32" />
         </div>
@@ -385,7 +385,7 @@ watch(isLoggedIn, (value) => {
 
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <!-- Sticky Tabs -->
-          <div class="song-list-sticky sticky top-[64px] z-110 bg-bg-main">
+          <div class="song-list-sticky sticky top-16 z-110 bg-bg-main">
             <div class="px-6 border-b border-border-light/10">
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">

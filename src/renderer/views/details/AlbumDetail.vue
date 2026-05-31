@@ -622,16 +622,16 @@ const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" />
 
-        <div v-if="album.intro" class="px-6 pt-[6px] pb-[6px]">
+        <div v-if="album.intro" class="px-6 pt-1.5 pb-1.5">
           <div class="text-[15px] font-semibold text-text-main">专辑介绍</div>
-          <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
+          <div class="mt-1.5 text-[12px] leading-relaxed text-text-secondary line-clamp-1">
             {{ album.intro }}
           </div>
           <Button
             variant="unstyled"
             size="none"
             type="button"
-            class="mt-[2px] text-[11px] font-semibold text-primary"
+            class="mt-0.5 text-[11px] font-semibold text-primary"
             @click="showIntroDialog = true"
           >
             查看详情

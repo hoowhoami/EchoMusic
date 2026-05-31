@@ -654,16 +654,16 @@ const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, sear
           :source-id="playlist?.listid || playlist?.id"
         />
 
-        <div v-if="playlist.intro" class="px-6 pt-[6px] pb-[6px]">
+        <div v-if="playlist.intro" class="px-6 pt-1.5 pb-1.5">
           <div class="text-[15px] font-semibold text-text-main">歌单介绍</div>
-          <div class="mt-[6px] text-[12px] leading-relaxed text-text-secondary line-clamp-1">
+          <div class="mt-1.5 text-[12px] leading-relaxed text-text-secondary line-clamp-1">
             {{ playlist.intro }}
           </div>
           <Button
             variant="unstyled"
             size="none"
             type="button"
-            class="mt-[2px] text-[11px] font-semibold text-primary"
+            class="mt-0.5 text-[11px] font-semibold text-primary"
             @click="showIntroDialog = true"
           >
             查看详情

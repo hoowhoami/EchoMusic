@@ -364,7 +364,7 @@ onActivated(() => {
         class="fm-empty flex flex-col items-center justify-center text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
         >
           <Icon :icon="iconHeartFilled" width="32" height="32" />
         </div>

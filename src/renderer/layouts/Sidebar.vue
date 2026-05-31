@@ -431,7 +431,7 @@ watch(
           @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
         >
           <div
-            class="w-[34px] h-[34px] shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden"
+            class="w-8.5 h-8.5 shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden"
           >
             <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
           </div>
@@ -707,7 +707,7 @@ watch(
             v-for="playlist in createdPlaylists.pinned"
             :key="playlist.listid || playlist.id"
             :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
+              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
               isActivePlaylist(playlist)
                 ? 'is-active bg-primary/12 text-primary'
                 : 'text-text-main/90',
@@ -743,7 +743,7 @@ watch(
             v-for="playlist in createdPlaylists.normal"
             :key="playlist.listid || playlist.id"
             :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
+              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
               isActivePlaylist(playlist)
                 ? 'is-active bg-primary/12 text-primary'
                 : 'text-text-main/90',
@@ -798,7 +798,7 @@ watch(
             v-for="playlist in favoritedPlaylists"
             :key="playlist.listid || playlist.id"
             :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-[12px] group cursor-pointer active:scale-[0.98] transition-all',
+              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
               isActivePlaylist(playlist)
                 ? 'is-active bg-primary/12 text-primary'
                 : 'text-text-main/90',

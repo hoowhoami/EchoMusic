@@ -239,14 +239,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="player-bar-container w-full px-2 pb-[5px] z-1000">
+  <div class="player-bar-container w-full px-2 pb-1.25 z-1000">
     <footer
-      class="player-bar w-full h-[84px] bg-bg-card border border-border-light/40 rounded-[12px] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
+      class="player-bar w-full h-21 bg-bg-card border border-border-light/40 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
-      <div class="flex-1 flex items-center gap-3 min-w-[120px] max-w-[320px] overflow-hidden">
+      <div class="flex-1 flex items-center gap-3 min-w-30 max-w-[320px] overflow-hidden">
         <div
-          class="relative w-[56px] h-[56px] shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-black/4 dark:bg-white/4"
+          class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-black/4 dark:bg-white/4"
           @click="navigateToLyric"
         >
           <Cover
@@ -374,7 +374,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 2. 中间：播放控制 & 进度条 - 核心弹性区域 -->
-      <div class="flex-[1.5] flex flex-col items-center justify-center gap-1 min-w-[150px]">
+      <div class="flex-[1.5] flex flex-col items-center justify-center gap-1 min-w-37.5">
         <div class="flex items-center justify-center gap-4 h-10">
           <!-- 播放模式 -->
           <Tooltip
@@ -442,7 +442,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.togglePlay"
-            class="player-toggle w-[38px] h-[38px] rounded-full bg-black/4 flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border border-black/5"
+            class="player-toggle w-9.5 h-9.5 rounded-full bg-black/4 flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border border-black/5"
           >
             <Icon v-if="!player.isPlaying" :icon="iconPlay" width="16" height="16" class="ml-0.5" />
             <Icon v-else :icon="iconPause" width="20" height="20" />
@@ -462,7 +462,7 @@ onUnmounted(() => {
         </div>
 
         <!-- 进度条系统 - 动态伸缩至最大值 -->
-        <div class="w-full max-w-[480px] flex items-center gap-3 px-1 h-[14px] min-w-0">
+        <div class="w-full max-w-120 flex items-center gap-3 px-1 h-3.5 min-w-0">
           <span
             class="text-[10px] font-medium text-text-main/50 w-9 shrink-0 text-right tabular-nums"
             >{{
@@ -483,9 +483,7 @@ onUnmounted(() => {
             @mouseenter="isHoveringProgress = true"
             @mouseleave="isHoveringProgress = false"
           >
-            <SliderTrack
-              class="player-progress-track bg-black/8 relative grow rounded-full h-[3px]"
-            >
+            <SliderTrack class="player-progress-track bg-black/8 relative grow rounded-full h-0.75">
               <div class="climax-mark-layer">
                 <template
                   v-for="(mark, index) in player.climaxMarks"
@@ -517,9 +515,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 3. 右侧：功能选项 - 弹性增长 -->
-      <div
-        class="player-actions flex-1 flex justify-end items-center gap-1 min-w-[120px] max-w-[320px]"
-      >
+      <div class="player-actions flex-1 flex justify-end items-center gap-1 min-w-30 max-w-[320px]">
         <SpeedPopover />
         <QualityPopover />
         <EffectPopover />

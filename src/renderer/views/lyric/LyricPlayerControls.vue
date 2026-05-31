@@ -429,21 +429,19 @@ const formatTime = (seconds: number) => {
 .bar-main {
   width: 100%;
   height: 72px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   padding: 0 16px;
   gap: 12px;
 }
 
 /* 1. 左侧 */
 .bar-left {
-  flex: 1.15;
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 120px;
-  max-width: 450px;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -537,11 +535,10 @@ const formatTime = (seconds: number) => {
 
 /* 2. 中间 */
 .bar-center {
-  flex: 1.5;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 150px;
+  min-width: max-content;
 }
 
 .bar-controls {
@@ -605,13 +602,11 @@ const formatTime = (seconds: number) => {
 
 /* 3. 右侧 */
 .bar-right {
-  flex: 1;
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 4px;
-  min-width: 120px;
-  max-width: 320px;
+  min-width: 0;
   padding-right: 6px;
 }
 

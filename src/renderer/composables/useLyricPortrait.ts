@@ -140,6 +140,10 @@ export function useLyricPortrait(options: PortraitOptions) {
       return;
     }
 
+    // 切歌后若目标写真未命中缓存，立即清掉上一首的写真与计数，
+    // 避免用户误以为当前歌曲串用了上一首的写真。
+    clearArtistBackdrop();
+
     try {
       const pendingRequest =
         singerPortraitPending.get(lyricHash) ??

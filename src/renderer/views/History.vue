@@ -239,10 +239,10 @@ onMounted(() => {
     <div class="history-view bg-bg-main min-h-full">
       <div
         v-if="!isLoggedIn"
-        class="history-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+        class="history-empty flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
         >
           <Icon :icon="iconClock" width="32" height="32" />
         </div>

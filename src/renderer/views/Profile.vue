@@ -241,11 +241,11 @@ onMounted(() => loadData());
 
             <!-- 2. User Profile Card -->
             <div
-              class="user-card relative overflow-hidden p-6 rounded-[24px] bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
+              class="user-card relative overflow-hidden p-6 rounded-3xl bg-linear-to-br from-primary/12 via-primary/6 to-transparent border border-primary/20 mb-6"
             >
               <div class="flex items-center gap-6 relative z-10">
                 <div class="p-1 rounded-full border-2 border-primary/30 shrink-0">
-                  <Avatar :src="userInfo.pic" class="w-[76px] h-[76px] rounded-full" />
+                  <Avatar :src="userInfo.pic" class="w-19 h-19 rounded-full" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-3 mb-2">
@@ -355,7 +355,7 @@ onMounted(() => loadData());
                   <div
                     @click="handleClaimTvip"
                     :class="[
-                      'flex items-center gap-3 p-3 rounded-[16px] transition-all border',
+                      'flex items-center gap-3 p-3 rounded-2xl transition-all border',
                       userStore.isTvipClaimedToday
                         ? 'bg-green-500/10 border-green-500/20'
                         : 'bg-black/3 dark:bg-white/3 border-transparent hover:bg-black/6 dark:hover:bg-white/6 cursor-pointer',
@@ -396,7 +396,7 @@ onMounted(() => loadData());
                               <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
                             </span>
                           </template>
-                          <div class="min-w-[180px] space-y-1.5 text-[13px] normal-case">
+                          <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
                               <span class="font-bold opacity-60">开始时间</span>
                               <span class="font-black">{{
@@ -425,7 +425,7 @@ onMounted(() => loadData());
                   <div
                     @click="handleUpgradeSvip"
                     :class="[
-                      'flex items-center gap-3 p-3 rounded-[16px] transition-all border',
+                      'flex items-center gap-3 p-3 rounded-2xl transition-all border',
                       userStore.isSvipClaimedToday || svip
                         ? 'bg-orange-500/10 border-orange-500/20'
                         : userStore.isTvipClaimedToday
@@ -468,7 +468,7 @@ onMounted(() => loadData());
                               <Icon :icon="iconInfo" width="14" height="14" class="opacity-70" />
                             </span>
                           </template>
-                          <div class="min-w-[180px] space-y-1.5 text-[13px] normal-case">
+                          <div class="min-w-45 space-y-1.5 text-[13px] normal-case">
                             <div class="flex items-center justify-between gap-3">
                               <span class="font-bold opacity-60">开始时间</span>
                               <span class="font-black">{{

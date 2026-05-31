@@ -275,10 +275,10 @@ onMounted(() => {
     <div class="cloud-view bg-bg-main min-h-full">
       <div
         v-if="!isLoggedIn"
-        class="cloud-login-empty flex flex-col items-center justify-center min-h-[420px] text-center px-6"
+        class="cloud-login-empty flex flex-col items-center justify-center min-h-105 text-center px-6"
       >
         <div
-          class="w-18 h-18 rounded-[24px] bg-primary/10 text-primary flex items-center justify-center mb-5"
+          class="w-18 h-18 rounded-3xl bg-primary/10 text-primary flex items-center justify-center mb-5"
         >
           <Icon :icon="iconCloud" width="32" height="32" />
         </div>
@@ -340,7 +340,7 @@ onMounted(() => {
 
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="cloud" />
 
-        <div class="px-6 pt-[10px] pb-1">
+        <div class="px-6 pt-2.5 pb-1">
           <div class="cloud-info-card">
             <div class="flex items-center justify-between">
               <div class="text-[13px] font-semibold text-text-main">云盘容量</div>

@@ -28,7 +28,6 @@ import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
 import { queueAndPlaySong } from '@/utils/playback';
 import { logger } from '@/utils/logger';
-import { isSameSong } from '@/utils/song';
 import type { Song } from '@/models/song';
 import type { RecognizeStatus, ShazamResult } from '../../shared/shazam';
 

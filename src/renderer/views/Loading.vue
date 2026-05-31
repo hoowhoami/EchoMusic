@@ -191,12 +191,12 @@ onUnmounted(() => {
     <div class="absolute inset-0 bg-linear-to-b from-bg-sidebar to-bg-main opacity-50"></div>
 
     <div
-      class="absolute -top-[100px] -right-[100px] w-[300px] h-[300px] rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
+      class="absolute -top-25 -right-25 w-75 h-75 rounded-full bg-primary/5 dark:bg-primary/10 blur-3xl"
     ></div>
 
     <main class="relative h-full flex flex-col items-center justify-center">
       <div
-        class="w-[120px] h-[120px] bg-bg-card border border-border-light rounded-[32px] flex flex-col items-center justify-center shadow-sm mb-[60px]"
+        class="w-30 h-30 bg-bg-card border border-border-light rounded-4xl flex flex-col items-center justify-center shadow-sm mb-15"
       >
         <span class="text-[24px] font-bold text-text-main tracking-[-1px] leading-tight">Echo</span>
         <span class="text-[16px] font-bold text-primary tracking-[2px] leading-tight uppercase"
