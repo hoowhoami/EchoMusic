@@ -10,9 +10,6 @@ import { usePlaylistStore } from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
-import { useSettingStore } from '@/stores/setting';
-import { sortPlaylists } from '@/stores/playlist';
-import type { PlaylistSortOrder } from '@/stores/playlist';
 import { formatDuration } from '@/utils/format';
 import SongCard from '@/components/music/SongCard.vue';
 import { isPlayableSong } from '@/utils/song';
@@ -42,7 +39,6 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const toastStore = useToastStore();
-const settingStore = useSettingStore();
 
 const selectedKeys = ref<Set<string>>(new Set());
 const showPlaylistDialog = ref(false);
@@ -160,12 +156,7 @@ const visibleBlockStyle = computed(() => ({
   transform: `translateY(${visibleOffset.value}px)`,
 }));
 
-const createdPlaylists = computed(() =>
-  sortPlaylists(
-    playlistStore.getCreatedPlaylists(userStore.info?.userid),
-    settingStore.playlistSortOrder as PlaylistSortOrder,
-  ),
-);
+const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
 
 const addToPlaybackQueues = computed(() =>
   playlistStore.playbackQueueList.filter(
@@ -295,6 +286,7 @@ const confirmRemoveFromPlaylist = async () => {
       },
     );
     if (successCount > 0 && failedCount === 0) {
+      playlistStore.forgetPlaylistSongs(String(props.sourceId), songsToRemove);
       toastStore.actionCompleted(`已从歌单移除 ${successCount} 首`);
       open.value = false;
     } else if (successCount > 0 && failedCount > 0) {

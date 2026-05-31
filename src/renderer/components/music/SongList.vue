@@ -7,8 +7,7 @@ import { formatDuration } from '@/utils/format';
 import SongCard from './SongCard.vue';
 import { iconPlay, iconPause } from '@/icons';
 import { usePlayerStore } from '@/stores/player';
-import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
-import type { PlaylistSortOrder } from '@/stores/playlist';
+import { usePlaylistStore } from '@/stores/playlist';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
 import { playSongInContext, queueAndPlaySong, addSongToPlayNext } from '@/utils/playback';
@@ -22,7 +21,6 @@ import {
   ContextMenuItem,
 } from 'reka-ui';
 import { useUserStore } from '@/stores/user';
-import { useSettingStore } from '@/stores/setting';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
 
@@ -77,7 +75,6 @@ const props = withDefaults(defineProps<Props>(), {
 
 const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();
-const settingStore = useSettingStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -419,10 +416,7 @@ const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
 
 const selectablePlaylists = computed(() =>
-  sortPlaylists(
-    playlistStore.getCreatedPlaylists(userStore.info?.userid),
-    settingStore.playlistSortOrder as PlaylistSortOrder,
-  ),
+  playlistStore.getCreatedPlaylists(userStore.info?.userid),
 );
 
 const contextMenuCanRemove = computed(() => {

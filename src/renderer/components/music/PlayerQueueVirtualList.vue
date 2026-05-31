@@ -155,8 +155,8 @@ defineExpose({
                     )
                   "
                   :icon="iconPlay"
-                  width="14"
-                  height="14"
+                  width="16"
+                  height="16"
                 />
                 <Icon
                   v-show="
@@ -165,8 +165,8 @@ defineExpose({
                     isPlayerPlaying
                   "
                   :icon="iconPause"
-                  width="14"
-                  height="14"
+                  width="16"
+                  height="16"
                 />
               </Button>
             </div>
@@ -214,14 +214,16 @@ defineExpose({
 <style scoped>
 .queue-list {
   min-height: 100%;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
 }
 
 .queue-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 28px;
+  grid-template-columns: 52px minmax(0, 1fr) 28px;
   align-items: center;
   gap: 10px;
-  padding: 0 12px 0 8px;
+  padding: 0 12px 0 10px;
   border-radius: 14px;
   transition: background-color 0.16s ease;
 }
@@ -242,8 +244,8 @@ defineExpose({
   justify-content: center;
   gap: 4px;
   position: relative;
-  width: 40px;
-  min-width: 40px;
+  width: 44px;
+  min-width: 44px;
 }
 
 .queue-index {
@@ -257,15 +259,20 @@ defineExpose({
   position: absolute;
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   color: var(--color-primary);
   opacity: 0;
+  background: transparent !important;
 }
 
 .queue-play:hover {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  background: transparent !important;
+}
+
+.queue-play:focus-visible {
+  background: transparent !important;
 }
 
 .queue-row:hover .queue-play,

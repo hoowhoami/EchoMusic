@@ -342,10 +342,18 @@ const fetchData = async () => {
         onPageLoaded(allItems) {
           songs.value = allItems.slice();
           loadedSongCount.value = allItems.length;
+          playlistStore.rememberPlaylistSongs(
+            playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+            allItems,
+          );
         },
         onComplete(allItems) {
           songs.value = allItems.slice();
           loadedSongCount.value = allItems.length;
+          playlistStore.rememberPlaylistSongs(
+            playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+            allItems,
+          );
         },
         onError() {
           toastStore.loadFailed('歌单歌曲');
@@ -439,10 +447,12 @@ const secondaryActions = computed(() => {
 });
 
 const handleSongDoubleTapPlay = async (song: Song) => {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
   await replaceQueueAndPlay(
     playlistStore,
     playerStore,
-    songs.value,
+    queueSongs,
     playlistFilteredInvalidCount.value,
     song,
     {
@@ -457,13 +467,18 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 const handleRemovedFromPlaylist = (song: Song) => {
   songs.value = songs.value.filter((s) => String(s.id) !== String(song.id));
   loadedSongCount.value = songs.value.length;
+  playlistStore.forgetPlaylistSongs(
+    playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+    [song],
+  );
   if (playlist.value && typeof playlist.value.count === 'number') {
     playlist.value = { ...playlist.value, count: Math.max(0, playlist.value.count - 1) };
   }
 };
 
 const handlePlayAll = async () => {
-  if (songs.value.length === 0) return;
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
   const queueOpts = {
     queueId: `queue:playlist:${playlist.value?.id ?? getPlaylistId()}`,
     title: playlist.value?.name || '歌单',
@@ -473,17 +488,21 @@ const handlePlayAll = async () => {
   await replaceQueueAndPlay(
     playlistStore,
     playerStore,
-    songs.value,
+    queueSongs,
     playlistFilteredInvalidCount.value,
     undefined,
     queueOpts,
   );
   // 后台等待全部加载完，静默更新播放队列
   if (songLoader && !songLoader.fullyLoaded) {
-    const allSongs = await songLoader.waitForAll();
-    if (allSongs.length > songs.value.length) {
+    const allSongs = Array.from(await songLoader.waitForAll()) as Song[];
+    const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
+      indexSource: allSongs,
+    });
+    const displayedAllSongs = filterSongsByQuery(sortedAllSongs, searchQuery.value);
+    if (displayedAllSongs.length > queueSongs.length) {
       playlistStore.setPlaybackQueueWithOptions(
-        allSongs.slice() as Song[],
+        Array.from(displayedAllSongs) as Song[],
         playlistFilteredInvalidCount.value,
         queueOpts,
       );

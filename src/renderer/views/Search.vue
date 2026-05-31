@@ -480,8 +480,9 @@ const handleLyricSort = (field: SortField) => {
 };
 
 const playSearchSongs = async () => {
-  if (songResults.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, undefined, {
+  const queueSongs = filteredSongResults.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: `queue:search:${currentSearchKeyword.value.trim() || 'default'}`,
     title: '搜索结果',
     subtitle: currentSearchSubtitle.value,
@@ -491,7 +492,9 @@ const playSearchSongs = async () => {
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songResults.value, 0, song, {
+  const queueSongs = filteredSongResults.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: `queue:search:${currentSearchKeyword.value.trim() || 'default'}`,
     title: '搜索结果',
     subtitle: currentSearchSubtitle.value,
@@ -506,8 +509,9 @@ const openSongBatchDrawer = () => {
 };
 
 const playLyricSearchSongs = async () => {
-  if (lyricResults.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, lyricResults.value, 0, undefined, {
+  const queueSongs = sortedLyricResults.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: `queue:search-lyric:${currentSearchKeyword.value.trim() || 'default'}`,
     title: '歌词搜索',
     subtitle: currentSearchSubtitle.value,

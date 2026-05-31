@@ -72,7 +72,8 @@ const handleSort = (field: SortField) => {
 };
 
 const handlePlayAll = async () => {
-  if (songs.value.length === 0) return;
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
   const queueOpts = {
     queueId: 'queue:favorites',
     title: '我最喜爱',
@@ -80,16 +81,26 @@ const handlePlayAll = async () => {
     type: 'playlist' as const,
   };
   // 先用已加载的歌曲开始播放
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, queueOpts);
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
   // 后台等待全部加载完，静默更新播放队列
-  const allSongs = await playlistStore.waitForFavoritesLoaded();
-  if (allSongs.length > songs.value.length) {
-    playlistStore.setPlaybackQueueWithOptions(allSongs.slice() as Song[], 0, queueOpts);
+  const allSongs = Array.from(await playlistStore.waitForFavoritesLoaded()) as Song[];
+  const sortedAllSongs = sortSongs(allSongs, sortField.value, sortOrder.value, {
+    indexSource: allSongs,
+  });
+  const displayedAllSongs = filterSongsByQuery(sortedAllSongs, searchQuery.value);
+  if (displayedAllSongs.length > queueSongs.length) {
+    playlistStore.setPlaybackQueueWithOptions(
+      Array.from(displayedAllSongs) as Song[],
+      0,
+      queueOpts,
+    );
   }
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:favorites',
     title: '我最喜爱',
     subtitle: '收藏歌曲',

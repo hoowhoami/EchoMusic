@@ -5,9 +5,12 @@ import { useVModel } from '@vueuse/core';
 import Sortable from 'sortablejs';
 import Drawer from '@/components/ui/Drawer.vue';
 import PlayerQueueVirtualList from '@/components/music/PlayerQueueVirtualList.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
+import { useUserStore } from '@/stores/user';
+import { useToastStore } from '@/stores/toast';
 import type { Song } from '@/models/song';
 import { isPlayableSong } from '@/utils/song';
 import {
@@ -15,11 +18,11 @@ import {
   iconX,
   iconPlay,
   iconPause,
-  iconList,
   iconArrowUp,
   iconCurrentLocation,
   iconChevronLeft,
   iconChevronRight,
+  iconPlus,
 } from '@/icons';
 
 interface Props {
@@ -37,6 +40,8 @@ const emit = defineEmits<{
 const open = useVModel(props, 'open', emit, { defaultValue: false });
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
+const userStore = useUserStore();
+const toastStore = useToastStore();
 
 type QueueLike = NonNullable<ReturnType<typeof usePlaylistStore>['activeQueue']>;
 type QueueVirtualListExposed = {
@@ -53,6 +58,9 @@ const slidesRef = ref<HTMLElement | null>(null);
 const queueListRefs = ref<Record<string, QueueVirtualListExposed | null>>({});
 const previewQueueId = ref<string | null>(null);
 const canSwipeQueues = ref(false);
+const showPlaylistDialog = ref(false);
+const isPlaylistLoading = ref(false);
+const isAddingToPlaylist = ref(false);
 
 const dragPointerId = ref<number | null>(null);
 const dragStartX = ref(0);
@@ -169,6 +177,10 @@ const headerMeta = computed(() => {
   const count = previewQueue.value?.songs.length ?? 0;
   return `${count} 首`;
 });
+const canAddPreviewQueue = computed(
+  () => userStore.isLoggedIn && !!previewQueue.value && previewQueue.value.songs.length > 0,
+);
+const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
 
 const resolveResumeTrack = (queue: QueueLike | null | undefined) => {
   if (!queue) return null;
@@ -500,6 +512,56 @@ const handleClear = () => {
   playerStore.stop();
 };
 
+const handleAddToPlaylist = async () => {
+  if (!previewQueue.value?.songs.length) return;
+  if (!userStore.isLoggedIn) {
+    toastStore.loginRequired('添加到歌单');
+    return;
+  }
+  showPlaylistDialog.value = true;
+  if (playlistStore.userPlaylists.length === 0) {
+    isPlaylistLoading.value = true;
+    try {
+      await playlistStore.fetchUserPlaylists();
+    } catch {
+      toastStore.loadFailed('歌单');
+    } finally {
+      isPlaylistLoading.value = false;
+    }
+  }
+};
+
+const handleSelectPlaylist = async (listId: string | number) => {
+  const queue = previewQueue.value;
+  if (!queue || queue.songs.length === 0 || isAddingToPlaylist.value) return;
+  const targetName =
+    createdPlaylists.value.find((p) => String(p.listid ?? p.id) === String(listId))?.name ?? '歌单';
+  isAddingToPlaylist.value = true;
+  try {
+    // 反转顺序以保持目标歌单中看到的顺序与当前队列一致
+    const songsToAdd = [...queue.songs].reverse();
+    const { successCount, failedCount } = await playlistStore.addSongsToPlaylist(
+      listId,
+      songsToAdd,
+    );
+    if (successCount > 0 && failedCount === 0) {
+      toastStore.actionCompleted(`已添加 ${successCount} 首到『${targetName}』`);
+      showPlaylistDialog.value = false;
+      return;
+    }
+    if (successCount > 0 && failedCount > 0) {
+      toastStore.warning(`已添加 ${successCount} 首到『${targetName}』，${failedCount} 首失败`);
+      showPlaylistDialog.value = false;
+      return;
+    }
+    toastStore.warning('所选歌曲已在目标歌单中');
+  } catch {
+    toastStore.actionFailed('添加到歌单');
+  } finally {
+    isAddingToPlaylist.value = false;
+  }
+};
+
 const handleResumePreviewQueue = async (song?: Song | null) => {
   const queue = previewQueue.value;
   if (!queue || queue.id === currentPlaybackQueue.value?.id) return;
@@ -606,46 +668,14 @@ onBeforeUnmount(() => {
     panelClass="queue-drawer"
   >
     <div class="queue-header">
-      <div class="queue-heading">
+      <div class="queue-title-block">
         <div class="queue-title-row">
           <div class="queue-title">{{ headerTitle }}</div>
           <div v-if="headerSubtitle" class="queue-title-subtitle">
             {{ headerSubtitle }}
           </div>
         </div>
-        <div class="queue-meta-row">
-          <div class="queue-title-meta">{{ headerMeta }}</div>
-          <div
-            v-if="queueOptions.length > 1"
-            class="queue-switcher"
-            role="group"
-            aria-label="队列切换"
-            tabindex="0"
-            @keydown="handleQueueNavKeydown"
-          >
-            <button
-              type="button"
-              class="queue-switcher-btn"
-              :disabled="!canSwitchToPrevQueue"
-              title="上一队列"
-              @click="handleSwitchQueueByDirection(-1)"
-            >
-              <Icon :icon="iconChevronLeft" width="14" height="14" />
-            </button>
-            <div class="queue-switcher-label" :title="queueSwitcherTitle" aria-live="polite">
-              {{ queueSwitcherLabel }}
-            </div>
-            <button
-              type="button"
-              class="queue-switcher-btn"
-              :disabled="!canSwitchToNextQueue"
-              title="下一队列"
-              @click="handleSwitchQueueByDirection(1)"
-            >
-              <Icon :icon="iconChevronRight" width="14" height="14" />
-            </button>
-          </div>
-        </div>
+        <div class="queue-title-meta">{{ headerMeta }}</div>
       </div>
 
       <div class="queue-actions">
@@ -695,6 +725,53 @@ onBeforeUnmount(() => {
         >
           <Icon :icon="iconX" width="20" height="20" />
         </Button>
+      </div>
+
+      <div class="queue-toolbar">
+        <div
+          v-if="queueOptions.length > 1"
+          class="queue-switcher"
+          role="group"
+          aria-label="队列切换"
+          tabindex="0"
+          @keydown="handleQueueNavKeydown"
+        >
+          <button
+            type="button"
+            class="queue-switcher-btn"
+            :disabled="!canSwitchToPrevQueue"
+            title="上一队列"
+            @click="handleSwitchQueueByDirection(-1)"
+          >
+            <Icon :icon="iconChevronLeft" width="14" height="14" />
+          </button>
+          <div class="queue-switcher-label" :title="queueSwitcherTitle" aria-live="polite">
+            {{ queueSwitcherLabel }}
+          </div>
+          <button
+            type="button"
+            class="queue-switcher-btn"
+            :disabled="!canSwitchToNextQueue"
+            title="下一队列"
+            @click="handleSwitchQueueByDirection(1)"
+          >
+            <Icon :icon="iconChevronRight" width="14" height="14" />
+          </button>
+        </div>
+
+        <div class="queue-actions-primary">
+          <Button
+            type="button"
+            class="queue-add-btn"
+            variant="secondary"
+            size="xs"
+            :disabled="!canAddPreviewQueue || isAddingToPlaylist"
+            @click="handleAddToPlaylist"
+          >
+            <Icon :icon="iconPlus" width="14" height="14" />
+            <span>添加到</span>
+          </Button>
+        </div>
       </div>
     </div>
 
@@ -750,6 +827,37 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </Drawer>
+
+  <Dialog
+    v-model:open="showPlaylistDialog"
+    title="添加到"
+    overlayClass="batch-playlist-overlay"
+    contentClass="batch-playlist-dialog max-w-[420px]"
+    showClose
+  >
+    <div class="batch-playlist-body">
+      <div class="batch-playlist-divider">
+        <span>歌单</span>
+      </div>
+      <div v-if="isPlaylistLoading" class="batch-playlist-status">加载歌单中...</div>
+      <div v-else-if="createdPlaylists.length === 0" class="batch-playlist-status">
+        暂无可用歌单
+      </div>
+      <Button
+        v-for="entry in createdPlaylists"
+        :key="entry.listid ?? entry.id"
+        type="button"
+        class="playlist-picker-item"
+        variant="ghost"
+        size="sm"
+        :disabled="isAddingToPlaylist"
+        @click="handleSelectPlaylist(entry.listid ?? entry.id)"
+      >
+        <span class="batch-playlist-name">{{ entry.name }}</span>
+        <span class="batch-playlist-count">{{ entry.count ?? 0 }} 首</span>
+      </Button>
+    </div>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -766,20 +874,33 @@ onBeforeUnmount(() => {
 }
 
 .queue-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'toolbar toolbar';
   align-items: center;
   gap: 12px;
-  padding: 14px 16px 5px;
+  padding: 14px 16px 10px;
   border-bottom: 1px solid var(--color-border-light);
 }
 
-.queue-heading {
+.queue-title-block {
+  grid-area: title;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  flex: 1;
+  gap: 6px;
   min-width: 0;
+}
+
+.queue-toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .queue-title-row {
@@ -793,6 +914,7 @@ onBeforeUnmount(() => {
 
 .queue-title {
   flex: 0 0 auto;
+  max-width: 100%;
   font-size: 16px;
   font-weight: 700;
   line-height: 1;
@@ -812,8 +934,6 @@ onBeforeUnmount(() => {
 }
 
 .queue-title-meta {
-  width: 62px;
-  flex: 0 0 62px;
   font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.86;
@@ -821,26 +941,37 @@ onBeforeUnmount(() => {
   line-height: 1;
 }
 
-.queue-meta-row {
+.queue-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  white-space: nowrap;
+  min-height: 28px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.queue-actions-primary {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 16px;
+  gap: 8px;
 }
 
 .queue-switcher {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 24px;
+  min-height: 28px;
 }
 
 .queue-switcher-btn {
   height: 24px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   transition:
     color 0.18s ease,
     background-color 0.18s ease;
@@ -868,8 +999,8 @@ onBeforeUnmount(() => {
 }
 
 .queue-switcher-label {
-  flex: 1;
-  min-width: 0;
+  min-width: 54px;
+  max-width: 140px;
   text-align: center;
   font-size: 13px;
   font-weight: 700;
@@ -882,11 +1013,12 @@ onBeforeUnmount(() => {
 }
 
 .queue-actions {
+  grid-area: actions;
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 4px;
-  margin-left: auto;
+  justify-self: end;
 }
 
 .queue-icon-btn {
@@ -894,6 +1026,107 @@ onBeforeUnmount(() => {
   height: 38px;
   min-width: 38px;
   border-radius: 12px;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 760px) {
+  .queue-header {
+    gap: 10px;
+  }
+
+  .queue-title-row {
+    gap: 6px;
+  }
+
+  .queue-toolbar {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .queue-switcher {
+    order: 1;
+    flex: 1 1 160px;
+  }
+
+  .queue-actions-primary {
+    order: 2;
+    flex: 0 0 auto;
+  }
+
+  .queue-actions {
+    gap: 2px;
+  }
+
+  .queue-icon-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+
+  .queue-title-subtitle {
+    max-width: 140px;
+  }
+}
+
+.batch-playlist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.batch-playlist-status {
+  padding: 18px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.batch-playlist-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.batch-playlist-count {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+:global(.batch-playlist-overlay) {
+  z-index: 1600 !important;
+}
+
+:global(.batch-playlist-dialog) {
+  z-index: 1610 !important;
+}
+
+.playlist-picker-item {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-card);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-main);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.playlist-picker-item:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.batch-playlist-divider {
+  padding: 4px 0;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--color-text-secondary);
 }
 

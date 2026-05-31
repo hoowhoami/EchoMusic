@@ -222,7 +222,9 @@ const loadCloud = async () => {
 };
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:cloud',
     title: '云盘音乐',
     subtitle: '你的云盘收藏',
@@ -232,7 +234,9 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handlePlayAll = async () => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:cloud',
     title: '云盘音乐',
     subtitle: '你的云盘收藏',

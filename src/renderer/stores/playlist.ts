@@ -164,6 +164,7 @@ let personalFmSessionResetPending = true;
 
 // 收藏歌曲加载器（模块级，非响应式）
 let favoritesLoader: PagedSongLoader<Song> | null = null;
+const localPlaylistSongsCache = new Map<string, Song[]>();
 
 const buildPlaybackQueueState = (
   options: SetPlaybackQueueOptions = {},
@@ -209,6 +210,16 @@ const resolveFavoriteSongKey = (song: Song | null | undefined): string => {
   const queueKey = resolveSongQueueKey(song);
   if (queueKey) return queueKey;
   return `id:${String(song.id ?? '')}`;
+};
+
+const buildPlaylistTrackPayload = (song: Song): string =>
+  `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
+
+const removeSongsFromKnownList = (existing: Song[], songs: Song[]): Song[] => {
+  if (existing.length === 0 || songs.length === 0) return existing.slice();
+  return existing.filter(
+    (item) => !songs.some((song) => isSameSong(item, song) || String(item.id) === String(song.id)),
+  );
 };
 
 const mergeQueueSongs = (existing: Song[], incoming: Song[]): Song[] => {
@@ -890,6 +901,27 @@ export const usePlaylistStore = defineStore('playlist', {
       if (!matched) return id;
       return matched.listid || matched.id || id;
     },
+    rememberPlaylistSongs(listId: string | number | null | undefined, songs: readonly Song[]) {
+      if (listId === undefined || listId === null || String(listId) === '') return;
+      localPlaylistSongsCache.set(String(listId), dedupeSongs(Array.from(songs) as Song[]));
+    },
+    forgetPlaylistSongs(listId: string | number | null | undefined, songs?: readonly Song[]) {
+      if (listId === undefined || listId === null || String(listId) === '') return;
+      const key = String(listId);
+      if (!songs || songs.length === 0) {
+        localPlaylistSongsCache.delete(key);
+        return;
+      }
+      const current = localPlaylistSongsCache.get(key) ?? [];
+      localPlaylistSongsCache.set(
+        key,
+        removeSongsFromKnownList(current, Array.from(songs) as Song[]),
+      );
+    },
+    getKnownPlaylistSongs(listId: string | number | null | undefined): Song[] {
+      if (listId === undefined || listId === null || String(listId) === '') return [];
+      return localPlaylistSongsCache.get(String(listId)) ?? [];
+    },
     syncCloudFavorites(songs: Song[]) {
       this.favorites = dedupeSongs(songs);
     },
@@ -1123,9 +1155,16 @@ export const usePlaylistStore = defineStore('playlist', {
       if (!targetId) return false;
 
       try {
-        const songData = `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`;
-        const res = await addPlaylistTrack(targetId, songData);
+        const existingSongs = this.getKnownPlaylistSongs(targetId);
+        if (existingSongs.some((item) => isSameSong(item, song))) {
+          logger.info('PlaylistStore', `Song ${song.title} already exists in playlist ${targetId}`);
+          return true;
+        }
+        const res = await addPlaylistTrack(targetId, buildPlaylistTrackPayload(song));
         if (res && typeof res === 'object' && 'status' in res && res.status === 1) {
+          if (existingSongs.length > 0) {
+            this.rememberPlaylistSongs(targetId, [...existingSongs, song]);
+          }
           logger.info('PlaylistStore', `Song ${song.title} added to playlist ${targetId}`);
           return true;
         }
@@ -1167,11 +1206,29 @@ export const usePlaylistStore = defineStore('playlist', {
       const total = songs.length;
       if (!targetId || total === 0) return { successCount: 0, failedCount: total };
 
+      const existingSongs = this.getKnownPlaylistSongs(targetId);
+      const dedupedSongs: Song[] = [];
+      const seenIncoming = new Set<string>();
+      songs.forEach((song) => {
+        const key = resolveSongQueueKey(song);
+        if (seenIncoming.has(key)) return;
+        seenIncoming.add(key);
+        if (existingSongs.some((item) => isSameSong(item, song))) return;
+        dedupedSongs.push(song);
+      });
+
+      if (dedupedSongs.length === 0) {
+        onProgress?.(total, total);
+        logger.info(
+          'PlaylistStore',
+          `Skip adding songs to playlist ${targetId}: all already exist`,
+        );
+        return { successCount: 0, failedCount: 0 };
+      }
+
       const MAX_PARAM_LEN = 4000;
       const encode = (s: string) => encodeURIComponent(s).length;
-      const payloads = songs.map(
-        (song) => `${song.title}|${song.hash}|${song.albumId || 0}|${song.mixSongId}`,
-      );
+      const payloads = dedupedSongs.map((song) => buildPlaylistTrackPayload(song));
 
       // 按 encode 后长度分批
       const batches: string[][] = [];
@@ -1193,7 +1250,9 @@ export const usePlaylistStore = defineStore('playlist', {
       let successCount = 0;
       let failedCount = 0;
       let done = 0;
-      onProgress?.(0, total);
+      const skippedCount = total - dedupedSongs.length;
+      onProgress?.(skippedCount, total);
+      done = skippedCount;
 
       for (const batch of batches) {
         try {
@@ -1210,6 +1269,10 @@ export const usePlaylistStore = defineStore('playlist', {
         }
         done += batch.length;
         onProgress?.(done, total);
+      }
+
+      if (successCount > 0 && existingSongs.length > 0) {
+        this.rememberPlaylistSongs(targetId, [...existingSongs, ...dedupedSongs]);
       }
 
       return { successCount, failedCount };

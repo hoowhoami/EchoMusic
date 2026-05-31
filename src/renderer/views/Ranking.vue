@@ -124,8 +124,10 @@ const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, sear
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const handleSongDoubleTapPlay = async (song: Song) => {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
   try {
-    await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+    await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
       queueId: `queue:ranking:${selectedRank.value?.id ?? 'default'}`,
       title: selectedRank.value?.name || '排行榜',
       subtitle: selectedRank.value?.rankTypeName || '实时热门趋势',
@@ -138,9 +140,10 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handlePlayAll = async () => {
-  if (songs.value.length === 0) return;
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
   try {
-    await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+    await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
       queueId: `queue:ranking:${selectedRank.value?.id ?? 'default'}`,
       title: selectedRank.value?.name || '排行榜',
       subtitle: selectedRank.value?.rankTypeName || '实时热门趋势',

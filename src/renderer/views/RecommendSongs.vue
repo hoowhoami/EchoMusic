@@ -83,7 +83,9 @@ const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, sear
 const activeSongId = computed(() => playerStore.currentTrackId ?? undefined);
 
 const handleSongDoubleTapPlay = async (song: Song) => {
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, song, {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: 'queue:daily-recommend',
     title: '每日推荐',
     subtitle: '为你量身定制',
@@ -93,8 +95,9 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handlePlayAll = async () => {
-  if (songs.value.length === 0) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, songs.value, 0, undefined, {
+  const queueSongs = displayedSongs.value.slice() as Song[];
+  if (queueSongs.length === 0) return;
+  await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, {
     queueId: 'queue:daily-recommend',
     title: '每日推荐',
     subtitle: '为你量身定制',
