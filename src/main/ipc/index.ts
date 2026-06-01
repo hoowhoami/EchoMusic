@@ -31,7 +31,6 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeAllListeners('window-drag:end');
   ipcMain.removeAllListeners('window-toggle');
   ipcMain.removeAllListeners('quit-app');
-  ipcMain.removeHandler('window:frame-metrics');
   ipcMain.removeHandler('shortcuts:register');
   ipcMain.removeHandler('shortcuts:refresh');
   ipcMain.removeAllListeners('tray:sync-playback');

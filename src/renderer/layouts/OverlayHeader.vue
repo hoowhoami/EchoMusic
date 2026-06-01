@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { iconMinus, iconSquare, iconX, iconFullscreen } from '@/icons';
-import { useWindowFrameMetrics } from '@/composables/useWindowFrameMetrics';
 import Button from '@/components/ui/Button.vue';
 
 const isMac = computed(() => window.electron.platform === 'darwin');
-const { controlRightInset } = useWindowFrameMetrics();
+const headerRef = ref<HTMLElement | null>(null);
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
@@ -26,11 +25,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
       <slot name="left" />
     </div>
 
-    <div
-      v-if="!isMac"
-      class="overlay-header-controls no-drag relative z-10"
-      :style="{ right: `${controlRightInset}px` }"
-    >
+    <div v-if="!isMac" class="overlay-header-controls no-drag relative z-10">
       <Button
         variant="unstyled"
         size="none"

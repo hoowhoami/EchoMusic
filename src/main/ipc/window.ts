@@ -1,11 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import {
-  getWindowFrameMetrics,
-  hideMainWindow,
-  quitApplication,
-  requestMainWindowClose,
-  showMainWindow,
-} from '../window';
+import { hideMainWindow, quitApplication, requestMainWindowClose, showMainWindow } from '../window';
 import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
@@ -30,11 +24,6 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
       }
     },
   );
-
-  ipcMain.handle('window:frame-metrics', (event) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender) ?? getMainWindow();
-    return getWindowFrameMetrics(browserWindow);
-  });
 
   // 窗口拖动已改为 CSS -webkit-app-region: drag
   // 保留 IPC 通道兼容旧代码
