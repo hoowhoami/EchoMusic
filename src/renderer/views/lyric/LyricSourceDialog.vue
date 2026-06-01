@@ -244,9 +244,10 @@ const restoreAuto = async () => {
       duration: durationMs.value || undefined,
     });
     pickInitialCandidate();
-    toastStore.success('已恢复自动选择');
+    toastStore.success('已改为智能推荐');
+    open.value = false;
   } catch {
-    toastStore.actionFailed('恢复自动选择');
+    toastStore.actionFailed('改为智能推荐');
   } finally {
     isApplying.value = false;
   }
@@ -427,7 +428,7 @@ watch(selectedKey, () => {
         :disabled="!canRestoreAuto || isApplying"
         @click="restoreAuto"
       >
-        恢复自动
+        使用智能推荐
       </Button>
       <Button :loading="isApplying" :disabled="!selectedCandidate" size="sm" @click="applySelected">
         应用
