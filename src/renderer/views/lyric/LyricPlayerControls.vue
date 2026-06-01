@@ -67,6 +67,14 @@ const progressValue = computed(() => {
   return [playerStore.currentTime];
 });
 
+const progressTooltipPercent = computed(() => {
+  const displayTime =
+    isDraggingSeek.value && pendingSeekTime.value !== null
+      ? pendingSeekTime.value
+      : playerStore.currentTime;
+  return (displayTime / Math.max(playerStore.duration, 1)) * 100;
+});
+
 const handleSeek = (value: number[] | undefined) => {
   if (!value || value.length === 0) return;
   if (isDraggingSeek.value) {
@@ -144,7 +152,7 @@ const formatTime = (seconds: number) => {
         v-if="isHoveringProgress || isDraggingSeek"
         class="bar-progress-tooltip"
         :style="{
-          left: `${((isDraggingSeek && pendingSeekTime !== null ? pendingSeekTime : playerStore.currentTime) / Math.max(playerStore.duration, 1)) * 100}%`,
+          left: `clamp(var(--bar-progress-tooltip-edge-gap), ${progressTooltipPercent}%, calc(100% - var(--bar-progress-tooltip-edge-gap)))`,
         }"
       >
         {{
@@ -347,6 +355,7 @@ const formatTime = (seconds: number) => {
 
 /* 顶部进度条 */
 .bar-progress-top {
+  --bar-progress-tooltip-edge-gap: 46px;
   width: 100%;
   position: relative;
   overflow: visible;
