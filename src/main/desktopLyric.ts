@@ -35,6 +35,7 @@ import {
   withDesktopLyricWindow,
 } from './desktopLyric/window';
 import log from './logger';
+import { showMainWindow } from './window';
 
 export { getDesktopLyricWindow } from './desktopLyric/window';
 
@@ -505,13 +506,17 @@ export const registerDesktopLyricHandlers = () => {
         | 'previousTrack'
         | 'nextTrack'
         | 'toggleLyricsMode'
-        | 'cycleLyricsMode',
+        | 'cycleLyricsMode'
+        | 'openLyricSource',
     ) => {
       const lyricWin = getDesktopLyricWindow();
       const focusedMainWindow = BrowserWindow.getAllWindows().find(
         (win) => win !== lyricWin && !win.isDestroyed(),
       );
       if (!focusedMainWindow) return;
+      if (command === 'openLyricSource') {
+        showMainWindow();
+      }
       focusedMainWindow.webContents.send('shortcut-trigger', command);
     },
   );

@@ -227,6 +227,7 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     ),
     toggleLyricsMode: '',
     cycleLyricsMode: '',
+    openLyricSource: '',
     volumeUp: labelToAccelerator(bindings.volumeUp ?? defaults.volumeUp ?? ''),
     volumeDown: labelToAccelerator(bindings.volumeDown ?? defaults.volumeDown ?? ''),
     toggleMute: labelToAccelerator(bindings.toggleMute ?? defaults.toggleMute ?? ''),
@@ -246,6 +247,7 @@ const getShortcutCommandLabel = (command: ShortcutCommand) => {
     toggleDesktopLyric: '桌面歌词开关',
     toggleLyricsMode: '歌词模式切换',
     cycleLyricsMode: '歌词模式轮换',
+    openLyricSource: '选择歌词版本',
     volumeUp: '音量 +',
     volumeDown: '音量 -',
     toggleMute: '静音',
@@ -304,6 +306,9 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
       lyricStore.wantTranslation = false;
       lyricStore.wantRomanization = false;
     }
+  } else if (command === 'openLyricSource') {
+    playerStore.toggleLyricView(true);
+    lyricStore.sourceDialogOpen = true;
   } else if (command === 'volumeUp') {
     playerStore.setVolume(playerStore.volume + 0.05);
   } else if (command === 'volumeDown') {

@@ -27,6 +27,28 @@ export interface IElectronAPI {
     onTrigger: (func: (command: string) => void) => () => void;
   };
   windowControl: (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => void;
+  windowFrame?: {
+    getMetrics: () => Promise<{
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      isMaximized: boolean;
+      isFullScreen: boolean;
+      scaleFactor: number;
+    }>;
+    onMetrics: (
+      func: (metrics: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+        isMaximized: boolean;
+        isFullScreen: boolean;
+        scaleFactor: number;
+      }) => void,
+    ) => () => void;
+  };
   appInfo: {
     get: () => Promise<AppInfoResult>;
     getChangelog: () => Promise<string>;
@@ -76,7 +98,8 @@ export interface IElectronAPI {
         | 'previousTrack'
         | 'nextTrack'
         | 'toggleLyricsMode'
-        | 'cycleLyricsMode',
+        | 'cycleLyricsMode'
+        | 'openLyricSource',
     ) => void;
   };
   log: {

@@ -186,6 +186,26 @@ const close = () => {
           <div class="section-title">翻译</div>
           <div class="setting-row">
             <div class="setting-text">
+              <span class="setting-label">歌词来源</span>
+              <span class="setting-hint">
+                {{
+                  lyricStore.manualCandidateForCurrentHash
+                    ? '已手动选择当前歌词版本'
+                    : '使用智能推荐歌词版本'
+                }}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="source-change-btn"
+              @click="lyricStore.sourceDialogOpen = true"
+            >
+              更换
+            </Button>
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
               <span class="setting-label">翻译</span>
               <span class="setting-hint">有翻译时显示翻译</span>
             </div>

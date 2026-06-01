@@ -6,6 +6,7 @@ export type ShortcutCommand =
   | 'toggleDesktopLyric'
   | 'toggleLyricsMode'
   | 'cycleLyricsMode'
+  | 'openLyricSource'
   | 'volumeUp'
   | 'volumeDown'
   | 'toggleMute'

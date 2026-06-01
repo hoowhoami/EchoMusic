@@ -59,8 +59,57 @@ let powerSaveBlockerId = -1;
 let win: BrowserWindow | null = null;
 let isQuitting = false;
 
+export type WindowFrameMetrics = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  isMaximized: boolean;
+  isFullScreen: boolean;
+  scaleFactor: number;
+};
+
 const canUseMainWindow = (mainWindow: BrowserWindow | null): mainWindow is BrowserWindow => {
   return Boolean(mainWindow && !mainWindow.isDestroyed());
+};
+
+export const getWindowFrameMetrics = (
+  targetWindow: BrowserWindow | null = win,
+): WindowFrameMetrics => {
+  if (!canUseMainWindow(targetWindow)) {
+    return {
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+      isMaximized: false,
+      isFullScreen: false,
+      scaleFactor: 1,
+    };
+  }
+
+  const bounds = targetWindow.getBounds();
+  const contentBounds = targetWindow.getContentBounds();
+  const left = Math.max(0, contentBounds.x - bounds.x);
+  const top = Math.max(0, contentBounds.y - bounds.y);
+  const right = Math.max(0, bounds.width - contentBounds.width - left);
+  const bottom = Math.max(0, bounds.height - contentBounds.height - top);
+  const display = screen.getDisplayMatching(bounds);
+
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    isMaximized: targetWindow.isMaximized(),
+    isFullScreen: targetWindow.isFullScreen(),
+    scaleFactor: display.scaleFactor,
+  };
+};
+
+export const emitWindowFrameMetrics = (targetWindow: BrowserWindow | null = win) => {
+  if (!canUseMainWindow(targetWindow)) return;
+  targetWindow.webContents.send('window:frame-metrics', getWindowFrameMetrics(targetWindow));
 };
 
 export function hideMainWindow() {
@@ -289,12 +338,14 @@ export async function createWindow() {
   // 当窗口准备好显示时再展示，优雅解决启动白屏
   win.once('ready-to-show', () => {
     win?.show();
+    emitWindowFrameMetrics(win);
   });
 
   // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放
   win.webContents.on('did-finish-load', () => {
     win?.webContents.setZoomFactor(1.0);
     win?.webContents.setVisualZoomLevelLimits(1, 1);
+    emitWindowFrameMetrics(win);
   });
 
   if (url) {
@@ -321,19 +372,31 @@ export async function createWindow() {
   });
 
   win.on('resize', () => {
+    emitWindowFrameMetrics(win);
     if (!win?.isMaximized()) persistWindowState();
   });
 
   win.on('move', () => {
+    emitWindowFrameMetrics(win);
     if (!win?.isMaximized()) persistWindowState();
   });
 
   win.on('maximize', () => {
+    emitWindowFrameMetrics(win);
     persistWindowState();
   });
 
   win.on('unmaximize', () => {
+    emitWindowFrameMetrics(win);
     persistWindowState();
+  });
+
+  win.on('enter-full-screen', () => {
+    emitWindowFrameMetrics(win);
+  });
+
+  win.on('leave-full-screen', () => {
+    emitWindowFrameMetrics(win);
   });
 
   win.on('closed', () => {

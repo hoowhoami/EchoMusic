@@ -25,15 +25,50 @@ export interface LyricLine {
 
 export type LyricsMode = 'none' | 'translation' | 'romanization' | 'both';
 
-type LyricSearchCandidate = {
+export type LyricSearchCandidate = {
   id?: string | number;
   accesskey?: string;
+  download_id?: string | number;
   krctype?: number;
   content_format?: number;
   contenttype?: number;
   score?: number;
   duration?: number;
   product_from?: string;
+  singer?: string;
+  song?: string;
+  language?: string;
+  nickname?: string;
+  adjust?: number;
+  hitlayer?: number;
+  hitcasemask?: number;
+  can_score?: boolean;
+};
+
+export type ManualLyricSelection = Pick<
+  LyricSearchCandidate,
+  | 'id'
+  | 'accesskey'
+  | 'download_id'
+  | 'product_from'
+  | 'krctype'
+  | 'content_format'
+  | 'contenttype'
+  | 'score'
+  | 'duration'
+  | 'singer'
+  | 'song'
+  | 'language'
+  | 'nickname'
+  | 'adjust'
+>;
+
+export type ParsedLyricPreview = {
+  lines: LyricLine[];
+  rawLyric: string;
+  hasTranslation: boolean;
+  hasRomanization: boolean;
+  tips: string;
 };
 
 type LyricSearchResponse = {
@@ -92,10 +127,33 @@ const normalizeSearchPayload = (payload: unknown): LyricSearchResponse | null =>
   return { candidates, info };
 };
 
+export const getLyricCandidateKey = (candidate: Pick<LyricSearchCandidate, 'id' | 'accesskey'>) =>
+  `${String(candidate.id ?? '')}:${String(candidate.accesskey ?? '')}`;
+
+const isUsableCandidate = (candidate: LyricSearchCandidate | null | undefined) =>
+  Boolean(candidate?.id && candidate.accesskey);
+
+const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection => ({
+  id: candidate.id,
+  accesskey: candidate.accesskey,
+  download_id: candidate.download_id,
+  product_from: candidate.product_from,
+  krctype: candidate.krctype,
+  content_format: candidate.content_format,
+  contenttype: candidate.contenttype,
+  score: candidate.score,
+  duration: candidate.duration,
+  singer: candidate.singer,
+  song: candidate.song,
+  language: candidate.language,
+  nickname: candidate.nickname,
+  adjust: candidate.adjust,
+});
+
 /**
  * 从多个歌词候选中优选一条最可能包含翻译+音译的歌词
  * content_format 含义：1=纯原歌词, 2=音译(krctype2格式), 3=只有音译, 4=翻译+音译
- * 优先级：content_format=4 > content_format=3 > content_format=2 > content_format=1
+ * 优先级：官方推荐歌词 > content_format=4 > content_format=3 > content_format=2 > content_format=1
  * contenttype 含义：1=KRC格式(有时间戳), 2=纯文本(无时间戳) - 有时间戳的必须优先
  * krctype 含义：1=逐字歌词, 2=普通歌词
  * 同 content_format 下：contenttype=1(有时间戳) 优先 > product_from=官方推荐歌词 优先 > krctype=1 优于 krctype=2 > score 高优先
@@ -114,8 +172,8 @@ const selectBestCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCan
     else if (c.content_format === 2) priority += 50;
     // content_format=1 不加分
 
-    // product_from = 官方推荐歌词 优先
-    if (c.product_from === '官方推荐歌词') priority += 80;
+    // product_from = 官方推荐歌词 优先级最高，尽量避免用户上传歌词覆盖官方歌词
+    if (c.product_from === '官方推荐歌词') priority += 300;
 
     // krctype=1 优于 krctype=2
     if (c.krctype === 1) priority += 10;
@@ -216,6 +274,225 @@ const resolveLyricColor = (value: string, fallback: string): string => {
   return value || fallback;
 };
 
+const parseLyricDetailPayload = (payload: LyricDetailResponse): ParsedLyricPreview => {
+  const content = String(payload.decodeContent ?? payload.lyric ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .trim();
+
+  if (!content) {
+    return {
+      lines: [],
+      rawLyric: '',
+      hasTranslation: false,
+      hasRomanization: false,
+      tips: '暂无歌词',
+    };
+  }
+
+  const sourceLines = content.split(/\r?\n/);
+  const languageLine = sourceLines.find((line) => line.startsWith('[language:')) ?? '';
+  const { translationLyrics, romanizationLyrics } = languageLine
+    ? decodeLanguageLine(languageLine)
+    : {};
+  const charRegex = /<(\d+),(\d+),\d+>([^<]+)/g;
+  const parsedLines: LyricLine[] = [];
+
+  for (const sourceLine of sourceLines) {
+    const krcMatch = sourceLine.match(/^\[(\d+),(\d+)\](.*)$/);
+
+    if (krcMatch) {
+      const lineStart = Number.parseInt(krcMatch[1], 10);
+      const lineDuration = Number.parseInt(krcMatch[2], 10);
+      const lineContent = krcMatch[3] ?? '';
+      const characters: LyricCharacter[] = [];
+      const matches = Array.from(lineContent.matchAll(charRegex));
+
+      if (matches.length > 0) {
+        for (const match of matches) {
+          const text = match[3] ?? '';
+          const duration = Number.parseInt(match[2] ?? '0', 10);
+          const startTime = lineStart + Number.parseInt(match[1] ?? '0', 10);
+          characters.push({
+            text,
+            startTime,
+            endTime: startTime + duration,
+            highlighted: false,
+          });
+        }
+      } else {
+        const text = lineContent.replace(/<.*?>/g, '').trim();
+        if (text) {
+          characters.push(...buildFallbackCharacters(text, lineStart, lineDuration));
+        }
+      }
+
+      if (characters.length > 0) {
+        parsedLines.push({
+          time: characters[0].startTime / 1000,
+          text: characters.map((c) => c.text).join(''),
+          characters,
+        });
+      }
+      continue;
+    }
+
+    const lrcMatch = sourceLine.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/);
+    if (lrcMatch) {
+      const minutes = Number.parseInt(lrcMatch[1], 10);
+      const seconds = Number.parseFloat(lrcMatch[2]);
+      const text = (lrcMatch[3] ?? '').trim();
+      const startTime = Math.round((minutes * 60 + seconds) * 1000);
+
+      if (text) {
+        parsedLines.push({
+          time: startTime / 1000,
+          text,
+          characters: [
+            {
+              text,
+              startTime,
+              endTime: startTime + 3000,
+              highlighted: false,
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  let hasTranslation = false;
+  let hasRomanization = false;
+  const lines = parsedLines.map((line, index) => {
+    let translated = '';
+    let romanized = '';
+
+    const translationLine = translationLyrics?.[index];
+    if (Array.isArray(translationLine) && translationLine.length > 0) {
+      translated = String(translationLine[0] ?? '').trim();
+    }
+
+    const romanizationLine = romanizationLyrics?.[index];
+    if (Array.isArray(romanizationLine) && romanizationLine.length > 0) {
+      romanized = romanizationLine.join('').trim();
+    }
+
+    if (translated) hasTranslation = true;
+    if (romanized) hasRomanization = true;
+
+    const stripText = (textToStrip: string) => {
+      if (!textToStrip) return;
+      let remaining = textToStrip.replace(/\s+/g, '');
+      const characters = line.characters;
+      while (remaining.length > 0 && characters.length > 0) {
+        const lastChar = characters[characters.length - 1];
+        if (!lastChar) break;
+        const charTextNoSpace = lastChar.text.replace(/\s+/g, '');
+
+        if (charTextNoSpace === '') {
+          characters.pop();
+          continue;
+        }
+
+        if (remaining.endsWith(charTextNoSpace)) {
+          remaining = remaining.slice(0, -charTextNoSpace.length);
+          characters.pop();
+        } else if (charTextNoSpace.endsWith(remaining)) {
+          let charsDeleted = 0;
+          let i = lastChar.text.length - 1;
+          while (i >= 0 && charsDeleted < remaining.length) {
+            if (!/\s/.test(lastChar.text[i] ?? '')) {
+              charsDeleted++;
+            }
+            i--;
+          }
+          lastChar.text = lastChar.text.slice(0, i + 1);
+          remaining = '';
+          break;
+        } else {
+          break;
+        }
+      }
+    };
+
+    const origLineStart = line.characters[0]?.startTime ?? 0;
+    const origLineEnd = line.characters[line.characters.length - 1]?.endTime ?? origLineStart;
+
+    stripText(translated);
+    stripText(romanized);
+
+    if (line.characters.length > 0) {
+      line.text = line.characters
+        .map((c) => c.text)
+        .join('')
+        .trim();
+    }
+
+    let romanizedCharacters: LyricCharacter[] | undefined;
+    if (romanized && Array.isArray(romanizationLine) && romanizationLine.length > 0) {
+      const chars = line.characters;
+      if (romanizationLine.length === chars.length) {
+        romanizedCharacters = romanizationLine.map((text: unknown, i: number) => ({
+          text: String(text ?? ''),
+          startTime: chars[i]?.startTime ?? 0,
+          endTime: chars[i]?.endTime ?? 0,
+          highlighted: false,
+        }));
+      } else {
+        const lineStart = chars[0]?.startTime ?? 0;
+        const lineEnd = chars[chars.length - 1]?.endTime ?? lineStart;
+        const totalDuration = lineEnd - lineStart;
+        const totalLen = romanizationLine.reduce(
+          (sum: number, t: unknown) => sum + String(t ?? '').length,
+          0,
+        );
+        let offset = 0;
+        romanizedCharacters = romanizationLine.map((text: unknown) => {
+          const t = String(text ?? '');
+          const ratio = totalLen > 0 ? t.length / totalLen : 0;
+          const start = lineStart + Math.round(offset * totalDuration);
+          offset += ratio;
+          const end = lineStart + Math.round(offset * totalDuration);
+          return { text: t, startTime: start, endTime: end, highlighted: false };
+        });
+      }
+    }
+
+    let translatedCharacters: LyricCharacter[] | undefined;
+    if (translated) {
+      const totalDuration = Math.max(origLineEnd - origLineStart, translated.length * 120);
+      const chars = translated.split('');
+      const totalLen = chars.length;
+      translatedCharacters = chars.map((char, i) => ({
+        text: char,
+        startTime: origLineStart + Math.round((i / totalLen) * totalDuration),
+        endTime: origLineStart + Math.round(((i + 1) / totalLen) * totalDuration),
+        highlighted: false,
+      }));
+    }
+
+    return {
+      time: line.time,
+      text: line.text,
+      characters: line.characters,
+      translated: translated || undefined,
+      romanized: romanized || undefined,
+      romanizedCharacters,
+      translatedCharacters,
+    };
+  });
+
+  return {
+    lines,
+    rawLyric: content,
+    hasTranslation,
+    hasRomanization,
+    tips: lines.length > 0 ? '歌词已加载' : '暂无歌词',
+  };
+};
+
 // 歌词过滤默认正则表达式
 export const DEFAULT_LYRIC_FILTER_PATTERN =
   '^(作词|作曲|编曲|制作人|录音|混音|母带|出品|发行|企划|监制|和声|吉他|贝斯|鼓|键盘|弦乐|词|曲|编|唱片|OP|SP|原唱|翻唱|许可|音乐人|纯音乐|宣推|协作推广|策划|统筹|营销|推广|制作|配唱|和音|弦乐编写|人声录音|人声编辑)[：:]|^(Lyrics|Composed|Produced|Written|Arranged|Mixed|Mastered|Recorded|Performed) by[：:]|^[『「【].*[』」】]$|未经著作权人许可|不得翻唱|翻录或使用|听歌就在';
@@ -258,10 +535,20 @@ export const useLyricStore = defineStore('lyric', {
     unplayedColor: '',
     requestSerial: 0,
     detailResolved: false,
+    sourceDialogOpen: false,
+    candidateHash: '',
+    candidates: [] as LyricSearchCandidate[],
+    autoCandidateKey: '',
+    currentCandidateKey: '',
+    manualLyricMap: {} as Record<string, ManualLyricSelection>,
     // 每首歌的歌词时间偏移（毫秒），key 为歌曲 hash/id
     timeOffsetMap: {} as Record<string, number>,
   }),
   getters: {
+    manualCandidateForCurrentHash: (state): ManualLyricSelection | null => {
+      if (!state.loadedHash) return null;
+      return state.manualLyricMap[state.loadedHash] ?? null;
+    },
     // 当前歌曲的歌词时间偏移（毫秒）
     currentTimeOffset: (state): number => {
       if (!state.loadedHash) return 0;
@@ -346,6 +633,7 @@ export const useLyricStore = defineStore('lyric', {
       this.hasTranslation = false;
       this.hasRomanization = false;
       this.detailResolved = false;
+      this.currentCandidateKey = '';
     },
     clear(hash = '', tips = '暂无歌词') {
       this.requestSerial += 1;
@@ -383,218 +671,73 @@ export const useLyricStore = defineStore('lyric', {
       options?: { detailResolved?: boolean },
     ) {
       this.resetLyricsState({ hash, tips: '暂无歌词' });
-      const content = String(payload.decodeContent ?? payload.lyric ?? '')
-        .replace(/^\uFEFF/, '')
-        .replace(/&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .trim();
-      this.rawLyric = content;
+      const parsed = parseLyricDetailPayload(payload);
+      this.lines = parsed.lines;
+      this.rawLyric = parsed.rawLyric;
       this.loadedHash = hash;
       this.detailResolved = Boolean(options?.detailResolved);
       this.isLoading = false;
-
-      if (!content) {
-        this.tips = '暂无歌词';
-        return;
+      this.hasTranslation = parsed.hasTranslation;
+      this.hasRomanization = parsed.hasRomanization;
+      this.tips = parsed.tips;
+    },
+    async fetchLyricCandidates(hash: string, options?: { duration?: number; force?: boolean }) {
+      const normalizedHash = String(hash ?? '').trim();
+      if (!normalizedHash) return [] as LyricSearchCandidate[];
+      if (!options?.force && this.candidateHash === normalizedHash && this.candidates.length > 0) {
+        return this.candidates;
       }
 
-      const sourceLines = content.split(/\r?\n/);
-      const languageLine = sourceLines.find((line) => line.startsWith('[language:')) ?? '';
-      const { translationLyrics, romanizationLyrics } = languageLine
-        ? decodeLanguageLine(languageLine)
-        : {};
-      const charRegex = /<(\d+),(\d+),\d+>([^<]+)/g;
-      const parsedLines: LyricLine[] = [];
+      const searchResult = normalizeSearchPayload(
+        await searchLyric(normalizedHash, options?.duration),
+      );
+      const candidates =
+        Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
+          ? searchResult.candidates
+          : Array.isArray(searchResult?.info)
+            ? searchResult.info
+            : [];
+      const autoCandidate = selectBestCandidate(candidates);
 
-      for (const sourceLine of sourceLines) {
-        const krcMatch = sourceLine.match(/^\[(\d+),(\d+)\](.*)$/);
+      this.candidateHash = normalizedHash;
+      this.candidates = candidates;
+      this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
+      return candidates;
+    },
+    async previewCandidate(candidate: LyricSearchCandidate): Promise<ParsedLyricPreview | null> {
+      if (!isUsableCandidate(candidate)) return null;
+      const lyricData = normalizeDetailPayload(
+        await getLyric(String(candidate.id), String(candidate.accesskey)),
+      );
+      if (!lyricData) return null;
+      return parseLyricDetailPayload(lyricData);
+    },
+    async applyCandidate(
+      hash: string,
+      candidate: LyricSearchCandidate,
+      options?: { remember?: boolean },
+    ): Promise<boolean> {
+      const normalizedHash = String(hash ?? '').trim();
+      if (!normalizedHash || !isUsableCandidate(candidate)) return false;
 
-        if (krcMatch) {
-          const lineStart = Number.parseInt(krcMatch[1], 10);
-          const lineDuration = Number.parseInt(krcMatch[2], 10);
-          const lineContent = krcMatch[3] ?? '';
-          const characters: LyricCharacter[] = [];
-          const matches = Array.from(lineContent.matchAll(charRegex));
+      const lyricData = normalizeDetailPayload(
+        await getLyric(String(candidate.id), String(candidate.accesskey)),
+      );
+      if (!lyricData) return false;
 
-          if (matches.length > 0) {
-            for (const match of matches) {
-              const text = match[3] ?? '';
-              const duration = Number.parseInt(match[2] ?? '0', 10);
-              const startTime = lineStart + Number.parseInt(match[1] ?? '0', 10);
-              characters.push({
-                text,
-                startTime,
-                endTime: startTime + duration,
-                highlighted: false,
-              });
-            }
-          } else {
-            const text = lineContent.replace(/<.*?>/g, '').trim();
-            if (text) {
-              characters.push(...buildFallbackCharacters(text, lineStart, lineDuration));
-            }
-          }
-
-          if (characters.length > 0) {
-            parsedLines.push({
-              time: characters[0].startTime / 1000,
-              text: characters.map((c) => c.text).join(''),
-              characters,
-            });
-          }
-          continue;
-        }
-
-        const lrcMatch = sourceLine.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/);
-        if (lrcMatch) {
-          const minutes = Number.parseInt(lrcMatch[1], 10);
-          const seconds = Number.parseFloat(lrcMatch[2]);
-          const text = (lrcMatch[3] ?? '').trim();
-          const startTime = Math.round((minutes * 60 + seconds) * 1000);
-
-          if (text) {
-            parsedLines.push({
-              time: startTime / 1000,
-              text,
-              characters: [
-                {
-                  text,
-                  startTime,
-                  endTime: startTime + 3000,
-                  highlighted: false,
-                },
-              ],
-            });
-          }
-        }
+      this.parseLyricContent(lyricData, normalizedHash, { detailResolved: true });
+      this.currentCandidateKey = getLyricCandidateKey(candidate);
+      if (options?.remember) {
+        this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
       }
-
-      this.lines = parsedLines.map((line, index) => {
-        let translated = '';
-        let romanized = '';
-
-        const translationLine = translationLyrics?.[index];
-        if (Array.isArray(translationLine) && translationLine.length > 0) {
-          translated = String(translationLine[0] ?? '').trim();
-        }
-
-        const romanizationLine = romanizationLyrics?.[index];
-        if (Array.isArray(romanizationLine) && romanizationLine.length > 0) {
-          romanized = romanizationLine.join('').trim();
-        }
-
-        if (translated) this.hasTranslation = true;
-        if (romanized) this.hasRomanization = true;
-
-        const stripText = (textToStrip: string) => {
-          if (!textToStrip) return;
-          let remaining = textToStrip.replace(/\s+/g, '');
-          const characters = line.characters;
-          while (remaining.length > 0 && characters.length > 0) {
-            const lastChar = characters[characters.length - 1];
-            if (!lastChar) break;
-            const charTextNoSpace = lastChar.text.replace(/\s+/g, '');
-
-            if (charTextNoSpace === '') {
-              characters.pop();
-              continue;
-            }
-
-            if (remaining.endsWith(charTextNoSpace)) {
-              remaining = remaining.slice(0, -charTextNoSpace.length);
-              characters.pop();
-            } else if (charTextNoSpace.endsWith(remaining)) {
-              let charsDeleted = 0;
-              let i = lastChar.text.length - 1;
-              while (i >= 0 && charsDeleted < remaining.length) {
-                if (!/\s/.test(lastChar.text[i] ?? '')) {
-                  charsDeleted++;
-                }
-                i--;
-              }
-              lastChar.text = lastChar.text.slice(0, i + 1);
-              remaining = '';
-              break;
-            } else {
-              break;
-            }
-          }
-        };
-
-        // 保存原始时间范围（stripText 会修改 line.characters）
-        const origLineStart = line.characters[0]?.startTime ?? 0;
-        const origLineEnd = line.characters[line.characters.length - 1]?.endTime ?? origLineStart;
-
-        stripText(translated);
-        stripText(romanized);
-
-        if (line.characters.length > 0) {
-          line.text = line.characters
-            .map((c) => c.text)
-            .join('')
-            .trim();
-        }
-
-        // 构建音译逐字字符（一一映射主歌词时间）
-        let romanizedCharacters: LyricCharacter[] | undefined;
-        if (romanized && Array.isArray(romanizationLine) && romanizationLine.length > 0) {
-          const chars = line.characters;
-          if (romanizationLine.length === chars.length) {
-            // 一一映射：音译元素数 === 主歌词字符数
-            romanizedCharacters = romanizationLine.map((text: string, i: number) => ({
-              text: String(text ?? ''),
-              startTime: chars[i]?.startTime ?? 0,
-              endTime: chars[i]?.endTime ?? 0,
-              highlighted: false,
-            }));
-          } else {
-            // 数量不一致时按比例均分
-            const lineStart = chars[0]?.startTime ?? 0;
-            const lineEnd = chars[chars.length - 1]?.endTime ?? lineStart;
-            const totalDuration = lineEnd - lineStart;
-            const totalLen = romanizationLine.reduce(
-              (sum: number, t: string) => sum + String(t ?? '').length,
-              0,
-            );
-            let offset = 0;
-            romanizedCharacters = romanizationLine.map((text: string) => {
-              const t = String(text ?? '');
-              const ratio = totalLen > 0 ? t.length / totalLen : 0;
-              const start = lineStart + Math.round(offset * totalDuration);
-              offset += ratio;
-              const end = lineStart + Math.round(offset * totalDuration);
-              return { text: t, startTime: start, endTime: end, highlighted: false };
-            });
-          }
-        }
-
-        // 构建翻译逐字字符（按字符比例均分时间，使用原始时间范围）
-        let translatedCharacters: LyricCharacter[] | undefined;
-        if (translated) {
-          const totalDuration = Math.max(origLineEnd - origLineStart, translated.length * 120);
-          const chars = translated.split('');
-          const totalLen = chars.length;
-          translatedCharacters = chars.map((char, i) => ({
-            text: char,
-            startTime: origLineStart + Math.round((i / totalLen) * totalDuration),
-            endTime: origLineStart + Math.round(((i + 1) / totalLen) * totalDuration),
-            highlighted: false,
-          }));
-        }
-
-        return {
-          time: line.time,
-          text: line.text,
-          characters: line.characters,
-          translated: translated || undefined,
-          romanized: romanized || undefined,
-          romanizedCharacters,
-          translatedCharacters,
-        };
-      });
-
-      this.tips = this.lines.length > 0 ? '歌词已加载' : '暂无歌词';
+      return true;
+    },
+    async restoreAutoLyric(hash: string, options?: { duration?: number }) {
+      const normalizedHash = String(hash ?? '').trim();
+      if (!normalizedHash) return;
+      delete this.manualLyricMap[normalizedHash];
+      this.currentCandidateKey = '';
+      await this.fetchLyrics(normalizedHash, { duration: options?.duration, force: true });
     },
     updateCurrentIndex(currentTime: number, isLyricViewOpen = false) {
       if (this.lines.length === 0) {
@@ -640,7 +783,10 @@ export const useLyricStore = defineStore('lyric', {
         }
       });
     },
-    async fetchLyrics(hash: string, options?: { preserveCurrent?: boolean; duration?: number }) {
+    async fetchLyrics(
+      hash: string,
+      options?: { preserveCurrent?: boolean; duration?: number; force?: boolean },
+    ) {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash) {
         this.clear('', '暂无歌词');
@@ -649,7 +795,8 @@ export const useLyricStore = defineStore('lyric', {
 
       if (
         this.loadedHash === normalizedHash &&
-        this.lines.length > 0 &&
+        (this.lines.length > 0 || Boolean(this.rawLyric)) &&
+        !options?.force &&
         (!options?.preserveCurrent || this.detailResolved)
       ) {
         return;
@@ -671,17 +818,17 @@ export const useLyricStore = defineStore('lyric', {
       }
 
       try {
-        const searchResult = normalizeSearchPayload(
-          await searchLyric(normalizedHash, options?.duration),
-        );
+        const candidates = await this.fetchLyricCandidates(normalizedHash, {
+          duration: options?.duration,
+          force: true,
+        });
         if (requestSerial !== this.requestSerial) return;
 
+        const manualCandidate = this.manualLyricMap[normalizedHash];
         const target =
-          (Array.isArray(searchResult?.candidates) && searchResult.candidates.length > 0
-            ? selectBestCandidate(searchResult.candidates)
-            : Array.isArray(searchResult?.info) && searchResult.info.length > 0
-              ? searchResult.info[0]
-              : null) ?? null;
+          (isUsableCandidate(manualCandidate)
+            ? manualCandidate
+            : selectBestCandidate(candidates)) ?? null;
 
         if (!target?.id || !target.accesskey) {
           if (options?.preserveCurrent && this.lines.length > 0) {
@@ -713,6 +860,7 @@ export const useLyricStore = defineStore('lyric', {
         }
 
         this.parseLyricContent(lyricData, normalizedHash, { detailResolved: true });
+        this.currentCandidateKey = getLyricCandidateKey(target);
       } catch (error) {
         if (requestSerial !== this.requestSerial) return;
         logger.error('LyricStore', 'Fetch lyrics failed', error, { hash: normalizedHash });
@@ -736,6 +884,7 @@ export const useLyricStore = defineStore('lyric', {
       'playedColor',
       'unplayedColor',
       'timeOffsetMap',
+      'manualLyricMap',
     ],
   },
 });

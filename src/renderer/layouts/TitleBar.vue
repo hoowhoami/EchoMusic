@@ -3,6 +3,7 @@ import { computed, watch, ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSearchSuggest, getSearchDefault } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
+import { useWindowFrameMetrics } from '@/composables/useWindowFrameMetrics';
 import Button from '@/components/ui/Button.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
@@ -22,6 +23,7 @@ const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const settingStore = useSettingStore();
+const { controlRightInset } = useWindowFrameMetrics();
 
 // 侧边栏折叠
 const props = defineProps<{
@@ -460,7 +462,11 @@ onUnmounted(() => {
     <div class="flex-1 h-full"></div>
 
     <!-- 3. 右侧：窗口控制 -->
-    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full relative z-10">
+    <div
+      v-if="!isMac"
+      class="window-controls flex items-center no-drag h-full relative z-10"
+      :style="{ right: `${controlRightInset}px` }"
+    >
       <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn">
         <Icon :icon="iconMinus" width="14" height="14" />
       </Button>

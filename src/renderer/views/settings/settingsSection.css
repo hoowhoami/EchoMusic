@@ -1,0 +1,140 @@
+@reference "@/style.css";
+
+.settings-section {
+  @apply min-h-[60px];
+}
+
+.settings-card {
+  @apply bg-bg-sidebar rounded-2xl p-5 space-y-5 transition-all duration-300 border border-border-light/40 overflow-visible;
+  font-size: 13px;
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
+}
+
+.settings-card h3 {
+  font-size: 13px;
+}
+
+.settings-card p {
+  font-size: 12px;
+}
+
+.settings-item {
+  @apply flex items-center justify-between gap-6 py-1;
+}
+
+.settings-divider {
+  @apply h-px shrink-0;
+  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
+}
+
+:global(.dark) .settings-divider {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.settings-button {
+  @apply text-sm font-semibold;
+}
+
+.settings-button.danger {
+  @apply text-red-500 hover:text-red-400 transition-colors;
+}
+
+.settings-color-swatch {
+  @apply w-8 h-8 rounded-full border-2 border-white/20 shadow-sm cursor-pointer transition-all duration-200 active:scale-95;
+}
+
+.settings-color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.settings-color-stack {
+  @apply flex flex-col gap-2 w-full max-w-[360px] pt-1;
+}
+
+.settings-color-grid {
+  @apply grid grid-cols-2 gap-3 w-full max-w-[360px];
+}
+
+.settings-color-item {
+  @apply flex items-center justify-between gap-3 rounded-xl border border-border-light/50 bg-bg-main/60 px-3 py-2;
+}
+
+.settings-color-actions {
+  @apply flex items-center justify-end min-h-5 px-1;
+}
+
+.settings-color-reset {
+  @apply text-[11px] font-semibold text-text-secondary hover:text-text-main transition-colors whitespace-nowrap;
+}
+
+.settings-input {
+  @apply px-3 py-1.5 text-[12px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main transition-all;
+}
+
+.settings-input:hover {
+  @apply border-primary/50;
+}
+
+.settings-input:focus {
+  @apply border-primary outline-none ring-1 ring-primary/30;
+}
+
+.accent-preset-swatch {
+  @apply w-8 h-8 rounded-full border-2 border-transparent cursor-pointer transition-all duration-200;
+}
+
+.accent-preset-swatch:hover {
+  @apply scale-110;
+}
+
+.accent-preset-swatch.is-active {
+  @apply scale-110 ring-2 ring-primary/50;
+}
+
+.shortcut-grid-header {
+  @apply grid grid-cols-[1fr_140px_140px_40px] gap-4 px-1 py-2 text-[12px] font-semibold text-text-secondary;
+}
+
+.shortcut-col-title {
+  @apply text-center;
+}
+
+.shortcut-list {
+  @apply space-y-3;
+}
+
+.shortcut-grid-row {
+  @apply grid grid-cols-[1fr_140px_140px_40px] gap-4 items-center;
+}
+
+.shortcut-cell {
+  @apply text-center;
+}
+
+.shortcut-cell-offset {
+  @apply translate-x-1;
+}
+
+.shortcut-cell-reset {
+  @apply flex items-center justify-center;
+}
+
+.shortcut-reset-btn {
+  @apply text-[11px] font-semibold text-text-secondary hover:text-primary transition-colors cursor-pointer whitespace-nowrap;
+}
+
+.shortcut-input {
+  @apply w-full px-3 py-1.5 text-[13px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+}
+
+.shortcut-input:hover {
+  @apply border-primary/50;
+}
+
+.shortcut-input.recording {
+  @apply border-primary bg-primary/5 text-primary;
+}
+
+.shortcut-input-disabled {
+  @apply opacity-50 cursor-not-allowed;
+}

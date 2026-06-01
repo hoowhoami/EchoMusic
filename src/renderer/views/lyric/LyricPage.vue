@@ -19,6 +19,7 @@ import PortraitMode from './PortraitMode.vue';
 import LyricMode from './LyricMode.vue';
 import LyricPlayerControls from './LyricPlayerControls.vue';
 import LyricSettingsDrawer from './LyricSettingsDrawer.vue';
+import LyricSourceDialog from './LyricSourceDialog.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -381,7 +382,7 @@ onUnmounted(() => {
 
     <!-- 歌词工具按钮：固定在右侧中间 -->
     <div
-      v-if="hasLyrics && !isCollapsed"
+      v-if="!isCollapsed"
       class="lyric-page-tools no-drag"
       :style="{
         opacity: isContentHovered ? 1 : 0,
@@ -390,15 +391,33 @@ onUnmounted(() => {
       @mouseenter="handleContentEnter"
       @mouseleave="handleContentLeave"
     >
-      <!-- 上组：时间调整 -->
+      <!-- 上组：歌词来源 / 时间调整 -->
       <div class="lyric-page-tools-group">
-        <button class="lyric-page-tool-btn" title="歌词后退 0.5s" @click="handleOffsetAdjust(-500)">
+        <button
+          class="lyric-page-tool-btn"
+          title="选择歌词"
+          @click="lyricStore.sourceDialogOpen = true"
+        >
+          <Icon :icon="iconList" width="14" height="14" />
+        </button>
+        <button
+          v-if="hasLyrics"
+          class="lyric-page-tool-btn"
+          title="歌词后退 0.5s"
+          @click="handleOffsetAdjust(-500)"
+        >
           <Icon :icon="iconRotateCcw" width="15" height="15" />
         </button>
-        <button class="lyric-page-tool-btn" title="歌词前进 0.5s" @click="handleOffsetAdjust(500)">
+        <button
+          v-if="hasLyrics"
+          class="lyric-page-tool-btn"
+          title="歌词前进 0.5s"
+          @click="handleOffsetAdjust(500)"
+        >
           <Icon :icon="iconRotateCw" width="15" height="15" />
         </button>
         <button
+          v-if="hasLyrics"
           class="lyric-page-tool-btn"
           :style="{ visibility: lyricStore.currentTimeOffset !== 0 ? 'visible' : 'hidden' }"
           title="重置偏移"
@@ -409,7 +428,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 下组：翻译/音译/复制 -->
-      <div class="lyric-page-tools-group">
+      <div v-if="hasLyrics" class="lyric-page-tools-group">
         <button
           v-if="lyricStore.hasTranslation"
           class="lyric-page-tool-btn"
@@ -436,6 +455,14 @@ onUnmounted(() => {
 
     <!-- 设置 Drawer -->
     <LyricSettingsDrawer v-model:open="isSettingsOpen" />
+
+    <LyricSourceDialog
+      v-model:open="lyricStore.sourceDialogOpen"
+      :hash="currentTrackLyricHash"
+      :duration="playerStore.duration || currentTrack?.duration || 0"
+      :title="currentTrack?.title"
+      :artist="currentTrack?.artist"
+    />
 
     <!-- 播放队列抽屉 -->
     <PlayerQueueDrawer v-model:open="isQueueDrawerOpen" />

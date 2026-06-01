@@ -65,6 +65,23 @@ const { getNowMs, updateYrcDom, syncSeekAnchor } = useYrcAnimation(lyricListRef)
 const effectivePlayedColor = computed(() => lyricStore.effectivePlayedColor);
 const effectiveUnplayedColor = computed(() => lyricStore.effectiveUnplayedColor);
 const hasLyrics = computed(() => lyricStore.lines.length > 0);
+const staticLyricLines = computed(() =>
+  lyricStore.rawLyric
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/^\[\d+:\d+(?:\.\d+)?\]/, '')
+        .replace(/^\[\d+,\d+\]/, '')
+        .trim(),
+    )
+    .filter((line) => {
+      if (!line) return false;
+      return !/^\[(?:id|ar|ti|al|by|offset|hash|language|kana):/i.test(line);
+    }),
+);
+const hasStaticLyrics = computed(
+  () => !hasLyrics.value && !lyricStore.isLoading && staticLyricLines.value.length > 0,
+);
 const titleFontSize = computed(() => `${1.5 * lyricStore.fontScale}rem`);
 const secondaryFontSize = computed(() => `${1.2 * lyricStore.fontScale}rem`);
 const lyricFontFamily = computed(() => settingStore.buildLyricFontFamily());
@@ -416,6 +433,23 @@ watch(
         </div>
       </template>
 
+      <template v-else-if="hasStaticLyrics">
+        <div class="static-lyric-list">
+          <div
+            v-for="(line, index) in staticLyricLines"
+            :key="`${line}-${index}`"
+            class="static-lyric-row"
+            :style="{
+              color: effectiveUnplayedColor,
+              fontSize: titleFontSize,
+              fontWeight: String(lyricStore.fontWeightValue),
+            }"
+          >
+            {{ line }}
+          </div>
+        </div>
+      </template>
+
       <!-- 空状态 -->
       <div v-else class="flex h-full items-center justify-center text-center">
         <div class="space-y-3">
@@ -578,5 +612,17 @@ watch(
 
 .lyric-line.is-current .lyric-subline {
   opacity: 0.75;
+}
+
+.static-lyric-list {
+  min-height: 100%;
+  padding: 20vh 8px;
+}
+
+.static-lyric-row {
+  padding: 10px 16px;
+  text-align: center;
+  line-height: 1.32;
+  opacity: 0.86;
 }
 </style>

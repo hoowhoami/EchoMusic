@@ -60,6 +60,44 @@ contextBridge.exposeInMainWorld('electron', {
   },
   windowControl: (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') =>
     ipcRenderer.send('window-control', action),
+  windowFrame: {
+    getMetrics: () =>
+      ipcRenderer.invoke('window:frame-metrics') as Promise<{
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+        isMaximized: boolean;
+        isFullScreen: boolean;
+        scaleFactor: number;
+      }>,
+    onMetrics: (
+      func: (metrics: {
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+        isMaximized: boolean;
+        isFullScreen: boolean;
+        scaleFactor: number;
+      }) => void,
+    ) => {
+      const listener = (_event: Electron.IpcRendererEvent, metrics: unknown) =>
+        func(
+          metrics as {
+            left: number;
+            top: number;
+            right: number;
+            bottom: number;
+            isMaximized: boolean;
+            isFullScreen: boolean;
+            scaleFactor: number;
+          },
+        );
+      ipcRenderer.on('window:frame-metrics', listener);
+      return () => ipcRenderer.removeListener('window:frame-metrics', listener);
+    },
+  },
   appInfo: {
     get: () => ipcRenderer.invoke('app:get-info') as Promise<AppInfoResult>,
     getChangelog: () => ipcRenderer.invoke('app:get-changelog') as Promise<string>,
@@ -121,7 +159,12 @@ contextBridge.exposeInMainWorld('electron', {
     command: (
       command: Extract<
         ShortcutCommand,
-        'togglePlayback' | 'previousTrack' | 'nextTrack' | 'toggleLyricsMode' | 'cycleLyricsMode'
+        | 'togglePlayback'
+        | 'previousTrack'
+        | 'nextTrack'
+        | 'toggleLyricsMode'
+        | 'cycleLyricsMode'
+        | 'openLyricSource'
       >,
     ) => ipcRenderer.send('desktop-lyric:command', command),
   },

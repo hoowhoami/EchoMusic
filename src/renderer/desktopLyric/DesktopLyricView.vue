@@ -18,6 +18,7 @@ import {
   iconStepBack,
   iconStepForward,
   iconChevronUpDown,
+  iconList,
   iconX,
 } from '@/icons';
 import type { DesktopLyricSnapshot, LyricLinePayload } from '../../shared/desktop-lyric';
@@ -626,6 +627,10 @@ const cycleSecondaryMode = () => {
   }
 };
 
+const openLyricSource = () => {
+  window.electron?.desktopLyric?.command('openLyricSource');
+};
+
 const closeWindow = async () => {
   if (!window.electron?.desktopLyric) return;
   snapshot.value = await window.electron.desktopLyric.hide();
@@ -747,6 +752,9 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="header-right" @pointerdown.stop>
+        <button class="menu-btn" title="选择歌词" @click.stop="openLyricSource">
+          <Icon :icon="iconList" width="20" height="20" />
+        </button>
         <div class="tran-group">
           <button
             class="menu-btn tran-btn"
