@@ -502,7 +502,7 @@ onUnmounted(() => {
             <Icon :icon="iconList" width="16" height="16" />
             {{ queue.title || '播放队列' }}
           </span>
-          <span class="add-playlist-count">{{ queue.songs.length }} 首</span>
+          <span class="add-playlist-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
         </Button>
         <div class="add-playlist-divider"><span>歌单</span></div>
         <div v-if="isPlaylistLoading" class="add-playlist-empty">加载歌单中...</div>
@@ -748,10 +748,11 @@ onUnmounted(() => {
   right: 16px;
   transform: translateY(-50%);
   z-index: 60;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 152px 112px;
   gap: 180px;
-  align-items: center;
+  align-items: start;
+  justify-items: center;
   transition: opacity 0.2s ease;
 }
 

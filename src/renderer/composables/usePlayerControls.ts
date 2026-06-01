@@ -260,7 +260,12 @@ export function usePlayerControls() {
   };
 
   // ── 队列 ──
-  const queueCount = computed(() => currentPlaybackQueue.value?.songs.length ?? 0);
+  const queueCount = computed(() =>
+    Math.max(
+      0,
+      currentPlaybackQueue.value?.songCount ?? currentPlaybackQueue.value?.songs.length ?? 0,
+    ),
+  );
 
   const openQueue = () => {
     isQueueDrawerOpen.value = true;
@@ -276,7 +281,8 @@ export function usePlayerControls() {
 
   const addToPlaybackQueues = computed(() =>
     playlist.playbackQueueList.filter(
-      (queue) => queue.id !== PERSONAL_FM_QUEUE_ID && queue.songs.length > 0,
+      (queue) =>
+        queue.id !== PERSONAL_FM_QUEUE_ID && Math.max(0, queue.songCount ?? queue.songs.length) > 0,
     ),
   );
 

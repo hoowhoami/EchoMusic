@@ -39,6 +39,7 @@ export type DesktopLyricSettings = {
   opacity: number;
   scale: number;
   fontFamily: string;
+  resolvedFontFamily?: string;
   inactiveFontSize: number;
   activeFontSize: number;
   secondaryFontSize: number;
@@ -62,7 +63,7 @@ export const DEFAULT_DESKTOP_LYRIC_SETTINGS: DesktopLyricSettings = {
   theme: 'system',
   opacity: 0.92,
   scale: 1,
-  fontFamily: 'system-ui',
+  fontFamily: 'follow',
   inactiveFontSize: 26,
   activeFontSize: 40,
   secondaryFontSize: 18,

@@ -60,10 +60,13 @@ export const initDesktopLyricSync = async () => {
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
   const { lines, currentIndex, wantTranslation, wantRomanization } = storeToRefs(lyricStore);
+  const settingStore = useSettingStore();
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
     return {
       ...settings,
+      resolvedFontFamily:
+        settings.fontFamily === 'follow' ? settingStore.globalFont : settings.resolvedFontFamily,
       wantTranslation: wantTranslation.value,
       wantRomanization: wantRomanization.value,
     };
@@ -76,7 +79,6 @@ export const initDesktopLyricSync = async () => {
   let progressSyncQueued = false;
 
   const buildLyricsPayload = () => {
-    const settingStore = useSettingStore();
     const enabled = settingStore.desktopLyricFilterEnabled;
     const pattern = settingStore.desktopLyricFilterPattern;
     const raw = lines.value.map(normalizeLinePayload);
@@ -196,7 +198,6 @@ export const initDesktopLyricSync = async () => {
   );
 
   // 桌面歌词过滤设置变化时重新同步歌词
-  const settingStore = useSettingStore();
   stops.push(
     watch(
       () => [settingStore.desktopLyricFilterEnabled, settingStore.desktopLyricFilterPattern],
@@ -218,7 +219,12 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [() => desktopLyricStore.settings, wantTranslation, wantRomanization],
+      [
+        () => desktopLyricStore.settings,
+        () => settingStore.globalFont,
+        wantTranslation,
+        wantRomanization,
+      ],
       () => {
         void syncSettingsSnapshot();
       },

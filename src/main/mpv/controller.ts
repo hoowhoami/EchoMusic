@@ -14,7 +14,14 @@ interface MpvAddon {
   registerEventHandler(
     callback: (
       err: Error | null,
-      event: { type: string; value?: number; flag?: boolean; message?: string },
+      event: {
+        type: string;
+        value?: number;
+        flag?: boolean;
+        message?: string;
+        prefix?: string;
+        level?: string;
+      },
     ) => void,
   ): void;
   loadFile(url: string): void;
@@ -45,10 +52,13 @@ interface MpvAddon {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 const DEFAULT_IMPULSE_RESPONSE_MIX = 0.4;
-const IMPULSE_RESPONSE_WET_GAIN_DB = 18;
 
+// IR 路径会放进 lavfi 图的单引号里传给 amovie 滤镜。amovie 用 ':' 分隔 filename 与选项，
+// 图层单引号只能挡住图解析器、挡不住 amovie 自己的选项解析器，因此 Windows 盘符里的 ':'
+// （如 C:/…）会被当成分隔符，文件名被截断成 'C' 而打不开 IRS——表现为加滤镜后音频静默、
+// 进度条停住（歌词走的是独立时钟所以照常滚动）。把 ':' 转义成 '\:' 即可保留完整路径。
 const escapeLavfiQuotedValue = (value: string): string =>
-  value.replace(/\\/g, '/').replace(/'/g, "\\'");
+  value.replace(/\\/g, '/').replace(/'/g, "\\'").replace(/:/g, '\\:');
 
 const quoteMpvOptionValue = (value: string): string =>
   `%${Buffer.byteLength(value, 'utf8')}%${value}`;
@@ -79,6 +89,7 @@ export class MpvController extends EventEmitter {
   private normalizationGainDb = 0;
   private impulseResponsePath = '';
   private impulseResponseMix = DEFAULT_IMPULSE_RESPONSE_MIX;
+  private impulseResponseFailureRecovering = false;
 
   constructor() {
     super();
@@ -182,6 +193,8 @@ export class MpvController extends EventEmitter {
     value?: number;
     flag?: boolean;
     message?: string;
+    prefix?: string;
+    level?: string;
     devices?: Array<{ name: string; description: string }>;
   }): void {
     switch (event.type) {
@@ -234,7 +247,78 @@ export class MpvController extends EventEmitter {
       case 'audio-device-list-changed':
         this.emit('audio-device-list-changed', event.devices ?? []);
         break;
+      case 'log-message':
+        this.handleLogMessage(event);
+        break;
     }
+  }
+
+  private handleLogMessage(event: { message?: string; prefix?: string; level?: string }): void {
+    const message = String(event.message || '').trim();
+    if (!message) return;
+
+    const payload = {
+      message,
+      prefix: String(event.prefix || '').trim(),
+      level: String(event.level || '').trim(),
+    };
+    if (payload.level === 'error' || payload.level === 'fatal') {
+      log.error('[MpvController] mpv log:', payload);
+    } else {
+      log.warn('[MpvController] mpv log:', payload);
+    }
+    this.emit('log-message', payload);
+
+    if (this.isImpulseResponseFailureLog(payload)) {
+      void this.disableImpulseResponseFromFailure(message);
+    }
+  }
+
+  private isImpulseResponseFailureLog(payload: {
+    message: string;
+    prefix: string;
+    level: string;
+  }): boolean {
+    if (!this.impulseResponsePath || this.impulseResponseFailureRecovering) return false;
+
+    const level = payload.level.toLowerCase();
+    if (level !== 'error' && level !== 'fatal' && level !== 'warn') return false;
+
+    const text = `${payload.prefix} ${payload.message}`.toLowerCase();
+    const relatesToAudioFilter =
+      text.includes('afir') ||
+      text.includes('amovie') ||
+      text.includes('lavfi') ||
+      text.includes('filter graph') ||
+      text.includes('audio filter') ||
+      text.includes('reconfig') ||
+      text.includes('failed to configure') ||
+      text.includes('error reinitializing filters');
+    const looksLikeFailure =
+      text.includes('error') ||
+      text.includes('failed') ||
+      text.includes('invalid') ||
+      text.includes('cannot') ||
+      text.includes('no such') ||
+      text.includes('could not');
+    return relatesToAudioFilter && looksLikeFailure;
+  }
+
+  private async disableImpulseResponseFromFailure(reason: string): Promise<void> {
+    if (!this.impulseResponsePath || this.impulseResponseFailureRecovering) return;
+    this.impulseResponseFailureRecovering = true;
+    const failedPath = this.impulseResponsePath;
+    this.impulseResponsePath = '';
+    log.warn('[MpvController] Disabling IRS after mpv filter failure:', {
+      path: failedPath,
+      reason,
+    });
+    try {
+      await this.syncAudioFilters();
+    } finally {
+      this.impulseResponseFailureRecovering = false;
+    }
+    this.emit('impulse-response-disabled', { path: failedPath, reason });
   }
 
   /** 文件加载后打印音频详细信息 */
@@ -499,6 +583,17 @@ export class MpvController extends EventEmitter {
     const hasEq = this.equalizerGains.some((g) => g !== 0);
     let hasImpulseResponseFilter = false;
 
+    if (this.impulseResponsePath) {
+      hasImpulseResponseFilter = true;
+      const irPath = escapeLavfiQuotedValue(this.impulseResponsePath);
+      const mix = Number(this.impulseResponseMix.toFixed(2));
+      const graph =
+        `[in]asplit=2[irsdry][irsin];amovie='${irPath}',asetpts=N/SR/TB[ir];` +
+        `[irsin][ir]afir=dry=0:wet=1:gtype=peak[irswet];` +
+        `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0[out]`;
+      filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
+    }
+
     if (hasEq) {
       const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
       const eqParts = this.equalizerGains
@@ -511,17 +606,6 @@ export class MpvController extends EventEmitter {
       if (eqParts.length > 0) {
         filters.push(...eqParts);
       }
-    }
-
-    if (this.impulseResponsePath) {
-      hasImpulseResponseFilter = true;
-      const irPath = escapeLavfiQuotedValue(this.impulseResponsePath);
-      const mix = Number(this.impulseResponseMix.toFixed(2));
-      const graph =
-        `[in]asplit=2[irsdry][irsin];amovie='${irPath}',asetpts=N/SR/TB[ir];` +
-        `[irsin][ir]afir=dry=1:wet=1,volume=${IMPULSE_RESPONSE_WET_GAIN_DB}dB[irswet];` +
-        `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0,alimiter=limit=0.98[out]`;
-      filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
     }
 
     if (this.normalizationGainDb !== 0) {
@@ -541,8 +625,13 @@ export class MpvController extends EventEmitter {
     } catch (err) {
       if (!hasImpulseResponseFilter) throw err;
       log.warn('[MpvController] Impulse response filter failed, disabling IRS:', err);
+      const failedPath = this.impulseResponsePath;
       this.impulseResponsePath = '';
       await this.syncAudioFilters();
+      this.emit('impulse-response-disabled', {
+        path: failedPath,
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

@@ -6,6 +6,7 @@ import type { PlayerEngine } from '@/utils/player';
 import type { usePlaylistStore } from '../playlist';
 import type { useSettingStore } from '../setting';
 import { PERSONAL_FM_QUEUE_ID } from '../playlist';
+import { toRawSong, toRawSongList } from '../playlist/helpers';
 import {
   buildMediaMeta,
   buildMediaState,
@@ -121,7 +122,9 @@ export const createPlaybackManager = (
     },
   ) => {
     const requestSeq = ++state.playbackRequestSeq;
-    const sourceList = playlist ?? playlistStore.activeQueue?.songs ?? playlistStore.defaultList;
+    const sourceList = playlist
+      ? toRawSongList(playlist)
+      : (playlistStore.activeQueue?.songs ?? playlistStore.defaultList);
     const resolvedId = String(id);
     clearAutoNextTimer();
     if (!options?.preserveFailureChain) {
@@ -136,7 +139,7 @@ export const createPlaybackManager = (
 
     if (!isPlayableSong(track)) {
       state.lastError = 'track-not-playable';
-      state.currentTrackSnapshot = track;
+      state.currentTrackSnapshot = toRawSong(track);
       state.currentTrackId = resolvedId;
       state.currentPlaylist = sourceList;
       showPlaybackNotice('track-not-playable', track);
@@ -168,7 +171,7 @@ export const createPlaybackManager = (
       playlistStore.activeQueue?.id ??
       playlistStore.activeQueueId ??
       null;
-    state.currentTrackSnapshot = track;
+    state.currentTrackSnapshot = toRawSong(track);
     historyManager.resetHistoryUploadState(track);
     state.currentPlaylist = sourceList;
     playlistStore.updateQueueCurrentTrack(resolvedId);
@@ -217,7 +220,7 @@ export const createPlaybackManager = (
     }
     if (!resolved.url) {
       state.lastError = 'audio-url-unavailable';
-      state.currentTrackSnapshot = track;
+      state.currentTrackSnapshot = toRawSong(track);
       state.currentTrackId = resolvedId;
       state.currentPlaylist = sourceList;
       showPlaybackNotice('audio-url-unavailable', track);

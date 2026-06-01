@@ -37,7 +37,7 @@ impl Default for PlayerState {
 #[napi(object)]
 #[derive(Clone, Debug)]
 pub struct PlayerEvent {
-    /// time-update / duration-change / state-change / playback-end / file-loaded / idle / error
+    /// time-update / duration-change / state-change / playback-end / file-loaded / idle / error / log-message
     pub r#type: String,
     /// 事件关联的数值（time-pos、duration、volume 等）
     pub value: Option<f64>,
@@ -47,6 +47,10 @@ pub struct PlayerEvent {
     pub message: Option<String>,
     /// 事件关联的设备列表（audio-device-list-changed 时携带）
     pub devices: Option<Vec<AudioDevice>>,
+    /// mpv 日志来源前缀（log-message 时携带）
+    pub prefix: Option<String>,
+    /// mpv 日志等级（log-message 时携带）
+    pub level: Option<String>,
 }
 
 impl PlayerEvent {
@@ -57,6 +61,8 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -67,6 +73,8 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -77,6 +85,8 @@ impl PlayerEvent {
             flag: Some(paused),
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -87,6 +97,8 @@ impl PlayerEvent {
             flag: None,
             message: Some(reason.to_string()),
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -97,6 +109,8 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -107,6 +121,8 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -117,6 +133,8 @@ impl PlayerEvent {
             flag: None,
             message: Some(msg.to_string()),
             devices: None,
+            prefix: None,
+            level: None,
         }
     }
 
@@ -127,6 +145,8 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: Some(devices),
+            prefix: None,
+            level: None,
         }
     }
 
@@ -137,6 +157,20 @@ impl PlayerEvent {
             flag: None,
             message: None,
             devices: None,
+            prefix: None,
+            level: None,
+        }
+    }
+
+    pub fn log_message(prefix: String, level: String, message: String) -> Self {
+        Self {
+            r#type: "log-message".to_string(),
+            value: None,
+            flag: None,
+            message: Some(message),
+            devices: None,
+            prefix: Some(prefix),
+            level: Some(level),
         }
     }
 }

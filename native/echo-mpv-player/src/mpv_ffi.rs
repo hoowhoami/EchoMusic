@@ -64,6 +64,15 @@ pub struct MpvEventEndFile {
     pub error: c_int,
 }
 
+// mpv_event_log_message 结构体
+#[repr(C)]
+pub struct MpvEventLogMessage {
+    pub prefix: *const c_char,
+    pub level: *const c_char,
+    pub text: *const c_char,
+    pub log_level: c_int,
+}
+
 // mpv_node 及相关结构体（用于解析 track-list、audio-device-list 等复杂属性）
 #[repr(C)]
 pub struct MpvNode {
@@ -111,6 +120,8 @@ pub struct MpvLib {
         libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char>,
     pub mpv_set_option_string:
         libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvHandle, *const c_char, *const c_char) -> c_int>,
+    pub mpv_request_log_messages:
+        libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> c_int>,
     pub mpv_observe_property:
         libloading::Symbol<'static, unsafe extern "C" fn(*mut MpvHandle, u64, *const c_char, c_int) -> c_int>,
     pub mpv_wait_event:
@@ -165,6 +176,7 @@ impl MpvLib {
             mpv_get_property: load_fn!(mpv_get_property, unsafe extern "C" fn(*mut MpvHandle, *const c_char, c_int, *mut c_void) -> c_int),
             mpv_get_property_string: load_fn!(mpv_get_property_string, unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char),
             mpv_set_option_string: load_fn!(mpv_set_option_string, unsafe extern "C" fn(*mut MpvHandle, *const c_char, *const c_char) -> c_int),
+            mpv_request_log_messages: load_fn!(mpv_request_log_messages, unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> c_int),
             mpv_observe_property: load_fn!(mpv_observe_property, unsafe extern "C" fn(*mut MpvHandle, u64, *const c_char, c_int) -> c_int),
             mpv_wait_event: load_fn!(mpv_wait_event, unsafe extern "C" fn(*mut MpvHandle, f64) -> *mut MpvEvent),
             mpv_free: load_fn!(mpv_free, unsafe extern "C" fn(*mut c_void)),

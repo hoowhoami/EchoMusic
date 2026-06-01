@@ -57,6 +57,9 @@ function bindEventForwarding(
   controller.on('error', (error: Error) => {
     getMainWindow()?.webContents.send('mpv:error', error.message);
   });
+  controller.on('impulse-response-disabled', (payload: unknown) => {
+    getMainWindow()?.webContents.send('mpv:impulse-response-disabled', payload);
+  });
   controller.on(
     'audio-device-list-changed',
     (devices: Array<{ name: string; description: string }>) => {

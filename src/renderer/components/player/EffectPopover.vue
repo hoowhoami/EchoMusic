@@ -250,7 +250,7 @@ withDefaults(defineProps<Props>(), {
 
           <div v-if="selectedImpulseResponse" class="irs-strength">
             <div class="irs-strength-label">
-              <span>强度</span>
+              <span>湿声比例</span>
               <span>{{ impulseResponseStrength }}%</span>
             </div>
             <SliderRoot
@@ -557,6 +557,7 @@ withDefaults(defineProps<Props>(), {
   height: 18px;
   user-select: none;
   touch-action: none;
+  cursor: pointer;
   box-sizing: border-box;
 }
 
@@ -568,6 +569,7 @@ withDefaults(defineProps<Props>(), {
   height: 4px;
   border-radius: 9999px;
   background: rgba(29, 29, 31, 0.08);
+  cursor: pointer;
 }
 
 .dark .irs-strength-track {
@@ -590,6 +592,7 @@ withDefaults(defineProps<Props>(), {
   border-radius: 9999px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   outline: none;
+  cursor: pointer;
 }
 
 .irs-preset-item {
@@ -640,6 +643,7 @@ withDefaults(defineProps<Props>(), {
   align-items: center;
   user-select: none;
   touch-action: none;
+  cursor: pointer;
   width: 100%;
   flex: 1;
 }
@@ -650,6 +654,7 @@ withDefaults(defineProps<Props>(), {
   border-radius: 9999px;
   width: 4px;
   background: rgba(29, 29, 31, 0.08);
+  cursor: pointer;
 }
 
 .dark .eq-track {
@@ -672,6 +677,7 @@ withDefaults(defineProps<Props>(), {
   border-radius: 9999px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   outline: none;
+  cursor: pointer;
 }
 
 .eq-freq {

@@ -8,6 +8,8 @@ import RouteErrorBoundary from '@/components/app/RouteErrorBoundary.vue';
 import { usePlayerStore } from './stores/player';
 import { useSettingStore } from './stores/setting';
 import { useThemeStore } from './stores/theme';
+import { usePlaylistStore } from './stores/playlist';
+import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { getCoverUrl } from '@/utils/cover';
@@ -17,6 +19,7 @@ import LyricView from '@/views/lyric/LyricPage.vue';
 const player = usePlayerStore();
 const settings = useSettingStore();
 const themeStore = useThemeStore();
+const playlistStore = usePlaylistStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
@@ -55,7 +58,9 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
   showStartupUpdateDialog.value = true;
 };
 
-onMounted(() => {
+onMounted(async () => {
+  await waitForSqlitePersistHydration();
+  await playlistStore.hydratePlaybackStateFromStorage();
   player.init();
   void initDesktopLyricSync().then((dispose) => {
     disposeDesktopLyricSync = dispose;

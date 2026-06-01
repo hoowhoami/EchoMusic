@@ -13,8 +13,11 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   const LYRIC_LOOKAHEAD = 150;
   const CLOCK_SYNC_TOLERANCE_MS = 300;
   const RECENT_SEEK_SYNC_WINDOW_MS = 800;
+  const PLAYBACK_STALE_THRESHOLD_MS = 1800;
   let seekBaseMs = 0;
   let seekAnchorTick = 0;
+  let lastPlaybackUpdateTick = 0;
+  let lastObservedPlayerTimeMs = -1;
   let cachedYrcOverlays: HTMLElement[] = [];
   let cachedYrcLineIndex = -1;
   let cachedSubOverlays: HTMLElement[] = [];
@@ -22,8 +25,10 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
 
   // 获取当前播放时间（毫秒），非响应式
   const getNowMs = () => {
-    if (playerStore.isPlaying) {
-      return seekBaseMs + (performance.now() - seekAnchorTick);
+    const now = performance.now();
+    const hasFreshPlaybackProgress = now - lastPlaybackUpdateTick <= PLAYBACK_STALE_THRESHOLD_MS;
+    if (playerStore.isPlaying && hasFreshPlaybackProgress) {
+      return seekBaseMs + (now - seekAnchorTick) * (playerStore.playbackRate || 1);
     }
     return seekBaseMs;
   };
@@ -223,9 +228,14 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   const syncSeekAnchor = (force = false) => {
     const nextBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
     const now = performance.now();
+    const hasNewPlayerTime = force || nextBaseMs !== lastObservedPlayerTimeMs;
+    if (hasNewPlayerTime) {
+      lastPlaybackUpdateTick = now;
+      lastObservedPlayerTimeMs = nextBaseMs;
+    }
 
     if (playerStore.isPlaying && !force) {
-      const predictedMs = seekBaseMs + (now - seekAnchorTick);
+      const predictedMs = seekBaseMs + (now - seekAnchorTick) * (playerStore.playbackRate || 1);
       const driftMs = nextBaseMs - predictedMs;
       const recentSeek = Date.now() - (playerStore.seekTimestamp || 0) < RECENT_SEEK_SYNC_WINDOW_MS;
 

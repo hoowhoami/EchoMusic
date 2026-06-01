@@ -2,13 +2,8 @@ import { app } from 'electron';
 import { join } from 'path';
 import fs from 'fs';
 import log from 'electron-log';
-import Conf from 'conf';
-import {
-  DEFAULT_LOG_SETTINGS,
-  getEffectiveLogLevel,
-  normalizeLogSettings,
-  type LogSettings,
-} from '../shared/logging';
+import { getEffectiveLogLevel, normalizeLogSettings, type LogSettings } from '../shared/logging';
+import { getPersistedLogSettings, setPersistedLogSettings } from './storage/settings';
 
 /** 单个日志文件最大 5MB，超出后自动轮转 */
 const MAX_LOG_SIZE = 5 * 1024 * 1024;
@@ -16,14 +11,7 @@ const MAX_LOG_SIZE = 5 * 1024 * 1024;
 /** 日志保留天数 */
 const LOG_RETENTION_DAYS = 7;
 
-const settingsStore = new Conf<{ logSettings: LogSettings }>({
-  projectName: app.getName(),
-  defaults: {
-    logSettings: DEFAULT_LOG_SETTINGS,
-  },
-});
-
-let currentLogSettings = normalizeLogSettings(settingsStore.get('logSettings'));
+let currentLogSettings = normalizeLogSettings(getPersistedLogSettings());
 let loggerInitialized = false;
 let diagnosticTimer: NodeJS.Timeout | null = null;
 
@@ -85,7 +73,7 @@ export function getLogSettings(): LogSettings {
 export function applyLogSettings(settings?: Partial<LogSettings> | null, persist = false) {
   currentLogSettings = normalizeLogSettings(settings);
   if (persist) {
-    settingsStore.set('logSettings', currentLogSettings);
+    setPersistedLogSettings(currentLogSettings);
   }
 
   if (diagnosticTimer) {

@@ -85,12 +85,19 @@ const handleImportImpulseResponse = async () => {
   try {
     const result = await window.electron.audioEffects.importImpulseResponse();
     if (result.canceled) return;
-    if (!result.file) {
+    const files = result.files?.length ? result.files : result.file ? [result.file] : [];
+    if (files.length === 0) {
       toastStore.warning(result.error || 'IRS 文件导入失败');
       return;
     }
-    settingStore.addImpulseResponseFile(result.file);
-    toastStore.success('IRS 文件已导入');
+    settingStore.addImpulseResponseFiles(files);
+    if (result.errors?.length) {
+      toastStore.warning(`已导入 ${files.length} 个 IRS，${result.errors.length} 个失败`, 4200);
+    } else {
+      toastStore.success(
+        files.length === 1 ? 'IRS 文件已导入' : `已导入 ${files.length} 个 IRS 文件`,
+      );
+    }
   } catch {
     toastStore.actionFailed('导入 IRS 文件');
   } finally {

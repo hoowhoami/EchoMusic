@@ -8,12 +8,36 @@ import {
   PERSONAL_FM_MODE,
   PERSONAL_FM_QUEUE_ID,
 } from './constants';
-import { findLikedPlaylist, resolveFavoriteSongKey } from './helpers';
+import {
+  findLikedPlaylist,
+  normalizePlaybackQueueRuntime,
+  normalizePlaybackQueuesRuntime,
+  resolveFavoriteSongKey,
+  toRawSongList,
+} from './helpers';
 import { favoritesActions } from './favoritesActions';
 import { personalFmActions } from './personalFmActions';
 import { queueActions } from './queueActions';
 import { userActions } from './userActions';
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
+
+const toPlain = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const toStorageQueueMeta = (queue: PlaybackQueueState): Omit<PlaybackQueueState, 'songs'> => ({
+  id: queue.id,
+  title: queue.title,
+  subtitle: queue.subtitle,
+  coverUrl: queue.coverUrl,
+  type: queue.type,
+  songCount: queue.songCount,
+  filteredInvalidCount: queue.filteredInvalidCount,
+  queuedNextTrackIds: queue.queuedNextTrackIds,
+  currentTrackId: queue.currentTrackId,
+  createdAt: queue.createdAt,
+  updatedAt: queue.updatedAt,
+  dynamic: queue.dynamic,
+  meta: queue.meta,
+});
 
 export type { Song, SongRelateGood, SongArtist } from '@/models/song';
 export type { PlaylistInfo } from '@/models/playlist';
@@ -41,7 +65,7 @@ export {
 
 export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
-    defaultList: [] as Song[],
+    defaultList: toRawSongList([]),
     favorites: shallowRef<Song[]>([]),
     userPlaylists: [] as PlaylistMeta[],
     queueFilteredInvalidCount: 0,
@@ -49,9 +73,10 @@ export const usePlaylistStore = defineStore('playlist', {
     playbackQueues: [] as PlaybackQueueState[],
     activeQueueId: DEFAULT_PLAYBACK_QUEUE_ID,
     lastNonFmQueueId: DEFAULT_PLAYBACK_QUEUE_ID,
+    playbackStorageReady: false,
     personalFmMode: PERSONAL_FM_MODE as PersonalFmMode,
     personalFmSongPoolId: 0 as PersonalFmSongPoolId,
-    personalFmBuffer: [] as Song[],
+    personalFmBuffer: toRawSongList([]),
   }),
   getters: {
     likedPlaylist(state) {
@@ -59,6 +84,10 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     activeQueue(state): PlaybackQueueState | null {
       return state.playbackQueues.find((queue) => queue.id === state.activeQueueId) ?? null;
+    },
+    getQueueSongCount() {
+      return (queue: PlaybackQueueState | null | undefined) =>
+        Math.max(0, queue?.songCount ?? queue?.songs.length ?? 0);
     },
     playbackQueueList(state): PlaybackQueueState[] {
       return state.playbackQueues
@@ -73,7 +102,7 @@ export const usePlaylistStore = defineStore('playlist', {
           queue.id !== this.activeQueueId &&
           queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
           queue.id !== PERSONAL_FM_QUEUE_ID &&
-          queue.songs.length > 0,
+          this.getQueueSongCount(queue) > 0,
       );
     },
     recentPlaybackQueues(): PlaybackQueueState[] {
@@ -82,13 +111,13 @@ export const usePlaylistStore = defineStore('playlist', {
           queue.id !== this.activeQueueId &&
           queue.id !== MANUAL_PLAYBACK_QUEUE_ID &&
           queue.id !== PERSONAL_FM_QUEUE_ID &&
-          queue.songs.length > 0,
+          this.getQueueSongCount(queue) > 0,
       );
     },
     customPlaybackQueue(): PlaybackQueueState | null {
       return (
         this.playbackQueues.find(
-          (queue) => queue.id === MANUAL_PLAYBACK_QUEUE_ID && queue.songs.length > 0,
+          (queue) => queue.id === MANUAL_PLAYBACK_QUEUE_ID && this.getQueueSongCount(queue) > 0,
         ) ?? null
       );
     },
@@ -109,6 +138,38 @@ export const usePlaylistStore = defineStore('playlist', {
     },
   },
   actions: {
+    applyPlaybackSnapshot(snapshot: {
+      queues: PlaybackQueueState[];
+      activeQueueId: string;
+      lastNonFmQueueId: string;
+    }) {
+      this.playbackQueues = normalizePlaybackQueuesRuntime(
+        (snapshot.queues ?? []) as PlaybackQueueState[],
+      );
+      this.activeQueueId = snapshot.activeQueueId || DEFAULT_PLAYBACK_QUEUE_ID;
+      this.lastNonFmQueueId = snapshot.lastNonFmQueueId || this.activeQueueId;
+      this.syncLegacyPlaybackState();
+    },
+    upsertPlaybackQueueInMemory(queue: PlaybackQueueState) {
+      normalizePlaybackQueueRuntime(queue);
+      const index = this.playbackQueues.findIndex((item) => item.id === queue.id);
+      if (index === -1) this.playbackQueues.unshift(queue);
+      else this.playbackQueues.splice(index, 1, queue);
+      if (queue.id === this.activeQueueId) this.syncLegacyPlaybackState();
+    },
+    async loadPlaybackQueueFromStorage(queueId: string | number) {
+      if (!window.electron?.storage) return this.getQueueById(queueId);
+      const queue = await window.electron.storage.getPlaybackQueue({ queueId: String(queueId) });
+      if (!queue) return null;
+      this.upsertPlaybackQueueInMemory(queue as PlaybackQueueState);
+      return this.getQueueById(queueId);
+    },
+    async ensurePlaybackQueueSongsLoaded(queueId: string | number) {
+      const queue = this.getQueueById(queueId);
+      if (!queue) return null;
+      if (queue.songs.length > 0 || (queue.songCount ?? 0) === 0) return queue;
+      return this.loadPlaybackQueueFromStorage(queue.id);
+    },
     markLastNonFmQueue(queueId: string | number | null | undefined) {
       const resolvedId = String(queueId ?? '');
       if (
@@ -118,6 +179,105 @@ export const usePlaylistStore = defineStore('playlist', {
       )
         return;
       this.lastNonFmQueueId = resolvedId;
+    },
+    async hydratePlaybackStateFromStorage() {
+      if (!window.electron?.storage) {
+        this.playbackStorageReady = true;
+        return;
+      }
+      const snapshot = await window.electron.storage.getPlaybackSnapshot();
+      this.playbackStorageReady = true;
+      this.applyPlaybackSnapshot(
+        snapshot as {
+          queues: PlaybackQueueState[];
+          activeQueueId: string;
+          lastNonFmQueueId: string;
+        },
+      );
+    },
+    persistQueueToStorage(queue: PlaybackQueueState) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.replacePlaybackQueue(
+        toPlain({
+          queue,
+          activeQueueId: this.activeQueueId,
+          lastNonFmQueueId: this.lastNonFmQueueId,
+        }),
+      );
+    },
+    persistQueueAppendToStorage(queue: PlaybackQueueState, songs: Song[]) {
+      if (!this.playbackStorageReady || !window.electron?.storage || songs.length === 0) return;
+      void window.electron.storage.appendPlaybackQueueItems(
+        toPlain({
+          queue: toStorageQueueMeta(queue),
+          songs,
+          activeQueueId: this.activeQueueId,
+          lastNonFmQueueId: this.lastNonFmQueueId,
+        }),
+      );
+    },
+    persistQueueMetaToStorage(queue: PlaybackQueueState) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.updatePlaybackQueueMeta(
+        toPlain({
+          queue: toStorageQueueMeta(queue),
+          activeQueueId: this.activeQueueId,
+          lastNonFmQueueId: this.lastNonFmQueueId,
+        }),
+      );
+    },
+    persistQueueClearToStorage(queue: PlaybackQueueState) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.clearPlaybackQueue(
+        toPlain({
+          queue: toStorageQueueMeta(queue),
+          activeQueueId: this.activeQueueId,
+          lastNonFmQueueId: this.lastNonFmQueueId,
+        }),
+      );
+    },
+    persistQueueRemovalToStorage(queueId: string) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.removePlaybackQueue({ queueId }).then((snapshot) => {
+        this.applyPlaybackSnapshot(
+          snapshot as {
+            queues: PlaybackQueueState[];
+            activeQueueId: string;
+            lastNonFmQueueId: string;
+          },
+        );
+      });
+    },
+    persistQueueItemRemovalToStorage(queue: PlaybackQueueState, songId: string | number) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.removePlaybackQueueItem(
+        toPlain({
+          queueId: queue.id,
+          songId,
+          queuedNextTrackIds: queue.queuedNextTrackIds,
+          currentTrackId: queue.currentTrackId,
+          updatedAt: queue.updatedAt,
+        }),
+      );
+    },
+    persistQueueReorderToStorage(queue: PlaybackQueueState) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.reorderPlaybackQueueItems(
+        toPlain({
+          queueId: queue.id,
+          songs: queue.songs,
+          updatedAt: queue.updatedAt,
+        }),
+      );
+    },
+    persistQueueCurrentTrackToStorage(queueId: string, trackId: string | null) {
+      if (!this.playbackStorageReady || !window.electron?.storage) return;
+      void window.electron.storage.setQueueCurrentTrack(
+        toPlain({
+          queueId,
+          trackId,
+        }),
+      );
     },
     getPreferredManualQueueOptions: queueActions.getPreferredManualQueueOptions,
     getPlaybackQueueSongs: queueActions.getPlaybackQueueSongs,
@@ -182,5 +342,4 @@ export const usePlaylistStore = defineStore('playlist', {
     unfavoriteAlbum: userActions.unfavoriteAlbum,
     unfavoritePlaylist: userActions.unfavoritePlaylist,
   },
-  persist: true,
 });

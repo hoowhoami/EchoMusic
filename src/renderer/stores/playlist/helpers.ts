@@ -1,3 +1,4 @@
+import { markRaw, toRaw } from 'vue';
 import type { PlaylistMeta } from '@/models/playlist';
 import type { Song } from '@/models/song';
 import { isSameSong } from '@/utils/song';
@@ -88,6 +89,22 @@ export const dedupeSongs = (songs: Song[]): Song[] => {
   });
 };
 
+export const toRawSong = (song: Song): Song => markRaw(toRaw(song));
+
+export const toRawSongList = (songs: Song[] = []): Song[] => {
+  if ((songs as { __v_skip?: boolean }).__v_skip === true) return songs;
+  return markRaw(songs.map(toRawSong));
+};
+
+export const normalizePlaybackQueueRuntime = (queue: PlaybackQueueState): PlaybackQueueState => {
+  queue.songs = toRawSongList(queue.songs ?? []);
+  return queue;
+};
+
+export const normalizePlaybackQueuesRuntime = (
+  queues: PlaybackQueueState[] = [],
+): PlaybackQueueState[] => queues.map(normalizePlaybackQueueRuntime);
+
 export const includesPlaylistIdentity = (playlist: PlaylistMeta, id: string): boolean =>
   getPlaylistIdentityValues(playlist).includes(id);
 
@@ -103,7 +120,7 @@ export const buildPlaybackQueueState = (
     subtitle: options.subtitle?.trim() || '',
     coverUrl: options.coverUrl?.trim() || '',
     type: options.type ?? 'default',
-    songs: songs.slice(),
+    songs: toRawSongList(songs),
     filteredInvalidCount: Math.max(0, filteredInvalidCount),
     queuedNextTrackIds: [],
     currentTrackId: null,
@@ -158,7 +175,7 @@ export const appendQueueSong = (queue: PlaybackQueueState, song: Song): boolean 
   const key = resolveSongQueueKey(song);
   const exists = queue.songs.some((item) => resolveSongQueueKey(item) === key);
   if (exists) return false;
-  queue.songs.push(song);
+  queue.songs = toRawSongList([...queue.songs, song]);
   return true;
 };
 

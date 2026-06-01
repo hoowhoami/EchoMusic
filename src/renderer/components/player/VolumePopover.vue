@@ -121,6 +121,7 @@ const handleWheel = (e: WheelEvent) => {
   align-items: center;
   user-select: none;
   touch-action: none;
+  cursor: pointer;
   width: 20px;
   flex: 1;
 }
@@ -131,6 +132,7 @@ const handleWheel = (e: WheelEvent) => {
   border-radius: 9999px;
   width: 3px;
   background: rgba(29, 29, 31, 0.18);
+  cursor: pointer;
 }
 
 .dark .vol-track {
@@ -153,6 +155,7 @@ const handleWheel = (e: WheelEvent) => {
   border-radius: 9999px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   outline: none;
+  cursor: pointer;
 }
 
 .vol-thumb:focus-visible {

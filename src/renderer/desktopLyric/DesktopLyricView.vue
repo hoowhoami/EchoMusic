@@ -41,6 +41,7 @@ let disposeSnapshotListener: (() => void) | null = null;
 // 锚点时间（毫秒）与锚点帧时间，用于插值推进
 let baseMs = 0;
 let anchorTick = 0;
+let lastPlaybackUpdateTick = 0;
 
 // 实时播放进度（毫秒） - 非响应式以提升性能
 let playSeekMsRaw = 0;
@@ -67,8 +68,11 @@ const calculateCurrentIndex = (seekMs: number) => {
 
 // 每帧推进播放游标
 const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
-  if (snapshot.value?.playback?.isPlaying) {
-    playSeekMsRaw = baseMs + (performance.now() - anchorTick);
+  const state = snapshot.value?.playback;
+  const now = performance.now();
+  const hasFreshPlaybackProgress = now - lastPlaybackUpdateTick <= PLAYBACK_STALE_THRESHOLD;
+  if (state?.isPlaying && hasFreshPlaybackProgress) {
+    playSeekMsRaw = baseMs + (now - anchorTick) * (state.playbackRate || 1);
   } else {
     playSeekMsRaw = baseMs;
   }
@@ -162,6 +166,8 @@ const updateScrollManual = () => {
 const LYRIC_LOOKAHEAD = 150;
 // 锚点同步阈值（毫秒）
 const SYNC_THRESHOLD = 300;
+// mpv 没有持续上报进度时，桌面歌词不再自行推进
+const PLAYBACK_STALE_THRESHOLD = 1800;
 // ── 计算属性 ──
 
 const settings = computed(() => snapshot.value?.settings);
@@ -206,9 +212,9 @@ const secondaryDisplayLabel = computed(() => {
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
 const fontFamily = computed(() => {
-  const raw = settings.value?.fontFamily ?? 'system-ui';
-  // 跟随全局时使用系统默认
-  return buildFontFamily(raw === 'follow' ? 'system-ui' : raw);
+  const raw = settings.value?.fontFamily ?? 'follow';
+  const resolved = raw === 'follow' ? settings.value?.resolvedFontFamily : raw;
+  return buildFontFamily(resolved || 'system-ui');
 });
 const fontWeight = computed(() => (settings.value?.bold ? 700 : 400));
 
@@ -651,6 +657,7 @@ const playNext = () => {
 const syncAnchor = (force = false) => {
   const state = playback.value;
   if (!state) return;
+  lastPlaybackUpdateTick = performance.now();
   const newBaseMs = Math.round((state.currentTime || 0) * 1000);
   const ipcDelay = performance.now() - (state.updatedAt || performance.now());
   const compensated = ipcDelay > 0 && ipcDelay < 1000 ? newBaseMs + ipcDelay : newBaseMs;
@@ -673,6 +680,7 @@ onMounted(async () => {
   document.getElementById('app')?.classList.add('desktop-lyric-window');
 
   snapshot.value = (await window.electron?.desktopLyric?.getSnapshot()) ?? null;
+  syncAnchor(true);
   // 从窗口高度计算初始字体大小
   localFontSize.value = computedFontSize.value;
 

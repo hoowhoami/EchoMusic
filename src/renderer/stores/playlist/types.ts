@@ -28,6 +28,7 @@ export interface PlaybackQueueState {
   coverUrl: string;
   type: PlaybackQueueType;
   songs: Song[];
+  songCount?: number;
   filteredInvalidCount: number;
   queuedNextTrackIds: string[];
   currentTrackId: string | null;

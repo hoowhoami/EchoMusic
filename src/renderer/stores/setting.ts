@@ -56,6 +56,14 @@ const getUniqueImpulseResponseName = (name: string, existingNames: string[]): st
   }
 };
 
+const toImpulseResponseFilePayload = (file: ImpulseResponseFile): ImpulseResponseFile => ({
+  id: String(file.id || ''),
+  name: String(file.name || ''),
+  path: String(file.path || ''),
+  size: Number(file.size) || 0,
+  importedAt: Number(file.importedAt) || 0,
+});
+
 export const useSettingStore = defineStore('setting', {
   state: () => ({
     theme: 'system' as ThemeMode,
@@ -157,6 +165,7 @@ export const useSettingStore = defineStore('setting', {
       if (window.electron?.ipcRenderer) {
         window.electron.ipcRenderer.send('clear-app-data', null);
       }
+      void window.electron?.storage?.resetAll?.();
       localStorage.clear();
       sessionStorage.clear();
       this.$reset();
@@ -261,18 +270,46 @@ export const useSettingStore = defineStore('setting', {
       this.outputDeviceStatusMessage = message;
     },
     addImpulseResponseFile(file: ImpulseResponseFile) {
+      this.addImpulseResponseFiles([file]);
+    },
+    addImpulseResponseFiles(files: ImpulseResponseFile[]) {
+      const normalizedFiles: ImpulseResponseFile[] = [];
+      let names = this.impulseResponseFiles.map((item) => item.name);
+      for (const file of files) {
+        const normalizedFile = {
+          ...file,
+          name: getUniqueImpulseResponseName(file.name, names),
+        };
+        normalizedFiles.push(normalizedFile);
+        names = [normalizedFile.name, ...names];
+      }
+      if (normalizedFiles.length === 0) return;
       const normalizedFile = {
-        ...file,
-        name: getUniqueImpulseResponseName(
-          file.name,
-          this.impulseResponseFiles.filter((item) => item.id !== file.id).map((item) => item.name),
-        ),
+        ...normalizedFiles[0],
       };
       this.impulseResponseFiles = [
-        normalizedFile,
-        ...this.impulseResponseFiles.filter((item) => item.id !== normalizedFile.id),
+        ...normalizedFiles,
+        ...this.impulseResponseFiles.filter(
+          (item) => !normalizedFiles.some((file) => file.id === item.id),
+        ),
       ];
       this.selectedImpulseResponseId = normalizedFile.id;
+    },
+    async reconcileImpulseResponseFiles() {
+      if (!window.electron?.audioEffects?.reconcileImpulseResponses) return;
+      const nextFiles = await window.electron.audioEffects.reconcileImpulseResponses(
+        this.impulseResponseFiles.map(toImpulseResponseFilePayload),
+      );
+      const nextIds = new Set(nextFiles.map((item) => item.id));
+      this.impulseResponseFiles = nextFiles;
+      if (this.selectedImpulseResponseId && !nextIds.has(this.selectedImpulseResponseId)) {
+        this.selectedImpulseResponseId = nextFiles[0]?.id ?? '';
+        this.impulseResponseEnabled = false;
+      }
+      if (nextFiles.length === 0) {
+        this.selectedImpulseResponseId = '';
+        this.impulseResponseEnabled = false;
+      }
     },
     removeImpulseResponseFile(id: string) {
       const target = this.impulseResponseFiles.find((item) => item.id === id);

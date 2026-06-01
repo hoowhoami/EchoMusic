@@ -52,6 +52,14 @@ pub fn start_event_loop(
                             unsafe { &*(event_ref.data as *const MpvEventProperty) };
                         handle_property_change(prop, &state, &callback);
                     }
+                    MPV_EVENT_LOG_MESSAGE => {
+                        if event_ref.data.is_null() {
+                            continue;
+                        }
+                        let message =
+                            unsafe { &*(event_ref.data as *const MpvEventLogMessage) };
+                        handle_log_message(message, &callback);
+                    }
                     MPV_EVENT_END_FILE => {
                         let reason = if event_ref.data.is_null() {
                             "eof"
@@ -88,6 +96,26 @@ pub fn start_event_loop(
             }
         })
         .expect("failed to spawn mpv event loop thread")
+}
+
+fn read_c_string(ptr: *const std::os::raw::c_char) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(ptr).to_string_lossy().trim().to_string() }
+}
+
+fn handle_log_message(
+    message: &MpvEventLogMessage,
+    callback: &Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>,
+) {
+    let prefix = read_c_string(message.prefix);
+    let level = read_c_string(message.level);
+    let text = read_c_string(message.text);
+    if text.is_empty() {
+        return;
+    }
+    call_callback(callback, PlayerEvent::log_message(prefix, level, text));
 }
 
 /// 通过 Arc<Mutex> 包装的回调发送事件

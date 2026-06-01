@@ -7,10 +7,26 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
-import type { ImportImpulseResponseResult, ImpulseResponsePlaybackOptions } from '../shared/audio';
+import type {
+  ImportImpulseResponseResult,
+  ImpulseResponseFile,
+  ImpulseResponsePlaybackOptions,
+} from '../shared/audio';
 import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type {
+  StorageAppendQueueItemsPayload,
+  StoragePlaybackSnapshot,
+  StoragePlaybackQueueState,
+  StorageQueueIdPayload,
+  StorageReplaceQueuePayload,
+  StorageRemoveQueueItemPayload,
+  StorageReorderQueueItemsPayload,
+  StorageResetResult,
+  StorageSetQueueCurrentTrackPayload,
+  StorageUpdateQueueMetaPayload,
+} from '../shared/storage';
 
 export interface IElectronAPI {
   platform: string;
@@ -39,6 +55,7 @@ export interface IElectronAPI {
   audioEffects: {
     importImpulseResponse: () => Promise<ImportImpulseResponseResult>;
     deleteImpulseResponse: (filePath: string) => Promise<boolean>;
+    reconcileImpulseResponses: (files: ImpulseResponseFile[]) => Promise<ImpulseResponseFile[]>;
   };
   updater: {
     download: () => void;
@@ -105,6 +122,33 @@ export interface IElectronAPI {
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) => Promise<ResolvePlaylistResponse>;
   };
+  storage?: {
+    getPlaybackSnapshot: () => Promise<StoragePlaybackSnapshot>;
+    getPlaybackQueue: (payload: StorageQueueIdPayload) => Promise<StoragePlaybackQueueState | null>;
+    replacePlaybackQueue: (payload: StorageReplaceQueuePayload) => Promise<StorageResetResult>;
+    appendPlaybackQueueItems: (
+      payload: StorageAppendQueueItemsPayload,
+    ) => Promise<StorageResetResult>;
+    updatePlaybackQueueMeta: (
+      payload: StorageUpdateQueueMetaPayload,
+    ) => Promise<StorageResetResult>;
+    clearPlaybackQueue: (payload: StorageUpdateQueueMetaPayload) => Promise<StorageResetResult>;
+    removePlaybackQueue: (payload: StorageQueueIdPayload) => Promise<StoragePlaybackSnapshot>;
+    removePlaybackQueueItem: (
+      payload: StorageRemoveQueueItemPayload,
+    ) => Promise<StorageResetResult>;
+    reorderPlaybackQueueItems: (
+      payload: StorageReorderQueueItemsPayload,
+    ) => Promise<StorageResetResult>;
+    setQueueCurrentTrack: (
+      payload: StorageSetQueueCurrentTrackPayload,
+    ) => Promise<StorageResetResult>;
+    setActiveQueue: (queueId: string) => Promise<StorageResetResult>;
+    getKv: <T = unknown>(key: string) => Promise<T | null>;
+    setKv: (key: string, value: unknown) => Promise<StorageResetResult>;
+    deleteKv: (key: string) => Promise<StorageResetResult>;
+    resetAll: () => Promise<StorageResetResult>;
+  };
   mediaControls: {
     updateMetadata: (payload: {
       title: string;
@@ -161,6 +205,9 @@ export interface IElectronAPI {
     onStateChange: (func: (state: { playing?: boolean; paused?: boolean }) => void) => () => void;
     onPlaybackEnd: (func: (reason: string) => void) => () => void;
     onError: (func: (message: string) => void) => () => void;
+    onImpulseResponseDisabled: (
+      func: (payload: { path?: string; reason?: string }) => void,
+    ) => () => void;
     onAudioDeviceListChanged: (
       func: (devices: Array<{ name: string; description: string }>) => void,
     ) => () => void;

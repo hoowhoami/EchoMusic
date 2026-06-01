@@ -1,34 +1,13 @@
-import { app, screen } from 'electron';
-import Conf from 'conf';
+import { screen } from 'electron';
+import type { DesktopLyricSettings } from '../../shared/desktop-lyric';
 import {
-  DEFAULT_DESKTOP_LYRIC_SETTINGS,
-  type DesktopLyricSettings,
-} from '../../shared/desktop-lyric';
+  DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS,
+  getDesktopLyricPersistedSettings,
+  patchDesktopLyricPersistedSettings,
+  type DesktopLyricWindowState,
+} from '../storage/settings';
 
-export type DesktopLyricWindowState = {
-  width: number;
-  height: number;
-  x?: number;
-  y?: number;
-};
-
-type DesktopLyricPersistedSettings = DesktopLyricSettings & {
-  windowState: DesktopLyricWindowState;
-};
-
-const DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS: DesktopLyricPersistedSettings = {
-  ...DEFAULT_DESKTOP_LYRIC_SETTINGS,
-  windowState: {
-    width: 800,
-    height: 180,
-  },
-};
-
-const settingsStore = new Conf<DesktopLyricPersistedSettings>({
-  projectName: app.getName(),
-  configName: 'desktop-lyric',
-  defaults: DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS,
-});
+export type { DesktopLyricWindowState } from '../storage/settings';
 
 export const DESKTOP_LYRIC_MIN_WIDTH = 640;
 export const DESKTOP_LYRIC_MIN_HEIGHT = 140;
@@ -38,7 +17,7 @@ export const DESKTOP_LYRIC_MAX_HEIGHT = 360;
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export function getDesktopLyricSettings(): DesktopLyricSettings {
-  const raw = settingsStore.store;
+  const raw = getDesktopLyricPersistedSettings();
   return {
     enabled: Boolean(raw.enabled),
     locked: Boolean(raw.locked),
@@ -137,7 +116,7 @@ export function sanitizeDesktopLyricSettings(
 }
 
 export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) {
-  settingsStore.set({
+  patchDesktopLyricPersistedSettings({
     enabled: nextSettings.enabled,
     locked: nextSettings.locked,
     autoShow: nextSettings.autoShow,
@@ -163,18 +142,15 @@ export function persistDesktopLyricSettings(nextSettings: DesktopLyricSettings) 
 }
 
 export function setDesktopLyricEnabledFlag(enabled: boolean) {
-  settingsStore.set('enabled', enabled);
+  patchDesktopLyricPersistedSettings({ enabled });
 }
 
 export function setDesktopLyricLockedFlag(locked: boolean) {
-  settingsStore.set('locked', locked);
+  patchDesktopLyricPersistedSettings({ locked });
 }
 
 export function getDesktopLyricWindowState(): DesktopLyricWindowState {
-  const state = settingsStore.get(
-    'windowState',
-    DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState,
-  );
+  const state = getDesktopLyricPersistedSettings().windowState;
   return {
     width: clamp(
       Math.round(Number(state.width) || DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS.windowState.width),
@@ -283,11 +259,13 @@ export function resolveInitialBounds() {
 }
 
 export function persistDesktopLyricWindowState(bounds: DesktopLyricWindowState) {
-  settingsStore.set('windowState', {
-    width: Math.round(bounds.width),
-    height: Math.round(bounds.height),
-    ...(typeof bounds.x === 'number' ? { x: Math.round(bounds.x) } : {}),
-    ...(typeof bounds.y === 'number' ? { y: Math.round(bounds.y) } : {}),
+  patchDesktopLyricPersistedSettings({
+    windowState: {
+      width: Math.round(bounds.width),
+      height: Math.round(bounds.height),
+      ...(typeof bounds.x === 'number' ? { x: Math.round(bounds.x) } : {}),
+      ...(typeof bounds.y === 'number' ? { y: Math.round(bounds.y) } : {}),
+    },
   });
 }
 

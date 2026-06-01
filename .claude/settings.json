@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//private/tmp/**)",
+      "Bash(ffmpeg -hide_banner -loglevel error -f lavfi -i \"sine=frequency=440:duration=1\" -ar 44100 src.wav -y)",
+      "Bash(ffmpeg -hide_banner -loglevel error -f lavfi -i \"sine=frequency=1000:duration=0.05\" -ar 44100 ir.wav -y)",
+      "Bash(cp ir.wav ir.irs)",
+      "Bash(ffmpeg -hide_banner -loglevel error -f lavfi -i \"amovie=C\\\\\\\\:/tmp/ir.irs\" -t 0.1 outB1.wav -y)",
+      "Bash(ffmpeg -hide_banner -loglevel error -f lavfi -i \"amovie='C\\\\\\\\:/tmp/ir.irs'\" -t 0.1 outB2.wav -y)",
+      "Bash(ffmpeg -hide_banner -loglevel warning -f lavfi -i \"amovie=C:/tmp/ir.irs\" -t 0.1 outB3.wav -y)",
+      "Bash(echo \"vue-tsc exit code: $?\")"
+    ]
+  }
+}

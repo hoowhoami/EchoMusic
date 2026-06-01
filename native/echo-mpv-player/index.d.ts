@@ -53,7 +53,7 @@ export declare function play(): void
 
 /** 播放器事件 */
 export interface PlayerEvent {
-  /** time-update / duration-change / state-change / playback-end / file-loaded / idle / error */
+  /** time-update / duration-change / state-change / playback-end / file-loaded / idle / error / log-message */
   type: string
   /** 事件关联的数值（time-pos、duration、volume 等） */
   value?: number
@@ -63,6 +63,10 @@ export interface PlayerEvent {
   message?: string
   /** 事件关联的设备列表（audio-device-list-changed 时携带） */
   devices?: Array<AudioDevice>
+  /** mpv 日志来源前缀（log-message 时携带） */
+  prefix?: string
+  /** mpv 日志等级（log-message 时携带） */
+  level?: string
 }
 
 /** 播放器状态快照 */

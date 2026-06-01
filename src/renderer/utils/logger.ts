@@ -33,22 +33,7 @@ const getElectronLog = (): LoggerFunctions | undefined => {
 
 const electronLog = getElectronLog();
 
-const readPersistedSettings = (): LogSettings => {
-  try {
-    const raw = window.localStorage.getItem('setting');
-    if (!raw) return DEFAULT_LOG_SETTINGS;
-    const parsed = JSON.parse(raw);
-    return normalizeLogSettings({
-      level: parsed?.logLevel,
-      apiResponseBody: parsed?.logApiResponseBody,
-      diagnosticUntil: parsed?.logDiagnosticUntil,
-    });
-  } catch {
-    return DEFAULT_LOG_SETTINGS;
-  }
-};
-
-let currentSettings = readPersistedSettings();
+let currentSettings = DEFAULT_LOG_SETTINGS;
 
 export const configureRendererLogger = (settings?: Partial<LogSettings> | null) => {
   currentSettings = normalizeLogSettings(settings);

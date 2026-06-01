@@ -1,7 +1,7 @@
 import { ipcMain, shell, app, session, dialog, type OpenDialogOptions } from 'electron';
-import Conf from 'conf';
 import log from 'electron-log';
 import fs from 'fs';
+import { execFile } from 'child_process';
 import { dirname, extname, join, resolve, sep, basename } from 'path';
 import { autoUpdater } from 'electron-updater';
 import { getFonts } from 'font-list';
@@ -13,6 +13,8 @@ import {
 } from '../../shared/audio';
 import type { LogSettings } from '../../shared/logging';
 import { applyLogSettings, getLogSettings } from '../logger';
+import { getPlaybackQueueStorage } from '../storage/playbackQueues';
+import { setMainAppSetting } from '../storage/settings';
 import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
@@ -22,11 +24,58 @@ const openLogDirectory = async () => {
   await shell.openPath(logDir);
 };
 
-const appSettingsStore = new Conf<Record<string, unknown>>({
-  projectName: app.getName(),
-});
-
 const getImpulseResponseDir = () => join(app.getPath('userData'), 'irs');
+
+const probeAudioFileWithFfprobe = async (filePath: string): Promise<boolean | null> =>
+  new Promise((resolveProbe) => {
+    execFile(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'a:0',
+        '-show_entries',
+        'stream=codec_type',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        filePath,
+      ],
+      { timeout: 5000 },
+      (error, stdout) => {
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+          resolveProbe(null);
+          return;
+        }
+        if (error) {
+          resolveProbe(false);
+          return;
+        }
+        resolveProbe(stdout.trim().split(/\s+/).includes('audio'));
+      },
+    );
+  });
+
+const isSupportedImpulseResponseAudio = async (filePath: string): Promise<boolean> => {
+  const ffprobeResult = await probeAudioFileWithFfprobe(filePath);
+  if (ffprobeResult !== null) return ffprobeResult;
+
+  const handle = await fs.promises.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(16);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead < 4) return false;
+
+    const magic4 = buffer.subarray(0, 4).toString('ascii');
+    const magic3 = buffer.subarray(0, 3).toString('ascii');
+    if (magic4 === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WAVE') return true;
+    if (magic4 === 'fLaC' || magic4 === 'OggS' || magic4 === 'FORM') return true;
+    if (magic3 === 'ID3') return true;
+    return buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+  } finally {
+    await handle.close();
+  }
+};
 
 const isPathInside = (targetPath: string, parentPath: string): boolean => {
   const normalizedParent = resolve(parentPath);
@@ -35,6 +84,41 @@ const isPathInside = (targetPath: string, parentPath: string): boolean => {
     normalizedTarget === normalizedParent ||
     normalizedTarget.startsWith(`${normalizedParent}${sep}`)
   );
+};
+
+const importImpulseResponseFile = async (
+  sourcePath: string,
+): Promise<{ file?: ImpulseResponseFile; error?: string }> => {
+  const extension = extname(sourcePath).toLowerCase();
+  const sourceName = basename(sourcePath);
+  if (extension !== '.irs') {
+    return { error: `${sourceName}: 请选择 .irs 文件。` };
+  }
+
+  const stat = await fs.promises.stat(sourcePath);
+  if (!stat.isFile()) {
+    return { error: `${sourceName}: 请选择有效的 IRS 文件。` };
+  }
+  if (!(await isSupportedImpulseResponseAudio(sourcePath))) {
+    return { error: `${sourceName}: IRS 文件不是可识别的音频文件。` };
+  }
+
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const irsDir = getImpulseResponseDir();
+  await fs.promises.mkdir(irsDir, { recursive: true });
+
+  const targetPath = join(irsDir, `${id}.irs`);
+  await fs.promises.copyFile(sourcePath, targetPath);
+
+  return {
+    file: {
+      id,
+      name: normalizeImpulseResponseName(sourceName),
+      path: targetPath,
+      size: stat.size,
+      importedAt: Date.now(),
+    },
+  };
 };
 
 const getAppInfo = (): AppInfoResult => {
@@ -168,7 +252,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       const win = getMainWindow();
       const options: OpenDialogOptions = {
         title: '导入 IRS 文件',
-        properties: ['openFile'],
+        properties: ['openFile', 'multiSelections'],
         filters: [{ name: 'IRS Impulse Response', extensions: ['irs'] }],
       };
       const result = win
@@ -179,37 +263,27 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         return { canceled: true };
       }
 
-      const sourcePath = result.filePaths[0];
-      const extension = extname(sourcePath).toLowerCase();
-      if (extension !== '.irs') {
-        return { canceled: false, error: '请选择 .irs 文件。' };
-      }
+      const files: ImpulseResponseFile[] = [];
+      const errors: string[] = [];
 
-      try {
-        const stat = await fs.promises.stat(sourcePath);
-        if (!stat.isFile()) {
-          return { canceled: false, error: '请选择有效的 IRS 文件。' };
+      for (const sourcePath of result.filePaths) {
+        try {
+          const imported = await importImpulseResponseFile(sourcePath);
+          if (imported.file) files.push(imported.file);
+          if (imported.error) errors.push(imported.error);
+        } catch (error) {
+          log.error('[Audio] Import impulse response failed:', { sourcePath, error });
+          errors.push(`${basename(sourcePath)}: IRS 文件导入失败。`);
         }
-
-        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const irsDir = getImpulseResponseDir();
-        await fs.promises.mkdir(irsDir, { recursive: true });
-
-        const targetPath = join(irsDir, `${id}.irs`);
-        await fs.promises.copyFile(sourcePath, targetPath);
-
-        const file: ImpulseResponseFile = {
-          id,
-          name: normalizeImpulseResponseName(basename(sourcePath)),
-          path: targetPath,
-          size: stat.size,
-          importedAt: Date.now(),
-        };
-        return { canceled: false, file };
-      } catch (error) {
-        log.error('[Audio] Import impulse response failed:', error);
-        return { canceled: false, error: 'IRS 文件导入失败。' };
       }
+
+      return {
+        canceled: false,
+        file: files[0],
+        files,
+        error: files.length === 0 ? errors[0] || 'IRS 文件导入失败。' : undefined,
+        errors,
+      };
     },
   );
 
@@ -225,6 +299,32 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
       return false;
     }
   });
+
+  ipcMain.handle(
+    'audio:reconcile-impulse-responses',
+    async (_event, files: ImpulseResponseFile[] = []) => {
+      if (!Array.isArray(files)) return [];
+      const irsDir = getImpulseResponseDir();
+      const next: ImpulseResponseFile[] = [];
+
+      for (const file of files) {
+        if (!file?.path || !isPathInside(file.path, irsDir)) continue;
+        try {
+          const stat = await fs.promises.stat(file.path);
+          if (!stat.isFile()) continue;
+          if (!(await isSupportedImpulseResponseAudio(file.path))) continue;
+          next.push({
+            ...file,
+            size: stat.size,
+          });
+        } catch {
+          // 文件被手动删除或不可读时，从列表中剔除
+        }
+      }
+
+      return next;
+    },
+  );
 
   ipcMain.on('open-log-directory', async () => {
     await openLogDirectory();
@@ -407,14 +507,15 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
   });
 
   ipcMain.on('clear-app-data', async () => {
-    appSettingsStore.clear();
+    getPlaybackQueueStorage().resetAll();
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
+    await fs.promises.rm(getImpulseResponseDir(), { recursive: true, force: true });
   });
 
   // GPU 加速设置（需重启生效）
   ipcMain.on('update-disable-gpu-acceleration', (_event, disabled: boolean) => {
-    appSettingsStore.set('disableGpuAcceleration', disabled);
+    setMainAppSetting('disableGpuAcceleration', Boolean(disabled));
   });
 
   // 获取系统全部字体

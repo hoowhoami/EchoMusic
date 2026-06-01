@@ -12,6 +12,7 @@ import {
   mergeQueueSongs,
   resolveSongNumericId,
   resolveSongQueueKey,
+  toRawSongList,
 } from './helpers';
 import type { PersonalFmMode, PersonalFmSongPoolId, PlaybackQueueState } from './types';
 
@@ -149,7 +150,7 @@ export const personalFmActions = {
     if (queue && !options?.preserveQueue) {
       queue.title = presentation.title;
       queue.subtitle = presentation.subtitle;
-      queue.songs = [];
+      queue.songs = toRawSongList([]);
       queue.filteredInvalidCount = 0;
       queue.queuedNextTrackIds = [];
       queue.currentTrackId = null;
@@ -163,14 +164,14 @@ export const personalFmActions = {
       queue.updatedAt = queue.createdAt;
     }
 
-    this.personalFmBuffer = [];
+    this.personalFmBuffer = toRawSongList([]);
 
     try {
       const songs = await this.fetchPersonalFmSongs({
         mode: presentation.mode,
         song_pool_id: songPoolPresentation.songPoolId,
       });
-      this.personalFmBuffer = dedupeSongs(songs);
+      this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
       if (!options?.preserveQueue) {
         personalFmSessionResetPending = false;
       }
@@ -195,7 +196,7 @@ export const personalFmActions = {
         song_pool_id: this.personalFmSongPoolId,
       });
       if (songs.length > 0) {
-        this.personalFmBuffer = dedupeSongs(songs);
+        this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
       }
       return songs;
     } catch (error) {
@@ -224,14 +225,14 @@ export const personalFmActions = {
     }
     const queue = ensurePersonalFmPlaybackQueue(this);
     if (options?.fresh) {
-      queue.songs = [];
+      queue.songs = toRawSongList([]);
       queue.queuedNextTrackIds = [];
       queue.currentTrackId = null;
       queue.filteredInvalidCount = 0;
       queue.createdAt = Date.now();
       queue.updatedAt = queue.createdAt;
       if (!options.retainBuffer) {
-        this.personalFmBuffer = [];
+        this.personalFmBuffer = toRawSongList([]);
       }
     }
     if (queue.songs.length > 0 || this.personalFmBuffer.length > 0) {
@@ -245,10 +246,10 @@ export const personalFmActions = {
       song_pool_id: songPoolPresentation.songPoolId,
     });
     if (songs.length === 0) return false;
-    queue.songs = [];
+    queue.songs = toRawSongList([]);
     queue.currentTrackId = null;
     queue.updatedAt = Date.now();
-    this.personalFmBuffer = dedupeSongs(songs);
+    this.personalFmBuffer = toRawSongList(dedupeSongs(songs));
     this.activeQueueId = queue.id;
     this.syncLegacyPlaybackState();
     personalFmSessionResetPending = false;
@@ -257,11 +258,11 @@ export const personalFmActions = {
   activatePersonalFmTrack(this: PersonalFmStoreShape, song: Song) {
     const queue = ensurePersonalFmPlaybackQueue(this);
     const targetKey = resolveSongQueueKey(song);
-    this.personalFmBuffer = this.personalFmBuffer.filter(
-      (item) => resolveSongQueueKey(item) !== targetKey,
+    this.personalFmBuffer = toRawSongList(
+      this.personalFmBuffer.filter((item) => resolveSongQueueKey(item) !== targetKey),
     );
     if (!queue.songs.some((item) => resolveSongQueueKey(item) === targetKey)) {
-      queue.songs.push(song);
+      queue.songs = toRawSongList([...queue.songs, song]);
     }
     this.activeQueueId = queue.id;
     queue.updatedAt = Date.now();
@@ -307,7 +308,7 @@ export const personalFmActions = {
     try {
       const nextSongs = await this.fetchPersonalFmSongs(params);
       if (nextSongs.length === 0) return 0;
-      this.personalFmBuffer = mergeQueueSongs(this.personalFmBuffer, nextSongs);
+      this.personalFmBuffer = toRawSongList(mergeQueueSongs(this.personalFmBuffer, nextSongs));
       return nextSongs.length;
     } catch (error) {
       logger.warn('PlaylistStore', 'Fetch personal fm songs failed:', error);
@@ -330,7 +331,8 @@ export const personalFmActions = {
     }
 
     while (this.personalFmBuffer.length > 0) {
-      const nextSong = this.personalFmBuffer.shift();
+      const [nextSong, ...rest] = this.personalFmBuffer;
+      this.personalFmBuffer = toRawSongList(rest);
       if (!nextSong) break;
       appendQueueSong(queue, nextSong);
       queue.updatedAt = Date.now();

@@ -7,6 +7,7 @@ import {
   useLyricStore,
   getLyricCandidateKey,
   type LyricLine,
+  type ParsedLyricPreview,
   type LyricSearchCandidate,
 } from '@/stores/lyric';
 import { usePlayerStore } from '@/stores/player';
@@ -86,32 +87,30 @@ const hasLargeDurationDiff = (candidate: LyricSearchCandidate) => {
 };
 
 const isScrollableCandidate = (candidate: LyricSearchCandidate) => candidate.contenttype !== 2;
-const hasTranslationCandidate = (candidate: LyricSearchCandidate) => candidate.content_format === 4;
-const hasRomanizationCandidate = (candidate: LyricSearchCandidate) =>
-  candidate.content_format === 2 ||
-  candidate.content_format === 3 ||
-  candidate.content_format === 4;
+const candidatePreview = (candidate: LyricSearchCandidate): ParsedLyricPreview | null =>
+  lyricStore.candidatePreviewMap[getLyricCandidateKey(candidate)] ?? null;
 
 const recommendationLevel = (candidate: LyricSearchCandidate) => {
   if (lyricStore.autoCandidateKey === getLyricCandidateKey(candidate)) return 5;
+  const preview = candidatePreview(candidate);
   let score = 1;
   if (candidate.product_from === '官方推荐歌词') score += 1;
   if (isScrollableCandidate(candidate)) score += 1;
   if (candidate.krctype === 1) score += 1;
-  if (candidate.content_format === 4) score += 1;
-  else if (candidate.content_format === 3 || candidate.content_format === 2) score += 0.5;
+  if (preview?.hasTranslation && preview.hasRomanization) score += 1;
+  else if (preview?.hasTranslation || preview?.hasRomanization) score += 0.5;
   if ((candidate.score ?? 0) >= 50) score += 0.5;
   return Math.min(5, Math.max(1, Math.round(score)));
 };
 
 const typeLabels = (candidate: LyricSearchCandidate) => {
   const labels: string[] = [];
+  const preview = candidatePreview(candidate);
   if (candidate.product_from === '官方推荐歌词') labels.push('官方推荐');
-  if (hasTranslationCandidate(candidate)) labels.push('翻译');
-  if (hasRomanizationCandidate(candidate)) labels.push('音译');
+  if (preview?.hasTranslation) labels.push('翻译');
+  if (preview?.hasRomanization) labels.push('音译');
   if (candidate.krctype === 1) labels.push('逐字');
-  if (isScrollableCandidate(candidate)) labels.push('可滚动');
-  else labels.push('纯文本');
+  if (!isScrollableCandidate(candidate)) labels.push('无法滚动');
   if (candidate.language) labels.push(candidate.language);
   return labels;
 };
@@ -343,7 +342,7 @@ watch(selectedKey, () => {
                     roman: label === '音译',
                     translation: label === '翻译',
                     yrc: label === '逐字',
-                    scrollable: label === '可滚动',
+                    unscrollable: label === '无法滚动',
                   }"
                 >
                   {{ label }}
@@ -366,57 +365,63 @@ watch(selectedKey, () => {
         </div>
 
         <div class="preview-pane">
-          <div v-if="selectedCandidate" class="preview-head">
-            <div class="preview-title-group">
-              <div class="preview-title">{{ selectedCandidate.song || title || '未知歌曲' }}</div>
-              <div class="preview-subtitle">
-                {{ sourceLabel(selectedCandidate) }}
-                <template v-if="selectedCandidate.nickname">
-                  · {{ selectedCandidate.nickname }}</template
+          <Transition name="preview-switch" mode="out-in">
+            <div :key="selectedKey || 'empty'" class="preview-content">
+              <div v-if="selectedCandidate" class="preview-head">
+                <div class="preview-title-group">
+                  <div class="preview-title">
+                    {{ selectedCandidate.song || title || '未知歌曲' }}
+                  </div>
+                  <div class="preview-subtitle">
+                    {{ sourceLabel(selectedCandidate) }}
+                    <template v-if="selectedCandidate.nickname">
+                      · {{ selectedCandidate.nickname }}</template
+                    >
+                  </div>
+                </div>
+                <div class="preview-badges">
+                  <span>{{ previewState.lineCount }} 行</span>
+                  <span v-if="previewState.isScrollable">实时预览</span>
+                  <span v-if="previewState.hasTranslation">翻译</span>
+                  <span v-if="previewState.hasRomanization">音译</span>
+                </div>
+              </div>
+              <div
+                v-if="selectedCandidate && hasLargeDurationDiff(selectedCandidate)"
+                class="preview-warning"
+              >
+                <Icon :icon="iconTriangleAlert" width="14" height="14" />
+                这份歌词时长差异较大，可能不同步
+              </div>
+              <div class="preview-lines">
+                <div v-if="previewLoading" class="empty-state">正在加载预览...</div>
+                <div
+                  v-else-if="previewLines.length === 0 && previewStaticLines.length === 0"
+                  class="empty-state"
                 >
+                  暂无歌词预览
+                </div>
+                <div
+                  v-for="entry in livePreviewLines"
+                  :key="`${entry.line.time}-${entry.index}`"
+                  class="preview-line"
+                  :class="{ active: entry.index === previewActiveIndex }"
+                >
+                  <span>{{ entry.line.text }}</span>
+                  <small v-if="entry.line.translated">{{ entry.line.translated }}</small>
+                  <small v-if="entry.line.romanized">{{ entry.line.romanized }}</small>
+                </div>
+                <div
+                  v-for="(line, index) in previewStaticLines.slice(0, 18)"
+                  v-show="previewLines.length === 0"
+                  :key="`${line}-${index}`"
+                  class="preview-line static"
+                >
+                  <span>{{ line }}</span>
+                </div>
               </div>
             </div>
-            <div class="preview-badges">
-              <span>{{ previewState.lineCount }} 行</span>
-              <span v-if="previewState.isScrollable">实时预览</span>
-              <span v-if="previewState.hasTranslation">翻译</span>
-              <span v-if="previewState.hasRomanization">音译</span>
-            </div>
-          </div>
-          <div
-            v-if="selectedCandidate && hasLargeDurationDiff(selectedCandidate)"
-            class="preview-warning"
-          >
-            <Icon :icon="iconTriangleAlert" width="14" height="14" />
-            这份歌词时长差异较大，可能不同步
-          </div>
-          <div class="preview-lines">
-            <div v-if="previewLoading" class="empty-state">正在加载预览...</div>
-            <div
-              v-else-if="previewLines.length === 0 && previewStaticLines.length === 0"
-              class="empty-state"
-            >
-              暂无歌词预览
-            </div>
-            <div
-              v-for="entry in livePreviewLines"
-              :key="`${entry.line.time}-${entry.index}`"
-              class="preview-line"
-              :class="{ active: entry.index === previewActiveIndex }"
-            >
-              <span>{{ entry.line.text }}</span>
-              <small v-if="entry.line.translated">{{ entry.line.translated }}</small>
-              <small v-if="entry.line.romanized">{{ entry.line.romanized }}</small>
-            </div>
-            <div
-              v-for="(line, index) in previewStaticLines.slice(0, 18)"
-              v-show="previewLines.length === 0"
-              :key="`${line}-${index}`"
-              class="preview-line static"
-            >
-              <span>{{ line }}</span>
-            </div>
-          </div>
+          </Transition>
         </div>
       </div>
     </div>
@@ -667,7 +672,7 @@ watch(selectedKey, () => {
 .candidate-tags .translation,
 .candidate-tags .roman,
 .candidate-tags .yrc,
-.candidate-tags .scrollable {
+.candidate-tags .unscrollable {
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
 }
@@ -681,6 +686,29 @@ watch(selectedKey, () => {
 .preview-pane {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.preview-switch-enter-active,
+.preview-switch-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.preview-switch-enter-from,
+.preview-switch-leave-to {
+  opacity: 0;
+}
+
+.preview-switch-enter-to,
+.preview-switch-leave-from {
+  opacity: 1;
 }
 
 .preview-head {

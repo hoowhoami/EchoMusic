@@ -160,7 +160,7 @@ const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userSt
 
 const addToPlaybackQueues = computed(() =>
   playlistStore.playbackQueueList.filter(
-    (queue) => queue.id !== PERSONAL_FM_QUEUE_ID && queue.songs.length > 0,
+    (queue) => queue.id !== PERSONAL_FM_QUEUE_ID && (queue.songCount ?? queue.songs.length) > 0,
   ),
 );
 
@@ -458,7 +458,7 @@ const confirmRemoveFromPlaylist = async () => {
           <Icon :icon="iconList" width="16" height="16" />
           {{ queue.title || '播放队列' }}
         </span>
-        <span class="batch-playlist-count">{{ queue.songs.length }} 首</span>
+        <span class="batch-playlist-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
       </Button>
       <div class="batch-playlist-divider">
         <span>歌单</span>

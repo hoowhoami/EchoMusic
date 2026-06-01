@@ -7,6 +7,7 @@ import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
 import { registerShazamHandlers } from './shazam';
 import { registerExternalHandlers } from './external';
+import { registerStorageHandlers, unregisterStorageHandlers } from './storage';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -21,6 +22,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerDesktopLyricHandlers();
   registerShazamHandlers();
   registerExternalHandlers();
+  registerStorageHandlers();
   registered = true;
 };
 
@@ -54,6 +56,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('app:get-changelog');
   ipcMain.removeHandler('audio:import-impulse-response');
   ipcMain.removeHandler('audio:delete-impulse-response');
+  ipcMain.removeHandler('audio:reconcile-impulse-responses');
   ipcMain.removeHandler('get-all-fonts');
   ipcMain.removeHandler('desktop-lyric:get-snapshot');
   ipcMain.removeHandler('desktop-lyric:get-bounds');
@@ -64,4 +67,5 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('desktop-lyric:update-settings');
   ipcMain.removeAllListeners('desktop-lyric:sync-snapshot');
   ipcMain.removeHandler('external:resolve-playlist');
+  unregisterStorageHandlers();
 };

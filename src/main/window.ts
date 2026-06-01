@@ -7,52 +7,24 @@ import {
   powerSaveBlocker,
   screen,
 } from 'electron';
-import Conf from 'conf';
 import { join } from 'path';
 import type { CloseBehavior, ThemeMode } from '../shared/app';
-
-type WindowState = {
-  width: number;
-  height: number;
-  x?: number;
-  y?: number;
-  isMaximized: boolean;
-};
-
-type AppSettings = {
-  closeBehavior: CloseBehavior;
-  theme: ThemeMode;
-  rememberWindowSize: boolean;
-  preventSleep: boolean;
-  disableGpuAcceleration: boolean;
-  windowState: WindowState;
-};
-
-const settingsStore = new Conf<AppSettings>({
-  projectName: app.getName(),
-  defaults: {
-    closeBehavior: 'tray',
-    theme: 'system',
-    rememberWindowSize: true,
-    preventSleep: true,
-    disableGpuAcceleration: false,
-    windowState: {
-      width: 1100,
-      height: 750,
-      isMaximized: false,
-    },
-  },
-});
+import {
+  getMainAppSettings,
+  setMainAppSetting,
+  type MainWindowState as WindowState,
+} from './storage/settings';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
 const defaultWidth: number = 1150;
 const defaultHeight: number = 750;
 
-let closeBehavior: CloseBehavior = settingsStore.get('closeBehavior', 'tray');
-let currentTheme: ThemeMode = settingsStore.get('theme', 'system');
-let rememberWindowSize = settingsStore.get('rememberWindowSize', true);
-let preventSleep = settingsStore.get('preventSleep', true);
+const initialSettings = getMainAppSettings();
+let closeBehavior: CloseBehavior = initialSettings.closeBehavior;
+let currentTheme: ThemeMode = initialSettings.theme;
+let rememberWindowSize = initialSettings.rememberWindowSize;
+let preventSleep = initialSettings.preventSleep;
 let isPlaybackActive = false;
 let powerSaveBlockerId = -1;
 
@@ -127,18 +99,18 @@ app.on('before-quit', () => {
 // 监听关闭行为更新
 ipcMain.on('update-close-behavior', (_event, behavior: CloseBehavior) => {
   closeBehavior = behavior;
-  settingsStore.set('closeBehavior', behavior);
+  setMainAppSetting('closeBehavior', behavior);
 });
 
 // 监听主题更新，用于同步主进程背景色判断
 ipcMain.on('update-theme', (_event, theme: ThemeMode) => {
   currentTheme = theme;
-  settingsStore.set('theme', theme);
+  setMainAppSetting('theme', theme);
 });
 
 ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
   rememberWindowSize = enabled;
-  settingsStore.set('rememberWindowSize', enabled);
+  setMainAppSetting('rememberWindowSize', enabled);
 });
 
 const syncPowerSaveBlocker = () => {
@@ -161,17 +133,13 @@ ipcMain.on(
   (_event, payload: { enabled: boolean; isPlaying: boolean }) => {
     preventSleep = Boolean(payload?.enabled);
     isPlaybackActive = Boolean(payload?.isPlaying);
-    settingsStore.set('preventSleep', preventSleep);
+    setMainAppSetting('preventSleep', preventSleep);
     syncPowerSaveBlocker();
   },
 );
 
 const getPersistedWindowState = (): WindowState => {
-  return settingsStore.get('windowState', {
-    width: defaultWidth,
-    height: defaultHeight,
-    isMaximized: false,
-  });
+  return getMainAppSettings().windowState;
 };
 
 const hasVisibleArea = (bounds: { x?: number; y?: number; width: number; height: number }) => {
@@ -215,7 +183,7 @@ const persistWindowState = () => {
   // 因此最大化状态下只更新 isMaximized 标记，保留上一次窗口化时的 width/height/x/y
   if (maximized) {
     const prev = getPersistedWindowState();
-    settingsStore.set('windowState', {
+    setMainAppSetting('windowState', {
       width: prev.width,
       height: prev.height,
       x: prev.x,
@@ -225,7 +193,7 @@ const persistWindowState = () => {
     return;
   }
   const bounds = win.getBounds();
-  settingsStore.set('windowState', {
+  setMainAppSetting('windowState', {
     width: bounds.width,
     height: bounds.height,
     x: bounds.x,
@@ -291,11 +259,19 @@ export async function createWindow() {
     win?.show();
   });
 
-  // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.setZoomFactor(1.0);
-    win?.webContents.setVisualZoomLevelLimits(1, 1);
-  });
+  // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放。
+  // Windows 高 DPI（如 200%）下，全屏 / 最大化等窗口状态切换会意外重置 zoomFactor，
+  // 使页面被整体放大，右上角窗口控制按钮被挤出可视区域而“消失”。
+  // 因此除首次加载外，每次窗口状态切换后都重新强制一次。
+  const enforceNoZoom = () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.setZoomFactor(1.0);
+    win.webContents.setVisualZoomLevelLimits(1, 1);
+  };
+
+  win.webContents.on('did-finish-load', enforceNoZoom);
+  win.on('enter-full-screen', enforceNoZoom);
+  win.on('leave-full-screen', enforceNoZoom);
 
   if (url) {
     win.loadURL(url);

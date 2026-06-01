@@ -70,7 +70,7 @@ withDefaults(defineProps<Props>(), {
       <div class="flex items-center gap-2">
         <span class="text-[10px] font-semibold opacity-40 shrink-0">0.1</span>
         <SliderRoot
-          class="relative flex items-center select-none touch-none flex-1 h-5"
+          class="relative flex items-center select-none touch-none cursor-pointer flex-1 h-5"
           :model-value="[Math.round(player.playbackRate * 10)]"
           :min="1"
           :max="50"
@@ -78,11 +78,13 @@ withDefaults(defineProps<Props>(), {
           orientation="horizontal"
           @update:model-value="handlePlaybackRateSlider"
         >
-          <SliderTrack class="relative grow rounded-full h-[3px] bg-black/12 dark:bg-white/15">
+          <SliderTrack
+            class="relative grow rounded-full h-[3px] cursor-pointer bg-black/12 dark:bg-white/15"
+          >
             <SliderRange class="absolute h-full rounded-full bg-black dark:bg-white" />
           </SliderTrack>
           <SliderThumb
-            class="block w-3 h-3 bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
+            class="block w-3 h-3 cursor-pointer bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
           />
         </SliderRoot>
         <span class="text-[10px] font-semibold opacity-40 shrink-0">5x</span>

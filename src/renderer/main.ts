@@ -1,16 +1,16 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
-import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
 import { Icon } from '@iconify/vue';
 import type { ComponentPublicInstance } from 'vue';
 import App from './App.vue';
 import router from './router';
 import { logger } from '@/utils/logger';
+import { sqlitePersistPlugin } from '@/stores/sqlitePersist';
 import './style.css';
 
 const app = createApp(App);
 const pinia = createPinia();
-pinia.use(piniaPluginPersistedstate);
+pinia.use(sqlitePersistPlugin);
 
 const ERROR_REDIRECT_DEDUPE_MS = 1200;
 let lastErrorSignature = '';

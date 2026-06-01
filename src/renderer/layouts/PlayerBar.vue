@@ -580,7 +580,7 @@ onUnmounted(() => {
           <Icon :icon="iconList" width="16" height="16" />
           {{ queue.title || '播放队列' }}
         </span>
-        <span class="add-to-playlist-count">{{ queue.songs.length }} 首</span>
+        <span class="add-to-playlist-count">{{ queue.songCount ?? queue.songs.length }} 首</span>
       </Button>
       <div class="add-to-playlist-divider"><span>歌单</span></div>
       <div v-if="isPlaylistLoading" class="add-to-playlist-status">加载歌单中...</div>

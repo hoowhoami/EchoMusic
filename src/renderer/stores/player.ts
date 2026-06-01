@@ -3,6 +3,7 @@ import { reactive, toRefs } from 'vue';
 import { PERSONAL_FM_QUEUE_ID, usePlaylistStore } from './playlist';
 import { useLyricStore } from './lyric';
 import { useSettingStore } from './setting';
+import { useToastStore } from './toast';
 import logger from '@/utils/logger';
 import { PlayerEngine, type PlayerEngineEvents } from '@/utils/player';
 import type { Song } from '@/models/song';
@@ -24,6 +25,7 @@ export const usePlayerStore = defineStore(
     const playlistStore = usePlaylistStore();
     const settingStore = useSettingStore();
     const lyricStore = useLyricStore();
+    const toastStore = useToastStore();
 
     const resolver = createResolver(state, playlistStore, settingStore);
     const historyManager = createHistoryManager(state);
@@ -141,6 +143,7 @@ export const usePlayerStore = defineStore(
       showPlaybackNotice,
       clearPlaybackNotice,
     );
+    let impulseResponseFailureListenerRegistered = false;
 
     const toggleLyricView = (open?: boolean) => {
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
@@ -233,6 +236,15 @@ export const usePlayerStore = defineStore(
       });
     };
 
+    const disableActiveImpulseResponse = (failedPath?: string) => {
+      const active = settingStore.getSelectedImpulseResponse();
+      if (failedPath && active?.path && active.path !== failedPath) return;
+      if (!settingStore.impulseResponseEnabled) return;
+      settingStore.impulseResponseEnabled = false;
+      audioManager.setImpulseResponse(null, settingStore.impulseResponseMix);
+      toastStore.warning('IRS 音效加载失败，已自动关闭', 4200);
+    };
+
     const init = () => {
       engine.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
@@ -241,11 +253,24 @@ export const usePlayerStore = defineStore(
         settingStore.impulseResponseEnabled = false;
         settingStore.impulseResponseSafetyMigrationDone = true;
       }
-      engine.setImpulseResponse(getActiveImpulseResponsePath(), settingStore.impulseResponseMix);
+      void settingStore
+        .reconcileImpulseResponseFiles()
+        .finally(() =>
+          engine.setImpulseResponse(
+            getActiveImpulseResponsePath(),
+            settingStore.impulseResponseMix,
+          ),
+        );
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(state.playMode === 'single');
       registerSettingWatchers();
+      if (!impulseResponseFailureListenerRegistered) {
+        impulseResponseFailureListenerRegistered = true;
+        window.electron?.mpv?.onImpulseResponseDisabled?.((payload) => {
+          disableActiveImpulseResponse(payload?.path);
+        });
+      }
       deviceManager.registerOutputDeviceWatcher();
       void deviceManager.refreshOutputDevices();
 

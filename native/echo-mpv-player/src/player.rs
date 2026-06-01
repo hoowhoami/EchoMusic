@@ -100,6 +100,19 @@ impl MpvPlayer {
         }
     }
 
+    pub fn request_log_messages(&self, level: &str) -> Result<(), String> {
+        let c_level = CString::new(level).unwrap();
+        let rc = unsafe { (self.lib.mpv_request_log_messages)(self.handle, c_level.as_ptr()) };
+        if rc < 0 {
+            Err(format!(
+                "failed to request mpv log messages at {level}: {}",
+                self.error_string(rc),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     fn observe_property(&self, name: &str, format: c_int) {
         let c_name = CString::new(name).unwrap();
         unsafe {

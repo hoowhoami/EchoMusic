@@ -1,6 +1,7 @@
 import type { Song } from '@/models/song';
 import type { SetPlaybackQueueOptions } from '@/stores/playlist';
 import { MANUAL_PLAYBACK_QUEUE_ID } from '@/stores/playlist';
+import { toRawSongList } from '@/stores/playlist/helpers';
 import { isPlayableSong, isSameSong, splitValidSongs } from '@/utils/song';
 import type { PlayMode } from '../types';
 
@@ -12,6 +13,7 @@ export interface PlaybackQueueStoreLike {
     options?: SetPlaybackQueueOptions,
   ) => void;
   setActiveQueue?: (queueId: string | number) => void;
+  ensurePlaybackQueueSongsLoaded?: (queueId: string | number) => Promise<unknown>;
   appendToPlaybackQueue?: (songs: Song[], options?: SetPlaybackQueueOptions) => number;
   defaultList?: Song[];
   getPreferredManualQueueOptions?: (options?: SetPlaybackQueueOptions) => SetPlaybackQueueOptions;
@@ -138,13 +140,14 @@ export const queueAndPlaySong = async (
 ): Promise<boolean> => {
   const manualQueueOptions = playlistStore.getPreferredManualQueueOptions?.(options) ?? options;
   const queueId = manualQueueOptions?.queueId;
+  if (queueId) await playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
   const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
   const activeList = preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? []);
   const resolvedSong = resolvePlayableSongForRequest(song, [song]);
   if (!resolvedSong) return false;
   const nextList = activeList.slice();
   const exists = nextList.some((item) => isSameSong(item, resolvedSong));
-  const sourceList = exists ? activeList : [...nextList, resolvedSong];
+  const sourceList = toRawSongList(exists ? activeList : [...nextList, resolvedSong]);
 
   const isCurrentSong = String(playerStore.currentTrackId ?? '') === String(resolvedSong.id);
   if (isCurrentSong) {
@@ -194,6 +197,9 @@ export const addSongToPlayNext = (
   if (!resolvedSong) return false;
 
   const queueId = manualQueueOptions?.queueId;
+  if (queueId) {
+    void playlistStore.ensurePlaybackQueueSongsLoaded?.(queueId);
+  }
   const preferredList = queueId ? (playlistStore.getPlaybackQueueSongs?.(queueId) ?? []) : [];
   const list = (
     preferredList.length > 0 ? preferredList : (playlistStore.defaultList ?? [])

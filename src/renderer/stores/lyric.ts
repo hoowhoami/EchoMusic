@@ -71,6 +71,11 @@ export type ParsedLyricPreview = {
   tips: string;
 };
 
+type CandidateLyricDetail = {
+  detail: LyricDetailResponse;
+  parsed: ParsedLyricPreview;
+};
+
 type LyricSearchResponse = {
   candidates?: LyricSearchCandidate[];
   info?: LyricSearchCandidate[];
@@ -150,35 +155,31 @@ const compactCandidate = (candidate: LyricSearchCandidate): ManualLyricSelection
   adjust: candidate.adjust,
 });
 
-/**
- * 从多个歌词候选中优选一条最可能包含翻译+音译的歌词
- * content_format 含义：1=纯原歌词, 2=音译(krctype2格式), 3=只有音译, 4=翻译+音译
- * 优先级：官方推荐歌词 > content_format=4 > content_format=3 > content_format=2 > content_format=1
- * contenttype 含义：1=KRC格式(有时间戳), 2=纯文本(无时间戳) - 有时间戳的必须优先
- * krctype 含义：1=逐字歌词, 2=普通歌词
- * 同 content_format 下：contenttype=1(有时间戳) 优先 > product_from=官方推荐歌词 优先 > krctype=1 优于 krctype=2 > score 高优先
- */
-const selectBestCandidate = (candidates: LyricSearchCandidate[]): LyricSearchCandidate | null => {
+const scoreCandidate = (
+  candidate: LyricSearchCandidate,
+  parsed?: Pick<ParsedLyricPreview, 'hasTranslation' | 'hasRomanization' | 'lines'> | null,
+) => {
+  let priority = 0;
+  if (parsed?.hasTranslation && parsed.hasRomanization) priority += 220;
+  else if (parsed?.hasRomanization) priority += 140;
+  else if (parsed?.hasTranslation) priority += 100;
+  if ((parsed?.lines.length ?? 0) > 0) priority += 30;
+  if (candidate.contenttype !== 2) priority += 20;
+  if (candidate.product_from === '官方推荐歌词') priority += 300;
+  if (candidate.krctype === 1) priority += 10;
+  priority += (candidate.score ?? 0) / 100;
+  return priority;
+};
+
+const selectBestCandidate = (
+  candidates: LyricSearchCandidate[],
+  parsedByKey?: Record<string, ParsedLyricPreview | null | undefined>,
+): LyricSearchCandidate | null => {
   if (candidates.length === 0) return null;
   if (candidates.length === 1) return candidates[0];
 
   const scored = candidates.map((c) => {
-    let priority = 0;
-    // content_format=4 最优
-    if (c.content_format === 4) priority += 200;
-    // content_format=3 优先
-    else if (c.content_format === 3) priority += 100;
-    // content_format=2 优先
-    else if (c.content_format === 2) priority += 50;
-    // content_format=1 不加分
-
-    // product_from = 官方推荐歌词 优先级最高，尽量避免用户上传歌词覆盖官方歌词
-    if (c.product_from === '官方推荐歌词') priority += 300;
-
-    // krctype=1 优于 krctype=2
-    if (c.krctype === 1) priority += 10;
-    // 原始 score 作为次要排序依据
-    priority += (c.score ?? 0) / 100;
+    const priority = scoreCandidate(c, parsedByKey?.[getLyricCandidateKey(c)] ?? null);
     return { candidate: c, priority };
   });
 
@@ -538,6 +539,8 @@ export const useLyricStore = defineStore('lyric', {
     sourceDialogOpen: false,
     candidateHash: '',
     candidates: [] as LyricSearchCandidate[],
+    candidatePreviewMap: {} as Record<string, ParsedLyricPreview | null>,
+    candidateDetailMap: {} as Record<string, LyricDetailResponse | null>,
     autoCandidateKey: '',
     currentCandidateKey: '',
     manualLyricMap: {} as Record<string, ManualLyricSelection>,
@@ -701,16 +704,66 @@ export const useLyricStore = defineStore('lyric', {
 
       this.candidateHash = normalizedHash;
       this.candidates = candidates;
+      this.candidatePreviewMap = {};
+      this.candidateDetailMap = {};
       this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
+      await this.hydrateCandidatePreviews(candidates);
       return candidates;
     },
-    async previewCandidate(candidate: LyricSearchCandidate): Promise<ParsedLyricPreview | null> {
+    async resolveCandidateDetail(
+      candidate: LyricSearchCandidate,
+    ): Promise<CandidateLyricDetail | null> {
       if (!isUsableCandidate(candidate)) return null;
+      const key = getLyricCandidateKey(candidate);
+      if (Object.prototype.hasOwnProperty.call(this.candidateDetailMap, key)) {
+        const detail = this.candidateDetailMap[key];
+        const parsed = this.candidatePreviewMap[key];
+        return detail && parsed ? { detail, parsed } : null;
+      }
+
       const lyricData = normalizeDetailPayload(
         await getLyric(String(candidate.id), String(candidate.accesskey)),
       );
-      if (!lyricData) return null;
-      return parseLyricDetailPayload(lyricData);
+      if (!lyricData) {
+        this.candidateDetailMap[key] = null;
+        this.candidatePreviewMap[key] = null;
+        return null;
+      }
+
+      const parsed = parseLyricDetailPayload(lyricData);
+      this.candidateDetailMap[key] = lyricData;
+      this.candidatePreviewMap[key] = parsed;
+      return { detail: lyricData, parsed };
+    },
+    async hydrateCandidatePreviews(candidates: LyricSearchCandidate[]) {
+      const usableCandidates = candidates.filter(isUsableCandidate);
+      if (usableCandidates.length === 0) return;
+
+      await Promise.all(
+        usableCandidates.map((candidate) =>
+          this.resolveCandidateDetail(candidate).catch((error) => {
+            logger.warn('LyricStore', 'Resolve lyric candidate failed', error, {
+              key: getLyricCandidateKey(candidate),
+            });
+            this.candidateDetailMap[getLyricCandidateKey(candidate)] = null;
+            this.candidatePreviewMap[getLyricCandidateKey(candidate)] = null;
+            return null;
+          }),
+        ),
+      );
+
+      const resolvedCandidates = candidates.filter((candidate) =>
+        Boolean(this.candidateDetailMap[getLyricCandidateKey(candidate)]),
+      );
+      const autoCandidate = selectBestCandidate(
+        resolvedCandidates.length > 0 ? resolvedCandidates : candidates,
+        this.candidatePreviewMap,
+      );
+      this.autoCandidateKey = autoCandidate ? getLyricCandidateKey(autoCandidate) : '';
+    },
+    async previewCandidate(candidate: LyricSearchCandidate): Promise<ParsedLyricPreview | null> {
+      const resolved = await this.resolveCandidateDetail(candidate);
+      return resolved?.parsed ?? null;
     },
     async applyCandidate(
       hash: string,
@@ -720,12 +773,10 @@ export const useLyricStore = defineStore('lyric', {
       const normalizedHash = String(hash ?? '').trim();
       if (!normalizedHash || !isUsableCandidate(candidate)) return false;
 
-      const lyricData = normalizeDetailPayload(
-        await getLyric(String(candidate.id), String(candidate.accesskey)),
-      );
-      if (!lyricData) return false;
+      const resolved = await this.resolveCandidateDetail(candidate);
+      if (!resolved) return false;
 
-      this.parseLyricContent(lyricData, normalizedHash, { detailResolved: true });
+      this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
       this.currentCandidateKey = getLyricCandidateKey(candidate);
       if (options?.remember) {
         this.manualLyricMap[normalizedHash] = compactCandidate(candidate);
@@ -749,15 +800,19 @@ export const useLyricStore = defineStore('lyric', {
       const offsetMs = this.timeOffsetMap[this.loadedHash] || 0;
       const currentTimeMs = Math.round(currentTime * 1000) + offsetMs;
       let nextIndex = -1;
+      let low = 0;
+      let high = this.lines.length - 1;
 
-      // 与桌面歌词保持一致：找到最后一个 startTime <= currentTimeMs 的行
-      for (let index = 0; index < this.lines.length; index += 1) {
-        const currentLine = this.lines[index];
-        const start = currentLine.characters[0]?.startTime ?? Math.round(currentLine.time * 1000);
+      // 找到最后一个 startTime <= currentTimeMs 的行。播放中这是高频路径，用二分避免逐帧线性扫描。
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const line = this.lines[mid];
+        const start = line.characters[0]?.startTime ?? Math.round(line.time * 1000);
         if (currentTimeMs >= start) {
-          nextIndex = index;
+          nextIndex = mid;
+          low = mid + 1;
         } else {
-          break;
+          high = mid - 1;
         }
       }
 
@@ -828,7 +883,7 @@ export const useLyricStore = defineStore('lyric', {
         const target =
           (isUsableCandidate(manualCandidate)
             ? manualCandidate
-            : selectBestCandidate(candidates)) ?? null;
+            : selectBestCandidate(candidates, this.candidatePreviewMap)) ?? null;
 
         if (!target?.id || !target.accesskey) {
           if (options?.preserveCurrent && this.lines.length > 0) {
@@ -842,12 +897,10 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
 
-        const lyricData = normalizeDetailPayload(
-          await getLyric(String(target.id), String(target.accesskey)),
-        );
+        const resolved = await this.resolveCandidateDetail(target);
         if (requestSerial !== this.requestSerial) return;
 
-        if (!lyricData) {
+        if (!resolved) {
           if (options?.preserveCurrent && this.lines.length > 0) {
             this.isLoading = false;
             this.loadedHash = normalizedHash;
@@ -859,7 +912,7 @@ export const useLyricStore = defineStore('lyric', {
           return;
         }
 
-        this.parseLyricContent(lyricData, normalizedHash, { detailResolved: true });
+        this.parseLyricContent(resolved.detail, normalizedHash, { detailResolved: true });
         this.currentCandidateKey = getLyricCandidateKey(target);
       } catch (error) {
         if (requestSerial !== this.requestSerial) return;

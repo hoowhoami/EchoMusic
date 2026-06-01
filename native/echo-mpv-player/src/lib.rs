@@ -65,6 +65,9 @@ pub fn initialize(lib_path: String) -> napi::Result<()> {
 
     let player =
         unsafe { MpvPlayer::new(lib) }.map_err(|e| napi::Error::from_reason(e))?;
+    player
+        .request_log_messages("warn")
+        .map_err(|e| napi::Error::from_reason(e))?;
     let player = Arc::new(player);
 
     let mut guard = PLAYER

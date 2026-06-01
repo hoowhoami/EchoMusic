@@ -9,10 +9,26 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
-import type { ImportImpulseResponseResult, ImpulseResponsePlaybackOptions } from '../shared/audio';
+import type {
+  ImportImpulseResponseResult,
+  ImpulseResponseFile,
+  ImpulseResponsePlaybackOptions,
+} from '../shared/audio';
 import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
+import type {
+  StorageAppendQueueItemsPayload,
+  StoragePlaybackSnapshot,
+  StoragePlaybackQueueState,
+  StorageQueueIdPayload,
+  StorageReplaceQueuePayload,
+  StorageRemoveQueueItemPayload,
+  StorageReorderQueueItemsPayload,
+  StorageResetResult,
+  StorageSetQueueCurrentTrackPayload,
+  StorageUpdateQueueMetaPayload,
+} from '../shared/storage';
 
 const ipcListenerMap = new Map<
   string,
@@ -34,11 +50,35 @@ const getWrappedListener = (channel: string, func: (...args: any[]) => void) => 
   return wrapped;
 };
 
+const toPlainIpcPayload = <T>(value: T): T => {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'object') return value;
+  if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return value;
+
+  const seen = new WeakSet<object>();
+  return JSON.parse(
+    JSON.stringify(value, (_key, nextValue) => {
+      if (typeof nextValue === 'bigint') return nextValue.toString();
+      if (typeof nextValue !== 'object' || nextValue === null) return nextValue;
+      if (seen.has(nextValue)) return undefined;
+      seen.add(nextValue);
+      return nextValue;
+    }),
+  ) as T;
+};
+
+const invokeWithPlainPayload = <T = unknown>(channel: string, ...args: unknown[]) =>
+  ipcRenderer.invoke(channel, ...args.map(toPlainIpcPayload)) as Promise<T>;
+
+const sendWithPlainPayload = (channel: string, ...args: unknown[]) => {
+  ipcRenderer.send(channel, ...args.map(toPlainIpcPayload));
+};
+
 contextBridge.exposeInMainWorld('electron', {
   platform: process.platform,
   ipcRenderer: {
-    send: (channel: string, ...args: any[]) => ipcRenderer.send(channel, ...args),
-    invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+    send: (channel: string, ...args: any[]) => sendWithPlainPayload(channel, ...args),
+    invoke: (channel: string, ...args: any[]) => invokeWithPlainPayload(channel, ...args),
     on: (channel: string, func: (...args: any[]) => void) => {
       const wrapped = getWrappedListener(channel, func);
       ipcRenderer.on(channel, wrapped);
@@ -52,7 +92,7 @@ contextBridge.exposeInMainWorld('electron', {
   },
   shortcuts: {
     register: (payload: { enabled: boolean; shortcutMap: ShortcutMap }) =>
-      ipcRenderer.invoke('shortcuts:register', payload) as Promise<ShortcutRegistrationResult>,
+      invokeWithPlainPayload<ShortcutRegistrationResult>('shortcuts:register', payload),
     refresh: () => ipcRenderer.invoke('shortcuts:refresh') as Promise<ShortcutRegistrationResult>,
     onTrigger: (func: (command: string) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, command: string) => func(command);
@@ -74,6 +114,8 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('audio:import-impulse-response') as Promise<ImportImpulseResponseResult>,
     deleteImpulseResponse: (filePath: string) =>
       ipcRenderer.invoke('audio:delete-impulse-response', filePath) as Promise<boolean>,
+    reconcileImpulseResponses: (files: ImpulseResponseFile[]) =>
+      invokeWithPlainPayload<ImpulseResponseFile[]>('audio:reconcile-impulse-responses', files),
   },
   updater: {
     download: () => ipcRenderer.send('update:download'),
@@ -96,11 +138,11 @@ contextBridge.exposeInMainWorld('electron', {
       params?: Record<string, any>;
       data?: any;
       headers?: Record<string, string>;
-    }) => ipcRenderer.invoke('api:request', config),
+    }) => invokeWithPlainPayload('api:request', config),
   },
   tray: {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) =>
-      ipcRenderer.send('tray:sync-playback', payload),
+      sendWithPlainPayload('tray:sync-playback', payload),
     onSetPlayMode: (func: (playMode: PlayMode) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, playMode: PlayMode) => func(playMode);
       ipcRenderer.on('tray:set-play-mode', listener);
@@ -115,9 +157,9 @@ contextBridge.exposeInMainWorld('electron', {
     toggleLock: () =>
       ipcRenderer.invoke('desktop-lyric:toggle-lock') as Promise<DesktopLyricSnapshot>,
     updateSettings: (payload: Partial<DesktopLyricSettings>) =>
-      ipcRenderer.invoke('desktop-lyric:update-settings', payload) as Promise<DesktopLyricSnapshot>,
+      invokeWithPlainPayload<DesktopLyricSnapshot>('desktop-lyric:update-settings', payload),
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) =>
-      ipcRenderer.send('desktop-lyric:sync-snapshot', payload),
+      sendWithPlainPayload('desktop-lyric:sync-snapshot', payload),
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: DesktopLyricSnapshot) =>
         func(snapshotPayload);
@@ -142,7 +184,7 @@ contextBridge.exposeInMainWorld('electron', {
   logging: {
     get: () => ipcRenderer.invoke('logging:get-settings') as Promise<LogSettings>,
     update: (settings: Partial<LogSettings>) =>
-      ipcRenderer.invoke('logging:update-settings', settings) as Promise<LogSettings>,
+      invokeWithPlainPayload<LogSettings>('logging:update-settings', settings),
   },
   mpv: {
     load: (url: string) => ipcRenderer.invoke('mpv:load', url),
@@ -155,9 +197,9 @@ contextBridge.exposeInMainWorld('electron', {
     seek: (time: number) => ipcRenderer.invoke('mpv:seek', time),
     setVolume: (volume: number) => ipcRenderer.invoke('mpv:set-volume', volume),
     setSpeed: (speed: number) => ipcRenderer.invoke('mpv:set-speed', speed),
-    setEqualizer: (gains: number[]) => ipcRenderer.invoke('mpv:set-equalizer', gains),
+    setEqualizer: (gains: number[]) => invokeWithPlainPayload('mpv:set-equalizer', gains),
     setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) =>
-      ipcRenderer.invoke('mpv:set-impulse-response', payload),
+      invokeWithPlainPayload('mpv:set-impulse-response', payload),
     getAudioFilter: () => ipcRenderer.invoke('mpv:get-audio-filter') as Promise<string>,
     setAudioDevice: (deviceName: string) => ipcRenderer.invoke('mpv:set-audio-device', deviceName),
     getAudioDevices: () =>
@@ -207,6 +249,14 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('mpv:error', listener);
       return () => ipcRenderer.removeListener('mpv:error', listener);
     },
+    onImpulseResponseDisabled: (func: (payload: { path?: string; reason?: string }) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: { path?: string; reason?: string },
+      ) => func(payload);
+      ipcRenderer.on('mpv:impulse-response-disabled', listener);
+      return () => ipcRenderer.removeListener('mpv:impulse-response-disabled', listener);
+    },
     onAudioDeviceListChanged: (
       func: (devices: Array<{ name: string; description: string }>) => void,
     ) => {
@@ -226,7 +276,68 @@ contextBridge.exposeInMainWorld('electron', {
   },
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) =>
-      ipcRenderer.invoke('external:resolve-playlist', req) as Promise<ResolvePlaylistResponse>,
+      invokeWithPlainPayload<ResolvePlaylistResponse>('external:resolve-playlist', req),
+  },
+  storage: {
+    getPlaybackSnapshot: () =>
+      ipcRenderer.invoke('storage:playback:get-snapshot') as Promise<StoragePlaybackSnapshot>,
+    getPlaybackQueue: (payload: StorageQueueIdPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:get-queue',
+        payload,
+      ) as Promise<StoragePlaybackQueueState | null>,
+    replacePlaybackQueue: (payload: StorageReplaceQueuePayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:replace-queue',
+        payload,
+      ) as Promise<StorageResetResult>,
+    appendPlaybackQueueItems: (payload: StorageAppendQueueItemsPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:append-items',
+        payload,
+      ) as Promise<StorageResetResult>,
+    updatePlaybackQueueMeta: (payload: StorageUpdateQueueMetaPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:update-queue-meta',
+        payload,
+      ) as Promise<StorageResetResult>,
+    clearPlaybackQueue: (payload: StorageUpdateQueueMetaPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:clear-queue',
+        payload,
+      ) as Promise<StorageResetResult>,
+    removePlaybackQueue: (payload: StorageQueueIdPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:remove-queue',
+        payload,
+      ) as Promise<StoragePlaybackSnapshot>,
+    removePlaybackQueueItem: (payload: StorageRemoveQueueItemPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:remove-item',
+        payload,
+      ) as Promise<StorageResetResult>,
+    reorderPlaybackQueueItems: (payload: StorageReorderQueueItemsPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:reorder-items',
+        payload,
+      ) as Promise<StorageResetResult>,
+    setQueueCurrentTrack: (payload: StorageSetQueueCurrentTrackPayload) =>
+      invokeWithPlainPayload(
+        'storage:playback:set-current-track',
+        payload,
+      ) as Promise<StorageResetResult>,
+    setActiveQueue: (queueId: string) =>
+      ipcRenderer.invoke(
+        'storage:playback:set-active-queue',
+        queueId,
+      ) as Promise<StorageResetResult>,
+    getKv: <T = unknown>(key: string) =>
+      ipcRenderer.invoke('storage:kv:get', key) as Promise<T | null>,
+    setKv: (key: string, value: unknown) =>
+      invokeWithPlainPayload<StorageResetResult>('storage:kv:set', key, value),
+    deleteKv: (key: string) =>
+      ipcRenderer.invoke('storage:kv:delete', key) as Promise<StorageResetResult>,
+    resetAll: () => ipcRenderer.invoke('storage:reset-all') as Promise<StorageResetResult>,
   },
   mediaControls: {
     updateMetadata: (payload: {
@@ -235,11 +346,11 @@ contextBridge.exposeInMainWorld('electron', {
       album: string;
       coverUrl?: string;
       durationMs?: number;
-    }) => ipcRenderer.invoke('media-control:update-metadata', payload),
+    }) => invokeWithPlainPayload('media-control:update-metadata', payload),
     updateState: (payload: { status: string }) =>
-      ipcRenderer.invoke('media-control:update-state', payload),
+      invokeWithPlainPayload('media-control:update-state', payload),
     updateTimeline: (payload: { currentTimeMs: number; totalTimeMs: number }) =>
-      ipcRenderer.invoke('media-control:update-timeline', payload),
+      invokeWithPlainPayload('media-control:update-timeline', payload),
     available: () => ipcRenderer.invoke('media-control:available') as Promise<boolean>,
     onEvent: (func: (event: { type: string; positionMs?: number }) => void) => {
       const listener = (

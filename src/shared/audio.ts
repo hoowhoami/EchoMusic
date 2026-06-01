@@ -9,7 +9,9 @@ export interface ImpulseResponseFile {
 export interface ImportImpulseResponseResult {
   canceled: boolean;
   file?: ImpulseResponseFile;
+  files?: ImpulseResponseFile[];
   error?: string;
+  errors?: string[];
 }
 
 export interface ImpulseResponsePlaybackOptions {

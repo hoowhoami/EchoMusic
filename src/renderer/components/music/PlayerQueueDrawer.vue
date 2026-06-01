@@ -87,13 +87,16 @@ const currentPlaybackQueue = computed(() => {
   );
 });
 
+const getQueueCount = (queue: QueueLike | null | undefined) =>
+  Math.max(0, queue?.songCount ?? queue?.songs.length ?? 0);
+
 const queueOptions = computed(() => {
   const list: QueueLike[] = [];
-  if (currentPlaybackQueue.value?.songs.length) list.push(currentPlaybackQueue.value);
+  if (getQueueCount(currentPlaybackQueue.value) > 0) list.push(currentPlaybackQueue.value);
   if (
     playlistStore.customPlaybackQueue &&
     playlistStore.customPlaybackQueue.id !== currentPlaybackQueue.value?.id &&
-    playlistStore.customPlaybackQueue.songs.length > 0
+    getQueueCount(playlistStore.customPlaybackQueue) > 0
   ) {
     list.push(playlistStore.customPlaybackQueue);
   }
@@ -178,11 +181,11 @@ const headerSubtitle = computed(() => {
 });
 const headerMeta = computed(() => {
   if (!previewQueue.value) return '0 首';
-  const count = previewQueue.value.songs.length;
+  const count = getQueueCount(previewQueue.value);
   return `${count} 首`;
 });
 const canAddPreviewQueue = computed(
-  () => userStore.isLoggedIn && !!previewQueue.value && previewQueue.value.songs.length > 0,
+  () => userStore.isLoggedIn && !!previewQueue.value && getQueueCount(previewQueue.value) > 0,
 );
 const createdPlaylists = computed(() => playlistStore.getCreatedPlaylists(userStore.info?.userid));
 
@@ -330,6 +333,9 @@ const setPreviewQueueByIndex = (index: number, animate = true) => {
     return;
   }
   previewQueueId.value = targetQueue.id;
+  if (targetQueue.songs.length === 0 && getQueueCount(targetQueue) > 0) {
+    void playlistStore.loadPlaybackQueueFromStorage(targetQueue.id);
+  }
   animatePageTransition.value = animate;
   if (animate) schedulePageTransitionEnd();
   else clearPageTransitionTimer();
@@ -517,6 +523,11 @@ const handleClear = () => {
 };
 
 const handleAddToPlaylist = async () => {
+  const queue = previewQueue.value;
+  if (!queue || getQueueCount(queue) === 0) return;
+  if (queue.songs.length === 0) {
+    await playlistStore.loadPlaybackQueueFromStorage(queue.id);
+  }
   if (!previewQueue.value?.songs.length) return;
   if (!userStore.isLoggedIn) {
     toastStore.loginRequired('添加到歌单');
@@ -588,6 +599,9 @@ watch(
     }
 
     previewQueueId.value = currentPlaybackQueue.value?.id ?? queueOptions.value[0]?.id ?? null;
+    if (previewQueue.value?.songs.length === 0 && getQueueCount(previewQueue.value) > 0) {
+      await playlistStore.loadPlaybackQueueFromStorage(previewQueue.value.id);
+    }
     animatePageTransition.value = false;
     await nextTick();
     await initSortable();
@@ -610,6 +624,9 @@ watch(
   () => previewQueueId.value,
   async () => {
     if (!open.value) return;
+    if (previewQueue.value?.songs.length === 0 && getQueueCount(previewQueue.value) > 0) {
+      await playlistStore.loadPlaybackQueueFromStorage(previewQueue.value.id);
+    }
     await initSortable();
     await nextTick();
     // 移除这里的 scrollToCurrent 调用，避免切换队列时自动滚动
@@ -636,7 +653,7 @@ watch(
 );
 
 watch(
-  () => queueOptions.value.map((queue) => `${queue.id}:${queue.songs.length}`).join('|'),
+  () => queueOptions.value.map((queue) => `${queue.id}:${getQueueCount(queue)}`).join('|'),
   async () => {
     if (open.value) {
       await initSortable();

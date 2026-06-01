@@ -3,6 +3,7 @@ import type { Song } from '@/models/song';
 import logger from '@/utils/logger';
 import type { PlayerState } from './state';
 import { resolveServerTimestamp, resolveTrackMxid, summarizeSong, trimPlayCountMap } from './utils';
+import { toRawSong } from '../playlist/helpers';
 
 const HISTORY_UPLOAD_MIN_SECONDS = 15;
 const HISTORY_UPLOAD_PROGRESS_RATIO = 0.5;
@@ -90,11 +91,11 @@ export const createHistoryManager = (state: PlayerState) => {
         state.historyUploadPlayCount = playCount;
         syncTrackedPlayCount(target, playCount);
         if (state.currentTrackSnapshot && String(state.currentTrackSnapshot.id) === activeTrackId) {
-          state.currentTrackSnapshot = {
+          state.currentTrackSnapshot = toRawSong({
             ...state.currentTrackSnapshot,
             playCount,
             lastPlayedAt: timestamp,
-          };
+          });
         }
         logger.info('PlayerHistory', 'Play history uploaded', {
           track: summarizeSong(target),
