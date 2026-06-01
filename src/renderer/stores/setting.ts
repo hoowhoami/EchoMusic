@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import type { CloseBehavior, ThemeMode } from '../../shared/app';
+import type { AppLogLevel, LogSettings } from '../../shared/logging';
 import type {
   AudioQualityValue,
   OutputDeviceDisconnectBehavior,
@@ -7,6 +8,8 @@ import type {
   OutputDeviceStatus,
 } from '../types';
 import { buildFontFamily } from '../../shared/font';
+import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../shared/audio';
+import { configureRendererLogger } from '@/utils/logger';
 
 export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayback: '⌘Space',
@@ -36,6 +39,21 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
   togglePlayMode: '⌘⇧P',
   toggleWindow: '⌥⌘S',
   toggleSidebar: '⌘⇧B',
+};
+
+const getUniqueImpulseResponseName = (name: string, existingNames: string[]): string => {
+  const baseName = normalizeImpulseResponseName(name);
+  const usedNames = new Set(
+    existingNames.map((item) => normalizeImpulseResponseName(item).toLocaleLowerCase()),
+  );
+  if (!usedNames.has(baseName.toLocaleLowerCase())) return baseName;
+
+  let index = 2;
+  while (true) {
+    const nextName = `${baseName} ${index}`;
+    if (!usedNames.has(nextName.toLocaleLowerCase())) return nextName;
+    index += 1;
+  }
 };
 
 export const useSettingStore = defineStore('setting', {
@@ -88,6 +106,11 @@ export const useSettingStore = defineStore('setting', {
     showAudioQualityBadge: true,
     volumeNormalization: true,
     volumeNormalizationLufs: -14,
+    impulseResponseEnabled: false,
+    selectedImpulseResponseId: '',
+    impulseResponseMix: 0.4,
+    impulseResponseFiles: [] as ImpulseResponseFile[],
+    impulseResponseSafetyMigrationDone: false,
     keepAliveEnabled: true,
     keepAliveMax: 20,
     playResumeTimeout: 5,
@@ -100,6 +123,9 @@ export const useSettingStore = defineStore('setting', {
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     disableGpuAcceleration: false,
+    logLevel: 'info' as AppLogLevel,
+    logApiResponseBody: false,
+    logDiagnosticUntil: 0,
     // 字体设置
     globalFont: 'system-ui',
     lyricFont: 'follow',
@@ -198,9 +224,90 @@ export const useSettingStore = defineStore('setting', {
         );
       }
     },
+    getLogSettings(): LogSettings {
+      return {
+        level: this.logLevel,
+        apiResponseBody: this.logApiResponseBody,
+        diagnosticUntil: this.logDiagnosticUntil,
+      };
+    },
+    syncLogSettings() {
+      const settings = this.getLogSettings();
+      configureRendererLogger(settings);
+      if (window.electron?.logging) {
+        void window.electron.logging.update(settings);
+      } else if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('logging:update-settings', settings);
+      }
+    },
+    setLogLevel(level: AppLogLevel) {
+      this.logLevel = level;
+      this.syncLogSettings();
+    },
+    setLogApiResponseBody(enabled: boolean) {
+      this.logApiResponseBody = enabled;
+      this.syncLogSettings();
+    },
+    enableTemporaryDiagnosticLogging(minutes = 10) {
+      this.logDiagnosticUntil = Date.now() + Math.max(1, minutes) * 60 * 1000;
+      this.syncLogSettings();
+    },
+    disableTemporaryDiagnosticLogging() {
+      this.logDiagnosticUntil = 0;
+      this.syncLogSettings();
+    },
     setOutputDeviceStatus(status: OutputDeviceStatus, message = '') {
       this.outputDeviceStatus = status;
       this.outputDeviceStatusMessage = message;
+    },
+    addImpulseResponseFile(file: ImpulseResponseFile) {
+      const normalizedFile = {
+        ...file,
+        name: getUniqueImpulseResponseName(
+          file.name,
+          this.impulseResponseFiles.filter((item) => item.id !== file.id).map((item) => item.name),
+        ),
+      };
+      this.impulseResponseFiles = [
+        normalizedFile,
+        ...this.impulseResponseFiles.filter((item) => item.id !== normalizedFile.id),
+      ];
+      this.selectedImpulseResponseId = normalizedFile.id;
+    },
+    removeImpulseResponseFile(id: string) {
+      const target = this.impulseResponseFiles.find((item) => item.id === id);
+      this.impulseResponseFiles = this.impulseResponseFiles.filter((item) => item.id !== id);
+      if (this.selectedImpulseResponseId === id) {
+        const next = this.impulseResponseFiles[0] ?? null;
+        this.selectedImpulseResponseId = next?.id ?? '';
+        this.impulseResponseEnabled = false;
+      }
+      if (target?.path && window.electron?.audioEffects) {
+        void window.electron.audioEffects.deleteImpulseResponse(target.path);
+      }
+    },
+    setSelectedImpulseResponse(id: string) {
+      if (!this.impulseResponseFiles.some((item) => item.id === id)) return;
+      this.selectedImpulseResponseId = id;
+      this.impulseResponseEnabled = true;
+    },
+    renameImpulseResponseFile(id: string, name: string) {
+      const normalizedName = getUniqueImpulseResponseName(
+        name,
+        this.impulseResponseFiles.filter((item) => item.id !== id).map((item) => item.name),
+      );
+      this.impulseResponseFiles = this.impulseResponseFiles.map((item) =>
+        item.id === id ? { ...item, name: normalizedName } : item,
+      );
+    },
+    setImpulseResponseMix(value: number) {
+      this.impulseResponseMix = Math.min(1, Math.max(0.1, Number(value) || 0.4));
+    },
+    getSelectedImpulseResponse(): ImpulseResponseFile | null {
+      if (!this.selectedImpulseResponseId) return null;
+      return (
+        this.impulseResponseFiles.find((item) => item.id === this.selectedImpulseResponseId) ?? null
+      );
     },
     addToSearchHistory(keyword: string) {
       const normalized = keyword.trim();

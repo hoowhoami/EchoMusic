@@ -1,8 +1,10 @@
 import { EventEmitter } from 'events';
 import { app } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import { resolveLibmpvPath, resolveLibmpvDir } from './path';
 import type { MpvAudioDevice, MpvState, MpvTrackInfo } from './types';
+import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import log from '../logger';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
@@ -42,6 +44,14 @@ interface MpvAddon {
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+const DEFAULT_IMPULSE_RESPONSE_MIX = 0.4;
+const IMPULSE_RESPONSE_WET_GAIN_DB = 18;
+
+const escapeLavfiQuotedValue = (value: string): string =>
+  value.replace(/\\/g, '/').replace(/'/g, "\\'");
+
+const quoteMpvOptionValue = (value: string): string =>
+  `%${Buffer.byteLength(value, 'utf8')}%${value}`;
 
 export class MpvController extends EventEmitter {
   private addon: MpvAddon | null = null;
@@ -67,6 +77,8 @@ export class MpvController extends EventEmitter {
 
   private equalizerGains: number[] = Array(10).fill(0);
   private normalizationGainDb = 0;
+  private impulseResponsePath = '';
+  private impulseResponseMix = DEFAULT_IMPULSE_RESPONSE_MIX;
 
   constructor() {
     super();
@@ -425,6 +437,26 @@ export class MpvController extends EventEmitter {
     await this.syncAudioFilters();
   }
 
+  async setImpulseResponse(options: string | ImpulseResponsePlaybackOptions): Promise<void> {
+    const filePath = typeof options === 'string' ? options : options.filePath;
+    const normalizedPath = String(filePath ?? '').trim();
+    this.impulseResponseMix =
+      typeof options === 'string'
+        ? DEFAULT_IMPULSE_RESPONSE_MIX
+        : clamp(Number(options.mix) || DEFAULT_IMPULSE_RESPONSE_MIX, 0.1, 1);
+
+    if (normalizedPath && !fs.existsSync(normalizedPath)) {
+      log.warn(
+        '[MpvController] Impulse response file not found, disabling filter:',
+        normalizedPath,
+      );
+      this.impulseResponsePath = '';
+    } else {
+      this.impulseResponsePath = normalizedPath;
+    }
+    await this.syncAudioFilters();
+  }
+
   async setAudioDevice(deviceName: string): Promise<void> {
     if (!this.addon) return;
     this.addon.setAudioDevice(deviceName);
@@ -465,6 +497,7 @@ export class MpvController extends EventEmitter {
 
     const filters: string[] = [];
     const hasEq = this.equalizerGains.some((g) => g !== 0);
+    let hasImpulseResponseFilter = false;
 
     if (hasEq) {
       const freqs = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
@@ -480,6 +513,17 @@ export class MpvController extends EventEmitter {
       }
     }
 
+    if (this.impulseResponsePath) {
+      hasImpulseResponseFilter = true;
+      const irPath = escapeLavfiQuotedValue(this.impulseResponsePath);
+      const mix = Number(this.impulseResponseMix.toFixed(2));
+      const graph =
+        `[in]asplit=2[irsdry][irsin];amovie='${irPath}',asetpts=N/SR/TB[ir];` +
+        `[irsin][ir]afir=dry=1:wet=1,volume=${IMPULSE_RESPONSE_WET_GAIN_DB}dB[irswet];` +
+        `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0,alimiter=limit=0.98[out]`;
+      filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
+    }
+
     if (this.normalizationGainDb !== 0) {
       filters.push(`volume=${this.normalizationGainDb}dB`);
     }
@@ -492,7 +536,14 @@ export class MpvController extends EventEmitter {
 
     const filterString = filters.join(',');
     log.info('[MpvController] Applying audio filter:', filterString);
-    this.addon.setAudioFilter(filterString);
+    try {
+      this.addon.setAudioFilter(filterString);
+    } catch (err) {
+      if (!hasImpulseResponseFilter) throw err;
+      log.warn('[MpvController] Impulse response filter failed, disabling IRS:', err);
+      this.impulseResponsePath = '';
+      await this.syncAudioFilters();
+    }
   }
 
   // ── 淡入淡出 ──

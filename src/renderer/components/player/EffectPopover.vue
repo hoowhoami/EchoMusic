@@ -10,11 +10,12 @@ import Badge from '@/components/ui/Badge.vue';
 import { iconSlidersHorizontal } from '@/icons';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import type { AudioEffectValue } from '@/types';
+import { normalizeImpulseResponseName } from '../../../shared/audio';
 
 const { player, settingStore, currentTrack, audioEffectButtonBadge, setAudioEffect } =
   usePlayerControls();
 
-const activeTab = ref<'effect' | 'eq'>('effect');
+const activeTab = ref<'effect' | 'eq' | 'irs'>('effect');
 
 const audioEffectOptions: readonly { value: AudioEffectValue; label: string }[] = [
   { value: 'none', label: '原声' },
@@ -43,6 +44,11 @@ const eqPresets = [
 
 const frequencies = ['60', '170', '310', '600', '1k', '3k', '6k', '12k', '14k', '16k'];
 const gains = computed(() => player.equalizerGains);
+const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
+const impulseResponseActive = computed(
+  () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
+);
+const impulseResponseStrength = computed(() => Math.round(settingStore.impulseResponseMix * 100));
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -71,6 +77,22 @@ const resetGains = () => {
   player.setEq([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 };
 
+const toggleImpulseResponse = () => {
+  if (!selectedImpulseResponse.value) return;
+  settingStore.impulseResponseEnabled = !settingStore.impulseResponseEnabled;
+};
+
+const selectImpulseResponse = (id: string) => {
+  settingStore.setSelectedImpulseResponse(id);
+};
+
+const updateImpulseResponseStrength = (value: number[] | undefined) => {
+  if (!value?.length) return;
+  settingStore.setImpulseResponseMix(value[0] / 100);
+};
+
+const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
+
 interface Props {
   variant?: 'lyric' | 'bar';
   side?: 'top' | 'bottom';
@@ -98,7 +120,9 @@ withDefaults(defineProps<Props>(), {
         type="button"
         class="p-2 transition-all hover:scale-110 active:scale-90"
         :class="
-          player.audioEffect !== 'none' || gains.some((g: number) => g !== 0)
+          player.audioEffect !== 'none' ||
+          gains.some((g: number) => g !== 0) ||
+          impulseResponseActive
             ? variant === 'lyric'
               ? 'text-black dark:text-white'
               : 'text-primary'
@@ -142,6 +166,13 @@ withDefaults(defineProps<Props>(), {
         >
           均衡器
         </button>
+        <button
+          class="sidebar-item"
+          :class="{ 'is-active': activeTab === 'irs' }"
+          @click="activeTab = 'irs'"
+        >
+          IRS
+        </button>
       </div>
 
       <!-- 右侧主内容 -->
@@ -152,7 +183,7 @@ withDefaults(defineProps<Props>(), {
             <span class="panel-title">音效预设</span>
           </div>
           <Scrollbar class="panel-scroll">
-            <div class="grid grid-cols-3 gap-2 p-2">
+            <div class="effect-preset-grid">
               <button
                 v-for="option in audioEffectOptions"
                 :key="option.value"
@@ -210,6 +241,67 @@ withDefaults(defineProps<Props>(), {
             </div>
           </div>
         </div>
+
+        <!-- IRS 面板 -->
+        <div v-if="activeTab === 'irs'" class="panel-content irs-panel-content">
+          <div class="panel-header">
+            <span class="panel-title">IRS 音效</span>
+          </div>
+
+          <div v-if="selectedImpulseResponse" class="irs-strength">
+            <div class="irs-strength-label">
+              <span>强度</span>
+              <span>{{ impulseResponseStrength }}%</span>
+            </div>
+            <SliderRoot
+              :model-value="[impulseResponseStrength]"
+              :min="10"
+              :max="100"
+              :step="5"
+              class="irs-strength-slider"
+              style="width: 100%; min-width: 0"
+              @update:model-value="updateImpulseResponseStrength"
+            >
+              <SliderTrack class="irs-strength-track" style="width: 100%; min-width: 0">
+                <SliderRange class="irs-strength-range" />
+              </SliderTrack>
+              <SliderThumb class="irs-strength-thumb" />
+            </SliderRoot>
+          </div>
+
+          <Scrollbar
+            class="panel-scroll irs-panel-scroll"
+            :content-props="{ class: 'irs-scroll-wrap' }"
+          >
+            <div v-if="settingStore.impulseResponseFiles.length > 0" class="effect-preset-grid">
+              <button
+                type="button"
+                class="pm-item w-full! m-0!"
+                :class="{ 'is-active': !impulseResponseActive }"
+                @click="toggleImpulseResponse"
+              >
+                <span class="pm-label text-center">原声</span>
+              </button>
+              <button
+                v-for="file in settingStore.impulseResponseFiles"
+                :key="file.id"
+                type="button"
+                class="pm-item irs-preset-item w-full! m-0!"
+                :class="{
+                  'is-active':
+                    file.id === settingStore.selectedImpulseResponseId && impulseResponseActive,
+                }"
+                :title="getImpulseResponseDisplayName(file.name)"
+                @click="selectImpulseResponse(file.id)"
+              >
+                <span class="pm-label text-center irs-preset-label">
+                  {{ getImpulseResponseDisplayName(file.name) }}
+                </span>
+              </button>
+            </div>
+            <div v-else class="irs-panel-empty">暂无 IRS 文件</div>
+          </Scrollbar>
+        </div>
       </div>
     </div>
   </Popover>
@@ -225,6 +317,13 @@ withDefaults(defineProps<Props>(), {
   backdrop-filter: blur(24px);
   border-color: rgba(0, 0, 0, 0.1);
   display: flex;
+}
+
+.effect-popover.echo-popover-content > div:first-child {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
 }
 
 .dark .effect-popover.echo-popover-content {
@@ -286,13 +385,18 @@ withDefaults(defineProps<Props>(), {
   flex: 1;
   display: flex;
   flex-direction: column;
+  width: 100%;
   min-width: 0;
+  align-self: stretch;
 }
 
 .panel-content {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
+  min-width: 0;
+  align-self: stretch;
 }
 
 .panel-header {
@@ -326,6 +430,88 @@ withDefaults(defineProps<Props>(), {
 
 .panel-scroll {
   flex: 1;
+  width: 100%;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.irs-panel-content,
+.irs-panel-content > *,
+.irs-panel-scroll,
+.effect-popover .irs-scroll-wrap,
+.effect-popover .irs-scroll-wrap > .scrollbar-view {
+  width: 100% !important;
+  min-width: 0 !important;
+  align-self: stretch !important;
+  box-sizing: border-box;
+}
+
+.effect-popover .scroll-area,
+.effect-popover .scrollbar-wrap,
+.effect-popover .scrollbar-view {
+  width: 100%;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.effect-popover .pm-item {
+  width: 100%;
+  margin: 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.035);
+  color: var(--color-text-main);
+  opacity: 0.82;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.dark .effect-popover .pm-item {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.effect-popover .pm-item:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  color: var(--color-primary);
+  opacity: 1;
+}
+
+.effect-popover .pm-item.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: white;
+  opacity: 1;
+}
+
+.effect-popover .pm-label {
+  min-width: 0;
+  flex: 1;
+  text-align: center;
+}
+
+.effect-preset-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.effect-preset-grid > .pm-item {
+  justify-self: stretch;
+  align-self: stretch;
 }
 
 /* 均衡器特定样式 */
@@ -339,6 +525,104 @@ withDefaults(defineProps<Props>(), {
   display: flex;
   justify-content: space-between;
   height: 150px;
+}
+
+.irs-strength {
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 0 16px 12px;
+  box-sizing: border-box;
+}
+
+.irs-strength-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-main);
+  opacity: 0.65;
+}
+
+.irs-strength-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 18px;
+  user-select: none;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.irs-strength-track {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(29, 29, 31, 0.08);
+}
+
+.dark .irs-strength-track {
+  background: rgba(245, 245, 247, 0.1);
+}
+
+.irs-strength-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--color-primary);
+}
+
+.irs-strength-thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 9999px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  outline: none;
+}
+
+.irs-preset-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+}
+
+.irs-preset-label {
+  display: -webkit-box;
+  flex: 0 1 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.irs-panel-empty {
+  height: 210px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-main);
+  opacity: 0.42;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .eq-band {

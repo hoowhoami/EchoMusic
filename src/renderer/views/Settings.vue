@@ -111,6 +111,7 @@ const scrollToSection = (id: string) => {
 const initSettings = async () => {
   settingStore.syncCloseBehavior();
   settingStore.syncTheme();
+  settingStore.syncLogSettings();
   void settingStore.hydrateAppInfo();
   void desktopLyricStore.hydrate();
 };

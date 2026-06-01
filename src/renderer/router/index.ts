@@ -144,7 +144,9 @@ router.beforeEach((to, from) => {
   if ((!skipToHistory && !skipFromHistory) || to.redirectedFrom) return true;
 
   return {
-    ...to,
+    path: to.path,
+    query: to.query,
+    hash: to.hash,
     replace: true,
   };
 });

@@ -38,6 +38,10 @@ export const createAudioManager = (
     engine.setEqualizer(clampedGains);
   };
 
+  const setImpulseResponse = (filePath: string | null, mix = 0.4) => {
+    engine.setImpulseResponse(filePath, mix);
+  };
+
   const setAudioEffect = (effect: AudioEffectValue) => {
     const nextEffect = normalizeEffect(effect);
     if (state.audioEffect === nextEffect) return;
@@ -87,6 +91,7 @@ export const createAudioManager = (
     setVolumeNormalization,
     setReferenceLufs,
     setEq,
+    setImpulseResponse,
     setAudioEffect,
     fadeVolume,
     setCurrentAudioQualityOverride,

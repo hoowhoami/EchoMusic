@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate';
 import { Icon } from '@iconify/vue';
+import type { ComponentPublicInstance } from 'vue';
 import App from './App.vue';
 import router from './router';
 import { logger } from '@/utils/logger';
@@ -29,6 +30,31 @@ const getErrorMessage = (error: unknown): string => {
   } catch {
     return String(error ?? '发生了一些未知的错误');
   }
+};
+
+const getErrorSummary = (error: unknown) => {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return {
+    message: getErrorMessage(error),
+  };
+};
+
+const getComponentSummary = (instance: ComponentPublicInstance | null): string => {
+  if (!instance) return 'unknown';
+  const type = instance.$?.type;
+  if (typeof type === 'object' && type && 'name' in type && typeof type.name === 'string') {
+    return type.name;
+  }
+  if (typeof type === 'object' && type && '__name' in type && typeof type.__name === 'string') {
+    return type.__name;
+  }
+  return instance.$?.type ? 'anonymous-component' : 'unknown';
 };
 
 const shouldSkipErrorRedirect = (status: string, message: string, from: string): boolean => {
@@ -65,7 +91,11 @@ const navigateToErrorPage = async (error: unknown, status: string): Promise<void
 };
 
 app.config.errorHandler = (err: unknown, instance, info) => {
-  logger.error('App', 'Vue global exception catch', err, instance, info);
+  logger.error('App', 'Vue global exception catch', {
+    error: getErrorSummary(err),
+    component: getComponentSummary(instance),
+    info,
+  });
   void navigateToErrorPage(err, 'App Error');
 };
 

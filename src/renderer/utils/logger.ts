@@ -1,4 +1,13 @@
 import type {} from '../electron.d.ts';
+import {
+  DEFAULT_LOG_SETTINGS,
+  getEffectiveLogLevel,
+  isLogLevelEnabled,
+  normalizeLogSettings,
+  stringifyForLog,
+  type AppLogLevel,
+  type LogSettings,
+} from '../../shared/logging';
 
 /**
  * 接入 electron-log 的日志工具，支持开发环境回退到 console
@@ -24,72 +33,79 @@ const getElectronLog = (): LoggerFunctions | undefined => {
 
 const electronLog = getElectronLog();
 
+const readPersistedSettings = (): LogSettings => {
+  try {
+    const raw = window.localStorage.getItem('setting');
+    if (!raw) return DEFAULT_LOG_SETTINGS;
+    const parsed = JSON.parse(raw);
+    return normalizeLogSettings({
+      level: parsed?.logLevel,
+      apiResponseBody: parsed?.logApiResponseBody,
+      diagnosticUntil: parsed?.logDiagnosticUntil,
+    });
+  } catch {
+    return DEFAULT_LOG_SETTINGS;
+  }
+};
+
+let currentSettings = readPersistedSettings();
+
+export const configureRendererLogger = (settings?: Partial<LogSettings> | null) => {
+  currentSettings = normalizeLogSettings(settings);
+};
+
+export const getRendererLogSettings = () => currentSettings;
+
+export const isRendererLogLevelEnabled = (level: AppLogLevel) =>
+  isLogLevelEnabled(level, getEffectiveLogLevel(currentSettings));
+
 const formatArgs = (args: any[]) => {
   return args
-    .map((arg) => {
-      if (typeof arg === 'object') {
-        try {
-          return JSON.stringify(arg);
-        } catch {
-          return arg;
-        }
-      }
-      return arg;
-    })
+    .map((arg) =>
+      typeof arg === 'string' ? stringifyForLog(arg, 2000) : stringifyForLog(arg, 2000),
+    )
     .join(' ');
+};
+
+const writeLog = (
+  level: AppLogLevel,
+  module: string,
+  args: any[],
+  fallback: (...args: any[]) => void,
+) => {
+  if (!isRendererLogLevelEnabled(level)) return;
+  const message = `[${module}] ${formatArgs(args)}`;
+  if (electronLog) {
+    electronLog[level](message);
+  } else {
+    fallback(message);
+  }
 };
 
 // 创建一个符合 Logger 接口的对象
 export const logger = {
   info: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.info(message);
-    } else {
-      console.info(`[INFO] [${module}]`, ...args);
-    }
+    writeLog('info', module, args, console.info);
   },
   warn: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.warn(message);
-    } else {
-      console.warn(`[WARN] [${module}]`, ...args);
-    }
+    writeLog('warn', module, args, console.warn);
   },
   error: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.error(message);
-    } else {
-      console.error(`[ERROR] [${module}]`, ...args);
-    }
+    writeLog('error', module, args, console.error);
   },
   debug: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.debug(message);
-    } else {
-      console.debug(`[DEBUG] [${module}]`, ...args);
-    }
+    writeLog('debug', module, args, console.debug);
   },
   verbose: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.verbose(message);
-    } else {
-      console.log(`[VERBOSE] [${module}]`, ...args);
-    }
+    writeLog('verbose', module, args, console.log);
   },
   // 兼容旧调用或简单调用
   log: (module: string, ...args: any[]) => {
-    const message = `[${module}] ${formatArgs(args)}`;
-    if (electronLog) {
-      electronLog.info(message);
-    } else {
-      console.log(`[LOG] [${module}]`, ...args);
-    }
+    writeLog('info', module, args, console.log);
   },
+  isEnabled: isRendererLogLevelEnabled,
+  configure: configureRendererLogger,
+  settings: getRendererLogSettings,
 };
 
 export default logger;

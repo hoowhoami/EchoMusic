@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { app, ipcMain } from 'electron';
-import log from 'electron-log';
+import log from './logger';
 
 // --- 类型定义 ---
 
@@ -114,7 +114,7 @@ export async function initApiServer(): Promise<void> {
   moduleMap = new Map();
   for (const mod of modules) {
     moduleMap.set(mod.route, mod);
-    log.info(`[IPC-Server] Route registered: ${mod.route}`);
+    log.debug(`[IPC-Server] Route registered: ${mod.route}`);
   }
 
   serverReady = true;

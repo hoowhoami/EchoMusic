@@ -67,6 +67,7 @@ onMounted(() => {
   settings.syncCloseBehavior();
   settings.syncRememberWindowSize();
   settings.syncPreventSleep(player.isPlaying);
+  settings.syncLogSettings();
   disposeShortcuts = initShortcutSync();
   disposeTrayPlayModeSync =
     window.electron?.tray?.onSetPlayMode((playMode) => {

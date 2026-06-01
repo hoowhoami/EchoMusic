@@ -7,6 +7,8 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type { ImportImpulseResponseResult, ImpulseResponsePlaybackOptions } from '../shared/audio';
+import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 
@@ -55,6 +57,10 @@ export interface IElectronAPI {
   };
   fonts: {
     getAll: () => Promise<string[]>;
+  };
+  audioEffects: {
+    importImpulseResponse: () => Promise<ImportImpulseResponseResult>;
+    deleteImpulseResponse: (filePath: string) => Promise<boolean>;
   };
   updater: {
     download: () => void;
@@ -109,6 +115,10 @@ export interface IElectronAPI {
     debug: (...args: unknown[]) => void;
     verbose: (...args: unknown[]) => void;
   };
+  logging?: {
+    get: () => Promise<LogSettings>;
+    update: (settings: Partial<LogSettings>) => Promise<LogSettings>;
+  };
   shazam: {
     recognize: (pcmData: ArrayBuffer) => Promise<RecognizeResponse>;
     enableLoopback: () => Promise<void>;
@@ -143,6 +153,7 @@ export interface IElectronAPI {
     setVolume: (volume: number) => Promise<void>;
     setSpeed: (speed: number) => Promise<void>;
     setEqualizer: (gains: number[]) => Promise<void>;
+    setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) => Promise<void>;
     getAudioFilter: () => Promise<string>;
     setAudioDevice: (deviceName: string) => Promise<void>;
     getAudioDevices: () => Promise<Array<{ name: string; description: string }>>;

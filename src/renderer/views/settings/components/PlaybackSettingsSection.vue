@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { usePlayerStore } from '@/stores/player';
+import { useToastStore } from '@/stores/toast';
 import Switch from '@/components/ui/Switch.vue';
 import Slider from '@/components/ui/Slider.vue';
 import InputNumber from '@/components/ui/InputNumber.vue';
-import FontIcon from '@/components/ui/FontIcon.vue';
+import Button from '@/components/ui/Button.vue';
+import Dialog from '@/components/ui/Dialog.vue';
 import { Icon } from '@iconify/vue';
-import { iconPlayerPlay } from '@/icons';
+import { iconCheckMark, iconPencil, iconPlayerPlay, iconPlus, iconTrash, iconX } from '@/icons';
 import SettingsSectionShell from './SettingsSectionShell.vue';
 import { sectionTitles } from '../constants';
+import { normalizeImpulseResponseName, type ImpulseResponseFile } from '../../../../shared/audio';
 
 const settingStore = useSettingStore();
 const playerStore = usePlayerStore();
+const toastStore = useToastStore();
+const isImportingImpulseResponse = ref(false);
+const showImpulseResponseDialog = ref(false);
+const editingImpulseResponseId = ref('');
+const impulseResponseNameDraft = ref('');
+
+const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseResponse());
 
 const autoNextDelayInput = computed({
   get: () => String(settingStore.autoNextDelaySeconds ?? 0),
@@ -42,6 +52,55 @@ const handleVolumeNormalizationChange = (enabled: boolean) => {
 const handleReferenceLufsSlider = (value: number) => {
   settingStore.volumeNormalizationLufs = value;
   playerStore.setReferenceLufs(value);
+};
+
+const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
+
+const beginRenameImpulseResponse = (file: ImpulseResponseFile) => {
+  editingImpulseResponseId.value = file.id;
+  impulseResponseNameDraft.value = getImpulseResponseDisplayName(file.name);
+};
+
+const cancelRenameImpulseResponse = () => {
+  editingImpulseResponseId.value = '';
+  impulseResponseNameDraft.value = '';
+};
+
+const commitRenameImpulseResponse = (id: string) => {
+  settingStore.renameImpulseResponseFile(id, impulseResponseNameDraft.value);
+  cancelRenameImpulseResponse();
+};
+
+const handleImpulseResponseEnabledChange = (enabled: boolean) => {
+  if (enabled && !selectedImpulseResponse.value) {
+    toastStore.warning('请先导入 IRS 文件');
+    return;
+  }
+  settingStore.impulseResponseEnabled = enabled;
+};
+
+const handleImportImpulseResponse = async () => {
+  if (!window.electron?.audioEffects || isImportingImpulseResponse.value) return;
+  isImportingImpulseResponse.value = true;
+  try {
+    const result = await window.electron.audioEffects.importImpulseResponse();
+    if (result.canceled) return;
+    if (!result.file) {
+      toastStore.warning(result.error || 'IRS 文件导入失败');
+      return;
+    }
+    settingStore.addImpulseResponseFile(result.file);
+    toastStore.success('IRS 文件已导入');
+  } catch {
+    toastStore.actionFailed('导入 IRS 文件');
+  } finally {
+    isImportingImpulseResponse.value = false;
+  }
+};
+
+const handleRemoveImpulseResponse = (id: string) => {
+  settingStore.removeImpulseResponseFile(id);
+  toastStore.actionCompleted('已移除 IRS 文件');
 };
 </script>
 
@@ -117,6 +176,103 @@ const handleReferenceLufsSlider = (value: number) => {
         />
       </div>
     </template>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">IRS 音效</h3>
+        <p class="text-sm text-text-secondary">导入本地 .irs 文件，用作播放时的空间音效</p>
+      </div>
+      <div class="irs-actions">
+        <Button variant="outline" size="xs" type="button" @click="showImpulseResponseDialog = true">
+          <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
+          添加 IRS
+        </Button>
+        <Switch
+          :model-value="settingStore.impulseResponseEnabled"
+          :disabled="settingStore.impulseResponseFiles.length === 0"
+          @update:model-value="handleImpulseResponseEnabledChange"
+        />
+      </div>
+    </div>
+
+    <Dialog
+      v-model:open="showImpulseResponseDialog"
+      title="IRS 文件"
+      showClose
+      :content-style="{ width: '420px' }"
+    >
+      <div v-if="settingStore.impulseResponseFiles.length > 0" class="irs-list">
+        <div
+          v-for="file in settingStore.impulseResponseFiles"
+          :key="file.id"
+          class="irs-file-row"
+          :class="{ 'is-active': file.id === settingStore.selectedImpulseResponseId }"
+        >
+          <span class="irs-file-main">
+            <input
+              v-if="editingImpulseResponseId === file.id"
+              v-model="impulseResponseNameDraft"
+              class="irs-rename-input"
+              type="text"
+              maxlength="40"
+              @keydown.enter.prevent="commitRenameImpulseResponse(file.id)"
+              @keydown.esc.prevent="cancelRenameImpulseResponse"
+            />
+            <span v-else class="irs-file-name">{{ getImpulseResponseDisplayName(file.name) }}</span>
+          </span>
+          <button
+            v-if="editingImpulseResponseId === file.id"
+            type="button"
+            class="irs-row-btn"
+            title="保存名称"
+            @click.stop="commitRenameImpulseResponse(file.id)"
+          >
+            <Icon :icon="iconCheckMark" width="14" height="14" />
+          </button>
+          <button
+            v-if="editingImpulseResponseId === file.id"
+            type="button"
+            class="irs-row-btn"
+            title="取消重命名"
+            @click.stop="cancelRenameImpulseResponse"
+          >
+            <Icon :icon="iconX" width="14" height="14" />
+          </button>
+          <button
+            v-else
+            type="button"
+            class="irs-row-btn"
+            title="重命名 IRS"
+            @click.stop="beginRenameImpulseResponse(file)"
+          >
+            <Icon :icon="iconPencil" width="14" height="14" />
+          </button>
+          <button
+            type="button"
+            class="irs-row-btn is-danger"
+            title="移除 IRS 文件"
+            @click.stop="handleRemoveImpulseResponse(file.id)"
+          >
+            <Icon :icon="iconTrash" width="14" height="14" />
+          </button>
+        </div>
+      </div>
+      <div v-else class="irs-empty">暂无 IRS 文件</div>
+
+      <template #footer>
+        <Button
+          variant="outline"
+          size="sm"
+          type="button"
+          :loading="isImportingImpulseResponse"
+          @click="handleImportImpulseResponse"
+        >
+          <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
+          导入 IRS
+        </Button>
+      </template>
+    </Dialog>
+
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
@@ -196,3 +352,104 @@ const handleReferenceLufsSlider = (value: number) => {
 </template>
 
 <style scoped src="../settingsSection.css"></style>
+<style scoped>
+.irs-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.irs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.irs-file-row {
+  min-width: 0;
+  width: 100%;
+  height: 48px;
+  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  border-radius: 8px;
+  padding: 0 10px 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-main);
+  transition: all 0.2s;
+}
+
+.irs-file-row.is-active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.irs-file-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.irs-file-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.irs-rename-input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  padding: 0 8px;
+  color: var(--color-text-main);
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+}
+
+.irs-row-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+
+.irs-row-btn:hover {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.irs-row-btn.is-danger:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.irs-empty {
+  height: 96px;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--color-text-main) 16%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+</style>

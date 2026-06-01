@@ -58,6 +58,7 @@ let powerSaveBlockerId = -1;
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
+let windowFrameMetricsTimer: NodeJS.Timeout | null = null;
 
 export type WindowFrameMetrics = {
   left: number;
@@ -112,6 +113,17 @@ export const emitWindowFrameMetrics = (targetWindow: BrowserWindow | null = win)
   targetWindow.webContents.send('window:frame-metrics', getWindowFrameMetrics(targetWindow));
 };
 
+const scheduleWindowFrameMetrics = (targetWindow: BrowserWindow | null = win, delay = 48) => {
+  if (!canUseMainWindow(targetWindow)) return;
+  if (windowFrameMetricsTimer) {
+    clearTimeout(windowFrameMetricsTimer);
+  }
+  windowFrameMetricsTimer = setTimeout(() => {
+    windowFrameMetricsTimer = null;
+    emitWindowFrameMetrics(targetWindow);
+  }, delay);
+};
+
 export function hideMainWindow() {
   if (!canUseMainWindow(win)) return;
 
@@ -148,6 +160,9 @@ export function showMainWindow() {
     win.moveTop();
     win.focus();
   }
+
+  emitWindowFrameMetrics(win);
+  scheduleWindowFrameMetrics(win);
 }
 
 export function quitApplication() {
@@ -331,6 +346,11 @@ export async function createWindow() {
     },
   });
 
+  const handleDisplayMetricsChanged = () => {
+    emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win, 72);
+  };
+
   if (rememberWindowSize && initialWindowState.isMaximized) {
     win.maximize();
   }
@@ -339,6 +359,7 @@ export async function createWindow() {
   win.once('ready-to-show', () => {
     win?.show();
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
   });
 
   // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放
@@ -346,6 +367,7 @@ export async function createWindow() {
     win?.webContents.setZoomFactor(1.0);
     win?.webContents.setVisualZoomLevelLimits(1, 1);
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
   });
 
   if (url) {
@@ -373,36 +395,63 @@ export async function createWindow() {
 
   win.on('resize', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
     if (!win?.isMaximized()) persistWindowState();
   });
 
   win.on('move', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
     if (!win?.isMaximized()) persistWindowState();
   });
 
   win.on('maximize', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
     persistWindowState();
   });
 
   win.on('unmaximize', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
     persistWindowState();
+  });
+
+  win.on('restore', () => {
+    emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win, 72);
+  });
+
+  win.on('show', () => {
+    emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win, 72);
   });
 
   win.on('enter-full-screen', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
   });
 
   win.on('leave-full-screen', () => {
     emitWindowFrameMetrics(win);
+    scheduleWindowFrameMetrics(win);
   });
 
   win.on('closed', () => {
+    screen.removeListener('display-metrics-changed', handleDisplayMetricsChanged);
+    screen.removeListener('display-added', handleDisplayMetricsChanged);
+    screen.removeListener('display-removed', handleDisplayMetricsChanged);
+    if (windowFrameMetricsTimer) {
+      clearTimeout(windowFrameMetricsTimer);
+      windowFrameMetricsTimer = null;
+    }
     syncPowerSaveBlocker();
     win = null;
   });
+
+  screen.on('display-metrics-changed', handleDisplayMetricsChanged);
+  screen.on('display-added', handleDisplayMetricsChanged);
+  screen.on('display-removed', handleDisplayMetricsChanged);
 
   return win;
 }

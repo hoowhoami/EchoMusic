@@ -1,11 +1,18 @@
-import { ipcMain, shell, app, session } from 'electron';
+import { ipcMain, shell, app, session, dialog, type OpenDialogOptions } from 'electron';
 import Conf from 'conf';
 import log from 'electron-log';
 import fs from 'fs';
-import { dirname, join } from 'path';
+import { dirname, extname, join, resolve, sep, basename } from 'path';
 import { autoUpdater } from 'electron-updater';
 import { getFonts } from 'font-list';
 import type { AppInfoResult, UpdateCheckResult, UpdateDownloadResult } from '../../shared/app';
+import {
+  normalizeImpulseResponseName,
+  type ImportImpulseResponseResult,
+  type ImpulseResponseFile,
+} from '../../shared/audio';
+import type { LogSettings } from '../../shared/logging';
+import { applyLogSettings, getLogSettings } from '../logger';
 import type { IpcContext } from './types';
 
 const openLogDirectory = async () => {
@@ -18,6 +25,17 @@ const openLogDirectory = async () => {
 const appSettingsStore = new Conf<Record<string, unknown>>({
   projectName: app.getName(),
 });
+
+const getImpulseResponseDir = () => join(app.getPath('userData'), 'irs');
+
+const isPathInside = (targetPath: string, parentPath: string): boolean => {
+  const normalizedParent = resolve(parentPath);
+  const normalizedTarget = resolve(targetPath);
+  return (
+    normalizedTarget === normalizedParent ||
+    normalizedTarget.startsWith(`${normalizedParent}${sep}`)
+  );
+};
 
 const getAppInfo = (): AppInfoResult => {
   const version = app.getVersion();
@@ -144,8 +162,82 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     }
   });
 
+  ipcMain.handle(
+    'audio:import-impulse-response',
+    async (): Promise<ImportImpulseResponseResult> => {
+      const win = getMainWindow();
+      const options: OpenDialogOptions = {
+        title: '导入 IRS 文件',
+        properties: ['openFile'],
+        filters: [{ name: 'IRS Impulse Response', extensions: ['irs'] }],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true };
+      }
+
+      const sourcePath = result.filePaths[0];
+      const extension = extname(sourcePath).toLowerCase();
+      if (extension !== '.irs') {
+        return { canceled: false, error: '请选择 .irs 文件。' };
+      }
+
+      try {
+        const stat = await fs.promises.stat(sourcePath);
+        if (!stat.isFile()) {
+          return { canceled: false, error: '请选择有效的 IRS 文件。' };
+        }
+
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const irsDir = getImpulseResponseDir();
+        await fs.promises.mkdir(irsDir, { recursive: true });
+
+        const targetPath = join(irsDir, `${id}.irs`);
+        await fs.promises.copyFile(sourcePath, targetPath);
+
+        const file: ImpulseResponseFile = {
+          id,
+          name: normalizeImpulseResponseName(basename(sourcePath)),
+          path: targetPath,
+          size: stat.size,
+          importedAt: Date.now(),
+        };
+        return { canceled: false, file };
+      } catch (error) {
+        log.error('[Audio] Import impulse response failed:', error);
+        return { canceled: false, error: 'IRS 文件导入失败。' };
+      }
+    },
+  );
+
+  ipcMain.handle('audio:delete-impulse-response', async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return false;
+    const irsDir = getImpulseResponseDir();
+    if (!isPathInside(filePath, irsDir)) return false;
+    try {
+      await fs.promises.unlink(filePath);
+      return true;
+    } catch (error) {
+      log.warn('[Audio] Delete impulse response failed:', error);
+      return false;
+    }
+  });
+
   ipcMain.on('open-log-directory', async () => {
     await openLogDirectory();
+  });
+
+  ipcMain.handle('logging:get-settings', () => getLogSettings());
+
+  ipcMain.handle('logging:update-settings', (_event, settings: Partial<LogSettings>) => {
+    return applyLogSettings(settings, true);
+  });
+
+  ipcMain.on('logging:update-settings', (_event, settings: Partial<LogSettings>) => {
+    applyLogSettings(settings, true);
   });
 
   ipcMain.on(

@@ -1,4 +1,5 @@
 import logger from './logger';
+import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 
 export interface PlayerEngineEvents {
   timeUpdate?: (currentTime: number) => void;
@@ -187,7 +188,15 @@ export class PlayerEngine {
   }
 
   setEqualizer(gains: number[]): void {
-    mpv?.setEqualizer(gains);
+    mpv?.setEqualizer(gains.map((gain) => Number(gain) || 0));
+  }
+
+  setImpulseResponse(filePath: string | null, mix = 0.4): void {
+    const payload: ImpulseResponsePlaybackOptions = {
+      filePath: filePath || '',
+      mix: clamp(Number(mix) || 0.4, 0.1, 1),
+    };
+    mpv?.setImpulseResponse(payload);
   }
 
   async getAudioFilter(): Promise<string> {
@@ -310,7 +319,7 @@ export class PlayerEngine {
     const coverUrl = meta.artwork?.[meta.artwork.length - 1]?.src;
 
     // 调试日志：打印发送给主进程的封面 URL
-    logger.info('MediaSession', 'updateMediaMetadata:', {
+    logger.debug('MediaSession', 'updateMediaMetadata:', {
       title: meta.title,
       artist: meta.artist,
       coverUrl,

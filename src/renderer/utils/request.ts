@@ -3,6 +3,7 @@ import { useUserStore } from '@/stores/user';
 import { useDeviceStore } from '@/stores/device';
 import { ensureDevice } from './device';
 import { logger } from './logger';
+import { getPayloadSize, maskSensitiveText, stringifyForLog } from '../../shared/logging';
 
 // --- 类型定义 ---
 
@@ -30,6 +31,30 @@ interface RequestConfig {
 // --- 拦截器逻辑（从原 axios 版本保留） ---
 
 let isAuthExpiredNotified = false;
+
+const summarizeApiBody = (body: unknown): Record<string, unknown> => {
+  if (!body || typeof body !== 'object') return { size: getPayloadSize(body) };
+  const record = body as Record<string, unknown>;
+  const data = record.data && typeof record.data === 'object' ? record.data : null;
+  const dataRecord = data as Record<string, unknown> | null;
+  const songs = Array.isArray(dataRecord?.songs) ? dataRecord.songs : null;
+  const candidates = Array.isArray(dataRecord?.candidates ?? record.candidates)
+    ? ((dataRecord?.candidates ?? record.candidates) as unknown[])
+    : null;
+  const list = Array.isArray(dataRecord?.list ?? record.list)
+    ? ((dataRecord?.list ?? record.list) as unknown[])
+    : null;
+
+  return {
+    status: record.status ?? dataRecord?.status,
+    errorCode: record.error_code ?? dataRecord?.error_code,
+    count: dataRecord?.count ?? record.count,
+    songs: songs?.length,
+    candidates: candidates?.length,
+    list: list?.length,
+    size: getPayloadSize(body),
+  };
+};
 
 /**
  * 构建 Authorization header（复现原请求拦截器逻辑）
@@ -146,13 +171,12 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
 
   const elapsed = (performance.now() - startTime).toFixed(1);
 
-  // 格式化日志：请求 + 响应放一起
   const paramStr = Object.keys(params).length
     ? Object.entries(params)
         .map(([k, v]) => `${k}=${v}`)
         .join('&')
     : '';
-  const fullUrl = paramStr ? `${url}?${paramStr}` : url;
+  const fullUrl = maskSensitiveText(paramStr ? `${url}?${paramStr}` : url);
 
   if (error) {
     logger.error(
@@ -162,30 +186,41 @@ const ipcRequest = async (method: string, url: string, config?: RequestConfig): 
     throw error;
   }
 
-  let bodyPreview = '';
-  if (response.body != null) {
-    bodyPreview =
-      typeof response.body === 'object' ? JSON.stringify(response.body) : String(response.body);
-    if (bodyPreview.length > 2000) {
-      bodyPreview = bodyPreview.substring(0, 2000) + '... (truncated)';
-    }
-  }
-
   const statusTag = response.status >= 400 ? '✗' : '✓';
   const headerEntries = Object.entries(headers).filter(([k]) => k !== 'Authorization');
+  const bodySummary = summarizeApiBody(response.body);
+  const baseLine = `${statusTag} [${method}] ${fullUrl} status=${response.status} time=${elapsed}ms summary=${stringifyForLog(
+    bodySummary,
+    600,
+  )}`;
 
-  const lines = [
-    `${statusTag} [${method}] ${fullUrl}`,
-    `  ├─ Auth: ${auth || '(none)'}`,
-    ...(headerEntries.length
-      ? [`  ├─ Headers: ${headerEntries.map(([k, v]) => `${k}: ${v}`).join(', ')}`]
-      : []),
-    ...(config?.data ? [`  ├─ Body: ${JSON.stringify(config.data)}`] : []),
-    `  ├─ Status: ${response.status} | Time: ${elapsed}ms`,
-    `  └─ Response: ${bodyPreview}`,
-  ];
-
-  logger.info('API', lines.join('\n'));
+  if (response.status >= 400) {
+    logger.warn('API', `${baseLine}\n  └─ Response: ${stringifyForLog(response.body, 800)}`);
+  } else {
+    logger.debug('API', baseLine);
+    const shouldLogBody = logger.settings().apiResponseBody || logger.isEnabled('verbose');
+    if (shouldLogBody) {
+      const lines = [
+        `${statusTag} [${method}] ${fullUrl}`,
+        `  ├─ Auth: ${auth ? 'yes' : 'none'}`,
+        ...(headerEntries.length
+          ? [
+              `  ├─ Headers: ${headerEntries
+                .map(([k, v]) => `${k}: ${maskSensitiveText(String(v))}`)
+                .join(', ')}`,
+            ]
+          : []),
+        ...(config?.data ? [`  ├─ Body: ${stringifyForLog(config.data, 800)}`] : []),
+        `  ├─ Status: ${response.status} | Time: ${elapsed}ms`,
+        `  └─ Response: ${stringifyForLog(response.body, 2000)}`,
+      ];
+      if (logger.settings().apiResponseBody) {
+        logger.info('API', lines.join('\n'));
+      } else {
+        logger.verbose('API', lines.join('\n'));
+      }
+    }
+  }
 
   // 响应拦截：auth 过期检测
   handleAuthExpired(url, response.status, response.body);

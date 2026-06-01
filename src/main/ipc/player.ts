@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type { MpvController } from '../mpv/controller';
+import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
 import { restartMpvPlayer } from '../mpv';
 
 /** 可变引用，允许 mpv 实例在注册后异步赋值 */
@@ -47,6 +48,20 @@ export function registerPlayerIpc(ref: MpvRef): void {
   ipcMain.handle('mpv:set-equalizer', async (_e, gains: number[]) => {
     await ref.current?.setEq(gains);
   });
+
+  ipcMain.handle(
+    'mpv:set-impulse-response',
+    async (_e, payload: string | ImpulseResponsePlaybackOptions) => {
+      if (typeof payload === 'string') {
+        await ref.current?.setImpulseResponse(payload || '');
+        return;
+      }
+      await ref.current?.setImpulseResponse({
+        filePath: String(payload?.filePath || ''),
+        mix: Number(payload?.mix) || 0.4,
+      });
+    },
+  );
 
   ipcMain.handle('mpv:get-audio-filter', async () => {
     return (await ref.current?.getAudioFilter()) ?? '';

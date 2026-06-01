@@ -1,4 +1,4 @@
-import { watch, onMounted, onUnmounted, type Ref } from 'vue';
+import type { Ref } from 'vue';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore } from '@/stores/lyric';
 
@@ -15,8 +15,6 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
   const RECENT_SEEK_SYNC_WINDOW_MS = 800;
   let seekBaseMs = 0;
   let seekAnchorTick = 0;
-  let seekRafId: number | null = null;
-  let seekLastTime = 0;
   let cachedYrcOverlays: HTMLElement[] = [];
   let cachedYrcLineIndex = -1;
   let cachedSubOverlays: HTMLElement[] = [];
@@ -222,31 +220,6 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
     }
   };
 
-  // 30fps 循环
-  const seekLoop = () => {
-    seekRafId = requestAnimationFrame((timestamp) => {
-      if (timestamp - seekLastTime >= 33) {
-        seekLastTime = timestamp;
-        lyricStore.updateCurrentIndex(getNowMs() / 1000, true);
-        // updateYrcDom 由外部调用时传入颜色
-      }
-      seekLoop();
-    });
-  };
-
-  const resumeSeekRaf = () => {
-    if (seekRafId !== null) return;
-    seekLastTime = performance.now();
-    seekLoop();
-  };
-
-  const pauseSeekRaf = () => {
-    if (seekRafId !== null) {
-      cancelAnimationFrame(seekRafId);
-      seekRafId = null;
-    }
-  };
-
   const syncSeekAnchor = (force = false) => {
     const nextBaseMs = Math.round((playerStore.currentTime || 0) * 1000);
     const now = performance.now();
@@ -263,30 +236,6 @@ export function useYrcAnimation(lyricListRef: Ref<HTMLElement | null>) {
     seekBaseMs = nextBaseMs;
     seekAnchorTick = now;
   };
-
-  watch(
-    () => playerStore.currentTime,
-    () => syncSeekAnchor(),
-  );
-
-  watch(
-    () => playerStore.isPlaying,
-    (playing) => {
-      syncSeekAnchor(true);
-      if (playing) resumeSeekRaf();
-      else pauseSeekRaf();
-    },
-  );
-
-  onMounted(() => {
-    syncSeekAnchor(true);
-    if (playerStore.isPlaying) resumeSeekRaf();
-    else pauseSeekRaf();
-  });
-
-  onUnmounted(() => {
-    pauseSeekRaf();
-  });
 
   return {
     getNowMs,

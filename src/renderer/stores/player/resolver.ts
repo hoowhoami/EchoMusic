@@ -69,7 +69,7 @@ export const createResolver = (
     const pending = privilegeLiteRequests.get(requestKey);
     if (pending) return pending;
 
-    logger.info(
+    logger.debug(
       'PlayerResolver',
       options?.forceRefresh
         ? 'Refreshing privilege lite for track before playback'
@@ -81,7 +81,7 @@ export const createResolver = (
         const privilegeRes = await getSongPrivilegeLite(track.hash, track.albumId);
         const relateGoods = parseRelateGoodsFromPrivilege(privilegeRes);
         track.relateGoods = relateGoods;
-        logger.info('PlayerResolver', 'Preloaded privilege lite relateGoods', {
+        logger.debug('PlayerResolver', 'Preloaded privilege lite relateGoods', {
           track: summarizeSong(track),
           count: relateGoods.length,
           qualities: relateGoods.map((item) => item.quality ?? item.level ?? 'unknown'),
@@ -114,7 +114,7 @@ export const createResolver = (
 
     const trackNum = effect === 'vocal' ? 2 : 1;
     const proxyUrl = `mpv-mkv://track=${trackNum}&url=${encodeURIComponent(url)}`;
-    logger.info('PlayerResolver', 'Resolved MKV extract url', { effect, trackNum, hash });
+    logger.debug('PlayerResolver', 'Resolved MKV extract url', { effect, trackNum, hash });
     return proxyUrl;
   };
 

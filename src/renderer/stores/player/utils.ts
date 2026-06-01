@@ -13,7 +13,7 @@ export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null
   if (!track) return null;
 
   // 调试日志：打印原始封面 URL
-  logger.info('MediaSession', 'buildMediaMeta - original coverUrl:', track.coverUrl);
+  logger.debug('MediaSession', 'buildMediaMeta - original coverUrl:', track.coverUrl);
 
   const artwork = [96, 128, 192, 256, 384, 512].map((size) => {
     const url = getCoverUrl(track.coverUrl, size);
@@ -25,8 +25,8 @@ export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null
   });
 
   // 调试日志：打印处理后的最大尺寸封面 URL
-  logger.info('MediaSession', 'buildMediaMeta - processed artwork[0]:', artwork[0]?.src);
-  logger.info(
+  logger.debug('MediaSession', 'buildMediaMeta - processed artwork[0]:', artwork[0]?.src);
+  logger.debug(
     'MediaSession',
     'buildMediaMeta - processed artwork[last]:',
     artwork[artwork.length - 1]?.src,

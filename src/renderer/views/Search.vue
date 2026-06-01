@@ -10,7 +10,7 @@ import {
   watch,
   type ComponentPublicInstance,
 } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { getSearchHot, getSearchSuggest, search } from '@/api/search';
 import { useSettingStore } from '@/stores/setting';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -59,6 +59,7 @@ const settingStore = useSettingStore();
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const route = useRoute();
+const router = useRouter();
 
 const searchInput = ref('');
 const currentSearchKeyword = ref('');
@@ -250,10 +251,16 @@ const handleSearchChanged = (value: string) => {
   }
 
   if (!value.trim()) {
+    clearSearchResults();
+    resetPaginationState();
+    currentSearchKeyword.value = '';
     clearSuggestions();
     hasSearched.value = false;
     showPinnedTabs.value = false;
     isIgnoringChanges.value = false;
+    if (route.query.q !== undefined) {
+      void router.replace({ name: 'search', query: {} });
+    }
     return;
   }
 
@@ -523,13 +530,34 @@ const mvCards = computed(() => mvResults.value);
 onMounted(async () => {
   await loadHotSearches();
   await attachScrollTarget();
-
-  // 从标题栏搜索跳转过来时，自动执行搜索
-  const queryKeyword = route.query.q;
-  if (typeof queryKeyword === 'string' && queryKeyword.trim()) {
-    await runSearch(queryKeyword.trim());
-  }
 });
+
+watch(
+  () => route.query.q,
+  (queryKeyword) => {
+    const keyword = typeof queryKeyword === 'string' ? queryKeyword.trim() : '';
+
+    if (!keyword) {
+      searchInput.value = '';
+      currentSearchKeyword.value = '';
+      clearSearchResults();
+      resetPaginationState();
+      clearSuggestions();
+      hasSearched.value = false;
+      showPinnedTabs.value = false;
+      isIgnoringChanges.value = false;
+      return;
+    }
+
+    searchInput.value = keyword;
+    if (keyword === currentSearchKeyword.value.trim() && hasSearched.value) {
+      return;
+    }
+
+    void runSearch(keyword);
+  },
+  { immediate: true },
+);
 
 watch(
   () => activeTabIndex.value,

@@ -64,7 +64,7 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
   if (!url) return null;
 
   try {
-    log.info('[MediaControls] Starting cover download', { url });
+    log.debug('[MediaControls] Starting cover download', { url });
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -93,7 +93,7 @@ async function downloadCoverImage(url: string, signal?: AbortSignal): Promise<Bu
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    log.info('[MediaControls] Cover download completed', { size: buffer.length, url });
+    log.debug('[MediaControls] Cover download completed', { size: buffer.length, url });
     return buffer;
   } catch (err) {
     log.warn('[MediaControls] Cover download exception:', err);
@@ -126,7 +126,7 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
       log.warn('[MediaControls] Event callback error:', err);
       return;
     }
-    log.info('[MediaControls] System media event:', event);
+    log.debug('[MediaControls] System media event:', event);
     getMainWindow()?.webContents.send('media-control:event', event);
   });
 
@@ -145,7 +145,7 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
     ) => {
       if (!nativeModule) return;
 
-      log.info('[MediaControls] Metadata update received', {
+      log.debug('[MediaControls] Metadata update received', {
         title: payload.title,
         artist: payload.artist,
         hasCoverUrl: !!payload.coverUrl,
@@ -160,9 +160,9 @@ export function initMediaControls(getMainWindow: () => BrowserWindow | null): vo
 
       let coverData: Buffer | null = null;
       if (payload.coverUrl) {
-        log.info('[MediaControls] Starting cover download', { url: payload.coverUrl });
+        log.debug('[MediaControls] Starting cover download', { url: payload.coverUrl });
         coverData = await downloadCoverImage(payload.coverUrl, coverAbortController.signal);
-        log.info('[MediaControls] Cover download result', {
+        log.debug('[MediaControls] Cover download result', {
           success: !!coverData,
           size: coverData?.length ?? 0,
           url: payload.coverUrl,

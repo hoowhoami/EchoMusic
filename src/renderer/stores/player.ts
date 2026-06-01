@@ -106,6 +106,10 @@ export const usePlayerStore = defineStore(
 
     const audioManager = createAudioManager(state, engine, refreshCurrentTrack);
     const deviceManager = createDeviceManager(state, engine, settingStore);
+    const getActiveImpulseResponsePath = () => {
+      if (!settingStore.impulseResponseEnabled) return null;
+      return settingStore.getSelectedImpulseResponse()?.path ?? null;
+    };
     const showPlaybackNotice = (code: string, track?: Song | null) => {
       state.playbackNotice = resolvePlaybackNotice({
         code,
@@ -179,6 +183,10 @@ export const usePlayerStore = defineStore(
         volumeFadeTime: settingStore.volumeFadeTime,
         outputDevice: settingStore.outputDevice,
         exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
+        impulseResponseEnabled: settingStore.impulseResponseEnabled,
+        selectedImpulseResponseId: settingStore.selectedImpulseResponseId,
+        impulseResponseMix: settingStore.impulseResponseMix,
+        impulseResponseCount: settingStore.impulseResponseFiles.length,
       };
       settingStore.$subscribe(() => {
         const shouldRefresh =
@@ -191,6 +199,11 @@ export const usePlayerStore = defineStore(
         const shouldUpdateOutputDevice =
           settingStore.outputDevice !== snapshot.outputDevice ||
           settingStore.exclusiveAudioDevice !== snapshot.exclusiveAudioDevice;
+        const shouldUpdateImpulseResponse =
+          settingStore.impulseResponseEnabled !== snapshot.impulseResponseEnabled ||
+          settingStore.selectedImpulseResponseId !== snapshot.selectedImpulseResponseId ||
+          settingStore.impulseResponseMix !== snapshot.impulseResponseMix ||
+          settingStore.impulseResponseFiles.length !== snapshot.impulseResponseCount;
         snapshot = {
           defaultAudioQuality: settingStore.defaultAudioQuality,
           compatibilityMode: settingStore.compatibilityMode,
@@ -198,6 +211,10 @@ export const usePlayerStore = defineStore(
           volumeFadeTime: settingStore.volumeFadeTime,
           outputDevice: settingStore.outputDevice,
           exclusiveAudioDevice: settingStore.exclusiveAudioDevice,
+          impulseResponseEnabled: settingStore.impulseResponseEnabled,
+          selectedImpulseResponseId: settingStore.selectedImpulseResponseId,
+          impulseResponseMix: settingStore.impulseResponseMix,
+          impulseResponseCount: settingStore.impulseResponseFiles.length,
         };
         if (shouldRefresh) {
           if (state.isLoading || state.pendingSettingRefresh) state.pendingSettingRefresh = true;
@@ -208,12 +225,23 @@ export const usePlayerStore = defineStore(
         }
         if (shouldUpdateOutputDevice)
           void deviceManager.applyOutputDevice(settingStore.outputDevice);
+        if (shouldUpdateImpulseResponse)
+          audioManager.setImpulseResponse(
+            getActiveImpulseResponsePath(),
+            settingStore.impulseResponseMix,
+          );
       });
     };
 
     const init = () => {
       engine.setVolume(state.volume);
       engine.setPlaybackRate(state.playbackRate);
+      engine.setEqualizer(state.equalizerGains);
+      if (!settingStore.impulseResponseSafetyMigrationDone) {
+        settingStore.impulseResponseEnabled = false;
+        settingStore.impulseResponseSafetyMigrationDone = true;
+      }
+      engine.setImpulseResponse(getActiveImpulseResponsePath(), settingStore.impulseResponseMix);
       engine.setVolumeNormalization(settingStore.volumeNormalization);
       engine.setReferenceLufs(settingStore.volumeNormalizationLufs);
       engine.setLoopFile(state.playMode === 'single');
@@ -345,6 +373,7 @@ export const usePlayerStore = defineStore(
       setVolumeNormalization: audioManager.setVolumeNormalization,
       setReferenceLufs: audioManager.setReferenceLufs,
       setEq: audioManager.setEq,
+      setImpulseResponse: audioManager.setImpulseResponse,
       setAudioEffect: audioManager.setAudioEffect,
       fadeVolume: audioManager.fadeVolume,
       setCurrentAudioQualityOverride: audioManager.setCurrentAudioQualityOverride,

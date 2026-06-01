@@ -100,7 +100,7 @@ const handleLineClick = (time: number) => {
   }
   // seek 后立即更新当前行索引并滚动到对应位置
   nextTick(() => {
-    lyricStore.updateCurrentIndex(time, true);
+    lyricStore.updateCurrentIndex(time);
     scrollToLine(currentIndex.value, true);
   });
 };
@@ -133,7 +133,7 @@ const rafLoop = () => {
   rafId = requestAnimationFrame((timestamp) => {
     if (timestamp - lastRafTime >= 33) {
       lastRafTime = timestamp;
-      lyricStore.updateCurrentIndex(getNowMs() / 1000, true);
+      lyricStore.updateCurrentIndex(getNowMs() / 1000);
       updateYrcDom();
     }
     rafLoop();

@@ -45,6 +45,7 @@ export class PagedSongLoader<T> {
   private _seenKeys = new Set<string>();
   private _completionPromise: Promise<readonly T[]> | null = null;
   private _completionResolve: ((items: readonly T[]) => void) | null = null;
+  private _startedAt = 0;
 
   private readonly fetcher: PageFetcher<T>;
   private readonly pageSize: number;
@@ -105,6 +106,7 @@ export class PagedSongLoader<T> {
   async loadFirstPage(): Promise<readonly T[]> {
     if (this._aborted) return this._items;
     this._loading = true;
+    this._startedAt = this._startedAt || performance.now();
 
     try {
       const { items, hasMore } = await this.fetcher(1, this.pageSize);
@@ -121,7 +123,7 @@ export class PagedSongLoader<T> {
         this.markComplete();
       }
 
-      logger.info(this.logTag, `First page load finished`, {
+      logger.debug(this.logTag, `First page load finished`, {
         count: this._items.length,
         hasMore,
       });
@@ -292,6 +294,7 @@ export class PagedSongLoader<T> {
     logger.info(this.logTag, `load completed`, {
       total: this._items.length,
       pages: this._loadedPages,
+      durationMs: this._startedAt ? Math.round(performance.now() - this._startedAt) : 0,
     });
   }
 }

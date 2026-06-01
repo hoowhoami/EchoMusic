@@ -9,6 +9,8 @@ import type {
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type { ImportImpulseResponseResult, ImpulseResponsePlaybackOptions } from '../shared/audio';
+import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 
@@ -105,6 +107,12 @@ contextBridge.exposeInMainWorld('electron', {
   fonts: {
     getAll: () => ipcRenderer.invoke('get-all-fonts') as Promise<string[]>,
   },
+  audioEffects: {
+    importImpulseResponse: () =>
+      ipcRenderer.invoke('audio:import-impulse-response') as Promise<ImportImpulseResponseResult>,
+    deleteImpulseResponse: (filePath: string) =>
+      ipcRenderer.invoke('audio:delete-impulse-response', filePath) as Promise<boolean>,
+  },
   updater: {
     download: () => ipcRenderer.send('update:download'),
     install: (silent?: boolean) => ipcRenderer.send('update:install', { silent: !!silent }),
@@ -169,6 +177,11 @@ contextBridge.exposeInMainWorld('electron', {
     ) => ipcRenderer.send('desktop-lyric:command', command),
   },
   log: log.functions,
+  logging: {
+    get: () => ipcRenderer.invoke('logging:get-settings') as Promise<LogSettings>,
+    update: (settings: Partial<LogSettings>) =>
+      ipcRenderer.invoke('logging:update-settings', settings) as Promise<LogSettings>,
+  },
   mpv: {
     load: (url: string) => ipcRenderer.invoke('mpv:load', url),
     loadMkvTrack: (url: string, trackId: number) =>
@@ -181,6 +194,8 @@ contextBridge.exposeInMainWorld('electron', {
     setVolume: (volume: number) => ipcRenderer.invoke('mpv:set-volume', volume),
     setSpeed: (speed: number) => ipcRenderer.invoke('mpv:set-speed', speed),
     setEqualizer: (gains: number[]) => ipcRenderer.invoke('mpv:set-equalizer', gains),
+    setImpulseResponse: (payload: string | ImpulseResponsePlaybackOptions) =>
+      ipcRenderer.invoke('mpv:set-impulse-response', payload),
     getAudioFilter: () => ipcRenderer.invoke('mpv:get-audio-filter') as Promise<string>,
     setAudioDevice: (deviceName: string) => ipcRenderer.invoke('mpv:set-audio-device', deviceName),
     getAudioDevices: () =>
