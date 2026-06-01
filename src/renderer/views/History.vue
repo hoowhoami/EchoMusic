@@ -162,7 +162,6 @@ const loadHistory = async (append = false) => {
       )
       .map((item) => mapHistorySong(item));
 
-    playerStore.hydrateHistoryPlayCounts(mapped);
     remoteSongs.value = append
       ? mergeHistorySongs(remoteSongs.value, mapped)
       : mergeHistorySongs([], mapped);

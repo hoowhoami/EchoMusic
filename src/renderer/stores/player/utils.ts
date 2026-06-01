@@ -204,38 +204,6 @@ export const resolveTrackMxid = (track: Song | null | undefined): number | null 
   return null;
 };
 
-export const trimPlayCountMap = (
-  source: Record<string, number>,
-  limit = 500,
-): Record<string, number> => {
-  const entries = Object.entries(source);
-  if (entries.length <= limit) return source;
-  return Object.fromEntries(entries.slice(entries.length - limit));
-};
-
-export const resolveServerTimestamp = (payload: unknown): number | null => {
-  if (!payload || typeof payload !== 'object') return null;
-  const record = payload as Record<string, unknown>;
-  const source = (record.data && typeof record.data === 'object' ? record.data : record) as Record<
-    string,
-    unknown
-  >;
-  const candidates = [
-    source.now,
-    source.time,
-    source.timestamp,
-    source.server_time,
-    source.serverTime,
-  ];
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value) && value > 0) {
-      return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
-    }
-  }
-  return null;
-};
-
 export const summarizeSong = (track: Song | undefined) => {
   if (!track) return null;
   return {

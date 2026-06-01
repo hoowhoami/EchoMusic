@@ -60,6 +60,7 @@
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
   - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
+  - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
 ## 🖼️ 界面截图
 
@@ -151,6 +152,10 @@
      cd ../echo-media-controls
      cargo build --release
      cp target/release/libecho_media_controls.so echo-media-controls.node
+
+     cd ../echo-storage
+     cargo build --release
+     cp target/release/libecho_storage.so echo-storage.node
 
      cd ../..
    ```

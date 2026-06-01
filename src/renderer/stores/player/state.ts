@@ -35,8 +35,6 @@ export const createPlayerState = () => ({
   currentTrackSnapshot: null as Song | null,
   historyUploadCommitted: false,
   historyUploadTrackId: null as string | null,
-  historyUploadPlayCount: 0,
-  historyPlayCountMap: {} as Record<string, number>,
   autoNextTimer: null as number | null,
   autoNextAttempts: 0,
   autoNextSourceTrackId: null as string | null,

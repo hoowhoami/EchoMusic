@@ -454,7 +454,6 @@ export const createPlaybackManager = (
     state.currentTrackSnapshot = null;
     state.historyUploadCommitted = false;
     state.historyUploadTrackId = null;
-    state.historyUploadPlayCount = 0;
     engine.reset();
     state.currentTime = 0;
     state.duration = 0;

@@ -1,0 +1,17 @@
+export function initialize(databasePath: string): void;
+export function close(): void;
+export function kvGet(key: string): string | null;
+export function kvSet(key: string, valueJson: string): void;
+export function kvDelete(key: string): void;
+export function resetAll(): void;
+export function playbackGetSnapshot(hydrateAllSongs?: boolean): string;
+export function playbackGetQueue(payloadJson: string): string | null;
+export function playbackReplaceQueue(payloadJson: string): string;
+export function playbackAppendQueueItems(payloadJson: string): string;
+export function playbackUpdateQueueMeta(payloadJson: string): string;
+export function playbackClearQueue(payloadJson: string): string;
+export function playbackRemoveQueue(payloadJson: string): string;
+export function playbackRemoveQueueItem(payloadJson: string): string;
+export function playbackReorderQueueItems(payloadJson: string): string;
+export function playbackSetQueueCurrentTrack(payloadJson: string): string;
+export function playbackSetActiveQueue(queueId: string): string;

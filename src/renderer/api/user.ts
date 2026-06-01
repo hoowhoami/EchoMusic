@@ -136,18 +136,10 @@ export function getServerNow() {
  * 上传播放历史
  * @param mixSongId 歌曲 mixSongId
  */
-export function uploadPlayHistory(
-  mxid: number | string,
-  options?: {
-    time?: number;
-    pc?: number;
-  },
-) {
+export function uploadPlayHistory(mxid: number | string) {
   return request.get('/playhistory/upload', {
     params: {
       mxid,
-      time: options?.time,
-      pc: options?.pc,
     },
   });
 }

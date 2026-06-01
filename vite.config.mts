@@ -68,6 +68,7 @@ export default defineConfig({
                 'electron-audio-loopback',
                 '../../native/echo-media-controls',
                 '../../native/echo-mpv-player',
+                '../../native/echo-storage',
               ],
             },
           },

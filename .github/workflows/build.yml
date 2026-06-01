@@ -126,6 +126,17 @@ jobs:
             npm run build
           fi
 
+      - name: Build native storage addon
+        working-directory: native/echo-storage
+        shell: bash
+        run: |
+          npm install
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash

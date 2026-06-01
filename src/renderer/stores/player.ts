@@ -386,9 +386,6 @@ export const usePlayerStore = defineStore(
       resolveAudioUrl: resolver.resolveAudioUrl,
       fetchClimaxMarks: resolver.fetchClimaxMarks,
 
-      getTrackedPlayCount: historyManager.getTrackedPlayCount,
-      syncTrackedPlayCount: historyManager.syncTrackedPlayCount,
-      hydrateHistoryPlayCounts: historyManager.hydrateHistoryPlayCounts,
       resetHistoryUploadState: historyManager.resetHistoryUploadState,
       commitListeningHistory: historyManager.commitListeningHistory,
 
@@ -432,7 +429,6 @@ export const usePlayerStore = defineStore(
         'playbackRate',
         'audioEffect',
         'equalizerGains',
-        'historyPlayCountMap',
       ],
     },
   },

@@ -589,7 +589,7 @@ export class MpvController extends EventEmitter {
       const mix = Number(this.impulseResponseMix.toFixed(2));
       const graph =
         `[in]asplit=2[irsdry][irsin];amovie='${irPath}',asetpts=N/SR/TB[ir];` +
-        `[irsin][ir]afir=dry=0:wet=1:gtype=peak[irswet];` +
+        `[irsin][ir]afir=dry=0:wet=1[irswet];` +
         `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0[out]`;
       filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
     }
