@@ -348,6 +348,15 @@ export const createPlaybackManager = (
     engine.updateMediaPlaybackState(buildMediaState(state));
   };
 
+  const pushShuffleHistory = (trackId: string | null) => {
+    if (!trackId) return;
+    const MAX_SHUFFLE_HISTORY = 100;
+    state.shuffleHistory.push(trackId);
+    if (state.shuffleHistory.length > MAX_SHUFFLE_HISTORY) {
+      state.shuffleHistory = state.shuffleHistory.slice(-MAX_SHUFFLE_HISTORY);
+    }
+  };
+
   const next = async () => {
     playlistStore.syncQueuedNextTrackIds();
     const list =
@@ -357,6 +366,11 @@ export const createPlaybackManager = (
     if (list.length === 0) return;
 
     clearAutoNextTimer();
+
+    // 随机模式下，切歌前将当前曲目记入历史
+    if (state.playMode === 'random' && state.currentTrackId) {
+      pushShuffleHistory(state.currentTrackId);
+    }
 
     const queuedNextId = playlistStore.peekQueuedNextTrackId();
     if (queuedNextId) {
@@ -438,12 +452,37 @@ export const createPlaybackManager = (
         : (state.currentPlaylist ?? []);
     if (list.length === 0) return;
 
+    clearAutoNextTimer();
+
+    // 随机模式下，从播放历史中回退
+    if (state.playMode === 'random' && state.shuffleHistory.length > 0) {
+      const prevTrackId = state.shuffleHistory.pop()!;
+      const prevSong = list.find((s) => String(s.id) === prevTrackId);
+      if (prevSong && isPlayableSong(prevSong)) {
+        void playTrack(String(prevSong.id), list, {
+          sourceQueueId: state.currentSourceQueueId,
+        });
+        return;
+      }
+      // 历史中的歌曲在列表中已不存在或不可播放，继续尝试更早的历史
+      while (state.shuffleHistory.length > 0) {
+        const olderTrackId = state.shuffleHistory.pop()!;
+        const olderSong = list.find((s) => String(s.id) === olderTrackId);
+        if (olderSong && isPlayableSong(olderSong)) {
+          void playTrack(String(olderSong.id), list, {
+            sourceQueueId: state.currentSourceQueueId,
+          });
+          return;
+        }
+      }
+      // 历史全部耗尽，回退到默认行为
+    }
+
     const currentIndex = list.findIndex((s) => String(s.id) === String(state.currentTrackId));
     let prevIndex = (currentIndex - 1 + list.length) % list.length;
     prevIndex = findPlayableIndex(list, prevIndex, false, true);
     const prevSong = list[prevIndex];
     if (!prevSong) return;
-    clearAutoNextTimer();
     void playTrack(prevSong.id, list, { sourceQueueId: state.currentSourceQueueId });
   };
 

@@ -21,6 +21,7 @@ export const createAudioManager = (
     state.shuffleQueue = null;
     state.shuffleQueueLength = 0;
     state.shufflePlayed = new Set();
+    state.shuffleHistory = [];
     engine.setLoopFile(mode === 'single');
   };
 

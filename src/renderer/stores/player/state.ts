@@ -42,6 +42,7 @@ export const createPlayerState = () => ({
   shuffleQueue: null as number[] | null,
   shuffleQueueLength: 0,
   shufflePlayed: new Set<number>(),
+  shuffleHistory: [] as string[],
   seekTargetTime: null as number | null,
   seekTimestamp: 0,
   isResuming: false,

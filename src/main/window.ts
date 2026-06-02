@@ -269,9 +269,17 @@ export async function createWindow() {
     win.webContents.setVisualZoomLevelLimits(1, 1);
   };
 
+  // 部分高 DPI 设备上 zoomFactor 重置发生在事件回调之后，增加延时兜底
+  const enforceNoZoomDeferred = () => {
+    enforceNoZoom();
+    setTimeout(enforceNoZoom, 80);
+  };
+
   win.webContents.on('did-finish-load', enforceNoZoom);
-  win.on('enter-full-screen', enforceNoZoom);
-  win.on('leave-full-screen', enforceNoZoom);
+  win.on('enter-full-screen', enforceNoZoomDeferred);
+  win.on('leave-full-screen', enforceNoZoomDeferred);
+  win.on('maximize', enforceNoZoomDeferred);
+  win.on('unmaximize', enforceNoZoomDeferred);
 
   if (url) {
     win.loadURL(url);
