@@ -94,7 +94,13 @@ const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
 
-// 松手后应用强度。debounce 兜底合并按住键盘方向键的连续 commit。
+// 强度变化现在只是一条 af-command 运行时改 amix 权重（不重建 afir），开销极低，所以拖动中即可
+// 实时下发，手感更顺滑。节流 ~50ms 限制 IPC/命令频率；松手再 commit 一次最终值兜底。
+const throttledCommitImpulseResponseStrength = useThrottleFn((percent: number) => {
+  settingStore.setImpulseResponseMix(percent / 100);
+}, 50);
+
+// 松手后应用最终强度并清除本地草稿。debounce 兜底合并按住键盘方向键的连续 commit。
 const commitImpulseResponseStrength = useDebounceFn((percent: number) => {
   settingStore.setImpulseResponseMix(percent / 100);
   impulseResponseStrengthDraft.value = null;
@@ -102,8 +108,9 @@ const commitImpulseResponseStrength = useDebounceFn((percent: number) => {
 
 const updateImpulseResponseStrength = (value: number[] | undefined) => {
   if (!value?.length) return;
-  // 拖动中：仅更新本地显示，不碰后端
+  // 拖动中：更新本地显示并节流实时下发到后端
   impulseResponseStrengthDraft.value = value[0];
+  throttledCommitImpulseResponseStrength(value[0]);
 };
 
 const commitImpulseResponseStrengthFromSlider = (value: number[] | undefined) => {

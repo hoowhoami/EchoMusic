@@ -241,6 +241,14 @@ pub fn set_audio_filter(filter: String) -> napi::Result<()> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 运行时向已加载的 af 滤镜发送命令（如改 amix 权重），不重建整条滤镜链
+#[napi]
+pub fn af_command(label: String, cmd: String, arg: String, target: String) -> napi::Result<()> {
+    get_player()?
+        .af_command(&label, &cmd, &arg, &target)
+        .map_err(|e| napi::Error::from_reason(e))
+}
+
 /// 设置均衡器增益
 #[napi]
 pub fn set_eq(gains: Vec<f64>) -> napi::Result<()> {

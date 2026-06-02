@@ -508,6 +508,12 @@ impl MpvPlayer {
         self.set_property_string("af", filter)
     }
 
+    /// 运行时向已加载的 af 滤镜发送命令（如改 amix 权重），不重建整条滤镜链。
+    /// label 为 af 项的标签（如 "irs"），target 为图内部滤镜实例名（如 "amix@irsmix"）。
+    pub fn af_command(&self, label: &str, cmd: &str, arg: &str, target: &str) -> Result<(), String> {
+        self.command(&["af-command", label, cmd, arg, target])
+    }
+
     /// 设置音量均衡增益
     pub fn set_normalization_gain(&self, gain_db: f64) -> Result<(), String> {
         // 优先使用 volume-gain 属性

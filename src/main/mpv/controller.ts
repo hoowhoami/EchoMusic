@@ -37,6 +37,7 @@ interface MpvAddon {
   setAudioDevice(deviceName: string): void;
   getAudioDevices(): Array<{ name: string; description: string }>;
   setAudioFilter(filter: string): void;
+  afCommand(label: string, cmd: string, arg: string, target: string): void;
   setNormalizationGain(gainDb: number): void;
   setExclusive(exclusive: boolean): void;
   setMediaTitle(title: string): void;
@@ -56,6 +57,13 @@ const DEFAULT_IMPULSE_RESPONSE_MIX = 0.4;
 // 一个 makeup 增益把湿声补到与干声同量级，让“湿声比例”滑块整段都有手感（实测 wet=3 时
 // mix=1.0 输出 ≈ 干声 +0~1dB、峰值仍有 ~10dB 余量，正常音量不会削顶）。
 const IMPULSE_RESPONSE_WET_MAKEUP = 3;
+
+// IR lavfi 项的 af 标签与图内部 amix 实例名。强度（mix）变化时用 af-command 寻址内部 amix
+// 在运行时改权重，而不重设整条 af（重设会重建 afir 卷积器 → 卡顿/爆音）。
+const IMPULSE_RESPONSE_AF_LABEL = 'irs';
+const IMPULSE_RESPONSE_MIX_FILTER = 'amix@irsmix';
+// 构造「结构键」时用占位符替换真实 mix：只有 mix 变化时结构键不变 → 走 af-command 而非重建。
+const IMPULSE_RESPONSE_MIX_PLACEHOLDER = '__IRS_MIX__';
 
 // IR 路径会放进 lavfi 图的单引号里传给 amovie 滤镜。amovie 用 ':' 分隔 filename 与选项，
 // 图层单引号只能挡住图解析器、挡不住 amovie 自己的选项解析器，因此 Windows 盘符里的 ':'
@@ -94,9 +102,17 @@ export class MpvController extends EventEmitter {
   private impulseResponsePath = '';
   private impulseResponseMix = DEFAULT_IMPULSE_RESPONSE_MIX;
   private impulseResponseFailureRecovering = false;
-  // 上次成功下发给 mpv 的 af 串。相同则跳过，避免上游重复触发（拖动 commit、切歌
-  // file-loaded、音量归一化刷新等）反复重建 afir 卷积器导致卡顿/爆音。
-  private lastAppliedFilterString: string | null = null;
+  // 「结构键」= 完整 af 串，但 IR 的 mix 用占位符替换。只有结构（IR 路径/开关、EQ、归一化）
+  // 变化时它才变 → 触发整链重设；仅 mix 变化时结构键不变 → 走 af-command 运行时改权重，
+  // 不重建 afir，避免拖强度滑块卡顿/爆音。null 表示「未知/需强制下发」。
+  private lastStructuralKey: string | null = null;
+  // 上次实际生效的 mix（无论经整链重设还是 af-command 下发），用于判断是否需要更新权重。
+  private lastAppliedMix = DEFAULT_IMPULSE_RESPONSE_MIX;
+  // 上次 af 中 IR 的激活状态与路径，用于判断是否为「IR 结构变化」（决定是否做音量 duck）。
+  private lastIrActive = false;
+  private lastIrPath = '';
+  // file-loaded 后置位：强制下一次 sync 整链重设（mpv 换文件可能重置 af），且不做 duck。
+  private forceReapply = false;
 
   constructor() {
     super();
@@ -237,9 +253,10 @@ export class MpvController extends EventEmitter {
         }
         // 打印音频详细信息
         this.logAudioInfo();
-        // 重新应用音频滤镜（防止被新文件加载重置）。先清幂等缓存，确保这次重应用一定下发，
-        // 否则若 mpv 在换文件时重置了 af，缓存命中会跳过、导致换歌后音效悄悄消失。
-        this.lastAppliedFilterString = null;
+        // 重新应用音频滤镜（防止被新文件加载重置）。强制下一次 sync 整链重设，确保这次重应用
+        // 一定下发——否则若 mpv 在换文件时重置了 af，幂等命中会跳过、导致换歌后音效悄悄消失。
+        // 走整链重设而非 af-command，且不做 duck（换歌本身另有淡入淡出）。
+        this.forceReapply = true;
         void this.syncAudioFilters();
         // 触发原始事件名
         this.emit('mpv:file-loaded');
@@ -589,25 +606,38 @@ export class MpvController extends EventEmitter {
     if (!this.addon) return;
 
     const filters: string[] = [];
+    // 与 filters 一一对应，但 IR 的 mix 用占位符——用于「结构键」比较，区分「仅 mix 变化」
+    // （走 af-command）与「结构变化」（整链重设）。
+    const structuralParts: string[] = [];
+    const irActive = !!this.impulseResponsePath;
+    const irPath = this.impulseResponsePath;
+    const mix = Number(this.impulseResponseMix.toFixed(2));
     const hasEq = this.equalizerGains.some((g) => g !== 0);
-    let hasImpulseResponseFilter = false;
 
-    if (this.impulseResponsePath) {
-      hasImpulseResponseFilter = true;
-      const irPath = escapeLavfiQuotedValue(this.impulseResponsePath);
-      const mix = Number(this.impulseResponseMix.toFixed(2));
+    if (irActive) {
+      const irPathEsc = escapeLavfiQuotedValue(irPath);
       // afir 的输出永远是纯卷积湿声（dry/wet 只是卷积器的输入/输出增益，不是干湿混合），
       // 所以必须用 asplit 留一路干声、afir 出湿声、再用 amix 把干声混回，否则只剩很轻的
       // 混响尾音（湿声本就比干声低 ~15dB）→ 表现为“开启后声音特别小”。
       // 两路都对齐到 48k stereo fltp 是 afir 能 bind 成功的前提（IR 多为 mono/44.1k）。
       // 干声权重恒为 1（原声始终满幅），湿声先经 wet=makeup 补到与干声同量级，再按 mix 叠加。
-      const graph =
+      // amix 命名为 @irsmix、整项 af 打标签 @irs，使强度变化能用 af-command 运行时改权重而
+      // 不重建 afir。mixStr 参数化：真实串用真实 mix，结构键用占位符。
+      const buildGraph = (mixStr: string) =>
         `[in]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[irsdry][irsin];` +
-        `amovie='${irPath}',asetpts=N/SR/TB,aresample=48000,` +
+        `amovie='${irPathEsc}',asetpts=N/SR/TB,aresample=48000,` +
         `aformat=sample_fmts=fltp:channel_layouts=stereo[ir];` +
         `[irsin][ir]afir=dry=1:wet=${IMPULSE_RESPONSE_WET_MAKEUP}[irswet];` +
-        `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0[out]`;
-      filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
+        `[irsdry][irswet]${IMPULSE_RESPONSE_MIX_FILTER}=inputs=2:weights='1 ${mixStr}':normalize=0[out]`;
+      // 真实下发串：真实 mix + 正确的字节长度前缀（quoteMpvOptionValue 按字节数计前缀，
+      // 所以必须对真实图计算，不能对占位符串再做替换）。
+      filters.push(
+        `@${IMPULSE_RESPONSE_AF_LABEL}:lavfi=graph=${quoteMpvOptionValue(buildGraph(String(mix)))}`,
+      );
+      // 结构键无需是合法 mpv 串，仅用于比较，故用占位符、省去字节前缀。
+      structuralParts.push(
+        `@${IMPULSE_RESPONSE_AF_LABEL}:lavfi=${buildGraph(IMPULSE_RESPONSE_MIX_PLACEHOLDER)}`,
+      );
     }
 
     if (hasEq) {
@@ -621,41 +651,111 @@ export class MpvController extends EventEmitter {
 
       if (eqParts.length > 0) {
         filters.push(...eqParts);
+        structuralParts.push(...eqParts);
       }
     }
 
     if (this.normalizationGainDb !== 0) {
-      filters.push(`volume=${this.normalizationGainDb}dB`);
-    }
-
-    if (filters.length === 0) {
-      if (this.lastAppliedFilterString === '') return;
-      log.info('[MpvController] Applying audio filter: (cleared)');
-      this.addon.setAudioFilter('');
-      this.lastAppliedFilterString = '';
-      return;
+      const volFilter = `volume=${this.normalizationGainDb}dB`;
+      filters.push(volFilter);
+      structuralParts.push(volFilter);
     }
 
     const filterString = filters.join(',');
-    // 幂等：与上次完全一致则跳过，不重设 af（mpv 会为相同图重建 afir 卷积器，徒增卡顿）。
-    if (filterString === this.lastAppliedFilterString) return;
-    log.info('[MpvController] Applying audio filter:', filterString);
+    const structuralKey = structuralParts.join(',');
+    const irStructuralChange = irActive !== this.lastIrActive || irPath !== this.lastIrPath;
+
+    // 结构未变（且非强制重应用）：仅 mix 变化 → af-command 运行时改权重，不重建 afir；
+    // 否则完全幂等，直接跳过。
+    if (structuralKey === this.lastStructuralKey && !this.forceReapply) {
+      if (irActive && mix !== this.lastAppliedMix) {
+        try {
+          this.addon.afCommand(
+            IMPULSE_RESPONSE_AF_LABEL,
+            'weights',
+            `1 ${mix}`,
+            IMPULSE_RESPONSE_MIX_FILTER,
+          );
+          this.lastAppliedMix = mix;
+          return;
+        } catch (err) {
+          // af-command 不被支持（如旧版 mpv）→ 清结构键，落到下方整链重设兜底。
+          log.warn('[MpvController] af-command failed, falling back to full rebuild:', err);
+          this.lastStructuralKey = null;
+        }
+      } else {
+        return;
+      }
+    }
+
+    // 整链重设：结构变化 / 强制重应用 / af-command 回退。仅在「IR 结构变化」且正在播放、
+    // 非强制重应用、非失败恢复时做音量 duck，把重建 afir 的间隙藏进静音区。
+    const shouldDuck =
+      irStructuralChange &&
+      !this.state.paused &&
+      !this.forceReapply &&
+      !this.impulseResponseFailureRecovering;
+
+    log.info('[MpvController] Applying audio filter:', filterString || '(cleared)');
     try {
-      this.addon.setAudioFilter(filterString);
-      this.lastAppliedFilterString = filterString;
+      if (shouldDuck) await this.applyFilterWithDuck(filterString);
+      else this.addon.setAudioFilter(filterString);
+      this.lastStructuralKey = structuralKey;
+      this.lastAppliedMix = mix;
+      this.lastIrActive = irActive;
+      this.lastIrPath = irPath;
+      this.forceReapply = false;
     } catch (err) {
-      if (!hasImpulseResponseFilter) throw err;
+      if (!irActive) throw err;
       log.warn('[MpvController] Impulse response filter failed, disabling IR:', err);
       const failedPath = this.impulseResponsePath;
       this.impulseResponsePath = '';
-      // 让禁用 IR 后的重建能真正下发（新串与失败串不同，但保险起见清掉缓存）。
-      this.lastAppliedFilterString = null;
-      await this.syncAudioFilters();
+      // 清结构键，确保禁用 IR 后的重建一定下发；置位恢复标志，使重建走整链分支而不 duck。
+      this.lastStructuralKey = null;
+      this.impulseResponseFailureRecovering = true;
+      try {
+        await this.syncAudioFilters();
+      } finally {
+        this.impulseResponseFailureRecovering = false;
+      }
       this.emit('impulse-response-disabled', {
         path: failedPath,
         reason: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * 应用滤镜串前后做一次极短音量 duck（淡出→应用→淡入），把重建 afir 卷积器的间隙藏进
+   * 低音量区，避免切预设/开关空间音效时的卡顿/爆音。execute_fade 用 set_property_double 改
+   * volume，不污染 state.volume，所以 vol 是用户真实音量、结束精确复原。
+   */
+  private async applyFilterWithDuck(filterString: string): Promise<void> {
+    if (!this.addon) return;
+    const vol = this.state.volume;
+    let applyErr: unknown = null;
+    try {
+      await this.fade(vol, 0, 70);
+    } catch {
+      // 淡出失败也要继续应用滤镜
+    }
+    try {
+      this.addon.setAudioFilter(filterString);
+    } catch (err) {
+      applyErr = err;
+    }
+    try {
+      await this.fade(0, vol, 140);
+    } catch {
+      // 兜底：保证音量一定复原，不卡在 0
+      try {
+        await this.setVolume(vol);
+      } catch {
+        // ignore
+      }
+    }
+    // 应用失败时抛出，交由上层禁用 IR（此时音量已复原）
+    if (applyErr) throw applyErr;
   }
 
   // ── 淡入淡出 ──

@@ -98,7 +98,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
 }
 
 .overlay-header-left.mac-offset {
-  left: 80px;
+  left: 70px;
 }
 
 .overlay-control-btn {
