@@ -264,6 +264,7 @@ export const personalFmActions = {
     if (!queue.songs.some((item) => resolveSongQueueKey(item) === targetKey)) {
       queue.songs = toRawSongList([...queue.songs, song]);
     }
+    queue.songCount = queue.songs.length;
     this.activeQueueId = queue.id;
     queue.updatedAt = Date.now();
     this.syncLegacyPlaybackState();
@@ -335,6 +336,8 @@ export const personalFmActions = {
       this.personalFmBuffer = toRawSongList(rest);
       if (!nextSong) break;
       appendQueueSong(queue, nextSong);
+      queue.songCount = queue.songs.length;
+      this.activeQueueId = queue.id;
       queue.updatedAt = Date.now();
       this.syncLegacyPlaybackState();
       return nextSong;

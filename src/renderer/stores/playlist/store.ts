@@ -238,15 +238,10 @@ export const usePlaylistStore = defineStore('playlist', {
     },
     persistQueueRemovalToStorage(queueId: string) {
       if (!this.playbackStorageReady || !window.electron?.storage) return;
-      void window.electron.storage.removePlaybackQueue({ queueId }).then((snapshot) => {
-        this.applyPlaybackSnapshot(
-          snapshot as {
-            queues: PlaybackQueueState[];
-            activeQueueId: string;
-            lastNonFmQueueId: string;
-          },
-        );
-      });
+      // 仅持久化删除，不要把返回的快照回灌内存：删除后调用方可能立即重建队列
+      // （如私人 FM 首次播放的 recreate 流程），异步快照会用删除瞬间的过期状态覆盖
+      // 刚建好的队列并改写 activeQueueId，导致首次播放队列被清空、需再点一次才生效。
+      void window.electron.storage.removePlaybackQueue({ queueId });
     },
     persistQueueItemRemovalToStorage(queue: PlaybackQueueState, songId: string | number) {
       if (!this.playbackStorageReady || !window.electron?.storage) return;

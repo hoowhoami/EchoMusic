@@ -174,7 +174,10 @@ export const createPlaybackManager = (
     state.currentTrackSnapshot = toRawSong(track);
     historyManager.resetHistoryUploadState(track);
     state.currentPlaylist = sourceList;
-    playlistStore.updateQueueCurrentTrack(resolvedId);
+    playlistStore.updateQueueCurrentTrack(
+      resolvedId,
+      state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId,
+    );
     state.currentAudioUrl = '';
     state.currentResolvedAudioQuality = null;
     state.currentResolvedAudioEffect = 'none';
@@ -487,6 +490,8 @@ export const createPlaybackManager = (
   };
 
   const stop = () => {
+    const sourceQueueId =
+      state.currentSourceQueueId ?? playlistStore.activeQueue?.id ?? playlistStore.activeQueueId;
     clearAutoNextTimer();
     state.autoNextAttempts = 0;
     state.autoNextSourceTrackId = null;
@@ -507,7 +512,7 @@ export const createPlaybackManager = (
     state.playbackRequestSeq += 1;
     state.climaxRequestSeq += 1;
     state.isLoading = false;
-    playlistStore.updateQueueCurrentTrack(null);
+    playlistStore.updateQueueCurrentTrack(null, sourceQueueId);
     engine.updateMediaPlaybackState(buildMediaState(state));
   };
 

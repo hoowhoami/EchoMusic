@@ -12,9 +12,12 @@ import { useUserStore } from '@/stores/user';
 import { iconHeartFilled, iconHeartOff, iconPause, iconPlay } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import Cover from '@/components/ui/Cover.vue';
-import { replaceQueueAndPlay } from '@/utils/playback';
 import { getSongQualityTags } from '@/utils/song';
-import type { PersonalFmMode, PersonalFmSongPoolId } from '@/stores/playlist';
+import type {
+  PersonalFmMode,
+  PersonalFmSongPoolId,
+  SetPlaybackQueueOptions,
+} from '@/stores/playlist';
 import type { Song } from '@/models/song';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 
@@ -22,9 +25,11 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const personalFmLoading = ref(false);
+const personalFmPreloading = ref(false);
 const personalFmVinylsRef = ref<HTMLElement | null>(null);
 const personalFmVisibleSideCount = ref(3);
 let personalFmVinylsObserver: ResizeObserver | null = null;
+let personalFmPreviewPromise: Promise<Song | null> | null = null;
 
 const personalFmModeOptions: Array<{ value: PersonalFmMode; label: string }> = [
   { value: 'normal', label: '红心' },
@@ -118,6 +123,33 @@ const personalFmCurrentTrackInfoChips = computed(() => {
   return chips.slice(0, 4);
 });
 
+const buildPersonalFmQueueOptions = (): SetPlaybackQueueOptions => {
+  const queue = personalFmQueue.value;
+  return {
+    queueId: PERSONAL_FM_QUEUE_ID,
+    title: queue?.title ?? personalFmPresentation.value.title,
+    subtitle: queue?.subtitle ?? personalFmPresentation.value.subtitle,
+    type: 'fm',
+    dynamic: true,
+    meta: {
+      mode: selectedPersonalFmMode.value,
+      song_pool_id: selectedPersonalFmSongPoolId.value,
+    },
+  };
+};
+
+const playPersonalFmTrack = async (track: Song, songs?: Song[]) => {
+  const queueSongs = songs?.length ? songs : playlistStore.activatePersonalFmTrack(track);
+  playlistStore.setPlaybackQueueWithOptions(queueSongs, 0, buildPersonalFmQueueOptions());
+  playlistStore.updateQueueCurrentTrack(track.id, PERSONAL_FM_QUEUE_ID);
+  playerStore.currentSourceQueueId = PERSONAL_FM_QUEUE_ID;
+  playerStore.currentPlaylist = queueSongs;
+  await playerStore.playTrack(String(track.id), queueSongs, {
+    sourceQueueId: PERSONAL_FM_QUEUE_ID,
+  });
+  playerStore.currentSourceQueueId = PERSONAL_FM_QUEUE_ID;
+};
+
 const updatePersonalFmVisibleSideCount = () => {
   const element = personalFmVinylsRef.value;
   if (!element) {
@@ -148,24 +180,16 @@ const updatePersonalFmVisibleSideCount = () => {
 };
 
 const playCurrentPersonalFm = async () => {
-  const queue = playlistStore.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
-  if (!queue) return;
   const targetSong = await playlistStore.consumeNextPersonalFmTrack({
     playtime: 0,
     isOverplay: false,
   });
   if (!targetSong) return;
-  await replaceQueueAndPlay(playlistStore, playerStore, queue.songs, 0, targetSong, {
-    queueId: PERSONAL_FM_QUEUE_ID,
-    title: queue.title,
-    subtitle: queue.subtitle,
-    type: 'fm',
-    dynamic: true,
-    meta: {
-      mode: selectedPersonalFmMode.value,
-      song_pool_id: selectedPersonalFmSongPoolId.value,
-    },
-  });
+  const queue = playlistStore.playbackQueues.find((item) => item.id === PERSONAL_FM_QUEUE_ID);
+  const queueSongs = queue?.songs.length
+    ? queue.songs
+    : playlistStore.activatePersonalFmTrack(targetSong);
+  await playPersonalFmTrack(targetSong, queueSongs);
   void playlistStore.ensurePersonalFmQueue({ track: targetSong, playtime: 0, isOverplay: false });
 };
 
@@ -174,9 +198,7 @@ const resumeCurrentPersonalFm = async () => {
   if (!targetTrack) return false;
 
   const queueSongs = playlistStore.activatePersonalFmTrack(targetTrack);
-  await playerStore.playTrack(String(targetTrack.id), queueSongs, {
-    sourceQueueId: PERSONAL_FM_QUEUE_ID,
-  });
+  await playPersonalFmTrack(targetTrack, queueSongs);
   void playlistStore.ensurePersonalFmQueue({
     track: targetTrack,
     playtime: 0,
@@ -198,7 +220,12 @@ const handlePlayPersonalFm = async () => {
   if (personalFmLoading.value) return;
   personalFmLoading.value = true;
   try {
-    if (!resetPending) {
+    if (resetPending && personalFmPreviewPromise) {
+      await personalFmPreviewPromise;
+    }
+
+    const latestResetPending = playlistStore.isPersonalFmSessionResetPending();
+    if (!latestResetPending) {
       const resumed = await resumeCurrentPersonalFm();
       if (resumed) return;
     }
@@ -206,8 +233,8 @@ const handlePlayPersonalFm = async () => {
     const ready = await playlistStore.startPersonalFm({
       fresh: true,
       mode: selectedPersonalFmMode.value,
-      recreate: resetPending,
-      retainBuffer: resetPending,
+      recreate: latestResetPending,
+      retainBuffer: latestResetPending,
     });
     if (!ready) return;
     await playCurrentPersonalFm();
@@ -242,9 +269,7 @@ const handleSelectPersonalFmTrack = async (track: Song) => {
       return;
     }
     const queueSongs = playlistStore.activatePersonalFmTrack(track);
-    await playerStore.playTrack(targetId, queueSongs, {
-      sourceQueueId: PERSONAL_FM_QUEUE_ID,
-    });
+    await playPersonalFmTrack(track, queueSongs);
     void playlistStore.ensurePersonalFmQueue({ track, playtime: 0, isOverplay: false });
   } finally {
     personalFmLoading.value = false;
@@ -311,23 +336,32 @@ const handleDislikePersonalFm = async () => {
   }
 };
 
+const preloadPersonalFmPreview = () => {
+  if (personalFmPreviewPromise) return personalFmPreviewPromise;
+
+  personalFmPreloading.value = true;
+  personalFmPreviewPromise = playlistStore
+    .resetPersonalFmPreview({
+      mode: selectedPersonalFmMode.value,
+      songPoolId: selectedPersonalFmSongPoolId.value,
+      preserveQueue: true,
+    })
+    .finally(() => {
+      personalFmPreloading.value = false;
+      personalFmPreviewPromise = null;
+    });
+
+  return personalFmPreviewPromise;
+};
+
 onMounted(() => {
   if (!isLoggedIn.value) return;
 
   const shouldFetchPreview =
     playlistStore.isPersonalFmSessionResetPending() || !personalFmCurrentTrack.value;
 
-  if (shouldFetchPreview && !personalFmLoading.value) {
-    personalFmLoading.value = true;
-    void playlistStore
-      .resetPersonalFmPreview({
-        mode: selectedPersonalFmMode.value,
-        songPoolId: selectedPersonalFmSongPoolId.value,
-        preserveQueue: true,
-      })
-      .finally(() => {
-        personalFmLoading.value = false;
-      });
+  if (shouldFetchPreview && !personalFmLoading.value && !personalFmPreloading.value) {
+    void preloadPersonalFmPreview();
   }
 
   updatePersonalFmVisibleSideCount();
