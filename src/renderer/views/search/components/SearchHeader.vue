@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import CustomTabBar from '@/components/ui/CustomTabBar.vue';
@@ -27,6 +28,10 @@ const emit = defineEmits<{
   'update:activeTabIndex': [value: number];
   'update:searchInput': [value: string];
 }>();
+
+const inputRef = ref<HTMLInputElement | null>(null);
+
+defineExpose({ inputRef });
 </script>
 
 <template>
@@ -47,6 +52,7 @@ const emit = defineEmits<{
       <div class="search-input-wrap">
         <Icon :icon="iconSearch" width="18" height="18" class="search-input-icon" />
         <input
+          ref="inputRef"
           :value="searchInput"
           type="text"
           class="search-input"

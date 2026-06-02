@@ -63,7 +63,7 @@ const router = useRouter();
 
 const searchInput = ref('');
 const currentSearchKeyword = ref('');
-const searchInputRef = ref<HTMLInputElement | null>(null);
+const searchHeaderRef = ref<InstanceType<typeof SearchHeader> | null>(null);
 const isLoading = ref(false);
 const isLoadingHot = ref(true);
 const isLoadingSuggestions = ref(false);
@@ -284,7 +284,7 @@ const fetchSuggestions = async (keywords: string) => {
     if (searchInput.value.trim() !== keywords) return;
     suggestionCategories.value = extractSuggestionCategories(res);
     isLoadingSuggestions.value = false;
-    if (document.activeElement === searchInputRef.value) {
+    if (document.activeElement === searchHeaderRef.value?.inputRef) {
       showSuggestions.value = true;
     }
   } catch {
@@ -495,7 +495,7 @@ const runSearch = async (keyword?: string) => {
   songSearchQuery.value = '';
   clearSearchResults();
   resetPaginationState();
-  searchInputRef.value?.blur();
+  searchHeaderRef.value?.inputRef?.blur();
   settingStore.addToSearchHistory(keywords);
 
   try {
@@ -599,6 +599,7 @@ onUnmounted(() => {
   <PageScrollContainer class="search-view-container">
     <div class="search-view relative pb-10">
       <SearchHeader
+        ref="searchHeaderRef"
         :active-tab-index="activeTabIndex"
         :default-keyword="defaultKeyword"
         :has-searched="hasSearched"
@@ -612,7 +613,7 @@ onUnmounted(() => {
         @clear="
           searchInput = '';
           handleSearchChanged('');
-          searchInputRef?.focus();
+          searchHeaderRef?.inputRef?.focus();
         "
         @focus="handleInputFocus"
         @pick-suggestion="runSearch($event)"
