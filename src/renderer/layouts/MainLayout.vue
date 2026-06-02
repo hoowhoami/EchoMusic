@@ -58,10 +58,10 @@ const keepAliveMax = computed(() =>
     class="main-layout h-screen w-screen flex overflow-hidden bg-bg-main text-text-main transition-colors duration-300"
   >
     <div
-      class="sidebar-wrapper shrink-0 transition-all duration-300 ease-in-out relative"
-      :class="isSidebarCollapsed ? 'w-0' : 'w-55'"
+      class="sidebar-wrapper shrink-0 relative"
+      :style="{ width: isSidebarCollapsed ? '64px' : '230px' }"
     >
-      <Sidebar class="absolute inset-0" :class="{ invisible: isSidebarCollapsed }" />
+      <Sidebar class="absolute inset-0" :collapsed="isSidebarCollapsed" />
     </div>
 
     <div class="flex-1 flex flex-col min-w-0 min-h-0 relative">
@@ -89,5 +89,6 @@ const keepAliveMax = computed(() =>
 
 .sidebar-wrapper {
   overflow: hidden;
+  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 </style>

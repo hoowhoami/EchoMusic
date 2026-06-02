@@ -22,6 +22,9 @@ const route = useRoute();
 const router = useRouter();
 const isMac = computed(() => window.electron.platform === 'darwin');
 const settingStore = useSettingStore();
+const navStartClass = computed(() =>
+  isMac.value && !settingStore.sidebarCollapseEnabled ? 'pl-6' : 'pl-4',
+);
 
 // 侧边栏折叠
 const props = defineProps<{
@@ -250,12 +253,7 @@ onUnmounted(() => {
     <div class="drag-region"></div>
 
     <!-- 1. 左侧：导航按钮 -->
-    <div
-      class="flex items-center gap-1 no-drag relative z-10"
-      :class="
-        isMac && settingStore.sidebarCollapseEnabled && props.isSidebarCollapsed ? 'pl-20' : 'pl-6'
-      "
-    >
+    <div class="titlebar-nav flex items-center gap-1 no-drag relative z-10" :class="navStartClass">
       <!-- 侧边栏折叠按钮 -->
       <Button
         v-if="settingStore.sidebarCollapseEnabled"
@@ -491,6 +489,10 @@ onUnmounted(() => {
 <style scoped>
 .title-bar {
   height: 46px;
+}
+
+.titlebar-nav {
+  transition: padding-left 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-btn {

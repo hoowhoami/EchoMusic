@@ -242,7 +242,7 @@ export const usePlayerStore = defineStore(
       if (!settingStore.impulseResponseEnabled) return;
       settingStore.impulseResponseEnabled = false;
       audioManager.setImpulseResponse(null, settingStore.impulseResponseMix);
-      toastStore.warning('IRS 音效加载失败，已自动关闭', 4200);
+      toastStore.warning('空间音效加载失败，已自动关闭', 4200);
     };
 
     const init = () => {

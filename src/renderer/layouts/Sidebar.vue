@@ -10,6 +10,7 @@ import Popover from '@/components/ui/Popover.vue';
 import RefreshIcon from '@/components/ui/RefreshIcon.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import Switch from '@/components/ui/Switch.vue';
+import Tooltip from '@/components/ui/Tooltip.vue';
 import ImportPlaylistDialog from '@/components/music/ImportPlaylistDialog.vue';
 import {
   iconClock,
@@ -26,6 +27,7 @@ import {
   iconTrash,
   iconChevronDown,
   iconArrowsSort,
+  iconDotsVertical,
 } from '@/icons';
 import type { PlaylistMeta } from '@/models/playlist';
 import { usePlaylistStore, sortPlaylists } from '@/stores/playlist';
@@ -36,6 +38,10 @@ import { useSettingStore } from '@/stores/setting';
 defineOptions({
   inheritAttrs: false,
 });
+
+defineProps<{
+  collapsed?: boolean;
+}>();
 
 const router = useRouter();
 const route = useRoute();
@@ -171,6 +177,12 @@ const favoritedPlaylists = computed(() => {
   );
   return sortPlaylists(all, settingStore.playlistSortOrder as PlaylistSortOrder);
 });
+
+const visibleRailPlaylists = computed(() =>
+  activePlaylistTab.value === 0
+    ? [...createdPlaylists.value.pinned, ...createdPlaylists.value.normal]
+    : favoritedPlaylists.value,
+);
 
 const activePlaylistRouteId = computed(() => {
   return route.name === 'playlist-detail' ? String(route.params.id ?? '') : '';
@@ -415,6 +427,7 @@ watch(
   <aside
     v-bind="attrs"
     class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative overflow-hidden"
+    :class="{ 'is-rail': collapsed }"
   >
     <!-- 主题色顶部渐变氛围层 -->
     <div class="sidebar-accent-gradient"></div>
@@ -422,435 +435,698 @@ watch(
       <div class="drag-region"></div>
     </div>
 
-    <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
-      <div
-        class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/8 dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
-      >
-        <div
-          class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
-          @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
-        >
-          <div
-            class="w-8.5 h-8.5 shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden"
+    <template v-if="collapsed">
+      <div class="sidebar-rail flex flex-col flex-1 min-h-0 no-drag">
+        <div class="sidebar-rail-top">
+          <Tooltip
+            :content="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
+            side="right"
           >
-            <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
-          </div>
-          <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
-            <span
-              class="text-[13px] font-semibold text-primary truncate leading-tight tracking-tight"
-            >
-              {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
-            </span>
-            <span
-              class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider"
-            >
-              {{ isLoggedIn ? `Lv.${userInfo?.p_grade || 0}` : '点击登录账号' }}
-            </span>
-          </div>
-        </div>
-        <div class="sidebar-user-divider"></div>
-        <Button
-          variant="unstyled"
-          size="none"
-          class="sidebar-settings-btn p-2 mr-1 rounded-[14px] text-text-secondary transition-all active:scale-90"
-          @click="router.push('/main/settings')"
-        >
-          <Icon :icon="iconSettings" width="19" height="19" />
-        </Button>
-      </div>
-    </div>
-
-    <div class="px-4 shrink-0 no-drag">
-      <div v-for="group in menuGroups" :key="group.title" class="mb-4">
-        <h2
-          class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 cursor-pointer select-none"
-          @click="toggleSection(group.key)"
-        >
-          {{ group.title }}
-          <Icon
-            :icon="iconChevronDown"
-            width="10"
-            height="10"
-            class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
-            :class="{ '-rotate-90': isSectionCollapsed(group.key) }"
-          />
-        </h2>
-        <nav
-          class="sidebar-section-body"
-          :class="{ 'is-collapsed': isSectionCollapsed(group.key) }"
-        >
-          <div class="space-y-0.5">
-            <Button
-              v-for="item in group.items"
-              :key="item.path"
-              variant="unstyled"
-              size="none"
-              :disabled="isMenuItemDisabled(item)"
-              :class="[
-                'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
-                isMenuItemDisabled(item)
-                  ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
-                  : isMenuItemActive(item)
-                    ? 'is-active cursor-pointer bg-primary/12 text-primary'
-                    : 'cursor-pointer text-text-main/90',
-              ]"
-              @click="handleMenuClick(item)"
-            >
-              <Icon
-                :icon="iconMap[item.icon as keyof typeof iconMap]"
-                width="18"
-                height="18"
-                :class="[
-                  isMenuItemDisabled(item)
-                    ? 'text-text-main opacity-40'
-                    : isMenuItemActive(item)
-                      ? 'text-primary'
-                      : 'text-text-main opacity-60 group-hover:opacity-100',
-                ]"
-              />
-              <span
-                class="text-[14px]"
-                :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+            <template #trigger>
+              <Button
+                variant="unstyled"
+                size="none"
+                class="sidebar-rail-avatar-btn"
+                :title="isLoggedIn ? userInfo?.nickname || '个人主页' : '点击登录账号'"
+                @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
               >
-                {{ item.name }}
-              </span>
-            </Button>
-          </div>
-        </nav>
-      </div>
-    </div>
+                <Avatar
+                  :src="isLoggedIn ? userInfo?.pic : ''"
+                  class="w-9 h-9 rounded-full"
+                  error-class="opacity-30"
+                />
+              </Button>
+            </template>
+          </Tooltip>
+        </div>
 
-    <div class="pl-7.5 pr-3 mb-2 shrink-0 no-drag -mt-1.5 flex items-center gap-1.5">
-      <div class="min-w-0 flex flex-1 items-center gap-1">
-        <Button
-          variant="unstyled"
-          size="none"
-          :class="[
-            'sidebar-playlist-tab',
-            activePlaylistTab === 0
-              ? 'text-primary opacity-100'
-              : 'text-text-main opacity-60 hover:opacity-80',
-          ]"
-          @click="activePlaylistTab = 0"
-        >
-          自建歌单
-        </Button>
-        <span class="sidebar-tab-divider" aria-hidden="true"></span>
-        <Button
-          variant="unstyled"
-          size="none"
-          :class="[
-            'sidebar-playlist-tab',
-            activePlaylistTab === 1
-              ? 'text-primary opacity-100'
-              : 'text-text-main opacity-60 hover:opacity-80',
-          ]"
-          @click="activePlaylistTab = 1"
-        >
-          收藏歌单
-        </Button>
-      </div>
-      <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
-        <Popover
-          v-model:open="showSortMenu"
-          trigger="click"
-          side="bottom"
-          align="end"
-          :side-offset="6"
-          :show-arrow="false"
-          content-class="sidebar-sort-menu"
-        >
-          <template #trigger>
-            <Button
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="sidebar-section-action sidebar-icon-btn"
-              title="歌单排序"
-              :class="{ 'text-primary opacity-100': settingStore.playlistSortOrder !== 'default' }"
-            >
-              <Icon :icon="iconArrowsSort" width="12" height="12" />
-            </Button>
+        <div class="sidebar-rail-nav">
+          <template v-for="group in menuGroups" :key="group.key">
+            <div class="sidebar-rail-divider" aria-hidden="true"></div>
+            <Tooltip v-for="item in group.items" :key="item.path" :content="item.name" side="right">
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  :disabled="isMenuItemDisabled(item)"
+                  :title="item.name"
+                  :class="[
+                    'sidebar-rail-item',
+                    isMenuItemDisabled(item)
+                      ? 'is-disabled'
+                      : isMenuItemActive(item)
+                        ? 'is-active'
+                        : '',
+                  ]"
+                  @click="handleMenuClick(item)"
+                >
+                  <Icon :icon="iconMap[item.icon as keyof typeof iconMap]" width="19" height="19" />
+                </Button>
+              </template>
+            </Tooltip>
           </template>
-          <div class="sidebar-sort-menu-list">
-            <div class="sidebar-sort-menu-title">排序方式</div>
-            <button
-              type="button"
-              class="sidebar-sort-menu-item"
-              :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
-              @click="handleSortChange('default')"
-            >
-              默认顺序
-            </button>
-            <div class="sidebar-sort-menu-divider"></div>
-            <button
-              type="button"
-              class="sidebar-sort-menu-item"
-              :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
-              @click="handleSortChange('time-asc')"
-            >
-              时间正序
-            </button>
-            <button
-              type="button"
-              class="sidebar-sort-menu-item"
-              :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
-              @click="handleSortChange('time-desc')"
-            >
-              时间倒序
-            </button>
-            <div class="sidebar-sort-menu-divider"></div>
-            <button
-              type="button"
-              class="sidebar-sort-menu-item"
-              :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
-              @click="handleSortChange('name-asc')"
-            >
-              字母正序
-            </button>
-            <button
-              type="button"
-              class="sidebar-sort-menu-item"
-              :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
-              @click="handleSortChange('name-desc')"
-            >
-              字母倒序
-            </button>
+        </div>
+
+        <div class="sidebar-rail-playlists">
+          <div class="sidebar-rail-divider" aria-hidden="true"></div>
+          <div
+            class="sidebar-rail-tabs"
+            :class="activePlaylistTab === 1 ? 'is-favorited' : 'is-created'"
+          >
+            <span class="sidebar-rail-tab-indicator" aria-hidden="true"></span>
+            <Tooltip content="自建歌单" side="right">
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  title="自建歌单"
+                  :class="['sidebar-rail-tab', activePlaylistTab === 0 ? 'is-active' : '']"
+                  @click="activePlaylistTab = 0"
+                >
+                  <Icon :icon="iconPlaylistAdd" width="15" height="15" />
+                </Button>
+              </template>
+            </Tooltip>
+            <Tooltip content="收藏歌单" side="right">
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  title="收藏歌单"
+                  :class="['sidebar-rail-tab', activePlaylistTab === 1 ? 'is-active' : '']"
+                  @click="activePlaylistTab = 1"
+                >
+                  <Icon :icon="iconHeart" width="15" height="15" />
+                </Button>
+              </template>
+            </Tooltip>
           </div>
-        </Popover>
-        <Button
-          variant="unstyled"
-          size="none"
-          type="button"
-          class="sidebar-section-action sidebar-icon-btn"
-          title="刷新歌单"
-          :disabled="!isLoggedIn"
-          @click="refreshUserPlaylists"
-        >
-          <RefreshIcon width="13" height="13" />
-        </Button>
-        <div class="sidebar-section-action-slot">
+
+          <Scrollbar
+            class="sidebar-rail-scroll flex-1 min-h-0"
+            :scrollbar-inset="1"
+            :content-props="{ class: 'sidebar-rail-scroll-content' }"
+          >
+            <div
+              v-if="isLoggedIn && visibleRailPlaylists.length > 0"
+              class="sidebar-rail-cover-list"
+            >
+              <Tooltip
+                v-for="playlist in visibleRailPlaylists"
+                :key="playlist.listid || playlist.id"
+                :content="playlist.name || '歌单'"
+                side="right"
+              >
+                <template #trigger>
+                  <button
+                    type="button"
+                    :title="playlist.name || '歌单'"
+                    :class="[
+                      'sidebar-rail-cover-btn',
+                      isActivePlaylist(playlist) ? 'is-active' : '',
+                    ]"
+                    @click="navigateToPlaylist(playlist)"
+                  >
+                    <Cover
+                      :url="playlist.pic"
+                      :size="96"
+                      :width="32"
+                      :height="32"
+                      :borderRadius="8"
+                      class="sidebar-rail-cover"
+                    />
+                  </button>
+                </template>
+              </Tooltip>
+            </div>
+            <Tooltip v-else-if="!isLoggedIn" content="登录同步云端歌单" side="right">
+              <template #trigger>
+                <div class="sidebar-rail-empty" title="登录同步云端歌单">
+                  <Icon :icon="iconCloud" width="17" height="17" />
+                </div>
+              </template>
+            </Tooltip>
+          </Scrollbar>
+        </div>
+
+        <div class="sidebar-rail-bottom">
           <Popover
-            v-if="isLoggedIn && activePlaylistTab === 0"
-            v-model:open="showCreateMenu"
+            v-model:open="showSortMenu"
             trigger="click"
-            side="bottom"
+            side="right"
             align="end"
-            :side-offset="6"
+            :side-offset="8"
             :show-arrow="false"
-            content-class="sidebar-create-menu"
+            content-class="sidebar-rail-more-menu"
           >
             <template #trigger>
               <Button
                 variant="unstyled"
                 size="none"
                 type="button"
-                class="sidebar-section-action sidebar-icon-btn"
-                title="添加歌单"
+                class="sidebar-rail-item"
+                title="歌单操作"
               >
-                <Icon :icon="iconPlus" width="12" height="12" />
+                <Icon :icon="iconDotsVertical" width="18" height="18" />
               </Button>
             </template>
-            <div class="sidebar-create-menu-list">
-              <div class="sidebar-create-menu-title">添加歌单</div>
+            <div class="sidebar-rail-more-list">
+              <div class="sidebar-sort-menu-title">歌单操作</div>
               <button
                 type="button"
-                class="sidebar-create-menu-item"
+                class="sidebar-sort-menu-item"
+                :disabled="!isLoggedIn"
                 @click="
                   () => {
-                    showCreateMenu = false;
+                    showSortMenu = false;
+                    refreshUserPlaylists();
+                  }
+                "
+              >
+                刷新歌单
+              </button>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :disabled="!isLoggedIn || activePlaylistTab !== 0"
+                @click="
+                  () => {
+                    showSortMenu = false;
                     openCreatePlaylistDialog();
                   }
                 "
               >
-                <span class="sidebar-create-menu-icon">
-                  <Icon :icon="iconPlaylistAdd" width="16" height="16" />
-                </span>
-                <div class="min-w-0 flex-1 text-left">
-                  <div class="sidebar-create-menu-title-row">新建空歌单</div>
-                  <div class="sidebar-create-menu-desc">自定义名称从零开始</div>
-                </div>
+                新建空歌单
               </button>
               <button
                 type="button"
-                class="sidebar-create-menu-item"
+                class="sidebar-sort-menu-item"
+                :disabled="!isLoggedIn || activePlaylistTab !== 0"
                 @click="
                   () => {
-                    showCreateMenu = false;
+                    showSortMenu = false;
                     showImportDialog = true;
                   }
                 "
               >
-                <span class="sidebar-create-menu-icon">
-                  <Icon :icon="iconExternalLink" width="16" height="16" />
-                </span>
-                <div class="min-w-0 flex-1 text-left">
-                  <div class="sidebar-create-menu-title-row">从链接导入</div>
-                  <div class="sidebar-create-menu-desc">网易云 / QQ / 酷狗 / 文本</div>
-                </div>
+                从链接导入
+              </button>
+              <div class="sidebar-sort-menu-divider"></div>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
+                @click="handleSortChange('default')"
+              >
+                默认顺序
+              </button>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
+                @click="handleSortChange('time-asc')"
+              >
+                时间正序
+              </button>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
+                @click="handleSortChange('time-desc')"
+              >
+                时间倒序
+              </button>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
+                @click="handleSortChange('name-asc')"
+              >
+                字母正序
+              </button>
+              <button
+                type="button"
+                class="sidebar-sort-menu-item"
+                :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
+                @click="handleSortChange('name-desc')"
+              >
+                字母倒序
               </button>
             </div>
           </Popover>
+
+          <Tooltip content="设置" side="right">
+            <template #trigger>
+              <Button
+                variant="unstyled"
+                size="none"
+                class="sidebar-rail-item"
+                title="设置"
+                @click="router.push('/main/settings')"
+              >
+                <Icon :icon="iconSettings" width="19" height="19" />
+              </Button>
+            </template>
+          </Tooltip>
         </div>
       </div>
-    </div>
+    </template>
 
-    <Scrollbar
-      class="flex-1 min-h-0 no-drag"
-      :scrollbar-inset="3"
-      :content-props="{ class: 'sidebar-scroll' }"
-    >
-      <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
-        <template v-if="activePlaylistTab === 0">
-          <!-- 置顶歌单（默认收藏 + 我喜欢） -->
+    <template v-else>
+      <div class="sidebar-full-panel flex flex-col flex-1 min-h-0">
+        <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
           <div
-            v-for="playlist in createdPlaylists.pinned"
-            :key="playlist.listid || playlist.id"
-            :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
-              isActivePlaylist(playlist)
-                ? 'is-active bg-primary/12 text-primary'
-                : 'text-text-main/90',
-            ]"
-            @click="navigateToPlaylist(playlist)"
+            class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/8 dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
           >
-            <Cover
-              :url="playlist.pic"
-              :size="100"
-              :width="28"
-              :height="28"
-              :borderRadius="6"
-              class="shrink-0"
-            />
-            <div class="sidebar-playlist-label-wrap">
-              <span
-                :class="[
-                  'text-[13px] truncate w-full font-medium tracking-tight',
-                  isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
-                ]"
-              >
-                {{ playlist.name }}
-              </span>
-            </div>
-          </div>
-          <!-- 分隔线 -->
-          <div
-            v-if="createdPlaylists.pinned.length > 0 && createdPlaylists.normal.length > 0"
-            class="sidebar-playlist-divider"
-          ></div>
-          <!-- 普通歌单（受排序影响） -->
-          <div
-            v-for="playlist in createdPlaylists.normal"
-            :key="playlist.listid || playlist.id"
-            :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
-              isActivePlaylist(playlist)
-                ? 'is-active bg-primary/12 text-primary'
-                : 'text-text-main/90',
-            ]"
-            @click="navigateToPlaylist(playlist)"
-          >
-            <Cover
-              :url="playlist.pic"
-              :size="100"
-              :width="28"
-              :height="28"
-              :borderRadius="6"
-              class="shrink-0"
-            />
             <div
+              class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
+              @click="navigateTo(isLoggedIn ? '/main/profile' : '/login')"
+            >
+              <div
+                class="w-8.5 h-8.5 shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden"
+              >
+                <Avatar :src="isLoggedIn ? userInfo?.pic : ''" class="w-full h-full" />
+              </div>
+              <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+                <span
+                  class="text-[13px] font-semibold text-primary truncate leading-tight tracking-tight"
+                >
+                  {{ isLoggedIn ? userInfo?.nickname : '未登录' }}
+                </span>
+                <span
+                  class="truncate text-[9px] text-text-secondary font-medium opacity-60 tracking-wider"
+                >
+                  {{ isLoggedIn ? `Lv.${userInfo?.p_grade || 0}` : '点击登录账号' }}
+                </span>
+              </div>
+            </div>
+            <div class="sidebar-user-divider"></div>
+            <Button
+              variant="unstyled"
+              size="none"
+              class="sidebar-settings-btn p-2 mr-1 rounded-[14px] text-text-secondary transition-all active:scale-90"
+              @click="router.push('/main/settings')"
+            >
+              <Icon :icon="iconSettings" width="19" height="19" />
+            </Button>
+          </div>
+        </div>
+
+        <div class="px-4 shrink-0 no-drag">
+          <div v-for="group in menuGroups" :key="group.title" class="mb-4">
+            <h2
+              class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 cursor-pointer select-none"
+              @click="toggleSection(group.key)"
+            >
+              {{ group.title }}
+              <Icon
+                :icon="iconChevronDown"
+                width="10"
+                height="10"
+                class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
+                :class="{ '-rotate-90': isSectionCollapsed(group.key) }"
+              />
+            </h2>
+            <nav
+              class="sidebar-section-body"
+              :class="{ 'is-collapsed': isSectionCollapsed(group.key) }"
+            >
+              <div class="space-y-0.5">
+                <Button
+                  v-for="item in group.items"
+                  :key="item.path"
+                  variant="unstyled"
+                  size="none"
+                  :disabled="isMenuItemDisabled(item)"
+                  :class="[
+                    'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
+                    isMenuItemDisabled(item)
+                      ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
+                      : isMenuItemActive(item)
+                        ? 'is-active cursor-pointer bg-primary/12 text-primary'
+                        : 'cursor-pointer text-text-main/90',
+                  ]"
+                  @click="handleMenuClick(item)"
+                >
+                  <Icon
+                    :icon="iconMap[item.icon as keyof typeof iconMap]"
+                    width="18"
+                    height="18"
+                    :class="[
+                      isMenuItemDisabled(item)
+                        ? 'text-text-main opacity-40'
+                        : isMenuItemActive(item)
+                          ? 'text-primary'
+                          : 'text-text-main opacity-60 group-hover:opacity-100',
+                    ]"
+                  />
+                  <span
+                    class="text-[14px]"
+                    :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+                  >
+                    {{ item.name }}
+                  </span>
+                </Button>
+              </div>
+            </nav>
+          </div>
+        </div>
+
+        <div class="pl-7.5 pr-3 mb-2 shrink-0 no-drag -mt-1.5 flex items-center gap-1.5">
+          <div class="min-w-0 flex flex-1 items-center gap-1">
+            <Button
+              variant="unstyled"
+              size="none"
               :class="[
-                'sidebar-playlist-label-wrap',
-                canRemovePlaylist(playlist) ? 'has-action' : '',
+                'sidebar-playlist-tab',
+                activePlaylistTab === 0
+                  ? 'text-primary opacity-100'
+                  : 'text-text-main opacity-60 hover:opacity-80',
               ]"
+              @click="activePlaylistTab = 0"
             >
-              <span
-                :class="[
-                  'text-[13px] truncate w-full font-medium tracking-tight',
-                  isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
-                ]"
-              >
-                {{ playlist.name }}
-              </span>
-            </div>
+              自建歌单
+            </Button>
+            <span class="sidebar-tab-divider" aria-hidden="true"></span>
             <Button
-              v-if="canRemovePlaylist(playlist)"
+              variant="unstyled"
+              size="none"
+              :class="[
+                'sidebar-playlist-tab',
+                activePlaylistTab === 1
+                  ? 'text-primary opacity-100'
+                  : 'text-text-main opacity-60 hover:opacity-80',
+              ]"
+              @click="activePlaylistTab = 1"
+            >
+              收藏歌单
+            </Button>
+          </div>
+          <div class="flex items-center gap-0.5 shrink-0 pl-0.5">
+            <Popover
+              v-model:open="showSortMenu"
+              trigger="click"
+              side="bottom"
+              align="end"
+              :side-offset="6"
+              :show-arrow="false"
+              content-class="sidebar-sort-menu"
+            >
+              <template #trigger>
+                <Button
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="sidebar-section-action sidebar-icon-btn"
+                  title="歌单排序"
+                  :class="{
+                    'text-primary opacity-100': settingStore.playlistSortOrder !== 'default',
+                  }"
+                >
+                  <Icon :icon="iconArrowsSort" width="12" height="12" />
+                </Button>
+              </template>
+              <div class="sidebar-sort-menu-list">
+                <div class="sidebar-sort-menu-title">排序方式</div>
+                <button
+                  type="button"
+                  class="sidebar-sort-menu-item"
+                  :class="{ 'is-active': settingStore.playlistSortOrder === 'default' }"
+                  @click="handleSortChange('default')"
+                >
+                  默认顺序
+                </button>
+                <div class="sidebar-sort-menu-divider"></div>
+                <button
+                  type="button"
+                  class="sidebar-sort-menu-item"
+                  :class="{ 'is-active': settingStore.playlistSortOrder === 'time-asc' }"
+                  @click="handleSortChange('time-asc')"
+                >
+                  时间正序
+                </button>
+                <button
+                  type="button"
+                  class="sidebar-sort-menu-item"
+                  :class="{ 'is-active': settingStore.playlistSortOrder === 'time-desc' }"
+                  @click="handleSortChange('time-desc')"
+                >
+                  时间倒序
+                </button>
+                <div class="sidebar-sort-menu-divider"></div>
+                <button
+                  type="button"
+                  class="sidebar-sort-menu-item"
+                  :class="{ 'is-active': settingStore.playlistSortOrder === 'name-asc' }"
+                  @click="handleSortChange('name-asc')"
+                >
+                  字母正序
+                </button>
+                <button
+                  type="button"
+                  class="sidebar-sort-menu-item"
+                  :class="{ 'is-active': settingStore.playlistSortOrder === 'name-desc' }"
+                  @click="handleSortChange('name-desc')"
+                >
+                  字母倒序
+                </button>
+              </div>
+            </Popover>
+            <Button
               variant="unstyled"
               size="none"
               type="button"
-              class="sidebar-playlist-action"
-              :title="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
-              @click.stop="openRemovePlaylistDialog(playlist)"
+              class="sidebar-section-action sidebar-icon-btn"
+              title="刷新歌单"
+              :disabled="!isLoggedIn"
+              @click="refreshUserPlaylists"
             >
-              <Icon :icon="iconTrash" width="14" height="14" />
+              <RefreshIcon width="13" height="13" />
             </Button>
-          </div>
-          <div
-            v-if="createdPlaylists.pinned.length === 0 && createdPlaylists.normal.length === 0"
-            class="py-8 text-center opacity-40 text-[12px] italic"
-          >
-            暂无自建歌单
-          </div>
-        </template>
-
-        <template v-else>
-          <div
-            v-for="playlist in favoritedPlaylists"
-            :key="playlist.listid || playlist.id"
-            :class="[
-              'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
-              isActivePlaylist(playlist)
-                ? 'is-active bg-primary/12 text-primary'
-                : 'text-text-main/90',
-            ]"
-            @click="navigateToPlaylist(playlist)"
-          >
-            <Cover
-              :url="playlist.pic"
-              :size="100"
-              :width="28"
-              :height="28"
-              :borderRadius="6"
-              class="shrink-0"
-            />
-            <div class="sidebar-playlist-label-wrap has-action">
-              <span
-                :class="[
-                  'text-[13px] truncate w-full font-medium tracking-tight',
-                  isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
-                ]"
+            <div class="sidebar-section-action-slot">
+              <Popover
+                v-if="isLoggedIn && activePlaylistTab === 0"
+                v-model:open="showCreateMenu"
+                trigger="click"
+                side="bottom"
+                align="end"
+                :side-offset="6"
+                :show-arrow="false"
+                content-class="sidebar-create-menu"
               >
-                {{ playlist.name }}
-              </span>
+                <template #trigger>
+                  <Button
+                    variant="unstyled"
+                    size="none"
+                    type="button"
+                    class="sidebar-section-action sidebar-icon-btn"
+                    title="添加歌单"
+                  >
+                    <Icon :icon="iconPlus" width="12" height="12" />
+                  </Button>
+                </template>
+                <div class="sidebar-create-menu-list">
+                  <div class="sidebar-create-menu-title">添加歌单</div>
+                  <button
+                    type="button"
+                    class="sidebar-create-menu-item"
+                    @click="
+                      () => {
+                        showCreateMenu = false;
+                        openCreatePlaylistDialog();
+                      }
+                    "
+                  >
+                    <span class="sidebar-create-menu-icon">
+                      <Icon :icon="iconPlaylistAdd" width="16" height="16" />
+                    </span>
+                    <div class="min-w-0 flex-1 text-left">
+                      <div class="sidebar-create-menu-title-row">新建空歌单</div>
+                      <div class="sidebar-create-menu-desc">自定义名称从零开始</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    class="sidebar-create-menu-item"
+                    @click="
+                      () => {
+                        showCreateMenu = false;
+                        showImportDialog = true;
+                      }
+                    "
+                  >
+                    <span class="sidebar-create-menu-icon">
+                      <Icon :icon="iconExternalLink" width="16" height="16" />
+                    </span>
+                    <div class="min-w-0 flex-1 text-left">
+                      <div class="sidebar-create-menu-title-row">从链接导入</div>
+                      <div class="sidebar-create-menu-desc">网易云 / QQ / 酷狗 / 文本</div>
+                    </div>
+                  </button>
+                </div>
+              </Popover>
             </div>
-            <Button
-              v-if="canRemovePlaylist(playlist)"
-              variant="unstyled"
-              size="none"
-              type="button"
-              class="sidebar-playlist-action"
-              title="取消收藏"
-              @click.stop="openRemovePlaylistDialog(playlist)"
-            >
-              <Icon :icon="iconTrash" width="14" height="14" />
-            </Button>
           </div>
+        </div>
 
-          <div
-            v-if="favoritedPlaylists.length === 0"
-            class="py-8 text-center opacity-40 text-[12px] italic"
-          >
-            暂无收藏内容
-          </div>
-        </template>
-      </nav>
-
-      <div v-else class="sidebar-scroll-empty px-3.5 py-8 text-center">
-        <span class="text-[12px] font-normal text-text-main opacity-50 italic"
-          >登录同步云端歌单</span
+        <Scrollbar
+          class="sidebar-full-scroll flex-1 min-h-0 no-drag"
+          :scrollbar-inset="3"
+          :content-props="{ class: 'sidebar-scroll' }"
         >
+          <nav v-if="isLoggedIn" class="sidebar-scroll-inner space-y-0.5">
+            <template v-if="activePlaylistTab === 0">
+              <!-- 置顶歌单（默认收藏 + 我喜欢） -->
+              <div
+                v-for="playlist in createdPlaylists.pinned"
+                :key="playlist.listid || playlist.id"
+                :class="[
+                  'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
+                  isActivePlaylist(playlist)
+                    ? 'is-active bg-primary/12 text-primary'
+                    : 'text-text-main/90',
+                ]"
+                @click="navigateToPlaylist(playlist)"
+              >
+                <Cover
+                  :url="playlist.pic"
+                  :size="100"
+                  :width="28"
+                  :height="28"
+                  :borderRadius="6"
+                  class="shrink-0"
+                />
+                <div class="sidebar-playlist-label-wrap">
+                  <span
+                    :class="[
+                      'text-[13px] truncate w-full font-medium tracking-tight',
+                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                    ]"
+                  >
+                    {{ playlist.name }}
+                  </span>
+                </div>
+              </div>
+              <!-- 分隔线 -->
+              <div
+                v-if="createdPlaylists.pinned.length > 0 && createdPlaylists.normal.length > 0"
+                class="sidebar-playlist-divider"
+              ></div>
+              <!-- 普通歌单（受排序影响） -->
+              <div
+                v-for="playlist in createdPlaylists.normal"
+                :key="playlist.listid || playlist.id"
+                :class="[
+                  'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
+                  isActivePlaylist(playlist)
+                    ? 'is-active bg-primary/12 text-primary'
+                    : 'text-text-main/90',
+                ]"
+                @click="navigateToPlaylist(playlist)"
+              >
+                <Cover
+                  :url="playlist.pic"
+                  :size="100"
+                  :width="28"
+                  :height="28"
+                  :borderRadius="6"
+                  class="shrink-0"
+                />
+                <div
+                  :class="[
+                    'sidebar-playlist-label-wrap',
+                    canRemovePlaylist(playlist) ? 'has-action' : '',
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'text-[13px] truncate w-full font-medium tracking-tight',
+                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                    ]"
+                  >
+                    {{ playlist.name }}
+                  </span>
+                </div>
+                <Button
+                  v-if="canRemovePlaylist(playlist)"
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="sidebar-playlist-action"
+                  :title="isOwnerPlaylist(playlist) ? '删除歌单' : '取消收藏'"
+                  @click.stop="openRemovePlaylistDialog(playlist)"
+                >
+                  <Icon :icon="iconTrash" width="14" height="14" />
+                </Button>
+              </div>
+              <div
+                v-if="createdPlaylists.pinned.length === 0 && createdPlaylists.normal.length === 0"
+                class="py-8 text-center opacity-40 text-[12px] italic"
+              >
+                暂无自建歌单
+              </div>
+            </template>
+
+            <template v-else>
+              <div
+                v-for="playlist in favoritedPlaylists"
+                :key="playlist.listid || playlist.id"
+                :class="[
+                  'sidebar-library-item relative w-full flex items-center gap-3 px-3.5 py-1.5 rounded-xl group cursor-pointer active:scale-[0.98] transition-all',
+                  isActivePlaylist(playlist)
+                    ? 'is-active bg-primary/12 text-primary'
+                    : 'text-text-main/90',
+                ]"
+                @click="navigateToPlaylist(playlist)"
+              >
+                <Cover
+                  :url="playlist.pic"
+                  :size="100"
+                  :width="28"
+                  :height="28"
+                  :borderRadius="6"
+                  class="shrink-0"
+                />
+                <div class="sidebar-playlist-label-wrap has-action">
+                  <span
+                    :class="[
+                      'text-[13px] truncate w-full font-medium tracking-tight',
+                      isActivePlaylist(playlist) ? 'text-primary' : 'text-text-main/90',
+                    ]"
+                  >
+                    {{ playlist.name }}
+                  </span>
+                </div>
+                <Button
+                  v-if="canRemovePlaylist(playlist)"
+                  variant="unstyled"
+                  size="none"
+                  type="button"
+                  class="sidebar-playlist-action"
+                  title="取消收藏"
+                  @click.stop="openRemovePlaylistDialog(playlist)"
+                >
+                  <Icon :icon="iconTrash" width="14" height="14" />
+                </Button>
+              </div>
+
+              <div
+                v-if="favoritedPlaylists.length === 0"
+                class="py-8 text-center opacity-40 text-[12px] italic"
+              >
+                暂无收藏内容
+              </div>
+            </template>
+          </nav>
+
+          <div v-else class="sidebar-scroll-empty px-3.5 py-8 text-center">
+            <span class="text-[12px] font-normal text-text-main opacity-50 italic"
+              >登录同步云端歌单</span
+            >
+          </div>
+        </Scrollbar>
       </div>
-    </Scrollbar>
+    </template>
   </aside>
 
   <Dialog
@@ -935,10 +1211,257 @@ watch(
 
 .sidebar {
   width: 230px;
+  transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar.is-rail {
+  width: 64px;
 }
 
 :deep(.sidebar-scroll) {
   min-height: 0;
+}
+
+:deep(.sidebar-rail-scroll-content) {
+  min-height: 0;
+  padding: 0 8px 10px;
+}
+
+.sidebar-rail {
+  position: relative;
+  z-index: 1;
+  padding: 0 8px 10px;
+  align-items: center;
+  animation: sidebar-rail-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-full-panel {
+  position: relative;
+  z-index: 1;
+  animation: sidebar-full-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-rail-top {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 8px;
+}
+
+.sidebar-rail-avatar-btn {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border-light) 65%, transparent);
+}
+
+.sidebar-rail-avatar-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.sidebar-rail-nav,
+.sidebar-rail-bottom {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-rail-playlists {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.sidebar-rail-tabs {
+  width: 100%;
+  height: 30px;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-main) 4%, transparent);
+}
+
+.sidebar-rail-tab-indicator {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 9px;
+  background: var(--color-bg-sidebar);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sidebar-rail-tabs.is-favorited .sidebar-rail-tab-indicator {
+  transform: translateX(calc(100% + 2px));
+}
+
+.sidebar-rail-tab {
+  position: relative;
+  z-index: 1;
+  height: 24px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--color-text-main) 56%, transparent);
+  background: transparent;
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.sidebar-rail-tab:hover {
+  color: var(--color-text-main);
+}
+
+.sidebar-rail-tab.is-active {
+  color: var(--color-primary);
+}
+
+.sidebar-rail-scroll {
+  width: 64px;
+  max-width: none !important;
+}
+
+:deep(.sidebar-rail-scroll .scrollbar) {
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+.sidebar-rail-cover-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.sidebar-rail-cover-btn {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sidebar-rail-cover-btn:hover {
+  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
+}
+
+.sidebar-rail-cover-btn.is-active {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 26%, transparent);
+}
+
+.sidebar-rail-cover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar-rail-empty {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
+  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
+}
+
+.sidebar-rail-bottom {
+  padding-top: 8px;
+}
+
+.sidebar-rail-item {
+  width: 38px;
+  height: 38px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: color-mix(in srgb, var(--color-text-main) 66%, transparent);
+  background: transparent;
+  transition: all 0.18s ease;
+}
+
+.sidebar-rail-item:hover {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
+}
+
+.sidebar-rail-item.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.sidebar-rail-item.is-disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sidebar-rail-divider {
+  width: 28px;
+  height: 1px;
+  margin: 6px auto;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--color-text-main) 13%, transparent);
+}
+
+:deep(.sidebar-rail-more-menu) {
+  padding: 6px;
+  border-radius: 12px;
+  min-width: 156px;
+}
+
+.sidebar-rail-more-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+@keyframes sidebar-rail-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sidebar-full-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .sidebar-scroll-inner,

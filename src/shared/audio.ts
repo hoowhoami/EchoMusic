@@ -4,6 +4,7 @@ export interface ImpulseResponseFile {
   path: string;
   size: number;
   importedAt: number;
+  format?: string;
 }
 
 export interface ImportImpulseResponseResult {
@@ -19,10 +20,13 @@ export interface ImpulseResponsePlaybackOptions {
   mix: number;
 }
 
+const IMPULSE_RESPONSE_DISPLAY_EXTENSION =
+  /\.(irs|wav|wave|flac|aif|aiff|caf|ogg|oga|mp3|m4a|aac|opus)$/i;
+
 export const normalizeImpulseResponseName = (name: string): string => {
   const normalized = String(name ?? '')
     .trim()
-    .replace(/\.irs$/i, '')
+    .replace(IMPULSE_RESPONSE_DISPLAY_EXTENSION, '')
     .trim();
-  return normalized || '未命名 IRS';
+  return normalized || '未命名音效';
 };

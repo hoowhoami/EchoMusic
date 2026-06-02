@@ -172,7 +172,7 @@ export function usePlayerControls() {
   const audioEffectButtonBadge = computed(() => {
     if (player.currentResolvedAudioEffect !== 'none') return 'FX';
     if (settingStore.impulseResponseEnabled && settingStore.getSelectedImpulseResponse())
-      return 'IRS';
+      return 'IR';
     if (player.equalizerGains.some((g) => g !== 0)) return 'EQ';
     return null;
   });

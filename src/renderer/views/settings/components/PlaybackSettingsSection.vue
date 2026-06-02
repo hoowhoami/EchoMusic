@@ -73,7 +73,7 @@ const commitRenameImpulseResponse = (id: string) => {
 
 const handleImpulseResponseEnabledChange = (enabled: boolean) => {
   if (enabled && !selectedImpulseResponse.value) {
-    toastStore.warning('请先导入 IRS 文件');
+    toastStore.warning('请先导入空间音效文件');
     return;
   }
   settingStore.impulseResponseEnabled = enabled;
@@ -87,19 +87,19 @@ const handleImportImpulseResponse = async () => {
     if (result.canceled) return;
     const files = result.files?.length ? result.files : result.file ? [result.file] : [];
     if (files.length === 0) {
-      toastStore.warning(result.error || 'IRS 文件导入失败');
+      toastStore.warning(result.error || '空间音效文件导入失败');
       return;
     }
     settingStore.addImpulseResponseFiles(files);
     if (result.errors?.length) {
-      toastStore.warning(`已导入 ${files.length} 个 IRS，${result.errors.length} 个失败`, 4200);
+      toastStore.warning(`已导入 ${files.length} 个音效文件，${result.errors.length} 个失败`, 4200);
     } else {
       toastStore.success(
-        files.length === 1 ? 'IRS 文件已导入' : `已导入 ${files.length} 个 IRS 文件`,
+        files.length === 1 ? '空间音效文件已导入' : `已导入 ${files.length} 个音效文件`,
       );
     }
   } catch {
-    toastStore.actionFailed('导入 IRS 文件');
+    toastStore.actionFailed('导入空间音效文件');
   } finally {
     isImportingImpulseResponse.value = false;
   }
@@ -107,7 +107,7 @@ const handleImportImpulseResponse = async () => {
 
 const handleRemoveImpulseResponse = (id: string) => {
   settingStore.removeImpulseResponseFile(id);
-  toastStore.actionCompleted('已移除 IRS 文件');
+  toastStore.actionCompleted('已移除音效文件');
 };
 </script>
 
@@ -186,13 +186,13 @@ const handleRemoveImpulseResponse = (id: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">IRS 音效</h3>
-        <p class="text-sm text-text-secondary">导入本地 .irs 文件，用作播放时的空间音效</p>
+        <h3 class="font-semibold">空间音效</h3>
+        <p class="text-sm text-text-secondary">导入本地音频文件，用作播放时的空间音效</p>
       </div>
       <div class="irs-actions">
         <Button variant="outline" size="xs" type="button" @click="showImpulseResponseDialog = true">
           <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
-          添加 IRS
+          添加
         </Button>
         <Switch
           :model-value="settingStore.impulseResponseEnabled"
@@ -204,7 +204,7 @@ const handleRemoveImpulseResponse = (id: string) => {
 
     <Dialog
       v-model:open="showImpulseResponseDialog"
-      title="IRS 文件"
+      title="空间音效"
       showClose
       :content-style="{ width: '420px' }"
     >
@@ -249,7 +249,7 @@ const handleRemoveImpulseResponse = (id: string) => {
             v-else
             type="button"
             class="irs-row-btn"
-            title="重命名 IRS"
+            title="重命名"
             @click.stop="beginRenameImpulseResponse(file)"
           >
             <Icon :icon="iconPencil" width="14" height="14" />
@@ -257,14 +257,14 @@ const handleRemoveImpulseResponse = (id: string) => {
           <button
             type="button"
             class="irs-row-btn is-danger"
-            title="移除 IRS 文件"
+            title="移除音效文件"
             @click.stop="handleRemoveImpulseResponse(file.id)"
           >
             <Icon :icon="iconTrash" width="14" height="14" />
           </button>
         </div>
       </div>
-      <div v-else class="irs-empty">暂无 IRS 文件</div>
+      <div v-else class="irs-empty">暂无音效文件</div>
 
       <template #footer>
         <Button
@@ -275,7 +275,7 @@ const handleRemoveImpulseResponse = (id: string) => {
           @click="handleImportImpulseResponse"
         >
           <Icon :icon="iconPlus" width="14" height="14" class="mr-1" />
-          导入 IRS
+          导入音效文件
         </Button>
       </template>
     </Dialog>

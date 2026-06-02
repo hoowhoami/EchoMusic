@@ -25,6 +25,22 @@ const openLogDirectory = async () => {
 };
 
 const getImpulseResponseDir = () => join(app.getPath('userData'), 'irs');
+const DEFAULT_IMPULSE_RESPONSE_EXTENSION = '.irs';
+const SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS = new Set([
+  '.irs',
+  '.wav',
+  '.wave',
+  '.flac',
+  '.aif',
+  '.aiff',
+  '.caf',
+  '.ogg',
+  '.oga',
+  '.mp3',
+  '.m4a',
+  '.aac',
+  '.opus',
+]);
 
 const probeAudioFileWithFfprobe = async (filePath: string): Promise<boolean | null> =>
   new Promise((resolveProbe) => {
@@ -68,8 +84,11 @@ const isSupportedImpulseResponseAudio = async (filePath: string): Promise<boolea
 
     const magic4 = buffer.subarray(0, 4).toString('ascii');
     const magic3 = buffer.subarray(0, 3).toString('ascii');
+    const brand = buffer.subarray(4, 12).toString('ascii');
     if (magic4 === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WAVE') return true;
+    if (magic4 === 'caff') return true;
     if (magic4 === 'fLaC' || magic4 === 'OggS' || magic4 === 'FORM') return true;
+    if (brand.includes('ftyp')) return true;
     if (magic3 === 'ID3') return true;
     return buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
   } finally {
@@ -91,23 +110,23 @@ const importImpulseResponseFile = async (
 ): Promise<{ file?: ImpulseResponseFile; error?: string }> => {
   const extension = extname(sourcePath).toLowerCase();
   const sourceName = basename(sourcePath);
-  if (extension !== '.irs') {
-    return { error: `${sourceName}: 请选择 .irs 文件。` };
-  }
+  const targetExtension = SUPPORTED_IMPULSE_RESPONSE_EXTENSIONS.has(extension)
+    ? extension
+    : DEFAULT_IMPULSE_RESPONSE_EXTENSION;
 
   const stat = await fs.promises.stat(sourcePath);
   if (!stat.isFile()) {
-    return { error: `${sourceName}: 请选择有效的 IRS 文件。` };
+    return { error: `${sourceName}: 请选择有效的音频文件。` };
   }
   if (!(await isSupportedImpulseResponseAudio(sourcePath))) {
-    return { error: `${sourceName}: IRS 文件不是可识别的音频文件。` };
+    return { error: `${sourceName}: 该文件不是可识别的音频文件。` };
   }
 
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const irsDir = getImpulseResponseDir();
   await fs.promises.mkdir(irsDir, { recursive: true });
 
-  const targetPath = join(irsDir, `${id}.irs`);
+  const targetPath = join(irsDir, `${id}${targetExtension}`);
   await fs.promises.copyFile(sourcePath, targetPath);
 
   return {
@@ -117,6 +136,7 @@ const importImpulseResponseFile = async (
       path: targetPath,
       size: stat.size,
       importedAt: Date.now(),
+      format: targetExtension.slice(1),
     },
   };
 };
@@ -251,9 +271,29 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
     async (): Promise<ImportImpulseResponseResult> => {
       const win = getMainWindow();
       const options: OpenDialogOptions = {
-        title: '导入 IRS 文件',
+        title: '导入空间音效文件',
         properties: ['openFile', 'multiSelections'],
-        filters: [{ name: 'IRS Impulse Response', extensions: ['irs'] }],
+        filters: [
+          {
+            name: 'Impulse Response Audio',
+            extensions: [
+              'irs',
+              'wav',
+              'wave',
+              'flac',
+              'aif',
+              'aiff',
+              'caf',
+              'ogg',
+              'oga',
+              'mp3',
+              'm4a',
+              'aac',
+              'opus',
+            ],
+          },
+          { name: 'All Files', extensions: ['*'] },
+        ],
       };
       const result = win
         ? await dialog.showOpenDialog(win, options)
@@ -273,7 +313,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
           if (imported.error) errors.push(imported.error);
         } catch (error) {
           log.error('[Audio] Import impulse response failed:', { sourcePath, error });
-          errors.push(`${basename(sourcePath)}: IRS 文件导入失败。`);
+          errors.push(`${basename(sourcePath)}: 音效文件导入失败。`);
         }
       }
 
@@ -281,7 +321,7 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
         canceled: false,
         file: files[0],
         files,
-        error: files.length === 0 ? errors[0] || 'IRS 文件导入失败。' : undefined,
+        error: files.length === 0 ? errors[0] || '音效文件导入失败。' : undefined,
         errors,
       };
     },
@@ -313,9 +353,11 @@ export const registerSettingsHandlers = ({ getMainWindow }: IpcContext) => {
           const stat = await fs.promises.stat(file.path);
           if (!stat.isFile()) continue;
           if (!(await isSupportedImpulseResponseAudio(file.path))) continue;
+          const format = file.format || extname(file.path).replace(/^\./, '');
           next.push({
             ...file,
             size: stat.size,
+            format: format || undefined,
           });
         } catch {
           // 文件被手动删除或不可读时，从列表中剔除

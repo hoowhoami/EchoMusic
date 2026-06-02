@@ -62,6 +62,7 @@ const toImpulseResponseFilePayload = (file: ImpulseResponseFile): ImpulseRespons
   path: String(file.path || ''),
   size: Number(file.size) || 0,
   importedAt: Number(file.importedAt) || 0,
+  format: file.format ? String(file.format) : undefined,
 });
 
 export const useSettingStore = defineStore('setting', {

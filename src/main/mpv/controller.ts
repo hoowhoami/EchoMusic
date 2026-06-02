@@ -52,10 +52,14 @@ interface MpvAddon {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 const DEFAULT_IMPULSE_RESPONSE_MIX = 0.4;
+// 归一化后的卷积湿声本就比干声低约 15dB，直接按 mix 叠加会“拖满也偏淡”。给 afir 的 wet
+// 一个 makeup 增益把湿声补到与干声同量级，让“湿声比例”滑块整段都有手感（实测 wet=3 时
+// mix=1.0 输出 ≈ 干声 +0~1dB、峰值仍有 ~10dB 余量，正常音量不会削顶）。
+const IMPULSE_RESPONSE_WET_MAKEUP = 3;
 
 // IR 路径会放进 lavfi 图的单引号里传给 amovie 滤镜。amovie 用 ':' 分隔 filename 与选项，
 // 图层单引号只能挡住图解析器、挡不住 amovie 自己的选项解析器，因此 Windows 盘符里的 ':'
-// （如 C:/…）会被当成分隔符，文件名被截断成 'C' 而打不开 IRS——表现为加滤镜后音频静默、
+// （如 C:/…）会被当成分隔符，文件名被截断成 'C' 而打不开 IR——表现为加滤镜后音频静默、
 // 进度条停住（歌词走的是独立时钟所以照常滚动）。把 ':' 转义成 '\:' 即可保留完整路径。
 const escapeLavfiQuotedValue = (value: string): string =>
   value.replace(/\\/g, '/').replace(/'/g, "\\'").replace(/:/g, '\\:');
@@ -90,6 +94,9 @@ export class MpvController extends EventEmitter {
   private impulseResponsePath = '';
   private impulseResponseMix = DEFAULT_IMPULSE_RESPONSE_MIX;
   private impulseResponseFailureRecovering = false;
+  // 上次成功下发给 mpv 的 af 串。相同则跳过，避免上游重复触发（拖动 commit、切歌
+  // file-loaded、音量归一化刷新等）反复重建 afir 卷积器导致卡顿/爆音。
+  private lastAppliedFilterString: string | null = null;
 
   constructor() {
     super();
@@ -230,7 +237,9 @@ export class MpvController extends EventEmitter {
         }
         // 打印音频详细信息
         this.logAudioInfo();
-        // 重新应用音频滤镜（防止被新文件加载重置）
+        // 重新应用音频滤镜（防止被新文件加载重置）。先清幂等缓存，确保这次重应用一定下发，
+        // 否则若 mpv 在换文件时重置了 af，缓存命中会跳过、导致换歌后音效悄悄消失。
+        this.lastAppliedFilterString = null;
         void this.syncAudioFilters();
         // 触发原始事件名
         this.emit('mpv:file-loaded');
@@ -309,7 +318,7 @@ export class MpvController extends EventEmitter {
     this.impulseResponseFailureRecovering = true;
     const failedPath = this.impulseResponsePath;
     this.impulseResponsePath = '';
-    log.warn('[MpvController] Disabling IRS after mpv filter failure:', {
+    log.warn('[MpvController] Disabling IR after mpv filter failure:', {
       path: failedPath,
       reason,
     });
@@ -587,9 +596,16 @@ export class MpvController extends EventEmitter {
       hasImpulseResponseFilter = true;
       const irPath = escapeLavfiQuotedValue(this.impulseResponsePath);
       const mix = Number(this.impulseResponseMix.toFixed(2));
+      // afir 的输出永远是纯卷积湿声（dry/wet 只是卷积器的输入/输出增益，不是干湿混合），
+      // 所以必须用 asplit 留一路干声、afir 出湿声、再用 amix 把干声混回，否则只剩很轻的
+      // 混响尾音（湿声本就比干声低 ~15dB）→ 表现为“开启后声音特别小”。
+      // 两路都对齐到 48k stereo fltp 是 afir 能 bind 成功的前提（IR 多为 mono/44.1k）。
+      // 干声权重恒为 1（原声始终满幅），湿声先经 wet=makeup 补到与干声同量级，再按 mix 叠加。
       const graph =
-        `[in]asplit=2[irsdry][irsin];amovie='${irPath}',asetpts=N/SR/TB[ir];` +
-        `[irsin][ir]afir=dry=0:wet=1[irswet];` +
+        `[in]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asplit=2[irsdry][irsin];` +
+        `amovie='${irPath}',asetpts=N/SR/TB,aresample=48000,` +
+        `aformat=sample_fmts=fltp:channel_layouts=stereo[ir];` +
+        `[irsin][ir]afir=dry=1:wet=${IMPULSE_RESPONSE_WET_MAKEUP}[irswet];` +
         `[irsdry][irswet]amix=inputs=2:weights='1 ${mix}':normalize=0[out]`;
       filters.push(`lavfi=graph=${quoteMpvOptionValue(graph)}`);
     }
@@ -613,20 +629,27 @@ export class MpvController extends EventEmitter {
     }
 
     if (filters.length === 0) {
+      if (this.lastAppliedFilterString === '') return;
       log.info('[MpvController] Applying audio filter: (cleared)');
       this.addon.setAudioFilter('');
+      this.lastAppliedFilterString = '';
       return;
     }
 
     const filterString = filters.join(',');
+    // 幂等：与上次完全一致则跳过，不重设 af（mpv 会为相同图重建 afir 卷积器，徒增卡顿）。
+    if (filterString === this.lastAppliedFilterString) return;
     log.info('[MpvController] Applying audio filter:', filterString);
     try {
       this.addon.setAudioFilter(filterString);
+      this.lastAppliedFilterString = filterString;
     } catch (err) {
       if (!hasImpulseResponseFilter) throw err;
-      log.warn('[MpvController] Impulse response filter failed, disabling IRS:', err);
+      log.warn('[MpvController] Impulse response filter failed, disabling IR:', err);
       const failedPath = this.impulseResponsePath;
       this.impulseResponsePath = '';
+      // 让禁用 IR 后的重建能真正下发（新串与失败串不同，但保险起见清掉缓存）。
+      this.lastAppliedFilterString = null;
       await this.syncAudioFilters();
       this.emit('impulse-response-disabled', {
         path: failedPath,

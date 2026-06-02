@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useThrottleFn } from '@vueuse/core';
+import { useDebounceFn, useThrottleFn } from '@vueuse/core';
 import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { Icon } from '@iconify/vue';
 import Popover from '@/components/ui/Popover.vue';
@@ -48,7 +48,15 @@ const selectedImpulseResponse = computed(() => settingStore.getSelectedImpulseRe
 const impulseResponseActive = computed(
   () => settingStore.impulseResponseEnabled && !!selectedImpulseResponse.value,
 );
-const impulseResponseStrength = computed(() => Math.round(settingStore.impulseResponseMix * 100));
+const impulseResponseStrengthSaved = computed(() =>
+  Math.round(settingStore.impulseResponseMix * 100),
+);
+// 拖动时只更新本地显示值，松手（valueCommit）才写入 store；否则每个 step 都会重建整张
+// afir 卷积图（重载 IR + 重新分区卷积），高频触发会卡顿甚至爆音。null = 未在拖动，用已保存值。
+const impulseResponseStrengthDraft = ref<number | null>(null);
+const impulseResponseStrength = computed(
+  () => impulseResponseStrengthDraft.value ?? impulseResponseStrengthSaved.value,
+);
 
 // 节流 EQ 更新，防止高频 IPC 调用导致音频卡顿
 const throttledSetEq = useThrottleFn((newGains: number[]) => {
@@ -86,9 +94,21 @@ const selectImpulseResponse = (id: string) => {
   settingStore.setSelectedImpulseResponse(id);
 };
 
+// 松手后应用强度。debounce 兜底合并按住键盘方向键的连续 commit。
+const commitImpulseResponseStrength = useDebounceFn((percent: number) => {
+  settingStore.setImpulseResponseMix(percent / 100);
+  impulseResponseStrengthDraft.value = null;
+}, 80);
+
 const updateImpulseResponseStrength = (value: number[] | undefined) => {
   if (!value?.length) return;
-  settingStore.setImpulseResponseMix(value[0] / 100);
+  // 拖动中：仅更新本地显示，不碰后端
+  impulseResponseStrengthDraft.value = value[0];
+};
+
+const commitImpulseResponseStrengthFromSlider = (value: number[] | undefined) => {
+  if (!value?.length) return;
+  commitImpulseResponseStrength(value[0]);
 };
 
 const getImpulseResponseDisplayName = (name: string) => normalizeImpulseResponseName(name);
@@ -171,7 +191,7 @@ withDefaults(defineProps<Props>(), {
           :class="{ 'is-active': activeTab === 'irs' }"
           @click="activeTab = 'irs'"
         >
-          IRS
+          空间音效
         </button>
       </div>
 
@@ -242,15 +262,15 @@ withDefaults(defineProps<Props>(), {
           </div>
         </div>
 
-        <!-- IRS 面板 -->
+        <!-- IR 面板 -->
         <div v-if="activeTab === 'irs'" class="panel-content irs-panel-content">
           <div class="panel-header">
-            <span class="panel-title">IRS 音效</span>
+            <span class="panel-title">空间音效</span>
           </div>
 
           <div v-if="selectedImpulseResponse" class="irs-strength">
             <div class="irs-strength-label">
-              <span>湿声比例</span>
+              <span>效果强度</span>
               <span>{{ impulseResponseStrength }}%</span>
             </div>
             <SliderRoot
@@ -261,6 +281,7 @@ withDefaults(defineProps<Props>(), {
               class="irs-strength-slider"
               style="width: 100%; min-width: 0"
               @update:model-value="updateImpulseResponseStrength"
+              @value-commit="commitImpulseResponseStrengthFromSlider"
             >
               <SliderTrack class="irs-strength-track" style="width: 100%; min-width: 0">
                 <SliderRange class="irs-strength-range" />
@@ -299,7 +320,7 @@ withDefaults(defineProps<Props>(), {
                 </span>
               </button>
             </div>
-            <div v-else class="irs-panel-empty">暂无 IRS 文件</div>
+            <div v-else class="irs-panel-empty">暂无音效文件</div>
           </Scrollbar>
         </div>
       </div>

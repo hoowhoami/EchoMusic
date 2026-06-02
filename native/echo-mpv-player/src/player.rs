@@ -6,6 +6,9 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+const SEEK_MUTE_HOLD_MS: u64 = 80;
 
 /// 淡入淡出请求
 #[allow(dead_code)]
@@ -22,6 +25,8 @@ pub struct MpvPlayer {
     // 淡入淡出控制
     fade_seq: Arc<AtomicU64>,
     fade_active: Arc<AtomicBool>,
+    // seek 瞬间静音控制，避免连续 seek 的旧恢复任务抢跑
+    seek_mute_seq: Arc<AtomicU64>,
     // 状态
     state: Arc<Mutex<PlayerState>>,
     // 事件线程停止标志
@@ -45,6 +50,7 @@ impl MpvPlayer {
             handle,
             fade_seq: Arc::new(AtomicU64::new(0)),
             fade_active: Arc::new(AtomicBool::new(false)),
+            seek_mute_seq: Arc::new(AtomicU64::new(0)),
             state: Arc::new(Mutex::new(PlayerState::default())),
             shutdown: Arc::new(AtomicBool::new(false)),
         };
@@ -59,10 +65,15 @@ impl MpvPlayer {
         player.set_option("audio-display", "no");
         player.set_option("hr-seek", "yes");
         player.set_option("volume-max", "100");
-        player.set_option("demuxer-max-bytes", "50MiB");
-        player.set_option("demuxer-max-back-bytes", "10MiB");
+        // 网络音频显式开启 mpv demuxer 缓冲，弱网时优先缓冲而不是断续播放。
+        player.set_option("demuxer-max-bytes", "150MiB");
+        player.set_option("demuxer-max-back-bytes", "50MiB");
+        player.set_option("demuxer-readahead-secs", "120");
         player.set_option("cache", "yes");
-        player.set_option("cache-secs", "30");
+        player.set_option("cache-secs", "120");
+        player.set_option("cache-pause", "yes");
+        player.set_option("cache-pause-wait", "2");
+        player.set_option("cache-seek-min", "50");
         player.set_option("user-agent", "Mozilla/5.0");
         player.set_option("input-media-keys", "no");
         player.set_option("audio-client-name", "EchoMusic");
@@ -360,7 +371,17 @@ impl MpvPlayer {
 
     /// 跳转（秒）
     pub fn seek(&self, time: f64) -> Result<(), String> {
-        self.command(&["seek", &time.to_string(), "absolute"])
+        let seq = self.seek_mute_seq.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.set_property_flag("mute", true);
+
+        let result = self.command(&["seek", &time.to_string(), "absolute"]);
+        if result.is_err() {
+            let _ = self.set_property_flag("mute", false);
+            return result;
+        }
+
+        self.unmute_after_seek(seq);
+        Ok(())
     }
 
     /// 设置音量（0-100）
@@ -607,6 +628,31 @@ impl MpvPlayer {
         let _ = self.set_property_double("volume", to.clamp(0.0, 100.0));
         self.fade_active.store(false, Ordering::SeqCst);
         true
+    }
+
+    fn unmute_after_seek(&self, seq: u64) {
+        let player = Arc::new(Self {
+            lib: self.lib.clone(),
+            handle: self.handle,
+            fade_seq: self.fade_seq.clone(),
+            fade_active: self.fade_active.clone(),
+            seek_mute_seq: self.seek_mute_seq.clone(),
+            state: self.state.clone(),
+            shutdown: self.shutdown.clone(),
+        });
+
+        let _ = std::thread::Builder::new()
+            .name("mpv-seek-unmute".to_string())
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(SEEK_MUTE_HOLD_MS));
+                if player.shutdown.load(Ordering::SeqCst) {
+                    return;
+                }
+                if player.seek_mute_seq.load(Ordering::SeqCst) != seq {
+                    return;
+                }
+                let _ = player.set_property_flag("mute", false);
+            });
     }
 
     /// 销毁播放器
