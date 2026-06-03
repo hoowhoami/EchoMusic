@@ -30,6 +30,9 @@ let isPlaybackActive = false;
 let systemSuspended = false;
 let powerSaveBlockerId = -1;
 
+// 启动时同步开机自启动状态，确保注册表与设置一致
+app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
+
 let win: BrowserWindow | null = null;
 let isQuitting = false;
 
@@ -114,6 +117,15 @@ ipcMain.on('update-theme', (_event, theme: ThemeMode) => {
 ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
   rememberWindowSize = enabled;
   setMainAppSetting('rememberWindowSize', enabled);
+});
+
+ipcMain.on('update-start-minimized', (_event, enabled: boolean) => {
+  setMainAppSetting('startMinimized', enabled);
+});
+
+ipcMain.on('update-auto-launch', (_event, enabled: boolean) => {
+  setMainAppSetting('autoLaunch', enabled);
+  app.setLoginItemSettings({ openAtLogin: enabled });
 });
 
 const syncPowerSaveBlocker = () => {
@@ -265,8 +277,11 @@ export async function createWindow() {
   }
 
   // 当窗口准备好显示时再展示，优雅解决启动白屏
+  // 如果启用了启动时最小化，则不自动显示窗口，由用户通过托盘恢复
   win.once('ready-to-show', () => {
-    win?.show();
+    if (!initialSettings.startMinimized) {
+      win?.show();
+    }
   });
 
   // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放。
