@@ -23,6 +23,7 @@ const playlistStore = usePlaylistStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
+let disposePowerResumeSync: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
@@ -78,6 +79,12 @@ onMounted(async () => {
     window.electron?.tray?.onSetPlayMode((playMode) => {
       player.setPlayMode(playMode);
     }) ?? null;
+  // 系统唤醒后重新枚举输出设备（睡眠期间设备可能变化，如耳机被拔）。
+  // 引擎级恢复（暂停/重建音频/恢复播放）已在主进程 powerMonitor 完成。
+  disposePowerResumeSync =
+    window.electron?.power?.onResume(() => {
+      void player.refreshOutputDevices();
+    }) ?? null;
   syncTrayPlayback();
   window.electron?.ipcRenderer?.on('update-check-result', handleSilentUpdateCheckResult);
   if (settings.autoCheckUpdate) {
@@ -101,6 +108,8 @@ onUnmounted(() => {
   disposeDesktopLyricSync = null;
   disposeTrayPlayModeSync?.();
   disposeTrayPlayModeSync = null;
+  disposePowerResumeSync?.();
+  disposePowerResumeSync = null;
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
   colorSchemeMediaQuery = null;
 });

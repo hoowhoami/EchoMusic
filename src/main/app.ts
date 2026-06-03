@@ -9,6 +9,7 @@ import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerPlayerIpc } from './ipc/player';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
+import { initPowerMonitor } from './powerMonitor';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -75,6 +76,9 @@ if (!gotTheLock) {
 
     // 初始化原生媒体控制（SMTC / MPNowPlaying / MPRIS）
     initMediaControls(getMainWindow);
+
+    // 注册系统挂起/唤醒处理：盒盖睡眠后暂停并释放 blocker，唤醒后重建音频并恢复播放
+    initPowerMonitor({ getMainWindow, getController: () => mpvRef.current });
 
     // --- 创建主窗口 ---
     await createWindow();

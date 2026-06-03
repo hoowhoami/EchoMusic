@@ -84,6 +84,10 @@ export interface IElectronAPI {
     syncPlayback: (payload: { isPlaying?: boolean; playMode?: PlayMode; volume?: number }) => void;
     onSetPlayMode: (func: (playMode: PlayMode) => void) => () => void;
   };
+  power: {
+    onSuspend: (func: () => void) => () => void;
+    onResume: (func: () => void) => () => void;
+  };
   desktopLyric: {
     getSnapshot: () => Promise<DesktopLyricSnapshot>;
     show: () => Promise<DesktopLyricSnapshot>;

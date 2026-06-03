@@ -24,6 +24,7 @@ import TabsContent from '@/components/ui/TabsContent.vue';
 import VirtualGrid from '@/components/ui/VirtualGrid.vue';
 import Badge from '@/components/ui/Badge.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Popover from '@/components/ui/Popover.vue';
 import BatchActionDrawer from '@/components/music/BatchActionDrawer.vue';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -43,6 +44,9 @@ import {
   iconList,
   iconHeart,
   iconHeartFilled,
+  iconArrowsSort,
+  iconCheckMark,
+  iconChevronDown,
 } from '@/icons';
 import { replaceQueueAndPlay } from '@/utils/playback';
 import Button from '@/components/ui/Button.vue';
@@ -68,6 +72,9 @@ interface ArtistMvCardProps {
   albumAudioId?: string | number;
 }
 
+type ArtistSongSort = 'hot' | 'new';
+type ArtistAlbumSort = 'hot' | 'new';
+
 const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const settingStore = useSettingStore();
@@ -91,10 +98,16 @@ const artist = ref<ReturnType<typeof mapArtistDetailMeta> | null>(null);
 
 // 使用 shallowRef 避免对成千上万个歌曲对象进行深层响应式代理，极大提升性能
 const songs = shallowRef<Song[]>([]);
+const songSort = ref<ArtistSongSort>('new');
+const songSortMenuOpen = ref(false);
+let songFetchToken = 0;
 const albums = shallowRef<ReturnType<typeof mapAlbumMeta>[]>([]);
 const albumPage = ref(1);
 const albumHasMore = ref(false);
 const albumFetched = ref(false);
+const albumSort = ref<ArtistAlbumSort>('new');
+const albumSortMenuOpen = ref(false);
+let albumFetchToken = 0;
 const mvs = shallowRef<ArtistMvCardProps[]>([]);
 const mvTotal = ref(0);
 const mvPage = ref(1);
@@ -121,6 +134,11 @@ const tabsTop = computed(() => {
 const sortField = ref<SortField | null>(null);
 const sortOrder = ref<SortOrder>(null);
 
+const songSortOptions = [
+  { value: 'new' as const, label: '最新' },
+  { value: 'hot' as const, label: '热门' },
+];
+
 const handleSort = (field: SortField) => {
   if (sortField.value === field) {
     if (sortOrder.value === 'asc') {
@@ -141,6 +159,9 @@ const sortedSongs = computed(() =>
   }),
 );
 const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
+const songSortLabel = computed(
+  () => songSortOptions.find((option) => option.value === songSort.value)?.label ?? '最新',
+);
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
@@ -151,10 +172,83 @@ const fetchAllArtistSongs = (totalCount: number) => {
   void songLoader.loadRemaining();
 };
 
+const resetSongTableSort = () => {
+  sortField.value = null;
+  sortOrder.value = null;
+};
+
+const resetSongPaging = () => {
+  songFetchToken += 1;
+  if (songLoader) {
+    songLoader.abort();
+    songLoader = null;
+  }
+  songs.value = [];
+  loadedSongCount.value = 0;
+  loadingSongs.value = true;
+};
+
+const loadArtistSongs = async (artistId = getArtistId()) => {
+  resetSongPaging();
+
+  const requestSort = songSort.value;
+  const requestToken = ++songFetchToken;
+
+  songLoader = new PagedSongLoader<Song>(
+    async (page, pageSize) => {
+      const res = await getArtistSongs(artistId, page, pageSize, requestSort);
+      const items = extractList(res).map((item) => mapArtistSong(artistId, item));
+      return { items, hasMore: items.length >= pageSize };
+    },
+    {
+      pageSize: 200,
+      concurrency: 3,
+      dedupeKey: (song) => String(song.id),
+      logTag: 'ArtistSongsLoader',
+      onPageLoaded(allItems) {
+        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onComplete(allItems) {
+        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        songs.value = allItems.slice();
+        loadedSongCount.value = allItems.length;
+      },
+      onError() {
+        if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+        toastStore.loadFailed('歌手歌曲');
+      },
+    },
+  );
+
+  const currentLoader = songLoader;
+  try {
+    await currentLoader.loadFirstPage();
+    if (requestToken !== songFetchToken || requestSort !== songSort.value) return;
+    loadingSongs.value = false;
+    const totalSongs = artist.value?.songCount ?? currentLoader.count;
+    if (totalSongs > currentLoader.count) {
+      fetchAllArtistSongs(totalSongs);
+    }
+  } catch {
+    if (requestToken === songFetchToken) {
+      loadingSongs.value = false;
+    }
+  }
+};
+
+const switchSongSort = (sort: ArtistSongSort) => {
+  songSortMenuOpen.value = false;
+  if (sort === songSort.value) return;
+  songSort.value = sort;
+  resetSongTableSort();
+  void loadArtistSongs();
+};
+
 const fetchData = async () => {
   const artistId = getArtistId();
   loading.value = true;
-  loadingSongs.value = true;
 
   // 0. 确保关注列表已加载
   void userStore.ensureFollowedArtists();
@@ -172,49 +266,7 @@ const fetchData = async () => {
       loading.value = false;
     });
 
-  // 2. 中止上一次加载
-  if (songLoader) {
-    songLoader.abort();
-  }
-
-  // 3. 创建加载器获取歌曲
-  songLoader = new PagedSongLoader<Song>(
-    async (page, pageSize) => {
-      const res = await getArtistSongs(artistId, page, pageSize, 'hot');
-      const items = extractList(res).map((item) => mapArtistSong(artistId, item));
-      return { items, hasMore: items.length >= pageSize };
-    },
-    {
-      pageSize: 200,
-      concurrency: 3,
-      dedupeKey: (song) => String(song.id),
-      logTag: 'ArtistSongsLoader',
-      onPageLoaded(allItems) {
-        songs.value = allItems.slice();
-        loadedSongCount.value = allItems.length;
-      },
-      onComplete(allItems) {
-        songs.value = allItems.slice();
-        loadedSongCount.value = allItems.length;
-      },
-      onError() {
-        toastStore.loadFailed('歌手歌曲');
-      },
-    },
-  );
-
-  const songsTask = songLoader
-    .loadFirstPage()
-    .then(() => {
-      loadingSongs.value = false;
-      const totalSongs = artist.value?.songCount ?? songLoader!.count;
-      if (totalSongs > songLoader!.count) {
-        fetchAllArtistSongs(totalSongs);
-      }
-    })
-    .catch(() => {
-      loadingSongs.value = false;
-    });
+  const songsTask = loadArtistSongs(artistId);
 
   await Promise.allSettled([detailTask, songsTask]);
 };
@@ -223,6 +275,8 @@ const fetchData = async () => {
 onIdChange(() => {
   artist.value = null;
   songs.value = [];
+  songSort.value = 'new';
+  songFetchToken += 1;
   albums.value = [];
   mvs.value = [];
   mvFetched.value = false;
@@ -232,10 +286,11 @@ onIdChange(() => {
   albumPage.value = 1;
   albumHasMore.value = false;
   albumFetched.value = false;
+  albumSort.value = 'new';
+  albumFetchToken += 1;
   loadedSongCount.value = 0;
   searchQuery.value = '';
-  sortField.value = null;
-  sortOrder.value = null;
+  resetSongTableSort();
   activeTab.value = 'songs';
   if (songLoader) {
     songLoader.abort();
@@ -313,7 +368,7 @@ const handleSongDoubleTapPlay = async (song: Song) => {
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, song, {
     queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
     title: artist.value?.name || '歌手',
-    subtitle: '',
+    subtitle: `${songSortLabel.value}歌曲`,
     type: 'artist',
   });
 };
@@ -324,7 +379,7 @@ const handlePlayAll = async () => {
   const queueOpts = {
     queueId: `queue:artist:${artist.value?.id ?? getArtistId()}`,
     title: artist.value?.name || '歌手',
-    subtitle: '',
+    subtitle: `${songSortLabel.value}歌曲`,
     type: 'artist' as const,
   };
   await replaceQueueAndPlay(playlistStore, playerStore, queueSongs, 0, undefined, queueOpts);
@@ -428,13 +483,42 @@ const switchMvTag = (tag: typeof mvTag.value) => {
   void fetchMvs(1);
 };
 
+const albumSortOptions = [
+  { value: 'new' as const, label: '最新' },
+  { value: 'hot' as const, label: '热门' },
+];
+
+const albumSortLabel = computed(
+  () => albumSortOptions.find((option) => option.value === albumSort.value)?.label ?? '最新',
+);
+
+const resetAlbumPaging = () => {
+  albumFetchToken += 1;
+  loadingAlbums.value = false;
+  albums.value = [];
+  albumPage.value = 1;
+  albumHasMore.value = false;
+  albumFetched.value = false;
+};
+
+const switchAlbumSort = (sort: ArtistAlbumSort) => {
+  albumSortMenuOpen.value = false;
+  if (sort === albumSort.value) return;
+  albumSort.value = sort;
+  resetAlbumPaging();
+  void fetchMoreAlbums();
+};
+
 const fetchMoreAlbums = async () => {
   if (loadingAlbums.value || (!albumFetched.value ? false : !albumHasMore.value)) return;
   const artistId = getArtistId();
   const nextPage = albumFetched.value ? albumPage.value + 1 : 1;
+  const requestSort = albumSort.value;
+  const requestToken = ++albumFetchToken;
   loadingAlbums.value = true;
   try {
-    const res = await getArtistAlbums(artistId, nextPage, 30, 'hot');
+    const res = await getArtistAlbums(artistId, nextPage, 30, requestSort);
+    if (requestToken !== albumFetchToken || requestSort !== albumSort.value) return;
     const fetched = extractList(res).map((item) => mapAlbumMeta(item));
     if (nextPage === 1) {
       albums.value = fetched;
@@ -448,7 +532,9 @@ const fetchMoreAlbums = async () => {
   } catch {
     // 忽略
   } finally {
-    loadingAlbums.value = false;
+    if (requestToken === albumFetchToken) {
+      loadingAlbums.value = false;
+    }
   }
 };
 
@@ -626,6 +712,48 @@ onUnmounted(() => {
                 </TabsList>
 
                 <div v-if="activeTab === 'songs'" class="flex items-center gap-2">
+                  <Popover
+                    v-model:open="songSortMenuOpen"
+                    trigger="click"
+                    side="bottom"
+                    align="end"
+                    :side-offset="6"
+                    :show-arrow="false"
+                    content-class="artist-sort-menu"
+                  >
+                    <template #trigger>
+                      <Button
+                        variant="unstyled"
+                        size="none"
+                        type="button"
+                        class="artist-sort-trigger"
+                        title="歌曲排序"
+                      >
+                        <Icon :icon="iconArrowsSort" width="15" height="15" />
+                        <span>{{ songSortLabel }}</span>
+                        <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
+                      </Button>
+                    </template>
+                    <div class="artist-sort-menu-list">
+                      <div class="artist-sort-menu-title">歌曲排序</div>
+                      <button
+                        v-for="opt in songSortOptions"
+                        :key="opt.value"
+                        type="button"
+                        class="artist-sort-menu-item"
+                        :class="{ 'is-active': songSort === opt.value }"
+                        @click="switchSongSort(opt.value)"
+                      >
+                        <span>{{ opt.label }}</span>
+                        <Icon
+                          v-if="songSort === opt.value"
+                          :icon="iconCheckMark"
+                          width="13"
+                          height="13"
+                        />
+                      </button>
+                    </div>
+                  </Popover>
                   <div class="relative">
                     <input
                       v-model="searchQuery"
@@ -677,7 +805,7 @@ onUnmounted(() => {
                 :queueOptions="{
                   queueId: `queue:artist:${artist?.id ?? getArtistId()}`,
                   title: artist?.name || '歌手',
-                  subtitle: '热门歌曲',
+                  subtitle: `${songSortLabel}歌曲`,
                   type: 'artist',
                 }"
                 :enableDefaultDoubleTapPlay="true"
@@ -688,6 +816,53 @@ onUnmounted(() => {
             </TabsContent>
 
             <TabsContent value="albums" class="mt-4 px-6">
+              <div class="flex items-center gap-3 mb-4 px-2">
+                <Popover
+                  v-model:open="albumSortMenuOpen"
+                  trigger="click"
+                  side="bottom"
+                  align="start"
+                  :side-offset="6"
+                  :show-arrow="false"
+                  content-class="artist-sort-menu"
+                >
+                  <template #trigger>
+                    <Button
+                      variant="unstyled"
+                      size="none"
+                      type="button"
+                      class="artist-sort-trigger"
+                      title="专辑排序"
+                    >
+                      <Icon :icon="iconArrowsSort" width="15" height="15" />
+                      <span>{{ albumSortLabel }}</span>
+                      <Icon class="artist-sort-trigger-arrow" :icon="iconChevronDown" />
+                    </Button>
+                  </template>
+                  <div class="artist-sort-menu-list">
+                    <div class="artist-sort-menu-title">专辑排序</div>
+                    <button
+                      v-for="opt in albumSortOptions"
+                      :key="opt.value"
+                      type="button"
+                      class="artist-sort-menu-item"
+                      :class="{ 'is-active': albumSort === opt.value }"
+                      @click="switchAlbumSort(opt.value)"
+                    >
+                      <span>{{ opt.label }}</span>
+                      <Icon
+                        v-if="albumSort === opt.value"
+                        :icon="iconCheckMark"
+                        width="13"
+                        height="13"
+                      />
+                    </button>
+                  </div>
+                </Popover>
+                <span v-if="albumFetched" class="text-[11px] text-text-secondary/60 ml-auto">
+                  共 {{ artist.albumCount || albums.length }} 张
+                </span>
+              </div>
               <VirtualGrid
                 class="px-2"
                 :items="albumCards"
@@ -791,6 +966,22 @@ onUnmounted(() => {
   background: transparent;
 }
 
+.artist-sort-trigger {
+  @apply inline-flex h-9 items-center gap-1.5 rounded-lg border border-border-light/40 px-3 text-[12px] font-semibold text-text-main/75 transition-all;
+  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+}
+
+.artist-sort-trigger:hover {
+  @apply border-primary/30 text-text-main;
+  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
+}
+
+.artist-sort-trigger-arrow {
+  width: 13px;
+  height: 13px;
+  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+}
+
 .mv-tag-btn:hover {
   @apply text-text-main;
   background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
@@ -799,5 +990,55 @@ onUnmounted(() => {
 .mv-tag-btn.is-active {
   @apply text-primary;
   background: var(--color-primary-light);
+}
+</style>
+
+<style>
+.artist-sort-menu {
+  padding: 6px;
+  border-radius: 12px;
+  min-width: 132px;
+}
+
+.artist-sort-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.artist-sort-menu-title {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-text-main) 50%, transparent);
+}
+
+.artist-sort-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.artist-sort-menu-item:hover {
+  color: var(--color-text-main);
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+}
+
+.artist-sort-menu-item.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  font-weight: 600;
 }
 </style>

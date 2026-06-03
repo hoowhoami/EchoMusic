@@ -26,6 +26,7 @@ let currentTheme: ThemeMode = initialSettings.theme;
 let rememberWindowSize = initialSettings.rememberWindowSize;
 let preventSleep = initialSettings.preventSleep;
 let isPlaybackActive = false;
+let systemSuspended = false;
 let powerSaveBlockerId = -1;
 
 let win: BrowserWindow | null = null;
@@ -114,7 +115,7 @@ ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
 });
 
 const syncPowerSaveBlocker = () => {
-  const shouldBlock = preventSleep && isPlaybackActive;
+  const shouldBlock = preventSleep && isPlaybackActive && !systemSuspended;
   if (shouldBlock) {
     if (powerSaveBlockerId === -1 || !powerSaveBlocker.isStarted(powerSaveBlockerId)) {
       powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
@@ -127,6 +128,13 @@ const syncPowerSaveBlocker = () => {
   }
   powerSaveBlockerId = -1;
 };
+
+// 系统挂起期间强制释放 power-save-blocker；唤醒后允许按播放状态重新获取。
+// 由 powerMonitor 的 suspend/resume 调用，避免唤醒后残留一个失效的 blocker。
+export function setSystemSuspended(suspended: boolean) {
+  systemSuspended = suspended;
+  syncPowerSaveBlocker();
+}
 
 ipcMain.on(
   'update-power-save-blocker',

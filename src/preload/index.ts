@@ -149,6 +149,18 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('tray:set-play-mode', listener);
     },
   },
+  power: {
+    onSuspend: (func: () => void) => {
+      const listener = () => func();
+      ipcRenderer.on('power:suspend', listener);
+      return () => ipcRenderer.removeListener('power:suspend', listener);
+    },
+    onResume: (func: () => void) => {
+      const listener = () => func();
+      ipcRenderer.on('power:resume', listener);
+      return () => ipcRenderer.removeListener('power:resume', listener);
+    },
+  },
   desktopLyric: {
     getSnapshot: () =>
       ipcRenderer.invoke('desktop-lyric:get-snapshot') as Promise<DesktopLyricSnapshot>,
