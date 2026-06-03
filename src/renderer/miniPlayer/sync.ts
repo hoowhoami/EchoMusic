@@ -15,6 +15,10 @@ import type {
 
 const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;
 
+// 记录上次「收藏列表已加载时」算出的收藏态：收藏列表在登录刷新等流程中可能被瞬时清空，
+// 导致 isFavoriteSong 短暂返回 false 让爱心闪烁。空列表时沿用此缓存，避免误判未收藏。
+let lastKnownFavorite: { trackId: string; isFavorite: boolean } | null = null;
+
 const resolveSongArtist = (song: Song): string =>
   String(song.artist || song.artists?.map((item) => item.name).join(' / ') || '未知歌手');
 
@@ -52,8 +56,20 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
   const track = resolveCurrentTrack();
   if (!track || !playerStore.currentTrackId) return null;
 
+  const trackId = String(playerStore.currentTrackId);
+  // 收藏列表非空时以实际计算为准并缓存；为空（未加载/瞬时清空）时沿用同曲的上次结果，避免爱心闪烁
+  let isFavorite: boolean;
+  if (playlistStore.favorites.length > 0) {
+    isFavorite = playlistStore.isFavoriteSong(track);
+    lastKnownFavorite = { trackId, isFavorite };
+  } else if (lastKnownFavorite && lastKnownFavorite.trackId === trackId) {
+    isFavorite = lastKnownFavorite.isFavorite;
+  } else {
+    isFavorite = playlistStore.isFavoriteSong(track);
+  }
+
   return {
-    trackId: String(playerStore.currentTrackId),
+    trackId,
     title: String(track.title || track.name || '未知歌曲'),
     artist: resolveSongArtist(track),
     album: String(track.album ?? track.albumName ?? ''),
@@ -61,7 +77,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     duration: Number(playerStore.duration || track.duration || 0),
     currentTime: Number(playerStore.currentTime || 0),
     isPlaying: Boolean(playerStore.isPlaying),
-    isFavorite: playlistStore.isFavoriteSong(track),
+    isFavorite,
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
     updatedAt: Date.now(),
@@ -99,12 +115,24 @@ const queuePayloadKey = (payload: MiniPlayerQueuePayload | null | undefined): st
 
 const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
   if (typeof command === 'string') {
+    if (command === 'toggleFavorite') {
+      // 单独处理收藏：用 resolveCurrentTrack（含来源队列回退）解析当前曲，
+      // 避免 executeShortcutCommand 仅查 activeQueue 在「未播放/来源队列≠活动队列」时找不到曲
+      const playlistStore = usePlaylistStore();
+      const track = resolveCurrentTrack();
+      if (!track) return;
+      if (playlistStore.isFavoriteSong(track)) {
+        playlistStore.removeFromFavorites(track.id);
+      } else {
+        playlistStore.addToFavorites(track);
+      }
+      return;
+    }
     if (
       command === 'togglePlayback' ||
       command === 'previousTrack' ||
       command === 'nextTrack' ||
       command === 'toggleLyricsMode' ||
-      command === 'toggleFavorite' ||
       command === 'toggleMute'
     ) {
       executeShortcutCommand(command);
@@ -184,12 +212,6 @@ export const initMiniPlayerSync = async () => {
       settingStore.theme === 'dark' ||
       (settingStore.theme === 'system' &&
         window.matchMedia('(prefers-color-scheme: dark)').matches);
-    window.electron?.log?.info(
-      '[mini-sync] syncAppearance theme=',
-      settingStore.theme,
-      'isDark=',
-      isDark,
-    );
     window.electron.miniPlayer?.syncSnapshot({
       appearance: {
         isDark,
@@ -270,9 +292,15 @@ export const initMiniPlayerSync = async () => {
     ),
   );
 
+  // 系统主题切换（theme=system 时跟随）：媒体查询变化不会触发上面的 store watch，需单独监听
+  const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handleColorSchemeChange = () => syncAppearanceSnapshot();
+  colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
+
   return () => {
     disposeSnapshotListener();
     disposeCommandListener();
+    colorSchemeQuery.removeEventListener('change', handleColorSchemeChange);
     if (progressSyncTimer) {
       clearTimeout(progressSyncTimer);
       progressSyncTimer = null;

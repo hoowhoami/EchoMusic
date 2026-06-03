@@ -205,6 +205,14 @@ contextBridge.exposeInMainWorld('electron', {
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) =>
       sendWithPlainPayload('mini-player:sync-snapshot', payload),
     setExpanded: (expanded: boolean) => ipcRenderer.send('mini-player:set-expanded', expanded),
+    getBounds: () =>
+      ipcRenderer.invoke('mini-player:get-bounds') as Promise<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>,
+    move: (x: number, y: number) => ipcRenderer.send('mini-player:move', x, y),
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: MiniPlayerSnapshot) =>
         func(snapshotPayload);

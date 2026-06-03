@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
+import { useVirtualList } from '@/composables/useVirtualList';
 import {
   iconHeart,
   iconHeartFilled,
@@ -10,6 +11,7 @@ import {
   iconSkipBack,
   iconSkipForward,
   iconList,
+  iconSquare,
   iconTypography,
   iconVolume1,
   iconVolume2,
@@ -21,6 +23,7 @@ import type {
   MiniPlayerCommand,
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
+  MiniPlayerQueueTrack,
   MiniPlayerSnapshot,
 } from '../../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../../shared/mini-player';
@@ -35,11 +38,15 @@ const playback = ref<MiniPlayerPlaybackPayload | null>(null);
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
 const queue = ref<MiniPlayerQueuePayload | null>(null);
 const isQueueOpen = ref(false);
+const isHovered = ref(false);
 const isDraggingSeek = ref(false);
 const pendingSeekRatio = ref<number | null>(null);
+const isVolumeOpen = ref(false);
+const isDraggingVolume = ref(false);
+let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let disposeSnapshot: (() => void) | null = null;
 
-const isMac = navigator.platform.toLowerCase().includes('mac');
+const volumePercent = computed(() => Math.round((playback.value?.volume ?? 0) * 100));
 
 const progressPercent = computed(() => {
   const duration = playback.value?.duration ?? 0;
@@ -66,20 +73,73 @@ const currentQueueTrackId = computed(
   () => queue.value?.currentTrackId ?? playback.value?.trackId ?? null,
 );
 
+// 播放列表虚拟滚动：复用主窗口同款 useVirtualList，仅渲染可视区，支撑大队列
+const MINI_QUEUE_ITEM_HEIGHT = 42;
+const queueTracks = computed(() => queue.value?.tracks ?? []);
+const queueScrollerRef = ref<HTMLElement | null>(null);
+const { containerRef, visibleStart, visibleEnd, offset, totalSize, refresh, scrollToIndex } =
+  useVirtualList({
+    itemCount: computed(() => queueTracks.value.length),
+    itemSize: MINI_QUEUE_ITEM_HEIGHT,
+    overscan: 6,
+    scrollContainer: queueScrollerRef,
+    active: isQueueOpen,
+  });
+
+const visibleQueueTracks = computed(() => {
+  const start = visibleStart.value;
+  const end = visibleEnd.value;
+  if (start >= end) return [] as Array<{ track: MiniPlayerQueueTrack; index: number }>;
+  return queueTracks.value.slice(start, end).map((track, i) => ({ track, index: start + i }));
+});
+
+const queueWrapperStyle = computed(() => ({
+  height: `${totalSize.value}px`,
+  position: 'relative' as const,
+}));
+const queueOffsetStyle = computed(() => ({ transform: `translateY(${offset.value}px)` }));
+
+// 打开队列时定位到正在播放的歌曲（若已在可视范围内则不滚动）
+const scrollQueueToCurrent = () => {
+  const id = currentQueueTrackId.value;
+  if (!id) return;
+  const index = queueTracks.value.findIndex((t) => t.trackId === id);
+  if (index < 0) return;
+  const scroller = queueScrollerRef.value;
+  if (scroller) {
+    const itemTop = index * MINI_QUEUE_ITEM_HEIGHT;
+    const itemBottom = itemTop + MINI_QUEUE_ITEM_HEIGHT;
+    const viewTop = scroller.scrollTop;
+    const viewBottom = viewTop + scroller.clientHeight;
+    // 当前曲整行已在可视区内（留 8px 余量）则不滚动
+    if (itemTop >= viewTop + 8 && itemBottom <= viewBottom - 8) return;
+  }
+  scrollToIndex(index);
+};
+
+// 队列内容变化时（展开中）刷新虚拟列表范围
+watch(
+  () => queueTracks.value.length,
+  () => {
+    if (isQueueOpen.value) void nextTick(() => refresh(true));
+  },
+);
+
 const command = (value: MiniPlayerCommand) => {
   window.electron?.miniPlayer?.command(value);
+};
+
+// 收藏：本地乐观切换，避免等待 ~120ms 防抖 + IPC 回传造成爱心状态延迟
+const toggleFavorite = () => {
+  if (!playback.value) return;
+  playback.value.isFavorite = !playback.value.isFavorite;
+  command('toggleFavorite');
 };
 
 const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   playback.value = snapshot?.playback ?? null;
   appearance.value = snapshot?.appearance ?? appearance.value;
   queue.value = snapshot?.queue ?? null;
-  window.electron?.log?.info(
-    '[mini] applySnapshot incoming=',
-    JSON.stringify(snapshot?.appearance),
-    'resolved=',
-    JSON.stringify(appearance.value),
-  );
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
     document.documentElement.style.setProperty('--color-primary', appearance.value.accentColor);
@@ -87,16 +147,108 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   }
 };
 
-// 滚轮调节音量：仿 VolumePopover 的步进与方向，本地乐观更新 + 下发命令
-const handleWheel = (event: WheelEvent) => {
+// 用 JS pointer 事件驱动 hover 态：CSS :hover 在 Electron 拖拽区(drag)与 no-drag 边界来回
+// 切换时会反复失/得焦造成闪烁，pointerenter/leave 以整窗为单位则稳定无抖动。
+const handlePointerEnter = () => {
+  isHovered.value = true;
+};
+
+const handlePointerLeave = () => {
+  isHovered.value = false;
+};
+
+// 自定义窗口拖动：用屏幕坐标增量驱动，替代 -webkit-app-region: drag（后者会吞掉拖拽区
+// pointer 事件导致 hover 闪烁）。在卡片空白处按下即可拖动；按钮/进度条/音量等交互元素不触发。
+let dragStartScreenX = 0;
+let dragStartScreenY = 0;
+let dragStartWinX = 0;
+let dragStartWinY = 0;
+let isDraggingWindow = false;
+
+const handleDragPointerDown = async (event: PointerEvent) => {
+  // 只响应鼠标左键；交互元素（带 .no-drag）不触发拖动
+  if (event.button !== 0) return;
+  if ((event.target as HTMLElement)?.closest('.no-drag')) return;
+  // currentTarget 在 await 之后会被置空，需在同步阶段先取出元素与坐标
+  const el = event.currentTarget as HTMLElement;
+  const pointerId = event.pointerId;
+  const startScreenX = event.screenX;
+  const startScreenY = event.screenY;
+  const bounds = await window.electron?.miniPlayer?.getBounds?.();
+  if (!bounds) return;
+  dragStartScreenX = startScreenX;
+  dragStartScreenY = startScreenY;
+  dragStartWinX = bounds.x;
+  dragStartWinY = bounds.y;
+  isDraggingWindow = true;
+  el.setPointerCapture(pointerId);
+};
+
+const handleDragPointerMove = (event: PointerEvent) => {
+  if (!isDraggingWindow) return;
+  const nextX = dragStartWinX + (event.screenX - dragStartScreenX);
+  const nextY = dragStartWinY + (event.screenY - dragStartScreenY);
+  window.electron?.miniPlayer?.move(nextX, nextY);
+};
+
+const handleDragPointerUp = (event: PointerEvent) => {
+  if (!isDraggingWindow) return;
+  isDraggingWindow = false;
+  const el = event.currentTarget as HTMLElement;
+  if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
+};
+
+// 音量：点击图标=静音切换；悬停展开横向滑块拖动调节（不支持滚轮调节）。
+// 因 mini 窗口贴合卡片且透明，竖向弹层会被裁切，故滑块从图标向左浮出。
+const clearVolumeCloseTimer = () => {
+  if (volumeCloseTimer) {
+    clearTimeout(volumeCloseTimer);
+    volumeCloseTimer = null;
+  }
+};
+
+const openVolume = () => {
+  clearVolumeCloseTimer();
+  isVolumeOpen.value = true;
+};
+
+const scheduleVolumeClose = () => {
+  if (isDraggingVolume.value) return;
+  clearVolumeCloseTimer();
+  volumeCloseTimer = setTimeout(() => {
+    volumeCloseTimer = null;
+    isVolumeOpen.value = false;
+  }, 160);
+};
+
+const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
+  // 以轨道（track）宽度计算比例，排除右侧数值标签占位，保证拖到最右即 100%
+  const track = sliderEl.querySelector('.mini-volume-track') as HTMLElement | null;
+  const rect = (track ?? sliderEl).getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+  if (playback.value) playback.value.volume = ratio;
+  command({ type: 'setVolume', value: ratio });
+};
+
+const handleVolumePointerDown = (event: PointerEvent) => {
   if (!playback.value) return;
-  event.preventDefault();
-  const normalized = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 120);
-  const step = (normalized / 120) * 0.05;
-  const direction = isMac ? 1 : -1;
-  const next = Math.max(0, Math.min(1, (playback.value.volume ?? 0) + step * direction));
-  playback.value.volume = next;
-  command({ type: 'setVolume', value: next });
+  const el = event.currentTarget as HTMLElement;
+  isDraggingVolume.value = true;
+  el.setPointerCapture(event.pointerId);
+  setVolumeFromEvent(event, el);
+};
+
+const handleVolumePointerMove = (event: PointerEvent) => {
+  if (!isDraggingVolume.value) return;
+  setVolumeFromEvent(event, event.currentTarget as HTMLElement);
+};
+
+const handleVolumePointerUp = (event: PointerEvent) => {
+  if (!isDraggingVolume.value) return;
+  const el = event.currentTarget as HTMLElement;
+  if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
+  isDraggingVolume.value = false;
 };
 
 const ratioFromEvent = (event: PointerEvent, el: HTMLElement) => {
@@ -151,6 +303,11 @@ const setQueueOpen = (open: boolean) => {
     expandFrameTimer = setTimeout(() => {
       expandFrameTimer = null;
       isQueueOpen.value = true;
+      // 等卡片高度过渡完、列表容器拿到真实高度后，定位到正在播放的歌曲
+      void nextTick(() => {
+        refresh(true);
+        window.setTimeout(scrollQueueToCurrent, 260);
+      });
     }, 60);
     return;
   }
@@ -201,6 +358,7 @@ onUnmounted(() => {
   document.documentElement.classList.remove('dark');
   document.removeEventListener('visibilitychange', handleVisibility);
   cancelExpandFrame();
+  clearVolumeCloseTimer();
   if (isQueueOpen.value) window.electron?.miniPlayer?.setExpanded(false);
   disposeSnapshot?.();
   disposeSnapshot = null;
@@ -208,9 +366,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="mini-shell" :class="{ 'is-expanded': isQueueOpen }">
-    <section class="mini-card">
-      <div class="mini-controls" @wheel="handleWheel">
+  <main
+    class="mini-shell"
+    :class="{ 'is-expanded': isQueueOpen, 'is-hovered': isHovered }"
+    @pointerenter="handlePointerEnter"
+    @pointerleave="handlePointerLeave"
+  >
+    <section
+      class="mini-card"
+      @pointerdown="handleDragPointerDown"
+      @pointermove="handleDragPointerMove"
+      @pointerup="handleDragPointerUp"
+      @pointercancel="handleDragPointerUp"
+    >
+      <div class="mini-controls">
         <div class="mini-left-actions">
           <button
             type="button"
@@ -226,7 +395,7 @@ onUnmounted(() => {
             title="回到主窗口"
             @click="requestShowMain"
           >
-            <span class="mini-restore-icon"></span>
+            <Icon :icon="iconSquare" width="12" height="12" />
           </button>
         </div>
 
@@ -262,6 +431,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="mini-center-btn mini-center-play no-drag"
+              :class="{ playing: playback?.isPlaying }"
               :disabled="!playback"
               :title="playback?.isPlaying ? '暂停' : '播放'"
               @click="command('togglePlayback')"
@@ -288,11 +458,10 @@ onUnmounted(() => {
         <div class="mini-right-actions">
           <button
             type="button"
-            class="mini-action-btn no-drag"
-            :class="{ active: playback?.isFavorite }"
+            class="mini-action-btn mini-fav-btn no-drag"
             :disabled="!playback"
             title="收藏当前歌曲"
-            @click="command('toggleFavorite')"
+            @click="toggleFavorite"
           >
             <Icon
               :icon="playback?.isFavorite ? iconHeartFilled : iconHeart"
@@ -318,16 +487,35 @@ onUnmounted(() => {
           >
             <Icon :icon="iconTypography" width="19" height="19" />
           </button>
-          <button
-            type="button"
-            class="mini-action-btn no-drag"
-            :class="{ active: (playback?.volume ?? 0) <= 0 }"
-            :disabled="!playback"
-            :title="(playback?.volume ?? 0) <= 0 ? '取消静音' : '静音（滚轮调节音量）'"
-            @click="command('toggleMute')"
+          <div
+            class="mini-volume no-drag"
+            :class="{ open: isVolumeOpen }"
+            @pointerenter="openVolume"
+            @pointerleave="scheduleVolumeClose"
           >
-            <Icon :icon="volumeIcon" width="19" height="19" />
-          </button>
+            <button
+              type="button"
+              class="mini-action-btn no-drag"
+              :class="{ active: (playback?.volume ?? 0) <= 0 }"
+              :disabled="!playback"
+              :title="(playback?.volume ?? 0) <= 0 ? '取消静音' : '静音'"
+              @click="command('toggleMute')"
+            >
+              <Icon :icon="volumeIcon" width="19" height="19" />
+            </button>
+            <div
+              class="mini-volume-slider no-drag"
+              @pointerdown="handleVolumePointerDown"
+              @pointermove="handleVolumePointerMove"
+              @pointerup="handleVolumePointerUp"
+              @pointercancel="handleVolumePointerUp"
+            >
+              <div class="mini-volume-track">
+                <div class="mini-volume-value" :style="{ width: `${volumePercent}%` }"></div>
+              </div>
+              <span class="mini-volume-label">{{ volumePercent }}</span>
+            </div>
+          </div>
         </div>
 
         <div
@@ -342,35 +530,47 @@ onUnmounted(() => {
       </div>
 
       <div class="mini-queue no-drag" :aria-hidden="!isQueueOpen">
-        <div class="mini-queue-list">
-          <button
-            v-for="track in queue?.tracks ?? []"
-            :key="track.trackId"
-            type="button"
-            class="mini-queue-item no-drag"
-            :class="{ active: track.trackId === currentQueueTrackId }"
-            :tabindex="isQueueOpen ? 0 : -1"
-            :title="`${track.title} - ${track.artist}`"
-            @click="playQueueTrack(track.trackId)"
-          >
-            <div class="mini-queue-cover">
-              <Cover
-                :url="track.coverUrl"
-                :size="80"
-                width="30px"
-                height="30px"
-                :borderRadius="4"
-              />
-              <span v-if="track.trackId === currentQueueTrackId" class="mini-queue-playing">
-                <Icon :icon="playback?.isPlaying ? iconPause : iconPlay" width="12" height="12" />
-              </span>
+        <div ref="queueScrollerRef" class="mini-queue-list">
+          <div ref="containerRef" :style="queueWrapperStyle">
+            <div :style="queueOffsetStyle">
+              <button
+                v-for="entry in visibleQueueTracks"
+                :key="entry.track.trackId"
+                type="button"
+                class="mini-queue-item no-drag"
+                :class="{ active: entry.track.trackId === currentQueueTrackId }"
+                :style="{ height: `${MINI_QUEUE_ITEM_HEIGHT}px` }"
+                :tabindex="isQueueOpen ? 0 : -1"
+                :title="`${entry.track.title} - ${entry.track.artist}`"
+                @click="playQueueTrack(entry.track.trackId)"
+              >
+                <div class="mini-queue-cover">
+                  <Cover
+                    :url="entry.track.coverUrl"
+                    :size="80"
+                    width="30px"
+                    height="30px"
+                    :borderRadius="4"
+                  />
+                  <span
+                    v-if="entry.track.trackId === currentQueueTrackId"
+                    class="mini-queue-playing"
+                  >
+                    <Icon
+                      :icon="playback?.isPlaying ? iconPause : iconPlay"
+                      width="12"
+                      height="12"
+                    />
+                  </span>
+                </div>
+                <div class="mini-queue-meta">
+                  <div class="mini-queue-song">{{ entry.track.title }}</div>
+                  <div class="mini-queue-artist">{{ entry.track.artist }}</div>
+                </div>
+              </button>
             </div>
-            <div class="mini-queue-meta">
-              <div class="mini-queue-song">{{ track.title }}</div>
-              <div class="mini-queue-artist">{{ track.artist }}</div>
-            </div>
-          </button>
-          <div v-if="!queue?.tracks.length" class="mini-queue-empty">队列为空</div>
+          </div>
+          <div v-if="!queueTracks.length" class="mini-queue-empty">队列为空</div>
         </div>
       </div>
     </section>
@@ -383,14 +583,20 @@ onUnmounted(() => {
   height: 100vh;
   box-sizing: border-box;
   background: transparent;
-  -webkit-app-region: drag;
+  /* 不使用 -webkit-app-region: drag —— 它会吞掉拖拽区的 pointer 事件导致 hover 闪烁；
+     改用 JS 自定义拖动（见 .mini-card 的 pointer 事件） */
   display: flex;
   /* 卡片锚定在顶部，向下增高：控制条固定在上方，队列在其下方向下弹出 */
   align-items: flex-start;
   min-height: 0;
+  /* 禁止文本选择/复制 */
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 .mini-card {
+  cursor: default;
   width: 100%;
   /* 折叠态仅控制条高度；展开时 CSS 过渡到「控制条 + 队列」高度，窗口已由主进程一次性放大，
      卡片在窗口内平滑下展，避免逐帧 setBounds 造成的闪烁 */
@@ -423,7 +629,6 @@ onUnmounted(() => {
   grid-template-columns: 18px 44px minmax(96px, 1fr) auto;
   align-items: center;
   gap: 10px;
-  /* 内容在控制条内垂直居中；进度条为绝对定位贴底，仅占中/右列，不与居中内容冲突 */
   padding: 0 16px 0 9px;
   box-sizing: border-box;
 }
@@ -467,14 +672,6 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-.mini-restore-icon {
-  width: 10px;
-  height: 10px;
-  display: block;
-  border: 2px solid currentColor;
-  border-radius: 3px;
-}
-
 .mini-window-btn:active,
 .mini-action-btn:active,
 .mini-center-btn:active {
@@ -516,6 +713,8 @@ button:disabled {
   height: 44px;
   display: flex;
   align-items: center;
+  /* 仅中间信息/控制区上移，给贴底进度条留白；左侧按钮与封面保持居中不动 */
+  margin-bottom: 8px;
 }
 
 .mini-title {
@@ -546,9 +745,7 @@ button:disabled {
   min-width: 0;
   position: absolute;
   inset: 0;
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
+  transition: opacity 0.18s ease;
 }
 
 .mini-info {
@@ -563,21 +760,18 @@ button:disabled {
   justify-content: center;
   gap: 10px;
   opacity: 0;
-  transform: translateY(-2px);
   pointer-events: none;
   color: rgba(76, 76, 76, 0.9);
 }
 
-.mini-shell:hover .mini-info,
+.mini-shell.is-hovered .mini-info,
 .mini-shell.is-expanded .mini-info {
   opacity: 0;
-  transform: translateY(-2px);
 }
 
-.mini-shell:hover .mini-hover-controls,
+.mini-shell.is-hovered .mini-hover-controls,
 .mini-shell.is-expanded .mini-hover-controls {
   opacity: 1;
-  transform: translateY(-2px);
   pointer-events: auto;
 }
 
@@ -588,23 +782,31 @@ button:disabled {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  color: var(--color-primary);
+  /* 与主窗口一致：上一首/下一首默认中性色，hover 才跟随主题色 */
+  color: rgba(29, 29, 31, 0.6);
 }
 
 .mini-center-btn:hover {
+  color: var(--color-primary);
   transform: translateY(-1px);
 }
 
 .mini-center-play {
   width: 30px;
   height: 30px;
-  background: var(--color-primary);
-  color: #fff;
+  /* 圆形背景用中性底色 + 细边框（不跟随主题色）；图标默认中性、hover/播放时才主题色 */
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: rgba(29, 29, 31, 0.7);
 }
 
 .mini-center-play:hover {
-  color: #fff;
-  transform: scale(1.04);
+  color: var(--color-primary);
+  transform: scale(1.06);
+}
+
+.mini-center-play.playing {
+  color: var(--color-primary);
 }
 
 .play-offset {
@@ -616,19 +818,8 @@ button:disabled {
   align-items: center;
   gap: 9px;
   color: rgba(84, 84, 88, 0.78);
-  opacity: 0;
-  transform: translateY(2px);
-  pointer-events: none;
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-
-.mini-shell:hover .mini-right-actions,
-.mini-shell.is-expanded .mini-right-actions {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
+  /* 与中间区一致上移，给贴底进度条留白 */
+  margin-bottom: 8px;
 }
 
 .mini-action-btn {
@@ -641,6 +832,77 @@ button:disabled {
 
 .mini-action-btn.active {
   color: var(--color-primary);
+}
+
+/* 收藏按钮始终红色（无论是否已收藏，由实心/空心爱心区分状态） */
+.mini-fav-btn {
+  color: #fa2d48;
+}
+
+.mini-fav-btn:hover {
+  color: #fa2d48;
+}
+
+/* 音量：图标 + 悬停横向展开的内联滑块（不弹出窗口外，避免裁切） */
+.mini-volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* 展开的滑块绝对定位、从音量图标向左浮出，不挤占网格，避免左侧按钮被压缩、数值被裁切 */
+.mini-volume-slider {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 110px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--mini-volume-pop-bg, rgba(248, 248, 248, 0.96));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.mini-volume.open .mini-volume-slider {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.mini-volume-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(120, 120, 120, 0.32);
+}
+
+.mini-volume-value {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.mini-volume-label {
+  flex: 0 0 auto;
+  width: 22px;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgba(84, 84, 88, 0.78);
 }
 
 .mini-progress {
@@ -683,9 +945,9 @@ button:disabled {
   content: '';
   position: absolute;
   top: 50%;
-  right: -6px;
-  width: 12px;
-  height: 12px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: var(--color-primary);
   opacity: 0;
@@ -733,13 +995,14 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 5px 7px;
+  padding: 0 7px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
+  box-sizing: border-box;
   transition: background 0.14s ease;
 }
 
@@ -811,53 +1074,83 @@ button:disabled {
   color: rgba(29, 29, 31, 0.45);
 }
 
-:global(.dark) .mini-card {
+.dark .mini-card {
   background: #2c2c30;
   color: #f5f5f7;
   border-color: rgba(255, 255, 255, 0.14);
 }
 
-:global(.dark) .mini-cover-placeholder {
+.dark .mini-cover-placeholder {
   background: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .mini-artist {
+.dark .mini-artist {
   color: rgba(245, 245, 247, 0.58);
 }
 
-:global(.dark) .mini-left-actions,
-:global(.dark) .mini-right-actions,
-:global(.dark) .mini-hover-controls {
+.dark .mini-left-actions,
+.dark .mini-right-actions,
+.dark .mini-hover-controls {
   color: rgba(245, 245, 247, 0.72);
 }
 
-:global(.dark) .mini-window-btn:hover,
-:global(.dark) .mini-action-btn:hover,
-:global(.dark) .mini-center-btn:hover {
+.dark .mini-volume-label {
+  color: rgba(245, 245, 247, 0.72);
+}
+
+.dark .mini-volume-slider {
+  --mini-volume-pop-bg: rgba(50, 50, 54, 0.96);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.dark .mini-window-btn:hover,
+.dark .mini-action-btn:hover {
   color: #fff;
 }
 
-:global(.dark) .mini-progress::before {
+/* 收藏按钮在深色下也始终保持红色 */
+.dark .mini-fav-btn,
+.dark .mini-fav-btn:hover {
+  color: #fa2d48;
+}
+
+/* 深色下中间控制：默认浅色中性、hover/播放跟随主题色；播放键圆形背景用浅色半透明中性底 */
+.dark .mini-center-btn {
+  color: rgba(245, 245, 247, 0.7);
+}
+
+.dark .mini-center-btn:hover,
+.dark .mini-center-play.playing {
+  color: var(--color-primary);
+}
+
+.dark .mini-center-play {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(245, 245, 247, 0.85);
+}
+
+.dark .mini-progress::before {
   background: rgba(255, 255, 255, 0.18);
 }
 
-:global(.dark) .mini-shell.is-expanded .mini-queue {
+.dark .mini-shell.is-expanded .mini-queue {
   border-top-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .mini-queue-artist {
+.dark .mini-queue-artist {
   color: rgba(245, 245, 247, 0.55);
 }
 
-:global(.dark) .mini-queue-empty {
+.dark .mini-queue-empty {
   color: rgba(245, 245, 247, 0.45);
 }
 
-:global(.dark) .mini-queue-item:hover {
+.dark .mini-queue-item:hover {
   background: rgba(255, 255, 255, 0.07);
 }
 
-:global(.dark) .mini-queue-list::-webkit-scrollbar-thumb {
+.dark .mini-queue-list::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
 }
 </style>

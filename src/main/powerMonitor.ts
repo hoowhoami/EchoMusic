@@ -92,7 +92,10 @@ export function initPowerMonitor(ctx: PowerMonitorContext): void {
  * 重设 audio-device 属性会强制 libmpv 重新打开音频输出（AO），这是切换独占
  * 模式时验证过的惯用法（见 ipc/player.ts）。重建后若挂起前在播放则从原进度恢复。
  */
-async function recoverAudio(controller: MpvController | null, shouldResume: boolean): Promise<void> {
+async function recoverAudio(
+  controller: MpvController | null,
+  shouldResume: boolean,
+): Promise<void> {
   if (!controller) return;
 
   // 重建音频输出设备：读当前设备名并重设，强制 libmpv 重开 AO

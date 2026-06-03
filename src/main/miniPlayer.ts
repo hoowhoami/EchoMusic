@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, screen, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, nativeTheme, screen, shell } from 'electron';
 import { join } from 'path';
 import type {
   MiniPlayerCommand,
@@ -28,6 +28,23 @@ const canUseWindow = (win: BrowserWindow | null): win is BrowserWindow =>
   Boolean(win && !win.isDestroyed());
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+// 主进程权威判定深色：theme=system 跟随系统 nativeTheme，否则按设置。
+// 不依赖隐藏的主窗口渲染层，保证 mini 在任意时刻都能正确响应深浅色。
+const resolveIsDark = () => {
+  const theme = getMainAppSettings().theme;
+  if (theme === 'dark') return true;
+  if (theme === 'light') return false;
+  return nativeTheme.shouldUseDarkColors;
+};
+
+// 用主进程权威的 isDark 覆盖快照里的 appearance（accentColor/fontFamily 仍由渲染层提供）
+const applyAuthoritativeDarkMode = () => {
+  if (!snapshot.appearance) return;
+  const isDark = resolveIsDark();
+  if (snapshot.appearance.isDark === isDark) return;
+  snapshot = { ...snapshot, appearance: { ...snapshot.appearance, isDark } };
+};
 
 export const getMiniPlayerWindow = () => miniPlayerWindow;
 
@@ -320,6 +337,8 @@ export const registerMiniPlayerHandlers = () => {
         ...snapshot,
         appearance: payload.appearance,
       };
+      // 渲染层传来的 isDark 可能滞后（主窗口隐藏时 matchMedia 不可靠），用主进程权威值覆盖
+      applyAuthoritativeDarkMode();
     }
     if (payload.queue !== undefined) {
       snapshot = {
@@ -332,6 +351,27 @@ export const registerMiniPlayerHandlers = () => {
 
   ipcMain.on('mini-player:set-expanded', (_event, expanded: boolean) => {
     setMiniPlayerExpanded(Boolean(expanded));
+  });
+
+  ipcMain.handle('mini-player:get-bounds', () => {
+    const win = getMiniPlayerWindow();
+    if (!win || win.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
+    return win.getBounds();
+  });
+
+  // 自定义拖动：渲染层用 pointer 事件计算新坐标后下发（取代 -webkit-app-region: drag，
+  // 后者会吞掉拖拽区的 pointer 事件导致 hover 闪烁）
+  ipcMain.on('mini-player:move', (_event, x: number, y: number) => {
+    const win = getMiniPlayerWindow();
+    if (!win || win.isDestroyed()) return;
+    const bounds = win.getBounds();
+    win.setBounds({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: bounds.width,
+      height: bounds.height,
+    });
+    persistMiniPlayerBounds();
   });
 
   ipcMain.on('mini-player:command', (_event, command: MiniPlayerCommand) => {
@@ -353,7 +393,22 @@ export const unregisterMiniPlayerHandlers = () => {
   ipcMain.removeHandler('mini-player:get-snapshot');
   ipcMain.removeHandler('mini-player:show');
   ipcMain.removeHandler('mini-player:hide');
+  ipcMain.removeHandler('mini-player:get-bounds');
   ipcMain.removeAllListeners('mini-player:sync-snapshot');
   ipcMain.removeAllListeners('mini-player:set-expanded');
+  ipcMain.removeAllListeners('mini-player:move');
   ipcMain.removeAllListeners('mini-player:command');
 };
+
+// 主题（应用设置或系统配色）变化时刷新 mini 的深色判定并广播。
+// 应用设置变化由 window.ts 的 update-theme 调用；系统配色由下方 nativeTheme 监听。
+export const refreshMiniPlayerDarkMode = () => {
+  if (!snapshot.appearance) return;
+  const before = snapshot.appearance.isDark;
+  applyAuthoritativeDarkMode();
+  if (snapshot.appearance.isDark !== before) sendSnapshot();
+};
+
+nativeTheme.on('updated', () => {
+  refreshMiniPlayerDarkMode();
+});

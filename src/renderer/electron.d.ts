@@ -118,6 +118,8 @@ export interface IElectronAPI {
     hide: () => Promise<MiniPlayerSnapshot>;
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) => void;
     setExpanded: (expanded: boolean) => void;
+    getBounds: () => Promise<{ x: number; y: number; width: number; height: number }>;
+    move: (x: number, y: number) => void;
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => () => void;
     command: (command: MiniPlayerCommand) => void;
     onCommand: (func: (command: MiniPlayerCommand) => void) => () => void;
