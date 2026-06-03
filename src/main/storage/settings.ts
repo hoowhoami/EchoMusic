@@ -19,6 +19,7 @@ export type MainAppSettings = {
   rememberWindowSize: boolean;
   preventSleep: boolean;
   disableGpuAcceleration: boolean;
+  startMinimized: boolean;
   windowState: MainWindowState;
 };
 
@@ -39,6 +40,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   rememberWindowSize: true,
   preventSleep: true,
   disableGpuAcceleration: false,
+  startMinimized: false,
   windowState: {
     width: 1100,
     height: 750,

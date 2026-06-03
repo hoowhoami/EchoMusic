@@ -132,6 +132,7 @@ export const useSettingStore = defineStore('setting', {
     searchHistory: [] as string[],
     userAgreementAccepted: false,
     disableGpuAcceleration: false,
+    startMinimized: false,
     logLevel: 'info' as AppLogLevel,
     logApiResponseBody: false,
     logDiagnosticUntil: 0,
@@ -232,6 +233,11 @@ export const useSettingStore = defineStore('setting', {
           'update-disable-gpu-acceleration',
           this.disableGpuAcceleration,
         );
+      }
+    },
+    syncStartMinimized() {
+      if (window.electron?.ipcRenderer) {
+        window.electron.ipcRenderer.send('update-start-minimized', this.startMinimized);
       }
     },
     getLogSettings(): LogSettings {

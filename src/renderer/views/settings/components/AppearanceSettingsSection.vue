@@ -157,6 +157,17 @@ const resolvedTitle = computed(() => title.label);
         "
       />
     </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
+        <h3 class="font-semibold">启动时最小化到托盘</h3>
+        <p class="text-sm text-text-secondary">开机自启时不显示主窗口，直接最小化到系统托盘</p>
+      </div>
+      <Switch
+        v-model="settingStore.startMinimized"
+        @update:model-value="settingStore.syncStartMinimized()"
+      />
+    </div>
 
     <ColorPickerDialog
       :open="showAccentPicker"

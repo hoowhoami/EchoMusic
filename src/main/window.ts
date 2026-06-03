@@ -114,6 +114,10 @@ ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
   setMainAppSetting('rememberWindowSize', enabled);
 });
 
+ipcMain.on('update-start-minimized', (_event, enabled: boolean) => {
+  setMainAppSetting('startMinimized', enabled);
+});
+
 const syncPowerSaveBlocker = () => {
   const shouldBlock = preventSleep && isPlaybackActive && !systemSuspended;
   if (shouldBlock) {
@@ -263,8 +267,11 @@ export async function createWindow() {
   }
 
   // 当窗口准备好显示时再展示，优雅解决启动白屏
+  // 如果启用了启动时最小化，则不自动显示窗口，由用户通过托盘恢复
   win.once('ready-to-show', () => {
-    win?.show();
+    if (!initialSettings.startMinimized) {
+      win?.show();
+    }
   });
 
   // 禁止视觉缩放 + 强制 zoomFactor，兜底防止 Windows 高 DPI 下意外缩放。
