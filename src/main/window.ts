@@ -29,6 +29,9 @@ let isPlaybackActive = false;
 let systemSuspended = false;
 let powerSaveBlockerId = -1;
 
+// 启动时同步开机自启动状态，确保注册表与设置一致
+app.setLoginItemSettings({ openAtLogin: initialSettings.autoLaunch });
+
 let win: BrowserWindow | null = null;
 let isQuitting = false;
 
@@ -116,6 +119,11 @@ ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
 
 ipcMain.on('update-start-minimized', (_event, enabled: boolean) => {
   setMainAppSetting('startMinimized', enabled);
+});
+
+ipcMain.on('update-auto-launch', (_event, enabled: boolean) => {
+  setMainAppSetting('autoLaunch', enabled);
+  app.setLoginItemSettings({ openAtLogin: enabled });
 });
 
 const syncPowerSaveBlocker = () => {
