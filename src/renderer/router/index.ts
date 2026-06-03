@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
     meta: { skipHistory: true },
   },
   {
+    path: '/mini-player',
+    name: 'mini-player',
+    component: () => import('@/miniPlayer/MiniPlayerView.vue'),
+    meta: { skipHistory: true },
+  },
+  {
     path: '/main',
     component: () => import('@/layouts/MainLayout.vue'),
     children: [

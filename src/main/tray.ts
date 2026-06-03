@@ -7,7 +7,7 @@ import log from './logger';
 
 interface TrayContext {
   getMainWindow: () => Electron.BrowserWindow | null;
-  restoreWindow: () => void;
+  restoreWindow: () => void | Promise<void>;
 }
 
 type TrayPlaybackState = Required<TrayPlaybackPayload>;
@@ -121,8 +121,8 @@ const createPlaybackMenuItems = (): MenuItemConstructorOptions[] => [
 const createTrayMenu = () => {
   return Menu.buildFromTemplate([
     {
-      label: '显示主窗口',
-      click: () => trayContext?.restoreWindow(),
+      label: '显示窗口',
+      click: () => void trayContext?.restoreWindow(),
     },
     { type: 'separator' },
     ...createPlaybackMenuItems(),
@@ -162,7 +162,7 @@ export const initTray = (context: TrayContext) => {
   appTray.setToolTip('EchoMusic');
 
   appTray.on('click', () => {
-    trayContext?.restoreWindow();
+    void trayContext?.restoreWindow();
   });
 
   if (process.platform === 'linux') {

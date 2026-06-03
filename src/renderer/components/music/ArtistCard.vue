@@ -95,15 +95,15 @@ const handleClick = () => {
 }
 
 .cover-shell {
-  height: 150px;
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .cover-wrapper {
-  width: 126px;
-  height: 126px;
+  width: min(82%, 180px);
+  aspect-ratio: 1;
   border-radius: 999px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);

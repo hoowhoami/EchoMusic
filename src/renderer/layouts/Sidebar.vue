@@ -98,6 +98,9 @@ const menuGroups = [
 ] as const;
 
 const isSectionCollapsed = (key: string) => settingStore.sidebarSectionCollapsed[key] ?? false;
+const visibleRailMenuGroups = computed(() =>
+  menuGroups.filter((group) => !isSectionCollapsed(group.key)),
+);
 const toggleSection = (key: string) => {
   settingStore.sidebarSectionCollapsed = {
     ...settingStore.sidebarSectionCollapsed,
@@ -460,8 +463,8 @@ watch(
           </Tooltip>
         </div>
 
-        <div class="sidebar-rail-nav">
-          <template v-for="group in menuGroups" :key="group.key">
+        <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
+          <template v-for="group in visibleRailMenuGroups" :key="group.key">
             <div class="sidebar-rail-divider" aria-hidden="true"></div>
             <Tooltip v-for="item in group.items" :key="item.path" :content="item.name" side="right">
               <template #trigger>

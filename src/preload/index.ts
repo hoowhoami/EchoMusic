@@ -10,6 +10,11 @@ import type {
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type {
+  MiniPlayerCommand,
+  MiniPlayerSnapshot,
+  MiniPlayerSnapshotPatch,
+} from '../shared/mini-player';
+import type {
   ImportImpulseResponseResult,
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
@@ -191,6 +196,28 @@ contextBridge.exposeInMainWorld('electron', {
         | 'openLyricSource'
       >,
     ) => ipcRenderer.send('desktop-lyric:command', command),
+  },
+  miniPlayer: {
+    getSnapshot: () =>
+      ipcRenderer.invoke('mini-player:get-snapshot') as Promise<MiniPlayerSnapshot>,
+    show: () => ipcRenderer.invoke('mini-player:show') as Promise<MiniPlayerSnapshot>,
+    hide: () => ipcRenderer.invoke('mini-player:hide') as Promise<MiniPlayerSnapshot>,
+    syncSnapshot: (payload: MiniPlayerSnapshotPatch) =>
+      sendWithPlainPayload('mini-player:sync-snapshot', payload),
+    setExpanded: (expanded: boolean) => ipcRenderer.send('mini-player:set-expanded', expanded),
+    onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: MiniPlayerSnapshot) =>
+        func(snapshotPayload);
+      ipcRenderer.on('mini-player:snapshot', listener);
+      return () => ipcRenderer.removeListener('mini-player:snapshot', listener);
+    },
+    command: (command: MiniPlayerCommand) => ipcRenderer.send('mini-player:command', command),
+    onCommand: (func: (command: MiniPlayerCommand) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: MiniPlayerCommand) =>
+        func(command);
+      ipcRenderer.on('mini-player:command', listener);
+      return () => ipcRenderer.removeListener('mini-player:command', listener);
+    },
   },
   log: log.functions,
   logging: {

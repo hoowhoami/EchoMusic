@@ -8,6 +8,11 @@ import type {
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
 import type {
+  MiniPlayerCommand,
+  MiniPlayerSnapshot,
+  MiniPlayerSnapshotPatch,
+} from '../shared/mini-player';
+import type {
   ImportImpulseResponseResult,
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
@@ -106,6 +111,16 @@ export interface IElectronAPI {
         | 'cycleLyricsMode'
         | 'openLyricSource',
     ) => void;
+  };
+  miniPlayer?: {
+    getSnapshot: () => Promise<MiniPlayerSnapshot>;
+    show: () => Promise<MiniPlayerSnapshot>;
+    hide: () => Promise<MiniPlayerSnapshot>;
+    syncSnapshot: (payload: MiniPlayerSnapshotPatch) => void;
+    setExpanded: (expanded: boolean) => void;
+    onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => () => void;
+    command: (command: MiniPlayerCommand) => void;
+    onCommand: (func: (command: MiniPlayerCommand) => void) => () => void;
   };
   log: {
     info: (...args: unknown[]) => void;

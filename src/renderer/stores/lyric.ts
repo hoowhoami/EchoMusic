@@ -161,8 +161,8 @@ const scoreCandidate = (
 ) => {
   let priority = 0;
   if (parsed?.hasTranslation && parsed.hasRomanization) priority += 220;
-  else if (parsed?.hasRomanization) priority += 140;
-  else if (parsed?.hasTranslation) priority += 100;
+  else if (parsed?.hasTranslation) priority += 140;
+  else if (parsed?.hasRomanization) priority += 100;
   if ((parsed?.lines.length ?? 0) > 0) priority += 30;
   if (candidate.contenttype !== 2) priority += 20;
   if (candidate.product_from === '官方推荐歌词') priority += 300;

@@ -85,6 +85,7 @@ import rotateCw from '@iconify/icons-tabler/rotate-clockwise-2';
 import arrowsSort from '@iconify/icons-tabler/arrows-sort';
 import pencil from '@iconify/icons-tabler/pencil';
 import dotsVertical from '@iconify/icons-tabler/dots-vertical';
+import pictureInPicture from '@iconify/icons-tabler/picture-in-picture';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -174,3 +175,4 @@ export const iconRotateCw = rotateCw as IconifyIcon;
 export const iconArrowsSort = arrowsSort as IconifyIcon;
 export const iconPencil = pencil as IconifyIcon;
 export const iconDotsVertical = dotsVertical as IconifyIcon;
+export const iconPictureInPicture = pictureInPicture as IconifyIcon;

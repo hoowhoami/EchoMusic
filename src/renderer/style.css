@@ -110,7 +110,10 @@ body.accent-scoped .main-layout .player-bar-container {
 
   html.desktop-lyric-window,
   html.desktop-lyric-window body,
-  html.desktop-lyric-window #app {
+  html.desktop-lyric-window #app,
+  html.mini-player-window,
+  html.mini-player-window body,
+  html.mini-player-window #app {
     background: transparent !important;
     background-color: transparent !important;
   }

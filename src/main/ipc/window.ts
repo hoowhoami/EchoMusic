@@ -1,5 +1,6 @@
 import { BrowserWindow, ipcMain } from 'electron';
-import { hideMainWindow, quitApplication, requestMainWindowClose, showMainWindow } from '../window';
+import { hideMainWindow, quitApplication, requestMainWindowClose } from '../window';
+import { restoreActiveWindowMode } from '../windowModeController';
 import type { IpcContext } from './types';
 
 export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
@@ -37,7 +38,7 @@ export const registerWindowHandlers = ({ getMainWindow }: IpcContext) => {
     if (browserWindow.isVisible()) {
       hideMainWindow();
     } else {
-      showMainWindow();
+      void restoreActiveWindowMode();
     }
   });
 

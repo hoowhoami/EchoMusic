@@ -3,7 +3,8 @@ import { initLogger } from './logger';
 import log from './logger';
 import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
-import { createWindow, getMainWindow, restoreWindow, showMainWindow } from './window';
+import { createWindow, getMainWindow } from './window';
+import { restoreActiveWindowMode } from './windowModeController';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
@@ -36,7 +37,7 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    restoreWindow();
+    void restoreActiveWindowMode();
   });
 
   // IPC handler 必须在窗口创建前注册
@@ -47,7 +48,7 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     const trayContext = {
       getMainWindow,
-      restoreWindow,
+      restoreWindow: restoreActiveWindowMode,
     };
 
     // --- Loading 阶段：在窗口创建前完成核心服务初始化 ---
@@ -105,10 +106,11 @@ if (!gotTheLock) {
     const mainWindow = getMainWindow();
 
     if (mainWindow) {
-      showMainWindow();
+      await restoreActiveWindowMode();
     } else {
       await createWindow();
       installWindowsTrayRecovery();
+      await restoreActiveWindowMode();
     }
   });
 

@@ -869,9 +869,11 @@ onUnmounted(() => {
                 :loading="loadingAlbums && albums.length === 0"
                 :active="activeTab === 'albums'"
                 :itemMinWidth="180"
-                :itemHeight="230"
+                :itemAspectRatio="1"
+                :itemChromeHeight="66"
                 :gap="20"
                 :overscan="3"
+                :paddingBottom="20"
                 keyField="id"
               >
                 <template #default="{ item }">
@@ -911,9 +913,11 @@ onUnmounted(() => {
                 :loading="loadingMvs && mvs.length === 0"
                 :active="activeTab === 'mvs'"
                 :itemMinWidth="200"
-                :itemHeight="180"
+                :itemAspectRatio="16 / 9"
+                :itemChromeHeight="66"
                 :gap="20"
                 :overscan="3"
+                :paddingBottom="20"
                 keyField="videoId"
               >
                 <template #default="{ item }">

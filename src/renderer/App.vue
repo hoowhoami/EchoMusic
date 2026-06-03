@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
-import { RouterView } from 'vue-router';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { RouterView, useRoute } from 'vue-router';
 import AuthExpiredDialog from '@/components/app/AuthExpiredDialog.vue';
 import ToastViewport from '@/components/app/ToastViewport.vue';
 import UpdateDialog from '@/components/app/UpdateDialog.vue';
@@ -12,16 +12,19 @@ import { usePlaylistStore } from './stores/playlist';
 import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
+import { initMiniPlayerSync } from '@/miniPlayer/sync';
 import { getCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
 import LyricView from '@/views/lyric/LyricPage.vue';
 
+const route = useRoute();
 const player = usePlayerStore();
 const settings = useSettingStore();
 const themeStore = useThemeStore();
 const playlistStore = usePlaylistStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
+let disposeMiniPlayerSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let disposePowerResumeSync: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
@@ -29,6 +32,7 @@ let colorSchemeMediaQuery: MediaQueryList | null = null;
 
 const showStartupUpdateDialog = ref(false);
 const startupUpdateResult = ref<UpdateCheckResult | null>(null);
+const isMiniPlayerRoute = computed(() => route.name === 'mini-player');
 
 const updateTheme = () => {
   const isDark =
@@ -60,11 +64,16 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
 };
 
 onMounted(async () => {
+  if (isMiniPlayerRoute.value) return;
+
   await waitForSqlitePersistHydration();
   await playlistStore.hydratePlaybackStateFromStorage();
   player.init();
   void initDesktopLyricSync().then((dispose) => {
     disposeDesktopLyricSync = dispose;
+  });
+  void initMiniPlayerSync().then((dispose) => {
+    disposeMiniPlayerSync = dispose;
   });
   updateTheme();
   applyGlobalFont();
@@ -106,6 +115,8 @@ onUnmounted(() => {
   disposeShortcuts = null;
   disposeDesktopLyricSync?.();
   disposeDesktopLyricSync = null;
+  disposeMiniPlayerSync?.();
+  disposeMiniPlayerSync = null;
   disposeTrayPlayModeSync?.();
   disposeTrayPlayModeSync = null;
   disposePowerResumeSync?.();
@@ -114,28 +125,55 @@ onUnmounted(() => {
   colorSchemeMediaQuery = null;
 });
 
-watch(() => settings.theme, updateTheme);
-watch(() => settings.globalFont, applyGlobalFont);
+watch(
+  () => settings.theme,
+  () => {
+    if (!isMiniPlayerRoute.value) updateTheme();
+  },
+);
+watch(
+  () => settings.globalFont,
+  () => {
+    if (!isMiniPlayerRoute.value) applyGlobalFont();
+  },
+);
 watch(
   () => settings.rememberWindowSize,
-  () => settings.syncRememberWindowSize(),
+  () => {
+    if (!isMiniPlayerRoute.value) settings.syncRememberWindowSize();
+  },
 );
 watch(
   () => settings.preventSleep,
-  () => settings.syncPreventSleep(player.isPlaying),
+  () => {
+    if (!isMiniPlayerRoute.value) settings.syncPreventSleep(player.isPlaying);
+  },
 );
 watch(
   () => player.isPlaying,
   (isPlaying) => {
+    if (isMiniPlayerRoute.value) return;
     settings.syncPreventSleep(isPlaying);
     syncTrayPlayback();
   },
 );
-watch(() => player.playMode, syncTrayPlayback);
-watch(() => player.volume, syncTrayPlayback);
+watch(
+  () => player.playMode,
+  () => {
+    if (!isMiniPlayerRoute.value) syncTrayPlayback();
+  },
+);
+watch(
+  () => player.volume,
+  () => {
+    if (!isMiniPlayerRoute.value) syncTrayPlayback();
+  },
+);
 watch(
   () => [settings.globalShortcutsEnabled, settings.globalShortcutBindings],
-  () => void syncGlobalShortcuts(),
+  () => {
+    if (!isMiniPlayerRoute.value) void syncGlobalShortcuts();
+  },
   { deep: true },
 );
 
@@ -143,6 +181,7 @@ watch(
 watch(
   () => player.currentTrackSnapshot?.coverUrl,
   (coverUrl) => {
+    if (isMiniPlayerRoute.value) return;
     if (!coverUrl) {
       void themeStore.refreshCoverColor('');
       return;
@@ -159,6 +198,7 @@ watch(
 watch(
   () => themeStore.accentMode,
   (mode) => {
+    if (isMiniPlayerRoute.value) return;
     if (mode !== 'cover') return;
     const coverUrl = player.currentTrackSnapshot?.coverUrl;
     if (!coverUrl) return;
@@ -169,20 +209,21 @@ watch(
 
 <template>
   <RouterView v-slot="{ Component, route }">
-    <transition name="page" mode="out-in">
+    <transition :name="route.name === 'mini-player' ? undefined : 'page'" mode="out-in">
       <RouteErrorBoundary :route="route">
         <component :is="Component" />
       </RouteErrorBoundary>
     </transition>
   </RouterView>
-  <Teleport to="body">
+  <Teleport v-if="$route.name !== 'mini-player'" to="body">
     <Transition name="lyric-overlay">
       <LyricView v-if="player.isLyricViewOpen" />
     </Transition>
   </Teleport>
-  <AuthExpiredDialog />
-  <ToastViewport />
+  <AuthExpiredDialog v-if="$route.name !== 'mini-player'" />
+  <ToastViewport v-if="$route.name !== 'mini-player'" />
   <UpdateDialog
+    v-if="$route.name !== 'mini-player'"
     v-model:open="showStartupUpdateDialog"
     :result="startupUpdateResult"
     dismiss-label="稍后"

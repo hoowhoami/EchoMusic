@@ -737,7 +737,8 @@ onUnmounted(() => {
             :loading="paginationState.author.loading && !paginationState.author.loaded"
             :active="activeTabIndex === 3"
             :item-min-width="180"
-            :item-height="218"
+            :item-aspect-ratio="1"
+            :item-chrome-height="68"
             :gap="20"
             key-field="id"
           >
@@ -788,7 +789,7 @@ onUnmounted(() => {
             :active="activeTabIndex === 5"
             :item-min-width="220"
             :item-aspect-ratio="1.78"
-            :item-chrome-height="50"
+            :item-chrome-height="66"
             :gap="20"
             key-field="videoId"
           >

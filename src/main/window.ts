@@ -14,6 +14,7 @@ import {
   setMainAppSetting,
   type MainWindowState as WindowState,
 } from './storage/settings';
+import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
@@ -53,6 +54,7 @@ export function hideMainWindow() {
 
 export function showMainWindow() {
   if (!canUseMainWindow(win)) return;
+  setActiveWindowMode('main');
 
   const wasVisible = win.isVisible();
   const wasMinimized = win.isMinimized();
@@ -332,6 +334,15 @@ export async function createWindow() {
     syncPowerSaveBlocker();
     win = null;
   });
+
+  const hideMainIfMiniMode = () => {
+    if (!win || win.isDestroyed()) return;
+    if (getActiveWindowMode() !== 'mini') return;
+    hideMainWindow();
+  };
+
+  win.on('show', hideMainIfMiniMode);
+  win.on('focus', hideMainIfMiniMode);
 
   return win;
 }

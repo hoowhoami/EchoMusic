@@ -16,6 +16,7 @@ import {
   iconMicrophone,
   iconFullscreen,
   iconPanelLeft,
+  iconPictureInPicture,
 } from '@/icons';
 
 const route = useRoute();
@@ -65,6 +66,10 @@ const updateNavState = () => {
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
+};
+
+const openMiniPlayer = () => {
+  void window.electron?.miniPlayer?.show();
 };
 
 const goBack = () => {
@@ -457,31 +462,52 @@ onUnmounted(() => {
     <!-- 2. 中间：拖拽区域 -->
     <div class="flex-1 h-full"></div>
 
-    <!-- 3. 右侧：窗口控制 -->
-    <div v-if="!isMac" class="window-controls flex items-center no-drag h-full relative z-10">
-      <Button variant="unstyled" size="none" @click="handleControl('minimize')" class="control-btn">
-        <Icon :icon="iconMinus" width="14" height="14" />
-      </Button>
+    <!-- 3. 右侧：mini 模式与窗口控制 -->
+    <div class="window-controls flex items-center no-drag h-full relative z-10">
       <Button
         variant="unstyled"
         size="none"
-        @click="handleControl('fullscreen')"
-        class="control-btn"
-        title="全屏"
+        @click="openMiniPlayer"
+        class="control-btn mini-control-btn"
+        title="mini 模式"
       >
-        <Icon :icon="iconFullscreen" width="14" height="14" />
+        <Icon :icon="iconPictureInPicture" width="16" height="16" />
       </Button>
-      <Button variant="unstyled" size="none" @click="handleControl('maximize')" class="control-btn">
-        <Icon :icon="iconSquare" width="13" height="13" />
-      </Button>
-      <Button
-        variant="unstyled"
-        size="none"
-        @click="handleControl('close')"
-        class="control-btn hover:bg-red-500 hover:text-white"
-      >
-        <Icon :icon="iconX" width="14" height="14" />
-      </Button>
+      <template v-if="!isMac">
+        <Button
+          variant="unstyled"
+          size="none"
+          @click="handleControl('minimize')"
+          class="control-btn"
+        >
+          <Icon :icon="iconMinus" width="14" height="14" />
+        </Button>
+        <Button
+          variant="unstyled"
+          size="none"
+          @click="handleControl('fullscreen')"
+          class="control-btn"
+          title="全屏"
+        >
+          <Icon :icon="iconFullscreen" width="14" height="14" />
+        </Button>
+        <Button
+          variant="unstyled"
+          size="none"
+          @click="handleControl('maximize')"
+          class="control-btn"
+        >
+          <Icon :icon="iconSquare" width="13" height="13" />
+        </Button>
+        <Button
+          variant="unstyled"
+          size="none"
+          @click="handleControl('close')"
+          class="control-btn hover:bg-red-500 hover:text-white"
+        >
+          <Icon :icon="iconX" width="14" height="14" />
+        </Button>
+      </template>
     </div>
   </header>
 </template>
@@ -544,6 +570,12 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 
+.mini-control-btn {
+  width: 40px;
+  color: var(--color-text-main);
+  opacity: 0.68;
+}
+
 .control-btn:hover {
   background-color: rgba(0, 0, 0, 0.05);
 }
@@ -554,6 +586,13 @@ onUnmounted(() => {
 
 .control-btn:hover.hover\:bg-red-500 {
   background-color: #ff3b30 !important;
+}
+
+.mini-control-btn:hover,
+.dark .mini-control-btn:hover {
+  background-color: transparent;
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 /* 搜索区域 */

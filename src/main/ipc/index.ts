@@ -5,6 +5,7 @@ import { registerSettingsHandlers } from './settings';
 import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
+import { registerMiniPlayerHandlers, unregisterMiniPlayerHandlers } from '../miniPlayer';
 import { registerShazamHandlers } from './shazam';
 import { registerExternalHandlers } from './external';
 import { registerStorageHandlers, unregisterStorageHandlers } from './storage';
@@ -20,6 +21,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerShortcutHandlers(context);
   registerTrayHandlers();
   registerDesktopLyricHandlers();
+  registerMiniPlayerHandlers();
   registerShazamHandlers();
   registerExternalHandlers();
   registerStorageHandlers();
@@ -66,6 +68,7 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('desktop-lyric:toggle-lock');
   ipcMain.removeHandler('desktop-lyric:update-settings');
   ipcMain.removeAllListeners('desktop-lyric:sync-snapshot');
+  unregisterMiniPlayerHandlers();
   ipcMain.removeHandler('external:resolve-playlist');
   unregisterStorageHandlers();
 };

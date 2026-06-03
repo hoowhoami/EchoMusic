@@ -13,6 +13,13 @@ export type MainWindowState = {
   isMaximized: boolean;
 };
 
+export type MiniPlayerWindowState = {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+};
+
 export type MainAppSettings = {
   closeBehavior: CloseBehavior;
   theme: ThemeMode;
@@ -20,6 +27,7 @@ export type MainAppSettings = {
   preventSleep: boolean;
   disableGpuAcceleration: boolean;
   windowState: MainWindowState;
+  miniPlayerWindowState: MiniPlayerWindowState;
 };
 
 export type DesktopLyricWindowState = {
@@ -43,6 +51,10 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
     width: 1100,
     height: 750,
     isMaximized: false,
+  },
+  miniPlayerWindowState: {
+    width: 560,
+    height: 120,
   },
 };
 
@@ -72,6 +84,10 @@ export const getMainAppSettings = (): MainAppSettings => {
     windowState: {
       ...DEFAULT_MAIN_APP_SETTINGS.windowState,
       ...(saved?.windowState ?? {}),
+    },
+    miniPlayerWindowState: {
+      ...DEFAULT_MAIN_APP_SETTINGS.miniPlayerWindowState,
+      ...(saved?.miniPlayerWindowState ?? {}),
     },
   };
 };

@@ -1,5 +1,6 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
 import { hideMainWindow, showMainWindow } from '../window';
+import { restoreActiveWindowMode } from '../windowModeController';
 import type {
   ShortcutCommand,
   ShortcutMap,
@@ -37,7 +38,7 @@ const registerShortcuts = (
             const win = getMainWindow();
             if (!win) return;
             if (win.isVisible()) hideMainWindow();
-            else showMainWindow();
+            else void restoreActiveWindowMode();
             return;
           }
           forwardToRenderer(command, getMainWindow);
