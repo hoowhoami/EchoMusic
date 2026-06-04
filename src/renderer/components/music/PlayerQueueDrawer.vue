@@ -20,9 +20,7 @@ import {
   iconPause,
   iconArrowUp,
   iconCurrentLocation,
-  iconChevronLeft,
-  iconChevronRight,
-  iconPlus,
+  iconPlaylistAdd,
 } from '@/icons';
 
 interface Props {
@@ -121,27 +119,22 @@ const previewIndex = computed(() => {
   return index >= 0 ? index : 0;
 });
 
-const canSwitchToPrevQueue = computed(() => previewIndex.value > 0);
-const canSwitchToNextQueue = computed(() => previewIndex.value < queueOptions.value.length - 1);
-const queueSwitcherLabel = computed(() => {
-  const total = queueOptions.value.length;
-  if (total === 0) return '0 / 0';
-  return `${previewIndex.value + 1} / ${total}`;
-});
-const queueSwitcherTitle = computed(() => {
-  const queue = previewQueue.value;
-  if (!queue) return '播放列表';
-  return previewIndex.value === 0
-    ? `当前队列 · ${resolveQueueTypeLabel(queue)}`
-    : queue.title || resolveQueueTypeLabel(queue);
-});
-
 const queueTrackStyle = computed(() => {
   const translateX = isDraggingSlides.value
     ? `calc(-${previewIndex.value * 100}% + ${dragOffsetX.value}px)`
     : `-${previewIndex.value * 100}%`;
   return {
     transform: `translate3d(${translateX}, 0, 0)`,
+  };
+});
+
+const progressThumbStyle = computed(() => {
+  const N = queueOptions.value.length;
+  if (N === 0) return { display: 'none' };
+  const gap = 2;
+  return {
+    width: `calc((100% - ${(N - 1) * gap}px) / ${N})`,
+    transform: `translateX(calc(${previewIndex.value * 100}% + ${previewIndex.value * gap}px))`,
   };
 });
 
@@ -167,7 +160,7 @@ const updatePlayerPlayingState = () => {
   }, 100);
 };
 
-const headerTitle = computed(() => (previewIndex.value === 0 ? '播放队列' : '历史队列'));
+const headerTitle = computed(() => (previewIndex.value === 0 ? '当前' : '历史'));
 const headerSubtitle = computed(() => {
   const queue = previewQueue.value;
   if (!queue) return '暂无队列';
@@ -696,7 +689,58 @@ onBeforeUnmount(() => {
             {{ headerSubtitle }}
           </div>
         </div>
-        <div class="queue-title-meta">{{ headerMeta }}</div>
+        <div class="queue-meta-row">
+          <div class="queue-title-meta">{{ headerMeta }}</div>
+          <div
+            class="queue-switcher-arrows"
+            v-if="queueOptions.length > 1"
+            role="group"
+            aria-label="队列切换"
+            tabindex="0"
+            @keydown="handleQueueNavKeydown"
+          >
+            <button
+              type="button"
+              class="queue-arrow-btn"
+              :disabled="previewIndex === 0"
+              title="上一队列"
+              @click="handleSwitchQueueByDirection(-1)"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="queue-arrow-btn"
+              :disabled="previewIndex === queueOptions.length - 1"
+              title="下一队列"
+              @click="handleSwitchQueueByDirection(1)"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="queue-actions">
@@ -725,6 +769,18 @@ onBeforeUnmount(() => {
           class="queue-icon-btn"
           variant="ghost"
           size="xs"
+          :title="isAddingToPlaylist ? '添加中...' : '添加到'"
+          :disabled="!canAddPreviewQueue || isAddingToPlaylist"
+          @click="handleAddToPlaylist"
+        >
+          <Icon :icon="iconPlaylistAdd" width="20" height="20" />
+        </Button>
+
+        <Button
+          type="button"
+          class="queue-icon-btn"
+          variant="ghost"
+          size="xs"
           :title="
             isMyQueue
               ? '清空我的队列'
@@ -748,49 +804,18 @@ onBeforeUnmount(() => {
         </Button>
       </div>
 
-      <div class="queue-toolbar">
-        <div
-          class="queue-switcher"
-          role="group"
-          aria-label="队列切换"
-          tabindex="0"
-          @keydown="handleQueueNavKeydown"
-        >
-          <button
-            type="button"
-            class="queue-switcher-btn"
-            :disabled="!canSwitchToPrevQueue"
-            title="上一队列"
-            @click="handleSwitchQueueByDirection(-1)"
-          >
-            <Icon :icon="iconChevronLeft" width="14" height="14" />
-          </button>
-          <div class="queue-switcher-label" :title="queueSwitcherTitle" aria-live="polite">
-            {{ queueSwitcherLabel }}
+      <div class="queue-progress-bar">
+        <div class="queue-progress-inner">
+          <div class="queue-progress-track">
+            <div v-if="queueOptions.length === 0" class="queue-progress-segment"></div>
+            <div
+              v-else
+              v-for="queue in queueOptions"
+              :key="queue.id"
+              class="queue-progress-segment"
+            ></div>
           </div>
-          <button
-            type="button"
-            class="queue-switcher-btn"
-            :disabled="!canSwitchToNextQueue"
-            title="下一队列"
-            @click="handleSwitchQueueByDirection(1)"
-          >
-            <Icon :icon="iconChevronRight" width="14" height="14" />
-          </button>
-        </div>
-
-        <div class="queue-actions-primary">
-          <Button
-            type="button"
-            class="queue-add-btn"
-            variant="secondary"
-            size="xs"
-            :disabled="!canAddPreviewQueue || isAddingToPlaylist"
-            @click="handleAddToPlaylist"
-          >
-            <Icon :icon="iconPlus" width="14" height="14" />
-            <span>添加到</span>
-          </Button>
+          <div class="queue-progress-thumb" :style="progressThumbStyle"></div>
         </div>
       </div>
     </div>
@@ -821,11 +846,10 @@ onBeforeUnmount(() => {
       >
         <section v-for="queue in queueOptions" :key="queue.id" class="queue-slide">
           <div
+            v-if="queue.id === previewQueue?.id && isPreviewReadonly"
             class="queue-panel-toolbar"
-            :class="{ 'has-resume': queue.id === previewQueue?.id && isPreviewReadonly }"
           >
             <Button
-              v-if="queue.id === previewQueue?.id && isPreviewReadonly"
               type="button"
               class="queue-inline-resume"
               variant="secondary"
@@ -840,6 +864,7 @@ onBeforeUnmount(() => {
               </span>
             </Button>
           </div>
+
           <PlayerQueueVirtualList
             :ref="setQueueListRef(queue.id)"
             :queue="queue"
@@ -903,15 +928,52 @@ onBeforeUnmount(() => {
 }
 
 .queue-header {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    'title actions'
-    'toolbar toolbar';
+  grid-template-areas: 'title actions';
   align-items: center;
   gap: 12px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 14px 16px 14px;
+}
+
+.queue-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+
+.queue-progress-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.queue-progress-track {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+}
+
+.queue-progress-segment {
+  flex: 1;
+  height: 1px;
+  margin-top: 1px;
+  background: var(--color-border-light);
+}
+
+.queue-progress-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left;
 }
 
 .queue-title-block {
@@ -920,16 +982,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-}
-
-.queue-toolbar {
-  grid-area: toolbar;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-  padding-top: 2px;
 }
 
 .queue-title-row {
@@ -962,83 +1014,48 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
+.queue-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .queue-title-meta {
   font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.86;
   white-space: nowrap;
   line-height: 1;
+  width: 45px;
+  flex-shrink: 0;
 }
 
-.queue-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  white-space: nowrap;
-  min-height: 28px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.queue-actions-primary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.queue-switcher {
-  flex: 1 1 auto;
-  min-width: 0;
+.queue-switcher-arrows {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
 }
 
-.queue-switcher-btn {
-  height: 24px;
-  border-radius: 999px;
-  font-size: 11px;
-  transition:
-    color 0.18s ease,
-    background-color 0.18s ease;
-}
-
-.queue-switcher-btn {
-  width: 24px;
-  min-width: 24px;
+.queue-arrow-btn {
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  background: transparent;
+  transition: color 0.18s ease;
+  border-radius: 4px;
 }
 
-.queue-switcher-btn:hover:not(:disabled),
-.queue-switcher-btn:focus-visible {
+.queue-arrow-btn:hover:not(:disabled) {
   color: var(--color-text-main);
-  background: color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  background: transparent;
 }
 
-.queue-switcher-btn:disabled {
-  opacity: 0.4;
+.queue-arrow-btn:disabled {
+  opacity: 0.3;
   cursor: default;
-}
-
-.queue-switcher-label {
-  min-width: 54px;
-  max-width: 140px;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  color: var(--color-text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .queue-actions {
@@ -1051,9 +1068,9 @@ onBeforeUnmount(() => {
 }
 
 .queue-icon-btn {
-  width: 38px;
-  height: 38px;
-  min-width: 38px;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
   border-radius: 12px;
   color: var(--color-text-secondary);
 }
@@ -1062,37 +1079,17 @@ onBeforeUnmount(() => {
   .queue-header {
     gap: 10px;
   }
-
   .queue-title-row {
     gap: 6px;
   }
-
-  .queue-toolbar {
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .queue-switcher {
-    order: 1;
-    flex: 1 1 160px;
-  }
-
-  .queue-actions-primary {
-    order: 2;
-    flex: 0 0 auto;
-  }
-
   .queue-actions {
     gap: 2px;
   }
-
   .queue-icon-btn {
     width: 34px;
     height: 34px;
     min-width: 34px;
   }
-
   .queue-title-subtitle {
     max-width: 140px;
   }
@@ -1204,13 +1201,9 @@ onBeforeUnmount(() => {
 .queue-panel-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
   padding: 8px 14px 6px;
-}
-
-.queue-panel-toolbar.has-resume {
-  justify-content: space-between;
 }
 
 .queue-inline-resume {
@@ -1406,26 +1399,6 @@ onBeforeUnmount(() => {
 
 .queue-empty-icon {
   opacity: 0.35;
-}
-
-.queue-dots {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.queue-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-  transition: all 0.2s ease;
-}
-
-.queue-dot.is-active {
-  width: 18px;
-  background: color-mix(in srgb, var(--color-primary) 80%, white 0%);
 }
 
 .queue-sortable-ghost {
