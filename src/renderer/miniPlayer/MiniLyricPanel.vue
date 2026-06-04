@@ -280,8 +280,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 7px 0;
   text-align: center;
-  opacity: 0.46;
-  color: inherit;
+  color: rgba(60, 60, 67, 0.6);
   transition:
     color 0.18s ease,
     opacity 0.18s ease;
@@ -292,7 +291,6 @@ onBeforeUnmount(() => {
 }
 
 .mini-lyric-line.active {
-  opacity: 1;
   color: var(--color-primary);
 }
 
@@ -317,7 +315,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
   line-height: 15px;
   font-weight: 650;
-  color: rgba(29, 29, 31, 0.56);
+  color: rgba(60, 60, 67, 0.45);
 }
 
 .mini-lyric-line.active .mini-lyric-secondary {
@@ -347,7 +345,15 @@ onBeforeUnmount(() => {
 
 .mini-lyric.dark .mini-lyric-artist,
 .mini-lyric.dark .mini-lyric-secondary {
-  color: rgba(245, 245, 247, 0.56);
+  color: rgba(245, 245, 247, 0.45);
+}
+
+.mini-lyric.dark .mini-lyric-line {
+  color: rgba(245, 245, 247, 0.55);
+}
+
+.mini-lyric.dark .mini-lyric-line.active {
+  color: var(--color-primary);
 }
 
 .mini-lyric.dark .mini-lyric-line.active .mini-lyric-secondary {

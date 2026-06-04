@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, screen, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, nativeTheme, screen, shell } from 'electron';
 import { join } from 'path';
 import type {
   MiniPlayerCommand,
@@ -408,6 +408,20 @@ export const registerMiniPlayerHandlers = () => {
     mainWindow.webContents.send('mini-player:lyric-visibility', visible);
   });
 };
+
+// 系统主题变化时，根据应用设置决定是否更新 mini player 的深浅色状态
+nativeTheme.on('updated', () => {
+  if (!canUseWindow(miniPlayerWindow)) return;
+  if (!snapshot.appearance) return;
+  const theme = getMainAppSettings().theme;
+  const isDark = theme === 'dark' || (theme === 'system' && nativeTheme.shouldUseDarkColors);
+  if (snapshot.appearance.isDark === isDark) return;
+  snapshot = {
+    ...snapshot,
+    appearance: { ...snapshot.appearance, isDark },
+  };
+  sendSnapshot();
+});
 
 export const unregisterMiniPlayerHandlers = () => {
   ipcMain.removeHandler('mini-player:get-snapshot');
