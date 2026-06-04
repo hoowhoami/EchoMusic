@@ -2,9 +2,11 @@
 import { computed, ref } from 'vue';
 import { iconMinus, iconSquare, iconX, iconFullscreen } from '@/icons';
 import Button from '@/components/ui/Button.vue';
+import { useSettingStore } from '@/stores/setting';
 
 const isMac = computed(() => window.electron.platform === 'darwin');
 const headerRef = ref<HTMLElement | null>(null);
+const settingStore = useSettingStore();
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
@@ -36,6 +38,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
         <Icon :icon="iconMinus" width="14" height="14" />
       </Button>
       <Button
+        v-if="settingStore.showFullscreenButton"
         variant="unstyled"
         size="none"
         @click="handleControl('fullscreen')"

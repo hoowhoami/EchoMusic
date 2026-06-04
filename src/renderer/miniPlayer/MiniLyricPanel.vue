@@ -8,6 +8,7 @@ const props = defineProps<{
   artist: string;
   coverUrl: string;
   visible: boolean;
+  isDark: boolean;
 }>();
 
 const lyricLines = computed(() => props.lyric?.lines ?? []);
@@ -153,7 +154,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mini-lyric no-drag">
+  <div class="mini-lyric no-drag" :class="{ dark: isDark }">
     <div class="mini-lyric-bg" :style="lyricBackgroundStyle"></div>
     <div class="mini-lyric-scrim"></div>
     <div class="mini-lyric-content">
@@ -334,26 +335,26 @@ onBeforeUnmount(() => {
   color: rgba(29, 29, 31, 0.52);
 }
 
-:global(.dark) .mini-lyric {
+.mini-lyric.dark {
   border-top-color: rgba(255, 255, 255, 0.08);
 }
 
-:global(.dark) .mini-lyric-scrim {
+.mini-lyric.dark .mini-lyric-scrim {
   background:
     linear-gradient(180deg, rgba(36, 36, 40, 0.84), rgba(24, 24, 28, 0.95)),
     radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.12), transparent 46%);
 }
 
-:global(.dark) .mini-lyric-artist,
-:global(.dark) .mini-lyric-secondary {
+.mini-lyric.dark .mini-lyric-artist,
+.mini-lyric.dark .mini-lyric-secondary {
   color: rgba(245, 245, 247, 0.56);
 }
 
-:global(.dark) .mini-lyric-line.active .mini-lyric-secondary {
+.mini-lyric.dark .mini-lyric-line.active .mini-lyric-secondary {
   color: color-mix(in srgb, var(--color-primary) 72%, #f5f5f7);
 }
 
-:global(.dark) .mini-lyric-empty {
+.mini-lyric.dark .mini-lyric-empty {
   color: rgba(245, 245, 247, 0.5);
 }
 </style>

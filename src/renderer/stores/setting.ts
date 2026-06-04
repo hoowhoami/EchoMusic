@@ -104,6 +104,7 @@ export const useSettingStore = defineStore('setting', {
     defaultGlobalShortcutLabels: { ...DEFAULT_GLOBAL_SHORTCUT_LABELS } as Record<string, string>,
     sidebarCollapsed: false,
     sidebarCollapseEnabled: false,
+    showFullscreenButton: true,
     outputDevice: 'default',
     outputDevices: [{ label: '系统默认', value: 'default' }] as OutputDeviceOption[],
     outputDeviceType: 'default' as 'default' | 'wasapi',

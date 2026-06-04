@@ -483,6 +483,7 @@ onUnmounted(() => {
           <Icon :icon="iconMinus" width="14" height="14" />
         </Button>
         <Button
+          v-if="settingStore.showFullscreenButton"
           variant="unstyled"
           size="none"
           @click="handleControl('fullscreen')"

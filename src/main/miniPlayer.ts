@@ -376,12 +376,13 @@ export const registerMiniPlayerHandlers = () => {
   ipcMain.on('mini-player:move', (_event, x: number, y: number) => {
     const win = getMiniPlayerWindow();
     if (!win || win.isDestroyed()) return;
-    const bounds = win.getBounds();
+    // 使用固定宽高避免 Windows DPI 缩放导致的尺寸舍入累积
+    const height = miniPlayerExpanded ? MINI_PLAYER_EXPANDED_HEIGHT : MINI_PLAYER_HEIGHT;
     win.setBounds({
       x: Math.round(x),
       y: Math.round(y),
-      width: bounds.width,
-      height: bounds.height,
+      width: MINI_PLAYER_WIDTH,
+      height,
     });
     persistMiniPlayerBounds();
   });

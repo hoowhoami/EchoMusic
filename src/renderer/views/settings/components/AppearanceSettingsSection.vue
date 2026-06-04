@@ -136,6 +136,14 @@ const resolvedTitle = computed(() => title.label);
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">全屏按钮</h3>
+        <p class="text-sm text-text-secondary">在标题栏显示全屏按钮（仅 Windows / Linux）</p>
+      </div>
+      <Switch v-model="settingStore.showFullscreenButton" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">侧边栏折叠</h3>
         <p class="text-sm text-text-secondary">启用后可通过快捷键或标题栏按钮折叠侧边栏</p>
       </div>

@@ -256,7 +256,8 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   }
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
-    document.documentElement.style.setProperty('--color-primary', appearance.value.accentColor);
+    // mini 模式使用固定主题色，不跟随主窗口的封面取色/自定义色
+    document.documentElement.style.setProperty('--color-primary', '#0071e3');
     document.documentElement.style.fontFamily = appearance.value.fontFamily || '';
   }
 };
@@ -456,10 +457,17 @@ const playQueueTrack = (trackId: string) => {
 };
 
 // 窗口被隐藏（关闭 mini / 回主窗口）时，主进程已折叠窗口，这里同步收起队列状态
-const handleVisibility = () => {
+// 窗口重新可见时重新获取最新 snapshot 确保主题/状态同步
+const handleVisibility = async () => {
   if (document.visibilityState === 'hidden' && isExpanded.value) {
     cancelExpandFrame();
     expandedMode.value = null;
+  } else if (document.visibilityState === 'visible') {
+    try {
+      applySnapshot(await window.electron?.miniPlayer?.getSnapshot?.());
+    } catch {
+      // ignore
+    }
   }
 };
 
@@ -686,6 +694,7 @@ onUnmounted(() => {
         :artist="lyricArtist"
         :cover-url="lyricCoverUrl"
         :visible="isLyricOpen"
+        :is-dark="appearance?.isDark ?? false"
         :aria-hidden="!isLyricOpen"
       />
 
