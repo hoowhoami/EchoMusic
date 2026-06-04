@@ -7,14 +7,17 @@ interface PortraitOptions {
   currentTrack: ComputedRef<Record<string, any> | null | undefined>;
   currentTrackLyricHash: ComputedRef<string>;
   settingStore: {
-    lyricArtistBackdrop: boolean;
     lyricCarouselEnabled: boolean;
     lyricCarouselInterval: number;
   };
 }
 
-const singerPortraitCache = new Map<string, string[]>();
+const singerPortraitCache = new Map<string, { urls: string[]; expiresAt: number }>();
 const singerPortraitPending = new Map<string, Promise<string[]>>();
+
+// 有写真结果时缓存 30 分钟，空结果缓存 5 分钟后重试
+const CACHE_TTL_HIT = 30 * 60 * 1000;
+const CACHE_TTL_EMPTY = 5 * 60 * 1000;
 
 const normalizeRemoteImageUrl = (url: string | undefined): string => {
   return String(url ?? '')
@@ -22,19 +25,28 @@ const normalizeRemoteImageUrl = (url: string | undefined): string => {
     .replace(/^http:\/\//, 'https://');
 };
 
+// 按优先级 3 > 4 > 2 取图，一旦某个类型有数据就使用该类型的全部图片
+const PORTRAIT_TYPE_PRIORITY = ['3', '4', '2'];
+
 const resolvePortraitsFromAuthors = (authors: unknown): string[] => {
   if (!Array.isArray(authors)) return [];
   const portraitSet = new Set<string>();
-  for (const author of authors as AudioImageAuthor[]) {
-    const portraits = Array.isArray(author?.imgs?.['3'])
-      ? (author.imgs?.['3'] as AudioImagePortrait[])
-      : [];
-    for (const portrait of portraits) {
-      const url = normalizeRemoteImageUrl(portrait?.sizable_portrait);
-      if (url) portraitSet.add(url);
+
+  for (const type of PORTRAIT_TYPE_PRIORITY) {
+    for (const author of authors as AudioImageAuthor[]) {
+      const portraits = Array.isArray(author?.imgs?.[type])
+        ? (author.imgs?.[type] as AudioImagePortrait[])
+        : [];
+      for (const portrait of portraits) {
+        const url = normalizeRemoteImageUrl(portrait?.sizable_portrait);
+        if (url) portraitSet.add(url);
+      }
     }
+    // 当前优先级类型有数据就直接返回，不再尝试更低优先级
+    if (portraitSet.size > 0) return [...portraitSet];
   }
-  return [...portraitSet];
+
+  return [];
 };
 
 // 预解码写真，避免切换时浏览器同步解码造成卡顿
@@ -57,9 +69,7 @@ export function useLyricPortrait(options: PortraitOptions) {
     return artistPortraitUrls.value[activePortraitIndex.value] || '';
   });
 
-  const hasPortraitGallery = computed(
-    () => settingStore.lyricArtistBackdrop && artistPortraitUrls.value.length > 0,
-  );
+  const hasPortraitGallery = computed(() => artistPortraitUrls.value.length > 0);
 
   const portraitCounterLabel = computed(() => {
     if (!hasPortraitGallery.value) return '';
@@ -128,16 +138,21 @@ export function useLyricPortrait(options: PortraitOptions) {
     const track = currentTrack.value;
     const lyricHash = currentTrackLyricHash.value;
 
-    if (!settingStore.lyricArtistBackdrop || !track || !lyricHash) {
+    if (!track || !lyricHash) {
       clearArtistBackdrop();
       return;
     }
 
     if (singerPortraitCache.has(lyricHash)) {
-      artistPortraitUrls.value = singerPortraitCache.get(lyricHash) ?? [];
-      syncPortraitIndex();
-      restartPortraitCarousel();
-      return;
+      const cached = singerPortraitCache.get(lyricHash)!;
+      if (Date.now() < cached.expiresAt) {
+        artistPortraitUrls.value = cached.urls;
+        syncPortraitIndex();
+        restartPortraitCarousel();
+        return;
+      }
+      // 缓存过期，删除后重新请求
+      singerPortraitCache.delete(lyricHash);
     }
 
     // 切歌后若目标写真未命中缓存，立即清掉上一首的写真与计数，
@@ -167,7 +182,8 @@ export function useLyricPortrait(options: PortraitOptions) {
               }
             }
             const portraitUrls = [...portraitSet].slice(0, 5);
-            singerPortraitCache.set(lyricHash, portraitUrls);
+            const ttl = portraitUrls.length > 0 ? CACHE_TTL_HIT : CACHE_TTL_EMPTY;
+            singerPortraitCache.set(lyricHash, { urls: portraitUrls, expiresAt: Date.now() + ttl });
             return portraitUrls;
           } finally {
             singerPortraitPending.delete(lyricHash);
@@ -183,7 +199,7 @@ export function useLyricPortrait(options: PortraitOptions) {
       // 预解码前两张写真
       portraitUrls.slice(0, 2).forEach(preDecodePortrait);
     } catch {
-      singerPortraitCache.set(lyricHash, []);
+      // 请求失败不缓存，下次切回来会重新请求
       if (requestId !== artistBackdropRequestId) return;
       clearArtistBackdrop();
     }

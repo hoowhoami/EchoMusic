@@ -520,20 +520,27 @@ onUnmounted(() => {
         <QualityPopover />
         <EffectPopover />
 
-        <Button
-          variant="unstyled"
-          size="none"
-          class="p-2 transition-all hover:scale-110 active:scale-90"
-          :class="
-            desktopLyricStore.settings.enabled
-              ? 'text-primary'
-              : 'text-text-main/50 hover:text-primary'
-          "
-          :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
-          @click="toggleDesktopLyric"
-        >
-          <Icon :icon="iconTypography" width="20" height="20" />
-        </Button>
+        <div class="relative">
+          <Button
+            variant="unstyled"
+            size="none"
+            class="p-2 transition-all hover:scale-110 active:scale-90"
+            :class="
+              desktopLyricStore.settings.enabled
+                ? 'text-primary'
+                : 'text-text-main/50 hover:text-primary'
+            "
+            :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
+            @click="toggleDesktopLyric"
+          >
+            <Icon :icon="iconTypography" width="20" height="20" />
+          </Button>
+          <Badge
+            :count="desktopLyricStore.settings.enabled ? 'ON' : 'OFF'"
+            class="-top-px"
+            style="right: -5px"
+          />
+        </div>
 
         <div class="relative">
           <Button

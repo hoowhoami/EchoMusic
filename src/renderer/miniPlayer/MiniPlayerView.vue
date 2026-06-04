@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Cover from '@/components/ui/Cover.vue';
+import MiniLyricPanel from './MiniLyricPanel.vue';
 import { useVirtualList } from '@/composables/useVirtualList';
 import {
   iconHeart,
@@ -21,6 +22,7 @@ import {
 import type {
   MiniPlayerAppearancePayload,
   MiniPlayerCommand,
+  MiniPlayerLyricPayload,
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
   MiniPlayerQueueTrack,
@@ -37,7 +39,9 @@ const cardExpandedHeight = `${
 const playback = ref<MiniPlayerPlaybackPayload | null>(null);
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
 const queue = ref<MiniPlayerQueuePayload | null>(null);
-const isQueueOpen = ref(false);
+const lyric = ref<MiniPlayerLyricPayload | null>(null);
+const lyricCoverUrl = ref('');
+const expandedMode = ref<'queue' | 'lyric' | null>(null);
 const isHovered = ref(false);
 const isDraggingSeek = ref(false);
 const pendingSeekRatio = ref<number | null>(null);
@@ -45,6 +49,13 @@ const isVolumeOpen = ref(false);
 const isDraggingVolume = ref(false);
 let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let disposeSnapshot: (() => void) | null = null;
+let lastAppliedLyricTrackId: string | null = null;
+let lastAppliedLyricIndex = -1;
+let lastAppliedLyricTime = 0;
+
+const isQueueOpen = computed(() => expandedMode.value === 'queue');
+const isLyricOpen = computed(() => expandedMode.value === 'lyric');
+const isExpanded = computed(() => expandedMode.value !== null);
 
 const volumePercent = computed(() => Math.round((playback.value?.volume ?? 0) * 100));
 
@@ -72,6 +83,9 @@ const volumeIcon = computed(() => {
 const currentQueueTrackId = computed(
   () => queue.value?.currentTrackId ?? playback.value?.trackId ?? null,
 );
+
+const lyricTitle = computed(() => playback.value?.title || '未在播放');
+const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
 
 // 播放列表虚拟滚动：复用主窗口同款 useVirtualList，仅渲染可视区，支撑大队列
 const MINI_QUEUE_ITEM_HEIGHT = 42;
@@ -136,10 +150,110 @@ const toggleFavorite = () => {
   command('toggleFavorite');
 };
 
+const mergeLyricSnapshot = (
+  nextLyric: MiniPlayerLyricPayload | null | undefined,
+): MiniPlayerLyricPayload | null => {
+  if (!nextLyric) return lyric.value;
+  const currentLyric = lyric.value;
+  const shouldKeepCurrentLines =
+    nextLyric.lines.length === 0 &&
+    (currentLyric?.lines.length ?? 0) > 0 &&
+    Boolean(nextLyric.trackId) &&
+    nextLyric.trackId === currentLyric?.trackId;
+
+  if (!shouldKeepCurrentLines || !currentLyric) return nextLyric;
+
+  return {
+    ...currentLyric,
+    ...nextLyric,
+    lines: currentLyric.lines,
+    hasTranslation: currentLyric.hasTranslation,
+    hasRomanization: currentLyric.hasRomanization,
+    tips: currentLyric.tips,
+  };
+};
+
+const lyricLineContentKey = (line: MiniPlayerLyricPayload['lines'][number] | undefined) =>
+  [line?.time ?? '', line?.text ?? '', line?.translated ?? '', line?.romanized ?? ''].join(
+    '\u0001',
+  );
+
+const shouldApplyLyricSnapshot = (
+  nextLyric: MiniPlayerLyricPayload | null | undefined,
+  currentLyric: MiniPlayerLyricPayload | null,
+) => {
+  if (!nextLyric) return false;
+  if (!currentLyric) return true;
+  const isTransientEmptySameTrack =
+    nextLyric.lines.length === 0 &&
+    currentLyric.lines.length > 0 &&
+    Boolean(nextLyric.trackId) &&
+    nextLyric.trackId === currentLyric.trackId;
+  if (nextLyric.trackId !== currentLyric.trackId) return true;
+  if (nextLyric.currentIndex !== currentLyric.currentIndex) return true;
+  if (nextLyric.desktopLyricEnabled !== currentLyric.desktopLyricEnabled) return true;
+  if (isTransientEmptySameTrack) return false;
+  if (nextLyric.wantTranslation !== currentLyric.wantTranslation) return true;
+  if (nextLyric.wantRomanization !== currentLyric.wantRomanization) return true;
+  if (nextLyric.hasTranslation !== currentLyric.hasTranslation) return true;
+  if (nextLyric.hasRomanization !== currentLyric.hasRomanization) return true;
+  if (nextLyric.isLoading !== currentLyric.isLoading) return true;
+  if (nextLyric.tips !== currentLyric.tips) return true;
+  if (nextLyric.lines.length !== currentLyric.lines.length) return true;
+
+  return nextLyric.lines.some(
+    (line, index) => lyricLineContentKey(line) !== lyricLineContentKey(currentLyric.lines[index]),
+  );
+};
+
+const stabilizeIncomingLyricSnapshot = (
+  nextLyric: MiniPlayerLyricPayload | null | undefined,
+  nextPlayback: MiniPlayerPlaybackPayload | null,
+) => {
+  if (!nextLyric) return nextLyric;
+  const trackId = nextLyric.trackId;
+  const time = Number(nextPlayback?.currentTime ?? playback.value?.currentTime ?? 0);
+
+  if (trackId !== lastAppliedLyricTrackId) {
+    lastAppliedLyricTrackId = trackId;
+    lastAppliedLyricIndex = nextLyric.currentIndex;
+    lastAppliedLyricTime = time;
+    return nextLyric;
+  }
+
+  const isPlaybackJitterBackwards =
+    Boolean(trackId) &&
+    Boolean(nextPlayback?.isPlaying ?? playback.value?.isPlaying) &&
+    nextLyric.currentIndex < lastAppliedLyricIndex &&
+    lastAppliedLyricIndex - nextLyric.currentIndex <= 2 &&
+    time >= lastAppliedLyricTime - 0.35;
+
+  const currentIndex = isPlaybackJitterBackwards ? lastAppliedLyricIndex : nextLyric.currentIndex;
+
+  lastAppliedLyricIndex = currentIndex;
+  lastAppliedLyricTime = time;
+
+  if (currentIndex === nextLyric.currentIndex) return nextLyric;
+  return { ...nextLyric, currentIndex };
+};
+
 const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
-  playback.value = snapshot?.playback ?? null;
+  const nextPlayback = snapshot?.playback ?? null;
+  const nextLyric = stabilizeIncomingLyricSnapshot(snapshot?.lyric, nextPlayback);
+  const nextCoverUrl = nextPlayback?.coverUrl ?? '';
+  if (nextCoverUrl !== lyricCoverUrl.value) lyricCoverUrl.value = nextCoverUrl;
+  if (!nextPlayback) {
+    playback.value = null;
+  } else if (!playback.value || playback.value.trackId !== nextPlayback.trackId) {
+    playback.value = nextPlayback;
+  } else {
+    Object.assign(playback.value, nextPlayback);
+  }
   appearance.value = snapshot?.appearance ?? appearance.value;
   queue.value = snapshot?.queue ?? null;
+  if (shouldApplyLyricSnapshot(nextLyric, lyric.value)) {
+    lyric.value = mergeLyricSnapshot(nextLyric);
+  }
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
     document.documentElement.style.setProperty('--color-primary', appearance.value.accentColor);
@@ -295,28 +409,47 @@ const cancelExpandFrame = () => {
 };
 
 const setQueueOpen = (open: boolean) => {
-  if (isQueueOpen.value === open) return;
-  cancelExpandFrame();
   if (open) {
+    setExpandedMode('queue');
+    return;
+  }
+  if (isQueueOpen.value) setExpandedMode(null);
+};
+
+const setExpandedMode = (mode: 'queue' | 'lyric' | null) => {
+  if (expandedMode.value === mode) return;
+  cancelExpandFrame();
+  if (mode) {
+    if (expandedMode.value) {
+      expandedMode.value = mode;
+      if (mode === 'queue') void nextTick(() => refresh(true));
+      return;
+    }
     // 展开：先让主进程把窗口放大，下一帧再触发卡片高度过渡，避免卡片在窗口变高前被裁切
     window.electron?.miniPlayer?.setExpanded(true);
     expandFrameTimer = setTimeout(() => {
       expandFrameTimer = null;
-      isQueueOpen.value = true;
-      // 等卡片高度过渡完、列表容器拿到真实高度后，定位到正在播放的歌曲
-      void nextTick(() => {
-        refresh(true);
-        window.setTimeout(scrollQueueToCurrent, 260);
-      });
+      expandedMode.value = mode;
+      if (mode === 'queue') {
+        // 等卡片高度过渡完、列表容器拿到真实高度后，定位到正在播放的歌曲
+        void nextTick(() => {
+          refresh(true);
+          window.setTimeout(scrollQueueToCurrent, 260);
+        });
+      }
     }, 60);
     return;
   }
   // 收起：先收卡片（CSS 过渡），主进程延迟缩小窗口，等待过渡播完
-  isQueueOpen.value = false;
+  expandedMode.value = null;
   window.electron?.miniPlayer?.setExpanded(false);
 };
 
 const toggleQueue = () => setQueueOpen(!isQueueOpen.value);
+const toggleLyricPanel = () => {
+  if (!playback.value) return;
+  setExpandedMode(isLyricOpen.value ? null : 'lyric');
+};
 
 const playQueueTrack = (trackId: string) => {
   command({ type: 'playQueueTrack', trackId });
@@ -324,23 +457,28 @@ const playQueueTrack = (trackId: string) => {
 
 // 窗口被隐藏（关闭 mini / 回主窗口）时，主进程已折叠窗口，这里同步收起队列状态
 const handleVisibility = () => {
-  if (document.visibilityState === 'hidden' && isQueueOpen.value) {
+  if (document.visibilityState === 'hidden' && isExpanded.value) {
     cancelExpandFrame();
-    isQueueOpen.value = false;
+    expandedMode.value = null;
   }
 };
 
 const requestShowMain = () => {
   cancelExpandFrame();
-  isQueueOpen.value = false;
+  expandedMode.value = null;
   command('showMainWindow');
 };
 
 const requestClose = () => {
   cancelExpandFrame();
-  isQueueOpen.value = false;
+  expandedMode.value = null;
   command('closeMiniPlayer');
 };
+
+// 通知主渲染进程歌词面板可见状态，用于动态调整同步频率
+watch(isLyricOpen, (visible) => {
+  window.electron?.miniPlayer?.notifyLyricVisibility?.(visible);
+});
 
 onMounted(async () => {
   document.documentElement.classList.add('mini-player-window');
@@ -359,7 +497,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibility);
   cancelExpandFrame();
   clearVolumeCloseTimer();
-  if (isQueueOpen.value) window.electron?.miniPlayer?.setExpanded(false);
+  if (isExpanded.value) window.electron?.miniPlayer?.setExpanded(false);
   disposeSnapshot?.();
   disposeSnapshot = null;
 });
@@ -368,7 +506,12 @@ onUnmounted(() => {
 <template>
   <main
     class="mini-shell"
-    :class="{ 'is-expanded': isQueueOpen, 'is-hovered': isHovered }"
+    :class="{
+      'is-expanded': isExpanded,
+      'is-queue-open': isQueueOpen,
+      'is-lyric-open': isLyricOpen,
+      'is-hovered': isHovered,
+    }"
     @pointerenter="handlePointerEnter"
     @pointerleave="handlePointerLeave"
   >
@@ -399,7 +542,14 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="mini-cover">
+        <button
+          type="button"
+          class="mini-cover mini-cover-btn no-drag"
+          :class="{ active: isLyricOpen }"
+          :disabled="!playback"
+          title="显示歌词"
+          @click.stop="toggleLyricPanel"
+        >
           <Cover
             v-if="playback"
             :url="playback.coverUrl"
@@ -411,7 +561,7 @@ onUnmounted(() => {
           <div v-else class="mini-cover-placeholder">
             <Icon :icon="iconMusic" width="22" height="22" />
           </div>
-        </div>
+        </button>
 
         <div class="mini-center">
           <div class="mini-info">
@@ -481,9 +631,9 @@ onUnmounted(() => {
           <button
             type="button"
             class="mini-action-btn no-drag"
-            :disabled="!playback"
-            :title="`歌词模式：${playback?.lyricsLabel || '原词'}`"
-            @click="command('toggleLyricsMode')"
+            :class="{ active: lyric?.desktopLyricEnabled }"
+            :title="lyric?.desktopLyricEnabled ? '关闭桌面歌词' : '开启桌面歌词'"
+            @click="command('toggleDesktopLyric')"
           >
             <Icon :icon="iconTypography" width="19" height="19" />
           </button>
@@ -529,7 +679,17 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="mini-queue no-drag" :aria-hidden="!isQueueOpen">
+      <MiniLyricPanel
+        v-show="isLyricOpen"
+        :lyric="lyric"
+        :title="lyricTitle"
+        :artist="lyricArtist"
+        :cover-url="lyricCoverUrl"
+        :visible="isLyricOpen"
+        :aria-hidden="!isLyricOpen"
+      />
+
+      <div v-show="isQueueOpen" class="mini-queue no-drag" :aria-hidden="!isQueueOpen">
         <div ref="queueScrollerRef" class="mini-queue-list">
           <div ref="containerRef" :style="queueWrapperStyle">
             <div :style="queueOffsetStyle">
@@ -690,6 +850,25 @@ button:disabled {
   height: 44px;
   border-radius: 6px;
   overflow: hidden;
+}
+
+.mini-cover-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.mini-cover-btn:hover {
+  transform: translateY(-1px);
+}
+
+.mini-cover-btn.active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 55%, transparent);
 }
 
 /* Cover 组件默认用 -webkit-mask 径向渐变做圆角，在透明窗口 + 高度过渡的合成下会渲染出黑色条纹；

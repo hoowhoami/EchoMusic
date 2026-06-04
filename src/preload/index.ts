@@ -226,6 +226,13 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('mini-player:command', listener);
       return () => ipcRenderer.removeListener('mini-player:command', listener);
     },
+    notifyLyricVisibility: (visible: boolean) =>
+      ipcRenderer.send('mini-player:lyric-visibility', visible),
+    onLyricVisibility: (func: (visible: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, visible: boolean) => func(visible);
+      ipcRenderer.on('mini-player:lyric-visibility', listener);
+      return () => ipcRenderer.removeListener('mini-player:lyric-visibility', listener);
+    },
   },
   log: log.functions,
   logging: {

@@ -1,9 +1,12 @@
+import type { LyricLinePayload } from './desktop-lyric';
+
 export type MiniPlayerSimpleCommand =
   | 'togglePlayback'
   | 'previousTrack'
   | 'nextTrack'
   | 'toggleFavorite'
   | 'toggleLyricsMode'
+  | 'toggleDesktopLyric'
   | 'toggleMute'
   | 'showMainWindow'
   | 'closeMiniPlayer';
@@ -57,16 +60,31 @@ export interface MiniPlayerSnapshot {
   playback: MiniPlayerPlaybackPayload | null;
   appearance?: MiniPlayerAppearancePayload;
   queue?: MiniPlayerQueuePayload;
+  lyric?: MiniPlayerLyricPayload;
 }
 
 export interface MiniPlayerSnapshotPatch {
   playback?: MiniPlayerPlaybackPayload | null;
   appearance?: MiniPlayerAppearancePayload;
   queue?: MiniPlayerQueuePayload;
+  lyric?: Partial<MiniPlayerLyricPayload>;
 }
 
 export interface MiniPlayerAppearancePayload {
   isDark: boolean;
   accentColor: string;
   fontFamily?: string;
+}
+
+export interface MiniPlayerLyricPayload {
+  trackId: string | null;
+  lines: LyricLinePayload[];
+  currentIndex: number;
+  wantTranslation: boolean;
+  wantRomanization: boolean;
+  hasTranslation: boolean;
+  hasRomanization: boolean;
+  desktopLyricEnabled: boolean;
+  isLoading?: boolean;
+  tips?: string;
 }

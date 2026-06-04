@@ -963,7 +963,7 @@ watch(
                     </span>
                     <div class="min-w-0 flex-1 text-left">
                       <div class="sidebar-create-menu-title-row">从链接导入</div>
-                      <div class="sidebar-create-menu-desc">网易云 / QQ / 酷狗 / 文本</div>
+                      <div class="sidebar-create-menu-desc">外部平台 / 文本</div>
                     </div>
                   </button>
                 </div>

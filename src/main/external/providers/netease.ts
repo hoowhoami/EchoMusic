@@ -71,7 +71,7 @@ const fetchTrackDetailsByIds = async (
 export const neteaseProvider: ExternalProvider = {
   id: 'netease',
   canHandle: (input: string) => {
-    return /163\.com|163cn\.tv/.test(input) || extractId(input) !== null;
+    return /163\.com|163cn\.tv/.test(input);
   },
   resolve: async (req, ctx): Promise<ExternalPlaylist> => {
     let input = req.input;

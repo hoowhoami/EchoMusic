@@ -56,6 +56,9 @@ const PROVIDERS: { id: ExternalProviderId; label: string }[] = [
   { id: 'qqmusic', label: 'QQ 音乐' },
   { id: 'kuwo', label: '酷我' },
   { id: 'kugou', label: '酷狗' },
+  { id: 'qishui', label: '汽水' },
+  { id: 'spotify', label: 'Spotify' },
+  { id: 'apple', label: 'Apple Music' },
   { id: 'text', label: '纯文本' },
 ];
 
@@ -413,7 +416,7 @@ const statusLabel = (status: ImportItemResult['status']): string => {
         v-model="inputText"
         class="import-textarea"
         rows="5"
-        placeholder="粘贴歌单链接（网易云 / QQ 音乐 / 酷我 / 酷狗），或粘贴“歌名 - 歌手”格式的多行文本"
+        placeholder="粘贴歌单链接，或粘贴“歌名 - 歌手”格式的多行文本"
         :disabled="isResolving"
       />
       <div v-if="resolveError" class="import-alert">

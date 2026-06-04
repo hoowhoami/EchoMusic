@@ -78,10 +78,26 @@ const preloadImage = async (url: string) => {
     return;
   }
 
-  await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error('portrait-image-load-failed'));
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('portrait-image-load-failed'));
+    });
+  } catch {
+    // 首次加载失败，可能是 Chromium 磁盘缓存了错误响应，附加时间戳绕过缓存重试一次
+    const retryImg = new Image();
+    retryImg.decoding = 'async';
+    const separator = url.includes('?') ? '&' : '?';
+    retryImg.src = `${url}${separator}_t=${Date.now()}`;
+
+    await new Promise<void>((resolve, reject) => {
+      retryImg.onload = () => resolve();
+      retryImg.onerror = () => reject(new Error('portrait-image-load-failed'));
+    });
+
+    await retryImg.decode?.().catch(() => {});
+    return;
+  }
 
   await img.decode?.().catch(() => {});
 };

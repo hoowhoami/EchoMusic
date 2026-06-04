@@ -67,6 +67,8 @@ export const usePlaylistStore = defineStore('playlist', {
   state: () => ({
     defaultList: toRawSongList([]),
     favorites: shallowRef<Song[]>([]),
+    favoritesLoaded: false,
+    favoritesLoading: false,
     userPlaylists: [] as PlaylistMeta[],
     queueFilteredInvalidCount: 0,
     queuedNextTrackIds: [] as string[],

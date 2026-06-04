@@ -10,6 +10,9 @@ import { neteaseProvider } from './providers/netease';
 import { qqmusicProvider } from './providers/qqmusic';
 import { kuwoProvider } from './providers/kuwo';
 import { kugouProvider } from './providers/kugou';
+import { qishuiProvider } from './providers/qishui';
+import { spotifyProvider } from './providers/spotify';
+import { appleProvider } from './providers/apple';
 import { textProvider } from './providers/text';
 
 const PROVIDERS: ExternalProvider[] = [
@@ -17,6 +20,9 @@ const PROVIDERS: ExternalProvider[] = [
   qqmusicProvider,
   kuwoProvider,
   kugouProvider,
+  qishuiProvider,
+  spotifyProvider,
+  appleProvider,
   textProvider,
 ];
 
@@ -25,6 +31,9 @@ const PROVIDER_MAP: Record<ExternalProviderId, ExternalProvider | undefined> = {
   qqmusic: qqmusicProvider,
   kuwo: kuwoProvider,
   kugou: kugouProvider,
+  qishui: qishuiProvider,
+  spotify: spotifyProvider,
+  apple: appleProvider,
   text: textProvider,
   auto: undefined,
 };

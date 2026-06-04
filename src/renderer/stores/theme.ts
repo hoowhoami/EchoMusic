@@ -25,6 +25,8 @@ export const useThemeStore = defineStore('theme', {
     sourceColor: DEFAULT_ACCENT,
     // 当前歌曲封面提取色（供歌词页面“跟随封面取色”使用）
     coverColor: DEFAULT_ACCENT,
+    // 主窗口实际生效的深浅色状态，由 App.vue 的主题流程同步
+    isDark: isDarkMode(),
   }),
   getters: {
     currentPreset: (state) =>
@@ -94,7 +96,8 @@ export const useThemeStore = defineStore('theme', {
     },
     // 明暗切换时重新应用归一化
     onThemeChange() {
-      applyAccentToRoot(this.sourceColor || DEFAULT_ACCENT, isDarkMode());
+      this.isDark = isDarkMode();
+      applyAccentToRoot(this.sourceColor || DEFAULT_ACCENT, this.isDark);
     },
     // 同步全局作用范围：通过 body 上的 class 控制 CSS 作用域
     syncGlobalScope() {

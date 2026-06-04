@@ -69,15 +69,15 @@ onMounted(async () => {
   await waitForSqlitePersistHydration();
   await playlistStore.hydratePlaybackStateFromStorage();
   player.init();
+  updateTheme();
+  applyGlobalFont();
+  themeStore.applyCurrent();
   void initDesktopLyricSync().then((dispose) => {
     disposeDesktopLyricSync = dispose;
   });
   void initMiniPlayerSync().then((dispose) => {
     disposeMiniPlayerSync = dispose;
   });
-  updateTheme();
-  applyGlobalFont();
-  themeStore.applyCurrent();
   settings.syncTheme();
   settings.syncCloseBehavior();
   settings.syncRememberWindowSize();

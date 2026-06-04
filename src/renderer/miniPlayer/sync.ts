@@ -5,22 +5,42 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { useLyricStore } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
 import { useThemeStore } from '@/stores/theme';
+import { useDesktopLyricStore } from '@/desktopLyric/store';
 import { executeShortcutCommand } from '@/utils/shortcuts';
 import type { Song } from '@/models/song';
+import { resolveFavoriteSongKey } from '@/stores/playlist/helpers';
 import type {
   MiniPlayerCommand,
+  MiniPlayerLyricPayload,
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
 } from '../../shared/mini-player';
+import type { LyricLinePayload } from '../../shared/desktop-lyric';
 
 const MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS = 120;
+// 歌词面板未展开时使用较低的同步频率，减少 IPC 开销
+const MINI_PLAYER_IDLE_SYNC_INTERVAL_MS = 500;
+const FAVORITES_QUEUE_ID = 'queue:favorites';
 
-// 记录上次「收藏列表已加载时」算出的收藏态：收藏列表在登录刷新等流程中可能被瞬时清空，
-// 导致 isFavoriteSong 短暂返回 false 让爱心闪烁。空列表时沿用此缓存，避免误判未收藏。
-let lastKnownFavorite: { trackId: string; isFavorite: boolean } | null = null;
+const favoriteStateCache = new Map<string, boolean>();
+const favoriteStateOverrides = new Map<string, boolean>();
 
 const resolveSongArtist = (song: Song): string =>
   String(song.artist || song.artists?.map((item) => item.name).join(' / ') || '未知歌手');
+
+const normalizeLyricLinePayload = (
+  line: ReturnType<typeof useLyricStore>['lines'][number],
+): LyricLinePayload => ({
+  time: Number(line.time) || 0,
+  text: String(line.text ?? ''),
+  translated: line.translated ? String(line.translated) : undefined,
+  romanized: line.romanized ? String(line.romanized) : undefined,
+  characters: (line.characters ?? []).map((char) => ({
+    text: String(char.text ?? ''),
+    startTime: Number(char.startTime) || 0,
+    endTime: Number(char.endTime) || Number(char.startTime) || 0,
+  })),
+});
 
 const resolveCurrentPlaybackQueue = () => {
   const playerStore = usePlayerStore();
@@ -49,24 +69,62 @@ const resolveCurrentTrack = (): Song | null => {
   );
 };
 
-const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
+const resolveFavoriteCacheKey = (track: Song, fallbackId?: string | number | null) =>
+  resolveFavoriteSongKey(track) || `id:${String(fallbackId ?? track.id ?? '')}`;
+
+const isCurrentTrackFromFavoritesQueue = (track: Song) => {
+  const playerStore = usePlayerStore();
+  const queue = resolveCurrentPlaybackQueue();
+  if (queue?.id !== FAVORITES_QUEUE_ID) return false;
+
+  const currentId = String(playerStore.currentTrackId ?? track.id ?? '');
+  const currentFavoriteKey = resolveFavoriteCacheKey(track, currentId);
+  return queue.songs.some(
+    (song) =>
+      String(song.id) === currentId ||
+      resolveFavoriteCacheKey(song, song.id) === currentFavoriteKey,
+  );
+};
+
+const resolveFavoriteState = (track: Song): boolean => {
   const playerStore = usePlayerStore();
   const playlistStore = usePlaylistStore();
+  const cacheKey = resolveFavoriteCacheKey(track, playerStore.currentTrackId);
+  const override = favoriteStateOverrides.get(cacheKey);
+  if (override !== undefined) return override;
+
+  if (playlistStore.isFavoriteSong(track)) {
+    favoriteStateCache.set(cacheKey, true);
+    return true;
+  }
+
+  if (playlistStore.favoritesLoaded) {
+    favoriteStateCache.set(cacheKey, false);
+    return false;
+  }
+
+  const cached = favoriteStateCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  if (isCurrentTrackFromFavoritesQueue(track)) {
+    favoriteStateCache.set(cacheKey, true);
+    return true;
+  }
+
+  return false;
+};
+
+const syncPlaybackSnapshotNow = () => {
+  window.electron?.miniPlayer?.syncSnapshot({ playback: buildPlaybackPayload() });
+};
+
+const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
+  const playerStore = usePlayerStore();
   const lyricStore = useLyricStore();
   const track = resolveCurrentTrack();
   if (!track || !playerStore.currentTrackId) return null;
 
   const trackId = String(playerStore.currentTrackId);
-  // 收藏列表非空时以实际计算为准并缓存；为空（未加载/瞬时清空）时沿用同曲的上次结果，避免爱心闪烁
-  let isFavorite: boolean;
-  if (playlistStore.favorites.length > 0) {
-    isFavorite = playlistStore.isFavoriteSong(track);
-    lastKnownFavorite = { trackId, isFavorite };
-  } else if (lastKnownFavorite && lastKnownFavorite.trackId === trackId) {
-    isFavorite = lastKnownFavorite.isFavorite;
-  } else {
-    isFavorite = playlistStore.isFavoriteSong(track);
-  }
 
   return {
     trackId,
@@ -77,7 +135,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     duration: Number(playerStore.duration || track.duration || 0),
     currentTime: Number(playerStore.currentTime || 0),
     isPlaying: Boolean(playerStore.isPlaying),
-    isFavorite,
+    isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
     volume: Number(playerStore.volume || 0),
     updatedAt: Date.now(),
@@ -104,6 +162,24 @@ const buildQueuePayload = (): MiniPlayerQueuePayload => {
   };
 };
 
+const buildLyricPayload = (): MiniPlayerLyricPayload => {
+  const playerStore = usePlayerStore();
+  const lyricStore = useLyricStore();
+  const desktopLyricStore = useDesktopLyricStore();
+  return {
+    trackId: playerStore.currentTrackId ? String(playerStore.currentTrackId) : null,
+    lines: lyricStore.lines.map(normalizeLyricLinePayload),
+    currentIndex: lyricStore.currentIndex,
+    wantTranslation: lyricStore.wantTranslation,
+    wantRomanization: lyricStore.wantRomanization,
+    hasTranslation: lyricStore.hasTranslation,
+    hasRomanization: lyricStore.hasRomanization,
+    desktopLyricEnabled: desktopLyricStore.settings.enabled,
+    isLoading: lyricStore.isLoading,
+    tips: lyricStore.tips,
+  };
+};
+
 const queuePayloadKey = (payload: MiniPlayerQueuePayload | null | undefined): string => {
   if (!payload) return '';
   return [
@@ -113,25 +189,56 @@ const queuePayloadKey = (payload: MiniPlayerQueuePayload | null | undefined): st
   ].join('|');
 };
 
+const lyricLinesPayloadKey = (payload: MiniPlayerLyricPayload): string =>
+  JSON.stringify({
+    trackId: payload.trackId,
+    lines: payload.lines,
+    wantTranslation: payload.wantTranslation,
+    wantRomanization: payload.wantRomanization,
+    hasTranslation: payload.hasTranslation,
+    hasRomanization: payload.hasRomanization,
+    isLoading: payload.isLoading,
+    tips: payload.tips,
+  });
+
 const executeMiniPlayerCommand = (command: MiniPlayerCommand) => {
   if (typeof command === 'string') {
     if (command === 'toggleFavorite') {
-      // 单独处理收藏：用 resolveCurrentTrack（含来源队列回退）解析当前曲，
-      // 避免 executeShortcutCommand 仅查 activeQueue 在「未播放/来源队列≠活动队列」时找不到曲
       const playlistStore = usePlaylistStore();
+      const playerStore = usePlayerStore();
       const track = resolveCurrentTrack();
       if (!track) return;
-      if (playlistStore.isFavoriteSong(track)) {
-        playlistStore.removeFromFavorites(track.id);
-      } else {
-        playlistStore.addToFavorites(track);
-      }
+      const cacheKey = resolveFavoriteCacheKey(track, playerStore.currentTrackId);
+      const wasFavorite = resolveFavoriteState(track);
+      favoriteStateOverrides.set(cacheKey, !wasFavorite);
+      syncPlaybackSnapshotNow();
+
+      const request = wasFavorite
+        ? playlistStore.removeFavoriteSong(track)
+        : playlistStore.addToFavorites(track);
+      void Promise.resolve(request)
+        .then((success) => {
+          favoriteStateOverrides.delete(cacheKey);
+          if (success !== false) {
+            favoriteStateCache.set(cacheKey, !wasFavorite);
+            syncPlaybackSnapshotNow();
+            return;
+          }
+          favoriteStateCache.set(cacheKey, wasFavorite);
+          syncPlaybackSnapshotNow();
+        })
+        .catch(() => {
+          favoriteStateOverrides.delete(cacheKey);
+          favoriteStateCache.set(cacheKey, wasFavorite);
+          syncPlaybackSnapshotNow();
+        });
       return;
     }
     if (
       command === 'togglePlayback' ||
       command === 'previousTrack' ||
       command === 'nextTrack' ||
+      command === 'toggleDesktopLyric' ||
       command === 'toggleLyricsMode' ||
       command === 'toggleMute'
     ) {
@@ -170,6 +277,7 @@ export const initMiniPlayerSync = async () => {
   const lyricStore = useLyricStore();
   const settingStore = useSettingStore();
   const themeStore = useThemeStore();
+  const desktopLyricStore = useDesktopLyricStore();
   const stops: WatchStopHandle[] = [];
   const {
     currentTime,
@@ -180,14 +288,59 @@ export const initMiniPlayerSync = async () => {
     volume,
     currentSourceQueueId,
   } = storeToRefs(playerStore);
-  const { favorites } = storeToRefs(playlistStore);
-  const { wantTranslation, wantRomanization, hasTranslation, hasRomanization } =
+  const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
+  const { lines, wantTranslation, wantRomanization, hasTranslation, hasRomanization, tips } =
     storeToRefs(lyricStore);
 
   let lastSyncedPlaybackKey = '';
   let lastSyncedQueueKey = '';
+  let lastSyncedLyricLinesKey = '';
+  let lastSyncedLyricStateKey = '';
+  let lastStableLyricTrackId: string | null = null;
+  let lastStableLyricIndex = -1;
+  let lastStableLyricTime = 0;
   let progressSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let progressSyncQueued = false;
+  // mini 窗口歌词面板是否展开中（由 mini 窗口通过 IPC 通知主渲染进程）
+  let miniLyricPanelVisible = false;
+
+  // 监听 mini 窗口歌词面板状态变更，动态调整同步频率
+  const disposeLyricVisibilityListener = window.electron.miniPlayer.onLyricVisibility?.(
+    (visible: boolean) => {
+      miniLyricPanelVisible = visible;
+    },
+  );
+
+  const getProgressSyncInterval = () =>
+    miniLyricPanelVisible
+      ? MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS
+      : MINI_PLAYER_IDLE_SYNC_INTERVAL_MS;
+
+  const stabilizeLyricPayload = (payload: MiniPlayerLyricPayload): MiniPlayerLyricPayload => {
+    const trackId = payload.trackId;
+    const time = Number(currentTime.value || 0);
+    if (trackId !== lastStableLyricTrackId) {
+      lastStableLyricTrackId = trackId;
+      lastStableLyricIndex = payload.currentIndex;
+      lastStableLyricTime = time;
+      return payload;
+    }
+
+    const isPlaybackJitterBackwards =
+      Boolean(trackId) &&
+      isPlaying.value &&
+      payload.currentIndex < lastStableLyricIndex &&
+      lastStableLyricIndex - payload.currentIndex <= 2 &&
+      time >= lastStableLyricTime - 0.35;
+
+    const currentIndex = isPlaybackJitterBackwards ? lastStableLyricIndex : payload.currentIndex;
+
+    lastStableLyricIndex = currentIndex;
+    lastStableLyricTime = time;
+
+    if (currentIndex === payload.currentIndex) return payload;
+    return { ...payload, currentIndex };
+  };
 
   const syncPlaybackSnapshot = () => {
     const playback = buildPlaybackPayload();
@@ -207,14 +360,44 @@ export const initMiniPlayerSync = async () => {
     lastSyncedQueueKey = nextQueueKey;
   };
 
+  const syncLyricLinesSnapshot = () => {
+    const lyric = stabilizeLyricPayload(buildLyricPayload());
+    const nextLinesKey = lyricLinesPayloadKey(lyric);
+    const nextStateKey = JSON.stringify({
+      currentIndex: lyric.currentIndex,
+      desktopLyricEnabled: lyric.desktopLyricEnabled,
+    });
+    if (nextLinesKey === lastSyncedLyricLinesKey && nextStateKey === lastSyncedLyricStateKey) {
+      return;
+    }
+
+    window.electron.miniPlayer?.syncSnapshot({ lyric });
+    lastSyncedLyricLinesKey = nextLinesKey;
+    lastSyncedLyricStateKey = nextStateKey;
+  };
+
+  const syncLyricStateSnapshot = () => {
+    lyricStore.updateCurrentIndex(currentTime.value);
+    const lyric = stabilizeLyricPayload(buildLyricPayload());
+    const nextStateKey = JSON.stringify({
+      currentIndex: lyric.currentIndex,
+      desktopLyricEnabled: lyric.desktopLyricEnabled,
+    });
+    if (nextStateKey === lastSyncedLyricStateKey) return;
+
+    window.electron.miniPlayer?.syncSnapshot({
+      lyric: {
+        currentIndex: lyric.currentIndex,
+        desktopLyricEnabled: lyric.desktopLyricEnabled,
+      },
+    });
+    lastSyncedLyricStateKey = nextStateKey;
+  };
+
   const syncAppearanceSnapshot = () => {
-    const isDark =
-      settingStore.theme === 'dark' ||
-      (settingStore.theme === 'system' &&
-        window.matchMedia('(prefers-color-scheme: dark)').matches);
     window.electron.miniPlayer?.syncSnapshot({
       appearance: {
-        isDark,
+        isDark: themeStore.isDark,
         accentColor: themeStore.sourceColor || '#0071e3',
         fontFamily: settingStore.buildGlobalFontFamily(),
       },
@@ -230,14 +413,12 @@ export const initMiniPlayerSync = async () => {
       if (!progressSyncQueued) return;
       progressSyncQueued = false;
       syncPlaybackSnapshot();
-    }, MINI_PLAYER_PROGRESS_SYNC_INTERVAL_MS);
+      syncLyricStateSnapshot();
+    }, getProgressSyncInterval());
   };
 
-  const disposeSnapshotListener = window.electron.miniPlayer.onSnapshot((nextSnapshot) => {
-    lastSyncedPlaybackKey = JSON.stringify({
-      playback: nextSnapshot.playback,
-    });
-    lastSyncedQueueKey = queuePayloadKey(nextSnapshot.queue);
+  const disposeSnapshotListener = window.electron.miniPlayer.onSnapshot(() => {
+    // 仅用于保持注册（主进程不再广播给主渲染进程），无需处理
   });
 
   const disposeCommandListener = window.electron.miniPlayer.onCommand(executeMiniPlayerCommand);
@@ -252,14 +433,27 @@ export const initMiniPlayerSync = async () => {
         currentTrackSnapshot,
         volume,
         favorites,
+        favoritesLoaded,
+        // 启动恢复后快照可能为空，需在队列歌曲加载完成时按 id 重新解析当前曲
+        () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,
+      ],
+      scheduleProgressSync,
+      { immediate: true },
+    ),
+  );
+
+  stops.push(
+    watch(
+      [
+        lines,
         wantTranslation,
         wantRomanization,
         hasTranslation,
         hasRomanization,
-        // 启动恢复后快照可能为空，需在队列歌曲加载完成时按 id 重新解析当前曲
-        () => resolveCurrentPlaybackQueue()?.songs,
+        tips,
+        () => desktopLyricStore.settings.enabled,
       ],
-      scheduleProgressSync,
+      syncLyricLinesSnapshot,
       { immediate: true, deep: true },
     ),
   );
@@ -269,11 +463,11 @@ export const initMiniPlayerSync = async () => {
       [
         currentSourceQueueId,
         currentTrackId,
-        () => resolveCurrentPlaybackQueue()?.songs,
+        () => resolveCurrentPlaybackQueue()?.songs?.length ?? 0,
         () => resolveCurrentPlaybackQueue()?.songCount,
       ],
       syncQueueSnapshot,
-      { immediate: true, deep: true },
+      { immediate: true },
     ),
   );
 
@@ -282,6 +476,7 @@ export const initMiniPlayerSync = async () => {
       [
         () => settingStore.theme,
         () => settingStore.globalFont,
+        () => themeStore.isDark,
         () => themeStore.sourceColor,
         () => themeStore.accentMode,
         () => themeStore.presetId,
@@ -292,15 +487,10 @@ export const initMiniPlayerSync = async () => {
     ),
   );
 
-  // 系统主题切换（theme=system 时跟随）：媒体查询变化不会触发上面的 store watch，需单独监听
-  const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  const handleColorSchemeChange = () => syncAppearanceSnapshot();
-  colorSchemeQuery.addEventListener('change', handleColorSchemeChange);
-
   return () => {
     disposeSnapshotListener();
     disposeCommandListener();
-    colorSchemeQuery.removeEventListener('change', handleColorSchemeChange);
+    disposeLyricVisibilityListener?.();
     if (progressSyncTimer) {
       clearTimeout(progressSyncTimer);
       progressSyncTimer = null;

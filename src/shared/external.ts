@@ -1,6 +1,15 @@
 /** 外部歌单导入相关共享类型 */
 
-export type ExternalProviderId = 'netease' | 'qqmusic' | 'kuwo' | 'kugou' | 'text' | 'auto';
+export type ExternalProviderId =
+  | 'netease'
+  | 'qqmusic'
+  | 'kuwo'
+  | 'kugou'
+  | 'qishui'
+  | 'spotify'
+  | 'apple'
+  | 'text'
+  | 'auto';
 
 export interface ExternalTrack {
   /** 原平台的 track id（可选，仅做调试） */

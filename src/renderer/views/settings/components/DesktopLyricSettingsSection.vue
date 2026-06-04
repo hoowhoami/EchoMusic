@@ -81,17 +81,6 @@ const applyDesktopLyricColor = async (value: string) => {
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
-        <h3 class="font-semibold">双行显示</h3>
-        <p class="text-sm text-text-secondary">同时显示当前行和下一行歌词</p>
-      </div>
-      <Switch
-        :model-value="desktopLyricStore.settings.doubleLine"
-        @update:model-value="commitDesktopLyricSettings({ doubleLine: Boolean($event) })"
-      />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
         <h3 class="font-semibold">显示翻译</h3>
         <p class="text-sm text-text-secondary">有翻译时在桌面歌词中显示翻译行</p>
       </div>

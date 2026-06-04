@@ -1,4 +1,4 @@
-import { BrowserWindow, app, ipcMain, nativeTheme, screen, shell } from 'electron';
+import { BrowserWindow, app, ipcMain, screen, shell } from 'electron';
 import { join } from 'path';
 import type {
   MiniPlayerCommand,
@@ -29,23 +29,6 @@ const canUseWindow = (win: BrowserWindow | null): win is BrowserWindow =>
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-// 主进程权威判定深色：theme=system 跟随系统 nativeTheme，否则按设置。
-// 不依赖隐藏的主窗口渲染层，保证 mini 在任意时刻都能正确响应深浅色。
-const resolveIsDark = () => {
-  const theme = getMainAppSettings().theme;
-  if (theme === 'dark') return true;
-  if (theme === 'light') return false;
-  return nativeTheme.shouldUseDarkColors;
-};
-
-// 用主进程权威的 isDark 覆盖快照里的 appearance（accentColor/fontFamily 仍由渲染层提供）
-const applyAuthoritativeDarkMode = () => {
-  if (!snapshot.appearance) return;
-  const isDark = resolveIsDark();
-  if (snapshot.appearance.isDark === isDark) return;
-  snapshot = { ...snapshot, appearance: { ...snapshot.appearance, isDark } };
-};
-
 export const getMiniPlayerWindow = () => miniPlayerWindow;
 
 const getMainRendererWindow = () => {
@@ -55,14 +38,13 @@ const getMainRendererWindow = () => {
 };
 
 const sendSnapshot = () => {
-  BrowserWindow.getAllWindows().forEach((win) => {
-    try {
-      if (win.isDestroyed() || win.webContents.isDestroyed()) return;
-      win.webContents.send('mini-player:snapshot', snapshot);
-    } catch {
-      // ignore windows destroyed during broadcast
-    }
-  });
+  const win = miniPlayerWindow;
+  if (!canUseWindow(win)) return;
+  try {
+    win.webContents.send('mini-player:snapshot', snapshot);
+  } catch {
+    // ignore if window destroyed during send
+  }
 };
 
 const loadMiniPlayerWindow = async (win: BrowserWindow) => {
@@ -87,8 +69,8 @@ const resolveMiniPlayerBounds = () => {
   const fallback = {
     width,
     height,
-    x: Math.round(primaryArea.x + primaryArea.width - width - 48),
-    y: Math.round(primaryArea.y + primaryArea.height - height - 72),
+    x: Math.round(primaryArea.x + (primaryArea.width - width) / 2),
+    y: Math.round(primaryArea.y + (primaryArea.height - height) / 2),
   };
 
   if (typeof saved.x !== 'number' || typeof saved.y !== 'number') return fallback;
@@ -225,7 +207,6 @@ export const ensureMiniPlayerWindow = async () => {
       allowRunningInsecureContent: true,
       backgroundThrottling: false,
       zoomFactor: 1.0,
-      partition: 'persist:mini-player',
     },
   });
 
@@ -337,13 +318,44 @@ export const registerMiniPlayerHandlers = () => {
         ...snapshot,
         appearance: payload.appearance,
       };
-      // 渲染层传来的 isDark 可能滞后（主窗口隐藏时 matchMedia 不可靠），用主进程权威值覆盖
-      applyAuthoritativeDarkMode();
     }
     if (payload.queue !== undefined) {
       snapshot = {
         ...snapshot,
         queue: payload.queue,
+      };
+    }
+    if (payload.lyric !== undefined) {
+      const previousLyric = snapshot.lyric;
+      const shouldKeepPreviousLyricLines =
+        Array.isArray(payload.lyric.lines) &&
+        payload.lyric.lines.length === 0 &&
+        (previousLyric?.lines.length ?? 0) > 0 &&
+        Boolean(payload.lyric.trackId) &&
+        payload.lyric.trackId === previousLyric?.trackId;
+      const nextLyric = {
+        trackId: null,
+        lines: [],
+        currentIndex: -1,
+        wantTranslation: false,
+        wantRomanization: false,
+        hasTranslation: false,
+        hasRomanization: false,
+        desktopLyricEnabled: false,
+        ...(previousLyric ?? {}),
+        ...payload.lyric,
+      };
+      snapshot = {
+        ...snapshot,
+        lyric: shouldKeepPreviousLyricLines
+          ? {
+              ...nextLyric,
+              lines: previousLyric?.lines ?? [],
+              hasTranslation: previousLyric?.hasTranslation ?? nextLyric.hasTranslation,
+              hasRomanization: previousLyric?.hasRomanization ?? nextLyric.hasRomanization,
+              tips: previousLyric?.tips ?? nextLyric.tips,
+            }
+          : nextLyric,
       };
     }
     sendSnapshot();
@@ -387,6 +399,13 @@ export const registerMiniPlayerHandlers = () => {
     }
     forwardCommandToMainRenderer(command);
   });
+
+  // mini 窗口通知歌词面板可见状态，转发给主渲染进程以调整同步频率
+  ipcMain.on('mini-player:lyric-visibility', (_event, visible: boolean) => {
+    const mainWindow = getMainRendererWindow();
+    if (!mainWindow) return;
+    mainWindow.webContents.send('mini-player:lyric-visibility', visible);
+  });
 };
 
 export const unregisterMiniPlayerHandlers = () => {
@@ -398,17 +417,5 @@ export const unregisterMiniPlayerHandlers = () => {
   ipcMain.removeAllListeners('mini-player:set-expanded');
   ipcMain.removeAllListeners('mini-player:move');
   ipcMain.removeAllListeners('mini-player:command');
+  ipcMain.removeAllListeners('mini-player:lyric-visibility');
 };
-
-// 主题（应用设置或系统配色）变化时刷新 mini 的深色判定并广播。
-// 应用设置变化由 window.ts 的 update-theme 调用；系统配色由下方 nativeTheme 监听。
-export const refreshMiniPlayerDarkMode = () => {
-  if (!snapshot.appearance) return;
-  const before = snapshot.appearance.isDark;
-  applyAuthoritativeDarkMode();
-  if (snapshot.appearance.isDark !== before) sendSnapshot();
-};
-
-nativeTheme.on('updated', () => {
-  refreshMiniPlayerDarkMode();
-});

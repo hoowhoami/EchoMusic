@@ -123,6 +123,8 @@ export interface IElectronAPI {
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => () => void;
     command: (command: MiniPlayerCommand) => void;
     onCommand: (func: (command: MiniPlayerCommand) => void) => () => void;
+    notifyLyricVisibility?: (visible: boolean) => void;
+    onLyricVisibility?: (func: (visible: boolean) => void) => () => void;
   };
   log: {
     info: (...args: unknown[]) => void;

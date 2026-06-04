@@ -9,6 +9,7 @@ import { SliderRoot, SliderTrack, SliderRange, SliderThumb } from 'reka-ui';
 import { usePlayerControls } from '@/composables/usePlayerControls';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
+import { useToastStore } from '@/stores/toast';
 import Button from '@/components/ui/Button.vue';
 import Tooltip from '@/components/ui/Tooltip.vue';
 import Badge from '@/components/ui/Badge.vue';
@@ -43,6 +44,7 @@ const emit = defineEmits<{
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
+const toastStore = useToastStore();
 
 const {
   player: playerStore,
@@ -104,6 +106,21 @@ const formatTime = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const handleCopySongInfo = async () => {
+  const track = currentTrack.value;
+  if (!track) return;
+  const title = track.title || '';
+  const artist = track.artist || '';
+  const text = artist ? `${title} - ${artist}` : title;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toastStore.success('已复制歌曲信息');
+  } catch {
+    toastStore.warning('复制失败');
+  }
 };
 </script>
 
@@ -170,7 +187,11 @@ const formatTime = (seconds: number) => {
       <div class="bar-left">
         <!-- 歌曲信息 + 操作 -->
         <div class="bar-song-info">
-          <div class="bar-song-text">
+          <div
+            class="bar-song-text bar-song-clickable"
+            title="点击复制歌曲信息"
+            @click="handleCopySongInfo"
+          >
             <span class="bar-song-title">{{ currentTrack?.title || '未在播放' }}</span>
             <span v-if="currentTrack" class="bar-song-sep">-</span>
             <span v-if="currentTrack" class="bar-song-artist">{{ currentTrack.artist }}</span>
@@ -308,16 +329,23 @@ const formatTime = (seconds: number) => {
         <QualityPopover />
         <EffectPopover />
 
-        <Button
-          variant="unstyled"
-          size="none"
-          class="bar-func-btn"
-          :class="desktopLyricStore.settings.enabled ? 'bar-func-active' : 'bar-func-muted'"
-          :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
-          @click="toggleDesktopLyric"
-        >
-          <Icon :icon="iconTypography" width="20" height="20" />
-        </Button>
+        <div class="relative">
+          <Button
+            variant="unstyled"
+            size="none"
+            class="bar-func-btn"
+            :class="desktopLyricStore.settings.enabled ? 'bar-func-active' : 'bar-func-muted'"
+            :title="desktopLyricStore.settings.enabled ? '关闭桌面歌词' : '开启桌面歌词'"
+            @click="toggleDesktopLyric"
+          >
+            <Icon :icon="iconTypography" width="20" height="20" />
+          </Button>
+          <Badge
+            :count="desktopLyricStore.settings.enabled ? 'ON' : 'OFF'"
+            class="-top-px"
+            style="right: -5px"
+          />
+        </div>
 
         <div class="relative">
           <Button
@@ -499,6 +527,15 @@ const formatTime = (seconds: number) => {
   max-width: 52%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.bar-song-clickable {
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.bar-song-clickable:hover {
+  color: white;
 }
 
 .bar-song-actions {

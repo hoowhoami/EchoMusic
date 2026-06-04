@@ -24,6 +24,8 @@ type FavoritesStoreShape = {
   }>;
   favoriteSongKeySet: Set<string>;
   favorites: Song[];
+  favoritesLoaded: boolean;
+  favoritesLoading: boolean;
   fetchUserPlaylists: () => Promise<void>;
   getKnownPlaylistSongs: (listId: string | number | null | undefined) => Song[];
   isFavoriteSong: (song: Song) => boolean;
@@ -91,12 +93,16 @@ export const favoritesActions = {
   },
   syncCloudFavorites(this: FavoritesStoreShape, songs: Song[]) {
     this.favorites = dedupeSongs(songs);
+    this.favoritesLoaded = true;
+    this.favoritesLoading = false;
   },
   async fetchLikedPlaylistSongs(this: FavoritesStoreShape) {
     const likedPlaylist = this.likedPlaylist;
     const likedQueryId = this.likedPlaylistQueryId;
     if (!likedPlaylist || !likedQueryId) {
       this.favorites = [];
+      this.favoritesLoaded = true;
+      this.favoritesLoading = false;
       return false;
     }
 
@@ -105,8 +111,15 @@ export const favoritesActions = {
     }
 
     const queryId = String(likedQueryId);
-    const updateFavorites = (items: readonly Song[]) => {
+    this.favoritesLoaded = false;
+    this.favoritesLoading = true;
+
+    const updateFavorites = (items: readonly Song[], loaded = false) => {
       this.favorites = dedupeSongs(items.slice());
+      if (loaded) {
+        this.favoritesLoaded = true;
+        this.favoritesLoading = false;
+      }
     };
 
     const loader = new PagedSongLoader<Song>(
@@ -123,7 +136,7 @@ export const favoritesActions = {
         logTag: 'FavoritesLoader',
         maxPages: 50,
         onPageLoaded: (allItems) => updateFavorites(allItems),
-        onComplete: (allItems) => updateFavorites(allItems),
+        onComplete: (allItems) => updateFavorites(allItems, true),
       },
     );
 

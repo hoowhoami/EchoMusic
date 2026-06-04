@@ -15,7 +15,6 @@ import {
   type MainWindowState as WindowState,
 } from './storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
-import { refreshMiniPlayerDarkMode } from './miniPlayer';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
@@ -113,8 +112,6 @@ ipcMain.on('update-close-behavior', (_event, behavior: CloseBehavior) => {
 ipcMain.on('update-theme', (_event, theme: ThemeMode) => {
   currentTheme = theme;
   setMainAppSetting('theme', theme);
-  // 应用主题设置变化时刷新 mini 播放器深色判定（mini 不依赖隐藏主窗口的渲染层判断）
-  refreshMiniPlayerDarkMode();
 });
 
 ipcMain.on('update-remember-window-size', (_event, enabled: boolean) => {
