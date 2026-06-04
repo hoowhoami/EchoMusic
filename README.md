@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-42.x-blue?logo=electron" alt="Electron">
+  <img src="https://img.shields.io/badge/Electron-42.3.1-blue?logo=electron" alt="Electron">
   <img src="https://img.shields.io/badge/Vue-3.5-brightgreen?logo=vue.js" alt="Vue 3">
-  <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript" alt="TypeScript">
+  <img src="https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Rust-napi--rs-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen" alt="Platform">
   <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
@@ -24,16 +24,17 @@
 - **极致美学**：精心适配桌面端布局，支持深浅色模式，兼顾信息密度与沉浸式体验。
 - **数据安全**：官方服务器直连，数据不经过第三方服务器，保证用户数据安全。
 - **音乐推荐**：支持歌曲、歌单、歌手、专辑、排行榜等内容推荐。
-- **多维探索**：支持歌曲、歌手、专辑、歌单全方位搜索，快速发现心仪旋律。
+- **多维探索**：支持歌曲、歌手、专辑、歌单、歌词、MV 全方位搜索，快速发现心仪旋律。
+- **外部歌单导入**：支持网易云、QQ 音乐、酷我、酷狗、汽水、Spotify、Apple Music 及文本歌单导入。
 - **进阶播放**：支持播放队列管理、播放模式切换、音量调节、进度拖动、倍速播放、淡入淡出切歌等核心播放能力。
 - **私人 FM**：智能推荐个性化电台，发现更多好音乐。
 - **听歌识曲**：支持麦克风和系统音频捕获，快速识别正在播放的歌曲。
 - **歌曲详情**：支持查看歌曲档案及播放详情。
 - **歌曲评论**：支持查看歌曲评论与评论楼层跳转。
-- **歌词显示**：支持 LRC/YRC 逐字歌词解析、滚动同步、全屏歌词、桌面歌词。
-- **音频增强**：支持 10 段 EQ 均衡器、音量均衡（基于 LUFS 响度标准化）、多种音效模式。
+- **歌词显示**：支持 LRC/YRC 逐字歌词解析、歌词选择、正则过滤、滚动同步、全屏歌词、写真模式、桌面歌词。
+- **音频增强**：支持 10 段 EQ 均衡器、音量均衡（基于 LUFS 响度标准化）、空间音效（IR 文件导入/切换）与多种音效模式。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
-- **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键。
+- **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
 - **音频设备**：支持切换音频输出设备、独占模式输出。
 - **持久化能力**：支持设置、播放历史、收藏、播放状态等本地持久化。
 - **跨平台支持**：完整适配 macOS、Windows 与 Linux 系统。
@@ -43,22 +44,22 @@
 ## 音质音效
 
 - **音质**：Hi-Res、SQ(flac)、HQ(320)、标准(128)
-- **音效**：钢琴、人声伴奏、骨笛、尤克里里、唢呐、DJ、蝰蛇母带、蝰蛇全景声、蝰蛇超清
+- **音效**：人声、伴奏、钢琴、骨笛、尤克里里、唢呐、DJ、蝰蛇母带、蝰蛇全景声、蝰蛇超清、空间音效（自定义 IR）
 
 ## 🛠️ 技术栈
 
-- **Desktop Shell**: [Electron](https://www.electronjs.org/) 42
-- **Frontend**: [Vue 3](https://vuejs.org/) + [TypeScript](https://www.typescriptlang.org/)
-- **Build Tool**: [Vite](https://vitejs.dev/)
+- **Desktop Shell**: [Electron](https://www.electronjs.org/) 42.3
+- **Frontend**: [Vue 3.5](https://vuejs.org/) + [TypeScript 5.9](https://www.typescriptlang.org/)
+- **Build Tool**: [Vite](https://vitejs.dev/) 8
 - **State Management**: [Pinia](https://pinia.vuejs.org/) + [pinia-plugin-persistedstate](https://prazdevs.github.io/pinia-plugin-persistedstate/)
 - **UI Primitives**: [Reka UI](https://reka-ui.com/)
-- **CSS**: [Tailwind CSS](https://tailwindcss.com/) v4
+- **CSS**: [Tailwind CSS](https://tailwindcss.com/) v4.3
 - **Routing**: [Vue Router](https://router.vuejs.org/)
 - **Package Manager**: [pnpm](https://pnpm.io/)
 - **Backend Service**: [Node.js](https://nodejs.org/)（内置本地服务，进程内直接调用）
 - **Audio Engine**: [libmpv](https://mpv.io/)（通过 Rust NAPI addon 进程内嵌入，零延迟直接函数调用）
 - **Native Addons**: [napi-rs](https://napi.rs/)（Rust 编写的原生扩展）
-  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡
+  - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡、空间音效
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
 
@@ -126,9 +127,9 @@
    需手动下载并解压Electron到对应目录：
 
    ```bash
-   cd node_modules/.pnpm/electron@42.0.1/node_modules/electron/
+   cd node_modules/.pnpm/electron@42.3.1/node_modules/electron/
    mkdir -p dist
-   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v42.0.1/electron-v42.0.1-linux-x64.zip"
+   curl -L -o /tmp/electron.zip "https://npmmirror.com/mirrors/electron/v42.3.1/electron-v42.3.1-linux-x64.zip"
    unzip -o /tmp/electron.zip -d dist/
    printf '%s' './electron' > path.txt
    ```
@@ -181,7 +182,7 @@ pnpm build
 ## 📦 打包产物
 
 - **macOS**：`dmg`、`zip`
-- **Windows**：`exe (nsis)`、`portable`
+- **Windows**：`exe (nsis，x64/arm64)`
 - **Linux**：`deb`、`rpm`、`AppImage`、`tar.gz`
 
 ## macOS
