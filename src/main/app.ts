@@ -5,12 +5,14 @@ import { initApiServer } from './server';
 import { registerIpcHandlers } from './ipc';
 import { createWindow, getMainWindow } from './window';
 import { restoreActiveWindowMode } from './windowModeController';
+import { setActiveWindowMode } from './windowMode';
 import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerPlayerIpc } from './ipc/player';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
+import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
 
 const WM_TASKBARCREATED = 0x031a;
 
@@ -19,6 +21,17 @@ initLogger();
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.hoowhoami.echomusic');
+}
+
+const hasSafeModeArg = (argv: string[]) => argv.includes('--safe-mode');
+
+if (hasSafeModeArg(process.argv)) {
+  const result = setPluginSafeMode(true);
+  if (result.ok) {
+    log.warn('[Plugin] Safe mode enabled from command line');
+  } else {
+    log.error('[Plugin] Failed to enable safe mode from command line', result.error);
+  }
 }
 
 const installWindowsTrayRecovery = () => {
@@ -36,7 +49,11 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    if (hasSafeModeArg(argv)) {
+      void setPluginSafeMode(true);
+      setActiveWindowMode('main');
+    }
     void restoreActiveWindowMode();
   });
 
@@ -132,6 +149,7 @@ if (!gotTheLock) {
     setImmediate(() => {
       log.info('[Main] before-quit: cleaning up native resources');
       globalShortcut.unregisterAll();
+      clearPluginRuntimeSession();
       destroyMediaControls();
       destroyMpvPlayer();
       // 销毁桌面歌词窗口

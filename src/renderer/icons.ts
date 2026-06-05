@@ -89,6 +89,8 @@ import pencil from '@iconify/icons-tabler/pencil';
 import dotsVertical from '@iconify/icons-tabler/dots-vertical';
 import pictureInPicture from '@iconify/icons-tabler/picture-in-picture';
 import pinned from '@iconify/icons-tabler/pinned';
+import puzzle from '@iconify/icons-tabler/puzzle';
+import folderOpen from '@iconify/icons-tabler/folder-open';
 
 export const iconChevronDown = chevronDown as IconifyIcon;
 export const iconChevronUp = chevronUp as IconifyIcon;
@@ -182,3 +184,5 @@ export const iconPencil = pencil as IconifyIcon;
 export const iconDotsVertical = dotsVertical as IconifyIcon;
 export const iconPictureInPicture = pictureInPicture as IconifyIcon;
 export const iconPinned = pinned as IconifyIcon;
+export const iconPlugin = puzzle as IconifyIcon;
+export const iconFolderOpen = folderOpen as IconifyIcon;

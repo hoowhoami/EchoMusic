@@ -1,0 +1,561 @@
+import { app, shell } from 'electron';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
+import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'path';
+import { pathToFileURL } from 'url';
+import type {
+  EchoPluginDescriptor,
+  EchoPluginManifest,
+  PluginAssetSourceResult,
+  PluginImageFileEntry,
+  PluginFileUrlResult,
+  PluginFailureRecord,
+  PluginListImageFilesOptions,
+  PluginListImageFilesResult,
+  PluginListResult,
+  PluginReportFailureResult,
+  PluginSetSafeModeResult,
+  PluginSetEnabledResult,
+  PluginUninstallResult,
+} from '../shared/plugins';
+import { getKvStorage } from './storage/kv';
+import log from './logger';
+
+const PLUGIN_STATE_KEY = 'plugins:enabled';
+const PLUGIN_SAFE_MODE_KEY = 'plugins:safe-mode';
+const PLUGIN_LAST_FAILURE_KEY = 'plugins:last-failure';
+const PLUGIN_STARTUP_SESSION_KEY = 'plugins:startup-session';
+const PLUGIN_ACTIVE_SESSION_KEY = 'plugins:active-session';
+const PLUGIN_MANIFEST_FILE = 'manifest.json';
+const PLUGIN_IMAGE_EXTENSIONS = new Set([
+  '.apng',
+  '.avif',
+  '.gif',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.svg',
+  '.webp',
+]);
+const MAX_PLUGIN_IMAGE_SCAN_LIMIT = 1000;
+
+type PluginEnabledState = Record<string, boolean>;
+type PluginRuntimeSession = {
+  pluginIds: string[];
+  startedAt: number;
+  sessionId?: string;
+};
+
+const normalizePluginId = (value: unknown) =>
+  String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '');
+
+const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const getPluginRoot = () => join(app.getPath('userData'), 'plugins');
+
+const ensurePluginRoot = () => {
+  const root = getPluginRoot();
+  mkdirSync(root, { recursive: true });
+  return root;
+};
+
+const getEnabledState = (): PluginEnabledState =>
+  getKvStorage().get<PluginEnabledState>(PLUGIN_STATE_KEY) ?? {};
+
+const setEnabledState = (state: PluginEnabledState) => {
+  getKvStorage().set(PLUGIN_STATE_KEY, state);
+};
+
+const getPluginStorageKey = (pluginId: string, key: string) =>
+  `plugin:${normalizePluginId(pluginId)}:${String(key)}`;
+
+const getPluginStorageIndexKey = (pluginId: string) =>
+  `plugins:storage-index:${normalizePluginId(pluginId)}`;
+
+const getPluginStorageKeys = (pluginId: string) => {
+  const saved = getKvStorage().get<unknown>(getPluginStorageIndexKey(pluginId));
+  if (!Array.isArray(saved)) return [];
+  return Array.from(new Set(saved.map((key) => String(key ?? '')).filter((key) => key.length > 0)));
+};
+
+const trackPluginStorageKey = (pluginId: string, key: string) => {
+  const normalizedKey = String(key);
+  const indexKey = getPluginStorageIndexKey(pluginId);
+  const keys = Array.from(new Set([...getPluginStorageKeys(pluginId), normalizedKey]));
+  getKvStorage().set(indexKey, keys);
+};
+
+const untrackPluginStorageKey = (pluginId: string, key: string) => {
+  const indexKey = getPluginStorageIndexKey(pluginId);
+  const keys = getPluginStorageKeys(pluginId).filter((item) => item !== String(key));
+  if (keys.length > 0) {
+    getKvStorage().set(indexKey, keys);
+  } else {
+    getKvStorage().delete(indexKey);
+  }
+};
+
+const clearPluginStorage = (pluginId: string) => {
+  const indexKey = getPluginStorageIndexKey(pluginId);
+  for (const key of getPluginStorageKeys(pluginId)) {
+    getKvStorage().delete(getPluginStorageKey(pluginId, key));
+  }
+  getKvStorage().delete(indexKey);
+};
+
+export const getPluginSafeMode = () => Boolean(getKvStorage().get<boolean>(PLUGIN_SAFE_MODE_KEY));
+
+const normalizePluginIds = (pluginIds: unknown) => {
+  if (!Array.isArray(pluginIds)) return [];
+  return Array.from(new Set(pluginIds.map(normalizePluginId).filter(Boolean)));
+};
+
+const getRuntimeSession = (key: string): PluginRuntimeSession | null => {
+  const session = getKvStorage().get<PluginRuntimeSession>(key);
+  if (!session || !Array.isArray(session.pluginIds) || session.pluginIds.length === 0) return null;
+  return {
+    pluginIds: normalizePluginIds(session.pluginIds),
+    startedAt: Number(session.startedAt) || Date.now(),
+    sessionId: typeof session.sessionId === 'string' ? session.sessionId : undefined,
+  };
+};
+
+const setRuntimeSession = (key: string, pluginIds: string[]) => {
+  const normalizedIds = normalizePluginIds(pluginIds);
+  if (normalizedIds.length === 0) {
+    getKvStorage().delete(key);
+    return;
+  }
+  getKvStorage().set(key, {
+    pluginIds: normalizedIds,
+    startedAt: Date.now(),
+    sessionId: pluginProcessSessionId,
+  });
+};
+
+const setLastFailure = (failure: PluginFailureRecord) => {
+  getKvStorage().set(PLUGIN_LAST_FAILURE_KEY, failure);
+};
+
+export const getPluginLastFailure = () =>
+  getKvStorage().get<PluginFailureRecord>(PLUGIN_LAST_FAILURE_KEY);
+
+const recoverPreviousPluginCrash = () => {
+  if (getPluginSafeMode()) return;
+
+  const startupSession = getRuntimeSession(PLUGIN_STARTUP_SESSION_KEY);
+  if (startupSession && startupSession.sessionId !== pluginProcessSessionId) {
+    setLastFailure({
+      pluginIds: startupSession.pluginIds,
+      reason: 'render-process-gone',
+      message: '上次启动时插件加载未正常完成，已自动进入安全模式。',
+      createdAt: Date.now(),
+    });
+    setPluginSafeMode(true);
+    getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
+    getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+    return;
+  }
+
+  const activeSession = getRuntimeSession(PLUGIN_ACTIVE_SESSION_KEY);
+  if (activeSession && activeSession.sessionId !== pluginProcessSessionId) {
+    setLastFailure({
+      pluginIds: activeSession.pluginIds,
+      reason: 'render-process-gone',
+      message: '上次应用在插件运行期间未正常退出，已自动进入安全模式。',
+      createdAt: Date.now(),
+    });
+    setPluginSafeMode(true);
+    getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+  }
+};
+
+export const setPluginSafeMode = (enabled: boolean): PluginSetSafeModeResult => {
+  try {
+    getKvStorage().set(PLUGIN_SAFE_MODE_KEY, Boolean(enabled));
+    if (enabled) {
+      getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
+      getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+    }
+    return { ok: true, safeMode: Boolean(enabled) };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件安全模式切换失败',
+    };
+  }
+};
+
+export const markPluginStartup = (pluginIds: string[]): PluginReportFailureResult => {
+  setRuntimeSession(PLUGIN_STARTUP_SESSION_KEY, pluginIds);
+  return { ok: true };
+};
+
+export const clearPluginStartup = (): PluginReportFailureResult => {
+  getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
+  return { ok: true };
+};
+
+export const setPluginActiveSession = (pluginIds: string[]): PluginReportFailureResult => {
+  setRuntimeSession(PLUGIN_ACTIVE_SESSION_KEY, pluginIds);
+  return { ok: true };
+};
+
+export const clearPluginRuntimeSession = () => {
+  getKvStorage().delete(PLUGIN_STARTUP_SESSION_KEY);
+  getKvStorage().delete(PLUGIN_ACTIVE_SESSION_KEY);
+};
+
+export const reportPluginFailure = (
+  failure: Omit<PluginFailureRecord, 'createdAt'> & { createdAt?: number; safeMode?: boolean },
+): PluginReportFailureResult => {
+  const pluginId = normalizePluginId(failure.pluginId);
+  const pluginIds = normalizePluginIds(failure.pluginIds);
+  setLastFailure({
+    ...(pluginId ? { pluginId } : {}),
+    ...(pluginIds.length > 0 ? { pluginIds } : {}),
+    reason: failure.reason,
+    message: String(failure.message || '插件运行异常'),
+    createdAt: Number(failure.createdAt) || Date.now(),
+  });
+  if (failure.safeMode) {
+    void setPluginSafeMode(true);
+  }
+  return { ok: true };
+};
+
+export const reportPluginRendererFailure = (
+  reason: 'render-process-gone' | 'unresponsive',
+  message: string,
+) => {
+  const session =
+    getRuntimeSession(PLUGIN_STARTUP_SESSION_KEY) ?? getRuntimeSession(PLUGIN_ACTIVE_SESSION_KEY);
+  if (!session) return false;
+  reportPluginFailure({
+    pluginIds: session.pluginIds,
+    reason,
+    message,
+    safeMode: true,
+  });
+  clearPluginRuntimeSession();
+  return true;
+};
+
+const isPathInside = (parent: string, target: string) => {
+  const diff = relative(parent, target);
+  return diff === '' || (!!diff && !diff.startsWith('..') && !isAbsolute(diff));
+};
+
+const resolvePluginFile = (directory: string, fileName: unknown) => {
+  const normalizedFileName = normalize(String(fileName ?? '').trim());
+  if (!normalizedFileName || normalizedFileName.startsWith('..')) return '';
+  const fullPath = resolve(directory, normalizedFileName);
+  if (!isPathInside(resolve(directory), fullPath)) return '';
+  return fullPath;
+};
+
+const isRemoteImageSource = (source: string) =>
+  /^https?:\/\//i.test(source) || /^data:image\//i.test(source);
+
+const isSupportedPluginImage = (source: string) =>
+  isRemoteImageSource(source) || PLUGIN_IMAGE_EXTENSIONS.has(extname(source).toLowerCase());
+
+const getManifestImageSource = (manifest: EchoPluginManifest) => {
+  const contributes = manifest.contributes;
+  const image = contributes?.image;
+  if (typeof image === 'string' && isSupportedPluginImage(image.trim())) return image.trim();
+
+  const legacyIcon = contributes?.icon;
+  if (typeof legacyIcon === 'string' && isSupportedPluginImage(legacyIcon.trim())) {
+    return legacyIcon.trim();
+  }
+
+  return '';
+};
+
+const readManifest = (manifestPath: string): { manifest: EchoPluginManifest; error: string } => {
+  try {
+    const raw = readFileSync(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw) as EchoPluginManifest;
+    return { manifest: parsed, error: '' };
+  } catch (error) {
+    return {
+      manifest: {
+        id: basename(manifestPath),
+        name: basename(manifestPath),
+        version: '0.0.0',
+      },
+      error: error instanceof Error ? error.message : 'manifest 读取失败',
+    };
+  }
+};
+
+const validateManifest = (manifest: EchoPluginManifest, manifestError: string) => {
+  if (manifestError) return manifestError;
+  if (!normalizePluginId(manifest.id)) return 'manifest.id 不能为空';
+  if (!String(manifest.name ?? '').trim()) return 'manifest.name 不能为空';
+  if (!String(manifest.version ?? '').trim()) return 'manifest.version 不能为空';
+  return '';
+};
+
+const toDescriptor = (
+  directory: string,
+  directoryName: string,
+  enabledState: PluginEnabledState,
+): EchoPluginDescriptor => {
+  const manifestPath = join(directory, PLUGIN_MANIFEST_FILE);
+  const { manifest, error: manifestError } = readManifest(manifestPath);
+  const id = normalizePluginId(manifest.id) || normalizePluginId(directoryName) || directoryName;
+  const mainFile = resolvePluginFile(directory, manifest.main || 'index.js');
+  const styleFile = manifest.style ? resolvePluginFile(directory, manifest.style) : '';
+  const imageSource = getManifestImageSource(manifest);
+  const imageFile =
+    imageSource && !isRemoteImageSource(imageSource)
+      ? resolvePluginFile(directory, imageSource)
+      : '';
+  const validationError = validateManifest(manifest, manifestError);
+  const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
+  const styleError =
+    !validationError && styleFile && !existsSync(styleFile) ? '插件样式文件不存在' : '';
+  const error = validationError || mainError || styleError;
+  const invalid = Boolean(error);
+
+  return {
+    id,
+    name: String(manifest.name || id),
+    version: String(manifest.version || '0.0.0'),
+    description: String(manifest.description || ''),
+    author: String(manifest.author || ''),
+    directoryName,
+    directory,
+    manifestPath,
+    mainFile,
+    styleFile,
+    imageUrl:
+      imageFile && existsSync(imageFile)
+        ? pathToFileURL(imageFile).toString()
+        : isRemoteImageSource(imageSource)
+          ? imageSource
+          : '',
+    enabled: !invalid && Boolean(enabledState[id]),
+    invalid,
+    error,
+    manifest: {
+      ...manifest,
+      id,
+      name: String(manifest.name || id),
+      version: String(manifest.version || '0.0.0'),
+    },
+  };
+};
+
+export const listPlugins = (): PluginListResult => {
+  recoverPreviousPluginCrash();
+  const root = ensurePluginRoot();
+  const enabledState = getEnabledState();
+  const plugins: EchoPluginDescriptor[] = [];
+
+  const entries = readdirSync(root, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const directory = join(root, entry.name);
+    const manifestPath = join(directory, PLUGIN_MANIFEST_FILE);
+    if (!existsSync(manifestPath)) continue;
+    try {
+      plugins.push(toDescriptor(directory, entry.name, enabledState));
+    } catch (error) {
+      log.warn('[Plugin] Failed to read plugin descriptor', { directory, error });
+    }
+  }
+
+  plugins.sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans-CN'));
+  return {
+    plugins,
+    directory: root,
+    safeMode: getPluginSafeMode(),
+    lastFailure: getPluginLastFailure() ?? null,
+  };
+};
+
+const findPlugin = (pluginId: string) =>
+  listPlugins().plugins.find((plugin) => plugin.id === normalizePluginId(pluginId)) ?? null;
+
+export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetEnabledResult => {
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+
+  const nextState = getEnabledState();
+  nextState[plugin.id] = Boolean(enabled);
+  setEnabledState(nextState);
+  const refreshed = findPlugin(plugin.id);
+  return refreshed ? { ok: true, plugin: refreshed } : { ok: false, error: '插件刷新失败' };
+};
+
+export const readPluginTextAsset = (
+  pluginId: string,
+  asset: 'main' | 'style',
+): PluginAssetSourceResult => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  if (!plugin.enabled) return { ok: false, error: '插件未启用' };
+
+  const filePath = asset === 'main' ? plugin.mainFile : plugin.styleFile;
+  if (!filePath)
+    return { ok: false, error: asset === 'main' ? '插件入口为空' : '插件没有样式文件' };
+  const pluginDir = resolve(plugin.directory);
+  const resolvedFile = resolve(filePath);
+  if (!isPathInside(pluginDir, resolvedFile)) return { ok: false, error: '插件资源路径非法' };
+  if (!existsSync(resolvedFile)) return { ok: false, error: '插件资源不存在' };
+
+  const ext = extname(resolvedFile).toLowerCase();
+  if (asset === 'main' && !['.js', '.mjs'].includes(ext)) {
+    return { ok: false, error: '插件入口必须是 .js 或 .mjs' };
+  }
+  if (asset === 'style' && ext !== '.css') {
+    return { ok: false, error: '插件样式必须是 .css' };
+  }
+
+  try {
+    return { ok: true, source: readFileSync(resolvedFile, 'utf8') };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件资源读取失败',
+    };
+  }
+};
+
+const normalizeImageScanLimit = (limit: unknown) => {
+  const value = Number(limit);
+  if (!Number.isFinite(value) || value <= 0) return 200;
+  return Math.min(Math.floor(value), MAX_PLUGIN_IMAGE_SCAN_LIMIT);
+};
+
+export const listPluginImageFiles = (
+  directoryPath: string,
+  options: PluginListImageFilesOptions = {},
+): PluginListImageFilesResult => {
+  try {
+    const root = resolve(String(directoryPath || '').trim());
+    if (!root || !existsSync(root)) return { ok: false, error: '图片文件夹不存在' };
+    const rootStat = statSync(root);
+    if (!rootStat.isDirectory()) return { ok: false, error: '路径不是文件夹' };
+
+    const recursive = Boolean(options.recursive);
+    const limit = normalizeImageScanLimit(options.limit);
+    const files: PluginImageFileEntry[] = [];
+    const queue = [root];
+
+    while (queue.length > 0 && files.length < limit) {
+      const current = queue.shift()!;
+      for (const entry of readdirSync(current, { withFileTypes: true })) {
+        const fullPath = join(current, entry.name);
+        if (entry.isDirectory()) {
+          if (recursive) queue.push(fullPath);
+          continue;
+        }
+        if (!entry.isFile() || !PLUGIN_IMAGE_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
+          continue;
+        }
+        const stats = statSync(fullPath);
+        files.push({
+          name: entry.name,
+          path: fullPath,
+          url: pathToFileURL(fullPath).toString(),
+          size: stats.size,
+          modifiedAt: stats.mtimeMs,
+        });
+        if (files.length >= limit) break;
+      }
+    }
+
+    files.sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans-CN'));
+    return { ok: true, files };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '图片文件夹读取失败',
+    };
+  }
+};
+
+export const getPluginFileUrl = (filePath: string): PluginFileUrlResult => {
+  try {
+    const resolvedPath = resolve(String(filePath || '').trim());
+    if (!resolvedPath || !existsSync(resolvedPath)) return { ok: false, error: '文件不存在' };
+    const stats = statSync(resolvedPath);
+    if (!stats.isFile()) return { ok: false, error: '路径不是文件' };
+    return { ok: true, url: pathToFileURL(resolvedPath).toString() };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '文件地址解析失败',
+    };
+  }
+};
+
+export const uninstallPlugin = (pluginId: string): PluginUninstallResult => {
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+
+  const root = resolve(ensurePluginRoot());
+  const directory = resolve(plugin.directory);
+  if (!isPathInside(root, directory) || directory === root) {
+    return { ok: false, error: '插件目录非法' };
+  }
+
+  try {
+    const nextState = getEnabledState();
+    delete nextState[plugin.id];
+    setEnabledState(nextState);
+    const lastFailure = getPluginLastFailure();
+    if (lastFailure?.pluginId === plugin.id || lastFailure?.pluginIds?.includes(plugin.id)) {
+      getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
+    }
+    clearPluginStorage(plugin.id);
+    rmSync(directory, { recursive: true, force: true });
+    return { ok: true, pluginId: plugin.id };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件卸载失败',
+    };
+  }
+};
+
+export const getPluginData = (pluginId: string, key: string) =>
+  getKvStorage().get(getPluginStorageKey(pluginId, key));
+
+export const setPluginData = (pluginId: string, key: string, value: unknown) => {
+  getKvStorage().set(getPluginStorageKey(pluginId, key), value);
+  trackPluginStorageKey(pluginId, key);
+  return { ok: true };
+};
+
+export const deletePluginData = (pluginId: string, key: string) => {
+  getKvStorage().delete(getPluginStorageKey(pluginId, key));
+  untrackPluginStorageKey(pluginId, key);
+  return { ok: true };
+};
+
+export const openPluginDirectory = () => {
+  const root = ensurePluginRoot();
+  void shell.openPath(root);
+  return root;
+};
+
+export const getPluginDirectory = () => ensurePluginRoot();
+
+export const ensurePluginDirectoryExists = () => {
+  const root = ensurePluginRoot();
+  try {
+    const stats = statSync(root);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+};

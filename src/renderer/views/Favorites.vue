@@ -115,13 +115,23 @@ const openBatchDrawer = () => {
 };
 
 // ========== 关注 Tab ==========
+const singerSearchQuery = ref('');
 const followedSingers = shallowRef<ArtistMeta[]>([]);
 const followedUsers = shallowRef<ArtistMeta[]>([]);
 const followedLoading = ref(false);
 const followedLoaded = ref(false);
 
+const filteredSingers = computed(() => {
+  const query = singerSearchQuery.value.trim().toLowerCase();
+  if (!query) return followedSingers.value;
+  return followedSingers.value.filter((artist) => {
+    const name = artist.name?.toLowerCase() || '';
+    return name.includes(query);
+  });
+});
+
 const singerCards = computed(() =>
-  followedSingers.value.map((artist) => ({
+  filteredSingers.value.map((artist) => ({
     id: artist.id,
     name: artist.name,
     coverUrl: artist.pic,
@@ -190,12 +200,24 @@ const fetchFollowed = async () => {
   }
 };
 // ========== 专辑 Tab ==========
+const albumSearchQuery = ref('');
+
 const favoritedAlbums = computed(() =>
   playlistStore.userPlaylists.filter((playlist) => playlist.source === 2),
 );
 
+const filteredAlbums = computed(() => {
+  const query = albumSearchQuery.value.trim().toLowerCase();
+  if (!query) return favoritedAlbums.value;
+  return favoritedAlbums.value.filter((album) => {
+    const name = album.name?.toLowerCase() || '';
+    const artist = album.nickname?.toLowerCase() || album.list_create_username?.toLowerCase() || '';
+    return name.includes(query) || artist.includes(query);
+  });
+});
+
 const albumCards = computed(() =>
-  favoritedAlbums.value.map((album) => ({
+  filteredAlbums.value.map((album) => ({
     id: String(album.listCreateListid ?? album.id),
     name: album.name,
     coverUrl: album.pic,
@@ -441,6 +463,42 @@ watch(isLoggedIn, (value) => {
                   >
                     <Icon :icon="iconCurrentLocation" width="18" height="18" />
                   </Button>
+                </div>
+
+                <!-- 歌手 tab 右侧搜索 -->
+                <div v-if="activeTab === 'singers'" class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="singerSearchQuery"
+                      type="text"
+                      placeholder="搜索歌手..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
+                </div>
+
+                <!-- 专辑 tab 右侧搜索 -->
+                <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="albumSearchQuery"
+                      type="text"
+                      placeholder="搜索专辑..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

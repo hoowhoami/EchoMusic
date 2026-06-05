@@ -21,6 +21,20 @@ import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
+  PluginAssetSourceResult,
+  PluginDialogResult,
+  PluginFileUrlResult,
+  PluginFailureRecord,
+  PluginListImageFilesOptions,
+  PluginListImageFilesResult,
+  PluginListResult,
+  PluginOpenDialogOptions,
+  PluginReportFailureResult,
+  PluginSetEnabledResult,
+  PluginSetSafeModeResult,
+  PluginUninstallResult,
+} from '../shared/plugins';
+import type {
   StorageAppendQueueItemsPayload,
   StoragePlaybackSnapshot,
   StoragePlaybackQueueState,
@@ -146,6 +160,40 @@ export interface IElectronAPI {
   };
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) => Promise<ResolvePlaylistResponse>;
+  };
+  plugins?: {
+    list: () => Promise<PluginListResult>;
+    getDirectory: () => Promise<string>;
+    openDirectory: () => Promise<string>;
+    setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
+    setSafeMode: (enabled: boolean) => Promise<PluginSetSafeModeResult>;
+    uninstall: (pluginId: string) => Promise<PluginUninstallResult>;
+    markStartup: (pluginIds: string[]) => Promise<PluginReportFailureResult>;
+    clearStartup: () => Promise<PluginReportFailureResult>;
+    setActiveSession: (pluginIds: string[]) => Promise<PluginReportFailureResult>;
+    reportFailure: (
+      failure: Omit<PluginFailureRecord, 'createdAt'> & {
+        createdAt?: number;
+        safeMode?: boolean;
+      },
+    ) => Promise<PluginReportFailureResult>;
+    readAsset: (pluginId: string, asset: 'main' | 'style') => Promise<PluginAssetSourceResult>;
+    dialog: {
+      selectDirectory: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;
+      selectFiles: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;
+    };
+    fs: {
+      listImageFiles: (
+        directoryPath: string,
+        options?: PluginListImageFilesOptions,
+      ) => Promise<PluginListImageFilesResult>;
+      getFileUrl: (filePath: string) => Promise<PluginFileUrlResult>;
+    };
+    storage: {
+      get: <T = unknown>(pluginId: string, key: string) => Promise<T | null>;
+      set: (pluginId: string, key: string, value: unknown) => Promise<{ ok: boolean }>;
+      delete: (pluginId: string, key: string) => Promise<{ ok: boolean }>;
+    };
   };
   storage?: {
     getPlaybackSnapshot: () => Promise<StoragePlaybackSnapshot>;

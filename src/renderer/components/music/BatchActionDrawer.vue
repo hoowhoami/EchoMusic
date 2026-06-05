@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useVModel } from '@vueuse/core';
 import Drawer from '@/components/ui/Drawer.vue';
 import Dialog from '@/components/ui/Dialog.vue';
@@ -107,9 +107,13 @@ const clearSelection = () => {
 
 watch(
   () => open.value,
-  (value) => {
+  async (value) => {
     if (!value) {
       clearSelection();
+    } else {
+      // 抽屉打开时刷新虚拟列表，确保正确计算可见范围
+      await nextTick();
+      refresh?.(true);
     }
   },
 );
@@ -123,18 +127,27 @@ watch(
 
 const itemHeight = 56;
 const scrollContainerRef = ref<HTMLElement | null>(null);
+const scrollbarRef = ref<InstanceType<typeof Scrollbar> | null>(null);
+
+// 当 Scrollbar 挂载后，获取其内部的滚动 DOM 元素
+const onScrollbarMounted = () => {
+  scrollContainerRef.value = scrollbarRef.value?.wrapRef ?? null;
+};
+
 const {
   containerRef,
   visibleStart,
   visibleEnd,
   totalSize: totalHeight,
   offset: visibleOffset,
+  refresh,
 } = useVirtualList({
   itemCount: computed(() => props.songs.length),
   itemSize: itemHeight,
   overscan: 8,
   scrollContainer: scrollContainerRef,
   active: computed(() => open.value),
+  cacheOffsets: false,
 });
 
 const list = computed(() => {
@@ -387,50 +400,52 @@ const confirmRemoveFromPlaylist = async () => {
 
     <div class="batch-list">
       <Scrollbar
+        ref="scrollbarRef"
         class="flex-1 min-h-0"
         :scrollbar-inset="4"
-        :content-props="{ ref: scrollContainerRef }"
+        @vue:mounted="onScrollbarMounted"
       >
-        <div ref="containerRef" :style="wrapperStyle" class="batch-list-inner">
-          <div :style="visibleBlockStyle">
-            <div
-              v-for="entry in list"
-              :key="entry.data.id"
-              class="batch-row"
-              :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
-              :style="{ height: `${itemHeight}px` }"
-              @click="toggleSong(entry.data)"
-            >
-              <div class="batch-leading" @click.stop>
-                <CheckboxRoot
-                  class="batch-checkbox"
-                  :model-value="selectedKeys.has(String(entry.data.id))"
-                  @update:model-value="setSongChecked(entry.data, $event)"
-                >
-                  <CheckboxIndicator as-child>
-                    <span class="batch-checkbox-indicator"></span>
-                  </CheckboxIndicator>
-                </CheckboxRoot>
+        <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
+        <div v-else ref="containerRef" class="batch-list-inner">
+          <div :style="wrapperStyle" class="batch-list-wrapper">
+            <div :style="visibleBlockStyle">
+              <div
+                v-for="entry in list"
+                :key="entry.data.id"
+                class="batch-row"
+                :class="{ 'text-primary': selectedKeys.has(String(entry.data.id)) }"
+                :style="{ height: `${itemHeight}px` }"
+                @click="toggleSong(entry.data)"
+              >
+                <div class="batch-leading" @click.stop>
+                  <CheckboxRoot
+                    class="batch-checkbox"
+                    :model-value="selectedKeys.has(String(entry.data.id))"
+                    @update:model-value="setSongChecked(entry.data, $event)"
+                  >
+                    <CheckboxIndicator as-child>
+                      <span class="batch-checkbox-indicator"></span>
+                    </CheckboxIndicator>
+                  </CheckboxRoot>
+                </div>
+                <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
+                  <SongCard
+                    :song="entry.data"
+                    :showCover="true"
+                    :showAlbum="false"
+                    :showDuration="false"
+                    :active="false"
+                    :showMore="false"
+                    :disableLinks="true"
+                    variant="list"
+                  />
+                </div>
+                <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
+                <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
               </div>
-              <div class="batch-card" :style="{ opacity: isPlayableSong(entry.data) ? 1 : 0.45 }">
-                <SongCard
-                  :song="entry.data"
-                  :showCover="true"
-                  :showAlbum="false"
-                  :showDuration="false"
-                  :active="false"
-                  :showMore="false"
-                  :disableLinks="true"
-                  variant="list"
-                />
-              </div>
-              <div class="batch-album">{{ entry.data.album || '未知专辑' }}</div>
-              <div class="batch-duration">{{ formatDuration(entry.data.duration) }}</div>
             </div>
           </div>
         </div>
-
-        <div v-if="props.songs?.length === 0" class="batch-empty">暂无歌曲</div>
       </Scrollbar>
     </div>
   </Drawer>
@@ -616,6 +631,11 @@ const confirmRemoveFromPlaylist = async () => {
   padding-right: 14px;
 }
 
+.batch-list-wrapper {
+  position: relative;
+  width: 100%;
+}
+
 .batch-empty {
   padding: 20px 0 28px;
   text-align: center;
@@ -669,10 +689,22 @@ const confirmRemoveFromPlaylist = async () => {
   align-items: center;
   justify-content: center;
   background: transparent;
+  transition: all 0.2s ease;
+}
+
+.dark .batch-checkbox {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .batch-checkbox[data-state='checked'],
 .batch-checkbox[data-state='indeterminate'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.dark .batch-checkbox[data-state='checked'],
+.dark .batch-checkbox[data-state='indeterminate'] {
   border-color: var(--color-primary);
   background: var(--color-primary);
 }

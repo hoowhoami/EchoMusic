@@ -24,6 +24,7 @@ import {
 import { useUserStore } from '@/stores/user';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { useVirtualList } from '@/composables/useVirtualList';
+import { songContextMenuExtensions } from './songContextMenuExtensions';
 
 interface Props {
   songs: Song[];
@@ -426,6 +427,28 @@ const contextMenuCanRemove = computed(() => {
   return playlistStore.isOwnedPlaylist(props.parentPlaylistId, userStore.info?.userid);
 });
 
+const extensionContextMenuItems = computed(() => {
+  const song = contextMenuTarget.value;
+  if (!song) return [];
+  return songContextMenuExtensions.value.filter((item) => {
+    try {
+      return item.visible ? item.visible(song) : true;
+    } catch {
+      return false;
+    }
+  });
+});
+
+const isExtensionContextItemEnabled = (item: (typeof extensionContextMenuItems.value)[number]) => {
+  const song = contextMenuTarget.value;
+  if (!song) return false;
+  try {
+    return item.enabled ? item.enabled(song) : true;
+  } catch {
+    return false;
+  }
+};
+
 const handleContextMenu = (event: MouseEvent) => {
   const target = (event.target as HTMLElement)?.closest<HTMLElement>('[data-song-row]');
   if (!target) {
@@ -513,6 +536,16 @@ const ctxRemoveFromPlaylist = async () => {
   const success = await playlistStore.removeFromPlaylist(String(props.parentPlaylistId), song);
   if (success) {
     props.onRemovedFromPlaylist?.(song);
+  }
+};
+
+const ctxExtensionAction = async (item: (typeof extensionContextMenuItems.value)[number]) => {
+  const song = contextMenuTarget.value;
+  if (!song || !isExtensionContextItemEnabled(item)) return;
+  try {
+    await item.onSelect(song);
+  } catch {
+    toastStore.actionFailed(item.label || '歌曲操作');
   }
 };
 
@@ -693,6 +726,17 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
             </ContextMenuItem>
             <ContextMenuItem class="song-context-item" @select="ctxAddToPlaylist">
               添加到歌单
+            </ContextMenuItem>
+            <div v-if="extensionContextMenuItems.length > 0" class="song-context-separator"></div>
+            <ContextMenuItem
+              v-for="item in extensionContextMenuItems"
+              :key="item.id"
+              class="song-context-item"
+              :class="{ 'text-red-500': item.danger }"
+              :disabled="!isExtensionContextItemEnabled(item)"
+              @select="ctxExtensionAction(item)"
+            >
+              {{ item.label }}
             </ContextMenuItem>
             <div v-if="contextMenuCanRemove" class="song-context-separator"></div>
             <ContextMenuItem

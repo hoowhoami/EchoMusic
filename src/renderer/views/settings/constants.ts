@@ -8,6 +8,7 @@ import {
   iconKeyboard,
   iconPalette,
   iconPlayerPlay,
+  iconPlugin,
   iconShield,
   iconTypography,
   iconVolume2,
@@ -23,25 +24,10 @@ export const sectionTitles = {
   shortcuts: { label: '快捷键', icon: iconKeyboard },
   audioDevice: { label: '音频设备', icon: iconDeviceSpeaker },
   experimental: { label: '实验性功能', icon: iconFlask },
+  plugins: { label: '插件', icon: iconPlugin },
   data: { label: '数据与安全', icon: iconShield },
   about: { label: '关于', icon: iconInfo },
 } as const;
-
-export type SettingsSectionId = keyof typeof sectionTitles;
-
-export const navItems: { id: SettingsSectionId; label: string; icon: string }[] = [
-  { id: 'appearance', label: '外观与界面', icon: 'palette' },
-  { id: 'font', label: '字体设置', icon: 'font' },
-  { id: 'playback', label: '播放体验', icon: 'play' },
-  { id: 'quality', label: '播放音质', icon: 'volume' },
-  { id: 'pageLyric', label: '页面歌词', icon: 'lyric' },
-  { id: 'desktopLyric', label: '桌面歌词', icon: 'typography' },
-  { id: 'shortcuts', label: '快捷键', icon: 'keyboard' },
-  { id: 'audioDevice', label: '音频设备', icon: 'speaker' },
-  { id: 'experimental', label: '实验性功能', icon: 'flask' },
-  { id: 'data', label: '数据与安全', icon: 'shield' },
-  { id: 'about', label: '关于', icon: 'info' },
-];
 
 export const accentModeOptions: { label: string; value: AccentMode }[] = [
   { label: '跟随封面', value: 'cover' },

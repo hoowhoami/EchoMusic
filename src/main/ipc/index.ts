@@ -9,6 +9,7 @@ import { registerMiniPlayerHandlers, unregisterMiniPlayerHandlers } from '../min
 import { registerShazamHandlers } from './shazam';
 import { registerExternalHandlers } from './external';
 import { registerStorageHandlers, unregisterStorageHandlers } from './storage';
+import { registerPluginHandlers, unregisterPluginHandlers } from './plugins';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -25,6 +26,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerShazamHandlers();
   registerExternalHandlers();
   registerStorageHandlers();
+  registerPluginHandlers(context);
   registered = true;
 };
 
@@ -71,4 +73,5 @@ export const unregisterIpcHandlers = () => {
   unregisterMiniPlayerHandlers();
   ipcMain.removeHandler('external:resolve-playlist');
   unregisterStorageHandlers();
+  unregisterPluginHandlers();
 };

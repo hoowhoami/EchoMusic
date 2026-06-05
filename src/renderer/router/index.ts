@@ -95,6 +95,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '偏好设置' },
       },
       {
+        path: 'settings/plugins',
+        name: 'plugin-management',
+        component: () => import('@/views/PluginManagement.vue'),
+        meta: { title: '插件管理' },
+      },
+      {
+        path: 'plugin/:pluginId/:pageId',
+        name: 'plugin-page',
+        component: () => import('@/plugins/PluginPageHost.vue'),
+        meta: { title: '插件' },
+      },
+      {
         path: 'playlist/:id',
         name: 'playlist-detail',
         component: () => import('@/views/details/PlaylistDetail.vue'),

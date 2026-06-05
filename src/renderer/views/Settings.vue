@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'settings-page' });
 import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue';
+import type { Component } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import { useDesktopLyricStore } from '@/desktopLyric/store';
 import type { UpdateCheckResult } from '../../shared/app';
@@ -20,9 +21,9 @@ import DesktopLyricSettingsSection from './settings/components/DesktopLyricSetti
 import ShortcutSettingsSection from './settings/components/ShortcutSettingsSection.vue';
 import AudioDeviceSettingsSection from './settings/components/AudioDeviceSettingsSection.vue';
 import ExperimentalSettingsSection from './settings/components/ExperimentalSettingsSection.vue';
+import PluginSettingsSection from './settings/components/PluginSettingsSection.vue';
 import DataSettingsSection from './settings/components/DataSettingsSection.vue';
 import AboutSettingsSection from './settings/components/AboutSettingsSection.vue';
-import { navItems } from './settings/constants';
 
 const settingStore = useSettingStore();
 const desktopLyricStore = useDesktopLyricStore();
@@ -89,7 +90,7 @@ const scrollToSection = (id: string) => {
   if (clickScrollTimer) clearTimeout(clickScrollTimer);
 
   nextTick(() => {
-    const sectionElement = document.querySelector(`[data-section="${id}"]`) as HTMLElement;
+    const sectionElement = findSectionElement(id);
     if (sectionElement && scrollbarRef.value?.wrapRef) {
       const wrap = scrollbarRef.value.wrapRef;
       const scrollTop = getSectionOffsetTop(sectionElement, wrap) - 12;
@@ -149,6 +150,167 @@ const handleShowChangelog = async () => {
   showChangelog.value = true;
 };
 
+interface SettingsRenderSection {
+  id: string;
+  label: string;
+  order: number;
+  icon?: null;
+  component: Component;
+  props?: Record<string, unknown>;
+  before?: string;
+  after?: string;
+  visible?: boolean | (() => boolean);
+}
+
+const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
+  {
+    id: 'appearance',
+    label: '外观与界面',
+    order: 100,
+    component: AppearanceSettingsSection,
+  },
+  {
+    id: 'font',
+    label: '字体设置',
+    order: 200,
+    component: FontSettingsSection,
+  },
+  {
+    id: 'playback',
+    label: '播放体验',
+    order: 300,
+    component: PlaybackSettingsSection,
+  },
+  {
+    id: 'quality',
+    label: '播放音质',
+    order: 400,
+    component: QualitySettingsSection,
+  },
+  {
+    id: 'pageLyric',
+    label: '页面歌词',
+    order: 500,
+    component: PageLyricSettingsSection,
+  },
+  {
+    id: 'desktopLyric',
+    label: '桌面歌词',
+    order: 600,
+    component: DesktopLyricSettingsSection,
+  },
+  {
+    id: 'shortcuts',
+    label: '快捷键',
+    order: 700,
+    component: ShortcutSettingsSection,
+  },
+  {
+    id: 'audioDevice',
+    label: '音频设备',
+    order: 800,
+    component: AudioDeviceSettingsSection,
+  },
+  {
+    id: 'experimental',
+    label: '实验性功能',
+    order: 900,
+    component: ExperimentalSettingsSection,
+  },
+  {
+    id: 'plugins',
+    label: '插件',
+    order: 1000,
+    component: PluginSettingsSection,
+  },
+  {
+    id: 'data',
+    label: '数据与安全',
+    order: 1100,
+    component: DataSettingsSection,
+    props: {
+      onClear: () => {
+        showConfirmClear.value = true;
+      },
+    },
+  },
+  {
+    id: 'about',
+    label: '关于',
+    order: 1200,
+    component: AboutSettingsSection,
+    props: {
+      isCheckingUpdate: isCheckingUpdate.value,
+      onCheckUpdates: handleCheckUpdates,
+      onShowChangelog: handleShowChangelog,
+      onShowDisclaimer: () => {
+        showDisclaimer.value = true;
+      },
+    },
+  },
+]);
+
+const resolveFlag = (value?: boolean | (() => boolean), fallback = true) => {
+  if (typeof value === 'function') {
+    try {
+      return Boolean(value());
+    } catch {
+      return fallback;
+    }
+  }
+  return value ?? fallback;
+};
+
+const matchesSectionAnchor = (section: SettingsRenderSection, anchor: string) => {
+  return section.id === anchor;
+};
+
+const sortSettingsSections = (sections: SettingsRenderSection[]) => {
+  const sorted = sections
+    .slice()
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.label.localeCompare(right.label, 'zh-Hans-CN'),
+    );
+
+  const moveAroundAnchor = (
+    item: SettingsRenderSection,
+    anchor: string,
+    placement: 'before' | 'after',
+  ) => {
+    const from = sorted.findIndex((candidate) => candidate.id === item.id);
+    const to = sorted.findIndex((candidate) => matchesSectionAnchor(candidate, anchor));
+    if (from < 0 || to < 0 || from === to) return;
+    const [moving] = sorted.splice(from, 1);
+    const nextTo = sorted.findIndex((candidate) => matchesSectionAnchor(candidate, anchor));
+    if (nextTo < 0) {
+      sorted.splice(from, 0, moving);
+      return;
+    }
+    sorted.splice(placement === 'before' ? nextTo : nextTo + 1, 0, moving);
+  };
+
+  for (const section of sorted.slice()) {
+    if (section.before) moveAroundAnchor(section, section.before, 'before');
+    if (section.after) moveAroundAnchor(section, section.after, 'after');
+  }
+
+  return sorted;
+};
+
+const settingsSections = computed(() => {
+  return sortSettingsSections([...builtinSettingsSections.value]).filter((section) =>
+    resolveFlag(section.visible),
+  );
+});
+
+const navItems = computed(() =>
+  settingsSections.value.map((section) => ({
+    id: section.id,
+    label: section.label,
+  })),
+);
+
 const handleUpdateCheckResult = (payload: unknown) => {
   if (
     payload &&
@@ -196,16 +358,24 @@ const handleScroll = () => {
   // 控制返回顶部按钮显示
   showBackToTop.value = currentScrollTop.value > 300;
 
-  for (let i = navItems.length - 1; i >= 0; i--) {
-    const section = document.querySelector(`[data-section="${navItems[i].id}"]`) as HTMLElement;
+  for (let i = navItems.value.length - 1; i >= 0; i--) {
+    const section = findSectionElement(navItems.value[i].id);
     if (section && getSectionOffsetTop(section, wrap) <= currentScrollTop.value + 40) {
-      if (activeSection.value !== navItems[i].id) {
-        activeSection.value = navItems[i].id;
-        scrollAnchorIntoView(navItems[i].id);
+      if (activeSection.value !== navItems.value[i].id) {
+        activeSection.value = navItems.value[i].id;
+        scrollAnchorIntoView(navItems.value[i].id);
       }
       break;
     }
   }
+};
+
+const findSectionElement = (id: string) => {
+  return (
+    Array.from(contentRef.value?.querySelectorAll<HTMLElement>('[data-section]') ?? []).find(
+      (section) => section.dataset.section === id,
+    ) ?? null
+  );
 };
 </script>
 
@@ -245,33 +415,9 @@ const handleScroll = () => {
       @scroll="handleScroll"
     >
       <div ref="contentRef" class="settings-content">
-        <AppearanceSettingsSection />
-
-        <FontSettingsSection />
-
-        <PlaybackSettingsSection />
-
-        <!-- 播放音质 -->
-        <QualitySettingsSection />
-
-        <PageLyricSettingsSection />
-
-        <DesktopLyricSettingsSection />
-
-        <ShortcutSettingsSection />
-
-        <AudioDeviceSettingsSection />
-
-        <ExperimentalSettingsSection />
-
-        <DataSettingsSection :on-clear="() => (showConfirmClear = true)" />
-
-        <AboutSettingsSection
-          :is-checking-update="isCheckingUpdate"
-          :on-check-updates="handleCheckUpdates"
-          :on-show-changelog="handleShowChangelog"
-          :on-show-disclaimer="() => (showDisclaimer = true)"
-        />
+        <template v-for="section in settingsSections" :key="section.id">
+          <component :is="section.component" v-bind="section.props ?? {}" />
+        </template>
 
         <!-- 返回顶部按钮 -->
         <button

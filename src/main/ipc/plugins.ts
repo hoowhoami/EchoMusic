@@ -1,0 +1,175 @@
+import { dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import type {
+  PluginAssetSourceResult,
+  PluginDialogResult,
+  PluginFileUrlResult,
+  PluginFailureRecord,
+  PluginListImageFilesOptions,
+  PluginListImageFilesResult,
+  PluginListResult,
+  PluginOpenDialogOptions,
+  PluginSetEnabledResult,
+  PluginReportFailureResult,
+  PluginSetSafeModeResult,
+  PluginUninstallResult,
+} from '../../shared/plugins';
+import {
+  clearPluginStartup,
+  deletePluginData,
+  getPluginData,
+  getPluginDirectory,
+  getPluginFileUrl,
+  listPluginImageFiles,
+  listPlugins,
+  markPluginStartup,
+  openPluginDirectory,
+  readPluginTextAsset,
+  reportPluginFailure,
+  setPluginData,
+  setPluginActiveSession,
+  setPluginEnabled,
+  setPluginSafeMode,
+  uninstallPlugin,
+} from '../plugins';
+import type { IpcContext } from './types';
+
+const sanitizeDialogOptions = (
+  options: PluginOpenDialogOptions | undefined,
+  properties: OpenDialogOptions['properties'],
+): OpenDialogOptions => ({
+  title: typeof options?.title === 'string' ? options.title : undefined,
+  defaultPath: typeof options?.defaultPath === 'string' ? options.defaultPath : undefined,
+  buttonLabel: typeof options?.buttonLabel === 'string' ? options.buttonLabel : undefined,
+  filters: Array.isArray(options?.filters)
+    ? options.filters
+        .map((filter) => ({
+          name: String(filter?.name || 'Files'),
+          extensions: Array.isArray(filter?.extensions)
+            ? filter.extensions.map((extension) => String(extension).replace(/^\./, ''))
+            : ['*'],
+        }))
+        .filter((filter) => filter.extensions.length > 0)
+    : undefined,
+  properties,
+});
+
+const showPluginOpenDialog = async (
+  context: IpcContext,
+  options: OpenDialogOptions,
+): Promise<PluginDialogResult> => {
+  const win = context.getMainWindow();
+  const result = win
+    ? await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(options);
+  return {
+    canceled: result.canceled,
+    paths: result.filePaths,
+  };
+};
+
+export const registerPluginHandlers = (context: IpcContext) => {
+  ipcMain.handle('plugins:list', (): PluginListResult => listPlugins());
+  ipcMain.handle('plugins:get-directory', (): string => getPluginDirectory());
+  ipcMain.handle('plugins:open-directory', (): string => openPluginDirectory());
+  ipcMain.handle(
+    'plugins:dialog:select-directory',
+    (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
+      showPluginOpenDialog(
+        context,
+        sanitizeDialogOptions(options, [
+          'openDirectory',
+          ...(options?.multiple ? ['multiSelections' as const] : []),
+        ]),
+      ),
+  );
+  ipcMain.handle(
+    'plugins:dialog:select-files',
+    (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
+      showPluginOpenDialog(
+        context,
+        sanitizeDialogOptions(options, [
+          'openFile',
+          ...(options?.multiple ? ['multiSelections' as const] : []),
+        ]),
+      ),
+  );
+  ipcMain.handle(
+    'plugins:fs:list-image-files',
+    (
+      _event,
+      directoryPath: string,
+      options?: PluginListImageFilesOptions,
+    ): PluginListImageFilesResult => listPluginImageFiles(directoryPath, options),
+  );
+  ipcMain.handle(
+    'plugins:fs:get-file-url',
+    (_event, filePath: string): PluginFileUrlResult => getPluginFileUrl(filePath),
+  );
+  ipcMain.handle(
+    'plugins:set-enabled',
+    (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult =>
+      setPluginEnabled(pluginId, enabled),
+  );
+  ipcMain.handle(
+    'plugins:set-safe-mode',
+    (_event, enabled: boolean): PluginSetSafeModeResult => setPluginSafeMode(enabled),
+  );
+  ipcMain.handle(
+    'plugins:uninstall',
+    (_event, pluginId: string): PluginUninstallResult => uninstallPlugin(pluginId),
+  );
+  ipcMain.handle(
+    'plugins:startup:mark',
+    (_event, pluginIds: string[]): PluginReportFailureResult => markPluginStartup(pluginIds),
+  );
+  ipcMain.handle('plugins:startup:clear', (): PluginReportFailureResult => clearPluginStartup());
+  ipcMain.handle(
+    'plugins:active-session:set',
+    (_event, pluginIds: string[]): PluginReportFailureResult => setPluginActiveSession(pluginIds),
+  );
+  ipcMain.handle(
+    'plugins:failure:report',
+    (
+      _event,
+      failure: Omit<PluginFailureRecord, 'createdAt'> & {
+        createdAt?: number;
+        safeMode?: boolean;
+      },
+    ): PluginReportFailureResult => reportPluginFailure(failure),
+  );
+  ipcMain.handle(
+    'plugins:read-asset',
+    (_event, pluginId: string, asset: 'main' | 'style'): PluginAssetSourceResult =>
+      readPluginTextAsset(pluginId, asset),
+  );
+  ipcMain.handle('plugins:data:get', (_event, pluginId: string, key: string) =>
+    getPluginData(pluginId, key),
+  );
+  ipcMain.handle('plugins:data:set', (_event, pluginId: string, key: string, value: unknown) =>
+    setPluginData(pluginId, key, value),
+  );
+  ipcMain.handle('plugins:data:delete', (_event, pluginId: string, key: string) =>
+    deletePluginData(pluginId, key),
+  );
+};
+
+export const unregisterPluginHandlers = () => {
+  ipcMain.removeHandler('plugins:list');
+  ipcMain.removeHandler('plugins:get-directory');
+  ipcMain.removeHandler('plugins:open-directory');
+  ipcMain.removeHandler('plugins:dialog:select-directory');
+  ipcMain.removeHandler('plugins:dialog:select-files');
+  ipcMain.removeHandler('plugins:fs:list-image-files');
+  ipcMain.removeHandler('plugins:fs:get-file-url');
+  ipcMain.removeHandler('plugins:set-enabled');
+  ipcMain.removeHandler('plugins:set-safe-mode');
+  ipcMain.removeHandler('plugins:uninstall');
+  ipcMain.removeHandler('plugins:startup:mark');
+  ipcMain.removeHandler('plugins:startup:clear');
+  ipcMain.removeHandler('plugins:active-session:set');
+  ipcMain.removeHandler('plugins:failure:report');
+  ipcMain.removeHandler('plugins:read-asset');
+  ipcMain.removeHandler('plugins:data:get');
+  ipcMain.removeHandler('plugins:data:set');
+  ipcMain.removeHandler('plugins:data:delete');
+};

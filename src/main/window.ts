@@ -15,6 +15,7 @@ import {
   type MainWindowState as WindowState,
 } from './storage/settings';
 import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
+import { reportPluginRendererFailure } from './plugins';
 
 const minWidth: number = 1100;
 const minHeight: number = 720;
@@ -301,10 +302,22 @@ export async function createWindow() {
   };
 
   win.webContents.on('did-finish-load', enforceNoZoom);
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const pluginFailureRecorded = reportPluginRendererFailure(
+      'render-process-gone',
+      `主界面渲染进程异常退出：${details.reason}`,
+    );
+    if (pluginFailureRecorded && win && !win.isDestroyed()) {
+      win.reload();
+    }
+  });
   win.on('enter-full-screen', enforceNoZoomDeferred);
   win.on('leave-full-screen', enforceNoZoomDeferred);
   win.on('maximize', enforceNoZoomDeferred);
   win.on('unmaximize', enforceNoZoomDeferred);
+  win.on('unresponsive', () => {
+    reportPluginRendererFailure('unresponsive', '主界面渲染进程无响应，已记录插件救援信息。');
+  });
 
   if (url) {
     win.loadURL(url);

@@ -6,6 +6,7 @@ import App from './App.vue';
 import router from './router';
 import { logger } from '@/utils/logger';
 import { sqlitePersistPlugin } from '@/stores/sqlitePersist';
+import { installPluginRuntime } from '@/plugins/runtime';
 import './style.css';
 
 const app = createApp(App);
@@ -57,6 +58,15 @@ const getComponentSummary = (instance: ComponentPublicInstance | null): string =
   return instance.$?.type ? 'anonymous-component' : 'unknown';
 };
 
+const hasPluginSource = (...sources: unknown[]) =>
+  sources
+    .filter((source) => source !== null && source !== undefined)
+    .map((source) =>
+      source instanceof Error ? `${source.message}\n${source.stack ?? ''}` : String(source),
+    )
+    .join('\n')
+    .includes('echo-plugin:');
+
 const shouldSkipErrorRedirect = (status: string, message: string, from: string): boolean => {
   const signature = `${status}|${message}|${from}`;
   const now = Date.now();
@@ -102,6 +112,10 @@ app.config.errorHandler = (err: unknown, instance, info) => {
 window.addEventListener('error', (event) => {
   const errorMessage = event.error?.message ?? event.message ?? '';
   const filename = event.filename ?? '';
+  if (hasPluginSource(event.error, event.message, filename)) {
+    logger.warn('App', 'Plugin window error skipped by app boundary', errorMessage);
+    return;
+  }
 
   // Skip benign browser warnings that don't affect functionality
   const ignoredErrors = [
@@ -131,6 +145,10 @@ window.addEventListener('error', (event) => {
 });
 
 window.addEventListener('unhandledrejection', (event) => {
+  if (hasPluginSource(event.reason)) {
+    logger.warn('App', 'Plugin promise rejection skipped by app boundary', event.reason);
+    return;
+  }
   logger.error('App', 'Unhandled promise rejection', event.reason);
   void navigateToErrorPage(event.reason, 'Unhandled Rejection');
 });
@@ -157,4 +175,5 @@ router.onError((error) => {
 app.use(pinia);
 app.use(router);
 app.component('Icon', Icon);
+installPluginRuntime({ app, router, pinia });
 app.mount('#app');

@@ -13,6 +13,7 @@ import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
+import { refreshPlugins } from '@/plugins/runtime';
 import { getCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
 import LyricView from '@/views/lyric/LyricPage.vue';
@@ -101,6 +102,7 @@ onMounted(async () => {
       settings.checkForUpdates(true);
     }, 4000);
   }
+  void refreshPlugins();
   colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
   colorSchemeMediaQuery.addEventListener('change', updateTheme);
 });
@@ -215,15 +217,15 @@ watch(
       </RouteErrorBoundary>
     </transition>
   </RouterView>
-  <Teleport v-if="$route.name !== 'mini-player'" to="body">
+  <Teleport v-if="route.name !== 'mini-player'" to="body">
     <Transition name="lyric-overlay">
       <LyricView v-if="player.isLyricViewOpen" />
     </Transition>
   </Teleport>
-  <AuthExpiredDialog v-if="$route.name !== 'mini-player'" />
-  <ToastViewport v-if="$route.name !== 'mini-player'" />
+  <AuthExpiredDialog v-if="route.name !== 'mini-player'" />
+  <ToastViewport v-if="route.name !== 'mini-player'" />
   <UpdateDialog
-    v-if="$route.name !== 'mini-player'"
+    v-if="route.name !== 'mini-player'"
     v-model:open="showStartupUpdateDialog"
     :result="startupUpdateResult"
     dismiss-label="稍后"

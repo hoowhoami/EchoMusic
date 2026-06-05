@@ -415,7 +415,19 @@ const getAlbumCardProps = (album: ReturnType<typeof mapAlbumMeta>): ArtistAlbumC
   };
 };
 
-const albumCards = computed(() => albums.value.map((entry) => getAlbumCardProps(entry)));
+const albumSearchQuery = ref('');
+
+const filteredAlbums = computed(() => {
+  const query = albumSearchQuery.value.trim().toLowerCase();
+  if (!query) return albums.value;
+  return albums.value.filter((album) => {
+    const name = album.name?.toLowerCase() || '';
+    const publishTime = album.publishTime?.toLowerCase() || '';
+    return name.includes(query) || publishTime.includes(query);
+  });
+});
+
+const albumCards = computed(() => filteredAlbums.value.map((entry) => getAlbumCardProps(entry)));
 
 const mapMvItem = (item: Record<string, unknown>): ArtistMvCardProps => {
   const hdpic = String(item.hdpic ?? item.cover ?? '').replace('{size}', '400');
@@ -777,6 +789,24 @@ onUnmounted(() => {
                   >
                     <Icon :icon="iconCurrentLocation" width="18" height="18" />
                   </Button>
+                </div>
+
+                <!-- 专辑 tab 右侧搜索 -->
+                <div v-if="activeTab === 'albums'" class="flex items-center gap-2">
+                  <div class="relative">
+                    <input
+                      v-model="albumSearchQuery"
+                      type="text"
+                      placeholder="搜索专辑..."
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    />
+                    <Icon
+                      class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
+                      :icon="iconSearch"
+                      width="14"
+                      height="14"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

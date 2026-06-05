@@ -23,6 +23,20 @@ import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
 import type {
+  PluginAssetSourceResult,
+  PluginDialogResult,
+  PluginFileUrlResult,
+  PluginFailureRecord,
+  PluginListImageFilesOptions,
+  PluginListImageFilesResult,
+  PluginListResult,
+  PluginOpenDialogOptions,
+  PluginReportFailureResult,
+  PluginSetEnabledResult,
+  PluginSetSafeModeResult,
+  PluginUninstallResult,
+} from '../shared/plugins';
+import type {
   StorageAppendQueueItemsPayload,
   StoragePlaybackSnapshot,
   StoragePlaybackQueueState,
@@ -339,6 +353,59 @@ contextBridge.exposeInMainWorld('electron', {
   external: {
     resolvePlaylist: (req: ResolvePlaylistRequest) =>
       invokeWithPlainPayload<ResolvePlaylistResponse>('external:resolve-playlist', req),
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
+    getDirectory: () => ipcRenderer.invoke('plugins:get-directory') as Promise<string>,
+    openDirectory: () => ipcRenderer.invoke('plugins:open-directory') as Promise<string>,
+    setEnabled: (pluginId: string, enabled: boolean) =>
+      ipcRenderer.invoke(
+        'plugins:set-enabled',
+        pluginId,
+        enabled,
+      ) as Promise<PluginSetEnabledResult>,
+    setSafeMode: (enabled: boolean) =>
+      ipcRenderer.invoke('plugins:set-safe-mode', enabled) as Promise<PluginSetSafeModeResult>,
+    uninstall: (pluginId: string) =>
+      ipcRenderer.invoke('plugins:uninstall', pluginId) as Promise<PluginUninstallResult>,
+    markStartup: (pluginIds: string[]) =>
+      invokeWithPlainPayload<PluginReportFailureResult>('plugins:startup:mark', pluginIds),
+    clearStartup: () =>
+      ipcRenderer.invoke('plugins:startup:clear') as Promise<PluginReportFailureResult>,
+    setActiveSession: (pluginIds: string[]) =>
+      invokeWithPlainPayload<PluginReportFailureResult>('plugins:active-session:set', pluginIds),
+    reportFailure: (
+      failure: Omit<PluginFailureRecord, 'createdAt'> & {
+        createdAt?: number;
+        safeMode?: boolean;
+      },
+    ) => invokeWithPlainPayload<PluginReportFailureResult>('plugins:failure:report', failure),
+    readAsset: (pluginId: string, asset: 'main' | 'style') =>
+      ipcRenderer.invoke('plugins:read-asset', pluginId, asset) as Promise<PluginAssetSourceResult>,
+    dialog: {
+      selectDirectory: (options?: PluginOpenDialogOptions) =>
+        invokeWithPlainPayload<PluginDialogResult>('plugins:dialog:select-directory', options),
+      selectFiles: (options?: PluginOpenDialogOptions) =>
+        invokeWithPlainPayload<PluginDialogResult>('plugins:dialog:select-files', options),
+    },
+    fs: {
+      listImageFiles: (directoryPath: string, options?: PluginListImageFilesOptions) =>
+        invokeWithPlainPayload<PluginListImageFilesResult>(
+          'plugins:fs:list-image-files',
+          directoryPath,
+          options,
+        ),
+      getFileUrl: (filePath: string) =>
+        ipcRenderer.invoke('plugins:fs:get-file-url', filePath) as Promise<PluginFileUrlResult>,
+    },
+    storage: {
+      get: <T = unknown>(pluginId: string, key: string) =>
+        ipcRenderer.invoke('plugins:data:get', pluginId, key) as Promise<T | null>,
+      set: (pluginId: string, key: string, value: unknown) =>
+        invokeWithPlainPayload('plugins:data:set', pluginId, key, value),
+      delete: (pluginId: string, key: string) =>
+        ipcRenderer.invoke('plugins:data:delete', pluginId, key),
+    },
   },
   storage: {
     getPlaybackSnapshot: () =>

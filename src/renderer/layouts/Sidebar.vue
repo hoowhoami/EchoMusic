@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useAttrs, watch } from 'vue';
+import type { Component } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Avatar from '@/components/ui/Avatar.vue';
 import Button from '@/components/ui/Button.vue';
@@ -76,43 +77,6 @@ const currentUserIdNumber = computed<number | undefined>(() => {
   return typeof value === 'number' && value > 0 ? value : undefined;
 });
 
-const menuGroups = [
-  {
-    key: 'discover',
-    title: '发现音乐',
-    items: [
-      { name: '为您推荐', path: '/main/home', icon: 'sparkles' },
-      { name: '探索发现', path: '/main/explore', icon: 'compass' },
-    ],
-  },
-  {
-    key: 'library',
-    title: '我的乐库',
-    items: [
-      { name: '我最喜爱', path: '/main/favorites', icon: 'heart' },
-      { name: '私人 FM', path: '/main/personal-fm', icon: 'pulse' },
-      { name: '我的云盘', path: '/main/cloud', icon: 'cloud' },
-      { name: '播放历史', path: '/main/history', icon: 'clock' },
-    ],
-  },
-] as const;
-
-const isSectionCollapsed = (key: string) => settingStore.sidebarSectionCollapsed[key] ?? false;
-const visibleRailMenuGroups = computed(() =>
-  menuGroups.filter((group) => !isSectionCollapsed(group.key)),
-);
-const toggleSection = (key: string) => {
-  settingStore.sidebarSectionCollapsed = {
-    ...settingStore.sidebarSectionCollapsed,
-    [key]: !isSectionCollapsed(key),
-  };
-};
-
-const handleSortChange = (order: PlaylistSortOrder) => {
-  settingStore.playlistSortOrder = order;
-  showSortMenu.value = false;
-};
-
 const iconMap = {
   sparkles: iconSparkles,
   pulse: iconPulse,
@@ -122,6 +86,178 @@ const iconMap = {
   cloud: iconCloud,
   heart: iconHeart,
 } as const;
+
+type BuiltinSidebarIcon = keyof typeof iconMap;
+
+interface SidebarMenuItem {
+  id: string;
+  key: string;
+  title: string;
+  order: number;
+  path?: string;
+  builtinIcon?: BuiltinSidebarIcon;
+  before?: string;
+  after?: string;
+  disabled?: boolean | (() => boolean);
+  visible?: boolean | (() => boolean);
+  component?: Component;
+  railComponent?: Component;
+  onClick?: () => void | Promise<void>;
+}
+
+interface SidebarSection {
+  id: string;
+  title: string;
+  order: number;
+  collapsible: boolean;
+  items: SidebarMenuItem[];
+}
+
+const builtinSidebarSections = [
+  {
+    id: 'discover',
+    title: '发现音乐',
+    order: 100,
+    collapsible: true,
+    items: [
+      {
+        id: 'home',
+        key: 'home',
+        title: '为您推荐',
+        path: '/main/home',
+        builtinIcon: 'sparkles',
+        order: 10,
+      },
+      {
+        id: 'explore',
+        key: 'explore',
+        title: '探索发现',
+        path: '/main/explore',
+        builtinIcon: 'compass',
+        order: 20,
+      },
+    ],
+  },
+  {
+    id: 'library',
+    title: '我的乐库',
+    order: 200,
+    collapsible: true,
+    items: [
+      {
+        id: 'favorites',
+        key: 'favorites',
+        title: '我最喜爱',
+        path: '/main/favorites',
+        builtinIcon: 'heart',
+        order: 10,
+      },
+      {
+        id: 'personal-fm',
+        key: 'personal-fm',
+        title: '私人 FM',
+        path: '/main/personal-fm',
+        builtinIcon: 'pulse',
+        order: 20,
+      },
+      {
+        id: 'cloud',
+        key: 'cloud',
+        title: '我的云盘',
+        path: '/main/cloud',
+        builtinIcon: 'cloud',
+        order: 30,
+      },
+      {
+        id: 'history',
+        key: 'history',
+        title: '播放历史',
+        path: '/main/history',
+        builtinIcon: 'clock',
+        order: 40,
+      },
+    ],
+  },
+] satisfies SidebarSection[];
+
+const sortMenuItems = (items: SidebarMenuItem[]) => {
+  const sorted = items
+    .slice()
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.title.localeCompare(right.title, 'zh-Hans-CN'),
+    );
+
+  const matchesAnchor = (item: SidebarMenuItem, anchor: string) => {
+    return item.id === anchor || item.key === anchor || item.path === anchor;
+  };
+  const moveAroundAnchor = (
+    list: SidebarMenuItem[],
+    item: SidebarMenuItem,
+    anchor: string,
+    placement: 'before' | 'after',
+  ) => {
+    const from = list.findIndex((candidate) => candidate.key === item.key);
+    const to = list.findIndex((candidate) => matchesAnchor(candidate, anchor));
+    if (from < 0 || to < 0 || from === to) return;
+    const [moving] = list.splice(from, 1);
+    const nextTo = list.findIndex((candidate) => matchesAnchor(candidate, anchor));
+    if (nextTo < 0) {
+      list.splice(from, 0, moving);
+      return;
+    }
+    list.splice(placement === 'before' ? nextTo : nextTo + 1, 0, moving);
+  };
+
+  for (const item of sorted.slice()) {
+    if (item.before) moveAroundAnchor(sorted, item, item.before, 'before');
+    if (item.after) moveAroundAnchor(sorted, item, item.after, 'after');
+  }
+
+  return sorted;
+};
+
+const resolveFlag = (value?: boolean | (() => boolean), fallback = false) => {
+  if (typeof value === 'function') {
+    try {
+      return Boolean(value());
+    } catch {
+      return fallback;
+    }
+  }
+  return value ?? fallback;
+};
+
+const allMenuGroups = computed(() => {
+  return builtinSidebarSections
+    .map((section) => ({
+      ...section,
+      items: sortMenuItems(section.items).filter((item) => resolveFlag(item.visible, true)),
+    }))
+    .filter((section) => section.items.length > 0)
+    .sort(
+      (left, right) =>
+        left.order - right.order || left.title.localeCompare(right.title, 'zh-Hans-CN'),
+    );
+});
+
+const isSectionCollapsed = (section: SidebarSection) =>
+  section.collapsible && (settingStore.sidebarSectionCollapsed[section.id] ?? false);
+const visibleRailMenuGroups = computed(() =>
+  allMenuGroups.value.filter((group) => !isSectionCollapsed(group)),
+);
+const toggleSection = (section: SidebarSection) => {
+  if (!section.collapsible) return;
+  settingStore.sidebarSectionCollapsed = {
+    ...settingStore.sidebarSectionCollapsed,
+    [section.id]: !isSectionCollapsed(section),
+  };
+};
+
+const handleSortChange = (order: PlaylistSortOrder) => {
+  settingStore.playlistSortOrder = order;
+  showSortMenu.value = false;
+};
 
 const getPlaylistIdentityList = (playlist: PlaylistMeta): string[] => {
   return [
@@ -370,18 +506,27 @@ const handleRemovePlaylist = async () => {
   }
 };
 
-const isMenuItemDisabled = (item?: { path: string; action?: string }) => {
-  void item;
-  return false;
+const isMenuItemDisabled = (item?: SidebarMenuItem) => {
+  if (!item) return true;
+  if (resolveFlag(item.disabled, false)) return true;
+  return !item.path && !item.onClick && !item.component && !item.railComponent;
 };
 
-const handleMenuClick = (item: { path: string; action?: string }) => {
+const handleMenuClick = async (item: SidebarMenuItem) => {
   if (isMenuItemDisabled(item)) return;
-  navigateTo(item.path);
+  try {
+    if (item.onClick) {
+      await item.onClick();
+      return;
+    }
+    if (item.path) navigateTo(item.path);
+  } catch {
+    toastStore.actionFailed(item.title);
+  }
 };
 
-const isMenuItemActive = (item: { path: string; action?: string }) => {
-  return route.path === item.path;
+const isMenuItemActive = (item: SidebarMenuItem) => {
+  return Boolean(item.path && route.path === item.path);
 };
 
 const syncCloudData = () => {
@@ -464,15 +609,23 @@ watch(
         </div>
 
         <div v-if="visibleRailMenuGroups.length > 0" class="sidebar-rail-nav">
-          <template v-for="group in visibleRailMenuGroups" :key="group.key">
+          <template v-for="group in visibleRailMenuGroups" :key="group.id">
             <div class="sidebar-rail-divider" aria-hidden="true"></div>
-            <Tooltip v-for="item in group.items" :key="item.path" :content="item.name" side="right">
+            <Tooltip v-for="item in group.items" :key="item.key" :content="item.title" side="right">
               <template #trigger>
+                <component
+                  :is="item.railComponent"
+                  v-if="item.railComponent"
+                  :item="item"
+                  :section="group"
+                  :collapsed="true"
+                />
                 <Button
+                  v-else
                   variant="unstyled"
                   size="none"
                   :disabled="isMenuItemDisabled(item)"
-                  :title="item.name"
+                  :title="item.title"
                   :class="[
                     'sidebar-rail-item',
                     isMenuItemDisabled(item)
@@ -483,7 +636,12 @@ watch(
                   ]"
                   @click="handleMenuClick(item)"
                 >
-                  <Icon :icon="iconMap[item.icon as keyof typeof iconMap]" width="19" height="19" />
+                  <Icon
+                    v-if="item.builtinIcon"
+                    :icon="iconMap[item.builtinIcon]"
+                    width="19"
+                    height="19"
+                  />
                 </Button>
               </template>
             </Tooltip>
@@ -736,60 +894,71 @@ watch(
         </div>
 
         <div class="px-4 shrink-0 no-drag">
-          <div v-for="group in menuGroups" :key="group.title" class="mb-4">
+          <div v-for="group in allMenuGroups" :key="group.id" class="mb-4">
             <h2
-              class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 cursor-pointer select-none"
-              @click="toggleSection(group.key)"
+              class="sidebar-section-header px-3.5 text-[11px] font-semibold text-text-main/60 uppercase tracking-[0.5px] mb-2 flex items-center gap-1 select-none"
+              :class="group.collapsible ? 'cursor-pointer' : 'cursor-default'"
+              @click="toggleSection(group)"
             >
               {{ group.title }}
               <Icon
+                v-if="group.collapsible"
                 :icon="iconChevronDown"
                 width="10"
                 height="10"
                 class="sidebar-collapse-arrow transition-transform duration-200 ml-auto"
-                :class="{ '-rotate-90': isSectionCollapsed(group.key) }"
+                :class="{ '-rotate-90': isSectionCollapsed(group) }"
               />
             </h2>
             <nav
               class="sidebar-section-body"
-              :class="{ 'is-collapsed': isSectionCollapsed(group.key) }"
+              :class="{ 'is-collapsed': isSectionCollapsed(group) }"
             >
               <div class="space-y-0.5">
-                <Button
-                  v-for="item in group.items"
-                  :key="item.path"
-                  variant="unstyled"
-                  size="none"
-                  :disabled="isMenuItemDisabled(item)"
-                  :class="[
-                    'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
-                    isMenuItemDisabled(item)
-                      ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
-                      : isMenuItemActive(item)
-                        ? 'is-active cursor-pointer bg-primary/12 text-primary'
-                        : 'cursor-pointer text-text-main/90',
-                  ]"
-                  @click="handleMenuClick(item)"
-                >
-                  <Icon
-                    :icon="iconMap[item.icon as keyof typeof iconMap]"
-                    width="18"
-                    height="18"
-                    :class="[
-                      isMenuItemDisabled(item)
-                        ? 'text-text-main opacity-40'
-                        : isMenuItemActive(item)
-                          ? 'text-primary'
-                          : 'text-text-main opacity-60 group-hover:opacity-100',
-                    ]"
+                <template v-for="item in group.items" :key="item.key">
+                  <component
+                    :is="item.component"
+                    v-if="item.component"
+                    :item="item"
+                    :section="group"
+                    :collapsed="false"
                   />
-                  <span
-                    class="text-[14px]"
-                    :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+                  <Button
+                    v-else
+                    variant="unstyled"
+                    size="none"
+                    :disabled="isMenuItemDisabled(item)"
+                    :class="[
+                      'sidebar-nav-item w-full flex items-center gap-3.5 px-3.5 py-2 rounded-[14px] transition-all duration-200 group active:scale-[0.98]',
+                      isMenuItemDisabled(item)
+                        ? 'is-disabled cursor-not-allowed opacity-35 text-text-main/55'
+                        : isMenuItemActive(item)
+                          ? 'is-active cursor-pointer bg-primary/12 text-primary'
+                          : 'cursor-pointer text-text-main/90',
+                    ]"
+                    @click="handleMenuClick(item)"
                   >
-                    {{ item.name }}
-                  </span>
-                </Button>
+                    <Icon
+                      v-if="item.builtinIcon"
+                      :icon="iconMap[item.builtinIcon]"
+                      width="18"
+                      height="18"
+                      :class="[
+                        isMenuItemDisabled(item)
+                          ? 'text-text-main opacity-40'
+                          : isMenuItemActive(item)
+                            ? 'text-primary'
+                            : 'text-text-main opacity-60 group-hover:opacity-100',
+                      ]"
+                    />
+                    <span
+                      class="text-[14px]"
+                      :class="[isMenuItemActive(item) ? 'font-semibold' : 'font-normal']"
+                    >
+                      {{ item.title }}
+                    </span>
+                  </Button>
+                </template>
               </div>
             </nav>
           </div>
