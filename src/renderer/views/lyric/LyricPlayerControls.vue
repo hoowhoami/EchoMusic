@@ -341,6 +341,7 @@ const handleCopySongInfo = async () => {
             <Icon :icon="iconTypography" width="20" height="20" />
           </Button>
           <Badge
+            v-if="settingStore.showDesktopLyricStatus"
             :count="desktopLyricStore.settings.enabled ? 'ON' : 'OFF'"
             class="-top-px"
             style="right: -5px"
