@@ -26,6 +26,7 @@ import { usePlaylistStore } from '@/stores/playlist';
 import { usePlayerStore } from '@/stores/player';
 import { useUserStore } from '@/stores/user';
 import { useSettingStore } from '@/stores/setting';
+import { useToastStore } from '@/stores/toast';
 import { queueAndPlaySong } from '@/utils/playback';
 import { logger } from '@/utils/logger';
 import type { Song } from '@/models/song';
@@ -38,6 +39,7 @@ const playlistStore = usePlaylistStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
 const settingStore = useSettingStore();
+const toastStore = useToastStore();
 
 const showPlaylistDialog = ref(false);
 const isPlaylistLoading = ref(false);
@@ -309,15 +311,34 @@ async function handleAddToPlaylist() {
   showPlaylistDialog.value = true;
   if (playlistStore.userPlaylists.length === 0) {
     isPlaylistLoading.value = true;
-    await playlistStore.fetchUserPlaylists();
-    isPlaylistLoading.value = false;
+    try {
+      await playlistStore.fetchUserPlaylists();
+    } catch {
+      toastStore.loadFailed('歌单');
+    } finally {
+      isPlaylistLoading.value = false;
+    }
   }
 }
 
 async function handleSelectPlaylist(listId: string | number) {
   if (!matchedSong.value) return;
-  await playlistStore.addToPlaylist(String(listId), matchedSong.value);
-  showPlaylistDialog.value = false;
+  try {
+    const result = await playlistStore.addToPlaylist(String(listId), matchedSong.value);
+    if (result === 'added') {
+      toastStore.actionCompleted('添加成功');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    if (result === 'exists') {
+      toastStore.warning('歌单中已有此内容');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    toastStore.actionFailed('添加到歌单');
+  } catch {
+    toastStore.actionFailed('添加到歌单');
+  }
 }
 
 onMounted(() => {

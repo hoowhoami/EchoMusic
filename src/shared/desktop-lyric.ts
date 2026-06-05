@@ -14,6 +14,7 @@ export type LyricLinePayload = {
 
 export type DesktopLyricPlaybackPayload = {
   trackId: string;
+  lyricHash: string;
   title: string;
   artist: string;
   album?: string;
@@ -81,6 +82,8 @@ export type DesktopLyricLockPhase = 'idle' | 'locking' | 'unlocking';
 
 export type DesktopLyricSnapshot = {
   playback: DesktopLyricPlaybackPayload | null;
+  lyricsTrackId: string | null;
+  lyricsRevision: number;
   lyrics: LyricLinePayload[];
   currentIndex: number;
   settings: DesktopLyricSettings;
@@ -90,7 +93,10 @@ export type DesktopLyricSnapshot = {
 };
 
 export type DesktopLyricSnapshotPatch = Partial<
-  Pick<DesktopLyricSnapshot, 'playback' | 'lyrics' | 'currentIndex' | 'lyricSyncWarning'>
+  Pick<
+    DesktopLyricSnapshot,
+    'playback' | 'lyricsTrackId' | 'lyrics' | 'currentIndex' | 'lyricSyncWarning'
+  >
 > & {
   settings?: Partial<DesktopLyricSettings>;
 };

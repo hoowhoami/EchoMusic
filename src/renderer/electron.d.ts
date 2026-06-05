@@ -117,9 +117,11 @@ export interface IElectronAPI {
     show: () => Promise<MiniPlayerSnapshot>;
     hide: () => Promise<MiniPlayerSnapshot>;
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) => void;
-    setExpanded: (expanded: boolean) => void;
+    setExpanded: (expanded: boolean) => Promise<MiniPlayerSnapshot>;
+    setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<MiniPlayerSnapshot>;
     getBounds: () => Promise<{ x: number; y: number; width: number; height: number }>;
     move: (x: number, y: number) => void;
+    applyExpandBounds: () => Promise<MiniPlayerSnapshot>;
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => () => void;
     command: (command: MiniPlayerCommand) => void;
     onCommand: (func: (command: MiniPlayerCommand) => void) => () => void;

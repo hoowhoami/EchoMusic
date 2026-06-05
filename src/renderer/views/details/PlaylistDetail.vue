@@ -48,6 +48,7 @@ import { PagedSongLoader } from '@/utils/PagedSongLoader';
 import PageScrollContainer from '@/components/ui/PageScrollContainer.vue';
 import { useScrollContainer } from '@/composables/usePageScroll';
 import { filterSongsByQuery, sortSongs } from '@/utils/songList';
+import { isSameSong } from '@/utils/song';
 
 const parseIntSafe = (value: unknown): number => {
   if (value == null) return 0;
@@ -101,6 +102,10 @@ const currentPlaylistIds = computed(() => {
     .filter((item): item is string | number => item !== undefined && item !== null && item !== '')
     .map((item) => String(item));
 });
+
+const currentPlaylistContentIds = computed(() =>
+  Array.from(new Set([getPlaylistId(), ...currentPlaylistIds.value].filter(Boolean))),
+);
 
 const isFavoritePlaylist = computed(() => {
   if (!playlist.value) return false;
@@ -282,10 +287,48 @@ watch(scrollContainerRef, () => {
 
 // 歌曲分页加载器
 let songLoader: PagedSongLoader<Song> | null = null;
+let pendingAddedPlaylistSongs: Song[] = [];
+let pendingRemovedPlaylistSongs: Song[] = [];
+
+const isCurrentPlaylistSongCacheComplete = (items: readonly Song[] = songs.value) => {
+  const total = playlist.value?.count ?? 0;
+  if (total <= 0) return false;
+  return items.length + playlistFilteredInvalidCount.value >= total;
+};
+
+const hasMatchingSong = (items: readonly Song[], song: Song) =>
+  items.some((item) => String(item.id) === String(song.id) || isSameSong(item, song));
+
+const withoutMatchingSongs = (items: readonly Song[], targets: readonly Song[]) =>
+  items.filter(
+    (item) =>
+      !targets.some((song) => String(song.id) === String(item.id) || isSameSong(song, item)),
+  );
+
+const mergePlaylistLocalChanges = (items: readonly Song[]) => {
+  const withoutRemoved = withoutMatchingSongs(items, pendingRemovedPlaylistSongs);
+  const additions = pendingAddedPlaylistSongs.filter(
+    (song) => !hasMatchingSong(withoutRemoved, song),
+  );
+  return [...additions, ...withoutRemoved];
+};
+
+const updateSongsFromLoader = (items: readonly Song[], complete = false) => {
+  const mergedSongs = mergePlaylistLocalChanges(items);
+  songs.value = mergedSongs;
+  loadedSongCount.value = mergedSongs.length;
+  playlistStore.rememberPlaylistSongs(
+    playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+    mergedSongs,
+    complete && isCurrentPlaylistSongCacheComplete(mergedSongs),
+  );
+};
 
 const fetchData = async () => {
   loading.value = true;
   try {
+    pendingAddedPlaylistSongs = [];
+    pendingRemovedPlaylistSongs = [];
     const detailRes = await getPlaylistDetail(getPlaylistId());
     if (detailRes) {
       const { status, data } = detailRes;
@@ -340,20 +383,10 @@ const fetchData = async () => {
         dedupeKey: (song) => String(song.id),
         logTag: 'PlaylistDetailLoader',
         onPageLoaded(allItems) {
-          songs.value = allItems.slice();
-          loadedSongCount.value = allItems.length;
-          playlistStore.rememberPlaylistSongs(
-            playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
-            allItems,
-          );
+          updateSongsFromLoader(allItems, false);
         },
         onComplete(allItems) {
-          songs.value = allItems.slice();
-          loadedSongCount.value = allItems.length;
-          playlistStore.rememberPlaylistSongs(
-            playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
-            allItems,
-          );
+          updateSongsFromLoader(allItems, true);
         },
         onError() {
           toastStore.loadFailed('歌单歌曲');
@@ -465,15 +498,99 @@ const handleSongDoubleTapPlay = async (song: Song) => {
 };
 
 const handleRemovedFromPlaylist = (song: Song) => {
+  const beforeCount = songs.value.length;
   songs.value = songs.value.filter((s) => String(s.id) !== String(song.id));
+  const removedCount = beforeCount - songs.value.length;
   loadedSongCount.value = songs.value.length;
   playlistStore.forgetPlaylistSongs(
     playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
     [song],
   );
-  if (playlist.value && typeof playlist.value.count === 'number') {
-    playlist.value = { ...playlist.value, count: Math.max(0, playlist.value.count - 1) };
+  if (playlist.value && typeof playlist.value.count === 'number' && removedCount > 0) {
+    playlist.value = {
+      ...playlist.value,
+      count: Math.max(0, playlist.value.count - removedCount),
+    };
   }
+};
+
+const appliedPlaylistChangeIds = new Set<number>();
+
+const applyAddedPlaylistSongs = (incomingSongs: readonly Song[]) => {
+  const additions = incomingSongs.filter((song) => !hasMatchingSong(songs.value, song));
+  pendingRemovedPlaylistSongs = withoutMatchingSongs(pendingRemovedPlaylistSongs, incomingSongs);
+  incomingSongs.forEach((song) => {
+    if (!hasMatchingSong(pendingAddedPlaylistSongs, song)) {
+      pendingAddedPlaylistSongs.push(song);
+    }
+  });
+  if (additions.length === 0) {
+    songs.value = mergePlaylistLocalChanges(songs.value);
+    return;
+  }
+  songs.value = mergePlaylistLocalChanges(songs.value);
+  loadedSongCount.value = songs.value.length;
+  playlistStore.rememberPlaylistSongs(
+    playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+    songs.value,
+    isCurrentPlaylistSongCacheComplete(),
+  );
+  if (playlist.value && typeof playlist.value.count === 'number') {
+    playlist.value = { ...playlist.value, count: playlist.value.count + additions.length };
+  }
+};
+
+const applyRemovedPlaylistSongs = (removedSongs: readonly Song[]) => {
+  const beforeCount = songs.value.length;
+  pendingAddedPlaylistSongs = withoutMatchingSongs(pendingAddedPlaylistSongs, removedSongs);
+  removedSongs.forEach((song) => {
+    if (!hasMatchingSong(pendingRemovedPlaylistSongs, song)) {
+      pendingRemovedPlaylistSongs.push(song);
+    }
+  });
+  songs.value = mergePlaylistLocalChanges(songs.value);
+  const removedCount = beforeCount - songs.value.length;
+  if (removedCount === 0) return;
+  loadedSongCount.value = songs.value.length;
+  playlistStore.rememberPlaylistSongs(
+    playlist.value?.listid ?? playlist.value?.id ?? getPlaylistId(),
+    songs.value,
+    isCurrentPlaylistSongCacheComplete(),
+  );
+  if (playlist.value && typeof playlist.value.count === 'number') {
+    playlist.value = {
+      ...playlist.value,
+      count: Math.max(0, playlist.value.count - removedCount),
+    };
+  }
+};
+
+const applyPlaylistContentChanges = () => {
+  const changesById = new Map<
+    number,
+    { id: number; action: 'add' | 'remove' | 'refresh'; songs: Song[] }
+  >();
+  currentPlaylistContentIds.value.forEach((id) => {
+    (playlistStore.playlistContentChanges[id] ?? []).forEach((change) => {
+      changesById.set(change.id, change);
+    });
+  });
+
+  Array.from(changesById.values())
+    .sort((left, right) => left.id - right.id)
+    .forEach((change) => {
+      if (appliedPlaylistChangeIds.has(change.id)) return;
+      appliedPlaylistChangeIds.add(change.id);
+      if (change.action === 'add') {
+        applyAddedPlaylistSongs(change.songs);
+        return;
+      }
+      if (change.action === 'remove') {
+        applyRemovedPlaylistSongs(change.songs);
+        return;
+      }
+      void fetchData();
+    });
 };
 
 const handlePlayAll = async () => {
@@ -523,6 +640,17 @@ const sortedSongs = computed(() =>
   }),
 );
 const displayedSongs = computed(() => filterSongsByQuery(sortedSongs.value, searchQuery.value));
+
+watch(
+  () =>
+    currentPlaylistContentIds.value
+      .map((id) => `${id}:${playlistStore.playlistContentVersions[id] ?? 0}`)
+      .join('|'),
+  () => {
+    applyPlaylistContentChanges();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

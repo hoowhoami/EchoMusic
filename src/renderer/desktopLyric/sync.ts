@@ -26,9 +26,11 @@ const buildPlaybackPayload = (): DesktopLyricPlaybackPayload | null => {
   const playerStore = usePlayerStore();
   const track = playerStore.currentTrackSnapshot;
   if (!track || !playerStore.currentTrackId) return null;
+  const lyricHash = String(track.hash ?? track.id ?? playerStore.currentTrackId ?? '').trim();
 
   return {
     trackId: String(playerStore.currentTrackId),
+    lyricHash,
     title: String(track.title || track.name || '未知歌曲'),
     artist: String(
       track.artist || track.artists?.map((item: any) => item.name).join(' / ') || '未知歌手',
@@ -59,7 +61,8 @@ export const initDesktopLyricSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
-  const { lines, currentIndex, wantTranslation, wantRomanization } = storeToRefs(lyricStore);
+  const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash } =
+    storeToRefs(lyricStore);
   const settingStore = useSettingStore();
 
   const buildSyncedSettings = (settings = desktopLyricStore.settings) => {
@@ -128,11 +131,15 @@ export const initDesktopLyricSync = async () => {
   };
 
   const syncLyricsSnapshot = async () => {
-    const lyrics = buildLyricsPayload();
-    const nextLyricsKey = JSON.stringify({ lyrics });
+    const playback = buildPlaybackPayload();
+    const lyricsTrackId = playback?.lyricHash || playback?.trackId || null;
+    const lyrics = lyricStore.loadedHash === (lyricsTrackId ?? '') ? buildLyricsPayload() : [];
+    const nextLyricsKey = JSON.stringify({ lyricsTrackId, lyrics });
     if (nextLyricsKey === lastSyncedLyricsKey) return;
 
     window.electron.desktopLyric.syncSnapshot({
+      playback,
+      lyricsTrackId,
       lyrics,
     });
     lastSyncedLyricsKey = nextLyricsKey;
@@ -169,6 +176,7 @@ export const initDesktopLyricSync = async () => {
       currentIndex: nextSnapshot.currentIndex,
     });
     lastSyncedLyricsKey = JSON.stringify({
+      lyricsTrackId: nextSnapshot.lyricsTrackId,
       lyrics: nextSnapshot.lyrics,
     });
   });
@@ -189,7 +197,7 @@ export const initDesktopLyricSync = async () => {
 
   stops.push(
     watch(
-      [lines],
+      [lines, loadedHash, currentTrackId, currentTrackSnapshot],
       () => {
         void syncLyricsSnapshot();
       },

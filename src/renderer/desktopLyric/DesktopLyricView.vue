@@ -172,7 +172,23 @@ const PLAYBACK_STALE_THRESHOLD = 1800;
 
 const settings = computed(() => snapshot.value?.settings);
 const playback = computed(() => snapshot.value?.playback);
-const lyrics = computed(() => snapshot.value?.lyrics ?? []);
+const activeLyricsTrackId = computed(
+  () => playback.value?.lyricHash || playback.value?.trackId || null,
+);
+const lyricsSnapshotKey = computed(
+  () => snapshot.value?.lyricsTrackId || activeLyricsTrackId.value || 'idle',
+);
+const renderScopeKey = computed(
+  () =>
+    `${activeLyricsTrackId.value || 'idle'}:${lyricsSnapshotKey.value}:${
+      snapshot.value?.lyricsRevision ?? 0
+    }`,
+);
+const lyrics = computed(() => {
+  if (!snapshot.value) return [];
+  if (snapshot.value.lyricsTrackId !== activeLyricsTrackId.value) return [];
+  return snapshot.value.lyrics ?? [];
+});
 const isLocked = computed(() => settings.value?.locked ?? false);
 
 // 本地计算 currentIndex，不再依赖主窗口传来的值
@@ -277,7 +293,7 @@ const placeholder = (word: string): RenderLine[] => [
   {
     line: { time: 0, text: word, characters: [{ text: word, startTime: 0, endTime: 0 }] },
     index: -1,
-    key: 'placeholder',
+    key: `${renderScopeKey.value}:placeholder`,
     active: true,
   },
 ];
@@ -335,7 +351,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
         {
           line: { ...current, characters: current.characters.map((c) => ({ ...c })) },
           index: idx,
-          key: `${idx}-orig`,
+          key: `${renderScopeKey.value}:${idx}-orig`,
           active: true,
         },
         {
@@ -351,7 +367,7 @@ const renderLyricLines = computed<RenderLine[]>(() => {
             ],
           },
           index: idx,
-          key: `${idx}-secondary`,
+          key: `${renderScopeKey.value}:${idx}-secondary`,
           active: false,
         },
       ];
@@ -359,16 +375,30 @@ const renderLyricLines = computed<RenderLine[]>(() => {
   }
   // 双行模式：当前 + 下一句
   if (doubleLine.value) {
-    const result: RenderLine[] = [{ line: current, index: idx, key: `${idx}-orig`, active: true }];
+    const result: RenderLine[] = [
+      { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
+    ];
     if (next) {
-      result.push({ line: next, index: idx + 1, key: `${idx + 1}-orig`, active: false });
+      result.push({
+        line: next,
+        index: idx + 1,
+        key: `${renderScopeKey.value}:${idx + 1}-orig`,
+        active: false,
+      });
     }
     return result;
   }
   // 单行模式：也预渲染下一句（视觉隐藏），切换时走 move 动画而非 enter/leave
-  const result: RenderLine[] = [{ line: current, index: idx, key: `${idx}-orig`, active: true }];
+  const result: RenderLine[] = [
+    { line: current, index: idx, key: `${renderScopeKey.value}:${idx}-orig`, active: true },
+  ];
   if (next) {
-    result.push({ line: next, index: idx + 1, key: `${idx + 1}-orig`, active: false });
+    result.push({
+      line: next,
+      index: idx + 1,
+      key: `${renderScopeKey.value}:${idx + 1}-orig`,
+      active: false,
+    });
   }
   return result;
 });
@@ -378,6 +408,10 @@ const isYrcLine = (line: LyricLinePayload) => (line.characters?.length ?? 0) > 1
 // 歌词行引用管理 (用于手动 DOM 补丁)
 const lineRefs = new Map<string, HTMLElement>();
 const contentRefs = new Map<string, HTMLElement>();
+const resetLyricDomCache = () => {
+  cachedYrcElements = [];
+  cachedYrcLineKey = '';
+};
 const setLineRef = (el: Element | ComponentPublicInstance | null, key: string) => {
   if (el) lineRefs.set(key, el as HTMLElement);
   else lineRefs.delete(key);
@@ -386,6 +420,13 @@ const setContentRef = (el: Element | ComponentPublicInstance | null, key: string
   if (el) contentRefs.set(key, el as HTMLElement);
   else contentRefs.delete(key);
 };
+
+watch(renderScopeKey, () => {
+  resetLyricDomCache();
+  lineRefs.clear();
+  contentRefs.clear();
+  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw);
+});
 
 // 拖拽
 // EchoMusic 的 preload send 只接受 (channel, data)，多参数包装成数组

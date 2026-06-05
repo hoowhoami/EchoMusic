@@ -8,6 +8,7 @@ import {
   iconHeartFilled,
   iconMusic,
   iconPause,
+  iconPinned,
   iconPlay,
   iconSkipBack,
   iconSkipForward,
@@ -22,6 +23,7 @@ import {
 import type {
   MiniPlayerAppearancePayload,
   MiniPlayerCommand,
+  MiniPlayerExpandDirection,
   MiniPlayerLyricPayload,
   MiniPlayerPlaybackPayload,
   MiniPlayerQueuePayload,
@@ -35,6 +37,8 @@ const cardCollapsedHeight = `${MINI_PLAYER_DIMENSIONS.controlsHeight}px`;
 const cardExpandedHeight = `${
   MINI_PLAYER_DIMENSIONS.expandedHeight - MINI_PLAYER_DIMENSIONS.shellPadding * 2
 }px`;
+const COLLAPSE_ANCHOR_HOLD_MS = 320;
+const isMac = navigator.platform.toLowerCase().includes('mac');
 
 const playback = ref<MiniPlayerPlaybackPayload | null>(null);
 const appearance = ref<MiniPlayerAppearancePayload | null>(null);
@@ -42,12 +46,18 @@ const queue = ref<MiniPlayerQueuePayload | null>(null);
 const lyric = ref<MiniPlayerLyricPayload | null>(null);
 const lyricCoverUrl = ref('');
 const expandedMode = ref<'queue' | 'lyric' | null>(null);
+const alwaysOnTop = ref(false);
+const expandDirection = ref<MiniPlayerExpandDirection>('down');
+const shellDirectionHold = ref<MiniPlayerExpandDirection | null>(null);
+const isPreparingExpand = ref(false);
+const preparingExpandedMode = ref<'queue' | 'lyric' | null>(null);
 const isHovered = ref(false);
 const isDraggingSeek = ref(false);
 const pendingSeekRatio = ref<number | null>(null);
 const isVolumeOpen = ref(false);
 const isDraggingVolume = ref(false);
 let volumeCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let shellDirectionHoldTimer: ReturnType<typeof setTimeout> | null = null;
 let disposeSnapshot: (() => void) | null = null;
 let lastAppliedLyricTrackId: string | null = null;
 let lastAppliedLyricIndex = -1;
@@ -56,8 +66,15 @@ let lastAppliedLyricTime = 0;
 const isQueueOpen = computed(() => expandedMode.value === 'queue');
 const isLyricOpen = computed(() => expandedMode.value === 'lyric');
 const isExpanded = computed(() => expandedMode.value !== null);
+const activeShellDirection = computed(() => {
+  if (shellDirectionHold.value) return shellDirectionHold.value;
+  if (isExpanded.value) return expandDirection.value;
+  return 'down';
+});
 
-const volumePercent = computed(() => Math.round((playback.value?.volume ?? 0) * 100));
+const volumePercent = computed(() =>
+  Math.round(Math.min(1, Math.max(0, playback.value?.volume ?? 0)) * 100),
+);
 
 const progressPercent = computed(() => {
   const duration = playback.value?.duration ?? 0;
@@ -250,6 +267,10 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
     Object.assign(playback.value, nextPlayback);
   }
   appearance.value = snapshot?.appearance ?? appearance.value;
+  if (snapshot?.window) {
+    alwaysOnTop.value = snapshot.window.alwaysOnTop;
+    expandDirection.value = snapshot.window.expandDirection;
+  }
   queue.value = snapshot?.queue ?? null;
   if (shouldApplyLyricSnapshot(nextLyric, lyric.value)) {
     lyric.value = mergeLyricSnapshot(nextLyric);
@@ -313,8 +334,7 @@ const handleDragPointerUp = (event: PointerEvent) => {
   if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
 };
 
-// 音量：点击图标=静音切换；悬停展开横向滑块拖动调节（不支持滚轮调节）。
-// 因 mini 窗口贴合卡片且透明，竖向弹层会被裁切，故滑块从图标向左浮出。
+// 音量：点击图标=静音切换；悬停展开竖向滑块，可拖动或滚轮微调。
 const clearVolumeCloseTimer = () => {
   if (volumeCloseTimer) {
     clearTimeout(volumeCloseTimer);
@@ -322,32 +342,66 @@ const clearVolumeCloseTimer = () => {
   }
 };
 
+const clearShellDirectionHoldTimer = () => {
+  if (shellDirectionHoldTimer) {
+    clearTimeout(shellDirectionHoldTimer);
+    shellDirectionHoldTimer = null;
+  }
+};
+
+const holdShellDirection = (direction = expandDirection.value) => {
+  clearShellDirectionHoldTimer();
+  shellDirectionHold.value = direction;
+};
+
+const releaseShellDirectionHoldSoon = () => {
+  clearShellDirectionHoldTimer();
+  shellDirectionHoldTimer = setTimeout(() => {
+    shellDirectionHoldTimer = null;
+    shellDirectionHold.value = null;
+  }, COLLAPSE_ANCHOR_HOLD_MS);
+};
+
 const openVolume = () => {
   clearVolumeCloseTimer();
   isVolumeOpen.value = true;
 };
 
-const scheduleVolumeClose = () => {
+const scheduleVolumeClose = (delay: number | Event = 260) => {
   if (isDraggingVolume.value) return;
+  const closeDelay = typeof delay === 'number' ? delay : 260;
   clearVolumeCloseTimer();
   volumeCloseTimer = setTimeout(() => {
     volumeCloseTimer = null;
-    isVolumeOpen.value = false;
-  }, 160);
+    closeVolume();
+  }, closeDelay);
+};
+
+const closeVolume = (immediate = false) => {
+  clearVolumeCloseTimer();
+  if (!isVolumeOpen.value && !immediate) return;
+  isVolumeOpen.value = false;
+};
+
+const setVolume = (value: number) => {
+  const nextVolume = Math.min(1, Math.max(0, value));
+  if (playback.value) playback.value.volume = nextVolume;
+  command({ type: 'setVolume', value: nextVolume });
 };
 
 const setVolumeFromEvent = (event: PointerEvent, sliderEl: HTMLElement) => {
-  // 以轨道（track）宽度计算比例，排除右侧数值标签占位，保证拖到最右即 100%
+  // 横向轨道保持在 mini 窗口内部，不触发 BrowserWindow 尺寸变化。
   const track = sliderEl.querySelector('.mini-volume-track') as HTMLElement | null;
   const rect = (track ?? sliderEl).getBoundingClientRect();
   if (rect.width <= 0) return;
   const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-  if (playback.value) playback.value.volume = ratio;
-  command({ type: 'setVolume', value: ratio });
+  setVolume(ratio);
 };
 
 const handleVolumePointerDown = (event: PointerEvent) => {
   if (!playback.value) return;
+  clearVolumeCloseTimer();
+  openVolume();
   const el = event.currentTarget as HTMLElement;
   isDraggingVolume.value = true;
   el.setPointerCapture(event.pointerId);
@@ -364,6 +418,18 @@ const handleVolumePointerUp = (event: PointerEvent) => {
   const el = event.currentTarget as HTMLElement;
   if (el.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
   isDraggingVolume.value = false;
+  scheduleVolumeClose(900);
+};
+
+const handleVolumeWheel = (event: WheelEvent) => {
+  if (!playback.value) return;
+  clearVolumeCloseTimer();
+  openVolume();
+  const normalized = Math.sign(event.deltaY) * Math.min(Math.abs(event.deltaY), 120);
+  const step = (normalized / 120) * 0.05;
+  const direction = isMac ? 1 : -1;
+  setVolume((playback.value.volume ?? 0) + step * direction);
+  scheduleVolumeClose(1200);
 };
 
 const ratioFromEvent = (event: PointerEvent, el: HTMLElement) => {
@@ -401,6 +467,7 @@ const handleSeekPointerUp = (event: PointerEvent) => {
 };
 
 let expandFrameTimer: ReturnType<typeof setTimeout> | null = null;
+let expandRequestSeq = 0;
 
 const cancelExpandFrame = () => {
   if (expandFrameTimer) {
@@ -418,32 +485,110 @@ const setQueueOpen = (open: boolean) => {
 };
 
 const setExpandedMode = (mode: 'queue' | 'lyric' | null) => {
-  if (expandedMode.value === mode) return;
+  if (expandedMode.value === mode && !expandFrameTimer) return;
+  expandRequestSeq += 1;
+  const requestSeq = expandRequestSeq;
   cancelExpandFrame();
+  if (mode && isVolumeOpen.value) closeVolume(true);
   if (mode) {
+    clearShellDirectionHoldTimer();
+    shellDirectionHold.value = null;
     if (expandedMode.value) {
       expandedMode.value = mode;
       if (mode === 'queue') void nextTick(() => refresh(true));
       return;
     }
-    // 展开：先让主进程把窗口放大，下一帧再触发卡片高度过渡，避免卡片在窗口变高前被裁切
-    window.electron?.miniPlayer?.setExpanded(true);
-    expandFrameTimer = setTimeout(() => {
-      expandFrameTimer = null;
-      expandedMode.value = mode;
-      if (mode === 'queue') {
-        // 等卡片高度过渡完、列表容器拿到真实高度后，定位到正在播放的歌曲
-        void nextTick(() => {
-          refresh(true);
-          window.setTimeout(scrollQueueToCurrent, 260);
-        });
+    // 展开：先锁定方向并让主进程扩窗，再触发卡片高度过渡。
+    // 向上展开时控制条会先贴在扩窗后的底部，列表再从它上方长出，避免锚点跳动。
+    const openPanel = async (snapshot?: MiniPlayerSnapshot) => {
+      if (requestSeq !== expandRequestSeq) return;
+      if (snapshot) applySnapshot(snapshot);
+      const direction = expandDirection.value;
+      const shouldPrepaintCard = direction === 'up';
+      holdShellDirection(direction);
+      isPreparingExpand.value = shouldPrepaintCard;
+      preparingExpandedMode.value = shouldPrepaintCard ? mode : null;
+      if (shouldPrepaintCard) {
+        await nextTick();
+        if (requestSeq !== expandRequestSeq) return;
+        const card = document.querySelector('.mini-card') as HTMLElement | null;
+        if (card) void card.offsetHeight;
       }
-    }, 60);
+      const finishOpen = (boundsSnapshot?: MiniPlayerSnapshot) => {
+        if (requestSeq !== expandRequestSeq) return;
+        if (boundsSnapshot) applySnapshot(boundsSnapshot);
+        expandFrameTimer = setTimeout(
+          () => {
+            expandFrameTimer = null;
+            if (requestSeq !== expandRequestSeq) return;
+            expandedMode.value = mode;
+            isPreparingExpand.value = false;
+            preparingExpandedMode.value = null;
+            shellDirectionHold.value = null;
+            if (mode === 'queue') {
+              void nextTick(() => {
+                refresh(true);
+                window.setTimeout(scrollQueueToCurrent, 260);
+              });
+            }
+          },
+          shouldPrepaintCard ? 16 : 32,
+        );
+      };
+      try {
+        finishOpen(await window.electron?.miniPlayer?.applyExpandBounds?.());
+      } catch {
+        finishOpen();
+      }
+    };
+    const expandSnapshot = window.electron?.miniPlayer?.setExpanded(true);
+    if (expandSnapshot) {
+      void expandSnapshot.then((snapshot) => openPanel(snapshot)).catch(() => openPanel());
+      return;
+    }
+    void openPanel();
     return;
   }
-  // 收起：先收卡片（CSS 过渡），主进程延迟缩小窗口，等待过渡播完
+  // 收起
+  const collapsingDirection = activeShellDirection.value;
+  holdShellDirection(collapsingDirection);
+  isPreparingExpand.value = false;
+  preparingExpandedMode.value = null;
+  if (collapsingDirection === 'up') {
+    const finishCollapse = (snapshot?: MiniPlayerSnapshot) => {
+      if (requestSeq !== expandRequestSeq) return;
+      if (snapshot) applySnapshot(snapshot);
+      expandedMode.value = null;
+      releaseShellDirectionHoldSoon();
+    };
+    const collapseSnapshot = window.electron?.miniPlayer?.setExpanded(false);
+    if (collapseSnapshot) {
+      void collapseSnapshot.then(finishCollapse).catch(() => finishCollapse());
+      return;
+    }
+    finishCollapse();
+    return;
+  }
+
   expandedMode.value = null;
-  window.electron?.miniPlayer?.setExpanded(false);
+  const collapseSnapshot = window.electron?.miniPlayer?.setExpanded(false);
+  if (collapseSnapshot) {
+    void collapseSnapshot.then(applySnapshot).catch(() => {
+      // ignore
+    });
+  }
+  releaseShellDirectionHoldSoon();
+};
+
+const toggleAlwaysOnTop = async () => {
+  const nextAlwaysOnTop = !alwaysOnTop.value;
+  alwaysOnTop.value = nextAlwaysOnTop;
+  try {
+    const nextSnapshot = await window.electron?.miniPlayer?.setAlwaysOnTop(nextAlwaysOnTop);
+    if (nextSnapshot) applySnapshot(nextSnapshot);
+  } catch {
+    alwaysOnTop.value = !nextAlwaysOnTop;
+  }
 };
 
 const toggleQueue = () => setQueueOpen(!isQueueOpen.value);
@@ -459,9 +604,15 @@ const playQueueTrack = (trackId: string) => {
 // 窗口被隐藏（关闭 mini / 回主窗口）时，主进程已折叠窗口，这里同步收起队列状态
 // 窗口重新可见时重新获取最新 snapshot 确保主题/状态同步
 const handleVisibility = async () => {
-  if (document.visibilityState === 'hidden' && isExpanded.value) {
+  if (document.visibilityState === 'hidden') {
+    expandRequestSeq += 1;
     cancelExpandFrame();
-    expandedMode.value = null;
+    isPreparingExpand.value = false;
+    preparingExpandedMode.value = null;
+    if (isExpanded.value) expandedMode.value = null;
+    shellDirectionHold.value = null;
+    clearShellDirectionHoldTimer();
+    closeVolume(true);
   } else if (document.visibilityState === 'visible') {
     try {
       applySnapshot(await window.electron?.miniPlayer?.getSnapshot?.());
@@ -472,14 +623,26 @@ const handleVisibility = async () => {
 };
 
 const requestShowMain = () => {
+  expandRequestSeq += 1;
   cancelExpandFrame();
+  isPreparingExpand.value = false;
+  preparingExpandedMode.value = null;
   expandedMode.value = null;
+  shellDirectionHold.value = null;
+  clearShellDirectionHoldTimer();
+  closeVolume(true);
   command('showMainWindow');
 };
 
 const requestClose = () => {
+  expandRequestSeq += 1;
   cancelExpandFrame();
+  isPreparingExpand.value = false;
+  preparingExpandedMode.value = null;
   expandedMode.value = null;
+  shellDirectionHold.value = null;
+  clearShellDirectionHoldTimer();
+  closeVolume(true);
   command('closeMiniPlayer');
 };
 
@@ -503,9 +666,14 @@ onUnmounted(() => {
   document.documentElement.classList.remove('mini-player-window');
   document.documentElement.classList.remove('dark');
   document.removeEventListener('visibilitychange', handleVisibility);
+  expandRequestSeq += 1;
   cancelExpandFrame();
+  isPreparingExpand.value = false;
+  preparingExpandedMode.value = null;
   clearVolumeCloseTimer();
-  if (isExpanded.value) window.electron?.miniPlayer?.setExpanded(false);
+  clearShellDirectionHoldTimer();
+  closeVolume(true);
+  if (isExpanded.value) void window.electron?.miniPlayer?.setExpanded(false);
   disposeSnapshot?.();
   disposeSnapshot = null;
 });
@@ -519,6 +687,11 @@ onUnmounted(() => {
       'is-queue-open': isQueueOpen,
       'is-lyric-open': isLyricOpen,
       'is-hovered': isHovered,
+      'is-volume-open': isVolumeOpen,
+      'is-preparing-expand': isPreparingExpand,
+      'expand-up': activeShellDirection === 'up',
+      'expand-down': activeShellDirection === 'down',
+      'is-always-on-top': alwaysOnTop,
     }"
     @pointerenter="handlePointerEnter"
     @pointerleave="handlePointerLeave"
@@ -549,6 +722,16 @@ onUnmounted(() => {
             <Icon :icon="iconSquare" width="12" height="12" />
           </button>
         </div>
+
+        <button
+          type="button"
+          class="mini-window-btn mini-pin-btn no-drag"
+          :class="{ active: alwaysOnTop }"
+          :title="alwaysOnTop ? '取消置顶' : '窗口置顶'"
+          @click="toggleAlwaysOnTop"
+        >
+          <Icon :icon="iconPinned" width="13" height="13" />
+        </button>
 
         <button
           type="button"
@@ -650,6 +833,7 @@ onUnmounted(() => {
             :class="{ open: isVolumeOpen }"
             @pointerenter="openVolume"
             @pointerleave="scheduleVolumeClose"
+            @wheel.prevent="handleVolumeWheel"
           >
             <button
               type="button"
@@ -670,6 +854,7 @@ onUnmounted(() => {
             >
               <div class="mini-volume-track">
                 <div class="mini-volume-value" :style="{ width: `${volumePercent}%` }"></div>
+                <div class="mini-volume-thumb" :style="{ left: `${volumePercent}%` }"></div>
               </div>
               <span class="mini-volume-label">{{ volumePercent }}</span>
             </div>
@@ -695,10 +880,15 @@ onUnmounted(() => {
         :cover-url="lyricCoverUrl"
         :visible="isLyricOpen"
         :is-dark="appearance?.isDark ?? false"
+        :expand-direction="expandDirection"
         :aria-hidden="!isLyricOpen"
       />
 
-      <div v-show="isQueueOpen" class="mini-queue no-drag" :aria-hidden="!isQueueOpen">
+      <div
+        v-show="isQueueOpen || (isPreparingExpand && preparingExpandedMode === 'queue')"
+        class="mini-queue no-drag"
+        :aria-hidden="!isQueueOpen"
+      >
         <div ref="queueScrollerRef" class="mini-queue-list">
           <div ref="containerRef" :style="queueWrapperStyle">
             <div :style="queueOffsetStyle">
@@ -755,13 +945,17 @@ onUnmounted(() => {
   /* 不使用 -webkit-app-region: drag —— 它会吞掉拖拽区的 pointer 事件导致 hover 闪烁；
      改用 JS 自定义拖动（见 .mini-card 的 pointer 事件） */
   display: flex;
-  /* 卡片锚定在顶部，向下增高：控制条固定在上方，队列在其下方向下弹出 */
+  /* 默认卡片锚定在顶部，向下增高；空间不足时主进程会切到向上展开 */
   align-items: flex-start;
   min-height: 0;
   /* 禁止文本选择/复制 */
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+
+.mini-shell.expand-up {
+  align-items: flex-end;
 }
 
 .mini-card {
@@ -786,8 +980,17 @@ onUnmounted(() => {
   will-change: height;
 }
 
+.mini-shell.expand-up .mini-card {
+  flex-direction: column-reverse;
+}
+
 .mini-shell.is-expanded .mini-card {
   height: v-bind(cardExpandedHeight);
+}
+
+.mini-shell.is-preparing-expand .mini-card {
+  height: v-bind(cardExpandedHeight);
+  transition: none;
 }
 
 .mini-controls {
@@ -798,7 +1001,7 @@ onUnmounted(() => {
   grid-template-columns: 18px 44px minmax(96px, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 0 16px 0 9px;
+  padding: 0 24px 0 9px;
   box-sizing: border-box;
 }
 
@@ -834,10 +1037,24 @@ onUnmounted(() => {
   justify-content: center;
 }
 
+.mini-pin-btn {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  z-index: 4;
+  color: rgba(84, 84, 88, 0.64);
+}
+
 .mini-window-btn:hover,
 .mini-action-btn:hover,
 .mini-center-btn:hover {
   color: #222;
+  opacity: 1;
+}
+
+.mini-window-btn.active,
+.mini-window-btn.active:hover {
+  color: var(--color-primary);
   opacity: 1;
 }
 
@@ -1031,14 +1248,13 @@ button:disabled {
   color: #fa2d48;
 }
 
-/* 音量：图标 + 悬停横向展开的内联滑块（不弹出窗口外，避免裁切） */
+/* 音量：图标 + 内联横向滑块。保持在 mini 窗口内部，避免 hover 触发窗口尺寸变化。 */
 .mini-volume {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-/* 展开的滑块绝对定位、从音量图标向左浮出，不挤占网格，避免左侧按钮被压缩、数值被裁切 */
 .mini-volume-slider {
   position: absolute;
   right: 100%;
@@ -1047,12 +1263,13 @@ button:disabled {
   margin-right: 4px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  width: 110px;
-  padding: 4px 10px;
+  gap: 7px;
+  width: 132px;
+  padding: 7px 10px 7px 12px;
   border-radius: 999px;
   background: var(--mini-volume-pop-bg, rgba(248, 248, 248, 0.96));
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  z-index: 6;
   opacity: 0;
   pointer-events: none;
   transition:
@@ -1069,23 +1286,51 @@ button:disabled {
 .mini-volume-track {
   position: relative;
   flex: 1 1 auto;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.mini-volume-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
   height: 3px;
   border-radius: 999px;
   background: rgba(120, 120, 120, 0.32);
+  transform: translateY(-50%);
 }
 
 .mini-volume-value {
   position: absolute;
   left: 0;
-  top: 0;
-  height: 100%;
+  top: 50%;
+  height: 3px;
   border-radius: inherit;
   background: var(--color-primary);
+  transform: translateY(-50%);
+}
+
+.mini-volume-thumb {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  box-shadow: none;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: transform 0.12s ease;
+}
+
+.mini-volume.open .mini-volume-thumb {
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .mini-volume-label {
   flex: 0 0 auto;
-  width: 22px;
+  width: 24px;
   text-align: right;
   font-size: 10px;
   font-weight: 700;
@@ -1156,10 +1401,29 @@ button:disabled {
   display: flex;
   flex-direction: column;
   border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
 }
 
 .mini-shell.is-expanded .mini-queue {
   border-top-color: rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mini-shell.is-expanded.expand-up .mini-queue {
+  border-top-color: transparent;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+  transform: translateY(0);
+}
+
+.mini-shell.expand-up .mini-queue {
+  transform: translateY(8px);
 }
 
 .mini-queue-list {
@@ -1296,6 +1560,11 @@ button:disabled {
   color: #fff;
 }
 
+.dark .mini-window-btn.active,
+.dark .mini-window-btn.active:hover {
+  color: var(--color-primary);
+}
+
 /* 收藏按钮在深色下也始终保持红色 */
 .dark .mini-fav-btn,
 .dark .mini-fav-btn:hover {
@@ -1324,6 +1593,11 @@ button:disabled {
 
 .dark .mini-shell.is-expanded .mini-queue {
   border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .mini-shell.is-expanded.expand-up .mini-queue {
+  border-top-color: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 .dark .mini-queue-artist {

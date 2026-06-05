@@ -10,6 +10,7 @@ import {
 } from './constants';
 import {
   findLikedPlaylist,
+  getPlaylistIdentityValues,
   normalizePlaybackQueueRuntime,
   normalizePlaybackQueuesRuntime,
   resolveFavoriteSongKey,
@@ -76,6 +77,12 @@ export const usePlaylistStore = defineStore('playlist', {
     activeQueueId: DEFAULT_PLAYBACK_QUEUE_ID,
     lastNonFmQueueId: DEFAULT_PLAYBACK_QUEUE_ID,
     playbackStorageReady: false,
+    playlistContentChangeSeq: 0,
+    playlistContentVersions: {} as Record<string, number>,
+    playlistContentChanges: {} as Record<
+      string,
+      { id: number; version: number; action: 'add' | 'remove' | 'refresh'; songs: Song[] }[]
+    >,
     personalFmMode: PERSONAL_FM_MODE as PersonalFmMode,
     personalFmSongPoolId: 0 as PersonalFmSongPoolId,
     personalFmBuffer: toRawSongList([]),
@@ -308,6 +315,7 @@ export const usePlaylistStore = defineStore('playlist', {
     resolveNumericListId: userActions.resolveNumericListId,
     rememberPlaylistSongs: favoritesActions.rememberPlaylistSongs,
     forgetPlaylistSongs: favoritesActions.forgetPlaylistSongs,
+    hasCompleteKnownPlaylistSongs: favoritesActions.hasCompleteKnownPlaylistSongs,
     getKnownPlaylistSongs: favoritesActions.getKnownPlaylistSongs,
     syncCloudFavorites: favoritesActions.syncCloudFavorites,
     fetchLikedPlaylistSongs: favoritesActions.fetchLikedPlaylistSongs,
@@ -323,6 +331,44 @@ export const usePlaylistStore = defineStore('playlist', {
     syncQueuedNextTrackIds: queueActions.syncQueuedNextTrackIds,
     removeFromQueue: queueActions.removeFromQueue,
     reorderPlaybackQueue: queueActions.reorderPlaybackQueue,
+    markPlaylistContentChanged(
+      listId: string | number | null | undefined,
+      action: 'add' | 'remove' | 'refresh',
+      songs: readonly Song[] = [],
+    ) {
+      if (listId === undefined || listId === null || String(listId) === '') return;
+      const targetId = String(listId);
+      const matched = this.findPlaylistByIdentity(targetId);
+      const affectedIds = new Set([targetId]);
+      if (matched) {
+        getPlaylistIdentityValues(matched).forEach((id) => affectedIds.add(id));
+      }
+
+      const delta = action === 'add' ? songs.length : action === 'remove' ? -songs.length : 0;
+      if (delta !== 0 && matched) {
+        const index = this.userPlaylists.findIndex((playlist) => playlist === matched);
+        if (index !== -1) {
+          const count = Math.max(0, (matched.count ?? 0) + delta);
+          this.userPlaylists.splice(index, 1, { ...matched, count });
+        }
+      }
+
+      const nextVersions = { ...this.playlistContentVersions };
+      const nextChanges = { ...this.playlistContentChanges };
+      const rawSongs = toRawSongList(Array.from(songs) as Song[]);
+      const changeId = this.playlistContentChangeSeq + 1;
+      this.playlistContentChangeSeq = changeId;
+      affectedIds.forEach((id) => {
+        const version = (nextVersions[id] ?? 0) + 1;
+        nextVersions[id] = version;
+        nextChanges[id] = [
+          ...(nextChanges[id] ?? []),
+          { id: changeId, version, action, songs: rawSongs },
+        ].slice(-20);
+      });
+      this.playlistContentVersions = nextVersions;
+      this.playlistContentChanges = nextChanges;
+    },
     addToPlaylist: favoritesActions.addToPlaylist,
     removeFromPlaylist: favoritesActions.removeFromPlaylist,
     addSongsToPlaylist: favoritesActions.addSongsToPlaylist,

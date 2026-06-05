@@ -204,7 +204,13 @@ contextBridge.exposeInMainWorld('electron', {
     hide: () => ipcRenderer.invoke('mini-player:hide') as Promise<MiniPlayerSnapshot>,
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) =>
       sendWithPlainPayload('mini-player:sync-snapshot', payload),
-    setExpanded: (expanded: boolean) => ipcRenderer.send('mini-player:set-expanded', expanded),
+    setExpanded: (expanded: boolean) =>
+      ipcRenderer.invoke('mini-player:set-expanded', expanded) as Promise<MiniPlayerSnapshot>,
+    setAlwaysOnTop: (alwaysOnTop: boolean) =>
+      ipcRenderer.invoke(
+        'mini-player:set-always-on-top',
+        alwaysOnTop,
+      ) as Promise<MiniPlayerSnapshot>,
     getBounds: () =>
       ipcRenderer.invoke('mini-player:get-bounds') as Promise<{
         x: number;
@@ -213,6 +219,8 @@ contextBridge.exposeInMainWorld('electron', {
         height: number;
       }>,
     move: (x: number, y: number) => ipcRenderer.send('mini-player:move', x, y),
+    applyExpandBounds: () =>
+      ipcRenderer.invoke('mini-player:apply-expand-bounds') as Promise<MiniPlayerSnapshot>,
     onSnapshot: (func: (snapshot: MiniPlayerSnapshot) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: MiniPlayerSnapshot) =>
         func(snapshotPayload);

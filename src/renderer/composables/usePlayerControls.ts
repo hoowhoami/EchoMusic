@@ -319,9 +319,18 @@ export function usePlayerControls() {
   const handleSelectPlaylist = async (listId: string | number) => {
     if (!currentTrack.value) return;
     try {
-      await playlist.addToPlaylist(String(listId), currentTrack.value);
-      toastStore.actionCompleted('已添加到歌单');
-      showAddToPlaylistDialog.value = false;
+      const result = await playlist.addToPlaylist(String(listId), currentTrack.value);
+      if (result === 'added') {
+        toastStore.actionCompleted('添加成功');
+        showAddToPlaylistDialog.value = false;
+        return;
+      }
+      if (result === 'exists') {
+        toastStore.warning('歌单中已有此内容');
+        showAddToPlaylistDialog.value = false;
+        return;
+      }
+      toastStore.actionFailed('添加到歌单');
     } catch {
       toastStore.actionFailed('添加到歌单');
     }

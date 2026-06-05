@@ -124,8 +124,19 @@ export class PlayerEngine {
     this.events = events;
   }
 
-  setSource(url: string): void {
-    if (!url || this.sourceUrl === url) return;
+  private withTimeout<T>(promise: Promise<T>, timeoutMs?: number, label = 'operation'): Promise<T> {
+    if (!timeoutMs || timeoutMs <= 0) return promise;
+    let timer: number | null = null;
+    const timeout = new Promise<T>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer !== null) window.clearTimeout(timer);
+    });
+  }
+
+  setSource(url: string, options?: { force?: boolean }): void {
+    if (!url || (this.sourceUrl === url && !options?.force)) return;
     this.sourceUrl = url;
     this.durationValue = 0;
     this.lastTimeValue = -1;
@@ -163,9 +174,13 @@ export class PlayerEngine {
         durationMs,
       });
       // 复合命令：主进程内完成 setVolume(0) → play → fade，fade 不阻塞
-      await mpv?.playWithFade(this.volumeValue, durationMs);
+      await this.withTimeout(
+        mpv?.playWithFade(this.volumeValue, durationMs) ?? Promise.resolve(),
+        options?.timeoutMs,
+        'mpv play',
+      );
     } else {
-      await mpv?.play();
+      await this.withTimeout(mpv?.play() ?? Promise.resolve(), options?.timeoutMs, 'mpv play');
     }
   }
 

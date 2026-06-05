@@ -2,6 +2,7 @@ import { BrowserWindow, app, ipcMain, nativeTheme, screen, shell } from 'electro
 import { join } from 'path';
 import type {
   MiniPlayerCommand,
+  MiniPlayerExpandDirection,
   MiniPlayerSnapshot,
   MiniPlayerSnapshotPatch,
 } from '../shared/mini-player';
@@ -15,13 +16,30 @@ const MINI_PLAYER_HEIGHT = MINI_PLAYER_DIMENSIONS.collapsedHeight;
 const MINI_PLAYER_EXPANDED_HEIGHT = MINI_PLAYER_DIMENSIONS.expandedHeight;
 // 收起时延迟还原窗口高度，等待渲染层 CSS 高度过渡（240ms）播完，留出缓冲避免提前裁切卡片
 const MINI_PLAYER_COLLAPSE_DELAY_MS = 280;
+const MINI_PLAYER_RESTACK_DELAYS_MS =
+  process.platform === 'win32'
+    ? [0, 120, 800]
+    : process.platform === 'darwin'
+      ? [120, 320]
+      : [0, 120];
+const MINI_PLAYER_DOCK_RESTORE_DELAYS_MS = [0, 120, 320];
 
 let miniPlayerWindow: BrowserWindow | null = null;
 let miniPlayerExpanded = false;
+let miniPlayerAlwaysOnTop = Boolean(getMainAppSettings().miniPlayerWindowState.alwaysOnTop);
+let miniPlayerExpandDirection: MiniPlayerExpandDirection = 'down';
+let miniPlayerWindowUsesPanel = false;
+let suppressNextMiniPlayerReadyToShow = false;
 let collapseTimer: ReturnType<typeof setTimeout> | null = null;
+let miniPlayerRestackTimers: ReturnType<typeof setTimeout>[] = [];
+let miniPlayerDockTimers: ReturnType<typeof setTimeout>[] = [];
 
 let snapshot: MiniPlayerSnapshot = {
   playback: null,
+  window: {
+    alwaysOnTop: miniPlayerAlwaysOnTop,
+    expandDirection: miniPlayerExpandDirection,
+  },
 };
 
 const canUseWindow = (win: BrowserWindow | null): win is BrowserWindow =>
@@ -30,6 +48,8 @@ const canUseWindow = (win: BrowserWindow | null): win is BrowserWindow =>
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export const getMiniPlayerWindow = () => miniPlayerWindow;
+
+const shouldUseMiniPlayerPanel = () => process.platform === 'darwin' && miniPlayerAlwaysOnTop;
 
 const getMainRendererWindow = () => {
   const mainWindow = getMainWindow();
@@ -45,6 +65,157 @@ const sendSnapshot = () => {
   } catch {
     // ignore if window destroyed during send
   }
+};
+
+const updateWindowSnapshot = (send = false) => {
+  snapshot = {
+    ...snapshot,
+    window: {
+      alwaysOnTop: miniPlayerAlwaysOnTop,
+      expandDirection: miniPlayerExpandDirection,
+    },
+  };
+  if (send) sendSnapshot();
+};
+
+const clearMiniPlayerPresentationTimers = () => {
+  if (!miniPlayerRestackTimers.length) return;
+  miniPlayerRestackTimers.forEach((timer) => clearTimeout(timer));
+  miniPlayerRestackTimers = [];
+};
+
+const clearMiniPlayerDockRestoreTimers = () => {
+  if (!miniPlayerDockTimers.length) return;
+  miniPlayerDockTimers.forEach((timer) => clearTimeout(timer));
+  miniPlayerDockTimers = [];
+};
+
+const scheduleMiniPlayerDockRestore = () => {
+  if (process.platform !== 'darwin') return;
+  clearMiniPlayerDockRestoreTimers();
+  miniPlayerDockTimers = MINI_PLAYER_DOCK_RESTORE_DELAYS_MS.map((delay) =>
+    setTimeout(() => {
+      app.dock?.show();
+    }, delay),
+  );
+};
+
+const syncMiniPlayerMacWorkspaceVisibility = (visible = miniPlayerAlwaysOnTop) => {
+  const win = getMiniPlayerWindow();
+  if (!canUseWindow(win) || process.platform !== 'darwin') return;
+  win.setVisibleOnAllWorkspaces(visible, {
+    visibleOnFullScreen: visible,
+  });
+  if (!visible) {
+    win.setVisibleOnAllWorkspaces(false, {
+      visibleOnFullScreen: false,
+    });
+  }
+  scheduleMiniPlayerDockRestore();
+};
+
+const syncMiniPlayerPresentation = (alwaysOnTop = miniPlayerAlwaysOnTop) => {
+  const win = getMiniPlayerWindow();
+  if (!canUseWindow(win)) return;
+  win.setBackgroundColor('#00000000');
+  if (alwaysOnTop) {
+    win.setAlwaysOnTop(true, 'screen-saver');
+    if (typeof win.moveTop === 'function') win.moveTop();
+  } else {
+    syncMiniPlayerMacWorkspaceVisibility(false);
+    win.setAlwaysOnTop(false, 'normal');
+  }
+  win.setSkipTaskbar(true);
+  // setAlwaysOnTop 会重置 macOS 的 visibleOnFullScreen 状态，
+  // 因此每次都必须在其之后重新设置 setVisibleOnAllWorkspaces
+  syncMiniPlayerMacWorkspaceVisibility(alwaysOnTop);
+};
+
+const scheduleMiniPlayerPresentationSync = () => {
+  const win = getMiniPlayerWindow();
+  if (!canUseWindow(win)) return;
+  clearMiniPlayerPresentationTimers();
+  miniPlayerRestackTimers = MINI_PLAYER_RESTACK_DELAYS_MS.map((delay) =>
+    setTimeout(() => {
+      syncMiniPlayerPresentation();
+    }, delay),
+  );
+};
+
+const applyMiniPlayerAlwaysOnTop = () => {
+  clearMiniPlayerPresentationTimers();
+  syncMiniPlayerPresentation();
+  scheduleMiniPlayerPresentationSync();
+  if (process.platform === 'darwin') {
+    scheduleMiniPlayerDockRestore();
+  }
+};
+
+const recreateMiniPlayerWindowForPresentation = async () => {
+  const previousWindow = getMiniPlayerWindow();
+  if (!canUseWindow(previousWindow)) return;
+
+  const shouldShowRecreatedWindow = miniPlayerAlwaysOnTop || process.platform !== 'darwin';
+  const wasVisible = previousWindow.isVisible() && shouldShowRecreatedWindow;
+  const wasFocused = previousWindow.isFocused();
+
+  if (persistBoundsTimer) {
+    clearTimeout(persistBoundsTimer);
+    persistBoundsTimer = null;
+  }
+  writeMiniPlayerBounds();
+  clearMiniPlayerPresentationTimers();
+  clearMiniPlayerDockRestoreTimers();
+  clearCollapseTimer();
+  applyMiniPlayerCollapsedBounds();
+  miniPlayerExpanded = false;
+
+  if (process.platform === 'darwin') {
+    previousWindow.setVisibleOnAllWorkspaces(false, {
+      visibleOnFullScreen: false,
+    });
+  }
+  previousWindow.setAlwaysOnTop(false, 'normal');
+  previousWindow.hide();
+
+  miniPlayerWindow = null;
+  miniPlayerWindowUsesPanel = false;
+  previousWindow.destroy();
+
+  suppressNextMiniPlayerReadyToShow = !shouldShowRecreatedWindow;
+  const nextWindow = await ensureMiniPlayerWindow();
+  if (wasVisible && !nextWindow.isVisible()) {
+    if (wasFocused) nextWindow.show();
+    else nextWindow.showInactive();
+  }
+  if (wasFocused) nextWindow.focus();
+};
+
+const setMiniPlayerAlwaysOnTop = async (alwaysOnTop: boolean) => {
+  const nextAlwaysOnTop = Boolean(alwaysOnTop);
+  const shouldRecreate =
+    process.platform === 'darwin' &&
+    canUseWindow(miniPlayerWindow) &&
+    miniPlayerWindowUsesPanel !== nextAlwaysOnTop;
+
+  miniPlayerAlwaysOnTop = nextAlwaysOnTop;
+  const saved = getMainAppSettings().miniPlayerWindowState;
+  setMainAppSetting('miniPlayerWindowState', {
+    ...saved,
+    alwaysOnTop: miniPlayerAlwaysOnTop,
+  });
+
+  if (shouldRecreate) {
+    updateWindowSnapshot(false);
+    void recreateMiniPlayerWindowForPresentation().catch(() => {
+      // ignore presentation rebuild failures; snapshot already reflects the requested state
+    });
+  } else {
+    applyMiniPlayerAlwaysOnTop();
+  }
+
+  updateWindowSnapshot(true);
+  return snapshot;
 };
 
 const loadMiniPlayerWindow = async (win: BrowserWindow) => {
@@ -106,12 +277,20 @@ const writeMiniPlayerBounds = () => {
   const win = getMiniPlayerWindow();
   if (!win || win.isDestroyed()) return;
   const bounds = win.getBounds();
-  // 顶边锚定：y 即窗口顶部，折叠/展开都不变，直接保存；高度始终存折叠值，下次以折叠态打开
+  const isWindowExpanded = bounds.height > MINI_PLAYER_HEIGHT + 1;
+  const collapsedY =
+    isWindowExpanded && miniPlayerExpandDirection === 'up'
+      ? bounds.y + bounds.height - MINI_PLAYER_HEIGHT
+      : bounds.y;
+  const saved = getMainAppSettings().miniPlayerWindowState;
+  // 保存折叠态控制条位置；向上展开时窗口顶部在面板顶端，需要换算回控制条顶部。
   setMainAppSetting('miniPlayerWindowState', {
+    ...saved,
     width: MINI_PLAYER_WIDTH,
     height: MINI_PLAYER_HEIGHT,
     x: Math.round(bounds.x),
-    y: Math.round(bounds.y),
+    y: Math.round(collapsedY),
+    alwaysOnTop: miniPlayerAlwaysOnTop,
   });
 };
 
@@ -124,22 +303,112 @@ const persistMiniPlayerBounds = () => {
   }, 250);
 };
 
-// 一次性把窗口设为目标高度，顶边锚定（保持卡片顶边不动，向下展开），并夹取在工作区内。
-// 高度动画交给渲染层 CSS（卡片高度过渡），避免逐帧 setBounds 造成透明窗口闪烁。
-const applyMiniPlayerWindowHeight = (height: number) => {
+const resolveCollapsedAnchorY = () => {
+  const win = getMiniPlayerWindow();
+  if (!win || win.isDestroyed()) return 0;
+  const bounds = win.getBounds();
+  const isWindowExpanded = bounds.height > MINI_PLAYER_HEIGHT + 1;
+  if (isWindowExpanded && miniPlayerExpandDirection === 'up') {
+    return bounds.y + bounds.height - MINI_PLAYER_HEIGHT;
+  }
+  return bounds.y;
+};
+
+const resolveMiniPlayerDirectionForHeight = (
+  collapsedY: number,
+  targetHeight: number,
+): MiniPlayerExpandDirection => {
+  const win = getMiniPlayerWindow();
+  if (!win || win.isDestroyed()) return 'down';
+  const bounds = win.getBounds();
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(collapsedY + MINI_PLAYER_HEIGHT / 2),
+  });
+  const area = display.workArea;
+  const extraHeight = targetHeight - MINI_PLAYER_HEIGHT;
+  const spaceAbove = collapsedY - area.y;
+  const spaceBelow = area.y + area.height - (collapsedY + MINI_PLAYER_HEIGHT);
+
+  if (spaceBelow >= extraHeight) return 'down';
+  if (spaceAbove >= extraHeight) return 'up';
+  return spaceBelow >= spaceAbove ? 'down' : 'up';
+};
+
+const resolveMiniPlayerExpandDirection = (collapsedY: number): MiniPlayerExpandDirection =>
+  resolveMiniPlayerDirectionForHeight(collapsedY, MINI_PLAYER_EXPANDED_HEIGHT);
+
+// 一次性把窗口设为展开高度，并根据当前位置选择向上或向下展开。
+// 高度动画交给渲染层 CSS，避免逐帧 setBounds 造成透明窗口闪烁。
+const applyMiniPlayerExpandedBounds = () => {
   const win = getMiniPlayerWindow();
   if (!win || win.isDestroyed()) return;
   const bounds = win.getBounds();
-  if (bounds.height === height) return;
+  const collapsedY = resolveCollapsedAnchorY();
+  miniPlayerExpandDirection = resolveMiniPlayerExpandDirection(collapsedY);
 
-  // 顶边锚定：保持窗口顶部 y 不变，向下增高；若底部超出工作区则整体上移夹取在屏幕内
   const display = screen.getDisplayNearestPoint({
     x: Math.round(bounds.x + bounds.width / 2),
-    y: Math.round(bounds.y + bounds.height / 2),
+    y: Math.round(collapsedY + MINI_PLAYER_HEIGHT / 2),
   });
   const area = display.workArea;
-  const y = clamp(Math.round(bounds.y), area.y, area.y + area.height - height);
-  win.setBounds({ x: bounds.x, y, width: bounds.width, height });
+  const targetY =
+    miniPlayerExpandDirection === 'up'
+      ? collapsedY + MINI_PLAYER_HEIGHT - MINI_PLAYER_EXPANDED_HEIGHT
+      : collapsedY;
+  const y = clamp(Math.round(targetY), area.y, area.y + area.height - MINI_PLAYER_EXPANDED_HEIGHT);
+
+  if (
+    bounds.width === MINI_PLAYER_WIDTH &&
+    bounds.height === MINI_PLAYER_EXPANDED_HEIGHT &&
+    bounds.y === y
+  ) {
+    updateWindowSnapshot(true);
+    return;
+  }
+
+  win.setBounds(
+    {
+      x: bounds.x,
+      y,
+      width: MINI_PLAYER_WIDTH,
+      height: MINI_PLAYER_EXPANDED_HEIGHT,
+    },
+    false,
+  );
+  updateWindowSnapshot(true);
+};
+
+const applyMiniPlayerCollapsedBounds = () => {
+  const win = getMiniPlayerWindow();
+  if (!win || win.isDestroyed()) return;
+  const bounds = win.getBounds();
+  const collapsedY =
+    miniPlayerExpandDirection === 'up' ? bounds.y + bounds.height - MINI_PLAYER_HEIGHT : bounds.y;
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(collapsedY + MINI_PLAYER_HEIGHT / 2),
+  });
+  const area = display.workArea;
+  const y = clamp(Math.round(collapsedY), area.y, area.y + area.height - MINI_PLAYER_HEIGHT);
+
+  if (
+    bounds.width === MINI_PLAYER_WIDTH &&
+    bounds.height === MINI_PLAYER_HEIGHT &&
+    bounds.y === y
+  ) {
+    return;
+  }
+
+  win.setBounds(
+    {
+      x: bounds.x,
+      y,
+      width: MINI_PLAYER_WIDTH,
+      height: MINI_PLAYER_HEIGHT,
+    },
+    false,
+  );
 };
 
 const clearCollapseTimer = () => {
@@ -151,25 +420,38 @@ const clearCollapseTimer = () => {
 
 const setMiniPlayerExpanded = (expanded: boolean) => {
   clearCollapseTimer();
-  miniPlayerExpanded = expanded;
   if (expanded) {
-    // 展开：窗口立即升至目标高度，渲染层卡片在透明空间内 CSS 上展
-    applyMiniPlayerWindowHeight(MINI_PLAYER_EXPANDED_HEIGHT);
+    miniPlayerExpanded = true;
+    const win = getMiniPlayerWindow();
+    if (!win || win.isDestroyed()) return;
+    const collapsedY = resolveCollapsedAnchorY();
+    miniPlayerExpandDirection = resolveMiniPlayerExpandDirection(collapsedY);
+    updateWindowSnapshot(false);
+    // 由渲染层先锁定展开方向，再触发 setBounds，避免向上展开时控制条跳到扩窗后的顶部。
     return;
   }
-  // 收起：先让渲染层卡片 CSS 下收，过渡结束后再缩小窗口，避免提前留出透明空洞
-  collapseTimer = setTimeout(() => {
-    collapseTimer = null;
-    applyMiniPlayerWindowHeight(MINI_PLAYER_HEIGHT);
-  }, MINI_PLAYER_COLLAPSE_DELAY_MS);
+  miniPlayerExpanded = false;
+  if (miniPlayerExpandDirection === 'up') {
+    // 向上收起时窗口顶部需要下移接近整个面板高度；延迟移动会在透明窗口里抖动。
+    // 直接裁回折叠窗口，只保留控制条，避免原生窗口位移参与收起动画。
+    applyMiniPlayerCollapsedBounds();
+  } else {
+    // 向下收起：先让渲染层卡片 CSS 下收，过渡结束后再缩小窗口
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null;
+      applyMiniPlayerCollapsedBounds();
+    }, MINI_PLAYER_COLLAPSE_DELAY_MS);
+  }
 };
 
 const collapseMiniPlayer = () => {
   clearCollapseTimer();
-  if (!miniPlayerExpanded) return;
-  miniPlayerExpanded = false;
+  const win = getMiniPlayerWindow();
+  if (!win || win.isDestroyed()) return;
+  if (!miniPlayerExpanded && win.getBounds().height <= MINI_PLAYER_HEIGHT + 1) return;
   // 窗口即将隐藏，立即收起，无需动画
-  applyMiniPlayerWindowHeight(MINI_PLAYER_HEIGHT);
+  applyMiniPlayerCollapsedBounds();
+  miniPlayerExpanded = false;
 };
 
 export const ensureMiniPlayerWindow = async () => {
@@ -193,8 +475,16 @@ export const ensureMiniPlayerWindow = async () => {
     show: false,
     resizable: false,
     movable: true,
+    ...(process.platform === 'darwin'
+      ? {
+          ...(shouldUseMiniPlayerPanel() ? { type: 'panel' as const } : {}),
+          acceptFirstMouse: true,
+          hiddenInMissionControl: shouldUseMiniPlayerPanel(),
+        }
+      : {}),
     // 透明窗口用原生阴影会在内容缩放时残留黑色条纹，改由渲染层 CSS 投影
     hasShadow: false,
+    alwaysOnTop: miniPlayerAlwaysOnTop,
     skipTaskbar: true,
     fullscreenable: false,
     maximizable: false,
@@ -211,7 +501,11 @@ export const ensureMiniPlayerWindow = async () => {
   });
 
   miniPlayerWindow = win;
+  miniPlayerWindowUsesPanel = shouldUseMiniPlayerPanel();
   miniPlayerExpanded = false;
+  miniPlayerExpandDirection = 'down';
+  updateWindowSnapshot();
+  applyMiniPlayerAlwaysOnTop();
 
   win.webContents.on('did-finish-load', () => {
     win.webContents.setZoomFactor(1.0);
@@ -219,7 +513,11 @@ export const ensureMiniPlayerWindow = async () => {
   });
 
   win.once('ready-to-show', () => {
-    win.show();
+    syncMiniPlayerPresentation();
+    scheduleMiniPlayerPresentationSync();
+    const shouldSuppressShow = suppressNextMiniPlayerReadyToShow;
+    suppressNextMiniPlayerReadyToShow = false;
+    if (!shouldSuppressShow) win.show();
     sendSnapshot();
   });
 
@@ -229,12 +527,16 @@ export const ensureMiniPlayerWindow = async () => {
   });
 
   win.on('closed', () => {
+    if (miniPlayerWindow !== win) return;
+    clearMiniPlayerPresentationTimers();
+    clearMiniPlayerDockRestoreTimers();
     clearCollapseTimer();
     if (persistBoundsTimer) {
       clearTimeout(persistBoundsTimer);
       persistBoundsTimer = null;
     }
     miniPlayerWindow = null;
+    miniPlayerWindowUsesPanel = false;
     miniPlayerExpanded = false;
   });
 
@@ -260,10 +562,16 @@ export const showMiniPlayerWindow = async () => {
       hideMainWindow();
       if (!win.isDestroyed()) {
         if (!win.isVisible()) win.show();
+        syncMiniPlayerPresentation();
+        scheduleMiniPlayerPresentationSync();
+        scheduleMiniPlayerDockRestore();
         win.focus();
       }
     }, 80);
   }
+  syncMiniPlayerPresentation();
+  scheduleMiniPlayerPresentationSync();
+  scheduleMiniPlayerDockRestore();
   sendSnapshot();
   return snapshot;
 };
@@ -278,12 +586,17 @@ export const closeMiniPlayerWindow = () => {
   writeMiniPlayerBounds();
   collapseMiniPlayer();
   win.hide();
+  scheduleMiniPlayerDockRestore();
 };
 
 export const destroyMiniPlayerWindow = () => {
   const win = getMiniPlayerWindow();
   if (!win || win.isDestroyed()) return;
+  clearMiniPlayerPresentationTimers();
+  clearMiniPlayerDockRestoreTimers();
+  clearCollapseTimer();
   miniPlayerWindow = null;
+  miniPlayerWindowUsesPanel = false;
   win.destroy();
 };
 
@@ -361,14 +674,27 @@ export const registerMiniPlayerHandlers = () => {
     sendSnapshot();
   });
 
-  ipcMain.on('mini-player:set-expanded', (_event, expanded: boolean) => {
+  ipcMain.handle('mini-player:set-expanded', (_event, expanded: boolean) => {
     setMiniPlayerExpanded(Boolean(expanded));
+    return snapshot;
   });
+
+  ipcMain.handle('mini-player:set-always-on-top', (_event, alwaysOnTop: boolean) =>
+    setMiniPlayerAlwaysOnTop(Boolean(alwaysOnTop)),
+  );
 
   ipcMain.handle('mini-player:get-bounds', () => {
     const win = getMiniPlayerWindow();
     if (!win || win.isDestroyed()) return { x: 0, y: 0, width: 0, height: 0 };
     return win.getBounds();
+  });
+
+  // 渲染层锁定展开方向后通知主进程扩窗，再触发卡片动画。
+  ipcMain.handle('mini-player:apply-expand-bounds', () => {
+    if (miniPlayerExpanded) {
+      applyMiniPlayerExpandedBounds();
+    }
+    return snapshot;
   });
 
   // 自定义拖动：渲染层用 pointer 事件计算新坐标后下发（取代 -webkit-app-region: drag，
@@ -378,12 +704,15 @@ export const registerMiniPlayerHandlers = () => {
     if (!win || win.isDestroyed()) return;
     // 使用固定宽高避免 Windows DPI 缩放导致的尺寸舍入累积
     const height = miniPlayerExpanded ? MINI_PLAYER_EXPANDED_HEIGHT : MINI_PLAYER_HEIGHT;
-    win.setBounds({
-      x: Math.round(x),
-      y: Math.round(y),
-      width: MINI_PLAYER_WIDTH,
-      height,
-    });
+    win.setBounds(
+      {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: MINI_PLAYER_WIDTH,
+        height,
+      },
+      false,
+    );
     persistMiniPlayerBounds();
   });
 
@@ -428,8 +757,10 @@ export const unregisterMiniPlayerHandlers = () => {
   ipcMain.removeHandler('mini-player:show');
   ipcMain.removeHandler('mini-player:hide');
   ipcMain.removeHandler('mini-player:get-bounds');
+  ipcMain.removeHandler('mini-player:set-always-on-top');
   ipcMain.removeAllListeners('mini-player:sync-snapshot');
-  ipcMain.removeAllListeners('mini-player:set-expanded');
+  ipcMain.removeHandler('mini-player:set-expanded');
+  ipcMain.removeHandler('mini-player:apply-expand-bounds');
   ipcMain.removeAllListeners('mini-player:move');
   ipcMain.removeAllListeners('mini-player:command');
   ipcMain.removeAllListeners('mini-player:lyric-visibility');

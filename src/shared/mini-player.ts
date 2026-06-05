@@ -1,5 +1,7 @@
 import type { LyricLinePayload } from './desktop-lyric';
 
+export type MiniPlayerExpandDirection = 'down' | 'up';
+
 export type MiniPlayerSimpleCommand =
   | 'togglePlayback'
   | 'previousTrack'
@@ -59,6 +61,7 @@ export interface MiniPlayerQueuePayload {
 export interface MiniPlayerSnapshot {
   playback: MiniPlayerPlaybackPayload | null;
   appearance?: MiniPlayerAppearancePayload;
+  window?: MiniPlayerWindowPayload;
   queue?: MiniPlayerQueuePayload;
   lyric?: MiniPlayerLyricPayload;
 }
@@ -74,6 +77,11 @@ export interface MiniPlayerAppearancePayload {
   isDark: boolean;
   accentColor: string;
   fontFamily?: string;
+}
+
+export interface MiniPlayerWindowPayload {
+  alwaysOnTop: boolean;
+  expandDirection: MiniPlayerExpandDirection;
 }
 
 export interface MiniPlayerLyricPayload {

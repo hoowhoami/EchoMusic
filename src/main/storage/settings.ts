@@ -18,6 +18,7 @@ export type MiniPlayerWindowState = {
   height: number;
   x?: number;
   y?: number;
+  alwaysOnTop: boolean;
 };
 
 export type MainAppSettings = {
@@ -59,6 +60,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
   miniPlayerWindowState: {
     width: 560,
     height: 120,
+    alwaysOnTop: false,
   },
 };
 

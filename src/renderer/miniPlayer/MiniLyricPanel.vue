@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import type { MiniPlayerLyricPayload } from '../../shared/mini-player';
+import type { MiniPlayerExpandDirection, MiniPlayerLyricPayload } from '../../shared/mini-player';
 
 const props = defineProps<{
   lyric: MiniPlayerLyricPayload | null;
@@ -9,6 +9,7 @@ const props = defineProps<{
   coverUrl: string;
   visible: boolean;
   isDark: boolean;
+  expandDirection?: MiniPlayerExpandDirection;
 }>();
 
 const lyricLines = computed(() => props.lyric?.lines ?? []);
@@ -154,7 +155,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mini-lyric no-drag" :class="{ dark: isDark }">
+  <div class="mini-lyric no-drag" :class="{ dark: isDark, 'expand-up': expandDirection === 'up' }">
     <div class="mini-lyric-bg" :style="lyricBackgroundStyle"></div>
     <div class="mini-lyric-scrim"></div>
     <div class="mini-lyric-content">
@@ -194,8 +195,14 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid transparent;
   isolation: isolate;
   contain: paint;
+}
+
+.mini-lyric.expand-up {
+  border-top-color: transparent;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
 .mini-lyric-bg,
@@ -335,6 +342,11 @@ onBeforeUnmount(() => {
 
 .mini-lyric.dark {
   border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.mini-lyric.dark.expand-up {
+  border-top-color: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 .mini-lyric.dark .mini-lyric-scrim {

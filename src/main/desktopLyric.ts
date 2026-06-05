@@ -57,6 +57,8 @@ app.on('before-quit', () => {
 
 let snapshot: DesktopLyricSnapshot = {
   playback: null,
+  lyricsTrackId: null,
+  lyricsRevision: 0,
   lyrics: [],
   currentIndex: -1,
   settings: getDesktopLyricSettings(),
@@ -422,8 +424,41 @@ export const registerDesktopLyricHandlers = () => {
 
   ipcMain.on('desktop-lyric:sync-snapshot', (_event, payload: DesktopLyricSnapshotPatch) => {
     if (!payload) return;
-    if (payload.playback !== undefined) snapshot = { ...snapshot, playback: payload.playback };
-    if (payload.lyrics !== undefined) snapshot = { ...snapshot, lyrics: payload.lyrics };
+    if (payload.playback !== undefined) {
+      const nextLyricsTrackId = payload.playback?.lyricHash || payload.playback?.trackId || null;
+      snapshot = {
+        ...snapshot,
+        playback: payload.playback,
+        ...(nextLyricsTrackId !== snapshot.lyricsTrackId
+          ? {
+              lyricsTrackId: nextLyricsTrackId,
+              lyricsRevision: snapshot.lyricsRevision + 1,
+              lyrics: [],
+              currentIndex: -1,
+            }
+          : {}),
+      };
+    }
+    if (payload.lyrics !== undefined) {
+      const activeLyricsTrackId =
+        snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
+      const nextLyricsTrackId =
+        payload.lyricsTrackId !== undefined ? payload.lyricsTrackId : activeLyricsTrackId;
+      if (nextLyricsTrackId === activeLyricsTrackId) {
+        snapshot = {
+          ...snapshot,
+          lyricsTrackId: nextLyricsTrackId,
+          lyricsRevision: snapshot.lyricsRevision + 1,
+          lyrics: payload.lyrics,
+        };
+      }
+    } else if (payload.lyricsTrackId !== undefined) {
+      const activeLyricsTrackId =
+        snapshot.playback?.lyricHash || snapshot.playback?.trackId || null;
+      if (payload.lyricsTrackId === activeLyricsTrackId) {
+        snapshot = { ...snapshot, lyricsTrackId: payload.lyricsTrackId };
+      }
+    }
     if (payload.currentIndex !== undefined) {
       snapshot = { ...snapshot, currentIndex: payload.currentIndex };
     }

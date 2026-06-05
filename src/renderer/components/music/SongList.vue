@@ -8,6 +8,7 @@ import SongCard from './SongCard.vue';
 import { iconPlay, iconPause } from '@/icons';
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
+import { useToastStore } from '@/stores/toast';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong } from '@/utils/song';
 import { playSongInContext, queueAndPlaySong, addSongToPlayNext } from '@/utils/playback';
@@ -75,6 +76,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const playerStore = usePlayerStore();
 const playlistStore = usePlaylistStore();
+const toastStore = useToastStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -474,16 +476,35 @@ const ctxAddToPlaylist = async () => {
   showPlaylistDialog.value = true;
   if (playlistStore.userPlaylists.length === 0) {
     isPlaylistLoading.value = true;
-    await playlistStore.fetchUserPlaylists();
-    isPlaylistLoading.value = false;
+    try {
+      await playlistStore.fetchUserPlaylists();
+    } catch {
+      toastStore.loadFailed('歌单');
+    } finally {
+      isPlaylistLoading.value = false;
+    }
   }
 };
 
 const ctxSelectPlaylist = async (listId: string | number) => {
   const song = contextMenuTarget.value;
   if (!song) return;
-  await playlistStore.addToPlaylist(String(listId), song);
-  showPlaylistDialog.value = false;
+  try {
+    const result = await playlistStore.addToPlaylist(String(listId), song);
+    if (result === 'added') {
+      toastStore.actionCompleted('添加成功');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    if (result === 'exists') {
+      toastStore.warning('歌单中已有此内容');
+      showPlaylistDialog.value = false;
+      return;
+    }
+    toastStore.actionFailed('添加到歌单');
+  } catch {
+    toastStore.actionFailed('添加到歌单');
+  }
 };
 
 const ctxRemoveFromPlaylist = async () => {
