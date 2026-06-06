@@ -20,6 +20,7 @@ import LyricMode from './LyricMode.vue';
 import LyricPlayerControls from './LyricPlayerControls.vue';
 import LyricSettingsDrawer from './LyricSettingsDrawer.vue';
 import LyricSourceDialog from './LyricSourceDialog.vue';
+import LyricFluidBackground from './LyricFluidBackground.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -75,70 +76,6 @@ const isBlurBackgroundRhythmEnabled = computed(
     Boolean(blurCoverUrl.value) &&
     viewMode.value !== 'portrait',
 );
-
-const fluidCanvas1 = ref<HTMLCanvasElement | null>(null);
-const fluidCanvas2 = ref<HTMLCanvasElement | null>(null);
-const fluidCanvas3 = ref<HTMLCanvasElement | null>(null);
-const fluidCanvas4 = ref<HTMLCanvasElement | null>(null);
-const fluidViewWidth = ref(0);
-const fluidViewHeight = ref(0);
-const fluidSeed = ref(0);
-
-const hashString = (value: string) => {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-};
-
-const fluidCanvasSize = computed(() => Math.max(fluidViewWidth.value, fluidViewHeight.value) * 0.707);
-
-const fluidCanvasStyle = (index: number) => {
-  const size = fluidCanvasSize.value;
-  const x = index % 2;
-  const y = Math.floor(index / 2);
-  const signX = x === 0 ? -1 : 1;
-  const signY = y === 0 ? -1 : 1;
-
-  return {
-    width: `${size}px`,
-    height: `${size}px`,
-    left: `${fluidViewWidth.value / 2 + signX * size * 0.35 - size / 2}px`,
-    top: `${fluidViewHeight.value / 2 + signY * size * 0.35 - size / 2}px`,
-  };
-};
-
-const updateFluidCanvasLayout = () => {
-  fluidViewWidth.value = window.innerWidth;
-  fluidViewHeight.value = window.innerHeight;
-};
-
-const drawFluidCanvas = (canvas: HTMLCanvasElement | null, image: HTMLImageElement, sx: number, sy: number) => {
-  if (!canvas) return;
-  const context = canvas.getContext('2d');
-  if (!context) return;
-
-  canvas.width = 100;
-  canvas.height = 100;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.filter = 'blur(5px)';
-  context.drawImage(image, sx, sy, image.width / 2, image.height / 2, 0, 0, 100, 100);
-};
-
-const refreshFluidCanvases = () => {
-  if (!isBlurBackgroundRhythmEnabled.value || !blurCoverUrl.value) return;
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.onload = () => {
-    drawFluidCanvas(fluidCanvas1.value, image, 0, 0);
-    drawFluidCanvas(fluidCanvas2.value, image, image.width / 2, 0);
-    drawFluidCanvas(fluidCanvas3.value, image, 0, image.height / 2);
-    drawFluidCanvas(fluidCanvas4.value, image, image.width / 2, image.height / 2);
-    fluidSeed.value = hashString(blurCoverUrl.value) % 1000;
-  };
-  image.src = blurCoverUrl.value;
-};
 
 // 背景样式
 const backgroundStyle = computed(() => {
@@ -282,26 +219,13 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => [isBlurBackgroundRhythmEnabled.value, blurCoverUrl.value],
-  () => {
-    updateFluidCanvasLayout();
-    requestAnimationFrame(refreshFluidCanvases);
-  },
-  { immediate: true },
-);
-
 onMounted(() => {
   ensureLyricsForCurrentTrack();
-  updateFluidCanvasLayout();
-  refreshFluidCanvases();
   window.addEventListener('keydown', handleKeydown);
-  window.addEventListener('resize', updateFluidCanvasLayout);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
-  window.removeEventListener('resize', updateFluidCanvasLayout);
   if (mouseActiveTimer) window.clearTimeout(mouseActiveTimer);
 });
 </script>
@@ -324,60 +248,10 @@ onUnmounted(() => {
         class="lyric-blur-bg-img"
         :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
       />
-      <template v-if="isBlurBackgroundRhythmEnabled">
-        <svg width="0" height="0" class="lyric-fluid-filter-svg" aria-hidden="true">
-          <filter
-            id="lyric-fluid-filter"
-            x="-20%"
-            y="-20%"
-            width="140%"
-            height="140%"
-            filterUnits="objectBoundingBox"
-            primitiveUnits="userSpaceOnUse"
-            color-interpolation-filters="sRGB"
-          >
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency="0.005"
-              numOctaves="1"
-              :seed="fluidSeed"
-            />
-            <feDisplacementMap in="SourceGraphic" scale="400" />
-          </filter>
-        </svg>
-        <div class="lyric-fluid-bg">
-          <div class="lyric-fluid-bg-rect">
-            <canvas
-              ref="fluidCanvas1"
-              class="lyric-fluid-bg-canvas"
-              :style="fluidCanvasStyle(0)"
-              width="100"
-              height="100"
-            ></canvas>
-            <canvas
-              ref="fluidCanvas2"
-              class="lyric-fluid-bg-canvas"
-              :style="fluidCanvasStyle(1)"
-              width="100"
-              height="100"
-            ></canvas>
-            <canvas
-              ref="fluidCanvas3"
-              class="lyric-fluid-bg-canvas"
-              :style="fluidCanvasStyle(2)"
-              width="100"
-              height="100"
-            ></canvas>
-            <canvas
-              ref="fluidCanvas4"
-              class="lyric-fluid-bg-canvas"
-              :style="fluidCanvasStyle(3)"
-              width="100"
-              height="100"
-            ></canvas>
-          </div>
-        </div>
-      </template>
+      <LyricFluidBackground
+        :cover-url="blurCoverUrl"
+        :enabled="isBlurBackgroundRhythmEnabled"
+      />
       <div class="lyric-blur-bg-overlay"></div>
     </div>
 
@@ -684,70 +558,6 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.lyric-fluid-filter-svg {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-
-.lyric-fluid-bg {
-  position: absolute;
-  left: -150px;
-  top: -150px;
-  z-index: 1;
-  width: calc(100% + 150px);
-  height: calc(100% + 150px);
-  overflow: hidden;
-}
-
-.lyric-fluid-bg::before {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  content: '';
-  background: rgba(0, 0, 0, 0.24);
-}
-
-.lyric-fluid-bg::after {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  content: '';
-  backdrop-filter: blur(64px);
-}
-
-.lyric-fluid-bg-rect {
-  position: relative;
-  top: calc(50% - 50vh);
-  left: calc(50% - 50vw);
-  width: max(100vw, 100vh);
-  height: max(100vw, 100vh);
-  filter: saturate(1.3) brightness(1.5) url('#lyric-fluid-filter');
-  animation: lyric-fluid-container-rotate 150s linear infinite;
-  will-change: transform;
-}
-
-.lyric-fluid-bg-canvas {
-  position: absolute;
-  opacity: 1;
-  animation: lyric-fluid-block-rotate 60s linear infinite;
-  will-change: transform;
-}
-
-.lyric-fluid-bg-canvas:nth-child(2) {
-  animation-delay: -5s;
-}
-
-.lyric-fluid-bg-canvas:nth-child(3) {
-  animation-delay: -10s;
-}
-
-.lyric-fluid-bg-canvas:nth-child(4) {
-  animation-delay: -15s;
-}
-
 .lyric-blur-bg-img {
   position: absolute;
   inset: 0;
@@ -764,26 +574,6 @@ onUnmounted(() => {
 .lyric-blur-bg-img--rhythm {
   opacity: 0;
   transform: scale(1.45);
-}
-
-@keyframes lyric-fluid-block-rotate {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes lyric-fluid-container-rotate {
-  0% {
-    transform: scale(1.2) rotate(0deg);
-  }
-
-  100% {
-    transform: scale(1.2) rotate(-360deg);
-  }
 }
 
 .lyric-blur-bg-overlay {
