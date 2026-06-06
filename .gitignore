@@ -19,6 +19,7 @@ dist
 dist-electron
 out
 release
+build/mpv/
 *.dmg
 *.exe
 *.deb

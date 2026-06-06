@@ -120,6 +120,14 @@ const resolvedTitle = computed(() => title.label);
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">桌面歌词状态</h3>
+        <p class="text-sm text-text-secondary">在播放器桌面歌词图标上显示开启或关闭状态角标</p>
+      </div>
+      <Switch v-model="settingStore.showDesktopLyricStatus" />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">播放列表计数</h3>
         <p class="text-sm text-text-secondary">在播放器播放列表图标上显示计数</p>
       </div>
