@@ -20,6 +20,7 @@ import LyricMode from './LyricMode.vue';
 import LyricPlayerControls from './LyricPlayerControls.vue';
 import LyricSettingsDrawer from './LyricSettingsDrawer.vue';
 import LyricSourceDialog from './LyricSourceDialog.vue';
+import LyricFluidBackground from './LyricFluidBackground.vue';
 import {
   iconChevronDown,
   iconChevronLeft,
@@ -66,6 +67,15 @@ const blurCoverUrl = computed(() => {
   // 替换尺寸参数为 400（模糊后不需要高分辨率）
   return url.replace(/\{size\}/g, '400').replace(/\/\d+(?=\/\d{8}\/)/, '/400');
 });
+
+// 背景律动：流体背景，固定速度且不关联播放状态
+const isBlurBackgroundRhythmEnabled = computed(
+  () =>
+    settingStore.lyricPageBackgroundBlur &&
+    settingStore.lyricPageBackgroundRhythm &&
+    Boolean(blurCoverUrl.value) &&
+    viewMode.value !== 'portrait',
+);
 
 // 背景样式
 const backgroundStyle = computed(() => {
@@ -231,8 +241,17 @@ onUnmounted(() => {
     <div
       v-if="settingStore.lyricPageBackgroundBlur && blurCoverUrl && viewMode !== 'portrait'"
       class="lyric-blur-bg"
+      :class="{ 'lyric-blur-bg--rhythm': isBlurBackgroundRhythmEnabled }"
     >
-      <img :src="blurCoverUrl" class="lyric-blur-bg-img" />
+      <img
+        :src="blurCoverUrl"
+        class="lyric-blur-bg-img"
+        :class="{ 'lyric-blur-bg-img--rhythm': isBlurBackgroundRhythmEnabled }"
+      />
+      <LyricFluidBackground
+        :cover-url="blurCoverUrl"
+        :enabled="isBlurBackgroundRhythmEnabled"
+      />
       <div class="lyric-blur-bg-overlay"></div>
     </div>
 
@@ -540,17 +559,27 @@ onUnmounted(() => {
 }
 
 .lyric-blur-bg-img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   filter: blur(40px);
   transform: scale(1.2);
-  transition: opacity 0.8s ease;
+  transition:
+    opacity 0.8s ease,
+    transform 0.8s ease;
+}
+
+.lyric-blur-bg-img--rhythm {
+  opacity: 0;
+  transform: scale(1.45);
 }
 
 .lyric-blur-bg-overlay {
   position: absolute;
   inset: 0;
+  z-index: 3;
   background: rgba(0, 0, 0, 0.5);
 }
 

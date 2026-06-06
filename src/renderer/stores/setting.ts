@@ -89,6 +89,7 @@ export const useSettingStore = defineStore('setting', {
     lyricAutoCollapseEnabled: true,
     lyricCollapseHideControls: false,
     lyricPageBackgroundBlur: false,
+    lyricPageBackgroundRhythm: false,
     lyricFilterEnabled: false,
     lyricFilterPattern: '',
     desktopLyricFilterEnabled: false,
