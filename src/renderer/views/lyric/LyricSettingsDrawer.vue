@@ -240,6 +240,16 @@ const close = () => {
           </div>
           <div class="setting-row">
             <div class="setting-text">
+              <span class="setting-label">背景律动</span>
+              <span class="setting-hint">需开启封面模糊背景，此功能会增加性能消耗</span>
+            </div>
+            <Switch
+              v-model="settingStore.lyricPageBackgroundRhythm"
+              :disabled="!settingStore.lyricPageBackgroundBlur"
+            />
+          </div>
+          <div class="setting-row">
+            <div class="setting-text">
               <span class="setting-label">歌词过滤</span>
               <span class="setting-hint">隐藏制作信息与版权声明</span>
             </div>
