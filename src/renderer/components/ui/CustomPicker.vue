@@ -141,10 +141,6 @@ watch(
   color: #ffffff;
 }
 
-.dark .custom-picker-option.active {
-  color: #000000;
-}
-
 .custom-picker-option:hover {
   border-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
   background: color-mix(in srgb, var(--color-primary) 12%, transparent);

@@ -383,16 +383,18 @@ const confirmRemoveFromPlaylist = async () => {
 
     <div class="batch-selection">
       <Button type="button" class="batch-select" variant="ghost" size="xs" @click="toggleSelectAll">
-        <CheckboxRoot
-          class="batch-checkbox"
-          :model-value="selectAllState"
-          @update:model-value="toggleSelectAll"
-          @click.stop
-        >
-          <CheckboxIndicator as-child>
-            <span class="batch-checkbox-indicator"></span>
-          </CheckboxIndicator>
-        </CheckboxRoot>
+        <span class="batch-select-leading">
+          <CheckboxRoot
+            class="batch-checkbox"
+            :model-value="selectAllState"
+            @update:model-value="toggleSelectAll"
+            @click.stop
+          >
+            <CheckboxIndicator as-child>
+              <span class="batch-checkbox-indicator"></span>
+            </CheckboxIndicator>
+          </CheckboxRoot>
+        </span>
         全选
       </Button>
       <div class="batch-count">已选 {{ selectedKeys.size }} / {{ songs.length }}</div>
@@ -598,11 +600,19 @@ const confirmRemoveFromPlaylist = async () => {
 .batch-select {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 12px;
+  gap: 12px;
+  padding-left: 0;
   padding-right: 12px;
   font-weight: 600;
   color: var(--color-text-main);
+}
+
+.batch-select-leading {
+  width: 40px;
+  flex: 0 0 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .batch-count {

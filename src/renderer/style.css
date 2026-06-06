@@ -386,7 +386,8 @@ body.accent-scoped .main-layout .player-bar-container {
 .new-song-toolbar,
 .search-song-toolbar,
 .song-list-sticky,
-.comment-main-tabs {
+.comment-main-tabs,
+.sliver-header-root {
   isolation: isolate;
 }
 
@@ -408,38 +409,6 @@ body.accent-scoped .main-layout .player-bar-container {
   pointer-events: none;
 }
 
-body.echo-custom-background-enabled {
-  background: transparent !important;
-}
-
-body.echo-custom-background-enabled #app {
-  background: transparent !important;
-}
-
-body.echo-custom-background-enabled .bg-bg-main,
-body.echo-custom-background-enabled .explore-header::before,
-body.echo-custom-background-enabled .rank-toolbar::before,
-body.echo-custom-background-enabled .new-song-toolbar::before,
-body.echo-custom-background-enabled .search-song-toolbar::before,
-body.echo-custom-background-enabled .song-list-sticky::before,
-body.echo-custom-background-enabled .comment-main-tabs::before {
-  background: color-mix(in srgb, var(--color-bg-main) 58%, transparent) !important;
-}
-
-.dark body.echo-custom-background-enabled .bg-bg-main,
-.dark body.echo-custom-background-enabled .explore-header::before,
-.dark body.echo-custom-background-enabled .rank-toolbar::before,
-.dark body.echo-custom-background-enabled .new-song-toolbar::before,
-.dark body.echo-custom-background-enabled .search-song-toolbar::before,
-.dark body.echo-custom-background-enabled .song-list-sticky::before,
-.dark body.echo-custom-background-enabled .comment-main-tabs::before {
-  background: color-mix(in srgb, var(--color-bg-main) 66%, transparent) !important;
-}
-
-body.echo-custom-background-enabled .main-layout {
-  background: transparent !important;
-}
-
 body.echo-surface-translucent .main-layout,
 body.echo-surface-translucent .bg-bg-main,
 body.echo-surface-translucent .bg-bg-sidebar,
@@ -450,6 +419,8 @@ body.echo-surface-translucent .new-song-toolbar,
 body.echo-surface-translucent .search-song-toolbar,
 body.echo-surface-translucent .song-list-sticky,
 body.echo-surface-translucent .comment-main-tabs,
+body.echo-surface-translucent .search-pinned-tabs,
+body.echo-surface-translucent .sliver-header-root,
 body.echo-surface-translucent .dialog-content,
 body.echo-surface-translucent .drawer-panel,
 body.echo-surface-translucent .echo-popover-content,
@@ -474,6 +445,19 @@ body.echo-surface-translucent .rec-playlist-item,
 body.echo-surface-translucent .add-playlist-item {
   -webkit-backdrop-filter: var(--surface-backdrop-filter);
   backdrop-filter: var(--surface-backdrop-filter);
+}
+
+body.echo-surface-translucent .explore-header,
+body.echo-surface-translucent .rank-toolbar,
+body.echo-surface-translucent .new-song-toolbar,
+body.echo-surface-translucent .search-song-toolbar,
+body.echo-surface-translucent .song-list-sticky,
+body.echo-surface-translucent .comment-main-tabs {
+  background: transparent !important;
+}
+
+body.echo-surface-translucent .sliver-header-background {
+  background: transparent !important;
 }
 
 body .dialog-content {

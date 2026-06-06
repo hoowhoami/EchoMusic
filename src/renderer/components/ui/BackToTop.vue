@@ -61,7 +61,7 @@ onUnmounted(() => {
       size="none"
       v-if="visible"
       @click="scrollToTop"
-      class="fixed right-8 bottom-32 z-50 p-3 rounded-full back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
+      class="fixed right-8 bottom-32 z-50 p-3 rounded-full border border-[var(--control-border)] back-to-top-btn shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 group"
       aria-label="回到顶部"
     >
       <Icon
@@ -80,7 +80,7 @@ onUnmounted(() => {
 .back-to-top-btn {
   background: var(--color-bg-elevated);
   color: var(--color-text-main);
-  border: 1px solid var(--border-subtle);
+  border-color: var(--control-border);
   backdrop-filter: var(--surface-backdrop-filter);
 }
 
@@ -88,7 +88,11 @@ onUnmounted(() => {
   color: var(--color-primary);
 }
 
-.dark .back-to-top-btn:hover {
+:global(.dark .back-to-top-btn) {
+  border-color: rgba(255, 255, 255, 0.26) !important;
+}
+
+:global(.dark .back-to-top-btn:hover) {
   color: var(--color-primary);
 }
 

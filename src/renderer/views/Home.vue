@@ -278,7 +278,11 @@ const handleRejectAgreement = () => {
 }
 
 .gradient-primary {
-  background: linear-gradient(135deg, var(--color-primary), rgba(0, 113, 227, 0.7));
+  background: linear-gradient(
+    135deg,
+    var(--color-primary),
+    color-mix(in srgb, var(--color-primary) 70%, transparent)
+  );
 }
 
 .gradient-secondary {

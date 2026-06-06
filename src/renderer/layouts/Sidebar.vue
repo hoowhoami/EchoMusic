@@ -1649,7 +1649,7 @@ watch(
   @apply mx-1.5 h-[22px] w-px shrink-0 rounded-full bg-text-main/14;
 }
 
-.dark .sidebar-user-divider {
+:global(.dark) .sidebar-user-divider {
   background-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
 }
 
@@ -1657,7 +1657,7 @@ watch(
   @apply shrink-0 mx-px w-px h-3 rounded-full bg-text-main/22;
 }
 
-.dark .sidebar-tab-divider {
+:global(.dark) .sidebar-tab-divider {
   background-color: color-mix(in srgb, var(--color-text-main) 36%, transparent);
 }
 
@@ -1890,7 +1890,7 @@ watch(
   transition: background 0.6s ease;
 }
 
-.dark .sidebar-accent-gradient {
+:global(.dark) .sidebar-accent-gradient {
   background: linear-gradient(
     180deg,
     rgba(var(--color-primary-rgb), 0.18) 0%,

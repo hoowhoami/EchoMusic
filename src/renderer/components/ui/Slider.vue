@@ -123,7 +123,7 @@ const valueLabel = computed(() =>
   @apply relative grow rounded-full;
 }
 
-.dark .slider-track {
+:global(.dark) .slider-track {
   background-color: var(--control-track-bg);
 }
 

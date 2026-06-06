@@ -682,6 +682,10 @@ const findSectionElement = (id: string) => {
   visibility: visible;
 }
 
+:global(.dark .settings-back-to-top) {
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
 .settings-input {
   @apply px-3 py-1.5 text-[12px] font-medium border rounded-lg text-text-main transition-all;
   background: var(--control-bg);

@@ -444,8 +444,8 @@ const handleRemoveImpulseResponse = (id: string) => {
 }
 
 .irs-row-btn.is-danger:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--state-danger);
+  background: color-mix(in srgb, var(--state-danger) 10%, transparent);
 }
 
 .irs-empty {

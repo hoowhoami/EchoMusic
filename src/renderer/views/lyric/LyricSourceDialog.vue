@@ -672,9 +672,9 @@ watch(selectedKey, () => {
 }
 
 .candidate-tags .warn {
-  color: #b45309;
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.18);
+  color: var(--state-warning);
+  background: color-mix(in srgb, var(--state-warning) 10%, transparent);
+  border-color: color-mix(in srgb, var(--state-warning) 18%, transparent);
 }
 
 .preview-pane {

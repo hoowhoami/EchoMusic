@@ -963,17 +963,17 @@ onUnmounted(() => {
 }
 
 .rec-circle-fav {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.08);
+  color: var(--state-danger);
+  background: color-mix(in srgb, var(--state-danger) 8%, transparent);
 }
 
 .rec-circle-fav:hover {
-  background: rgba(239, 68, 68, 0.16);
+  background: color-mix(in srgb, var(--state-danger) 16%, transparent);
 }
 
 .rec-circle-fav-active {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--state-danger);
+  background: color-mix(in srgb, var(--state-danger) 12%, transparent);
 }
 
 .rec-circle-ghost {

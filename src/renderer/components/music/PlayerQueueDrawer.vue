@@ -1370,8 +1370,8 @@ onBeforeUnmount(() => {
 }
 
 .queue-remove:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--state-danger);
+  background: color-mix(in srgb, var(--state-danger) 12%, transparent);
 }
 
 .queue-empty-container {

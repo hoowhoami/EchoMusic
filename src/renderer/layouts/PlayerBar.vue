@@ -652,11 +652,11 @@ onUnmounted(() => {
   width: 2px;
   height: 6px;
   border-radius: 1px;
-  background: rgba(0, 113, 227, 0.8);
+  background: color-mix(in srgb, var(--color-primary) 80%, transparent);
 }
 
-.dark .climax-tick {
-  background: rgba(0, 113, 227, 0.65);
+:global(.dark) .climax-tick {
+  background: color-mix(in srgb, var(--color-primary) 65%, transparent);
 }
 
 .player-actions {
@@ -669,13 +669,13 @@ onUnmounted(() => {
   justify-content: center;
   width: 18px;
   height: 18px;
-  color: #ef4444;
+  color: var(--state-danger);
   opacity: 0.92;
   cursor: help;
   animation: player-error-pulse 1.8s ease-in-out 2;
 }
 
-.dark .player-error-indicator {
+:global(.dark) .player-error-indicator {
   color: #f87171;
 }
 
@@ -705,10 +705,10 @@ onUnmounted(() => {
 .player-error-tooltip-title {
   font-size: 12px;
   font-weight: 700;
-  color: #ef4444;
+  color: var(--state-danger);
 }
 
-.dark .player-error-tooltip-title {
+:global(.dark) .player-error-tooltip-title {
   color: #f87171;
 }
 
@@ -731,7 +731,7 @@ onUnmounted(() => {
   border-color: transparent;
 }
 
-.dark .player-toggle {
+:global(.dark) .player-toggle {
   background-color: var(--control-hover-bg);
   border-color: transparent;
   box-shadow: none;
@@ -832,7 +832,7 @@ onUnmounted(() => {
 .player-error-title {
   font-size: 12px;
   font-weight: 700;
-  color: #ef4444;
+  color: var(--state-danger);
 }
 
 .dark .player-error-title {

@@ -127,14 +127,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- 吸顶容器：始终保持 bg-bg-main 确保不透明 -->
+  <!-- 吸顶容器：背景层由全局 surface 规则控制，支持自定义背景透出 -->
   <div
     class="sliver-header-root sticky top-0 z-100 w-full bg-bg-main"
     :style="{ height: `${props.collapsedHeight}px` }"
   >
     <!-- 展开背景层：不再使用 opacity 变化，仅随滚动上移 -->
     <div
-      class="absolute inset-0 bg-bg-main -z-10 origin-top"
+      class="sliver-header-background absolute inset-0 bg-bg-main -z-10 origin-top"
       :style="{
         height: `${props.expandedHeight}px`,
         transform: `translateY(${-scrollY}px)`,

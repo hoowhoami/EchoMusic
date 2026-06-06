@@ -767,23 +767,7 @@ onBeforeUnmount(() => {
     <div class="header">
       <div class="header-left" @pointerdown.stop>
         <span class="song-name">{{ songName }} - {{ artistName }}</span>
-      </div>
-      <div class="header-center" @pointerdown.stop>
-        <button class="menu-btn" @click.stop="playPrevious">
-          <Icon :icon="iconStepBack" width="20" height="20" />
-        </button>
-        <button class="menu-btn" :title="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
-          <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
-        </button>
-        <button class="menu-btn" @click.stop="playNext">
-          <Icon :icon="iconStepForward" width="20" height="20" />
-        </button>
-      </div>
-      <div class="header-right" @pointerdown.stop>
-        <button class="menu-btn" title="选择歌词" @click.stop="openLyricSource">
-          <Icon :icon="iconList" width="20" height="20" />
-        </button>
-        <div v-if="hasLyrics" class="offset-group">
+        <div v-if="hasLyrics" class="offset-controls">
           <button class="menu-btn" title="歌词后退 0.5s" @click.stop="adjustLyricOffsetBackward">
             <Icon :icon="iconRotateCcw" width="18" height="18" />
           </button>
@@ -791,14 +775,30 @@ onBeforeUnmount(() => {
             <Icon :icon="iconRotateCw" width="18" height="18" />
           </button>
           <button
+            v-if="lyricTimeOffset !== 0"
             class="menu-btn"
-            :style="{ visibility: lyricTimeOffset !== 0 ? 'visible' : 'hidden' }"
             title="重置偏移"
             @click.stop="resetLyricOffset"
           >
             <Icon :icon="iconRefreshCw" width="17" height="17" />
           </button>
         </div>
+      </div>
+      <div class="header-center" @pointerdown.stop>
+        <button class="menu-btn" title="上一首" @click.stop="playPrevious">
+          <Icon :icon="iconStepBack" width="20" height="20" />
+        </button>
+        <button class="menu-btn" :title="isPlaying ? '暂停' : '播放'" @click.stop="togglePlayback">
+          <Icon :icon="isPlaying ? iconPause : iconPlayerPlay" width="20" height="20" />
+        </button>
+        <button class="menu-btn" title="下一首" @click.stop="playNext">
+          <Icon :icon="iconStepForward" width="20" height="20" />
+        </button>
+      </div>
+      <div class="header-right" @pointerdown.stop>
+        <button class="menu-btn" title="选择歌词" @click.stop="openLyricSource">
+          <Icon :icon="iconList" width="20" height="20" />
+        </button>
         <div v-if="hasLyrics && hasSecondary" class="tran-group">
           <button
             v-if="hasTranslation"
@@ -940,6 +940,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
+  overflow: hidden;
 }
 .header-center {
   display: flex;
@@ -1000,7 +1001,6 @@ onBeforeUnmount(() => {
   color: #31cfa1;
 }
 
-.offset-group,
 .tran-group {
   display: inline-flex;
   align-items: center;
@@ -1014,9 +1014,6 @@ onBeforeUnmount(() => {
     background-color 0.3s;
 }
 
-.desktop-lyric.hovered:not(.locked) .offset-group,
-.desktop-lyric.dragging:not(.locked) .offset-group,
-.desktop-lyric.resizing:not(.locked) .offset-group,
 .desktop-lyric.hovered:not(.locked) .tran-group,
 .desktop-lyric.dragging:not(.locked) .tran-group,
 .desktop-lyric.resizing:not(.locked) .tran-group {
@@ -1024,31 +1021,33 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.offset-group .menu-btn,
 .tran-group .menu-btn {
   border-radius: 0;
   margin: 0;
   opacity: 1;
 }
 
-.offset-group .menu-btn:first-child,
 .tran-group .menu-btn:first-child {
   border-radius: 8px 0 0 8px;
 }
 
-.offset-group .menu-btn:last-child,
 .tran-group .menu-btn:last-child {
   border-radius: 0 8px 8px 0;
 }
 
-.offset-group .menu-btn:only-child,
 .tran-group .menu-btn:only-child {
   border-radius: 8px;
 }
 
-.offset-group .menu-btn + .menu-btn,
 .tran-group .menu-btn + .menu-btn {
   border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.offset-controls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
 }
 
 .text-toggle-btn {

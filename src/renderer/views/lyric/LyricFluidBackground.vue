@@ -111,12 +111,7 @@ onUnmounted(() => {
         primitiveUnits="userSpaceOnUse"
         color-interpolation-filters="sRGB"
       >
-        <feTurbulence
-          type="fractalNoise"
-          baseFrequency="0.005"
-          numOctaves="1"
-          :seed="fluidSeed"
-        />
+        <feTurbulence type="fractalNoise" baseFrequency="0.005" numOctaves="1" :seed="fluidSeed" />
         <feDisplacementMap in="SourceGraphic" scale="400" />
       </filter>
     </svg>

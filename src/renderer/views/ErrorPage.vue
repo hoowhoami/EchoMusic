@@ -143,16 +143,16 @@ const handleCopyError = async () => {
   min-height: 32px;
   padding: 0 12px;
   border-radius: 999px;
-  background: color-mix(in srgb, #ef4444 10%, transparent);
-  color: #d23d3d;
+  background: color-mix(in srgb, var(--state-danger) 10%, transparent);
+  color: var(--state-danger);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
-.dark .error-badge {
+:global(.dark) .error-badge {
   color: #ff8a8a;
-  background: color-mix(in srgb, #ef4444 18%, transparent);
+  background: color-mix(in srgb, var(--state-danger) 18%, transparent);
 }
 
 .error-badge-dot {
@@ -181,7 +181,11 @@ const handleCopyError = async () => {
   position: absolute;
   inset: 0;
   border-radius: 28px;
-  background: radial-gradient(circle at 30% 30%, rgba(239, 68, 68, 0.28), rgba(239, 68, 68, 0.04));
+  background: radial-gradient(
+    circle at 30% 30%,
+    color-mix(in srgb, var(--state-danger) 28%, transparent),
+    color-mix(in srgb, var(--state-danger) 4%, transparent)
+  );
   filter: blur(0.2px);
 }
 
@@ -194,11 +198,11 @@ const handleCopyError = async () => {
   justify-content: center;
   background: var(--color-bg-elevated);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 12px 28px rgba(239, 68, 68, 0.12);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--state-danger) 12%, transparent);
 }
 
 .error-icon {
-  color: #ef4444;
+  color: var(--state-danger);
 }
 
 .error-copy {
@@ -304,7 +308,7 @@ const handleCopyError = async () => {
 }
 
 .error-copy-success {
-  color: #10b981;
+  color: var(--state-success);
 }
 
 .error-footnote {
@@ -327,7 +331,7 @@ const handleCopyError = async () => {
   height: 220px;
   top: 56px;
   left: max(24px, calc(50% - 420px));
-  background: rgba(0, 113, 227, 0.1);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
 .error-ambient--danger {
@@ -335,7 +339,7 @@ const handleCopyError = async () => {
   height: 180px;
   right: max(24px, calc(50% - 360px));
   bottom: 42px;
-  background: rgba(239, 68, 68, 0.1);
+  background: color-mix(in srgb, var(--state-danger) 10%, transparent);
 }
 
 @media (max-width: 720px) {

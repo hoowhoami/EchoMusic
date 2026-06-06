@@ -582,7 +582,7 @@ onUnmounted(() => {
 }
 
 .mini-control-btn:hover,
-.dark .mini-control-btn:hover {
+:global(.dark) .mini-control-btn:hover {
   background-color: transparent;
   color: var(--color-primary);
   opacity: 1;
@@ -641,7 +641,7 @@ onUnmounted(() => {
 .tb-search-input-wrap:focus-within {
   background: var(--control-bg);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
 .tb-search-icon {
@@ -691,21 +691,21 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-primary);
-  background: rgba(0, 113, 227, 0.08);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   transition: all 0.15s ease;
   white-space: nowrap;
 }
 
 .tb-search-goto:hover {
-  background: rgba(0, 113, 227, 0.14);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
-.dark .tb-search-goto {
-  background: rgba(0, 113, 227, 0.12);
+:global(.dark) .tb-search-goto {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
-.dark .tb-search-goto:hover {
-  background: rgba(0, 113, 227, 0.2);
+:global(.dark) .tb-search-goto:hover {
+  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 /* 搜索建议下拉 */
@@ -763,12 +763,12 @@ onUnmounted(() => {
 }
 
 .tb-suggest-item:hover {
-  background: rgba(0, 113, 227, 0.08);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   color: var(--color-primary);
 }
 
-.dark .tb-suggest-item:hover {
-  background: rgba(0, 113, 227, 0.14);
+:global(.dark) .tb-suggest-item:hover {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .tb-suggest-item-icon {
