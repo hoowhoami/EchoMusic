@@ -130,6 +130,19 @@ const hasCustomLyricColors = computed(() =>
     <div class="settings-divider"></div>
     <div class="settings-item">
       <div class="space-y-1">
+        <h3 class="font-semibold">背景律动</h3>
+        <p class="text-sm text-text-secondary">
+          开启后，歌词页封面模糊背景会变成无规律色块流动效果，此功能会增加性能消耗
+        </p>
+      </div>
+      <Switch
+        v-model="settingStore.lyricPageBackgroundRhythm"
+        :disabled="!settingStore.lyricPageBackgroundBlur"
+      />
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-item">
+      <div class="space-y-1">
         <h3 class="font-semibold">歌词过滤</h3>
         <p class="text-sm text-text-secondary">过滤非歌词内容（如制作人信息、版权声明等）</p>
       </div>
