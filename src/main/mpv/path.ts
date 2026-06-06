@@ -49,7 +49,7 @@ function findLibmpvRecursive(dir: string, maxDepth = 3): string | null {
 export function resolveLibmpvPath(): string | null {
   const resourceBase = app.isPackaged
     ? process.resourcesPath
-    : path.join(__dirname, '../../../build');
+    : path.join(app.getAppPath(), 'build');
   const bundledDir = path.join(resourceBase, 'mpv');
 
   log.info('[mpv:path] Resolving libmpv library', {

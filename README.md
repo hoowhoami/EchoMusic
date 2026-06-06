@@ -99,7 +99,7 @@
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
-- [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载）
+- [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载 `libmpv-2.dll` 到 `build\mpv` 目录）
 
 ### 本地开发
 
