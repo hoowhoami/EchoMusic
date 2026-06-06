@@ -173,13 +173,13 @@ onBeforeUnmount(stopPress);
 .input-number {
   @apply inline-flex items-stretch rounded-xl overflow-hidden;
   height: 40px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 92%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  border: 1px solid var(--control-border);
+  background: var(--control-muted-bg);
   transition: border-color 0.15s ease;
 }
 
 .input-number:focus-within {
-  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--control-border));
 }
 
 .input-number.is-disabled {
@@ -217,7 +217,7 @@ onBeforeUnmount(stopPress);
 .input-number-controls {
   @apply flex flex-col shrink-0;
   width: 28px;
-  border-left: 1px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-left: 1px solid var(--control-border);
 }
 
 .input-number-btn {
@@ -235,12 +235,12 @@ onBeforeUnmount(stopPress);
 }
 
 .input-number-btn:hover:not(.is-disabled) {
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  background: var(--control-hover-bg);
   color: var(--color-text-main);
 }
 
 .input-number-btn:active:not(.is-disabled) {
-  background: color-mix(in srgb, var(--color-text-main) 14%, transparent);
+  background: var(--row-active-bg);
 }
 
 .input-number-btn.is-disabled {
@@ -249,6 +249,6 @@ onBeforeUnmount(stopPress);
 }
 
 .input-number-btn + .input-number-btn {
-  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-top: 1px solid var(--control-border);
 }
 </style>

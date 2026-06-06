@@ -54,12 +54,12 @@ const sizeStyle = computed<CSSProperties | undefined>(() => {
     <!-- 2. 加载中 & 失败占位 -->
     <AvatarFallback
       :delay-ms="delayMs"
-      class="flex h-full w-full items-center justify-center bg-black/[0.03] dark:bg-white/[0.03]"
+      class="flex h-full w-full items-center justify-center bg-[var(--control-muted-bg)]"
     >
       <!-- 加载中骨架屏 -->
       <div
         v-if="showSkeleton"
-        class="absolute inset-0 bg-black/[0.05] dark:bg-white/[0.05] animate-pulse z-10"
+        class="absolute inset-0 bg-[var(--control-hover-bg)] animate-pulse z-10"
         :class="skeletonClass"
       ></div>
 

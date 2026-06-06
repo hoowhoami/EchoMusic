@@ -1,16 +1,6 @@
-export type LyricCharacterPayload = {
-  text: string;
-  startTime: number;
-  endTime: number;
-};
+import type { LyricLinePayload } from './lyrics';
 
-export type LyricLinePayload = {
-  time: number;
-  text: string;
-  translated?: string;
-  romanized?: string;
-  characters: LyricCharacterPayload[];
-};
+export type { LyricCharacterPayload, LyricLinePayload } from './lyrics';
 
 export type DesktopLyricPlaybackPayload = {
   trackId: string;
@@ -86,6 +76,7 @@ export type DesktopLyricSnapshot = {
   lyricsRevision: number;
   lyrics: LyricLinePayload[];
   currentIndex: number;
+  lyricTimeOffset: number;
   settings: DesktopLyricSettings;
   lockPhase: DesktopLyricLockPhase;
   /** 歌词同步警告（实际播放时长与歌词时长差异过大） */
@@ -95,8 +86,26 @@ export type DesktopLyricSnapshot = {
 export type DesktopLyricSnapshotPatch = Partial<
   Pick<
     DesktopLyricSnapshot,
-    'playback' | 'lyricsTrackId' | 'lyrics' | 'currentIndex' | 'lyricSyncWarning'
+    | 'playback'
+    | 'lyricsTrackId'
+    | 'lyrics'
+    | 'currentIndex'
+    | 'lyricTimeOffset'
+    | 'lyricSyncWarning'
   >
 > & {
   settings?: Partial<DesktopLyricSettings>;
 };
+
+export type DesktopLyricCommand =
+  | 'togglePlayback'
+  | 'previousTrack'
+  | 'nextTrack'
+  | 'toggleLyricsMode'
+  | 'cycleLyricsMode'
+  | 'openLyricSource'
+  | 'toggleTranslation'
+  | 'toggleRomanization'
+  | 'lyricOffsetBackward'
+  | 'lyricOffsetForward'
+  | 'lyricOffsetReset';

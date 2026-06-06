@@ -1,5 +1,6 @@
 import { BrowserWindow, app, ipcMain, nativeTheme, screen } from 'electron';
 import type {
+  DesktopLyricCommand,
   DesktopLyricLockPhase,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
@@ -61,6 +62,7 @@ let snapshot: DesktopLyricSnapshot = {
   lyricsRevision: 0,
   lyrics: [],
   currentIndex: -1,
+  lyricTimeOffset: 0,
   settings: getDesktopLyricSettings(),
   lockPhase: 'idle',
 };
@@ -82,6 +84,14 @@ const clearDesktopLyricLockPhaseTimer = () => {
   clearTimeout(desktopLyricLockPhaseTimer);
   desktopLyricLockPhaseTimer = null;
 };
+
+const DESKTOP_LYRIC_RENDERER_COMMANDS = new Set<DesktopLyricCommand>([
+  'toggleTranslation',
+  'toggleRomanization',
+  'lyricOffsetBackward',
+  'lyricOffsetForward',
+  'lyricOffsetReset',
+]);
 
 const setDesktopLyricLockPhase = (phase: DesktopLyricLockPhase, withCooldown = false) => {
   clearDesktopLyricLockPhaseTimer();
@@ -435,6 +445,7 @@ export const registerDesktopLyricHandlers = () => {
               lyricsRevision: snapshot.lyricsRevision + 1,
               lyrics: [],
               currentIndex: -1,
+              lyricTimeOffset: 0,
             }
           : {}),
       };
@@ -461,6 +472,9 @@ export const registerDesktopLyricHandlers = () => {
     }
     if (payload.currentIndex !== undefined) {
       snapshot = { ...snapshot, currentIndex: payload.currentIndex };
+    }
+    if (payload.lyricTimeOffset !== undefined) {
+      snapshot = { ...snapshot, lyricTimeOffset: Number(payload.lyricTimeOffset) || 0 };
     }
     if (payload.lyricSyncWarning !== undefined) {
       snapshot = { ...snapshot, lyricSyncWarning: payload.lyricSyncWarning };
@@ -534,40 +548,34 @@ export const registerDesktopLyricHandlers = () => {
     return getDesktopLyricVirtualScreenBounds();
   });
 
-  ipcMain.on(
-    'desktop-lyric:command',
-    (
-      _event,
-      command:
-        | 'togglePlayback'
-        | 'previousTrack'
-        | 'nextTrack'
-        | 'toggleLyricsMode'
-        | 'cycleLyricsMode'
-        | 'openLyricSource',
-    ) => {
-      const lyricWin = getDesktopLyricWindow();
-      const focusedMainWindow = BrowserWindow.getAllWindows().find(
-        (win) => win !== lyricWin && !win.isDestroyed(),
-      );
-      if (!focusedMainWindow) return;
-      if (command === 'openLyricSource') {
-        if (getActiveWindowMode() === 'mini') {
-          closeMiniPlayerWindow();
-        }
-        showMainWindow();
-        const mainWin = getMainWindow();
-        if (!mainWin || mainWin.isDestroyed()) return;
-        setTimeout(() => {
-          if (!mainWin.isDestroyed()) {
-            mainWin.webContents.send('shortcut-trigger', command);
-          }
-        }, 300);
-        return;
+  ipcMain.on('desktop-lyric:command', (_event, command: DesktopLyricCommand) => {
+    const lyricWin = getDesktopLyricWindow();
+    const focusedMainWindow = BrowserWindow.getAllWindows().find(
+      (win) => win !== lyricWin && !win.isDestroyed(),
+    );
+    if (!focusedMainWindow) return;
+    if (DESKTOP_LYRIC_RENDERER_COMMANDS.has(command)) {
+      const mainWin = getMainWindow();
+      if (!mainWin || mainWin.isDestroyed()) return;
+      mainWin.webContents.send('desktop-lyric:command', command);
+      return;
+    }
+    if (command === 'openLyricSource') {
+      if (getActiveWindowMode() === 'mini') {
+        closeMiniPlayerWindow();
       }
-      focusedMainWindow.webContents.send('shortcut-trigger', command);
-    },
-  );
+      showMainWindow();
+      const mainWin = getMainWindow();
+      if (!mainWin || mainWin.isDestroyed()) return;
+      setTimeout(() => {
+        if (!mainWin.isDestroyed()) {
+          mainWin.webContents.send('shortcut-trigger', command);
+        }
+      }, 300);
+      return;
+    }
+    focusedMainWindow.webContents.send('shortcut-trigger', command);
+  });
 };
 
 nativeTheme.on('updated', () => {

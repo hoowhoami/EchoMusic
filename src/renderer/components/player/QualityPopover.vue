@@ -113,14 +113,8 @@ withDefaults(defineProps<Props>(), {
 .quality-popover.echo-popover-content {
   width: 160px;
   padding: 10px 0;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.dark .quality-popover.echo-popover-content {
-  background: rgba(28, 28, 30, 0.78);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
 }
 
 .pm-title {
@@ -150,21 +144,13 @@ withDefaults(defineProps<Props>(), {
 }
 
 .pm-item:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--row-hover-bg);
   opacity: 1;
-}
-
-.dark .pm-item:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .pm-item.is-active {
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  background: var(--row-selected-bg);
   opacity: 1;
-}
-
-.dark .pm-item.is-active {
-  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .pm-item.is-disabled {

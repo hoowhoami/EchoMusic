@@ -1298,7 +1298,7 @@ button:disabled {
   top: 50%;
   height: 3px;
   border-radius: 999px;
-  background: rgba(120, 120, 120, 0.32);
+  background: var(--control-track-bg);
   transform: translateY(-50%);
 }
 
@@ -1318,8 +1318,9 @@ button:disabled {
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: var(--color-primary);
-  box-shadow: none;
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-control);
   transform: translate(-50%, -50%) scale(0.9);
   transition: transform 0.12s ease;
 }
@@ -1370,7 +1371,7 @@ button:disabled {
   top: 50%;
   height: 3px;
   border-radius: 999px;
-  background: rgba(210, 210, 210, 0.86);
+  background: var(--control-track-bg);
   transform: translateY(-50%);
 }
 

@@ -232,7 +232,7 @@ onMounted(() => loadData());
                 variant="unstyled"
                 size="none"
                 @click="handleLogout"
-                class="w-10 h-10 flex items-center justify-center rounded-full border border-border-light hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
+                class="w-10 h-10 flex items-center justify-center rounded-full border border-[var(--control-border)] hover:bg-red-500/10 hover:text-red-500 transition-all active:scale-90"
                 title="退出登录"
               >
                 <Icon :icon="iconLogOut" width="20" height="20" />
@@ -278,21 +278,21 @@ onMounted(() => loadData());
                           >等级</span
                         >
                       </div>
-                      <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
+                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
                       <div class="flex flex-col">
                         <span class="text-[15px] font-black">{{ detail.follows || 0 }}</span>
                         <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
                           >关注</span
                         >
                       </div>
-                      <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
+                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
                       <div class="flex flex-col">
                         <span class="text-[15px] font-black">{{ detail.fans || 0 }}</span>
                         <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
                           >粉丝</span
                         >
                       </div>
-                      <div class="w-px h-4 bg-black/5 dark:bg-white/5"></div>
+                      <div class="w-px h-4 bg-[var(--border-subtle)]"></div>
                       <div class="flex flex-col">
                         <span class="text-[15px] font-black">{{ detail.nvisitors || 0 }}</span>
                         <span class="text-[10px] opacity-60 uppercase font-bold tracking-wider"
@@ -317,7 +317,7 @@ onMounted(() => loadData());
                   <h3 class="text-[16px] font-black">账号档案</h3>
                 </div>
                 <div
-                  class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-white border border-black/10 shadow-sm dark:bg-white/4 dark:border-white/10 dark:shadow-none"
+                  class="profile-archive-card space-y-0.5 p-2 rounded-[18px] bg-[var(--color-bg-elevated)] border border-[var(--border-subtle)] shadow-sm"
                 >
                   <div class="flex items-center justify-between px-4 py-3">
                     <span class="text-[13px] opacity-60 font-bold">用户 ID</span>
@@ -358,7 +358,7 @@ onMounted(() => loadData());
                       'flex items-center gap-3 p-3 rounded-2xl transition-all border',
                       userStore.isTvipClaimedToday
                         ? 'bg-green-500/10 border-green-500/20'
-                        : 'bg-black/3 dark:bg-white/3 border-transparent hover:bg-black/6 dark:hover:bg-white/6 cursor-pointer',
+                        : 'bg-[var(--control-muted-bg)] border-transparent hover:bg-[var(--control-hover-bg)] cursor-pointer',
                     ]"
                   >
                     <div
@@ -366,7 +366,7 @@ onMounted(() => loadData());
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
                         userStore.isTvipClaimedToday
                           ? 'bg-green-500/20 text-green-500'
-                          : 'bg-black/5 dark:bg-white/5 opacity-60',
+                          : 'bg-[var(--control-hover-bg)] opacity-60',
                       ]"
                     >
                       <Icon :icon="iconHome" width="18" height="18" />
@@ -429,8 +429,8 @@ onMounted(() => loadData());
                       userStore.isSvipClaimedToday || svip
                         ? 'bg-orange-500/10 border-orange-500/20'
                         : userStore.isTvipClaimedToday
-                          ? 'bg-black/3 dark:bg-white/3 border-transparent hover:bg-black/6 dark:hover:bg-white/6 cursor-pointer'
-                          : 'bg-black/1 dark:bg-white/1 opacity-60 cursor-not-allowed',
+                          ? 'bg-[var(--control-muted-bg)] border-transparent hover:bg-[var(--control-hover-bg)] cursor-pointer'
+                          : 'bg-[var(--control-muted-bg)] opacity-60 cursor-not-allowed',
                     ]"
                   >
                     <div
@@ -438,7 +438,7 @@ onMounted(() => loadData());
                         'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
                         userStore.isSvipClaimedToday || svip
                           ? 'bg-orange-500/20 text-orange-500'
-                          : 'bg-black/5 dark:bg-white/5 opacity-60',
+                          : 'bg-[var(--control-hover-bg)] opacity-60',
                       ]"
                     >
                       <Icon :icon="iconScan" width="18" height="18" />
@@ -529,15 +529,9 @@ onMounted(() => loadData());
 }
 
 .profile-archive-card {
-  background-color: #ffffff !important;
-  border-color: rgba(0, 0, 0, 0.12) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06) !important;
-}
-
-.dark .profile-archive-card {
-  background-color: rgba(255, 255, 255, 0.04) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: none !important;
+  background-color: var(--color-bg-elevated) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: var(--shadow-elevated) !important;
 }
 </style>
 
@@ -545,13 +539,7 @@ onMounted(() => loadData());
 .vip-expire-popover.echo-popover-content {
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.dark .vip-expire-popover.echo-popover-content {
-  background: rgba(28, 28, 30, 0.78);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
 }
 </style>

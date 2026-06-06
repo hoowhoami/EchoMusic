@@ -230,12 +230,7 @@ defineExpose({
 
 .queue-row.is-current,
 .queue-row:hover {
-  background: color-mix(in srgb, var(--color-text-main) 5%, transparent);
-}
-
-.dark .queue-row.is-current,
-.dark .queue-row:hover {
-  background: color-mix(in srgb, #ffffff 4%, transparent);
+  background: var(--row-hover-bg);
 }
 
 .queue-leading {

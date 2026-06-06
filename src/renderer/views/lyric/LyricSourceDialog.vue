@@ -520,9 +520,9 @@ watch(selectedKey, () => {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
 }
 
 .candidate-list {
@@ -539,8 +539,8 @@ watch(selectedKey, () => {
   width: 100%;
   padding: 11px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: color-mix(in srgb, var(--color-bg-main) 42%, transparent);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
   color: var(--color-text-main);
   text-align: left;
   transition:
@@ -560,18 +560,18 @@ watch(selectedKey, () => {
 
 .candidate-item:hover,
 .candidate-item.active {
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
-  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--control-border));
 }
 
 .candidate-item.recommended {
-  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-card));
-  border-color: color-mix(in srgb, var(--color-primary) 16%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-primary) 16%, var(--control-border));
 }
 
 .candidate-item.recommended.active {
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
-  border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-primary) 36%, var(--control-border));
 }
 
 .candidate-main,
@@ -613,7 +613,7 @@ watch(selectedKey, () => {
   padding: 0 7px;
   border-radius: 999px;
   border: 1px solid transparent;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  background: var(--control-muted-bg);
   color: var(--color-text-secondary);
   font-size: 11px;
   line-height: 1;
@@ -634,12 +634,6 @@ watch(selectedKey, () => {
   background: var(--color-primary);
   color: white;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 28%, transparent);
-}
-
-:global(.dark) .candidate-tags span,
-:global(.dark) .status-pill,
-:global(.dark) .preview-badges span {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .status-pill.recommended-pill {
@@ -717,7 +711,7 @@ watch(selectedKey, () => {
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .preview-title-group {

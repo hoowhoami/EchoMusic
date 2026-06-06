@@ -341,9 +341,8 @@ withDefaults(defineProps<Props>(), {
   height: 320px;
   padding: 0;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(24px);
-  border-color: rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
   display: flex;
 }
 
@@ -352,11 +351,6 @@ withDefaults(defineProps<Props>(), {
   width: 100%;
   height: 100%;
   min-width: 0;
-}
-
-.dark .effect-popover.echo-popover-content {
-  background: rgba(32, 32, 34, 0.8);
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .effect-layout {
@@ -368,17 +362,12 @@ withDefaults(defineProps<Props>(), {
 /* 侧边栏 */
 .effect-sidebar {
   width: 80px;
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--control-muted-bg);
   display: flex;
   flex-direction: column;
   padding: 12px 6px;
   gap: 4px;
-  border-right: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.dark .effect-sidebar {
-  background: rgba(255, 255, 255, 0.02);
-  border-right-color: rgba(255, 255, 255, 0.05);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .sidebar-item {
@@ -399,7 +388,7 @@ withDefaults(defineProps<Props>(), {
 
 .sidebar-item:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--row-hover-bg);
 }
 
 .sidebar-item.is-active {
@@ -489,8 +478,8 @@ withDefaults(defineProps<Props>(), {
   min-height: 38px;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid var(--control-border);
+  background: var(--control-muted-bg);
   color: var(--color-text-main);
   opacity: 0.82;
   align-items: center;
@@ -500,11 +489,6 @@ withDefaults(defineProps<Props>(), {
     border-color 0.16s ease,
     color 0.16s ease,
     opacity 0.16s ease;
-}
-
-.dark .effect-popover .pm-item {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.045);
 }
 
 .effect-popover .pm-item:hover {
@@ -596,12 +580,8 @@ withDefaults(defineProps<Props>(), {
   min-width: 0;
   height: 4px;
   border-radius: 9999px;
-  background: rgba(29, 29, 31, 0.08);
+  background: var(--control-track-bg);
   cursor: pointer;
-}
-
-.dark .irs-strength-track {
-  background: rgba(245, 245, 247, 0.1);
 }
 
 .irs-strength-range {
@@ -615,10 +595,10 @@ withDefaults(defineProps<Props>(), {
   display: block;
   width: 14px;
   height: 14px;
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
   border-radius: 9999px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-control);
   outline: none;
   cursor: pointer;
 }
@@ -681,12 +661,8 @@ withDefaults(defineProps<Props>(), {
   flex-grow: 1;
   border-radius: 9999px;
   width: 4px;
-  background: rgba(29, 29, 31, 0.08);
+  background: var(--control-track-bg);
   cursor: pointer;
-}
-
-.dark .eq-track {
-  background: rgba(245, 245, 247, 0.1);
 }
 
 .eq-range {
@@ -700,10 +676,10 @@ withDefaults(defineProps<Props>(), {
   display: block;
   width: 12px;
   height: 12px;
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
   border-radius: 9999px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-control);
   outline: none;
   cursor: pointer;
 }
@@ -724,8 +700,8 @@ withDefaults(defineProps<Props>(), {
 
 .preset-chip {
   padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--control-border);
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 600;
@@ -735,14 +711,9 @@ withDefaults(defineProps<Props>(), {
   transition: all 0.2s;
 }
 
-.dark .preset-chip {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.05);
-}
-
 .preset-chip:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--control-hover-bg);
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
@@ -752,9 +723,5 @@ withDefaults(defineProps<Props>(), {
   background: var(--color-primary);
   border-color: var(--color-primary);
   color: white;
-}
-
-.dark .preset-chip:hover {
-  background: rgba(255, 255, 255, 0.1);
 }
 </style>

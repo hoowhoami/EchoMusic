@@ -460,8 +460,8 @@ watch(
 .card-block {
   padding: 18px;
   border-radius: 18px;
-  background: var(--color-bg-card);
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
 }
 
 .card-block--hero {
@@ -507,7 +507,7 @@ watch(
   height: 34px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  border: 1px solid var(--border-subtle);
   background: var(--bg-info-card);
   color: var(--color-text-main);
   font-size: 12px;
@@ -652,7 +652,7 @@ watch(
 .mv-source-card {
   padding: 14px 16px;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  border: 1px solid var(--border-subtle);
   background: var(--bg-info-card);
   text-align: left;
   transition:

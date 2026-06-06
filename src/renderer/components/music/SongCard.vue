@@ -366,11 +366,7 @@ const handleFavorite = () => {
 }
 
 .song-card-surface:hover {
-  background: var(--color-bg-card);
-}
-
-.dark .song-card-surface:hover {
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
+  background: var(--row-hover-bg);
 }
 
 .song-card .song-title {
@@ -502,9 +498,9 @@ const handleFavorite = () => {
   min-width: 172px;
   padding: 6px;
   border-radius: 12px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -525,26 +521,22 @@ const handleFavorite = () => {
 }
 
 :deep(.song-context-item:hover) {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--row-hover-bg);
   color: var(--color-primary);
-}
-
-.dark :deep(.song-context-item:hover) {
-  background-color: rgba(255, 255, 255, 0.08);
 }
 
 :deep(.song-context-separator) {
   height: 1px;
   margin: 4px 6px;
-  background-color: var(--color-border-light);
+  background-color: var(--border-subtle);
 }
 
 .playlist-picker-item {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-card);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
   text-align: left;
   display: flex;
   align-items: center;

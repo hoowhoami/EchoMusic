@@ -39,10 +39,16 @@ const handleUpdate = (next: unknown) => {
 @reference "@/style.css";
 
 .switch-root {
-  @apply relative inline-flex h-6 w-11 items-center rounded-full border border-border-light/60 transition-colors outline-none;
-  @apply data-[state=checked]:bg-primary data-[state=unchecked]:bg-text-secondary/10;
+  @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors outline-none;
   @apply data-disabled:opacity-60 data-disabled:cursor-not-allowed;
   @apply focus-visible:outline-none;
+  border: 1px solid var(--control-border);
+  background: var(--control-muted-bg);
+}
+
+.switch-root[data-state='checked'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
 }
 
 .switch-root:focus-visible {

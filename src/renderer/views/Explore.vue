@@ -657,7 +657,7 @@ const filteredArtistCards = computed(() => {
           class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${rankToolbarOffset}px` }"
         >
-          <div class="border-b border-border-light/10">
+          <div class="border-b border-[var(--border-subtle)]">
             <div class="flex items-center justify-between h-14">
               <div class="rank-song-tab">
                 <span class="rank-song-label relative"
@@ -670,7 +670,7 @@ const filteredArtistCards = computed(() => {
                     v-model="rankSearchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -786,7 +786,7 @@ const filteredArtistCards = computed(() => {
           class="song-list-sticky sticky z-110 bg-bg-main"
           :style="{ top: `${newSongToolbarOffset}px` }"
         >
-          <div class="border-b border-border-light/10">
+          <div class="border-b border-[var(--border-subtle)]">
             <div class="flex items-center justify-between h-14">
               <div class="rank-song-tab">
                 <span class="rank-song-label relative"
@@ -799,7 +799,7 @@ const filteredArtistCards = computed(() => {
                     v-model="newSongSearchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"

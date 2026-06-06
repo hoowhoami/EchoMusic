@@ -193,11 +193,7 @@ const confirm = () => {
   flex-shrink: 0;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.dark .color-picker-native-wrap {
-  border-color: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--control-border);
 }
 
 .color-picker-native {
@@ -237,20 +233,15 @@ const confirm = () => {
   gap: 12px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--control-border);
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--control-bg);
   color: var(--color-text-main);
   cursor: pointer;
   transition:
     transform 0.15s ease,
     border-color 0.15s ease,
     background 0.15s ease;
-}
-
-.dark .color-picker-dynamic {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .color-picker-dynamic:hover {
@@ -339,20 +330,12 @@ const confirm = () => {
 }
 
 .color-picker-btn.cancel {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--control-muted-bg);
   color: var(--color-text-main);
 }
 
 .color-picker-btn.cancel:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.dark .color-picker-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.dark .color-picker-btn.cancel:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--control-hover-bg);
 }
 
 .color-picker-btn.confirm {

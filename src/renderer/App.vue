@@ -13,6 +13,7 @@ import { waitForSqlitePersistHydration } from './stores/sqlitePersist';
 import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
+import { initNowPlayingSync } from '@/nowPlaying/sync';
 import { refreshPlugins } from '@/plugins/runtime';
 import { getCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
@@ -26,6 +27,7 @@ const playlistStore = usePlaylistStore();
 let disposeShortcuts: (() => void) | null = null;
 let disposeDesktopLyricSync: (() => void) | null = null;
 let disposeMiniPlayerSync: (() => void) | null = null;
+let disposeNowPlayingSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let disposePowerResumeSync: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
@@ -77,6 +79,9 @@ onMounted(async () => {
   void initDesktopLyricSync().then((dispose) => {
     disposeDesktopLyricSync = dispose;
   });
+  void initNowPlayingSync().then((dispose) => {
+    disposeNowPlayingSync = dispose;
+  });
   void initMiniPlayerSync().then((dispose) => {
     disposeMiniPlayerSync = dispose;
   });
@@ -120,6 +125,8 @@ onUnmounted(() => {
   disposeDesktopLyricSync = null;
   disposeMiniPlayerSync?.();
   disposeMiniPlayerSync = null;
+  disposeNowPlayingSync?.();
+  disposeNowPlayingSync = null;
   disposeTrayPlayModeSync?.();
   disposeTrayPlayModeSync = null;
   disposePowerResumeSync?.();

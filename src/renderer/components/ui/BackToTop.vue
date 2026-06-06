@@ -78,15 +78,10 @@ onUnmounted(() => {
 @reference "@/style.css";
 
 .back-to-top-btn {
-  background: #ffffff;
-  color: #1d1d1f;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
-.dark .back-to-top-btn {
-  background: #2c2c2e;
-  color: #f5f5f7;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-main);
+  border: 1px solid var(--border-subtle);
+  backdrop-filter: var(--surface-backdrop-filter);
 }
 
 .back-to-top-btn:hover {

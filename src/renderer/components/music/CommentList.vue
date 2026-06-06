@@ -422,12 +422,12 @@ const formatLike = (value: number) => {
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  background: var(--color-bg-card);
+  background: var(--control-bg);
   color: var(--color-primary);
   font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
 
 .comment-content {

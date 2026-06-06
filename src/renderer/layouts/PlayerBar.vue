@@ -241,12 +241,12 @@ onUnmounted(() => {
 <template>
   <div class="player-bar-container w-full px-2 pb-1.25 z-1000">
     <footer
-      class="player-bar w-full h-21 bg-bg-card border border-border-light/40 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
+      class="player-bar w-full h-21 border rounded-xl flex items-center justify-between px-3 py-1 gap-3 select-none no-drag transition-all duration-300"
     >
       <!-- 1. 左侧：歌曲信息 - 弹性增长 -->
       <div class="flex-1 flex items-center gap-3 min-w-30 max-w-[320px] overflow-hidden">
         <div
-          class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-black/4 dark:bg-white/4"
+          class="relative w-14 h-14 shrink-0 cursor-pointer group rounded-[10px] overflow-hidden bg-[var(--control-muted-bg)]"
           @click="navigateToLyric"
         >
           <Cover
@@ -442,7 +442,7 @@ onUnmounted(() => {
             variant="unstyled"
             size="none"
             @click="player.togglePlay"
-            class="player-toggle w-9.5 h-9.5 rounded-full bg-black/4 flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border border-black/5"
+            class="player-toggle w-9.5 h-9.5 rounded-full flex items-center justify-center hover:scale-110 hover:text-primary active:scale-95 transition-all border"
           >
             <Icon v-if="!player.isPlaying" :icon="iconPlay" width="16" height="16" class="ml-0.5" />
             <Icon v-else :icon="iconPause" width="20" height="20" />
@@ -483,7 +483,7 @@ onUnmounted(() => {
             @mouseenter="isHoveringProgress = true"
             @mouseleave="isHoveringProgress = false"
           >
-            <SliderTrack class="player-progress-track bg-black/8 relative grow rounded-full h-0.75">
+            <SliderTrack class="player-progress-track relative grow rounded-full h-0.75">
               <div class="climax-mark-layer">
                 <template
                   v-for="(mark, index) in player.climaxMarks"
@@ -503,7 +503,7 @@ onUnmounted(() => {
               <SliderRange class="absolute bg-primary rounded-full h-full" />
             </SliderTrack>
             <SliderThumb
-              class="player-progress-thumb block w-2.5 h-2.5 bg-white border border-black/10 rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"
+              class="player-progress-thumb block w-2.5 h-2.5 border rounded-full shadow-md focus-visible:outline-none transition-[opacity,transform] duration-200"
               :class="[isHoveringProgress ? 'opacity-100 scale-125' : 'opacity-0 scale-50']"
             />
           </SliderRoot>
@@ -632,7 +632,12 @@ onUnmounted(() => {
 }
 
 .player-bar {
-  transition: background-color 0.3s ease;
+  background: var(--color-bg-player);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 .climax-mark-layer {
@@ -722,18 +727,24 @@ onUnmounted(() => {
 }
 
 .player-toggle {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: var(--control-muted-bg);
   border-color: transparent;
 }
 
 .dark .player-toggle {
-  background-color: rgba(245, 245, 247, 0.22);
+  background-color: var(--control-hover-bg);
   border-color: transparent;
   box-shadow: none;
 }
 
-.dark .player-progress-track {
-  background-color: rgba(245, 245, 247, 0.4);
+.player-progress-track {
+  background-color: var(--control-track-bg);
+}
+
+.player-progress-thumb {
+  background: var(--control-thumb-bg);
+  border-color: var(--control-border);
+  box-shadow: var(--shadow-control);
 }
 
 .player-progress-thumb:focus-visible {
@@ -769,8 +780,8 @@ onUnmounted(() => {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-card);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
   text-align: left;
   display: flex;
   align-items: center;
@@ -808,14 +819,8 @@ onUnmounted(() => {
 .player-error-popover.echo-popover-content {
   width: 220px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.dark .player-error-popover.echo-popover-content {
-  background: rgba(28, 28, 30, 0.78);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
 }
 
 .player-error-content {

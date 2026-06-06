@@ -1,4 +1,4 @@
-import type { LyricLinePayload } from './desktop-lyric';
+import type { LyricLinePayload } from './lyrics';
 
 export type MiniPlayerExpandDirection = 'down' | 'up';
 

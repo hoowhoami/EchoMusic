@@ -116,18 +116,11 @@ const handleClick = () => {
 }
 
 .card-container {
-  @apply p-[10px] rounded-[20px] bg-bg-card border border-border-light/50 transition-all duration-300;
-  --playlist-card-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-  --playlist-card-hover-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
-}
-
-.dark .card-container {
-  border-color: color-mix(in srgb, var(--color-border-light) 92%, transparent);
-  --playlist-card-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
-  --playlist-card-hover-shadow:
-    0 14px 34px rgba(0, 0, 0, 0.42),
-    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  @apply p-[10px] rounded-[20px] transition-all duration-300;
+  --playlist-card-shadow: var(--shadow-card);
+  --playlist-card-hover-shadow: var(--shadow-card-hover);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
 }
 
 .playlist-card-grid:hover .card-container {
@@ -160,8 +153,8 @@ const handleClick = () => {
 }
 
 .playlist-card-list:hover {
-  background-color: color-mix(in srgb, var(--color-text-main) 5%, transparent);
-  border-color: color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  background-color: var(--row-hover-bg);
+  border-color: var(--border-subtle);
 }
 
 .playlist-card-list .title {

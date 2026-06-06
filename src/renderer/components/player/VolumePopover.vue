@@ -96,14 +96,8 @@ const handleWheel = (e: WheelEvent) => {
 .vol-popover.echo-popover-content {
   width: auto;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(0, 0, 0, 0.1);
-}
-
-.dark .vol-popover.echo-popover-content {
-  background: rgba(28, 28, 30, 0.78);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
 }
 
 .vol-body {
@@ -131,12 +125,8 @@ const handleWheel = (e: WheelEvent) => {
   flex-grow: 1;
   border-radius: 9999px;
   width: 3px;
-  background: rgba(29, 29, 31, 0.18);
+  background: var(--control-track-bg);
   cursor: pointer;
-}
-
-.dark .vol-track {
-  background: rgba(245, 245, 247, 0.15);
 }
 
 .vol-range {
@@ -150,10 +140,10 @@ const handleWheel = (e: WheelEvent) => {
   display: block;
   width: 12px;
   height: 12px;
-  background: white;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
   border-radius: 9999px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-control);
   outline: none;
   cursor: pointer;
 }

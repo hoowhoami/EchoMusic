@@ -419,7 +419,7 @@ watch(
 .scrollbar-thumb {
   width: 4px;
   margin-left: auto;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--scrollbar-thumb-bg);
   border-radius: 4px;
   cursor: pointer;
   transition:
@@ -428,19 +428,10 @@ watch(
   will-change: transform;
 }
 
-.dark .scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-}
-
 .scrollbar-thumb:hover,
 .scrollbar-thumb:active {
   width: 8px;
-  background: rgba(0, 0, 0, 0.5);
-}
-
-.dark .scrollbar-thumb:hover,
-.dark .scrollbar-thumb:active {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--scrollbar-thumb-bg-active);
 }
 
 .scrollbar-fade-enter-active,

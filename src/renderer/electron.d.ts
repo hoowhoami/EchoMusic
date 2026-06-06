@@ -3,10 +3,16 @@ import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
 import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
+  DesktopLyricCommand,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type {
+  NowPlayingCommand,
+  NowPlayingSnapshot,
+  NowPlayingSnapshotPatch,
+} from '../shared/now-playing';
 import type {
   MiniPlayerCommand,
   MiniPlayerSnapshot,
@@ -33,6 +39,10 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWindowBounds,
+  PluginWindowContextResult,
+  PluginWindowResult,
+  PluginWindowShowOptions,
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
@@ -116,15 +126,14 @@ export interface IElectronAPI {
     syncSnapshot: (payload: DesktopLyricSnapshotPatch) => void;
     onSnapshot: (func: (snapshot: DesktopLyricSnapshot) => void) => () => void;
     setIgnoreMouseEvents: (ignore: boolean) => void;
-    command: (
-      command:
-        | 'togglePlayback'
-        | 'previousTrack'
-        | 'nextTrack'
-        | 'toggleLyricsMode'
-        | 'cycleLyricsMode'
-        | 'openLyricSource',
-    ) => void;
+    command: (command: DesktopLyricCommand) => void;
+  };
+  nowPlaying: {
+    getSnapshot: () => Promise<NowPlayingSnapshot>;
+    syncSnapshot: (payload: NowPlayingSnapshotPatch) => void;
+    onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => () => void;
+    command: (command: NowPlayingCommand) => void;
+    onCommand: (func: (command: NowPlayingCommand) => void) => () => void;
   };
   miniPlayer?: {
     getSnapshot: () => Promise<MiniPlayerSnapshot>;
@@ -178,7 +187,34 @@ export interface IElectronAPI {
         safeMode?: boolean;
       },
     ) => Promise<PluginReportFailureResult>;
+    clearFailure: (pluginId?: string) => Promise<PluginReportFailureResult>;
     readAsset: (pluginId: string, asset: 'main' | 'style') => Promise<PluginAssetSourceResult>;
+    windows: {
+      show: (
+        pluginId: string,
+        windowId: string,
+        options?: PluginWindowShowOptions,
+      ) => Promise<PluginWindowResult>;
+      hide: (pluginId: string, windowId: string) => Promise<PluginWindowResult>;
+      close: (pluginId: string, windowId: string) => Promise<PluginWindowResult>;
+      move: (
+        pluginId: string,
+        windowId: string,
+        bounds: Partial<PluginWindowBounds>,
+      ) => Promise<PluginWindowResult>;
+      getBounds: (pluginId: string, windowId: string) => Promise<PluginWindowResult>;
+      setIgnoreMouseEvents: (
+        pluginId: string,
+        windowId: string,
+        ignore: boolean,
+      ) => Promise<PluginWindowResult>;
+      getContext: (pluginId: string, windowId: string) => Promise<PluginWindowContextResult>;
+      readAsset: (
+        pluginId: string,
+        windowId: string,
+        asset: 'main' | 'style',
+      ) => Promise<PluginAssetSourceResult>;
+    };
     dialog: {
       selectDirectory: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;
       selectFiles: (options?: PluginOpenDialogOptions) => Promise<PluginDialogResult>;

@@ -60,9 +60,7 @@ withDefaults(defineProps<Props>(), {
           variant="unstyled"
           size="none"
           class="text-[13px] font-extrabold px-1.5 py-0.5 rounded-md transition-colors"
-          :class="
-            player.playbackRate === 1 ? 'opacity-40' : 'hover:bg-black/5 dark:hover:bg-white/10'
-          "
+          :class="player.playbackRate === 1 ? 'opacity-40' : 'hover:bg-[var(--control-hover-bg)]'"
           @click="resetPlaybackRate"
           >{{ playbackRateDisplay }}</Button
         >
@@ -78,13 +76,11 @@ withDefaults(defineProps<Props>(), {
           orientation="horizontal"
           @update:model-value="handlePlaybackRateSlider"
         >
-          <SliderTrack
-            class="relative grow rounded-full h-[3px] cursor-pointer bg-black/12 dark:bg-white/15"
-          >
-            <SliderRange class="absolute h-full rounded-full bg-black dark:bg-white" />
+          <SliderTrack class="speed-track relative grow rounded-full h-[3px] cursor-pointer">
+            <SliderRange class="speed-range absolute h-full rounded-full" />
           </SliderTrack>
           <SliderThumb
-            class="block w-3 h-3 cursor-pointer bg-black dark:bg-white rounded-full shadow-md focus-visible:outline-none"
+            class="speed-thumb block w-3 h-3 cursor-pointer border rounded-full shadow-md focus-visible:outline-none"
           />
         </SliderRoot>
         <span class="text-[10px] font-semibold opacity-40 shrink-0">5x</span>
@@ -98,8 +94,8 @@ withDefaults(defineProps<Props>(), {
           class="text-[11px] font-semibold px-2 py-1 rounded-md transition-colors"
           :class="
             Math.abs(player.playbackRate - r) < 0.01
-              ? 'bg-black/10 dark:bg-white/15'
-              : 'opacity-50 hover:bg-black/5 dark:hover:bg-white/8 hover:opacity-100'
+              ? 'bg-[var(--row-selected-bg)]'
+              : 'opacity-50 hover:bg-[var(--row-hover-bg)] hover:opacity-100'
           "
           @click="setPlaybackRate(r)"
           >{{ r === Math.floor(r) ? r.toFixed(1) : r }}x</Button
@@ -113,13 +109,21 @@ withDefaults(defineProps<Props>(), {
 .speed-popover.echo-popover-content {
   width: 320px;
   padding: 14px 16px 12px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  border-color: rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
 }
 
-.dark .speed-popover.echo-popover-content {
-  background: rgba(28, 28, 30, 0.78);
-  border-color: rgba(255, 255, 255, 0.12);
+.speed-track {
+  background: var(--control-track-bg);
+}
+
+.speed-range {
+  background: var(--color-primary);
+}
+
+.speed-thumb {
+  background: var(--control-thumb-bg);
+  border-color: var(--control-border);
+  box-shadow: var(--shadow-control);
 }
 </style>

@@ -574,7 +574,7 @@ watch(
 <template>
   <aside
     v-bind="attrs"
-    class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-border-light select-none transition-all duration-300 relative overflow-hidden"
+    class="sidebar h-full flex flex-col bg-bg-sidebar border-r border-[var(--border-subtle)] select-none transition-all duration-300 relative overflow-hidden"
     :class="{ 'is-rail': collapsed }"
   >
     <!-- 主题色顶部渐变氛围层 -->
@@ -857,7 +857,7 @@ watch(
       <div class="sidebar-full-panel flex flex-col flex-1 min-h-0">
         <div :class="['px-4 pb-4 shrink-0 no-drag', isMac ? 'mt-0' : 'mt-0']">
           <div
-            class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-black/8 dark:border-white/10 rounded-[20px] p-1 transition-all duration-200"
+            class="user-info-card flex items-center overflow-hidden bg-bg-info-card border border-[var(--border-subtle)] rounded-[20px] p-1 transition-all duration-200"
           >
             <div
               class="sidebar-user-link min-w-0 flex-1 flex items-center gap-3 p-1.5 rounded-[14px] cursor-pointer transition-all active:scale-[0.98]"
@@ -1317,7 +1317,7 @@ watch(
         input-class="h-12 rounded-[14px] px-4 pr-10 text-[14px] font-medium"
       />
       <div
-        class="flex items-center justify-between rounded-[14px] bg-black/3 dark:bg-white/3 px-4 py-3"
+        class="flex items-center justify-between rounded-[14px] bg-[var(--control-muted-bg)] px-4 py-3"
       >
         <div class="flex flex-col gap-1">
           <span class="text-[14px] font-medium text-text-main">设为隐私歌单</span>
@@ -1427,8 +1427,8 @@ watch(
   align-items: center;
   justify-content: center;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border-light) 65%, transparent);
+  background: var(--control-bg);
+  box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
 .sidebar-rail-avatar-btn:hover {
@@ -1801,12 +1801,8 @@ watch(
 .sidebar-playlist-divider {
   height: 1px;
   margin: 6px 14px;
-  background: color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  background: var(--border-subtle);
   border-radius: 1px;
-}
-
-.dark .sidebar-playlist-divider {
-  background: color-mix(in srgb, var(--color-text-main) 18%, transparent);
 }
 
 :deep(.sidebar-sort-menu) {

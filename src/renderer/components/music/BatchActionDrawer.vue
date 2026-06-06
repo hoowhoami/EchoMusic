@@ -515,7 +515,7 @@ const confirmRemoveFromPlaylist = async () => {
 @reference "@/style.css";
 
 :global(.batch-drawer-overlay) {
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--surface-scrim-bg);
 }
 
 :global(.batch-drawer) {
@@ -557,7 +557,7 @@ const confirmRemoveFromPlaylist = async () => {
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-main);
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--control-muted-bg);
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
@@ -567,19 +567,11 @@ const confirmRemoveFromPlaylist = async () => {
 .batch-action:hover {
   transform: scale(1.02);
   color: var(--color-primary);
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.dark .batch-action {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.dark .batch-action:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--control-hover-bg);
 }
 
 .batch-action.danger {
-  color: #ef4444;
+  color: var(--state-danger);
 }
 
 .batch-action:disabled {
@@ -658,19 +650,11 @@ const confirmRemoveFromPlaylist = async () => {
 }
 
 .batch-row.text-primary {
-  background: var(--color-bg-card);
-}
-
-.dark .batch-row.text-primary {
-  background: color-mix(in srgb, #ffffff 4%, transparent);
+  background: var(--row-selected-bg);
 }
 
 .batch-row:hover {
-  background: var(--color-bg-card);
-}
-
-.dark .batch-row:hover {
-  background: color-mix(in srgb, #ffffff 4%, transparent);
+  background: var(--row-hover-bg);
 }
 
 .batch-leading {
@@ -684,29 +668,34 @@ const confirmRemoveFromPlaylist = async () => {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid var(--color-border-light);
+  border: 1.5px solid var(--control-checkbox-border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  transition: all 0.2s ease;
+  background: var(--control-checkbox-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-card-base) 36%, transparent);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-.dark .batch-checkbox {
-  border-color: rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.05);
+.batch-checkbox:hover {
+  border-color: var(--control-checkbox-border-hover);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-checkbox-bg));
+}
+
+.batch-checkbox:focus-visible {
+  outline: none;
+  border-color: var(--control-checkbox-border-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .batch-checkbox[data-state='checked'],
 .batch-checkbox[data-state='indeterminate'] {
   border-color: var(--color-primary);
   background: var(--color-primary);
-}
-
-.dark .batch-checkbox[data-state='checked'],
-.dark .batch-checkbox[data-state='indeterminate'] {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 
 .batch-checkbox-indicator {
@@ -725,7 +714,7 @@ const confirmRemoveFromPlaylist = async () => {
   top: 50%;
   width: 4px;
   height: 7px;
-  border: 2px solid #fff;
+  border: 2px solid var(--control-checkbox-indicator);
   border-top: none;
   border-left: none;
   transform: translate(-50%, -55%) rotate(45deg);
@@ -736,7 +725,7 @@ const confirmRemoveFromPlaylist = async () => {
   width: 8px;
   height: 2px;
   border: none;
-  background: #fff;
+  background: var(--control-checkbox-indicator);
   border-radius: 999px;
   position: absolute;
   left: 50%;
@@ -834,8 +823,8 @@ const confirmRemoveFromPlaylist = async () => {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-card);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
   text-align: left;
   display: flex;
   align-items: center;

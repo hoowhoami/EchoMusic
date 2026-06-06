@@ -42,8 +42,8 @@ const toneClassMap = {
 
 .toast-card {
   @apply flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg backdrop-blur-md;
-  background: color-mix(in srgb, var(--color-bg-card) 92%, transparent);
-  border-color: color-mix(in srgb, var(--color-border-light) 78%, transparent);
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
   user-select: none;
 }
 

@@ -136,7 +136,7 @@ const handleClose = () => {
         <span class="text-xs text-text-secondary shrink-0">
           {{ downloadStatus === 'downloaded' ? '下载完成' : `${downloadPercent}%` }}
         </span>
-        <div class="flex-1 h-1.5 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden">
+        <div class="flex-1 h-1.5 rounded-full bg-[var(--control-hover-bg)] overflow-hidden">
           <div
             class="h-full rounded-full bg-primary transition-all duration-300"
             :style="{ width: `${downloadPercent}%` }"
@@ -186,11 +186,7 @@ const handleClose = () => {
   line-height: 1.5;
   color: var(--color-text-secondary);
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.03);
-}
-
-:global(.dark) .update-changelog {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-muted-bg);
 }
 
 .changelog-content :deep(h2) {

@@ -73,25 +73,15 @@ const handleClick = () => {
 }
 
 .card-container {
-  @apply p-3 rounded-[20px] bg-bg-card border border-border-light/50 transition-all duration-300;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
-}
-
-.dark .card-container {
-  border-color: color-mix(in srgb, var(--color-border-light) 92%, transparent);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  @apply p-3 rounded-[20px] transition-all duration-300;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
 }
 
 .artist-card.is-singer:hover .card-container {
-  box-shadow:
-    0 12px 28px rgba(15, 23, 42, 0.12),
-    0 0 24px var(--color-primary-light);
-}
-
-.dark .artist-card.is-singer:hover .card-container {
-  box-shadow:
-    0 14px 34px rgba(0, 0, 0, 0.42),
-    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  box-shadow: var(--shadow-card-hover);
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--border-subtle));
 }
 
 .cover-shell {
@@ -106,11 +96,7 @@ const handleClick = () => {
   aspect-ratio: 1;
   border-radius: 999px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
-}
-
-.dark .cover-wrapper {
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-cover);
 }
 
 .info-wrapper {

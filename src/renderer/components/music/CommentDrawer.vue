@@ -174,7 +174,7 @@ watch(
 
 :global(.comment-drawer-overlay) {
   z-index: 1500;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--surface-scrim-bg);
 }
 
 :global(.comment-drawer) {
@@ -191,7 +191,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   padding: 20px 20px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .comment-drawer-heading {
@@ -289,7 +289,7 @@ watch(
 .comment-drawer-divider {
   margin: 12px 4px;
   height: 1px;
-  background: color-mix(in srgb, var(--color-border-light) 50%, transparent);
+  background: var(--border-subtle);
 }
 
 .comment-drawer-load-more {

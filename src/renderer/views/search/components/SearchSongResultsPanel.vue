@@ -82,7 +82,7 @@ defineExpose({ scrollToActive });
     <BatchActionDrawer v-model:open="drawerOpen" :songs="songs" :source-id="queueIdPrefix" />
 
     <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${stickyTop + 52}px` }">
-      <div v-if="enableSearchQuery" class="border-b border-border-light/10">
+      <div v-if="enableSearchQuery" class="border-b border-[var(--border-subtle)]">
         <div class="flex items-center justify-between h-14">
           <div class="rank-song-tab">
             <span class="rank-song-label relative">歌曲 <Badge :count="subtitleLabel" /></span>
@@ -93,7 +93,7 @@ defineExpose({ scrollToActive });
                 :value="searchQuery"
                 type="text"
                 placeholder="搜索歌曲..."
-                class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                 @input="emit('song-search-change', ($event.target as HTMLInputElement).value)"
               />
               <Icon

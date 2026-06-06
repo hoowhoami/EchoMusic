@@ -385,6 +385,10 @@ const handleCopySongInfo = async () => {
 /* 顶部进度条 */
 .bar-progress-top {
   --bar-progress-tooltip-edge-gap: 46px;
+  --control-track-bg: rgba(255, 255, 255, 0.18);
+  --control-thumb-bg: #ffffff;
+  --control-border: rgba(0, 0, 0, 0.14);
+  --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.18);
   width: 100%;
   position: relative;
   overflow: visible;
@@ -420,7 +424,7 @@ const handleCopySongInfo = async () => {
 }
 
 .bar-slider-track-top {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--control-track-bg);
   position: relative;
   flex-grow: 1;
   border-radius: 9999px;
@@ -454,10 +458,10 @@ const handleCopySongInfo = async () => {
   display: block;
   width: 10px;
   height: 10px;
-  background: var(--color-primary);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
   border-radius: 50%;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-control);
   transition:
     opacity 0.2s,
     transform 0.2s;

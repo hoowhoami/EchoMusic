@@ -193,25 +193,17 @@ onUnmounted(() => {
 .echo-popover-content {
   z-index: 9999;
   border-radius: 16px;
-  background: var(--color-bg-card);
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.12),
-    0 2px 6px rgba(0, 0, 0, 0.06);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
   padding: 12px;
   user-select: none;
   -webkit-user-select: none;
   outline: none;
 }
 
-.dark .echo-popover-content {
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.36),
-    0 2px 6px rgba(0, 0, 0, 0.18);
-}
-
 .echo-popover-arrow {
-  fill: var(--color-bg-card);
+  fill: var(--color-bg-elevated);
   stroke: none;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.04));
 }

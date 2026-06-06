@@ -246,15 +246,19 @@ watch(open, (val) => {
 @reference "@/style.css";
 
 .echo-select-trigger {
-  @apply inline-flex h-9 px-3 rounded-xl border border-border-light bg-black/6 dark:bg-white/6 text-text-main text-[13px] font-semibold items-center gap-2 transition-all cursor-pointer overflow-hidden;
+  @apply inline-flex h-9 px-3 rounded-xl border text-text-main text-[13px] font-semibold items-center gap-2 transition-all cursor-pointer overflow-hidden;
+  background: var(--control-muted-bg);
+  border-color: var(--control-border);
 }
 
 .echo-select-trigger:hover {
-  @apply border-primary/30 bg-black/8 dark:bg-white/8;
+  background: var(--control-hover-bg);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
 }
 
 .echo-select-trigger[data-state='open'] {
-  @apply border-primary/40 bg-primary/10;
+  background: var(--control-active-bg);
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--control-border));
 }
 
 .echo-select-tags {
@@ -266,7 +270,8 @@ watch(open, (val) => {
 }
 
 .echo-select-tag--count {
-  @apply bg-black/8 dark:bg-white/10 text-text-secondary;
+  @apply text-text-secondary;
+  background: var(--control-hover-bg);
 }
 
 .echo-select-tag-text {
@@ -298,7 +303,8 @@ watch(open, (val) => {
 }
 
 .echo-select-clear {
-  @apply flex items-center justify-center w-4 h-4 rounded-full bg-black/10 dark:bg-white/10 text-text-secondary hover:text-text-main transition-colors cursor-pointer shrink-0;
+  @apply flex items-center justify-center w-4 h-4 rounded-full text-text-secondary hover:text-text-main transition-colors cursor-pointer shrink-0;
+  background: var(--control-hover-bg);
 }
 
 .echo-select-arrow {
@@ -350,16 +356,12 @@ watch(open, (val) => {
 }
 
 .echo-select-item:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.dark .echo-select-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--row-hover-bg);
 }
 
 .echo-select-item.is-selected {
   color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  background: var(--row-selected-bg);
 }
 
 .echo-select-item.is-disabled {

@@ -328,7 +328,7 @@ onUnmounted(() => {
           @click="closeLoginPage"
           variant="unstyled"
           size="none"
-          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20"
+          class="no-drag h-10 w-10 min-w-0 rounded-full p-0 flex items-center justify-center text-text-main dark:text-white bg-[var(--control-hover-bg)] hover:bg-[var(--control-hover-bg)]"
         >
           <Icon :icon="iconChevronLeft" width="24" height="24" />
         </Button>
@@ -359,9 +359,7 @@ onUnmounted(() => {
         </div>
 
         <Tabs v-model="activeTab" activationMode="manual" class="w-full">
-          <div
-            class="bg-bg-card/70 dark:bg-[#1C1C1E]/80 backdrop-blur-3xl border border-black/5 dark:border-white/5 rounded-[36px] shadow-[0_40px_100px_rgba(0,0,0,0.1)] transition-all duration-500 overflow-hidden flex flex-col h-127.5"
-          >
+          <div class="login-panel-card">
             <div class="px-10 pt-8 flex-1 flex flex-col items-center justify-center">
               <!-- 1. 扫码登录 -->
               <TabsContent value="0" class="w-full animate-fade-in flex flex-col items-center">
@@ -510,7 +508,7 @@ onUnmounted(() => {
             <!-- 底部：其他方式 -->
             <div class="px-10 pb-8">
               <div
-                class="pt-6 border-t border-black/3 dark:border-white/3 flex flex-col items-center space-y-4"
+                class="pt-6 border-t border-[var(--border-subtle)] flex flex-col items-center space-y-4"
               >
                 <span class="text-[12px] font-black opacity-50 uppercase tracking-[4px]"
                   >其他登录方式</span
@@ -521,7 +519,7 @@ onUnmounted(() => {
                     class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
-                      class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
+                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-primary/60 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
                     >
                       <Icon :icon="iconQrCode" width="22" height="22" />
                     </div>
@@ -531,7 +529,7 @@ onUnmounted(() => {
                     class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
-                      class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
+                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-text-main/50 group-hover:text-primary transition-all group-active:scale-90 group-hover:bg-primary/5"
                     >
                       <Icon :icon="iconSmartphone" width="22" height="22" />
                     </div>
@@ -541,7 +539,7 @@ onUnmounted(() => {
                     class="group h-auto! pb-0! items-center data-[state=active]:hidden [&_.active-line]:hidden"
                   >
                     <div
-                      class="w-14 h-14 rounded-full border border-border-light flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5"
+                      class="w-14 h-14 rounded-full border border-[var(--control-border)] flex items-center justify-center text-[#07C160]/60 group-hover:text-[#07C160] transition-all group-active:scale-90 group-hover:bg-[#07C160]/5"
                     >
                       <Icon :icon="iconBotMessageSquare" width="26" height="26" />
                     </div>
@@ -557,6 +555,20 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.login-panel-card {
+  display: flex;
+  flex-direction: column;
+  height: 31.875rem;
+  overflow: hidden;
+  border-radius: 36px;
+  background: var(--color-bg-dialog);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-dialog);
+  -webkit-backdrop-filter: var(--surface-backdrop-filter);
+  backdrop-filter: var(--surface-backdrop-filter);
+  transition: all 0.5s ease;
+}
+
 .animate-fade-in {
   animation: fade-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }

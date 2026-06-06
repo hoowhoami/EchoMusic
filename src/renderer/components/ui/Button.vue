@@ -18,11 +18,10 @@ const props = withDefaults(defineProps<Props>(), {
 
 const variants = {
   primary: 'bg-primary text-white shadow-lg shadow-primary/20 hover:opacity-90',
-  secondary:
-    'bg-black/[0.03] dark:bg-white/[0.03] text-text-main hover:bg-black/[0.05] dark:hover:bg-white/[0.05]',
-  ghost: 'bg-transparent text-text-main hover:bg-black/[0.05] dark:hover:bg-white/[0.05]',
+  secondary: 'bg-[var(--control-muted-bg)] text-text-main hover:bg-[var(--control-hover-bg)]',
+  ghost: 'bg-transparent text-text-main hover:bg-[var(--control-hover-bg)]',
   outline:
-    'border border-border-light bg-transparent hover:bg-black/[0.02] dark:hover:bg-white/[0.02]',
+    'border border-[var(--control-border)] bg-transparent hover:bg-[var(--control-muted-bg)]',
   danger: 'bg-red-500 text-white hover:bg-red-500/90',
   unstyled: '',
 };

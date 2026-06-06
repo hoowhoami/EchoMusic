@@ -312,15 +312,7 @@ export const createPluginUiApi = (
           sections,
           onChange: contribution.onChange
             ? async (values) => {
-                try {
-                  await contribution.onChange?.(values);
-                } catch (error) {
-                  reportError(
-                    `插件设置回调: ${contribution.title || contribution.id || 'default'}`,
-                    error,
-                  );
-                  throw error;
-                }
+                await contribution.onChange?.(values);
               }
             : undefined,
         };

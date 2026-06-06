@@ -749,7 +749,7 @@ watch(
                   }
                 }
               "
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-red-500"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-red-500"
             >
               <Icon
                 :icon="isFavoritePlaylist ? iconHeartFilled : iconHeart"
@@ -761,7 +761,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -769,7 +769,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -801,7 +801,7 @@ watch(
         <!-- 2. Sticky Tabs + 表头 -->
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: `${tabsTop}px` }">
-            <div class="px-6 border-b border-border-light/10">
+            <div class="px-6 border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">
                   <TabsTrigger value="songs">
@@ -821,7 +821,7 @@ watch(
                       v-model="searchQuery"
                       type="text"
                       placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60 dark:text-text-main/60"
@@ -979,12 +979,12 @@ watch(
   max-width: 280px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   color: var(--color-text-main);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-elevated);
   z-index: 150;
 }
 

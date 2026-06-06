@@ -5,7 +5,9 @@
 }
 
 .settings-card {
-  @apply bg-bg-sidebar rounded-2xl p-5 space-y-5 transition-all duration-300 border border-border-light/40 overflow-visible;
+  @apply rounded-2xl p-5 space-y-5 transition-all duration-300 border overflow-visible;
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
   font-size: 13px;
   box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
@@ -25,10 +27,6 @@
 .settings-divider {
   @apply h-px shrink-0;
   background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-}
-
-:global(.dark) .settings-divider {
-  background: rgba(255, 255, 255, 0.14);
 }
 
 .settings-button {
@@ -56,7 +54,9 @@
 }
 
 .settings-color-item {
-  @apply flex items-center justify-between gap-3 rounded-xl border border-border-light/50 bg-bg-main/60 px-3 py-2;
+  @apply flex items-center justify-between gap-3 rounded-xl border px-3 py-2;
+  background: var(--control-muted-bg);
+  border-color: var(--control-border);
 }
 
 .settings-color-actions {
@@ -68,7 +68,9 @@
 }
 
 .settings-input {
-  @apply px-3 py-1.5 text-[12px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main transition-all;
+  @apply px-3 py-1.5 text-[12px] font-medium border rounded-lg text-text-main transition-all;
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 
 .settings-input:hover {
@@ -124,7 +126,9 @@
 }
 
 .shortcut-input {
-  @apply w-full px-3 py-1.5 text-[13px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  @apply w-full px-3 py-1.5 text-[13px] font-medium border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 
 .shortcut-input:hover {

@@ -323,7 +323,7 @@ onMounted(() => {
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -331,7 +331,7 @@ onMounted(() => {
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -361,7 +361,7 @@ onMounted(() => {
         </div>
 
         <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
-          <div class="px-6 border-b border-border-light/10">
+          <div class="px-6 border-b border-[var(--border-subtle)]">
             <div class="flex items-center justify-between h-14">
               <div class="text-[14px] font-semibold text-text-main relative">
                 歌曲 <Badge :count="displaySongCount" />
@@ -372,7 +372,7 @@ onMounted(() => {
                     v-model="searchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -466,12 +466,12 @@ onMounted(() => {
 .cloud-info-card {
   padding: 14px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 86%, transparent);
+  background: var(--control-muted-bg);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-control);
 }
 
 .cloud-progress-track {
@@ -479,7 +479,7 @@ onMounted(() => {
   height: 8px;
   border-radius: 999px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  background: var(--control-track-bg);
 }
 
 .cloud-progress-value {

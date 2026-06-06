@@ -905,11 +905,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.04);
-}
-
-.dark .rec-cover-empty {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--control-muted-bg);
 }
 
 .rec-detail {
@@ -1019,8 +1015,8 @@ onUnmounted(() => {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-card);
+  border: 1px solid var(--control-border);
+  background: var(--color-bg-elevated);
   text-align: left;
   display: flex;
   align-items: center;

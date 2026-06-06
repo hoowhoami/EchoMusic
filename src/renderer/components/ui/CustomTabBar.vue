@@ -78,8 +78,8 @@ const handleSelect = (index: number) => {
   bottom: 0;
   left: 0;
   border-radius: 9px;
-  background: #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  background: var(--control-bg);
+  box-shadow: 0 2px 4px color-mix(in srgb, var(--color-text-main) 8%, transparent);
   transition: transform 0.2s ease;
   z-index: 1;
 }

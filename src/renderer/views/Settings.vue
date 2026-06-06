@@ -490,7 +490,8 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-anchor-bar {
-  @apply flex items-center border-b border-border-light/40;
+  @apply flex items-center;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .settings-anchor-list {
@@ -507,7 +508,8 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-anchor-item:hover {
-  @apply text-text-main bg-bg-main/60;
+  @apply text-text-main;
+  background: var(--row-hover-bg);
 }
 
 .settings-anchor-item.is-active {
@@ -543,7 +545,9 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-card {
-  @apply bg-bg-sidebar rounded-2xl p-5 space-y-5 transition-all duration-300 border border-border-light/40 overflow-visible;
+  @apply rounded-2xl p-5 space-y-5 transition-all duration-300 border overflow-visible;
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
   font-size: 13px;
   box-shadow: 0 2px 12px color-mix(in srgb, var(--color-text-main) 3%, transparent);
 }
@@ -563,10 +567,6 @@ const findSectionElement = (id: string) => {
 .settings-divider {
   @apply h-px shrink-0;
   background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-}
-
-:global(.dark) .settings-divider {
-  background: rgba(255, 255, 255, 0.14);
 }
 
 .settings-button {
@@ -590,7 +590,9 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-color-item {
-  @apply flex items-center justify-between gap-3 rounded-xl border border-border-light/50 bg-bg-main/60 px-3 py-2;
+  @apply flex items-center justify-between gap-3 rounded-xl border px-3 py-2;
+  background: var(--control-muted-bg);
+  border-color: var(--control-border);
 }
 
 .settings-color-actions {
@@ -650,7 +652,9 @@ const findSectionElement = (id: string) => {
 }
 
 .shortcut-input {
-  @apply w-full px-3 py-1.5 text-[13px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  @apply w-full px-3 py-1.5 text-[13px] font-medium border rounded-lg text-text-main text-center cursor-pointer transition-all tracking-wide;
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 
 .shortcut-input:hover {
@@ -666,7 +670,9 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-back-to-top {
-  @apply fixed bottom-28 right-10 w-11 h-11 rounded-full bg-bg-sidebar/95 backdrop-blur-sm border border-border-light/50 flex items-center justify-center text-text-secondary hover:text-primary hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
+  @apply fixed bottom-28 right-10 w-11 h-11 rounded-full backdrop-blur-sm border flex items-center justify-center text-text-secondary hover:text-primary hover:border-primary/60 transition-all duration-300 cursor-pointer shadow-lg shadow-black/5 z-50;
+  background: var(--color-bg-elevated);
+  border-color: var(--border-subtle);
   opacity: 0;
   visibility: hidden;
 }
@@ -677,7 +683,9 @@ const findSectionElement = (id: string) => {
 }
 
 .settings-input {
-  @apply px-3 py-1.5 text-[12px] font-medium bg-bg-main border border-border-light rounded-lg text-text-main transition-all;
+  @apply px-3 py-1.5 text-[12px] font-medium border rounded-lg text-text-main transition-all;
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 
 .settings-input:hover {
@@ -698,11 +706,7 @@ const findSectionElement = (id: string) => {
   font-size: 13px;
   line-height: 1.5;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.03);
-}
-
-:global(.dark) .settings-update-changelog {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--control-muted-bg);
 }
 
 .changelog-content {
@@ -714,7 +718,8 @@ const findSectionElement = (id: string) => {
 }
 
 .changelog-content :deep(h2) {
-  @apply text-sm font-bold text-text-main mt-4 mb-1.5 pb-1 border-b border-border-light/40;
+  @apply text-sm font-bold text-text-main mt-4 mb-1.5 pb-1;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .changelog-content :deep(h2:first-child) {
@@ -757,11 +762,11 @@ const findSectionElement = (id: string) => {
 }
 
 .changelog-content :deep(code) {
-  @apply px-1 py-0.5 rounded bg-black/5 dark:bg-white/10 text-xs font-mono;
+  @apply px-1 py-0.5 rounded bg-[var(--control-hover-bg)] text-xs font-mono;
 }
 
 .changelog-content :deep(pre) {
-  @apply my-2 p-3 rounded-lg bg-black/5 dark:bg-white/10 overflow-x-auto;
+  @apply my-2 p-3 rounded-lg bg-[var(--control-hover-bg)] overflow-x-auto;
 }
 
 .changelog-content :deep(pre code) {

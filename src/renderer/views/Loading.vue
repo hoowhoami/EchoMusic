@@ -196,7 +196,7 @@ onUnmounted(() => {
 
     <main class="relative h-full flex flex-col items-center justify-center">
       <div
-        class="w-30 h-30 bg-bg-card border border-border-light rounded-4xl flex flex-col items-center justify-center shadow-sm mb-15"
+        class="w-30 h-30 bg-[var(--color-bg-elevated)] border border-[var(--border-subtle)] rounded-4xl flex flex-col items-center justify-center shadow-sm mb-15"
       >
         <span class="text-[24px] font-bold text-text-main tracking-[-1px] leading-tight">Echo</span>
         <span class="text-[16px] font-bold text-primary tracking-[2px] leading-tight uppercase"

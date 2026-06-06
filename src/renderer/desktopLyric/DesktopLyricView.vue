@@ -10,15 +10,16 @@ import {
 } from 'vue';
 import { useRafFn, useThrottleFn, useWindowSize, useDebounceFn } from '@vueuse/core';
 import {
-  iconLanguage,
   iconLock,
   iconLockOpen,
   iconPause,
   iconPlayerPlay,
   iconStepBack,
   iconStepForward,
-  iconChevronUpDown,
   iconList,
+  iconRefreshCw,
+  iconRotateCcw,
+  iconRotateCw,
   iconX,
 } from '@/icons';
 import type { DesktopLyricSnapshot, LyricLinePayload } from '../../shared/desktop-lyric';
@@ -78,7 +79,7 @@ const { pause: pauseSeek, resume: resumeSeek } = useRafFn(() => {
   }
 
   // 更新 currentIndexRef (触发 Vue 更新行)
-  const nextIndex = calculateCurrentIndex(playSeekMsRaw);
+  const nextIndex = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
   if (nextIndex !== activeLineIndex.value) {
     activeLineIndex.value = nextIndex;
   }
@@ -115,7 +116,7 @@ const updateYrcDomManual = () => {
 
   if (cachedYrcElements.length === 0) return;
 
-  const seekMs = playSeekMsRaw + LYRIC_LOOKAHEAD;
+  const seekMs = playSeekMsRaw + lyricTimeOffset.value + LYRIC_LOOKAHEAD;
   const characters = activeRenderLine.line.characters;
 
   for (let i = 0; i < cachedYrcElements.length; i++) {
@@ -141,7 +142,7 @@ const updateScrollManual = () => {
       return;
     }
 
-    const seekMs = playSeekMsRaw;
+    const seekMs = playSeekMsRaw + lyricTimeOffset.value;
     const chars = line.line.characters;
     if (!chars?.length) return;
 
@@ -190,6 +191,8 @@ const lyrics = computed(() => {
   return snapshot.value.lyrics ?? [];
 });
 const isLocked = computed(() => settings.value?.locked ?? false);
+const hasLyrics = computed(() => lyrics.value.length > 0);
+const lyricTimeOffset = computed(() => snapshot.value?.lyricTimeOffset ?? 0);
 
 // 本地计算 currentIndex，不再依赖主窗口传来的值
 const currentIndex = computed(() => activeLineIndex.value);
@@ -216,15 +219,6 @@ const lyricsMode = computed(() => {
 const hasTranslation = computed(() => lyrics.value.some((l) => l.translated?.trim()));
 const hasRomanization = computed(() => lyrics.value.some((l) => l.romanized?.trim()));
 const hasSecondary = computed(() => hasTranslation.value || hasRomanization.value);
-const canCycleSecondaryMode = computed(() => hasTranslation.value && hasRomanization.value);
-const secondaryDisplayLabel = computed(() => {
-  if (!secondaryEnabled.value || !hasSecondary.value) return '原词';
-  const mode = lyricsMode.value;
-  if (mode === 'both') return '译+音';
-  if (mode === 'romanization') return '音译';
-  if (mode === 'translation') return '翻译';
-  return '原词';
-});
 const playedColor = computed(() => settings.value?.playedColor ?? '#31cfa1');
 const unplayedColor = computed(() => settings.value?.unplayedColor ?? '#7a7a7a');
 const fontFamily = computed(() => {
@@ -425,18 +419,17 @@ watch(renderScopeKey, () => {
   resetLyricDomCache();
   lineRefs.clear();
   contentRefs.clear();
-  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw);
+  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
+});
+
+watch(lyricTimeOffset, () => {
+  activeLineIndex.value = calculateCurrentIndex(playSeekMsRaw + lyricTimeOffset.value);
 });
 
 // 拖拽
 // EchoMusic 的 preload send 只接受 (channel, data)，多参数包装成数组
 const sendToMain = (channel: string, ...args: any[]) => {
   window.electron?.ipcRenderer?.send(channel, ...args);
-};
-
-const updateDesktopLyricSettings = async (partial: Record<string, unknown>) => {
-  if (!window.electron?.desktopLyric) return;
-  snapshot.value = await window.electron.desktopLyric.updateSettings(partial);
 };
 
 // 缓存窗口和屏幕边界
@@ -638,40 +631,26 @@ const toggleLyricLock = () => {
 
 // ── 操作命令 ──
 
-const toggleSecondary = () => {
-  // 如果当前有任何翻译开启，则全部关闭；否则智能开启
-  if (secondaryEnabled.value) {
-    void updateDesktopLyricSettings({ wantTranslation: false, wantRomanization: false });
-  } else {
-    // 开启时，优先翻译，没有翻译则开音译
-    const wantTrans = hasTranslation.value;
-    const wantRoman = !wantTrans && hasRomanization.value;
-    void updateDesktopLyricSettings({ wantTranslation: wantTrans, wantRomanization: wantRoman });
-  }
+const adjustLyricOffsetBackward = () => {
+  window.electron?.desktopLyric?.command('lyricOffsetBackward');
 };
 
-const cycleSecondaryMode = () => {
-  if (!hasSecondary.value) return;
-  const s = settings.value;
-  const curTrans = s?.wantTranslation ?? false;
-  const curRoman = s?.wantRomanization ?? false;
+const adjustLyricOffsetForward = () => {
+  window.electron?.desktopLyric?.command('lyricOffsetForward');
+};
 
-  if (hasTranslation.value && hasRomanization.value) {
-    // 翻译 → 音译 → 译+音 → 翻译
-    if (curTrans && !curRoman) {
-      void updateDesktopLyricSettings({ wantTranslation: false, wantRomanization: true });
-    } else if (!curTrans && curRoman) {
-      void updateDesktopLyricSettings({ wantTranslation: true, wantRomanization: true });
-    } else {
-      void updateDesktopLyricSettings({ wantTranslation: true, wantRomanization: false });
-    }
-  } else {
-    // 只有一种，直接开启对应的
-    void updateDesktopLyricSettings({
-      wantTranslation: hasTranslation.value,
-      wantRomanization: hasRomanization.value,
-    });
-  }
+const resetLyricOffset = () => {
+  window.electron?.desktopLyric?.command('lyricOffsetReset');
+};
+
+const toggleTranslation = () => {
+  if (!hasTranslation.value) return;
+  window.electron?.desktopLyric?.command('toggleTranslation');
+};
+
+const toggleRomanization = () => {
+  if (!hasRomanization.value) return;
+  window.electron?.desktopLyric?.command('toggleRomanization');
 };
 
 const openLyricSource = () => {
@@ -804,23 +783,40 @@ onBeforeUnmount(() => {
         <button class="menu-btn" title="选择歌词" @click.stop="openLyricSource">
           <Icon :icon="iconList" width="20" height="20" />
         </button>
-        <div class="tran-group">
-          <button
-            class="menu-btn tran-btn"
-            :class="{ 'is-active': secondaryEnabled && hasSecondary }"
-            :title="secondaryDisplayLabel"
-            @click.stop="toggleSecondary"
-          >
-            <Icon :icon="iconLanguage" width="20" height="20" />
-            <span class="tran-label">{{ secondaryDisplayLabel }}</span>
+        <div v-if="hasLyrics" class="offset-group">
+          <button class="menu-btn" title="歌词后退 0.5s" @click.stop="adjustLyricOffsetBackward">
+            <Icon :icon="iconRotateCcw" width="18" height="18" />
+          </button>
+          <button class="menu-btn" title="歌词前进 0.5s" @click.stop="adjustLyricOffsetForward">
+            <Icon :icon="iconRotateCw" width="18" height="18" />
           </button>
           <button
-            class="menu-btn cycle-btn"
-            :class="{ 'is-disabled': !canCycleSecondaryMode || !secondaryEnabled }"
-            title="切换翻译模式"
-            @click.stop="cycleSecondaryMode"
+            class="menu-btn"
+            :style="{ visibility: lyricTimeOffset !== 0 ? 'visible' : 'hidden' }"
+            title="重置偏移"
+            @click.stop="resetLyricOffset"
           >
-            <Icon :icon="iconChevronUpDown" width="18" height="18" />
+            <Icon :icon="iconRefreshCw" width="17" height="17" />
+          </button>
+        </div>
+        <div v-if="hasLyrics && hasSecondary" class="tran-group">
+          <button
+            v-if="hasTranslation"
+            class="menu-btn text-toggle-btn"
+            :class="{ 'is-active': settings?.wantTranslation }"
+            title="翻译"
+            @click.stop="toggleTranslation"
+          >
+            译
+          </button>
+          <button
+            v-if="hasRomanization"
+            class="menu-btn text-toggle-btn"
+            :class="{ 'is-active': settings?.wantRomanization }"
+            title="音译"
+            @click.stop="toggleRomanization"
+          >
+            音
           </button>
         </div>
         <button class="menu-btn lock-btn" @click.stop="toggleLyricLock">
@@ -1000,10 +996,11 @@ onBeforeUnmount(() => {
 .menu-btn:active {
   transform: scale(0.98);
 }
-.menu-btn.tran-btn.is-active svg {
+.menu-btn.text-toggle-btn.is-active {
   color: #31cfa1;
 }
 
+.offset-group,
 .tran-group {
   display: inline-flex;
   align-items: center;
@@ -1017,6 +1014,9 @@ onBeforeUnmount(() => {
     background-color 0.3s;
 }
 
+.desktop-lyric.hovered:not(.locked) .offset-group,
+.desktop-lyric.dragging:not(.locked) .offset-group,
+.desktop-lyric.resizing:not(.locked) .offset-group,
 .desktop-lyric.hovered:not(.locked) .tran-group,
 .desktop-lyric.dragging:not(.locked) .tran-group,
 .desktop-lyric.resizing:not(.locked) .tran-group {
@@ -1024,36 +1024,41 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.offset-group .menu-btn,
 .tran-group .menu-btn {
   border-radius: 0;
   margin: 0;
   opacity: 1;
 }
 
-.tran-group .menu-btn.tran-btn {
-  gap: 4px;
-  padding: 6px 8px;
+.offset-group .menu-btn:first-child,
+.tran-group .menu-btn:first-child {
   border-radius: 8px 0 0 8px;
 }
 
-.tran-group .menu-btn.cycle-btn {
-  padding: 6px 5px;
+.offset-group .menu-btn:last-child,
+.tran-group .menu-btn:last-child {
   border-radius: 0 8px 8px 0;
+}
+
+.offset-group .menu-btn:only-child,
+.tran-group .menu-btn:only-child {
+  border-radius: 8px;
+}
+
+.offset-group .menu-btn + .menu-btn,
+.tran-group .menu-btn + .menu-btn {
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.tran-group .menu-btn.cycle-btn.is-disabled {
-  opacity: 0.35;
-  pointer-events: none;
-}
-
-.tran-label {
+.text-toggle-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   line-height: 1;
-  min-width: 2em;
-  text-align: center;
 }
 
 /* 默认隐藏工具栏 */

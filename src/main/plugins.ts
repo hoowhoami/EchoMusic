@@ -12,6 +12,8 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginWindowDescriptor,
+  PluginWindowManifest,
   PluginReportFailureResult,
   PluginSetSafeModeResult,
   PluginSetEnabledResult,
@@ -37,6 +39,10 @@ const PLUGIN_IMAGE_EXTENSIONS = new Set([
   '.webp',
 ]);
 const MAX_PLUGIN_IMAGE_SCAN_LIMIT = 1000;
+const PLUGIN_WINDOW_MIN_WIDTH = 180;
+const PLUGIN_WINDOW_MIN_HEIGHT = 48;
+const PLUGIN_WINDOW_MAX_WIDTH = 1400;
+const PLUGIN_WINDOW_MAX_HEIGHT = 900;
 
 type PluginEnabledState = Record<string, boolean>;
 type PluginRuntimeSession = {
@@ -45,10 +51,12 @@ type PluginRuntimeSession = {
   sessionId?: string;
 };
 
-const normalizePluginId = (value: unknown) =>
+export const normalizePluginId = (value: unknown) =>
   String(value ?? '')
     .trim()
     .replace(/[^a-zA-Z0-9._-]/g, '');
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const pluginProcessSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -225,6 +233,25 @@ export const reportPluginFailure = (
   return { ok: true };
 };
 
+export const clearPluginFailureRecord = (pluginId?: string): PluginReportFailureResult => {
+  const failure = getPluginLastFailure();
+  if (!failure) return { ok: true };
+
+  const normalizedPluginId = normalizePluginId(pluginId);
+  if (!normalizedPluginId) {
+    getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
+    return { ok: true };
+  }
+
+  const failurePluginIds = new Set(
+    [failure.pluginId, ...(failure.pluginIds ?? [])].map(normalizePluginId).filter(Boolean),
+  );
+  if (failurePluginIds.has(normalizedPluginId)) {
+    getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
+  }
+  return { ok: true };
+};
+
 export const reportPluginRendererFailure = (
   reason: 'render-process-gone' | 'unresponsive',
   message: string,
@@ -274,6 +301,107 @@ const getManifestImageSource = (manifest: EchoPluginManifest) => {
   return '';
 };
 
+const normalizeWindowDimension = (value: unknown, fallback: number, min: number, max: number) => {
+  const next = Math.round(Number(value));
+  if (!Number.isFinite(next) || next <= 0) return fallback;
+  return clamp(next, min, max);
+};
+
+const normalizePluginWindowDescriptors = (
+  pluginId: string,
+  directory: string,
+  manifest: EchoPluginManifest,
+): { windows: PluginWindowDescriptor[]; error: string } => {
+  const rawWindows = manifest.contributes?.windows;
+  if (!rawWindows) return { windows: [], error: '' };
+  if (!Array.isArray(rawWindows)) return { windows: [], error: 'contributes.windows 必须是数组' };
+
+  const windows: PluginWindowDescriptor[] = [];
+  const seenWindowIds = new Set<string>();
+
+  for (const rawWindow of rawWindows as PluginWindowManifest[]) {
+    const windowId = normalizePluginId(rawWindow?.id);
+    if (!windowId) return { windows, error: '插件窗口 id 不能为空' };
+    if (seenWindowIds.has(windowId)) {
+      return { windows, error: `插件窗口 id 重复: ${windowId}` };
+    }
+    seenWindowIds.add(windowId);
+
+    const main = String(rawWindow?.main || '').trim();
+    if (!main) return { windows, error: `插件窗口 ${windowId} 缺少 main 入口` };
+    const mainFile = resolvePluginFile(directory, main);
+    if (!mainFile) return { windows, error: `插件窗口 ${windowId} 入口路径非法` };
+
+    const style = String(rawWindow?.style || '').trim();
+    const styleFile = style ? resolvePluginFile(directory, style) : '';
+    if (style && !styleFile) return { windows, error: `插件窗口 ${windowId} 样式路径非法` };
+
+    const defaultWidth = normalizeWindowDimension(
+      rawWindow.defaultWidth,
+      420,
+      PLUGIN_WINDOW_MIN_WIDTH,
+      PLUGIN_WINDOW_MAX_WIDTH,
+    );
+    const defaultHeight = normalizeWindowDimension(
+      rawWindow.defaultHeight,
+      72,
+      PLUGIN_WINDOW_MIN_HEIGHT,
+      PLUGIN_WINDOW_MAX_HEIGHT,
+    );
+    const minWidth = normalizeWindowDimension(
+      rawWindow.minWidth,
+      Math.min(defaultWidth, PLUGIN_WINDOW_MIN_WIDTH),
+      PLUGIN_WINDOW_MIN_WIDTH,
+      PLUGIN_WINDOW_MAX_WIDTH,
+    );
+    const minHeight = normalizeWindowDimension(
+      rawWindow.minHeight,
+      Math.min(defaultHeight, PLUGIN_WINDOW_MIN_HEIGHT),
+      PLUGIN_WINDOW_MIN_HEIGHT,
+      PLUGIN_WINDOW_MAX_HEIGHT,
+    );
+    const maxWidth = normalizeWindowDimension(
+      rawWindow.maxWidth,
+      Math.max(defaultWidth, minWidth),
+      minWidth,
+      PLUGIN_WINDOW_MAX_WIDTH,
+    );
+    const maxHeight = normalizeWindowDimension(
+      rawWindow.maxHeight,
+      Math.max(defaultHeight, minHeight),
+      minHeight,
+      PLUGIN_WINDOW_MAX_HEIGHT,
+    );
+
+    windows.push({
+      pluginId,
+      id: windowId,
+      type: 'floating',
+      title: String(rawWindow.title || `${manifest.name || pluginId} - ${windowId}`),
+      main,
+      style,
+      mainFile,
+      styleFile,
+      defaultWidth: clamp(defaultWidth, minWidth, maxWidth),
+      defaultHeight: clamp(defaultHeight, minHeight, maxHeight),
+      minWidth,
+      minHeight,
+      maxWidth,
+      maxHeight,
+      position: rawWindow.position === 'center' ? 'center' : 'top-center',
+      transparent: rawWindow.transparent !== false,
+      alwaysOnTop: rawWindow.alwaysOnTop !== false,
+      skipTaskbar: rawWindow.skipTaskbar !== false,
+      resizable: Boolean(rawWindow.resizable),
+      movable: rawWindow.movable !== false,
+      rememberBounds: rawWindow.rememberBounds !== false,
+      acceptFirstMouse: Boolean(rawWindow.acceptFirstMouse),
+    });
+  }
+
+  return { windows, error: '' };
+};
+
 const readManifest = (manifestPath: string): { manifest: EchoPluginManifest; error: string } => {
   try {
     const raw = readFileSync(manifestPath, 'utf8');
@@ -309,6 +437,7 @@ const toDescriptor = (
   const id = normalizePluginId(manifest.id) || normalizePluginId(directoryName) || directoryName;
   const mainFile = resolvePluginFile(directory, manifest.main || 'index.js');
   const styleFile = manifest.style ? resolvePluginFile(directory, manifest.style) : '';
+  const { windows, error: windowError } = normalizePluginWindowDescriptors(id, directory, manifest);
   const imageSource = getManifestImageSource(manifest);
   const imageFile =
     imageSource && !isRemoteImageSource(imageSource)
@@ -318,7 +447,31 @@ const toDescriptor = (
   const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
   const styleError =
     !validationError && styleFile && !existsSync(styleFile) ? '插件样式文件不存在' : '';
-  const error = validationError || mainError || styleError;
+  const missingWindowError =
+    !validationError && !windowError
+      ? (windows.find((item) => !existsSync(item.mainFile)) &&
+          `插件窗口 ${windows.find((item) => !existsSync(item.mainFile))?.id} 入口不存在`) ||
+        (windows.find((item) => item.styleFile && !existsSync(item.styleFile)) &&
+          `插件窗口 ${windows.find((item) => item.styleFile && !existsSync(item.styleFile))?.id} 样式文件不存在`) ||
+        ''
+      : '';
+  const windowExtensionError =
+    !validationError && !windowError && !missingWindowError
+      ? (windows.find((item) => !['.js', '.mjs'].includes(extname(item.mainFile).toLowerCase())) &&
+          `插件窗口 ${windows.find((item) => !['.js', '.mjs'].includes(extname(item.mainFile).toLowerCase()))?.id} 入口必须是 .js 或 .mjs`) ||
+        (windows.find(
+          (item) => item.styleFile && extname(item.styleFile).toLowerCase() !== '.css',
+        ) &&
+          `插件窗口 ${windows.find((item) => item.styleFile && extname(item.styleFile).toLowerCase() !== '.css')?.id} 样式必须是 .css`) ||
+        ''
+      : '';
+  const error =
+    validationError ||
+    mainError ||
+    styleError ||
+    windowError ||
+    missingWindowError ||
+    windowExtensionError;
   const invalid = Boolean(error);
 
   return {
@@ -338,6 +491,7 @@ const toDescriptor = (
         : isRemoteImageSource(imageSource)
           ? imageSource
           : '',
+    windows,
     enabled: !invalid && Boolean(enabledState[id]),
     invalid,
     error,
@@ -380,6 +534,15 @@ export const listPlugins = (): PluginListResult => {
 
 const findPlugin = (pluginId: string) =>
   listPlugins().plugins.find((plugin) => plugin.id === normalizePluginId(pluginId)) ?? null;
+
+export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);
+
+export const getPluginWindowDescriptor = (pluginId: string, windowId: string) => {
+  const plugin = findPlugin(pluginId);
+  if (!plugin || plugin.invalid || !plugin.enabled) return null;
+  const normalizedWindowId = normalizePluginId(windowId);
+  return plugin.windows.find((item) => item.id === normalizedWindowId) ?? null;
+};
 
 export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetEnabledResult => {
   const plugin = findPlugin(pluginId);
@@ -425,6 +588,47 @@ export const readPluginTextAsset = (
     return {
       ok: false,
       error: error instanceof Error ? error.message : '插件资源读取失败',
+    };
+  }
+};
+
+export const readPluginWindowTextAsset = (
+  pluginId: string,
+  windowId: string,
+  asset: 'main' | 'style',
+): PluginAssetSourceResult => {
+  if (getPluginSafeMode()) return { ok: false, error: '插件安全模式已开启' };
+  const plugin = findPlugin(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  if (!plugin.enabled) return { ok: false, error: '插件未启用' };
+
+  const descriptor = plugin.windows.find((item) => item.id === normalizePluginId(windowId));
+  if (!descriptor) return { ok: false, error: '插件窗口不存在' };
+
+  const filePath = asset === 'main' ? descriptor.mainFile : descriptor.styleFile;
+  if (!filePath)
+    return { ok: false, error: asset === 'main' ? '插件窗口入口为空' : '插件窗口没有样式文件' };
+
+  const pluginDir = resolve(plugin.directory);
+  const resolvedFile = resolve(filePath);
+  if (!isPathInside(pluginDir, resolvedFile)) return { ok: false, error: '插件窗口资源路径非法' };
+  if (!existsSync(resolvedFile)) return { ok: false, error: '插件窗口资源不存在' };
+
+  const ext = extname(resolvedFile).toLowerCase();
+  if (asset === 'main' && !['.js', '.mjs'].includes(ext)) {
+    return { ok: false, error: '插件窗口入口必须是 .js 或 .mjs' };
+  }
+  if (asset === 'style' && ext !== '.css') {
+    return { ok: false, error: '插件窗口样式必须是 .css' };
+  }
+
+  try {
+    return { ok: true, source: readFileSync(resolvedFile, 'utf8') };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : '插件窗口资源读取失败',
     };
   }
 };

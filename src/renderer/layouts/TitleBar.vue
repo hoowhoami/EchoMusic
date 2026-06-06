@@ -535,11 +535,7 @@ onUnmounted(() => {
 }
 
 .nav-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
-}
-
-.dark .nav-btn:hover {
-  background-color: rgba(255, 255, 255, 0.04);
+  background-color: var(--control-hover-bg);
 }
 
 .nav-btn:disabled {
@@ -578,11 +574,7 @@ onUnmounted(() => {
 }
 
 .control-btn:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
-.dark .control-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--control-hover-bg);
 }
 
 .control-btn:hover.hover\:bg-red-500 {
@@ -640,18 +632,14 @@ onUnmounted(() => {
   align-items: center;
   height: 30px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--control-muted-bg);
   padding: 0 4px 0 10px;
   transition: all 0.2s ease;
   border: 1px solid transparent;
 }
 
-.dark .tb-search-input-wrap {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .tb-search-input-wrap:focus-within {
-  background: var(--color-bg-card);
+  background: var(--control-bg);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12);
 }
@@ -693,11 +681,7 @@ onUnmounted(() => {
 
 .tb-search-clear:hover {
   color: var(--color-text-main);
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.dark .tb-search-clear:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--control-hover-bg);
 }
 
 .tb-search-goto {
@@ -732,11 +716,9 @@ onUnmounted(() => {
   width: 100%;
   max-height: 360px;
   border-radius: 12px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.12),
-    0 2px 6px rgba(0, 0, 0, 0.06);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
   padding: 6px 0;
   z-index: 500;
 }
@@ -750,7 +732,7 @@ onUnmounted(() => {
 }
 
 .tb-suggest-group + .tb-suggest-group .tb-suggest-title {
-  border-top: 0.5px solid var(--color-border-light);
+  border-top: 0.5px solid var(--border-subtle);
   padding-top: 8px;
   margin-top: 2px;
 }

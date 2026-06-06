@@ -1,5 +1,96 @@
 export type PluginContributionMap = Record<string, unknown>;
 
+export type PluginWindowType = 'floating';
+export type PluginWindowPosition = 'center' | 'top-center';
+
+export interface PluginWindowManifest {
+  id: string;
+  type?: PluginWindowType;
+  title?: string;
+  main: string;
+  style?: string;
+  defaultWidth?: number;
+  defaultHeight?: number;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  position?: PluginWindowPosition;
+  transparent?: boolean;
+  alwaysOnTop?: boolean;
+  skipTaskbar?: boolean;
+  resizable?: boolean;
+  movable?: boolean;
+  rememberBounds?: boolean;
+  acceptFirstMouse?: boolean;
+}
+
+export interface PluginWindowDescriptor extends Required<
+  Pick<
+    PluginWindowManifest,
+    | 'id'
+    | 'type'
+    | 'title'
+    | 'main'
+    | 'defaultWidth'
+    | 'defaultHeight'
+    | 'minWidth'
+    | 'minHeight'
+    | 'maxWidth'
+    | 'maxHeight'
+    | 'position'
+    | 'transparent'
+    | 'alwaysOnTop'
+    | 'skipTaskbar'
+    | 'resizable'
+    | 'movable'
+    | 'rememberBounds'
+    | 'acceptFirstMouse'
+  >
+> {
+  pluginId: string;
+  style: string;
+  mainFile: string;
+  styleFile: string;
+}
+
+export interface PluginWindowBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PluginWindowShowOptions {
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  alwaysOnTop?: boolean;
+}
+
+export type PluginWindowResult =
+  | {
+      ok: true;
+      window: PluginWindowDescriptor;
+      bounds?: PluginWindowBounds;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type PluginWindowContextResult =
+  | {
+      ok: true;
+      plugin: EchoPluginDescriptor;
+      window: PluginWindowDescriptor;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 export interface PluginFileDialogFilter {
   name: string;
   extensions: string[];
@@ -59,7 +150,11 @@ export interface EchoPluginManifest {
   author?: string;
   main?: string;
   style?: string;
-  contributes?: PluginContributionMap;
+  contributes?: PluginContributionMap & {
+    image?: string;
+    icon?: string;
+    windows?: PluginWindowManifest[];
+  };
   engines?: {
     echoMusic?: string;
   };
@@ -77,6 +172,7 @@ export interface EchoPluginDescriptor {
   mainFile: string;
   styleFile: string;
   imageUrl: string;
+  windows: PluginWindowDescriptor[];
   enabled: boolean;
   invalid: boolean;
   error: string;

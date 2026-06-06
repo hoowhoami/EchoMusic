@@ -6,10 +6,12 @@ import { registerShortcutHandlers } from './shortcuts';
 import { registerTrayHandlers } from './tray';
 import { registerDesktopLyricHandlers } from '../desktopLyric';
 import { registerMiniPlayerHandlers, unregisterMiniPlayerHandlers } from '../miniPlayer';
+import { registerNowPlayingHandlers, unregisterNowPlayingHandlers } from '../nowPlaying';
 import { registerShazamHandlers } from './shazam';
 import { registerExternalHandlers } from './external';
 import { registerStorageHandlers, unregisterStorageHandlers } from './storage';
 import { registerPluginHandlers, unregisterPluginHandlers } from './plugins';
+import { registerPluginWindowHandlers, unregisterPluginWindowHandlers } from '../pluginWindows';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -21,12 +23,14 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerSettingsHandlers(context);
   registerShortcutHandlers(context);
   registerTrayHandlers();
+  registerNowPlayingHandlers(context);
   registerDesktopLyricHandlers();
   registerMiniPlayerHandlers();
   registerShazamHandlers();
   registerExternalHandlers();
   registerStorageHandlers();
   registerPluginHandlers(context);
+  registerPluginWindowHandlers();
   registered = true;
 };
 
@@ -70,8 +74,10 @@ export const unregisterIpcHandlers = () => {
   ipcMain.removeHandler('desktop-lyric:toggle-lock');
   ipcMain.removeHandler('desktop-lyric:update-settings');
   ipcMain.removeAllListeners('desktop-lyric:sync-snapshot');
+  unregisterNowPlayingHandlers();
   unregisterMiniPlayerHandlers();
   ipcMain.removeHandler('external:resolve-playlist');
   unregisterStorageHandlers();
   unregisterPluginHandlers();
+  unregisterPluginWindowHandlers();
 };

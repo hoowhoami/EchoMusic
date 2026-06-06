@@ -3,12 +3,18 @@ import log from 'electron-log/renderer';
 import type { ApiServerStatus } from '../shared/api-server';
 import type { AppInfoResult, UpdateDownloadResult } from '../shared/app';
 import type { PlayMode } from '../shared/playback';
-import type { ShortcutCommand, ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
+import type { ShortcutMap, ShortcutRegistrationResult } from '../shared/shortcuts';
 import type {
+  DesktopLyricCommand,
   DesktopLyricSettings,
   DesktopLyricSnapshot,
   DesktopLyricSnapshotPatch,
 } from '../shared/desktop-lyric';
+import type {
+  NowPlayingCommand,
+  NowPlayingSnapshot,
+  NowPlayingSnapshotPatch,
+} from '../shared/now-playing';
 import type {
   MiniPlayerCommand,
   MiniPlayerSnapshot,
@@ -35,6 +41,10 @@ import type {
   PluginSetEnabledResult,
   PluginSetSafeModeResult,
   PluginUninstallResult,
+  PluginWindowBounds,
+  PluginWindowContextResult,
+  PluginWindowResult,
+  PluginWindowShowOptions,
 } from '../shared/plugins';
 import type {
   StorageAppendQueueItemsPayload,
@@ -199,17 +209,26 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setIgnoreMouseEvents: (ignore: boolean) =>
       ipcRenderer.send('desktop-lyric:set-ignore-mouse-events', ignore),
-    command: (
-      command: Extract<
-        ShortcutCommand,
-        | 'togglePlayback'
-        | 'previousTrack'
-        | 'nextTrack'
-        | 'toggleLyricsMode'
-        | 'cycleLyricsMode'
-        | 'openLyricSource'
-      >,
-    ) => ipcRenderer.send('desktop-lyric:command', command),
+    command: (command: DesktopLyricCommand) => ipcRenderer.send('desktop-lyric:command', command),
+  },
+  nowPlaying: {
+    getSnapshot: () =>
+      ipcRenderer.invoke('now-playing:get-snapshot') as Promise<NowPlayingSnapshot>,
+    syncSnapshot: (payload: NowPlayingSnapshotPatch) =>
+      sendWithPlainPayload('now-playing:sync-snapshot', payload),
+    onSnapshot: (func: (snapshot: NowPlayingSnapshot) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshotPayload: NowPlayingSnapshot) =>
+        func(snapshotPayload);
+      ipcRenderer.on('now-playing:snapshot', listener);
+      return () => ipcRenderer.removeListener('now-playing:snapshot', listener);
+    },
+    command: (command: NowPlayingCommand) => ipcRenderer.send('now-playing:command', command),
+    onCommand: (func: (command: NowPlayingCommand) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: NowPlayingCommand) =>
+        func(command);
+      ipcRenderer.on('now-playing:command', listener);
+      return () => ipcRenderer.removeListener('now-playing:command', listener);
+    },
   },
   miniPlayer: {
     getSnapshot: () =>
@@ -381,8 +400,64 @@ contextBridge.exposeInMainWorld('electron', {
         safeMode?: boolean;
       },
     ) => invokeWithPlainPayload<PluginReportFailureResult>('plugins:failure:report', failure),
+    clearFailure: (pluginId?: string) =>
+      invokeWithPlainPayload<PluginReportFailureResult>('plugins:failure:clear', pluginId),
     readAsset: (pluginId: string, asset: 'main' | 'style') =>
       ipcRenderer.invoke('plugins:read-asset', pluginId, asset) as Promise<PluginAssetSourceResult>,
+    windows: {
+      show: (pluginId: string, windowId: string, options?: PluginWindowShowOptions) =>
+        invokeWithPlainPayload<PluginWindowResult>(
+          'plugins:window:show',
+          pluginId,
+          windowId,
+          options,
+        ),
+      hide: (pluginId: string, windowId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:hide',
+          pluginId,
+          windowId,
+        ) as Promise<PluginWindowResult>,
+      close: (pluginId: string, windowId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:close',
+          pluginId,
+          windowId,
+        ) as Promise<PluginWindowResult>,
+      move: (pluginId: string, windowId: string, bounds: Partial<PluginWindowBounds>) =>
+        invokeWithPlainPayload<PluginWindowResult>(
+          'plugins:window:move',
+          pluginId,
+          windowId,
+          bounds,
+        ),
+      getBounds: (pluginId: string, windowId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:get-bounds',
+          pluginId,
+          windowId,
+        ) as Promise<PluginWindowResult>,
+      setIgnoreMouseEvents: (pluginId: string, windowId: string, ignore: boolean) =>
+        ipcRenderer.invoke(
+          'plugins:window:set-ignore-mouse-events',
+          pluginId,
+          windowId,
+          ignore,
+        ) as Promise<PluginWindowResult>,
+      getContext: (pluginId: string, windowId: string) =>
+        ipcRenderer.invoke(
+          'plugins:window:get-context',
+          pluginId,
+          windowId,
+        ) as Promise<PluginWindowContextResult>,
+      readAsset: (pluginId: string, windowId: string, asset: 'main' | 'style') =>
+        ipcRenderer.invoke(
+          'plugins:window:read-asset',
+          pluginId,
+          windowId,
+          asset,
+        ) as Promise<PluginAssetSourceResult>,
+    },
     dialog: {
       selectDirectory: (options?: PluginOpenDialogOptions) =>
         invokeWithPlainPayload<PluginDialogResult>('plugins:dialog:select-directory', options),

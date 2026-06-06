@@ -224,9 +224,9 @@ const selectAllState = computed<CheckboxState>(() => {
   if (someSelected.value) return 'indeterminate';
   return false;
 });
-const toggleSelectAll = () => {
-  if (allSelected.value) selectNone();
-  else selectAll();
+const setSelectAllChecked = (value: CheckboxState) => {
+  if (value === true) selectAll();
+  else selectNone();
 };
 const setTrackChecked = (idx: number, value: CheckboxState) => {
   const next = new Set(selectedSet.value);
@@ -605,19 +605,18 @@ const statusLabel = (status: ImportItemResult['status']): string => {
         <!-- Right: tracks (virtual scroll) -->
         <div class="import-tracks-pane">
           <div class="import-tracks-header">
-            <button type="button" class="import-select-all" @click="toggleSelectAll">
-              <CheckboxRoot
-                class="import-checkbox"
-                :model-value="selectAllState"
-                @update:model-value="toggleSelectAll"
-                @click.stop
-              >
+            <CheckboxRoot
+              class="import-select-all"
+              :model-value="selectAllState"
+              @update:model-value="setSelectAllChecked"
+            >
+              <span class="import-checkbox" aria-hidden="true">
                 <CheckboxIndicator as-child>
                   <span class="import-checkbox-indicator" />
                 </CheckboxIndicator>
-              </CheckboxRoot>
+              </span>
               <span>全选</span>
-            </button>
+            </CheckboxRoot>
             <span class="text-text-secondary/70 text-[12px]">
               已选 {{ selectedTracks.length }} / {{ resolved.tracks.length }}
             </span>
@@ -800,34 +799,34 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 }
 .import-target-pane {
   @apply flex flex-col gap-3 rounded-[14px] px-4 py-3.5;
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  background: var(--control-muted-bg);
 }
 .import-target-options {
   @apply flex flex-col gap-2;
 }
 .import-target-card {
   @apply flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-all cursor-pointer;
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 40%, transparent);
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
 }
 .import-target-card:hover {
-  background: color-mix(in srgb, var(--color-text-main) 7%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  background: var(--control-hover-bg);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
 }
 .import-target-card.is-active {
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
 }
 .import-target-card.is-disabled {
   @apply cursor-not-allowed opacity-55;
 }
 .import-target-card.is-disabled:hover {
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  border-color: color-mix(in srgb, var(--color-border-light) 40%, transparent);
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 .import-target-icon {
   @apply flex items-center justify-center w-8 h-8 rounded-[10px] shrink-0 text-text-secondary;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  background: var(--control-muted-bg);
 }
 .import-target-card.is-active .import-target-icon {
   background: color-mix(in srgb, var(--color-primary) 18%, transparent);
@@ -860,18 +859,21 @@ const statusLabel = (status: ImportItemResult['status']): string => {
   @apply flex flex-col gap-2 pt-0.5;
 }
 .import-tracks-pane {
+  --import-track-inline-padding: 16px;
+
   @apply flex flex-col rounded-[14px] overflow-hidden;
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  background: var(--control-muted-bg);
   height: 280px;
 }
 .import-tracks-header {
-  @apply flex items-center justify-between px-3.5 py-2.5 shrink-0;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-light) 30%, transparent);
+  @apply flex items-center justify-between py-2.5 shrink-0;
+  padding-inline: var(--import-track-inline-padding);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .import-chip {
   @apply inline-flex items-center justify-center px-3 h-7 rounded-full text-[12px] font-medium transition-colors;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  background: var(--control-muted-bg);
   color: var(--color-text-main);
   opacity: 0.75;
 }
@@ -886,15 +888,15 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 
 .import-textarea {
   @apply w-full rounded-[14px] px-4 py-3 text-[13px] leading-relaxed font-medium resize-y;
-  background: color-mix(in srgb, var(--color-text-main) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 50%, transparent);
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
   color: var(--color-text-main);
   outline: none;
   min-height: 120px;
 }
 .import-textarea:focus {
-  border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--control-border));
+  background: var(--control-hover-bg);
 }
 .import-textarea:disabled {
   opacity: 0.6;
@@ -908,7 +910,7 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 
 .import-section {
   @apply flex flex-col gap-2.5 rounded-[14px] px-4 py-3.5;
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  background: var(--control-muted-bg);
 }
 .import-section-title {
   @apply text-[12px] font-semibold text-text-secondary;
@@ -917,7 +919,7 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 .import-track-list {
   max-height: 320px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--color-text-main) 3%, transparent);
+  background: var(--control-muted-bg);
 }
 .import-tracks-pane .import-track-list {
   flex: 1;
@@ -941,7 +943,7 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 }
 .import-step-pill {
   @apply inline-flex items-center gap-1.5 px-2 h-6 rounded-full text-[11px] font-medium transition-colors;
-  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
+  background: var(--control-muted-bg);
   color: color-mix(in srgb, var(--color-text-main) 55%, transparent);
 }
 .import-step-pill.is-active {
@@ -994,8 +996,9 @@ const statusLabel = (status: ImportItemResult['status']): string => {
 }
 
 .import-track-row {
-  @apply flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-light) 30%, transparent);
+  @apply flex items-center gap-3 py-2.5 cursor-pointer transition-colors;
+  padding-inline: var(--import-track-inline-padding);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .import-track-row:last-child {
   border-bottom: none;
@@ -1015,57 +1018,79 @@ const statusLabel = (status: ImportItemResult['status']): string => {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  border: 1px solid var(--color-border-light);
-  background: transparent;
+  border: 1.5px solid var(--control-checkbox-border);
+  background: var(--control-checkbox-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface-card-base) 36%, transparent);
 }
 .import-track-row:not(.is-static):hover .import-checkbox,
 .import-select-all:hover .import-checkbox {
-  border-color: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  border-color: var(--control-checkbox-border-hover);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--control-checkbox-bg));
+}
+.import-checkbox:focus-visible {
+  outline: none;
+  border-color: var(--control-checkbox-border-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 .import-checkbox[data-state='checked'],
-.import-checkbox[data-state='indeterminate'] {
+.import-checkbox[data-state='indeterminate'],
+.import-select-all[data-state='checked'] .import-checkbox,
+.import-select-all[data-state='indeterminate'] .import-checkbox {
   background: var(--color-primary);
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
 .import-checkbox-indicator {
   @apply relative flex items-center justify-center;
   width: 10px;
   height: 10px;
 }
-.import-checkbox[data-state='checked'] .import-checkbox-indicator::after {
+.import-checkbox[data-state='checked'] .import-checkbox-indicator::after,
+.import-select-all[data-state='checked'] .import-checkbox-indicator::after {
   content: '';
   position: absolute;
   left: 50%;
   top: 50%;
   width: 4px;
   height: 8px;
-  border: 2px solid #fff;
+  border: 2px solid var(--control-checkbox-indicator);
   border-top: none;
   border-left: none;
   transform: translate(-50%, -60%) rotate(45deg);
 }
-.import-checkbox[data-state='indeterminate'] .import-checkbox-indicator::after {
+.import-checkbox[data-state='indeterminate'] .import-checkbox-indicator::after,
+.import-select-all[data-state='indeterminate'] .import-checkbox-indicator::after {
   content: '';
   position: absolute;
   left: 50%;
   top: 50%;
   width: 8px;
   height: 2px;
-  background: #fff;
+  background: var(--control-checkbox-indicator);
   border-radius: 999px;
   transform: translate(-50%, -50%);
 }
 
 .import-select-all {
   @apply inline-flex items-center gap-2 cursor-pointer text-[13px] text-text-main/85 transition-colors;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .import-select-all:hover {
   color: var(--color-text-main);
 }
+.import-select-all:focus-visible {
+  outline: none;
+}
+.import-select-all:focus-visible .import-checkbox {
+  border-color: var(--control-checkbox-border-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
 
 .import-progress-bar {
   @apply w-full h-1.5 rounded-full overflow-hidden;
-  background: color-mix(in srgb, var(--color-text-main) 8%, transparent);
+  background: var(--control-track-bg);
 }
 .import-progress-fill {
   @apply h-full rounded-full transition-all;

@@ -2,7 +2,7 @@
 
 .search-pinned-tabs {
   background: var(--color-bg-main);
-  border-bottom: 0.5px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-bottom: 0.5px solid var(--border-subtle);
 }
 
 .search-view {
@@ -108,11 +108,9 @@
   max-height: 400px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 82%, transparent);
-  box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.14),
-    0 2px 8px rgba(0, 0, 0, 0.06);
-  background: var(--color-bg-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-elevated);
+  background: var(--color-bg-elevated);
   backdrop-filter: blur(18px);
   z-index: 260;
 }
@@ -141,7 +139,7 @@
 }
 
 .search-suggestion-group + .search-suggestion-group .search-suggestion-title {
-  border-top: 0.5px solid color-mix(in srgb, var(--color-border-light) 70%, transparent);
+  border-top: 0.5px solid var(--border-subtle);
   margin-top: 2px;
 }
 
@@ -272,7 +270,7 @@
 
 .hot-chip {
   padding: 6px 12px;
-  border: 0.8px solid color-mix(in srgb, var(--color-border-light) 92%, transparent);
+  border: 0.8px solid var(--control-border);
 }
 
 .history-chip-icon {

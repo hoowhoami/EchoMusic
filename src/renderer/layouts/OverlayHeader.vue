@@ -122,11 +122,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
 
 .overlay-control-btn:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-:global(.dark) .overlay-control-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--control-hover-bg);
 }
 
 .overlay-control-btn--close:hover {

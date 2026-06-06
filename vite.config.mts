@@ -43,6 +43,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         desktopLyric: resolve(__dirname, 'desktop-lyric.html'),
+        pluginWindow: resolve(__dirname, 'plugin-window.html'),
       },
     },
   },

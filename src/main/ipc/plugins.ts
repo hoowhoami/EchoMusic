@@ -14,6 +14,7 @@ import type {
   PluginUninstallResult,
 } from '../../shared/plugins';
 import {
+  clearPluginFailureRecord,
   clearPluginStartup,
   deletePluginData,
   getPluginData,
@@ -24,6 +25,7 @@ import {
   markPluginStartup,
   openPluginDirectory,
   readPluginTextAsset,
+  readPluginWindowTextAsset,
   reportPluginFailure,
   setPluginData,
   setPluginActiveSession,
@@ -31,6 +33,7 @@ import {
   setPluginSafeMode,
   uninstallPlugin,
 } from '../plugins';
+import { closePluginWindows } from '../pluginWindows';
 import type { IpcContext } from './types';
 
 const sanitizeDialogOptions = (
@@ -107,17 +110,21 @@ export const registerPluginHandlers = (context: IpcContext) => {
   );
   ipcMain.handle(
     'plugins:set-enabled',
-    (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult =>
-      setPluginEnabled(pluginId, enabled),
+    (_event, pluginId: string, enabled: boolean): PluginSetEnabledResult => {
+      const result = setPluginEnabled(pluginId, enabled);
+      if (result.ok && !enabled) closePluginWindows(pluginId);
+      return result;
+    },
   );
-  ipcMain.handle(
-    'plugins:set-safe-mode',
-    (_event, enabled: boolean): PluginSetSafeModeResult => setPluginSafeMode(enabled),
-  );
-  ipcMain.handle(
-    'plugins:uninstall',
-    (_event, pluginId: string): PluginUninstallResult => uninstallPlugin(pluginId),
-  );
+  ipcMain.handle('plugins:set-safe-mode', (_event, enabled: boolean): PluginSetSafeModeResult => {
+    const result = setPluginSafeMode(enabled);
+    if (result.ok && enabled) closePluginWindows();
+    return result;
+  });
+  ipcMain.handle('plugins:uninstall', (_event, pluginId: string): PluginUninstallResult => {
+    closePluginWindows(pluginId);
+    return uninstallPlugin(pluginId);
+  });
   ipcMain.handle(
     'plugins:startup:mark',
     (_event, pluginIds: string[]): PluginReportFailureResult => markPluginStartup(pluginIds),
@@ -138,9 +145,22 @@ export const registerPluginHandlers = (context: IpcContext) => {
     ): PluginReportFailureResult => reportPluginFailure(failure),
   );
   ipcMain.handle(
+    'plugins:failure:clear',
+    (_event, pluginId?: string): PluginReportFailureResult => clearPluginFailureRecord(pluginId),
+  );
+  ipcMain.handle(
     'plugins:read-asset',
     (_event, pluginId: string, asset: 'main' | 'style'): PluginAssetSourceResult =>
       readPluginTextAsset(pluginId, asset),
+  );
+  ipcMain.handle(
+    'plugins:window:read-asset',
+    (
+      _event,
+      pluginId: string,
+      windowId: string,
+      asset: 'main' | 'style',
+    ): PluginAssetSourceResult => readPluginWindowTextAsset(pluginId, windowId, asset),
   );
   ipcMain.handle('plugins:data:get', (_event, pluginId: string, key: string) =>
     getPluginData(pluginId, key),
@@ -168,7 +188,9 @@ export const unregisterPluginHandlers = () => {
   ipcMain.removeHandler('plugins:startup:clear');
   ipcMain.removeHandler('plugins:active-session:set');
   ipcMain.removeHandler('plugins:failure:report');
+  ipcMain.removeHandler('plugins:failure:clear');
   ipcMain.removeHandler('plugins:read-asset');
+  ipcMain.removeHandler('plugins:window:read-asset');
   ipcMain.removeHandler('plugins:data:get');
   ipcMain.removeHandler('plugins:data:set');
   ipcMain.removeHandler('plugins:data:delete');

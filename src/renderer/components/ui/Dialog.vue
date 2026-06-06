@@ -152,7 +152,8 @@ const handleInteractOutside = (event: Event) => {
 @reference "@/style.css";
 
 :global(.dialog-overlay) {
-  @apply fixed inset-0 bg-black/30 z-1400;
+  @apply fixed inset-0 z-1400;
+  background: var(--surface-overlay-bg);
   opacity: 0;
   transition: opacity 0.16s ease-out;
 }
@@ -167,8 +168,11 @@ const handleInteractOutside = (event: Event) => {
 }
 
 :global(.dialog-content) {
-  @apply fixed left-1/2 top-[46%] z-1410 w-[420px] max-w-[92vw] rounded-2xl bg-bg-main border border-border-light/40 shadow-2xl flex flex-col select-none;
+  @apply fixed left-1/2 top-[46%] z-1410 w-[420px] max-w-[92vw] rounded-2xl border flex flex-col select-none;
   @apply max-h-[calc(100vh-240px)];
+  background: var(--color-bg-dialog);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-dialog);
   /* 将右侧内边距设为 2px，使滚动条紧贴边缘 */
   padding: 24px 2px 24px 24px;
   opacity: 0;

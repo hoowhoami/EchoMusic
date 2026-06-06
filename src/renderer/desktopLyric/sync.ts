@@ -3,10 +3,32 @@ import { storeToRefs } from 'pinia';
 import { usePlayerStore } from '@/stores/player';
 import { useLyricStore, testLyricFilter } from '@/stores/lyric';
 import { useSettingStore } from '@/stores/setting';
+import { useToastStore } from '@/stores/toast';
 import { useDesktopLyricStore } from './store';
-import type { DesktopLyricPlaybackPayload, LyricLinePayload } from '../../shared/desktop-lyric';
+import type {
+  DesktopLyricCommand,
+  DesktopLyricPlaybackPayload,
+  LyricLinePayload,
+} from '../../shared/desktop-lyric';
 
 const DESKTOP_LYRIC_PROGRESS_SYNC_INTERVAL_MS = 80;
+const DESKTOP_LYRIC_OFFSET_STEP_MS = 500;
+const DESKTOP_LYRIC_COMMANDS = new Set<DesktopLyricCommand>([
+  'togglePlayback',
+  'previousTrack',
+  'nextTrack',
+  'toggleLyricsMode',
+  'cycleLyricsMode',
+  'openLyricSource',
+  'toggleTranslation',
+  'toggleRomanization',
+  'lyricOffsetBackward',
+  'lyricOffsetForward',
+  'lyricOffsetReset',
+]);
+
+const isDesktopLyricCommand = (value: unknown): value is DesktopLyricCommand =>
+  typeof value === 'string' && DESKTOP_LYRIC_COMMANDS.has(value as DesktopLyricCommand);
 
 const normalizeLinePayload = (
   line: ReturnType<typeof useLyricStore>['lines'][number],
@@ -49,6 +71,7 @@ export const initDesktopLyricSync = async () => {
   const desktopLyricStore = useDesktopLyricStore();
   const playerStore = usePlayerStore();
   const lyricStore = useLyricStore();
+  const toastStore = useToastStore();
   if (!window.electron?.desktopLyric) return () => {};
 
   await desktopLyricStore.hydrate();
@@ -61,7 +84,7 @@ export const initDesktopLyricSync = async () => {
   const stops: WatchStopHandle[] = [];
   const { currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot } =
     storeToRefs(playerStore);
-  const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash } =
+  const { lines, currentIndex, wantTranslation, wantRomanization, loadedHash, currentTimeOffset } =
     storeToRefs(lyricStore);
   const settingStore = useSettingStore();
 
@@ -118,6 +141,7 @@ export const initDesktopLyricSync = async () => {
     const nextPlaybackKey = JSON.stringify({
       playback,
       currentIndex: currentIndex.value,
+      lyricTimeOffset: currentTimeOffset.value,
       lyricSyncWarning: lyricStore.lyricSyncWarning,
     });
     if (nextPlaybackKey === lastSyncedPlaybackKey) return;
@@ -125,6 +149,7 @@ export const initDesktopLyricSync = async () => {
     window.electron.desktopLyric.syncSnapshot({
       playback,
       currentIndex: currentIndex.value,
+      lyricTimeOffset: currentTimeOffset.value,
       lyricSyncWarning: lyricStore.lyricSyncWarning,
     });
     lastSyncedPlaybackKey = nextPlaybackKey;
@@ -174,6 +199,8 @@ export const initDesktopLyricSync = async () => {
     lastSyncedPlaybackKey = JSON.stringify({
       playback: nextSnapshot.playback,
       currentIndex: nextSnapshot.currentIndex,
+      lyricTimeOffset: nextSnapshot.lyricTimeOffset,
+      lyricSyncWarning: nextSnapshot.lyricSyncWarning,
     });
     lastSyncedLyricsKey = JSON.stringify({
       lyricsTrackId: nextSnapshot.lyricsTrackId,
@@ -181,9 +208,58 @@ export const initDesktopLyricSync = async () => {
     });
   });
 
+  const handleDesktopLyricCommand = (command: DesktopLyricCommand) => {
+    if (command === 'toggleTranslation') {
+      lyricStore.wantTranslation = !lyricStore.wantTranslation;
+      void syncSettingsSnapshot();
+      return;
+    }
+    if (command === 'toggleRomanization') {
+      lyricStore.wantRomanization = !lyricStore.wantRomanization;
+      void syncSettingsSnapshot();
+      return;
+    }
+    if (command === 'lyricOffsetBackward') {
+      const nextOffset = lyricStore.adjustTimeOffset(-DESKTOP_LYRIC_OFFSET_STEP_MS);
+      const sign = nextOffset >= 0 ? '+' : '';
+      toastStore.success(`歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
+      lyricStore.updateCurrentIndex(playerStore.currentTime);
+      void syncPlaybackSnapshot();
+      return;
+    }
+    if (command === 'lyricOffsetForward') {
+      const nextOffset = lyricStore.adjustTimeOffset(DESKTOP_LYRIC_OFFSET_STEP_MS);
+      const sign = nextOffset >= 0 ? '+' : '';
+      toastStore.success(`歌词偏移: ${sign}${(nextOffset / 1000).toFixed(1)}s`);
+      lyricStore.updateCurrentIndex(playerStore.currentTime);
+      void syncPlaybackSnapshot();
+      return;
+    }
+    if (command === 'lyricOffsetReset') {
+      lyricStore.resetTimeOffset();
+      toastStore.success('歌词偏移已重置');
+      lyricStore.updateCurrentIndex(playerStore.currentTime);
+      void syncPlaybackSnapshot();
+    }
+  };
+  const handleDesktopLyricIpcCommand = (...args: unknown[]) => {
+    const command = args[0];
+    if (isDesktopLyricCommand(command)) handleDesktopLyricCommand(command);
+  };
+
+  window.electron.ipcRenderer.on('desktop-lyric:command', handleDesktopLyricIpcCommand);
+
   stops.push(
     watch(
-      [currentTime, isPlaying, duration, playbackRate, currentTrackId, currentTrackSnapshot],
+      [
+        currentTime,
+        isPlaying,
+        duration,
+        playbackRate,
+        currentTrackId,
+        currentTrackSnapshot,
+        currentTimeOffset,
+      ],
       () => {
         // 桌面歌词启用时自驱动歌词行索引（不更新逐字高亮，桌面歌词窗口自己处理）
         if (desktopLyricStore.settings.enabled) {
@@ -242,6 +318,7 @@ export const initDesktopLyricSync = async () => {
 
   return () => {
     disposeSnapshotListener();
+    window.electron?.ipcRenderer?.off('desktop-lyric:command', handleDesktopLyricIpcCommand);
     if (progressSyncTimer) {
       clearTimeout(progressSyncTimer);
       progressSyncTimer = null;

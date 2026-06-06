@@ -1167,7 +1167,7 @@ watch(total, (value) => {
 .comment-singer-divider {
   margin: 16px 12px;
   height: 1px;
-  background: color-mix(in srgb, var(--color-border-light) 50%, transparent);
+  background: var(--border-subtle);
 }
 
 .comment-load-more {
@@ -1179,12 +1179,12 @@ watch(total, (value) => {
 .comment-load-more button {
   padding: 8px 24px;
   border-radius: 999px;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--control-border);
   font-size: 12px;
   font-weight: 600;
   color: var(--color-text-main);
-  background: var(--color-bg-card);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-control);
 }
 
 .comment-loading-inline {

@@ -119,12 +119,12 @@ const valueLabel = computed(() =>
 }
 
 .slider-track {
-  background-color: color-mix(in srgb, var(--color-text-main) 9%, var(--color-bg-card) 91%);
+  background-color: var(--control-track-bg);
   @apply relative grow rounded-full;
 }
 
 .dark .slider-track {
-  background-color: color-mix(in srgb, var(--color-text-main) 14%, var(--color-bg-card) 86%);
+  background-color: var(--control-track-bg);
 }
 
 .slider-root-horizontal .slider-track {
@@ -148,7 +148,10 @@ const valueLabel = computed(() =>
 }
 
 .slider-thumb {
-  @apply block w-3 h-3 rounded-full bg-white border border-black/10 shadow-sm transition-shadow focus-visible:outline-none;
+  @apply block w-3 h-3 rounded-full shadow-sm transition-shadow focus-visible:outline-none;
+  background: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-control);
 }
 
 .slider-value-label {

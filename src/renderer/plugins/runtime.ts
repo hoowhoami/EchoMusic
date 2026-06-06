@@ -8,6 +8,8 @@ import type {
   EchoPluginManifest,
   PluginFailureRecord,
   PluginListResult,
+  PluginWindowBounds,
+  PluginWindowShowOptions,
 } from '../../shared/plugins';
 import * as icons from '@/icons';
 import { usePlayerStore } from '@/stores/player';
@@ -42,6 +44,25 @@ type PluginModuleDefault =
       deactivate?: (ctx: EchoPluginContext) => unknown;
     };
 
+export interface PluginSurfaceOptions {
+  enabled?: boolean;
+  mainOpacity?: number | string;
+  sidebarOpacity?: number | string;
+  cardOpacity?: number | string;
+  elevatedOpacity?: number | string;
+  dialogOpacity?: number | string;
+  playerOpacity?: number | string;
+  backdropFilter?: string;
+  playerBackdropFilter?: string;
+}
+
+export interface PluginThemeApi {
+  surface: {
+    set: (options: PluginSurfaceOptions) => () => void;
+    clear: () => void;
+  };
+}
+
 export interface EchoPluginContext {
   id: string;
   manifest: EchoPluginManifest;
@@ -61,6 +82,16 @@ export interface EchoPluginContext {
   playlist: ReturnType<typeof createPlaylistApi>;
   lyric: ReturnType<typeof useLyricStore>;
   settings: ReturnType<typeof useSettingStore>;
+  theme: PluginThemeApi;
+  nowPlaying: Window['electron']['nowPlaying'];
+  windows: {
+    show: (windowId: string, options?: PluginWindowShowOptions) => Promise<unknown>;
+    hide: (windowId: string) => Promise<unknown>;
+    close: (windowId: string) => Promise<unknown>;
+    move: (windowId: string, bounds: Partial<PluginWindowBounds>) => Promise<unknown>;
+    getBounds: (windowId: string) => Promise<unknown>;
+    setIgnoreMouseEvents: (windowId: string, ignore: boolean) => Promise<unknown>;
+  };
   toast: ReturnType<typeof createToastApi>;
   storage: {
     get: <T = unknown>(key: string) => Promise<T | null>;
@@ -145,6 +176,144 @@ const activePlugins = new Map<string, ActivePlugin>();
 let hostRef: PluginRuntimeHost | null = null;
 let runtimeErrorHandlersInstalled = false;
 
+type NormalizedSurfaceContribution = {
+  enabled: boolean;
+  updatedAt: number;
+  mainOpacity?: string;
+  sidebarOpacity?: string;
+  cardOpacity?: string;
+  elevatedOpacity?: string;
+  dialogOpacity?: string;
+  playerOpacity?: string;
+  backdropFilter?: string;
+  playerBackdropFilter?: string;
+};
+
+const pluginSurfaceContributions = new Map<string, NormalizedSurfaceContribution>();
+let surfaceContributionRevision = 0;
+
+const surfaceCssVariables = [
+  '--surface-main-opacity',
+  '--surface-sidebar-opacity',
+  '--surface-card-opacity',
+  '--surface-elevated-opacity',
+  '--surface-dialog-opacity',
+  '--surface-player-opacity',
+  '--surface-backdrop-filter',
+  '--surface-player-backdrop-filter',
+] as const;
+
+const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
+
+const normalizeSurfaceOpacity = (value: number | string | undefined) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `${clampPercent(value <= 1 ? value * 100 : value)}%`;
+  }
+
+  const text = String(value).trim();
+  if (!text) return undefined;
+
+  if (text.endsWith('%')) {
+    const numeric = Number(text.slice(0, -1).trim());
+    if (Number.isFinite(numeric)) return `${clampPercent(numeric)}%`;
+  }
+
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return `${clampPercent(numeric <= 1 ? numeric * 100 : numeric)}%`;
+
+  return undefined;
+};
+
+const normalizeBackdropFilter = (value: string | undefined) => {
+  const text = String(value ?? '').trim();
+  return text || undefined;
+};
+
+const normalizeSurfaceContribution = (
+  options: PluginSurfaceOptions,
+): NormalizedSurfaceContribution => ({
+  enabled: options.enabled !== false,
+  updatedAt: ++surfaceContributionRevision,
+  mainOpacity: normalizeSurfaceOpacity(options.mainOpacity),
+  sidebarOpacity: normalizeSurfaceOpacity(options.sidebarOpacity),
+  cardOpacity: normalizeSurfaceOpacity(options.cardOpacity),
+  elevatedOpacity: normalizeSurfaceOpacity(options.elevatedOpacity),
+  dialogOpacity: normalizeSurfaceOpacity(options.dialogOpacity),
+  playerOpacity: normalizeSurfaceOpacity(options.playerOpacity),
+  backdropFilter: normalizeBackdropFilter(options.backdropFilter),
+  playerBackdropFilter: normalizeBackdropFilter(options.playerBackdropFilter),
+});
+
+const applySurfaceContributions = () => {
+  if (typeof document === 'undefined') return;
+
+  const body = document.body;
+  const enabledContributions = Array.from(pluginSurfaceContributions.values())
+    .filter((contribution) => contribution.enabled)
+    .sort((a, b) => a.updatedAt - b.updatedAt);
+
+  surfaceCssVariables.forEach((name) => body.style.removeProperty(name));
+  body.classList.toggle('echo-surface-translucent', enabledContributions.length > 0);
+
+  if (enabledContributions.length === 0) return;
+
+  const merged: Partial<Record<(typeof surfaceCssVariables)[number], string>> = {};
+
+  for (const contribution of enabledContributions) {
+    if (contribution.mainOpacity) merged['--surface-main-opacity'] = contribution.mainOpacity;
+    if (contribution.sidebarOpacity) {
+      merged['--surface-sidebar-opacity'] = contribution.sidebarOpacity;
+    }
+    if (contribution.cardOpacity) merged['--surface-card-opacity'] = contribution.cardOpacity;
+    if (contribution.elevatedOpacity) {
+      merged['--surface-elevated-opacity'] = contribution.elevatedOpacity;
+    }
+    if (contribution.dialogOpacity) {
+      merged['--surface-dialog-opacity'] = contribution.dialogOpacity;
+    }
+    if (contribution.playerOpacity) {
+      merged['--surface-player-opacity'] = contribution.playerOpacity;
+    }
+    if (contribution.backdropFilter) {
+      merged['--surface-backdrop-filter'] = contribution.backdropFilter;
+    }
+    if (contribution.playerBackdropFilter) {
+      merged['--surface-player-backdrop-filter'] = contribution.playerBackdropFilter;
+    }
+  }
+
+  Object.entries(merged).forEach(([name, value]) => {
+    body.style.setProperty(name, value);
+  });
+};
+
+const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => {
+  let clearRegistered = false;
+
+  const clear = () => {
+    if (!pluginSurfaceContributions.delete(pluginId)) return;
+    applySurfaceContributions();
+  };
+
+  const registerClear = () => {
+    if (clearRegistered) return clear;
+    clearRegistered = true;
+    return addDisposable(clear);
+  };
+
+  return {
+    surface: {
+      set: (options: PluginSurfaceOptions) => {
+        pluginSurfaceContributions.set(pluginId, normalizeSurfaceContribution(options));
+        applySurfaceContributions();
+        return registerClear();
+      },
+      clear,
+    },
+  };
+};
+
 const createPlayerApi = () => {
   const player = usePlayerStore();
   return {
@@ -186,6 +355,23 @@ const createToastApi = () => {
     warning: toast.warning,
     danger: toast.danger,
     show: toast.show,
+  };
+};
+
+const createPluginWindowsApi = (pluginId: string) => {
+  const getWindowsApi = () => window.electron.plugins?.windows;
+  const unavailable = () => Promise.reject(new Error('插件窗口 API 不可用'));
+  return {
+    show: (windowId: string, options?: PluginWindowShowOptions) =>
+      getWindowsApi()?.show(pluginId, windowId, options) ?? unavailable(),
+    hide: (windowId: string) => getWindowsApi()?.hide(pluginId, windowId) ?? unavailable(),
+    close: (windowId: string) => getWindowsApi()?.close(pluginId, windowId) ?? unavailable(),
+    move: (windowId: string, bounds: Partial<PluginWindowBounds>) =>
+      getWindowsApi()?.move(pluginId, windowId, bounds) ?? unavailable(),
+    getBounds: (windowId: string) =>
+      getWindowsApi()?.getBounds(pluginId, windowId) ?? unavailable(),
+    setIgnoreMouseEvents: (windowId: string, ignore: boolean) =>
+      getWindowsApi()?.setIgnoreMouseEvents(pluginId, windowId, ignore) ?? unavailable(),
   };
 };
 
@@ -430,25 +616,25 @@ const setRecordFailure = (pluginId: string, message: string) => {
   record.error = message;
 };
 
-const clearPluginFailure = (pluginId: string) => {
-  delete pluginRuntimeState.failures[pluginId];
-  const lastFailure = pluginRuntimeState.lastFailure;
-  if (!lastFailure) return;
-  const ids = new Set(
-    [lastFailure.pluginId, ...(lastFailure.pluginIds ?? [])].filter((id): id is string =>
-      Boolean(id),
-    ),
+const getFailurePluginIds = (failure: PluginFailureRecord | null) =>
+  new Set(
+    [failure?.pluginId, ...(failure?.pluginIds ?? [])].filter((id): id is string => Boolean(id)),
   );
-  if (!ids.has(pluginId)) return;
-  const remainingIds = Array.from(ids).filter((id) => id !== pluginId);
-  pluginRuntimeState.lastFailure =
-    remainingIds.length > 0
-      ? {
-          ...lastFailure,
-          pluginId: remainingIds[0],
-          pluginIds: remainingIds,
-        }
-      : null;
+
+const isLastFailureForPlugin = (pluginId: string) =>
+  getFailurePluginIds(pluginRuntimeState.lastFailure).has(pluginId);
+
+const clearCurrentPluginFailure = (pluginId: string) => {
+  delete pluginRuntimeState.failures[pluginId];
+};
+
+const clearRecordFailure = (pluginId: string) => {
+  const record = pluginRuntimeState.records.find((item) => item.descriptor.id === pluginId);
+  if (!record) return;
+  record.error = '';
+  if (record.status === 'error') {
+    record.status = activePlugins.has(pluginId) ? 'active' : 'idle';
+  }
 };
 
 const reportPluginFailure = async (
@@ -642,6 +828,9 @@ const createPluginContext = (
     playlist: createPlaylistApi(),
     lyric: lyricStore,
     settings: settingStore,
+    theme: createThemeApi(descriptor.id, addDisposable),
+    nowPlaying: window.electron.nowPlaying,
+    windows: createPluginWindowsApi(descriptor.id),
     toast: createToastApi(),
     storage: {
       get: <T = unknown>(key: string) =>
@@ -795,6 +984,11 @@ const deactivatePlugin = async (pluginId: string) => {
       void reportPluginRuntimeError(pluginId, error, '插件资源清理');
     }
   }
+  await Promise.allSettled(
+    active.descriptor.windows.map((item) =>
+      window.electron.plugins?.windows.close(active.descriptor.id, item.id),
+    ),
+  );
   active.blobUrls.forEach((url) => URL.revokeObjectURL(url));
   removePluginContributions(pluginId);
   activePlugins.delete(pluginId);
@@ -830,7 +1024,7 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
     if (!activator) throw new Error('插件未导出 activate(ctx) 或默认函数');
     activePlugins.set(descriptor.id, { descriptor, context, module, disposables, blobUrls });
     await activator(context);
-    clearPluginFailure(descriptor.id);
+    clearCurrentPluginFailure(descriptor.id);
     updateRecord(descriptor, 'active');
   } catch (error) {
     await deactivatePlugin(descriptor.id);
@@ -914,6 +1108,19 @@ export const setRuntimePluginSafeMode = async (enabled: boolean) => {
   return result.safeMode;
 };
 
+export const clearRuntimePluginFailure = async (pluginId: string) => {
+  const shouldClearLastFailure = isLastFailureForPlugin(pluginId);
+  if (shouldClearLastFailure) {
+    const result = await window.electron.plugins?.clearFailure(pluginId);
+    if (!result?.ok) {
+      throw new Error('插件异常记录清除失败');
+    }
+    pluginRuntimeState.lastFailure = null;
+  }
+  clearCurrentPluginFailure(pluginId);
+  clearRecordFailure(pluginId);
+};
+
 export const uninstallRuntimePlugin = async (pluginId: string) => {
   await deactivatePlugin(pluginId);
   const result = await window.electron.plugins?.uninstall(pluginId);
@@ -963,5 +1170,11 @@ export const notifyRuntimePluginSettingsChanged = async (
   values: Record<string, PluginSettingValue>,
 ) => {
   const contribution = getRuntimePluginSettingsContribution(pluginId);
-  await contribution?.onChange?.(values);
+  if (!contribution?.onChange) return;
+  try {
+    await contribution.onChange(values);
+  } catch (error) {
+    await reportPluginRuntimeError(pluginId, error, '插件设置变更');
+    throw error;
+  }
 };

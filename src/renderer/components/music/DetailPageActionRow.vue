@@ -96,10 +96,6 @@ const emit = defineEmits<{
   @apply brightness-95;
 }
 
-.dark .action-btn {
-  background-color: rgba(255, 255, 255, 0.08);
-}
-
 .icon-wrap {
   @apply flex items-center justify-center w-4 h-4;
 }

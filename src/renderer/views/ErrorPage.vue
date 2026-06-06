@@ -130,31 +130,10 @@ const handleCopyError = async () => {
   width: min(720px, 100%);
   padding: 28px;
   border-radius: 30px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 82%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, white 78%, transparent),
-      color-mix(in srgb, white 92%, transparent)
-    ),
-    var(--color-bg-card);
-  box-shadow:
-    0 24px 60px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(18px);
-}
-
-.dark .error-shell {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, #1b1f26 94%, transparent),
-      color-mix(in srgb, #101318 98%, transparent)
-    ),
-    var(--color-bg-card);
-  box-shadow:
-    0 26px 72px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-dialog);
+  box-shadow: var(--shadow-dialog);
+  backdrop-filter: var(--surface-backdrop-filter);
 }
 
 .error-badge {
@@ -213,14 +192,9 @@ const handleCopyError = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.68));
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
   box-shadow: 0 12px 28px rgba(239, 68, 68, 0.12);
-}
-
-.dark .error-icon-core {
-  background: linear-gradient(180deg, rgba(31, 35, 43, 0.94), rgba(20, 22, 28, 0.9));
-  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .error-icon {
@@ -305,7 +279,7 @@ const handleCopyError = async () => {
 .error-footer {
   margin-top: 20px;
   padding-top: 20px;
-  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 50%, transparent);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .error-copy-btn {

@@ -105,7 +105,7 @@ const close = () => {
         </div>
 
         <!-- 字体设置 -->
-        <div class="settings-section settings-card">
+        <div class="settings-section lyric-settings-card">
           <div class="section-title">文字</div>
           <div class="setting-row setting-row-compact">
             <span class="setting-label">大小</span>
@@ -144,7 +144,7 @@ const close = () => {
         </div>
 
         <!-- 歌词颜色 -->
-        <div class="settings-section settings-card">
+        <div class="settings-section lyric-settings-card">
           <div class="section-title">歌词颜色</div>
           <div class="color-row">
             <div class="color-item">
@@ -182,7 +182,7 @@ const close = () => {
         </div>
 
         <!-- 翻译/音译 -->
-        <div class="settings-section settings-card">
+        <div class="settings-section lyric-settings-card">
           <div class="section-title">翻译</div>
           <div class="setting-row">
             <div class="setting-text">
@@ -229,7 +229,7 @@ const close = () => {
         </div>
 
         <!-- 背景 -->
-        <div class="settings-section settings-card">
+        <div class="settings-section lyric-settings-card">
           <div class="section-title">显示</div>
           <div class="setting-row">
             <div class="setting-text">
@@ -249,7 +249,7 @@ const close = () => {
 
         <!-- 写真模式专属设置 -->
         <template v-if="currentMode === 'portrait'">
-          <div class="settings-section settings-card portrait-card">
+          <div class="settings-section lyric-settings-card portrait-card">
             <div class="section-title">写真设置</div>
             <div class="setting-row setting-row-compact">
               <span class="setting-label">背景透明度</span>
@@ -334,23 +334,33 @@ const close = () => {
   top: 0 !important;
   bottom: 0 !important;
   width: min(360px, 90vw) !important;
-  background: var(--color-bg-card) !important;
-  border-color: rgba(0, 0, 0, 0.08) !important;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.12) !important;
+  background: var(--lyric-settings-panel-bg, var(--color-bg-dialog)) !important;
+  border-color: var(--lyric-settings-panel-border, var(--border-subtle)) !important;
+  box-shadow: var(--shadow-elevated) !important;
 }
 
 .dark .lyric-settings-panel {
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4) !important;
+  --lyric-settings-panel-bg: color-mix(
+    in srgb,
+    var(--surface-elevated-base) 96%,
+    var(--surface-dialog-base) 4%
+  );
+  --lyric-settings-panel-border: rgba(255, 255, 255, 0.14);
 }
 
 .lyric-settings-overlay {
-  background: rgba(0, 0, 0, 0.3) !important;
+  background: var(--surface-scrim-bg) !important;
 }
 </style>
 
 <style scoped>
 .settings-drawer {
+  --lyric-settings-divider-border: var(--border-subtle);
+  --lyric-settings-card-bg: color-mix(in srgb, var(--surface-card-base) 96%, var(--text-main) 4%);
+  --lyric-settings-card-border: var(--border-subtle);
+  --lyric-settings-card-shadow: none;
+  --lyric-settings-control-border: var(--control-border);
+
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -360,12 +370,25 @@ const close = () => {
   -webkit-user-select: none;
 }
 
+:global(.dark) .settings-drawer {
+  --lyric-settings-divider-border: rgba(255, 255, 255, 0.12);
+  --lyric-settings-card-bg: color-mix(
+    in srgb,
+    var(--surface-elevated-base) 88%,
+    var(--color-text-main) 12%
+  );
+  --lyric-settings-card-border: rgba(255, 255, 255, 0.16);
+  --lyric-settings-card-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 8px 20px rgba(0, 0, 0, 0.12);
+  --lyric-settings-control-border: rgba(255, 255, 255, 0.16);
+}
+
 .settings-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   padding: 20px 20px 16px;
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--lyric-settings-divider-border);
   flex-shrink: 0;
   gap: 16px;
 }
@@ -403,7 +426,7 @@ const close = () => {
 
 .settings-close-btn:hover {
   opacity: 1;
-  background: var(--color-border-light);
+  background: var(--control-hover-bg);
 }
 
 .settings-body {
@@ -426,11 +449,12 @@ const close = () => {
   gap: 10px;
 }
 
-.settings-card {
+.lyric-settings-card {
   padding: 14px 14px 12px;
   border-radius: 18px;
-  background: color-mix(in srgb, var(--color-text-main) 5%, var(--color-bg-card) 95%);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  background: var(--lyric-settings-card-bg);
+  border: 1px solid var(--lyric-settings-card-border);
+  box-shadow: var(--lyric-settings-card-shadow);
 }
 
 .section-title {
@@ -483,7 +507,7 @@ const close = () => {
   color: var(--color-text-secondary);
 }
 
-.settings-card .settings-slider-root {
+.lyric-settings-card .settings-slider-root {
   margin: 2px 0 4px;
 }
 
@@ -507,11 +531,7 @@ const close = () => {
   flex-grow: 1;
   height: 4px;
   border-radius: 9999px;
-  background-color: #d1d5db;
-}
-
-:global(.dark) .settings-slider-track {
-  background-color: #6b7280;
+  background-color: var(--control-track-bg);
 }
 
 .settings-slider-range {
@@ -526,8 +546,9 @@ const close = () => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background-color: var(--color-primary);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  background-color: var(--control-thumb-bg);
+  border: 1px solid var(--control-border);
+  box-shadow: var(--shadow-control);
   outline: none;
 }
 
@@ -535,7 +556,7 @@ const close = () => {
   display: flex;
   gap: 4px;
   padding: 3px;
-  background: color-mix(in srgb, var(--color-text-main) 8%, var(--color-bg-card) 92%);
+  background: var(--control-muted-bg);
   border-radius: 12px;
 }
 
@@ -557,8 +578,8 @@ const close = () => {
 
 .mode-option.active {
   color: var(--color-text-main);
-  background: var(--color-bg-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-control);
 }
 
 .color-row {
@@ -573,8 +594,8 @@ const close = () => {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--color-text-main) 5%, var(--color-bg-card) 95%);
-  border: 1px solid color-mix(in srgb, var(--color-text-main) 10%, transparent);
+  background: var(--control-bg);
+  border: 1px solid var(--lyric-settings-control-border);
 }
 
 .color-text {
@@ -599,7 +620,7 @@ const close = () => {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--lyric-settings-control-border);
   cursor: pointer;
   transition: transform 0.15s ease;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);

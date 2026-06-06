@@ -302,7 +302,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="showSelectorDialog = true"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main"
             >
               <Icon :icon="iconChevronDown" width="18" height="18" />
             </Button>
@@ -310,7 +310,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -318,7 +318,7 @@ watch(
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -328,7 +328,7 @@ watch(
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="rank" />
 
         <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
-          <div class="px-6 border-b border-border-light/10">
+          <div class="px-6 border-b border-[var(--border-subtle)]">
             <div class="flex items-center justify-between h-14">
               <div class="text-[14px] font-semibold text-text-main relative">
                 榜单歌曲 <Badge :count="songs.length" />
@@ -339,7 +339,7 @@ watch(
                     v-model="searchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -439,12 +439,14 @@ watch(
 }
 
 .rank-selector {
-  @apply inline-flex items-center gap-2 h-9 px-4 rounded-xl border border-border-light bg-black/6 dark:bg-white/6 text-text-main text-[13px] font-semibold transition-all;
+  @apply inline-flex items-center gap-2 h-9 px-4 rounded-xl bg-[var(--control-muted-bg)] text-text-main text-[13px] font-semibold transition-all;
+  border: 1px solid var(--control-border);
   max-width: 220px;
 }
 
 .rank-selector:hover {
-  @apply border-primary/30 bg-black/8 dark:bg-white/8;
+  @apply bg-[var(--control-hover-bg)];
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--control-border));
 }
 
 .rank-selector-dialog {
@@ -456,7 +458,9 @@ watch(
 }
 
 .rank-selector-item {
-  @apply px-4 py-2 rounded-lg border border-border-light text-[12px] font-semibold text-text-main bg-bg-card transition-all;
+  @apply px-4 py-2 rounded-lg text-[12px] font-semibold text-text-main transition-all;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
 }
 
 .rank-selector-item.active {

@@ -75,7 +75,7 @@ onUnmounted(() => {
 :global(.drawer-overlay) {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--surface-scrim-bg);
   z-index: 1400;
   opacity: 0;
   pointer-events: none;
@@ -90,9 +90,9 @@ onUnmounted(() => {
 
 :global(.drawer-panel) {
   position: fixed;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-dialog);
   opacity: 0;
   pointer-events: none;
   z-index: 1410;

@@ -59,14 +59,17 @@ const containerStyle = computed(() => {
 <template>
   <div
     :class="[
-      'cover-container relative overflow-hidden bg-black/3 dark:bg-white/3 flex items-center justify-center',
+      'cover-container relative overflow-hidden bg-[var(--control-muted-bg)] flex items-center justify-center',
       showShadow ? 'shadow-xl shadow-black/20' : '',
       props.class,
     ]"
     :style="containerStyle"
   >
     <!-- 1. 加载中占位 -->
-    <div v-if="status === 'loading'" class="absolute inset-0 flex items-center justify-center">
+    <div
+      v-if="status === 'loading'"
+      class="absolute inset-0 flex items-center justify-center bg-[var(--control-muted-bg)]"
+    >
       <Icon :icon="iconMusic" width="40%" height="40%" class="opacity-10" />
     </div>
 
@@ -89,7 +92,7 @@ const containerStyle = computed(() => {
     <!-- 3. 错误占位 -->
     <div
       v-if="status === 'error'"
-      class="absolute inset-0 flex items-center justify-center bg-black/2 dark:bg-white/2"
+      class="absolute inset-0 flex items-center justify-center bg-[var(--control-muted-bg)]"
     >
       <Icon :icon="iconMusic" width="40%" height="40%" class="opacity-10" />
     </div>

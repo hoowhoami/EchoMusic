@@ -61,19 +61,19 @@ const props = withDefaults(defineProps<Props>(), {
   max-width: 260px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   color: var(--color-text-main);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-elevated);
   z-index: 300;
   user-select: none;
 }
 
 :global(.app-tooltip-arrow) {
   display: block;
-  fill: var(--color-bg-card);
+  fill: var(--color-bg-elevated);
   stroke: none;
 }
 </style>

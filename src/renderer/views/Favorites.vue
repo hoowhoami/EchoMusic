@@ -408,7 +408,7 @@ watch(isLoggedIn, (value) => {
         <Tabs :model-value="activeTab" class="w-full" @update:model-value="handleTabChange">
           <!-- Sticky Tabs -->
           <div class="song-list-sticky sticky top-16 z-110 bg-bg-main">
-            <div class="px-6 border-b border-border-light/10">
+            <div class="px-6 border-b border-[var(--border-subtle)]">
               <div class="flex items-center justify-between h-14">
                 <TabsList class="bg-transparent border-none gap-8">
                   <TabsTrigger value="songs">
@@ -445,7 +445,7 @@ watch(isLoggedIn, (value) => {
                       v-model="searchQuery"
                       type="text"
                       placeholder="搜索歌曲..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -472,7 +472,7 @@ watch(isLoggedIn, (value) => {
                       v-model="singerSearchQuery"
                       type="text"
                       placeholder="搜索歌手..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -490,7 +490,7 @@ watch(isLoggedIn, (value) => {
                       v-model="albumSearchQuery"
                       type="text"
                       placeholder="搜索专辑..."
-                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                      class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                     />
                     <Icon
                       class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -662,7 +662,7 @@ watch(isLoggedIn, (value) => {
 @reference "@/style.css";
 
 .favorites-header {
-  border-bottom: 0.5px solid color-mix(in srgb, var(--color-border-light) 60%, transparent);
+  border-bottom: 0.5px solid var(--border-subtle);
 }
 
 .song-locate-btn {

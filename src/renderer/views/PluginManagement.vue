@@ -15,6 +15,7 @@ import {
   iconTriangleAlert,
 } from '@/icons';
 import {
+  clearRuntimePluginFailure,
   notifyRuntimePluginSettingsChanged,
   uninstallRuntimePlugin,
   openPluginDirectory,
@@ -32,7 +33,7 @@ import {
   type PluginSettingValue,
 } from '@/plugins/registry';
 import { useToastStore } from '@/stores/toast';
-import type { PluginFailureRecord } from '../../shared/plugins';
+import type { PluginFailureRecord, PluginOpenDialogOptions } from '../../shared/plugins';
 
 const toastStore = useToastStore();
 const isRefreshing = ref(false);
@@ -40,6 +41,7 @@ const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
 const isSettingsLoading = ref(false);
 const isSettingsSaving = ref(false);
+const isClearingFailure = ref(false);
 const pendingUninstallPluginId = ref('');
 const settingsPluginId = ref('');
 const failureDetailPluginId = ref('');
@@ -135,13 +137,19 @@ interface PluginCardFailureDetail {
   message: string;
   stack: string;
   createdAt: number;
+  isHistorical?: boolean;
 }
 
 const failurePluginIds = computed(() => {
   const failure = pluginRuntimeState.lastFailure;
   if (!failure) return [];
+  const installedIds = new Set(records.value.map((record) => record.descriptor.id));
   return Array.from(
-    new Set([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean) as string[]),
+    new Set(
+      ([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean) as string[]).filter((id) =>
+        installedIds.has(id),
+      ),
+    ),
   );
 });
 
@@ -238,7 +246,7 @@ const confirmUninstallPlugin = async () => {
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
-  if (getPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
+  if (getCurrentPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
   if (!record.descriptor.enabled) return '已停用';
   if (pluginRuntimeState.safeMode && record.descriptor.enabled) return '安全模式';
   if (record.status === 'active') return '运行中';
@@ -290,20 +298,21 @@ const getLastFailureForPlugin = (pluginId: string): PluginCardFailureDetail | nu
   const failure = pluginRuntimeState.lastFailure;
   if (!failure) return null;
   const record = records.value.find((item) => item.descriptor.id === pluginId);
-  if (!pluginRuntimeState.safeMode || !record?.descriptor.enabled) return null;
+  if (!record) return null;
   const ids = new Set([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean));
   if (!ids.has(pluginId)) return null;
   return {
     pluginId,
     reason: failure.reason,
-    source: '最近一次故障恢复',
+    source: pluginRuntimeState.safeMode ? '最近一次故障恢复' : '最近一次插件异常',
     message: failure.message,
     stack: '',
     createdAt: failure.createdAt,
+    isHistorical: true,
   };
 };
 
-const getPluginCardFailure = (
+const getCurrentPluginCardFailure = (
   record: (typeof records.value)[number],
 ): PluginCardFailureDetail | null => {
   const pluginId = record.descriptor.id;
@@ -332,8 +341,25 @@ const getPluginCardFailure = (
     };
   }
 
-  return getLastFailureForPlugin(pluginId);
+  return null;
 };
+
+const getPluginCardFailure = (
+  record: (typeof records.value)[number],
+): PluginCardFailureDetail | null =>
+  getCurrentPluginCardFailure(record) ?? getLastFailureForPlugin(record.descriptor.id);
+
+const hasPluginCardFailure = (record: (typeof records.value)[number]) =>
+  Boolean(getPluginCardFailure(record));
+
+const hasCurrentPluginCardFailure = (record: (typeof records.value)[number]) =>
+  Boolean(getCurrentPluginCardFailure(record));
+
+const hasHistoricalPluginCardFailure = (record: (typeof records.value)[number]) =>
+  Boolean(getPluginCardFailure(record)?.isHistorical);
+
+const getPluginFailureButtonTitle = (record: (typeof records.value)[number]) =>
+  hasHistoricalPluginCardFailure(record) ? '查看最近一次插件异常' : '查看插件异常详情';
 
 const activeFailureDetail = computed(() =>
   failureDetailRecord.value ? getPluginCardFailure(failureDetailRecord.value) : null,
@@ -346,8 +372,28 @@ const activeFailureTitle = computed(() => {
   return `${record.descriptor.name} · ${pluginCardFailureReasonLabels[detail.reason]}`;
 });
 
+const canClearActiveFailureDetail = computed(
+  () => Boolean(activeFailureDetail.value) && activeFailureDetail.value?.reason !== 'invalid',
+);
+
 const openPluginFailureDetail = (pluginId: string) => {
   failureDetailPluginId.value = pluginId;
+};
+
+const clearActiveFailureRecord = async () => {
+  const detail = activeFailureDetail.value;
+  if (!detail || !canClearActiveFailureDetail.value || isClearingFailure.value) return;
+
+  isClearingFailure.value = true;
+  try {
+    await clearRuntimePluginFailure(detail.pluginId);
+    toastStore.actionCompleted('插件异常记录已清除');
+    showFailureDetailDialog.value = false;
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件异常记录清除失败');
+  } finally {
+    isClearingFailure.value = false;
+  }
 };
 
 const getSettingsContribution = (pluginId: string) =>
@@ -365,7 +411,11 @@ const getPluginSettingsButtonTitle = (record: (typeof records.value)[number]) =>
 const requestOpenPluginSettings = async (record: (typeof records.value)[number]) => {
   const pluginId = record.descriptor.id;
   if (getSettingsContribution(pluginId)) {
-    await openPluginSettings(pluginId);
+    try {
+      await openPluginSettings(pluginId);
+    } catch (error) {
+      toastStore.warning(error instanceof Error ? error.message : '插件设置打开失败');
+    }
     return;
   }
 
@@ -586,19 +636,32 @@ const clearPathField = (field: PluginSettingField) => {
   updateSettingDraft(field, field.multiple ? [] : '');
 };
 
+const buildPathDialogOptions = (field: PluginSettingField): PluginOpenDialogOptions => ({
+  title: String(field.label ?? ''),
+  buttonLabel: '选择',
+  multiple: Boolean(field.multiple),
+  filters: Array.isArray(field.filters)
+    ? field.filters.map((filter) => ({
+        name: String(filter?.name || 'Files'),
+        extensions: Array.isArray(filter?.extensions)
+          ? filter.extensions.map((extension) => String(extension).replace(/^\./, ''))
+          : ['*'],
+      }))
+    : undefined,
+});
+
 const selectPathForField = async (field: PluginSettingField) => {
-  const options = {
-    title: field.label,
-    buttonLabel: '选择',
-    filters: field.filters,
-    multiple: field.multiple,
-  };
-  const result =
-    field.type === 'directory'
-      ? await window.electron.plugins?.dialog.selectDirectory(options)
-      : await window.electron.plugins?.dialog.selectFiles(options);
-  if (!result || result.canceled || result.paths.length === 0) return;
-  updateSettingDraft(field, field.multiple ? result.paths : result.paths[0]);
+  try {
+    const options = buildPathDialogOptions(field);
+    const result =
+      field.type === 'directory'
+        ? await window.electron.plugins?.dialog.selectDirectory(options)
+        : await window.electron.plugins?.dialog.selectFiles(options);
+    if (!result || result.canceled || result.paths.length === 0) return;
+    updateSettingDraft(field, field.multiple ? result.paths : result.paths[0]);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '选择路径失败');
+  }
 };
 </script>
 
@@ -622,9 +685,7 @@ const selectPathForField = async (field: PluginSettingField) => {
         <!-- 右上角操作区 -->
         <div class="flex items-center gap-3">
           <!-- 安全模式 -->
-          <div
-            class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-card border border-border-light/40"
-          >
+          <div class="plugin-safe-mode-control">
             <Icon :icon="iconShield" width="14" height="14" class="text-primary" />
             <span class="text-xs font-medium text-text-main">安全模式</span>
             <Switch
@@ -694,7 +755,7 @@ const selectPathForField = async (field: PluginSettingField) => {
               class="plugin-card"
               :class="{
                 'is-disabled': !record.descriptor.enabled || record.descriptor.invalid,
-                'is-error': Boolean(getPluginCardFailure(record)),
+                'is-error': hasCurrentPluginCardFailure(record),
               }"
             >
               <div class="plugin-card-main">
@@ -719,12 +780,13 @@ const selectPathForField = async (field: PluginSettingField) => {
                     <span
                       class="plugin-status-badge"
                       :class="{
-                        'is-active': record.status === 'active' && !getPluginCardFailure(record),
-                        'is-error': Boolean(getPluginCardFailure(record)),
+                        'is-active':
+                          record.status === 'active' && !hasCurrentPluginCardFailure(record),
+                        'is-error': hasCurrentPluginCardFailure(record),
                         'is-safe':
                           pluginRuntimeState.safeMode &&
                           record.descriptor.enabled &&
-                          !getPluginCardFailure(record),
+                          !hasCurrentPluginCardFailure(record),
                       }"
                     >
                       {{ getStatusLabel(record) }}
@@ -750,36 +812,39 @@ const selectPathForField = async (field: PluginSettingField) => {
 
               <div class="plugin-card-actions">
                 <div class="plugin-card-action-group">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="plugin-settings-btn"
-                    :class="{
-                      'is-unavailable': !getSettingsContribution(record.descriptor.id),
-                    }"
-                    :title="getPluginSettingsButtonTitle(record)"
-                    :disabled="busyPluginIds.has(record.descriptor.id)"
-                    @click="requestOpenPluginSettings(record)"
-                  >
-                    <Icon :icon="iconSettings" width="14" height="14" />
-                    设置
-                  </Button>
+                  <div class="plugin-card-primary-actions">
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      class="plugin-settings-btn"
+                      :class="{
+                        'is-unavailable': !getSettingsContribution(record.descriptor.id),
+                      }"
+                      :title="getPluginSettingsButtonTitle(record)"
+                      :disabled="busyPluginIds.has(record.descriptor.id)"
+                      @click="requestOpenPluginSettings(record)"
+                    >
+                      <Icon :icon="iconSettings" width="14" height="14" />
+                      设置
+                    </Button>
 
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="plugin-remove-btn"
-                    :disabled="busyPluginIds.has(record.descriptor.id)"
-                    @click="requestUninstallPlugin(record.descriptor.id)"
-                  >
-                    移除
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      class="plugin-remove-btn"
+                      :disabled="busyPluginIds.has(record.descriptor.id)"
+                      @click="requestUninstallPlugin(record.descriptor.id)"
+                    >
+                      移除
+                    </Button>
+                  </div>
 
                   <button
-                    v-if="getPluginCardFailure(record)"
+                    v-if="hasPluginCardFailure(record)"
                     class="plugin-card-failure-btn"
+                    :class="{ 'is-historical': hasHistoricalPluginCardFailure(record) }"
                     type="button"
-                    title="查看插件异常详情"
+                    :title="getPluginFailureButtonTitle(record)"
                     @click="openPluginFailureDetail(record.descriptor.id)"
                   >
                     <Icon :icon="iconTriangleAlert" width="14" height="14" />
@@ -858,7 +923,25 @@ const selectPathForField = async (field: PluginSettingField) => {
       </div>
 
       <template #footer>
-        <Button variant="ghost" size="xs" @click="showFailureDetailDialog = false">关闭</Button>
+        <div class="plugin-failure-detail-footer">
+          <Button
+            v-if="canClearActiveFailureDetail"
+            variant="ghost"
+            size="xs"
+            :loading="isClearingFailure"
+            @click="clearActiveFailureRecord"
+          >
+            清除记录
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            :disabled="isClearingFailure"
+            @click="showFailureDetailDialog = false"
+          >
+            关闭
+          </Button>
+        </div>
       </template>
     </Dialog>
 
@@ -1031,7 +1114,7 @@ const selectPathForField = async (field: PluginSettingField) => {
 
 /* 页面头部 - 与 Settings 保持一致 */
 .plugin-header {
-  border-bottom: 1px solid var(--color-border-light);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .plugin-header-icon {
@@ -1043,6 +1126,17 @@ const selectPathForField = async (field: PluginSettingField) => {
   border-radius: 8px;
   background: var(--color-primary);
   color: white;
+}
+
+.plugin-safe-mode-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  color: var(--color-text-main);
 }
 
 .plugin-content {
@@ -1082,8 +1176,8 @@ const selectPathForField = async (field: PluginSettingField) => {
 
 .plugin-card {
   min-height: 212px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   padding: 1rem;
   display: flex;
@@ -1096,7 +1190,7 @@ const selectPathForField = async (field: PluginSettingField) => {
 }
 
 .plugin-card:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border-light));
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--control-border));
   box-shadow: 0 6px 18px color-mix(in srgb, var(--color-text-main) 6%, transparent);
   transform: translateY(-1px);
 }
@@ -1106,8 +1200,8 @@ const selectPathForField = async (field: PluginSettingField) => {
 }
 
 .plugin-card.is-error {
-  border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(239, 68, 68, 0.05);
+  border-color: color-mix(in srgb, var(--state-danger) 30%, var(--border-subtle));
+  background: var(--state-danger-bg-soft);
 }
 
 .plugin-card-main {
@@ -1131,7 +1225,7 @@ const selectPathForField = async (field: PluginSettingField) => {
       color-mix(in srgb, var(--plugin-accent) 7%, transparent)
     ),
     var(--color-bg-main);
-  border: 1px solid color-mix(in srgb, var(--plugin-accent) 18%, var(--color-border-light));
+  border: 1px solid color-mix(in srgb, var(--plugin-accent) 18%, var(--border-subtle));
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -1186,7 +1280,7 @@ const selectPathForField = async (field: PluginSettingField) => {
   border: 0;
   border-radius: 999px;
   color: var(--color-red-500);
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--state-danger-bg-soft);
   flex-shrink: 0;
   cursor: pointer;
   transition:
@@ -1199,6 +1293,16 @@ const selectPathForField = async (field: PluginSettingField) => {
   color: white;
   background: var(--color-red-500);
   transform: translateY(-1px);
+}
+
+.plugin-card-failure-btn.is-historical {
+  color: var(--state-warning);
+  background: var(--state-warning-bg-soft);
+}
+
+.plugin-card-failure-btn.is-historical:hover {
+  color: white;
+  background: var(--state-warning);
 }
 
 .plugin-status-badge {
@@ -1256,7 +1360,7 @@ const selectPathForField = async (field: PluginSettingField) => {
   font-size: 0.75rem;
   color: var(--color-red-500);
   padding: 0.5rem;
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--state-danger-bg-soft);
   border-radius: 8px;
 }
 
@@ -1273,10 +1377,17 @@ const selectPathForField = async (field: PluginSettingField) => {
   min-height: 33px;
   margin-top: 0.125rem;
   padding-top: 0.875rem;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .plugin-card-action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.plugin-card-primary-actions {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -1319,9 +1430,9 @@ const selectPathForField = async (field: PluginSettingField) => {
   grid-template-columns: 64px minmax(0, 1fr);
   gap: 0.5rem 0.875rem;
   padding: 0.875rem;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--color-bg-card);
+  background: var(--control-muted-bg);
 }
 
 .plugin-failure-detail-grid span {
@@ -1340,9 +1451,9 @@ const selectPathForField = async (field: PluginSettingField) => {
 
 .plugin-failure-detail-block {
   padding: 0.875rem;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
-  background: var(--color-bg-card);
+  background: var(--control-muted-bg);
 }
 
 .plugin-failure-detail-block h4 {
@@ -1374,9 +1485,49 @@ const selectPathForField = async (field: PluginSettingField) => {
   word-break: break-word;
 }
 
-:global(.plugin-settings-dialog) {
+.plugin-failure-detail-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+:global(.dialog-content.plugin-settings-dialog) {
   width: min(640px, 92vw);
   max-height: min(760px, calc(100vh - 120px));
+  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 96%, transparent);
+  --plugin-settings-panel-bg: color-mix(in srgb, var(--surface-elevated-base) 94%, transparent);
+  --plugin-settings-control-bg: color-mix(in srgb, var(--surface-card-base) 96%, transparent);
+  --plugin-settings-border: color-mix(in srgb, var(--color-text-main) 14%, var(--border-subtle));
+  --plugin-settings-slider-track-bg: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+  --plugin-settings-slider-thumb-bg: var(--surface-dialog-base);
+  --plugin-settings-slider-thumb-border: color-mix(
+    in srgb,
+    var(--color-text-main) 24%,
+    var(--plugin-settings-border)
+  );
+  background: var(--plugin-settings-dialog-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+:global(.dark .dialog-content.plugin-settings-dialog) {
+  --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 98%, transparent);
+  --plugin-settings-panel-bg: color-mix(
+    in srgb,
+    var(--surface-elevated-base) 92%,
+    var(--color-text-main) 8%
+  );
+  --plugin-settings-control-bg: color-mix(
+    in srgb,
+    var(--surface-card-base) 88%,
+    var(--color-text-main) 8%
+  );
+  --plugin-settings-border: color-mix(in srgb, var(--color-text-main) 22%, var(--border-light));
+  --plugin-settings-slider-track-bg: rgba(255, 255, 255, 0.24);
+  --plugin-settings-slider-thumb-bg: #f5f5f7;
+  --plugin-settings-slider-thumb-border: rgba(255, 255, 255, 0.44);
 }
 
 :global(.plugin-settings-dialog-body) {
@@ -1397,9 +1548,9 @@ const selectPathForField = async (field: PluginSettingField) => {
 }
 
 .plugin-settings-section {
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--plugin-settings-border, var(--border-subtle));
   border-radius: 8px;
-  background: var(--color-bg-card);
+  background: var(--plugin-settings-panel-bg, var(--color-bg-elevated));
   overflow: hidden;
 }
 
@@ -1432,7 +1583,7 @@ const selectPathForField = async (field: PluginSettingField) => {
   gap: 1rem;
   align-items: center;
   padding: 0.875rem 1rem;
-  border-top: 1px solid var(--color-border-light);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .plugin-settings-section-header + .plugin-settings-fields .plugin-settings-field:first-child {
@@ -1471,15 +1622,20 @@ const selectPathForField = async (field: PluginSettingField) => {
   justify-content: flex-end;
 }
 
+.plugin-settings-field-control :deep(.switch-root:not([data-state='checked'])) {
+  border-color: var(--plugin-settings-border, var(--control-border));
+  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
+}
+
 .plugin-settings-input,
 .plugin-settings-select,
 .plugin-settings-textarea {
   width: min(100%, 320px);
   min-width: 0;
-  border: 1px solid var(--color-border-light);
+  border: 1px solid var(--plugin-settings-border, var(--control-border));
   border-radius: 8px;
   color: var(--color-text-main);
-  background: var(--color-bg-main);
+  background: var(--plugin-settings-control-bg, var(--control-bg));
   font: inherit;
   font-size: 0.8125rem;
   outline: none;
@@ -1504,12 +1660,31 @@ const selectPathForField = async (field: PluginSettingField) => {
 .plugin-settings-input:focus,
 .plugin-settings-select:focus,
 .plugin-settings-textarea:focus {
-  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light));
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
 .plugin-settings-slider {
   width: min(100%, 320px);
+}
+
+.plugin-settings-slider :deep(.slider-track) {
+  height: 4px;
+  background-color: var(--plugin-settings-slider-track-bg, var(--control-track-bg));
+}
+
+.plugin-settings-slider :deep(.slider-thumb) {
+  width: 14px;
+  height: 14px;
+  border-color: var(--plugin-settings-slider-thumb-border, var(--control-border));
+  background: var(--plugin-settings-slider-thumb-bg, var(--control-thumb-bg));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface-dialog-base) 72%, transparent),
+    var(--shadow-control);
+}
+
+.plugin-settings-slider :deep(.slider-value-label) {
+  color: var(--color-text-main);
 }
 
 .plugin-settings-path-control {
@@ -1525,8 +1700,8 @@ const selectPathForField = async (field: PluginSettingField) => {
   align-items: center;
   padding: 0.45rem 0.625rem;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-main);
+  border: 1px solid var(--plugin-settings-border, var(--control-border));
+  background: var(--plugin-settings-control-bg, var(--control-bg));
   font-size: 0.75rem;
   line-height: 1.45;
   color: var(--color-text-secondary);

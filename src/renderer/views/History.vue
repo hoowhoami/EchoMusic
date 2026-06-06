@@ -280,7 +280,7 @@ onMounted(() => {
               variant="unstyled"
               size="none"
               @click="handlePlayAll"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-primary"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-primary"
             >
               <Icon :icon="iconPlay" width="20" height="20" />
             </Button>
@@ -288,7 +288,7 @@ onMounted(() => {
               variant="unstyled"
               size="none"
               @click="openBatchDrawer"
-              class="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-main opacity-60"
+              class="p-2 rounded-lg hover:bg-[var(--control-hover-bg)] text-text-main opacity-60"
             >
               <Icon :icon="iconList" width="18" height="18" />
             </Button>
@@ -298,7 +298,7 @@ onMounted(() => {
         <BatchActionDrawer v-model:open="showBatchDrawer" :songs="songs" source-id="history" />
 
         <div class="song-list-sticky sticky z-110 bg-bg-main" :style="{ top: '56px' }">
-          <div class="px-6 border-b border-border-light/10">
+          <div class="px-6 border-b border-[var(--border-subtle)]">
             <div class="flex items-center justify-between h-14">
               <div class="text-[14px] font-semibold text-text-main relative">
                 歌曲 <Badge :count="displayedCountLabel" />
@@ -309,7 +309,7 @@ onMounted(() => {
                     v-model="searchQuery"
                     type="text"
                     placeholder="搜索歌曲..."
-                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg bg-white border border-black/30 shadow-sm text-text-main placeholder:text-text-main/50 dark:bg-white/8 dark:border-white/10 dark:shadow-none outline-none text-[12px] transition-all"
+                    class="song-search-input w-52 h-9 pl-8 pr-3 rounded-lg text-text-main placeholder:text-text-main/50 outline-none text-[12px] transition-all"
                   />
                   <Icon
                     class="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-main/60"
@@ -386,7 +386,7 @@ onMounted(() => {
             <Button
               variant="unstyled"
               size="none"
-              class="px-4 h-9 rounded-lg bg-black/4 dark:bg-white/6 text-[12px] font-semibold text-text-main/75 hover:text-text-main transition-colors"
+              class="px-4 h-9 rounded-lg bg-[var(--control-muted-bg)] text-[12px] font-semibold text-text-main/75 hover:text-text-main transition-colors"
               :disabled="loadingMore"
               @click="handleLoadMore"
             >

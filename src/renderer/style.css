@@ -3,13 +3,86 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-sidebar: #ffffff; /* 浅色侧栏纯白 */
-  --bg-main: #f5f5f7; /* 浅色主体浅灰白 */
-  --bg-card: #ffffff;
+  --surface-sidebar-base: #ffffff; /* 浅色侧栏纯白 */
+  --surface-main-base: #f5f5f7; /* 浅色主体浅灰白 */
+  --surface-card-base: #ffffff;
+  --surface-elevated-base: #ffffff;
+  --surface-dialog-base: #ffffff;
+  --surface-player-base: #ffffff;
+  --surface-sidebar-opacity: 100%;
+  --surface-main-opacity: 100%;
+  --surface-card-opacity: 100%;
+  --surface-elevated-opacity: 100%;
+  --surface-dialog-opacity: 100%;
+  --surface-player-opacity: 100%;
+  --surface-backdrop-filter: none;
+  --surface-player-backdrop-filter: var(--surface-backdrop-filter);
+  --surface-overlay-bg: rgba(0, 0, 0, 0.3);
+  --surface-scrim-bg: rgba(0, 0, 0, 0.2);
+  --bg-sidebar: color-mix(
+    in srgb,
+    var(--surface-sidebar-base) var(--surface-sidebar-opacity),
+    transparent
+  );
+  --bg-main: color-mix(in srgb, var(--surface-main-base) var(--surface-main-opacity), transparent);
+  --bg-card: color-mix(in srgb, var(--surface-card-base) var(--surface-card-opacity), transparent);
+  --bg-elevated: color-mix(
+    in srgb,
+    var(--surface-elevated-base) var(--surface-elevated-opacity),
+    transparent
+  );
+  --bg-dialog: color-mix(
+    in srgb,
+    var(--surface-dialog-base) var(--surface-dialog-opacity),
+    transparent
+  );
+  --bg-player: color-mix(
+    in srgb,
+    var(--surface-player-base) var(--surface-player-opacity),
+    transparent
+  );
   --bg-info-card: rgba(0, 0, 0, 0.04);
   --text-main: #1d1d1f;
   --text-secondary: #4b5563;
   --border-light: #e5e5ea;
+  --border-subtle: color-mix(in srgb, var(--border-light) 72%, transparent);
+  --border-strong: color-mix(in srgb, var(--text-main) 18%, transparent);
+  --control-bg: color-mix(in srgb, var(--surface-card-base) 94%, transparent);
+  --control-muted-bg: color-mix(in srgb, var(--text-main) 4%, transparent);
+  --control-hover-bg: color-mix(in srgb, var(--text-main) 7%, transparent);
+  --control-active-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --control-border: color-mix(in srgb, var(--border-light) 76%, transparent);
+  --control-border-hover: color-mix(in srgb, var(--text-main) 24%, transparent);
+  --row-hover-bg: color-mix(in srgb, var(--text-main) 5%, transparent);
+  --row-active-bg: color-mix(in srgb, var(--text-main) 7%, transparent);
+  --row-selected-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --scrollbar-thumb-bg: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb-bg-hover: rgba(0, 0, 0, 0.28);
+  --scrollbar-thumb-bg-active: rgba(0, 0, 0, 0.45);
+  --control-track-bg: color-mix(in srgb, var(--text-main) 8%, transparent);
+  --control-track-bg-hover: color-mix(in srgb, var(--text-main) 12%, transparent);
+  --control-thumb-bg: #ffffff;
+  --control-checkbox-bg: color-mix(in srgb, var(--surface-card-base) 96%, var(--text-main) 4%);
+  --control-checkbox-border: color-mix(in srgb, var(--text-main) 32%, var(--border-light) 68%);
+  --control-checkbox-border-hover: color-mix(
+    in srgb,
+    var(--color-primary) 68%,
+    var(--control-checkbox-border)
+  );
+  --control-checkbox-indicator: #ffffff;
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.22);
+  --shadow-card: 0 8px 18px rgba(15, 23, 42, 0.08);
+  --shadow-card-hover: 0 12px 28px rgba(15, 23, 42, 0.12), 0 0 24px var(--color-primary-light);
+  --shadow-cover: 0 2px 8px rgba(15, 23, 42, 0.12);
+  --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --state-danger: #ef4444;
+  --state-danger-bg-soft: color-mix(in srgb, var(--state-danger) 10%, transparent);
+  --state-danger-bg: color-mix(in srgb, var(--state-danger) 16%, transparent);
+  --state-warning: #f59e0b;
+  --state-warning-bg-soft: color-mix(in srgb, var(--state-warning) 10%, transparent);
+  --state-success: #10b981;
+  --state-success-bg-soft: color-mix(in srgb, var(--state-success) 10%, transparent);
 
   /* 品牌蓝：非全局主题色模式下非播放区域的回退色 */
   --color-brand: #0071e3;
@@ -37,13 +110,45 @@ body.accent-scoped .main-layout .player-bar-container {
 }
 
 .dark {
-  --bg-sidebar: #36363a;
-  --bg-main: #26262a;
-  --bg-card: #36363a;
+  --surface-sidebar-base: #36363a;
+  --surface-main-base: #26262a;
+  --surface-card-base: #36363a;
+  --surface-elevated-base: #36363a;
+  --surface-dialog-base: #2f2f34;
+  --surface-player-base: #36363a;
+  --surface-overlay-bg: rgba(0, 0, 0, 0.36);
+  --surface-scrim-bg: rgba(0, 0, 0, 0.28);
   --bg-info-card: rgba(255, 255, 255, 0.06);
   --text-main: #f5f5f7;
   --text-secondary: #a8b0bf;
   --border-light: #3a3a3d;
+  --control-bg: color-mix(in srgb, var(--surface-card-base) 90%, transparent);
+  --control-muted-bg: color-mix(in srgb, var(--text-main) 6%, transparent);
+  --control-hover-bg: color-mix(in srgb, var(--text-main) 10%, transparent);
+  --control-border: color-mix(in srgb, var(--border-light) 80%, transparent);
+  --control-border-hover: color-mix(in srgb, var(--text-main) 22%, transparent);
+  --control-track-bg: color-mix(in srgb, var(--text-main) 14%, transparent);
+  --control-track-bg-hover: color-mix(in srgb, var(--text-main) 18%, transparent);
+  --control-checkbox-bg: color-mix(in srgb, var(--surface-card-base) 82%, var(--text-main) 10%);
+  --control-checkbox-border: color-mix(in srgb, var(--text-main) 36%, var(--border-light) 64%);
+  --control-checkbox-border-hover: color-mix(
+    in srgb,
+    var(--color-primary) 72%,
+    var(--control-checkbox-border)
+  );
+  --row-hover-bg: color-mix(in srgb, var(--text-main) 6%, transparent);
+  --row-active-bg: color-mix(in srgb, var(--text-main) 8%, transparent);
+  --scrollbar-thumb-bg: rgba(255, 255, 255, 0.28);
+  --scrollbar-thumb-bg-hover: rgba(255, 255, 255, 0.35);
+  --scrollbar-thumb-bg-active: rgba(255, 255, 255, 0.55);
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --shadow-dialog: 0 24px 60px rgba(0, 0, 0, 0.42);
+  --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.34);
+  --shadow-card-hover:
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 0 24px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --shadow-cover: 0 8px 18px rgba(0, 0, 0, 0.28);
+  --shadow-control: 0 2px 4px rgba(0, 0, 0, 0.18);
 }
 
 @theme {
@@ -55,6 +160,9 @@ body.accent-scoped .main-layout .player-bar-container {
   --color-bg-sidebar: var(--bg-sidebar);
   --color-bg-main: var(--bg-main);
   --color-bg-card: var(--bg-card);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-dialog: var(--bg-dialog);
+  --color-bg-player: var(--bg-player);
   --color-bg-info-card: var(--bg-info-card);
   --color-text-main: var(--text-main);
   --color-text-secondary: var(--text-secondary);
@@ -228,87 +336,48 @@ body.accent-scoped .main-layout .player-bar-container {
 
   .app-scrollbar:hover::-webkit-scrollbar-thumb,
   .app-scrollbar:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.22);
+    background-color: var(--scrollbar-thumb-bg);
   }
 
   .app-scrollbar:active::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.28);
+    background-color: var(--scrollbar-thumb-bg-hover);
   }
 
   .app-scrollbar:hover,
   .app-scrollbar:focus-within,
   .app-scrollbar:active {
-    scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
-  }
-
-  .dark .app-scrollbar:hover::-webkit-scrollbar-thumb,
-  .dark .app-scrollbar:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.28);
-  }
-
-  .dark .app-scrollbar:active::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.35);
-  }
-
-  .dark .app-scrollbar:hover,
-  .dark .app-scrollbar:focus-within,
-  .dark .app-scrollbar:active {
-    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
   }
 
   .song-search-input {
-    background-color: #ffffff !important;
-    border-color: rgba(0, 0, 0, 0.3) !important;
-    color: #1d1d1f !important;
+    background-color: var(--control-bg) !important;
+    border-color: var(--control-border-hover) !important;
+    color: var(--color-text-main) !important;
+    backdrop-filter: var(--surface-backdrop-filter);
   }
 
   .song-search-input::placeholder {
-    color: rgba(29, 29, 31, 0.5) !important;
+    color: color-mix(in srgb, var(--color-text-main) 50%, transparent) !important;
   }
 
   .song-search-input:focus-visible {
-    border-color: rgba(0, 0, 0, 0.3) !important;
-    box-shadow: none !important;
-  }
-
-  .dark .song-search-input {
-    background-color: rgba(255, 255, 255, 0.08) !important;
-    border-color: rgba(255, 255, 255, 0.1) !important;
-    color: #f5f5f7 !important;
-  }
-
-  .dark .song-search-input::placeholder {
-    color: rgba(245, 245, 247, 0.5) !important;
-  }
-
-  .dark .song-search-input:focus-visible {
-    border-color: rgba(255, 255, 255, 0.1) !important;
+    border-color: var(--control-border-hover) !important;
     box-shadow: none !important;
   }
 
   .song-locate-btn {
-    background-color: #ffffff;
-    border: 1px solid rgba(0, 0, 0, 0.18);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-    color: rgba(29, 29, 31, 0.7);
+    background-color: var(--control-bg);
+    border: 1px solid var(--control-border);
+    box-shadow: none;
+    color: color-mix(in srgb, var(--color-text-main) 70%, transparent);
     transition: all 0.2s ease;
+    backdrop-filter: var(--surface-backdrop-filter);
   }
 
   .song-locate-btn:hover {
-    border-color: rgba(0, 0, 0, 0.28);
-    color: rgba(29, 29, 31, 0.9);
-  }
-
-  .dark .song-locate-btn {
-    background-color: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: none;
-    color: rgba(245, 245, 247, 0.7);
-  }
-
-  .dark .song-locate-btn:hover {
-    border-color: rgba(255, 255, 255, 0.22);
-    color: rgba(245, 245, 247, 0.9);
+    border-color: var(--control-border-hover);
+    background-color: var(--control-hover-bg);
+    color: color-mix(in srgb, var(--color-text-main) 90%, transparent);
   }
 }
 
@@ -337,6 +406,114 @@ body.accent-scoped .main-layout .player-bar-container {
   background: var(--color-bg-main);
   z-index: -1;
   pointer-events: none;
+}
+
+body.echo-custom-background-enabled {
+  background: transparent !important;
+}
+
+body.echo-custom-background-enabled #app {
+  background: transparent !important;
+}
+
+body.echo-custom-background-enabled .bg-bg-main,
+body.echo-custom-background-enabled .explore-header::before,
+body.echo-custom-background-enabled .rank-toolbar::before,
+body.echo-custom-background-enabled .new-song-toolbar::before,
+body.echo-custom-background-enabled .search-song-toolbar::before,
+body.echo-custom-background-enabled .song-list-sticky::before,
+body.echo-custom-background-enabled .comment-main-tabs::before {
+  background: color-mix(in srgb, var(--color-bg-main) 58%, transparent) !important;
+}
+
+.dark body.echo-custom-background-enabled .bg-bg-main,
+.dark body.echo-custom-background-enabled .explore-header::before,
+.dark body.echo-custom-background-enabled .rank-toolbar::before,
+.dark body.echo-custom-background-enabled .new-song-toolbar::before,
+.dark body.echo-custom-background-enabled .search-song-toolbar::before,
+.dark body.echo-custom-background-enabled .song-list-sticky::before,
+.dark body.echo-custom-background-enabled .comment-main-tabs::before {
+  background: color-mix(in srgb, var(--color-bg-main) 66%, transparent) !important;
+}
+
+body.echo-custom-background-enabled .main-layout {
+  background: transparent !important;
+}
+
+body.echo-surface-translucent .main-layout,
+body.echo-surface-translucent .bg-bg-main,
+body.echo-surface-translucent .bg-bg-sidebar,
+body.echo-surface-translucent .bg-bg-card,
+body.echo-surface-translucent .explore-header,
+body.echo-surface-translucent .rank-toolbar,
+body.echo-surface-translucent .new-song-toolbar,
+body.echo-surface-translucent .search-song-toolbar,
+body.echo-surface-translucent .song-list-sticky,
+body.echo-surface-translucent .comment-main-tabs,
+body.echo-surface-translucent .dialog-content,
+body.echo-surface-translucent .drawer-panel,
+body.echo-surface-translucent .echo-popover-content,
+body.echo-surface-translucent .app-tooltip-content,
+body.echo-surface-translucent .song-context-menu,
+body.echo-surface-translucent .playlist-picker-item,
+body.echo-surface-translucent .toast-card,
+body.echo-surface-translucent .card-container,
+body.echo-surface-translucent .plugin-card,
+body.echo-surface-translucent .plugin-safe-mode-control,
+body.echo-surface-translucent .plugin-settings-section,
+body.echo-surface-translucent .settings-card,
+body.echo-surface-translucent .home-feature-card,
+body.echo-surface-translucent .cloud-info-card,
+body.echo-surface-translucent .route-error-card,
+body.echo-surface-translucent .error-shell,
+body.echo-surface-translucent .login-panel-card,
+body.echo-surface-translucent .tb-suggestions,
+body.echo-surface-translucent .search-suggestions-panel,
+body.echo-surface-translucent .profile-archive-card,
+body.echo-surface-translucent .rec-playlist-item,
+body.echo-surface-translucent .add-playlist-item {
+  -webkit-backdrop-filter: var(--surface-backdrop-filter);
+  backdrop-filter: var(--surface-backdrop-filter);
+}
+
+body .dialog-content {
+  background: var(--color-bg-dialog);
+}
+
+body .drawer-panel,
+body .echo-popover-content,
+body .app-tooltip-content,
+body .song-context-menu,
+body .playlist-picker-item,
+body .toast-card,
+body .card-container,
+body .plugin-card,
+body .plugin-settings-section,
+body .home-feature-card,
+body .cloud-info-card,
+body .route-error-card,
+body .error-shell,
+body .login-panel-card,
+body .tb-suggestions,
+body .search-suggestions-panel,
+body .profile-archive-card,
+body .rec-playlist-item,
+body .add-playlist-item {
+  background: var(--color-bg-elevated);
+}
+
+body .echo-popover-arrow,
+body .app-tooltip-arrow {
+  fill: var(--color-bg-elevated);
+}
+
+body .player-bar {
+  background-color: var(--color-bg-player);
+}
+
+body.echo-surface-translucent .player-bar {
+  -webkit-backdrop-filter: var(--surface-player-backdrop-filter);
+  backdrop-filter: var(--surface-player-backdrop-filter);
 }
 
 .view-port,
@@ -393,20 +570,12 @@ body.accent-scoped .main-layout .player-bar-container {
 
 /* 交互状态：当鼠标直接在滑块上时 */
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.28) !important;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.35) !important;
+  background-color: var(--scrollbar-thumb-bg-hover) !important;
 }
 
 /* 激活状态 */
 ::-webkit-scrollbar-thumb:active {
-  background-color: rgba(0, 0, 0, 0.45) !important;
-}
-
-.dark ::-webkit-scrollbar-thumb:active {
-  background-color: rgba(255, 255, 255, 0.55) !important;
+  background-color: var(--scrollbar-thumb-bg-active) !important;
 }
 
 .view-port,
@@ -428,55 +597,21 @@ body.accent-scoped .main-layout .player-bar-container {
   scrollbar-color: transparent transparent;
 
   &:hover::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.22);
+    background-color: var(--scrollbar-thumb-bg);
   }
 
   &:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.22);
+    background-color: var(--scrollbar-thumb-bg);
   }
 
   &:active::-webkit-scrollbar-thumb {
-    background-color: rgba(0, 0, 0, 0.28);
+    background-color: var(--scrollbar-thumb-bg-hover);
   }
 
   &:hover,
   &:focus-within,
   &:active {
-    scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
-  }
-}
-
-.dark .view-port,
-.dark .queue-list,
-.dark .batch-list,
-.dark .sidebar-scroll,
-.dark .profile-page,
-.dark .dialog-scroll-area,
-.dark .comment-floor-body,
-.dark .lyric-scroll,
-.dark .queue-slides,
-.dark .comment-chip-row,
-.dark .settings-update-changelog,
-.dark .overflow-auto,
-.dark .overflow-y-auto,
-.dark .overflow-x-auto,
-.dark [class*='scroll'] {
-  &:hover::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.28);
-  }
-
-  &:focus-within::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.28);
-  }
-
-  &:active::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.35);
-  }
-
-  &:hover,
-  &:focus-within,
-  &:active {
-    scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+    scrollbar-color: var(--scrollbar-thumb-bg) transparent;
   }
 }
 

@@ -254,19 +254,14 @@ const handleRejectAgreement = () => {
   height: 72px;
   padding: 0 18px;
   border-radius: 16px;
-  background: color-mix(in srgb, var(--color-text-main) 2%, transparent);
-  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--border-subtle);
   transition: all 0.2s ease;
-}
-
-.dark .home-feature-card {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .home-feature-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .feature-icon {

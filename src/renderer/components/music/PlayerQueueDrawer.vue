@@ -918,7 +918,7 @@ onBeforeUnmount(() => {
 @reference "@/style.css";
 
 :global(.queue-drawer-overlay) {
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--surface-scrim-bg);
 }
 
 :global(.queue-drawer) {
@@ -962,7 +962,7 @@ onBeforeUnmount(() => {
   flex: 1;
   height: 1px;
   margin-top: 1px;
-  background: var(--color-border-light);
+  background: var(--control-track-bg);
 }
 
 .queue-progress-thumb {
@@ -1132,8 +1132,8 @@ onBeforeUnmount(() => {
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-bg-card);
+  border: 1px solid var(--control-border);
+  background: var(--control-bg);
   text-align: left;
   display: flex;
   align-items: center;
@@ -1261,12 +1261,7 @@ onBeforeUnmount(() => {
 
 .queue-row.is-current,
 .queue-row:hover {
-  background: var(--color-bg-card);
-}
-
-.dark .queue-row.is-current,
-.dark .queue-row:hover {
-  background: color-mix(in srgb, #ffffff 4%, transparent);
+  background: var(--row-hover-bg);
 }
 
 .queue-leading {
@@ -1408,7 +1403,7 @@ onBeforeUnmount(() => {
 
 .queue-sortable-drag {
   opacity: 0.9;
-  background: var(--color-bg-card) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  background: var(--row-active-bg) !important;
+  box-shadow: var(--shadow-elevated);
 }
 </style>

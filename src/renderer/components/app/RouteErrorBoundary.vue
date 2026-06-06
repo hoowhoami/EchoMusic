@@ -19,6 +19,19 @@ const errorMessage = computed(() => {
   return '页面渲染时发生异常';
 });
 
+const errorDetailText = computed(() => {
+  const current = error.value;
+  if (current instanceof Error) {
+    return [current.name, current.message, current.stack].filter(Boolean).join('\n');
+  }
+  if (typeof current === 'string') return current;
+  try {
+    return JSON.stringify(current, null, 2);
+  } catch {
+    return '无法序列化错误详情';
+  }
+});
+
 const router = useRouter();
 
 const getErrorSummary = (current: unknown) => {
@@ -78,6 +91,10 @@ const goHome = () => {
           <h2>当前页面暂时无法显示</h2>
           <p>{{ errorMessage }}</p>
         </div>
+        <details class="route-error-details">
+          <summary>查看错误详情</summary>
+          <pre>{{ errorDetailText }}</pre>
+        </details>
         <div class="route-error-actions">
           <Button variant="primary" size="sm" @click="retry">重试</Button>
           <Button variant="secondary" size="sm" @click="goHome">回到首页</Button>
@@ -108,10 +125,10 @@ const goHome = () => {
   width: min(560px, 100%);
   padding: 24px;
   border-radius: 26px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 82%, transparent);
-  background: color-mix(in srgb, var(--color-bg-card) 92%, transparent);
-  box-shadow: 0 20px 56px rgba(15, 23, 42, 0.1);
-  backdrop-filter: blur(18px);
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-dialog);
+  box-shadow: var(--shadow-dialog);
+  backdrop-filter: var(--surface-backdrop-filter);
 }
 
 .route-error-icon {
@@ -137,8 +154,35 @@ const goHome = () => {
 
 .route-error-copy p {
   margin-top: 8px;
-  color: var(--color-text-sub);
+  color: var(--color-text-secondary);
   line-height: 1.7;
+  word-break: break-word;
+}
+
+.route-error-details {
+  margin-top: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+}
+
+.route-error-details summary {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.route-error-details pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
