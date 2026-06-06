@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
 import { YzsKeepAlive } from 'yzs-keep-alive-v3';
@@ -10,31 +10,51 @@ import PlayerBar from './PlayerBar.vue';
 const route = useRoute();
 const settingStore = useSettingStore();
 const routeViewKey = computed(() => String(route.query._t ?? route.fullPath));
+const SIDEBAR_AUTO_COLLAPSE_WIDTH = 700;
+const isNarrowViewport = ref(false);
+const narrowViewportExpanded = ref(false);
 
 const isSidebarCollapsed = computed(() => {
   if (!settingStore.sidebarCollapseEnabled) return false;
+  if (isNarrowViewport.value && !narrowViewportExpanded.value) return true;
   return settingStore.sidebarCollapsed;
 });
 
 const checkScreenWidth = () => {
-  if (settingStore.sidebarCollapseEnabled) {
-    settingStore.sidebarCollapsed = window.innerWidth < 700;
+  const nextIsNarrow = window.innerWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;
+  if (nextIsNarrow !== isNarrowViewport.value) {
+    narrowViewportExpanded.value = false;
   }
+  isNarrowViewport.value = nextIsNarrow;
 };
 
 const toggleSidebar = () => {
-  if (settingStore.sidebarCollapseEnabled) {
-    settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
+  if (!settingStore.sidebarCollapseEnabled) return;
+
+  if (isNarrowViewport.value && !narrowViewportExpanded.value) {
+    narrowViewportExpanded.value = true;
+    settingStore.sidebarCollapsed = false;
+    return;
   }
+
+  narrowViewportExpanded.value = false;
+  settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
+};
+
+const handleShortcutToggleSidebar = (event: Event) => {
+  event.preventDefault();
+  toggleSidebar();
 };
 
 onMounted(() => {
   checkScreenWidth();
   window.addEventListener('resize', checkScreenWidth);
+  window.addEventListener('echo:toggle-sidebar', handleShortcutToggleSidebar);
 });
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkScreenWidth);
+  window.removeEventListener('echo:toggle-sidebar', handleShortcutToggleSidebar);
 });
 
 const excludeFromCache = [

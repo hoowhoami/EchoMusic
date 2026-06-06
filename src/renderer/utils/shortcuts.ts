@@ -12,10 +12,94 @@ import type {
 
 type ShortcutDisplayPlatform = 'darwin' | 'win32' | 'linux' | string;
 
-const normalizeKey = (key: string): string => {
-  if (!key) return '';
-  if (key === ' ') return 'space';
-  return key.length === 1 ? key.toLowerCase() : key.toLowerCase();
+const MODIFIER_KEY_TOKENS = new Set(['control', 'shift', 'alt', 'meta']);
+const FUNCTION_KEY_PATTERN = /^F(?:[1-9]|1\d|2[0-4])$/i;
+const NUMPAD_CODE_LABELS: Record<string, string> = {
+  Numpad0: 'Num0',
+  Numpad1: 'Num1',
+  Numpad2: 'Num2',
+  Numpad3: 'Num3',
+  Numpad4: 'Num4',
+  Numpad5: 'Num5',
+  Numpad6: 'Num6',
+  Numpad7: 'Num7',
+  Numpad8: 'Num8',
+  Numpad9: 'Num9',
+  NumpadAdd: 'NumAdd',
+  NumpadSubtract: 'NumSubtract',
+  NumpadMultiply: 'NumMultiply',
+  NumpadDivide: 'NumDivide',
+  NumpadDecimal: 'NumDecimal',
+  NumpadEnter: 'NumEnter',
+  NumpadEqual: 'NumEqual',
+  NumpadClear: 'NumClear',
+};
+const SPECIAL_KEY_LABELS: Record<string, string> = {
+  ' ': 'Space',
+  Spacebar: 'Space',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  PageUp: 'PageUp',
+  PageDown: 'PageDown',
+  Home: 'Home',
+  End: 'End',
+  Insert: 'Insert',
+  Delete: 'Delete',
+  Backspace: 'Backspace',
+  Tab: 'Tab',
+  Enter: 'Enter',
+  Return: 'Enter',
+  Escape: 'Escape',
+  Esc: 'Escape',
+  CapsLock: 'CapsLock',
+  NumLock: 'NumLock',
+  ScrollLock: 'ScrollLock',
+  PrintScreen: 'PrintScreen',
+  Fn: 'Fn',
+  FnLock: 'FnLock',
+};
+const STANDALONE_SHORTCUT_LABELS = new Set([
+  ...Object.values(SPECIAL_KEY_LABELS),
+  ...Object.values(NUMPAD_CODE_LABELS),
+  ...Array.from({ length: 24 }, (_item, index) => `F${index + 1}`),
+]);
+
+const normalizeEventKeyLabel = (event: KeyboardEvent): string => {
+  if (event.code && Object.prototype.hasOwnProperty.call(NUMPAD_CODE_LABELS, event.code)) {
+    return NUMPAD_CODE_LABELS[event.code];
+  }
+  const key = event.key || '';
+  if (Object.prototype.hasOwnProperty.call(SPECIAL_KEY_LABELS, key)) return SPECIAL_KEY_LABELS[key];
+  if (FUNCTION_KEY_PATTERN.test(key)) return key.toUpperCase();
+  if (key.length === 1) return key.toUpperCase();
+  return key;
+};
+
+const normalizeKeyForMatch = (key: string): string => {
+  const normalized = normalizeDisplayToken(key);
+  const lower = normalized.toLowerCase();
+  if (lower.startsWith('num')) return `numpad${lower.slice(3)}`;
+  if (lower === 'left') return 'arrowleft';
+  if (lower === 'right') return 'arrowright';
+  if (lower === 'up') return 'arrowup';
+  if (lower === 'down') return 'arrowdown';
+  return lower;
+};
+
+const getShortcutMainLabel = (label: string): string => {
+  const tokens = parseShortcutLabelParts(label).map(normalizeDisplayToken).filter(Boolean);
+  return (
+    tokens.find(
+      (token) => !['cmdorctrl', 'ctrl', 'shift', 'alt', 'meta'].includes(token.toLowerCase()),
+    ) ?? ''
+  );
+};
+
+export const canUseStandaloneShortcutLabel = (label: string): boolean => {
+  const mainLabel = getShortcutMainLabel(label);
+  return Boolean(mainLabel && STANDALONE_SHORTCUT_LABELS.has(mainLabel));
 };
 
 const parseShortcutLabelParts = (label: string): string[] => {
@@ -70,8 +154,39 @@ const normalizeDisplayToken = (token: string): string => {
   if (normalized === '→' || lower === 'right' || lower === 'arrowright') return 'Right';
   if (normalized === '↑' || lower === 'up' || lower === 'arrowup') return 'Up';
   if (normalized === '↓' || lower === 'down' || lower === 'arrowdown') return 'Down';
+  if (lower === 'pageup' || lower === 'page-up') return 'PageUp';
+  if (lower === 'pagedown' || lower === 'page-down') return 'PageDown';
+  if (lower === 'esc') return 'Escape';
+  if (lower === 'return') return 'Enter';
+  if (lower === 'fn' || lower === 'fnlock') return lower === 'fnlock' ? 'FnLock' : 'Fn';
+  if (FUNCTION_KEY_PATTERN.test(normalized)) return normalized.toUpperCase();
+  if (/^(?:numpad|num)[0-9]$/i.test(normalized)) return `Num${normalized.slice(-1)}`;
+  if (['numpadadd', 'numadd'].includes(lower)) return 'NumAdd';
+  if (['numpadsubtract', 'numsubtract', 'numsub'].includes(lower)) return 'NumSubtract';
+  if (['numpadmultiply', 'nummultiply', 'nummul'].includes(lower)) return 'NumMultiply';
+  if (['numpaddivide', 'numdivide', 'numdiv'].includes(lower)) return 'NumDivide';
+  if (['numpaddecimal', 'numdecimal'].includes(lower)) return 'NumDecimal';
+  if (['numpadenter', 'numenter'].includes(lower)) return 'NumEnter';
+  if (['numpadequal', 'numequal'].includes(lower)) return 'NumEqual';
+  if (['numpadclear', 'numclear'].includes(lower)) return 'NumClear';
   if (lower === 'spacebar' || lower === 'space') return 'Space';
   return normalized.length === 1 ? normalized.toUpperCase() : normalized;
+};
+
+const formatDisplayMainToken = (token: string, platform: ShortcutDisplayPlatform) => {
+  if (platform === 'darwin') {
+    if (token === 'Left') return '←';
+    if (token === 'Right') return '→';
+    if (token === 'Up') return '↑';
+    if (token === 'Down') return '↓';
+  }
+  if (token === 'NumAdd') return 'Num+';
+  if (token === 'NumSubtract') return 'Num-';
+  if (token === 'NumMultiply') return 'Num*';
+  if (token === 'NumDivide') return 'Num/';
+  if (token === 'NumDecimal') return 'Num.';
+  if (token === 'NumEqual') return 'Num=';
+  return token;
 };
 
 const orderTokensForDisplay = (tokens: string[], platform: ShortcutDisplayPlatform) => {
@@ -101,11 +216,7 @@ export const formatShortcutLabelForDisplay = (
         if (token === 'shift') return '⇧';
         if (token === 'alt') return '⌥';
         if (token === 'ctrl') return '⌃';
-        if (token === 'Left') return '←';
-        if (token === 'Right') return '→';
-        if (token === 'Up') return '↑';
-        if (token === 'Down') return '↓';
-        return token;
+        return formatDisplayMainToken(token, platform);
       })
       .join('');
   }
@@ -116,7 +227,7 @@ export const formatShortcutLabelForDisplay = (
       if (token === 'shift') return 'Shift';
       if (token === 'alt') return 'Alt';
       if (token === 'meta') return 'Win';
-      return token;
+      return formatDisplayMainToken(token, platform);
     })
     .join('+');
 };
@@ -138,15 +249,43 @@ const buildShortcut = (event: KeyboardEvent): string => {
   if (event.metaKey) keys.add('meta');
   if (event.altKey) keys.add('alt');
   if (event.shiftKey) keys.add('shift');
-  const mainKey = normalizeKey(event.key);
-  if (mainKey && !['control', 'shift', 'alt', 'meta'].includes(mainKey)) {
-    keys.add(mainKey);
+  const mainKey = normalizeEventKeyLabel(event);
+  const normalizedMainKey = normalizeKeyForMatch(mainKey);
+  if (normalizedMainKey && !MODIFIER_KEY_TOKENS.has(normalizedMainKey)) {
+    keys.add(normalizedMainKey);
   }
   return Array.from(keys).sort().join('+');
 };
 
+export const buildShortcutLabelFromEvent = (
+  event: KeyboardEvent,
+  platform: ShortcutDisplayPlatform = window.electron?.platform ?? '',
+): string => {
+  const mainKey = normalizeEventKeyLabel(event);
+  if (!mainKey || MODIFIER_KEY_TOKENS.has(mainKey.toLowerCase())) return '';
+  const isMac = platform === 'darwin';
+  if (isMac) {
+    const parts = [
+      event.metaKey ? '⌘' : '',
+      event.shiftKey ? '⇧' : '',
+      event.altKey ? '⌥' : '',
+      event.ctrlKey ? '⌃' : '',
+      mainKey,
+    ].filter(Boolean);
+    return parts.join('');
+  }
+  const parts = [
+    event.ctrlKey ? 'Ctrl' : '',
+    event.shiftKey ? 'Shift' : '',
+    event.altKey ? 'Alt' : '',
+    event.metaKey ? 'Meta' : '',
+    mainKey,
+  ].filter(Boolean);
+  return parts.join('+');
+};
+
 const labelToAccelerator = (label: string): string => {
-  return label
+  const normalizedLabel = label
     .replace(/\s+/g, '')
     .replace(/CommandOrControl/gi, 'CmdOrCtrl+')
     .replace(/[⌘]/g, 'CmdOrCtrl+')
@@ -160,6 +299,22 @@ const labelToAccelerator = (label: string): string => {
     .replace(/\bSpace\b/gi, 'Space')
     .replace(/\+\+/g, '+')
     .replace(/\+$/, '');
+
+  return parseShortcutLabelParts(normalizedLabel)
+    .map(normalizeDisplayToken)
+    .map((token) => {
+      const lower = token.toLowerCase();
+      if (['cmdorctrl', 'commandorcontrol', 'command', 'cmd'].includes(lower)) {
+        return 'CmdOrCtrl';
+      }
+      if (lower === 'ctrl' || lower === 'control') return 'Ctrl';
+      if (lower === 'shift') return 'Shift';
+      if (lower === 'alt' || lower === 'option') return 'Alt';
+      if (lower === 'meta' || lower === 'win' || lower === 'super') return 'Meta';
+      return token;
+    })
+    .filter(Boolean)
+    .join('+');
 };
 
 const acceleratorToKeys = (accelerator: string): string[] => {
@@ -171,7 +326,8 @@ const acceleratorToKeys = (accelerator: string): string[] => {
   let hasCmdOrCtrl = false;
 
   for (const part of parts) {
-    const lower = part.toLowerCase();
+    const normalizedPart = normalizeDisplayToken(part);
+    const lower = normalizedPart.toLowerCase();
     if (['cmdorctrl', 'commandorcontrol', 'command', 'cmd'].includes(lower)) {
       hasCmdOrCtrl = true;
       continue;
@@ -188,12 +344,11 @@ const acceleratorToKeys = (accelerator: string): string[] => {
       modifiers.push('alt');
       continue;
     }
-    if (lower === 'left') keys.push('arrowleft');
-    else if (lower === 'right') keys.push('arrowright');
-    else if (lower === 'up') keys.push('arrowup');
-    else if (lower === 'down') keys.push('arrowdown');
-    else if (lower === 'space') keys.push('space');
-    else keys.push(lower);
+    if (['meta', 'win', 'super'].includes(lower)) {
+      modifiers.push('meta');
+      continue;
+    }
+    keys.push(normalizeKeyForMatch(normalizedPart));
   }
 
   const buildCombo = (extra: string[]) => {
@@ -233,6 +388,9 @@ export const resolveShortcutMap = (scope: 'local' | 'global'): ShortcutMap => {
     toggleMute: labelToAccelerator(bindings.toggleMute ?? defaults.toggleMute ?? ''),
     toggleFavorite: labelToAccelerator(bindings.toggleFavorite ?? defaults.toggleFavorite ?? ''),
     togglePlayMode: labelToAccelerator(bindings.togglePlayMode ?? defaults.togglePlayMode ?? ''),
+    toggleMiniPlayer: labelToAccelerator(
+      bindings.toggleMiniPlayer ?? defaults.toggleMiniPlayer ?? '',
+    ),
     toggleWindow: labelToAccelerator(bindings.toggleWindow ?? defaults.toggleWindow ?? ''),
     toggleSidebar: labelToAccelerator(bindings.toggleSidebar ?? defaults.toggleSidebar ?? ''),
   };
@@ -253,6 +411,7 @@ const getShortcutCommandLabel = (command: ShortcutCommand) => {
     toggleMute: '静音',
     toggleFavorite: '收藏当前歌曲',
     togglePlayMode: '切换播放模式',
+    toggleMiniPlayer: 'Mini 模式切换',
     toggleWindow: '显示 / 隐藏窗口',
     toggleSidebar: '侧边栏开关',
   };
@@ -336,10 +495,17 @@ export const executeShortcutCommand = (command: ShortcutCommand) => {
             ? 'single'
             : 'sequential';
     playerStore.setPlayMode(nextMode);
+  } else if (command === 'toggleMiniPlayer') {
+    void window.electron?.miniPlayer?.toggle?.();
   } else if (command === 'toggleWindow') {
     window.electron?.ipcRenderer?.send('window-toggle', null);
   } else if (command === 'toggleSidebar') {
     if (settingStore.sidebarCollapseEnabled) {
+      const handledByLayout = !window.dispatchEvent(
+        new CustomEvent('echo:toggle-sidebar', { cancelable: true }),
+      );
+      if (handledByLayout) return;
+
       settingStore.sidebarCollapsed = !settingStore.sidebarCollapsed;
     }
   }

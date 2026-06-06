@@ -130,6 +130,7 @@ export interface IElectronAPI {
     getSnapshot: () => Promise<MiniPlayerSnapshot>;
     show: () => Promise<MiniPlayerSnapshot>;
     hide: () => Promise<MiniPlayerSnapshot>;
+    toggle: () => Promise<MiniPlayerSnapshot>;
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) => void;
     setExpanded: (expanded: boolean) => Promise<MiniPlayerSnapshot>;
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<MiniPlayerSnapshot>;

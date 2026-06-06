@@ -1,6 +1,7 @@
 import { globalShortcut, BrowserWindow, ipcMain } from 'electron';
 import { hideMainWindow, showMainWindow } from '../window';
 import { restoreActiveWindowMode } from '../windowModeController';
+import { toggleMiniPlayerWindow } from '../miniPlayer';
 import type {
   ShortcutCommand,
   ShortcutMap,
@@ -39,6 +40,10 @@ const registerShortcuts = (
             if (!win) return;
             if (win.isVisible()) hideMainWindow();
             else void restoreActiveWindowMode();
+            return;
+          }
+          if (command === 'toggleMiniPlayer') {
+            void toggleMiniPlayerWindow();
             return;
           }
           forwardToRenderer(command, getMainWindow);

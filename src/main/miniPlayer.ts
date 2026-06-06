@@ -8,7 +8,7 @@ import type {
 } from '../shared/mini-player';
 import { MINI_PLAYER_DIMENSIONS } from '../shared/mini-player';
 import { getMainWindow, hideMainWindow, showMainWindow } from './window';
-import { setActiveWindowMode } from './windowMode';
+import { getActiveWindowMode, setActiveWindowMode } from './windowMode';
 import { getMainAppSettings, setMainAppSetting } from './storage/settings';
 
 const MINI_PLAYER_WIDTH = MINI_PLAYER_DIMENSIONS.width;
@@ -589,6 +589,21 @@ export const closeMiniPlayerWindow = () => {
   scheduleMiniPlayerDockRestore();
 };
 
+export const toggleMiniPlayerWindow = async () => {
+  const win = getMiniPlayerWindow();
+  const miniVisible = Boolean(win && !win.isDestroyed() && win.isVisible());
+  const shouldRestoreMain = getActiveWindowMode() === 'mini' || miniVisible;
+
+  if (shouldRestoreMain) {
+    setActiveWindowMode('main');
+    showMainWindow();
+    closeMiniPlayerWindow();
+    return snapshot;
+  }
+
+  return showMiniPlayerWindow();
+};
+
 export const destroyMiniPlayerWindow = () => {
   const win = getMiniPlayerWindow();
   if (!win || win.isDestroyed()) return;
@@ -617,6 +632,8 @@ export const registerMiniPlayerHandlers = () => {
     closeMiniPlayerWindow();
     return snapshot;
   });
+
+  ipcMain.handle('mini-player:toggle', () => toggleMiniPlayerWindow());
 
   ipcMain.on('mini-player:sync-snapshot', (_event, payload: MiniPlayerSnapshotPatch) => {
     if (!payload) return;
@@ -756,6 +773,7 @@ export const unregisterMiniPlayerHandlers = () => {
   ipcMain.removeHandler('mini-player:get-snapshot');
   ipcMain.removeHandler('mini-player:show');
   ipcMain.removeHandler('mini-player:hide');
+  ipcMain.removeHandler('mini-player:toggle');
   ipcMain.removeHandler('mini-player:get-bounds');
   ipcMain.removeHandler('mini-player:set-always-on-top');
   ipcMain.removeAllListeners('mini-player:sync-snapshot');

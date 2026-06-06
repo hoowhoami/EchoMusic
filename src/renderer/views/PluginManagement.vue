@@ -3,17 +3,34 @@ import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
-import { iconPlugin, iconRefreshCw, iconShield, iconTriangleAlert, iconFolderOpen } from '@/icons';
 import {
+  iconFolderOpen,
+  iconPlugin,
+  iconRefreshCw,
+  iconSettings,
+  iconShield,
+  iconTriangleAlert,
+} from '@/icons';
+import {
+  notifyRuntimePluginSettingsChanged,
   uninstallRuntimePlugin,
   openPluginDirectory,
   pluginRuntimeState,
   refreshPlugins,
   setRuntimePluginEnabled,
   setRuntimePluginSafeMode,
+  type PluginRuntimeFailureDetail,
 } from '@/plugins/runtime';
+import {
+  pluginSettingsContributions,
+  type PluginSettingField,
+  type PluginSettingOption,
+  type PluginSettingsContribution,
+  type PluginSettingValue,
+} from '@/plugins/registry';
 import { useToastStore } from '@/stores/toast';
 import type { PluginFailureRecord } from '../../shared/plugins';
 
@@ -21,9 +38,15 @@ const toastStore = useToastStore();
 const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
+const isSettingsLoading = ref(false);
+const isSettingsSaving = ref(false);
 const pendingUninstallPluginId = ref('');
+const settingsPluginId = ref('');
+const failureDetailPluginId = ref('');
+const settingsDraft = ref<Record<string, PluginSettingValue>>({});
 const busyPluginIds = ref<Set<string>>(new Set());
 const failedPluginImageIds = ref<Set<string>>(new Set());
+const pluginSettingsStorageKey = 'settings';
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -35,10 +58,59 @@ const pendingUninstallRecord = computed(
   () =>
     records.value.find((record) => record.descriptor.id === pendingUninstallPluginId.value) ?? null,
 );
+const settingsContributionByPluginId = computed(
+  () =>
+    new Map(
+      pluginSettingsContributions.value.map((contribution) => [
+        contribution.pluginId,
+        contribution,
+      ]),
+    ),
+);
+const settingsPluginRecord = computed(
+  () => records.value.find((record) => record.descriptor.id === settingsPluginId.value) ?? null,
+);
+const failureDetailRecord = computed(
+  () =>
+    records.value.find((record) => record.descriptor.id === failureDetailPluginId.value) ?? null,
+);
+const activeSettingsContribution = computed(() =>
+  settingsPluginId.value
+    ? (settingsContributionByPluginId.value.get(settingsPluginId.value) ?? null)
+    : null,
+);
+const activeSettingsTitle = computed(
+  () =>
+    activeSettingsContribution.value?.title ||
+    (settingsPluginRecord.value
+      ? `${settingsPluginRecord.value.descriptor.name} 设置`
+      : '插件设置'),
+);
+const activeSettingsDescription = computed(
+  () =>
+    activeSettingsContribution.value?.description ||
+    settingsPluginRecord.value?.descriptor.description ||
+    '',
+);
 const showUninstallDialog = computed({
   get: () => Boolean(pendingUninstallPluginId.value),
   set: (open: boolean) => {
     if (!open && !isUninstalling.value) pendingUninstallPluginId.value = '';
+  },
+});
+const showSettingsDialog = computed({
+  get: () => Boolean(settingsPluginId.value),
+  set: (open: boolean) => {
+    if (!open && !isSettingsSaving.value) {
+      settingsPluginId.value = '';
+      settingsDraft.value = {};
+    }
+  },
+});
+const showFailureDetailDialog = computed({
+  get: () => Boolean(failureDetailPluginId.value),
+  set: (open: boolean) => {
+    if (!open) failureDetailPluginId.value = '';
   },
 });
 
@@ -48,6 +120,22 @@ const failureReasonLabels: Record<PluginFailureRecord['reason'], string> = {
   'render-process-gone': '渲染进程异常退出',
   unresponsive: '渲染进程无响应',
 };
+const pluginCardFailureReasonLabels = {
+  ...failureReasonLabels,
+  invalid: '插件无效',
+  record: '插件异常',
+} as const;
+
+type PluginCardFailureReason = keyof typeof pluginCardFailureReasonLabels;
+
+interface PluginCardFailureDetail {
+  pluginId: string;
+  reason: PluginCardFailureReason;
+  source: string;
+  message: string;
+  stack: string;
+  createdAt: number;
+}
 
 const failurePluginIds = computed(() => {
   const failure = pluginRuntimeState.lastFailure;
@@ -57,20 +145,20 @@ const failurePluginIds = computed(() => {
   );
 });
 
-const failurePluginNames = computed(() => {
-  const ids = failurePluginIds.value;
-  if (ids.length === 0) return '无法定位到具体插件';
-  const names = ids.map(
-    (id) => records.value.find((record) => record.descriptor.id === id)?.descriptor.name ?? id,
-  );
-  return names.join('、');
+const globalFailure = computed(() => {
+  const failure = pluginRuntimeState.lastFailure;
+  if (!failure || failurePluginIds.value.length > 0) return null;
+  return failure;
 });
 
 const failureTime = computed(() => {
-  const createdAt = pluginRuntimeState.lastFailure?.createdAt;
+  const createdAt = globalFailure.value?.createdAt;
   if (!createdAt) return '';
   return new Date(createdAt).toLocaleString();
 });
+const globalFailureTitle = computed(() =>
+  globalFailure.value ? failureReasonLabels[globalFailure.value.reason] : '',
+);
 
 const refresh = async () => {
   if (isRefreshing.value) return;
@@ -150,6 +238,7 @@ const confirmUninstallPlugin = async () => {
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
+  if (getPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
   if (!record.descriptor.enabled) return '已停用';
   if (pluginRuntimeState.safeMode && record.descriptor.enabled) return '安全模式';
   if (record.status === 'active') return '运行中';
@@ -181,6 +270,335 @@ const getPluginAccentStyle = (pluginId: string) => {
   return {
     '--plugin-accent': pluginAccentPalette[hash % pluginAccentPalette.length],
   };
+};
+
+const formatFailureTime = (createdAt: number) =>
+  createdAt > 0 ? new Date(createdAt).toLocaleString() : '本次扫描';
+
+const toPluginCardRuntimeFailure = (
+  failure: PluginRuntimeFailureDetail,
+): PluginCardFailureDetail => ({
+  pluginId: failure.pluginId,
+  reason: failure.reason,
+  source: failure.source,
+  message: failure.message,
+  stack: failure.stack,
+  createdAt: failure.createdAt,
+});
+
+const getLastFailureForPlugin = (pluginId: string): PluginCardFailureDetail | null => {
+  const failure = pluginRuntimeState.lastFailure;
+  if (!failure) return null;
+  const record = records.value.find((item) => item.descriptor.id === pluginId);
+  if (!pluginRuntimeState.safeMode || !record?.descriptor.enabled) return null;
+  const ids = new Set([failure.pluginId, ...(failure.pluginIds ?? [])].filter(Boolean));
+  if (!ids.has(pluginId)) return null;
+  return {
+    pluginId,
+    reason: failure.reason,
+    source: '最近一次故障恢复',
+    message: failure.message,
+    stack: '',
+    createdAt: failure.createdAt,
+  };
+};
+
+const getPluginCardFailure = (
+  record: (typeof records.value)[number],
+): PluginCardFailureDetail | null => {
+  const pluginId = record.descriptor.id;
+  const runtimeFailure = pluginRuntimeState.failures[pluginId];
+  if (runtimeFailure) return toPluginCardRuntimeFailure(runtimeFailure);
+
+  if (record.descriptor.invalid && record.descriptor.error) {
+    return {
+      pluginId,
+      reason: 'invalid',
+      source: '插件清单',
+      message: record.descriptor.error,
+      stack: '',
+      createdAt: 0,
+    };
+  }
+
+  if (record.status === 'error' && record.error) {
+    return {
+      pluginId,
+      reason: 'record',
+      source: record.status === 'error' ? '当前运行状态' : '插件扫描',
+      message: record.error,
+      stack: '',
+      createdAt: 0,
+    };
+  }
+
+  return getLastFailureForPlugin(pluginId);
+};
+
+const activeFailureDetail = computed(() =>
+  failureDetailRecord.value ? getPluginCardFailure(failureDetailRecord.value) : null,
+);
+
+const activeFailureTitle = computed(() => {
+  const detail = activeFailureDetail.value;
+  const record = failureDetailRecord.value;
+  if (!detail || !record) return '插件异常详情';
+  return `${record.descriptor.name} · ${pluginCardFailureReasonLabels[detail.reason]}`;
+});
+
+const openPluginFailureDetail = (pluginId: string) => {
+  failureDetailPluginId.value = pluginId;
+};
+
+const getSettingsContribution = (pluginId: string) =>
+  settingsContributionByPluginId.value.get(pluginId) ?? null;
+
+const getPluginSettingsButtonTitle = (record: (typeof records.value)[number]) => {
+  if (getSettingsContribution(record.descriptor.id)) return '打开插件设置';
+  if (record.descriptor.invalid) return '插件无效，无法读取设置';
+  if (!record.descriptor.enabled) return '启用插件后可读取设置项';
+  if (pluginRuntimeState.safeMode) return '安全模式下不会加载插件设置';
+  if (record.status !== 'active') return '插件运行后可读取设置项';
+  return '该插件没有提供设置项';
+};
+
+const requestOpenPluginSettings = async (record: (typeof records.value)[number]) => {
+  const pluginId = record.descriptor.id;
+  if (getSettingsContribution(pluginId)) {
+    await openPluginSettings(pluginId);
+    return;
+  }
+
+  if (record.descriptor.invalid) {
+    toastStore.warning('插件无效，无法读取设置');
+    return;
+  }
+  if (!record.descriptor.enabled) {
+    toastStore.warning('启用插件后才能读取它提供的设置项');
+    return;
+  }
+  if (pluginRuntimeState.safeMode) {
+    toastStore.warning('安全模式下不会加载插件设置');
+    return;
+  }
+  if (record.status !== 'active') {
+    toastStore.warning('插件运行后才能读取它提供的设置项');
+    return;
+  }
+  toastStore.info('该插件没有提供设置项');
+};
+
+const cloneSettingValue = (value: PluginSettingValue): PluginSettingValue =>
+  Array.isArray(value) ? [...value] : value;
+
+const getFallbackSettingValue = (field: PluginSettingField): PluginSettingValue => {
+  if (field.default !== null && field.default !== undefined)
+    return cloneSettingValue(field.default);
+  if (field.type === 'switch') return false;
+  if (field.type === 'number' || field.type === 'slider') return field.min ?? 0;
+  if (field.type === 'file') return field.multiple ? [] : '';
+  if (field.type === 'select') return field.options?.[0]?.value ?? '';
+  return '';
+};
+
+const getSettingsFields = (contribution: PluginSettingsContribution) =>
+  contribution.sections.flatMap((section) => section.fields);
+
+const coerceSettingValue = (
+  field: PluginSettingField,
+  value: unknown,
+  fallback = getFallbackSettingValue(field),
+): PluginSettingValue => {
+  if (field.type === 'switch') return Boolean(value);
+
+  if (field.type === 'number' || field.type === 'slider') {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return fallback;
+    const min = field.min ?? -Infinity;
+    const max = field.max ?? Infinity;
+    return Math.max(min, Math.min(max, next));
+  }
+
+  if (field.type === 'file') {
+    if (field.multiple) {
+      return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+    }
+    return typeof value === 'string' ? value : '';
+  }
+
+  if (field.type === 'directory' || field.type === 'text' || field.type === 'textarea') {
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : '';
+  }
+
+  if (field.type === 'select') {
+    const matched = field.options?.find(
+      (option) => Object.is(option.value, value) || String(option.value) === String(value ?? ''),
+    );
+    return matched?.value ?? fallback;
+  }
+
+  return fallback;
+};
+
+const buildDefaultSettings = (contribution: PluginSettingsContribution) =>
+  Object.fromEntries(
+    getSettingsFields(contribution).map((field) => [field.key, getFallbackSettingValue(field)]),
+  ) as Record<string, PluginSettingValue>;
+
+const buildSettingsDraft = (
+  contribution: PluginSettingsContribution,
+  saved: Record<string, unknown> | null,
+) => {
+  const defaults = buildDefaultSettings(contribution);
+  for (const field of getSettingsFields(contribution)) {
+    if (!saved || !Object.hasOwn(saved, field.key)) continue;
+    defaults[field.key] = coerceSettingValue(field, saved[field.key], defaults[field.key]);
+  }
+  return defaults;
+};
+
+const getSerializableSettingsDraft = (contribution: PluginSettingsContribution) => {
+  const result = buildDefaultSettings(contribution);
+  for (const field of getSettingsFields(contribution)) {
+    result[field.key] = coerceSettingValue(
+      field,
+      settingsDraft.value[field.key],
+      result[field.key],
+    );
+  }
+  return result;
+};
+
+const openPluginSettings = async (pluginId: string) => {
+  const contribution = getSettingsContribution(pluginId);
+  if (!contribution || isSettingsLoading.value) return;
+
+  settingsPluginId.value = pluginId;
+  isSettingsLoading.value = true;
+  try {
+    const saved =
+      (await window.electron.plugins?.storage.get<Record<string, unknown>>(
+        pluginId,
+        pluginSettingsStorageKey,
+      )) ?? null;
+    settingsDraft.value = buildSettingsDraft(contribution, saved);
+  } catch {
+    settingsDraft.value = buildSettingsDraft(contribution, null);
+    toastStore.actionFailed('读取插件设置');
+  } finally {
+    isSettingsLoading.value = false;
+  }
+};
+
+const updateSettingDraft = (field: PluginSettingField, value: unknown) => {
+  settingsDraft.value = {
+    ...settingsDraft.value,
+    [field.key]: coerceSettingValue(field, value),
+  };
+};
+
+const updateTextField = (field: PluginSettingField, event: Event) => {
+  updateSettingDraft(field, (event.target as HTMLInputElement | HTMLTextAreaElement).value);
+};
+
+const updateNumberField = (field: PluginSettingField, event: Event) => {
+  updateSettingDraft(field, (event.target as HTMLInputElement).value);
+};
+
+const resetSettingsDraft = () => {
+  const contribution = activeSettingsContribution.value;
+  if (!contribution) return;
+  settingsDraft.value = buildDefaultSettings(contribution);
+};
+
+const savePluginSettings = async () => {
+  const pluginId = settingsPluginId.value;
+  const contribution = activeSettingsContribution.value;
+  if (!pluginId || !contribution || isSettingsSaving.value) return;
+
+  isSettingsSaving.value = true;
+  const nextSettings = getSerializableSettingsDraft(contribution);
+  try {
+    const result = await window.electron.plugins?.storage.set(
+      pluginId,
+      pluginSettingsStorageKey,
+      nextSettings,
+    );
+    if (result && !result.ok) throw new Error('插件设置保存失败');
+    await notifyRuntimePluginSettingsChanged(pluginId, nextSettings);
+    settingsDraft.value = nextSettings;
+    toastStore.actionCompleted('插件设置已保存');
+    showSettingsDialog.value = false;
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件设置保存失败');
+  } finally {
+    isSettingsSaving.value = false;
+  }
+};
+
+const getFieldStringValue = (field: PluginSettingField) =>
+  String(settingsDraft.value[field.key] ?? '');
+
+const getFieldNumberValue = (field: PluginSettingField) => {
+  const value = Number(settingsDraft.value[field.key]);
+  if (Number.isFinite(value)) return value;
+  const fallback = getFallbackSettingValue(field);
+  return typeof fallback === 'number' ? fallback : (field.min ?? 0);
+};
+
+const getSelectOptionKey = (option: PluginSettingOption, index: number) =>
+  `${index}:${typeof option.value}:${String(option.value)}`;
+
+const getSelectedOptionKey = (field: PluginSettingField) => {
+  const value = settingsDraft.value[field.key];
+  const index =
+    field.options?.findIndex(
+      (option) => Object.is(option.value, value) || String(option.value) === String(value ?? ''),
+    ) ?? -1;
+  if (index < 0 || !field.options) return '';
+  return getSelectOptionKey(field.options[index], index);
+};
+
+const updateSelectField = (field: PluginSettingField, event: Event) => {
+  const optionIndex = Number((event.target as HTMLSelectElement).value.split(':')[0]);
+  const option = field.options?.[optionIndex];
+  if (!option) return;
+  updateSettingDraft(field, option.value);
+};
+
+const getPathValues = (field: PluginSettingField) => {
+  const value = settingsDraft.value[field.key];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value) return [value];
+  return [];
+};
+
+const getPathLabel = (field: PluginSettingField) => {
+  const values = getPathValues(field);
+  if (values.length === 0) return field.type === 'directory' ? '未选择文件夹' : '未选择文件';
+  if (field.multiple) return `已选择 ${values.length} 个文件`;
+  return values[0];
+};
+
+const clearPathField = (field: PluginSettingField) => {
+  updateSettingDraft(field, field.multiple ? [] : '');
+};
+
+const selectPathForField = async (field: PluginSettingField) => {
+  const options = {
+    title: field.label,
+    buttonLabel: '选择',
+    filters: field.filters,
+    multiple: field.multiple,
+  };
+  const result =
+    field.type === 'directory'
+      ? await window.electron.plugins?.dialog.selectDirectory(options)
+      : await window.electron.plugins?.dialog.selectFiles(options);
+  if (!result || result.canceled || result.paths.length === 0) return;
+  updateSettingDraft(field, field.multiple ? result.paths : result.paths[0]);
 };
 </script>
 
@@ -234,20 +652,20 @@ const getPluginAccentStyle = (pluginId: string) => {
       </div>
 
       <!-- 错误提示 -->
-      <div v-if="pluginRuntimeState.lastFailure" class="plugin-failure-card mt-3">
+      <div v-if="globalFailure" class="plugin-failure-card mt-3">
         <div class="plugin-failure-icon">
           <Icon :icon="iconTriangleAlert" width="16" height="16" />
         </div>
         <div class="min-w-0 flex-1">
           <div class="plugin-failure-title">
-            {{ failureReasonLabels[pluginRuntimeState.lastFailure.reason] }}
+            {{ globalFailureTitle }}
           </div>
           <div class="plugin-failure-meta">
-            嫌疑插件：{{ failurePluginNames }}
+            无法定位到具体插件
             <span v-if="failureTime"> · {{ failureTime }}</span>
           </div>
           <div class="plugin-failure-message">
-            {{ pluginRuntimeState.lastFailure.message }}
+            {{ globalFailure.message }}
           </div>
         </div>
       </div>
@@ -276,7 +694,7 @@ const getPluginAccentStyle = (pluginId: string) => {
               class="plugin-card"
               :class="{
                 'is-disabled': !record.descriptor.enabled || record.descriptor.invalid,
-                'is-error': record.status === 'error' || record.descriptor.invalid,
+                'is-error': Boolean(getPluginCardFailure(record)),
               }"
             >
               <div class="plugin-card-main">
@@ -301,9 +719,12 @@ const getPluginAccentStyle = (pluginId: string) => {
                     <span
                       class="plugin-status-badge"
                       :class="{
-                        'is-active': record.status === 'active',
-                        'is-error': record.status === 'error' || record.descriptor.invalid,
-                        'is-safe': pluginRuntimeState.safeMode && record.descriptor.enabled,
+                        'is-active': record.status === 'active' && !getPluginCardFailure(record),
+                        'is-error': Boolean(getPluginCardFailure(record)),
+                        'is-safe':
+                          pluginRuntimeState.safeMode &&
+                          record.descriptor.enabled &&
+                          !getPluginCardFailure(record),
                       }"
                     >
                       {{ getStatusLabel(record) }}
@@ -327,21 +748,43 @@ const getPluginAccentStyle = (pluginId: string) => {
                 ID: {{ record.descriptor.id }}
               </div>
 
-              <div v-if="record.error || record.descriptor.error" class="plugin-card-error">
-                <Icon :icon="iconTriangleAlert" width="14" height="14" />
-                <span>{{ record.error || record.descriptor.error }}</span>
-              </div>
-
               <div class="plugin-card-actions">
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="plugin-remove-btn"
-                  :disabled="busyPluginIds.has(record.descriptor.id)"
-                  @click="requestUninstallPlugin(record.descriptor.id)"
-                >
-                  移除
-                </Button>
+                <div class="plugin-card-action-group">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="plugin-settings-btn"
+                    :class="{
+                      'is-unavailable': !getSettingsContribution(record.descriptor.id),
+                    }"
+                    :title="getPluginSettingsButtonTitle(record)"
+                    :disabled="busyPluginIds.has(record.descriptor.id)"
+                    @click="requestOpenPluginSettings(record)"
+                  >
+                    <Icon :icon="iconSettings" width="14" height="14" />
+                    设置
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="plugin-remove-btn"
+                    :disabled="busyPluginIds.has(record.descriptor.id)"
+                    @click="requestUninstallPlugin(record.descriptor.id)"
+                  >
+                    移除
+                  </Button>
+
+                  <button
+                    v-if="getPluginCardFailure(record)"
+                    class="plugin-card-failure-btn"
+                    type="button"
+                    title="查看插件异常详情"
+                    @click="openPluginFailureDetail(record.descriptor.id)"
+                  >
+                    <Icon :icon="iconTriangleAlert" width="14" height="14" />
+                  </button>
+                </div>
 
                 <Switch
                   :model-value="record.descriptor.enabled"
@@ -382,6 +825,198 @@ const getPluginAccentStyle = (pluginId: string) => {
         >
           卸载
         </Button>
+      </template>
+    </Dialog>
+
+    <!-- 插件异常详情 -->
+    <Dialog
+      v-model:open="showFailureDetailDialog"
+      :title="activeFailureTitle"
+      show-close
+      content-class="plugin-failure-detail-dialog"
+      body-class="plugin-failure-detail-body"
+    >
+      <div v-if="activeFailureDetail" class="plugin-failure-detail">
+        <div class="plugin-failure-detail-grid">
+          <span>类型</span>
+          <strong>{{ pluginCardFailureReasonLabels[activeFailureDetail.reason] }}</strong>
+          <span>位置</span>
+          <strong>{{ activeFailureDetail.source }}</strong>
+          <span>时间</span>
+          <strong>{{ formatFailureTime(activeFailureDetail.createdAt) }}</strong>
+        </div>
+
+        <div class="plugin-failure-detail-block">
+          <h4>错误信息</h4>
+          <p>{{ activeFailureDetail.message }}</p>
+        </div>
+
+        <div v-if="activeFailureDetail.stack" class="plugin-failure-detail-block">
+          <h4>调用栈</h4>
+          <pre>{{ activeFailureDetail.stack }}</pre>
+        </div>
+      </div>
+
+      <template #footer>
+        <Button variant="ghost" size="xs" @click="showFailureDetailDialog = false">关闭</Button>
+      </template>
+    </Dialog>
+
+    <!-- 插件统一设置 -->
+    <Dialog
+      v-model:open="showSettingsDialog"
+      :title="activeSettingsTitle"
+      :description="activeSettingsDescription"
+      show-close
+      content-class="plugin-settings-dialog"
+      body-class="plugin-settings-dialog-body"
+      :close-on-escape="!isSettingsSaving"
+      :close-on-interact-outside="!isSettingsSaving"
+    >
+      <div v-if="isSettingsLoading" class="plugin-settings-loading">正在读取设置...</div>
+
+      <div v-else-if="activeSettingsContribution" class="plugin-settings-content">
+        <section
+          v-for="section in activeSettingsContribution.sections"
+          :key="section.id"
+          class="plugin-settings-section"
+        >
+          <div v-if="section.title || section.description" class="plugin-settings-section-header">
+            <h4 v-if="section.title">{{ section.title }}</h4>
+            <p v-if="section.description">{{ section.description }}</p>
+          </div>
+
+          <div class="plugin-settings-fields">
+            <div
+              v-for="field in section.fields"
+              :key="field.key"
+              class="plugin-settings-field"
+              :class="{
+                'is-toggle': field.type === 'switch',
+                'is-wide': field.type === 'textarea' || field.type === 'file',
+              }"
+            >
+              <div class="plugin-settings-field-copy">
+                <label :for="`plugin-setting-${field.key}`">{{ field.label }}</label>
+                <p v-if="field.description">{{ field.description }}</p>
+              </div>
+
+              <div class="plugin-settings-field-control">
+                <Switch
+                  v-if="field.type === 'switch'"
+                  :model-value="Boolean(settingsDraft[field.key])"
+                  @update:model-value="(value) => updateSettingDraft(field, value)"
+                />
+
+                <textarea
+                  v-else-if="field.type === 'textarea'"
+                  :id="`plugin-setting-${field.key}`"
+                  class="plugin-settings-textarea"
+                  :value="getFieldStringValue(field)"
+                  :placeholder="field.placeholder"
+                  @input="(event) => updateTextField(field, event)"
+                ></textarea>
+
+                <input
+                  v-else-if="field.type === 'text'"
+                  :id="`plugin-setting-${field.key}`"
+                  class="plugin-settings-input"
+                  type="text"
+                  :value="getFieldStringValue(field)"
+                  :placeholder="field.placeholder"
+                  @input="(event) => updateTextField(field, event)"
+                />
+
+                <input
+                  v-else-if="field.type === 'number'"
+                  :id="`plugin-setting-${field.key}`"
+                  class="plugin-settings-input"
+                  type="number"
+                  :value="getFieldNumberValue(field)"
+                  :min="field.min"
+                  :max="field.max"
+                  :step="field.step ?? 1"
+                  @input="(event) => updateNumberField(field, event)"
+                />
+
+                <Slider
+                  v-else-if="field.type === 'slider'"
+                  :model-value="getFieldNumberValue(field)"
+                  :min="field.min ?? 0"
+                  :max="field.max ?? 100"
+                  :step="field.step ?? 1"
+                  show-value
+                  :value-suffix="field.unit ?? ''"
+                  class="plugin-settings-slider"
+                  @update:model-value="(value) => updateSettingDraft(field, value)"
+                />
+
+                <select
+                  v-else-if="field.type === 'select'"
+                  :id="`plugin-setting-${field.key}`"
+                  class="plugin-settings-select"
+                  :value="getSelectedOptionKey(field)"
+                  @change="(event) => updateSelectField(field, event)"
+                >
+                  <option
+                    v-for="(option, index) in field.options ?? []"
+                    :key="getSelectOptionKey(option, index)"
+                    :value="getSelectOptionKey(option, index)"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+
+                <div
+                  v-else-if="field.type === 'file' || field.type === 'directory'"
+                  class="plugin-settings-path-control"
+                >
+                  <div class="plugin-settings-path-value" :title="getPathValues(field).join('\n')">
+                    {{ getPathLabel(field) }}
+                  </div>
+                  <div class="plugin-settings-path-actions">
+                    <Button variant="outline" size="xs" @click="selectPathForField(field)">
+                      <Icon :icon="iconFolderOpen" width="14" height="14" />
+                      选择
+                    </Button>
+                    <Button
+                      v-if="getPathValues(field).length > 0"
+                      variant="ghost"
+                      size="xs"
+                      @click="clearPathField(field)"
+                    >
+                      清除
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <template #footer>
+        <Button variant="ghost" size="xs" :disabled="isSettingsSaving" @click="resetSettingsDraft">
+          恢复默认
+        </Button>
+        <div class="plugin-settings-footer-actions">
+          <Button
+            variant="ghost"
+            size="xs"
+            :disabled="isSettingsSaving"
+            @click="showSettingsDialog = false"
+          >
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="xs"
+            :loading="isSettingsSaving"
+            @click="savePluginSettings"
+          >
+            保存
+          </Button>
+        </div>
       </template>
     </Dialog>
   </div>
@@ -542,6 +1177,30 @@ const getPluginAccentStyle = (pluginId: string) => {
   white-space: nowrap;
 }
 
+.plugin-card-failure-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-red-500);
+  background: rgba(239, 68, 68, 0.1);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    background-color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.plugin-card-failure-btn:hover {
+  color: white;
+  background: var(--color-red-500);
+  transform: translateY(-1px);
+}
+
 .plugin-status-badge {
   @apply rounded-full px-2 py-0.5 text-[10px] font-semibold text-text-secondary bg-text-secondary/10 shrink-0;
   line-height: 1.35;
@@ -617,12 +1276,288 @@ const getPluginAccentStyle = (pluginId: string) => {
   border-top: 1px solid var(--color-border-light);
 }
 
+.plugin-card-action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.plugin-settings-btn {
+  @apply text-text-main hover:text-primary;
+  gap: 0.25rem;
+}
+
+.plugin-settings-btn.is-unavailable {
+  color: color-mix(in srgb, var(--color-text-secondary) 78%, transparent);
+}
+
 .plugin-remove-btn {
   @apply text-primary hover:text-primary-hover;
 }
 
 .plugin-card.is-error .plugin-remove-btn {
   @apply text-red-500 hover:text-red-400;
+}
+
+:global(.plugin-failure-detail-dialog) {
+  width: min(560px, 92vw);
+}
+
+:global(.plugin-failure-detail-body) {
+  padding-right: 1.125rem;
+}
+
+.plugin-failure-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.plugin-failure-detail-grid {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 0.5rem 0.875rem;
+  padding: 0.875rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-bg-card);
+}
+
+.plugin-failure-detail-grid span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.plugin-failure-detail-grid strong {
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  word-break: break-word;
+}
+
+.plugin-failure-detail-block {
+  padding: 0.875rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-bg-card);
+}
+
+.plugin-failure-detail-block h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+}
+
+.plugin-failure-detail-block p,
+.plugin-failure-detail-block pre {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.plugin-failure-detail-block p {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.plugin-failure-detail-block pre {
+  max-height: 220px;
+  overflow: auto;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+:global(.plugin-settings-dialog) {
+  width: min(640px, 92vw);
+  max-height: min(760px, calc(100vh - 120px));
+}
+
+:global(.plugin-settings-dialog-body) {
+  padding-right: 1.125rem;
+}
+
+.plugin-settings-loading {
+  padding: 2rem 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+}
+
+.plugin-settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.plugin-settings-section {
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  background: var(--color-bg-card);
+  overflow: hidden;
+}
+
+.plugin-settings-section-header {
+  padding: 0.875rem 1rem 0.25rem;
+}
+
+.plugin-settings-section-header h4 {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--color-text-main);
+}
+
+.plugin-settings-section-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.plugin-settings-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.plugin-settings-field {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.plugin-settings-section-header + .plugin-settings-fields .plugin-settings-field:first-child {
+  border-top-color: transparent;
+}
+
+.plugin-settings-section > .plugin-settings-fields:first-child .plugin-settings-field:first-child {
+  border-top: 0;
+}
+
+.plugin-settings-field.is-wide {
+  align-items: flex-start;
+}
+
+.plugin-settings-field-copy {
+  min-width: 0;
+}
+
+.plugin-settings-field-copy label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.plugin-settings-field-copy p {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.plugin-settings-field-control {
+  min-width: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.plugin-settings-input,
+.plugin-settings-select,
+.plugin-settings-textarea {
+  width: min(100%, 320px);
+  min-width: 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: 8px;
+  color: var(--color-text-main);
+  background: var(--color-bg-main);
+  font: inherit;
+  font-size: 0.8125rem;
+  outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.plugin-settings-input,
+.plugin-settings-select {
+  height: 34px;
+  padding: 0 0.625rem;
+}
+
+.plugin-settings-textarea {
+  min-height: 92px;
+  padding: 0.625rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.plugin-settings-input:focus,
+.plugin-settings-select:focus,
+.plugin-settings-textarea:focus {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.plugin-settings-slider {
+  width: min(100%, 320px);
+}
+
+.plugin-settings-path-control {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.plugin-settings-path-value {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0.45rem 0.625rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-bg-main);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+.plugin-settings-path-actions,
+.plugin-settings-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .plugin-settings-field {
+    grid-template-columns: 1fr;
+    gap: 0.625rem;
+  }
+
+  .plugin-settings-field-control {
+    justify-content: flex-start;
+  }
+
+  .plugin-settings-input,
+  .plugin-settings-select,
+  .plugin-settings-textarea,
+  .plugin-settings-slider,
+  .plugin-settings-path-control {
+    width: 100%;
+  }
 }
 
 /* 错误提示卡片 */

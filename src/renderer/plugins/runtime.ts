@@ -20,8 +20,10 @@ import { logger } from '@/utils/logger';
 import {
   createPluginUiApi,
   executePluginCommand,
+  pluginSettingsContributions,
   registerPluginCommand,
   removePluginContributions,
+  type PluginSettingValue,
 } from './registry';
 import type { Component } from 'vue';
 
@@ -112,6 +114,15 @@ export interface PluginRuntimeRecord {
   error: string;
 }
 
+export interface PluginRuntimeFailureDetail {
+  pluginId: string;
+  reason: PluginFailureRecord['reason'];
+  source: string;
+  message: string;
+  stack: string;
+  createdAt: number;
+}
+
 type ActivePlugin = {
   descriptor: EchoPluginDescriptor;
   context: EchoPluginContext;
@@ -124,6 +135,7 @@ export const pluginRuntimeState = reactive({
   directory: '',
   safeMode: false,
   lastFailure: null as PluginFailureRecord | null,
+  failures: {} as Record<string, PluginRuntimeFailureDetail>,
   loading: false,
   records: [] as PluginRuntimeRecord[],
   initialized: false,
@@ -256,6 +268,14 @@ const createMountedComponentDisposer = (
   mountedApp.use(host.router);
   mountedApp.component('Icon', Icon);
   mountedApp.config.globalProperties.$echo = host.app.config.globalProperties.$echo;
+  mountedApp.config.errorHandler = (error, _instance, info) => {
+    logger.error('PluginRuntime', 'Plugin mounted component failed', {
+      pluginId,
+      info,
+      error,
+    });
+    void reportPluginRuntimeError(pluginId, error, `Vue 组件: ${info || '未知位置'}`);
+  };
   mountedApp.mount(container);
 
   return () => {
@@ -272,7 +292,7 @@ const createMountedComponentDisposer = (
   };
 };
 
-const createDomApi = (addDisposable: (dispose: () => void) => () => void) => ({
+const createDomApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => ({
   query: <T extends Element = Element>(selector: string) => document.querySelector<T>(selector),
   queryAll: <T extends Element = Element>(selector: string) =>
     Array.from(document.querySelectorAll<T>(selector)),
@@ -289,7 +309,12 @@ const createDomApi = (addDisposable: (dispose: () => void) => () => void) => ({
     const visit = (element: Element) => {
       if (stopped || seen.has(element)) return;
       seen.add(element);
-      const dispose = handler(element);
+      const dispose = runPluginCallback(
+        pluginId,
+        `DOM 监听: ${selector}`,
+        () => handler(element),
+        undefined,
+      );
       if (typeof dispose === 'function') disposers.push(dispose);
       if (options?.once) stop();
     };
@@ -311,7 +336,9 @@ const createDomApi = (addDisposable: (dispose: () => void) => () => void) => ({
       disposers
         .splice(0)
         .reverse()
-        .forEach((dispose) => dispose());
+        .forEach((dispose) =>
+          runPluginCallback(pluginId, `DOM 监听清理: ${selector}`, dispose, undefined),
+        );
     };
 
     scan();
@@ -325,7 +352,9 @@ const createRuntimeUiApi = (
   host: PluginRuntimeHost,
   addDisposable: (dispose: () => void) => () => void,
 ) => {
-  const baseUi = createPluginUiApi(pluginId, addDisposable);
+  const baseUi = createPluginUiApi(pluginId, addDisposable, (source, error) => {
+    void reportPluginRuntimeError(pluginId, error, source);
+  });
   return {
     ...baseUi,
     components: hostComponentLoaders,
@@ -338,17 +367,30 @@ const createRuntimeUiApi = (
         className?: string;
         id?: string;
       },
-    ) => addDisposable(createMountedComponentDisposer(pluginId, host, target, component, options)),
+    ) =>
+      runPluginCallback(
+        pluginId,
+        '挂载插件组件',
+        () =>
+          addDisposable(createMountedComponentDisposer(pluginId, host, target, component, options)),
+        () => undefined,
+      ),
     teleport: (
       component: Component,
       options?: { props?: Record<string, unknown>; className?: string; id?: string },
     ) =>
-      addDisposable(
-        createMountedComponentDisposer(pluginId, host, document.body, component, {
-          ...options,
-          position: 'append',
-          className: ['echo-plugin-teleport', options?.className].filter(Boolean).join(' '),
-        }),
+      runPluginCallback(
+        pluginId,
+        '挂载插件浮层',
+        () =>
+          addDisposable(
+            createMountedComponentDisposer(pluginId, host, document.body, component, {
+              ...options,
+              position: 'append',
+              className: ['echo-plugin-teleport', options?.className].filter(Boolean).join(' '),
+            }),
+          ),
+        () => undefined,
       ),
   };
 };
@@ -376,20 +418,98 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   return message || fallback;
 };
 
-const reportPluginActivationFailure = async (pluginId: string, message: string) => {
+const getErrorStack = (error: unknown) => {
+  if (error instanceof Error) return error.stack ?? '';
+  return '';
+};
+
+const setRecordFailure = (pluginId: string, message: string) => {
+  const record = pluginRuntimeState.records.find((item) => item.descriptor.id === pluginId);
+  if (!record) return;
+  record.status = 'error';
+  record.error = message;
+};
+
+const clearPluginFailure = (pluginId: string) => {
+  delete pluginRuntimeState.failures[pluginId];
+  const lastFailure = pluginRuntimeState.lastFailure;
+  if (!lastFailure) return;
+  const ids = new Set(
+    [lastFailure.pluginId, ...(lastFailure.pluginIds ?? [])].filter((id): id is string =>
+      Boolean(id),
+    ),
+  );
+  if (!ids.has(pluginId)) return;
+  const remainingIds = Array.from(ids).filter((id) => id !== pluginId);
+  pluginRuntimeState.lastFailure =
+    remainingIds.length > 0
+      ? {
+          ...lastFailure,
+          pluginId: remainingIds[0],
+          pluginIds: remainingIds,
+        }
+      : null;
+};
+
+const reportPluginFailure = async (
+  pluginId: string,
+  reason: PluginFailureRecord['reason'],
+  error: unknown,
+  options: {
+    source: string;
+    fallback: string;
+  },
+) => {
+  const message = getErrorMessage(error, options.fallback);
+  const createdAt = Date.now();
+  const existing = pluginRuntimeState.failures[pluginId];
+  const detail: PluginRuntimeFailureDetail = {
+    pluginId,
+    reason,
+    source: options.source,
+    message,
+    stack: getErrorStack(error),
+    createdAt,
+  };
+
+  pluginRuntimeState.failures[pluginId] = detail;
+  pluginRuntimeState.lastFailure = {
+    pluginId,
+    reason,
+    message,
+    createdAt,
+  };
+  setRecordFailure(pluginId, message);
+
+  if (
+    existing?.reason === reason &&
+    existing.source === options.source &&
+    existing.message === message
+  ) {
+    return;
+  }
+
   try {
     await window.electron.plugins?.reportFailure({
       pluginId,
-      reason: 'activation-error',
+      reason,
       message,
+      createdAt,
     });
   } catch (error) {
-    logger.warn('PluginRuntime', 'Plugin activation failure report failed', {
+    logger.warn('PluginRuntime', 'Plugin failure report failed', {
       pluginId,
+      reason,
       error,
     });
   }
 };
+
+const reportPluginActivationFailure = (pluginId: string, error: unknown, source = '插件启动') =>
+  reportPluginFailure(pluginId, 'activation-error', error, {
+    source,
+    fallback: '插件启动失败',
+  });
 
 const syncActivePluginSession = async () => {
   try {
@@ -409,18 +529,35 @@ const extractPluginIdFromErrorSource = (...sources: unknown[]) => {
   return text.match(/echo-plugin:([a-zA-Z0-9._-]+)/)?.[1] ?? '';
 };
 
-const reportPluginRuntimeError = async (pluginId: string, message: string) => {
-  const active = activePlugins.get(pluginId);
-  if (active) updateRecord(active.descriptor, 'error', message);
+const reportPluginRuntimeError = (
+  pluginId: string,
+  error: unknown,
+  source = '插件运行时',
+  fallback = '插件运行异常',
+) =>
+  reportPluginFailure(pluginId, 'runtime-error', error, {
+    source,
+    fallback,
+  });
 
+const runPluginCallback = <T>(
+  pluginId: string,
+  source: string,
+  callback: () => T,
+  fallback: T,
+): T => {
   try {
-    await window.electron.plugins?.reportFailure({
-      pluginId,
-      reason: 'runtime-error',
-      message,
-    });
+    const result = callback();
+    if (result instanceof Promise) {
+      return result.catch((error) => {
+        void reportPluginRuntimeError(pluginId, error, source);
+        return fallback;
+      }) as T;
+    }
+    return result;
   } catch (error) {
-    logger.warn('PluginRuntime', 'Plugin runtime failure report failed', { pluginId, error });
+    void reportPluginRuntimeError(pluginId, error, source);
+    return fallback;
   }
 };
 
@@ -431,15 +568,23 @@ const installPluginRuntimeErrorHandlers = () => {
   window.addEventListener('error', (event) => {
     const pluginId = extractPluginIdFromErrorSource(event.error, event.message, event.filename);
     if (!pluginId) return;
-    const message = getErrorMessage(event.error, event.message || '插件运行异常');
-    void reportPluginRuntimeError(pluginId, message);
+    void reportPluginRuntimeError(
+      pluginId,
+      event.error ?? event.message,
+      '全局错误',
+      event.message || '插件运行异常',
+    );
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     const pluginId = extractPluginIdFromErrorSource(event.reason);
     if (!pluginId) return;
-    const message = getErrorMessage(event.reason, '插件 Promise 未处理异常');
-    void reportPluginRuntimeError(pluginId, message);
+    void reportPluginRuntimeError(
+      pluginId,
+      event.reason,
+      '未处理 Promise',
+      '插件 Promise 未处理异常',
+    );
   });
 };
 
@@ -530,7 +675,13 @@ const createPluginContext = (
         const dispose = registerPluginCommand(descriptor.id, {
           id,
           title: options?.title,
-          handler,
+          handler: (...args) =>
+            runPluginCallback(
+              descriptor.id,
+              `插件命令: ${options?.title || id}`,
+              () => handler(...args),
+              undefined,
+            ),
         });
         return addDisposable(dispose);
       },
@@ -545,7 +696,8 @@ const createPluginContext = (
         addDisposable(
           watch(
             () => playerStore.currentTrackSnapshot,
-            (track) => handler(track),
+            (track) =>
+              runPluginCallback(descriptor.id, '播放曲目变化事件', () => handler(track), undefined),
             { deep: true },
           ),
         ),
@@ -553,11 +705,17 @@ const createPluginContext = (
         addDisposable(
           watch(
             () => playerStore.isPlaying,
-            (isPlaying) => handler(isPlaying),
+            (isPlaying) =>
+              runPluginCallback(
+                descriptor.id,
+                '播放状态变化事件',
+                () => handler(isPlaying),
+                undefined,
+              ),
           ),
         ),
     },
-    dom: createDomApi(addDisposable),
+    dom: createDomApi(descriptor.id, addDisposable),
     net: {
       fetch: window.fetch.bind(window),
     },
@@ -626,6 +784,7 @@ const deactivatePlugin = async (pluginId: string) => {
     if (deactivator) await deactivator(active.context);
   } catch (error) {
     logger.warn('PluginRuntime', 'Plugin deactivate failed', { pluginId, error });
+    void reportPluginRuntimeError(pluginId, error, '插件停用');
   }
 
   for (const dispose of active.disposables.slice().reverse()) {
@@ -633,6 +792,7 @@ const deactivatePlugin = async (pluginId: string) => {
       dispose();
     } catch (error) {
       logger.warn('PluginRuntime', 'Plugin disposable failed', { pluginId, error });
+      void reportPluginRuntimeError(pluginId, error, '插件资源清理');
     }
   }
   active.blobUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -648,7 +808,7 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
   if (!mainAsset?.ok) {
     const message = mainAsset?.error || '插件入口读取失败';
     updateRecord(descriptor, 'error', message);
-    await reportPluginActivationFailure(descriptor.id, message);
+    await reportPluginActivationFailure(descriptor.id, message, '读取插件入口');
     return;
   }
 
@@ -670,13 +830,14 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
     if (!activator) throw new Error('插件未导出 activate(ctx) 或默认函数');
     activePlugins.set(descriptor.id, { descriptor, context, module, disposables, blobUrls });
     await activator(context);
+    clearPluginFailure(descriptor.id);
     updateRecord(descriptor, 'active');
   } catch (error) {
     await deactivatePlugin(descriptor.id);
     const message = getErrorMessage(error, '插件加载失败');
     logger.error('PluginRuntime', 'Plugin activate failed', { pluginId: descriptor.id, error });
     updateRecord(descriptor, 'error', message);
-    await reportPluginActivationFailure(descriptor.id, message);
+    await reportPluginActivationFailure(descriptor.id, error, '插件启动');
   }
 };
 
@@ -772,13 +933,12 @@ export const installPluginRuntime = (host: PluginRuntimeHost) => {
   host.app.config.errorHandler = (error, instance, info) => {
     const pluginId = extractPluginIdFromErrorSource(error);
     if (pluginId) {
-      const message = getErrorMessage(error, '插件 Vue 组件异常');
       logger.error('PluginRuntime', 'Plugin Vue component failed', {
         pluginId,
         info,
         error,
       });
-      void reportPluginRuntimeError(pluginId, message);
+      void reportPluginRuntimeError(pluginId, error, `Vue 组件: ${info || '未知位置'}`);
       return;
     }
     previousErrorHandler?.(error, instance, info);
@@ -794,3 +954,14 @@ export const installPluginRuntime = (host: PluginRuntimeHost) => {
 };
 
 export const getActivePluginIds = () => Array.from(activePlugins.keys());
+
+export const getRuntimePluginSettingsContribution = (pluginId: string) =>
+  pluginSettingsContributions.value.find((item) => item.pluginId === pluginId) ?? null;
+
+export const notifyRuntimePluginSettingsChanged = async (
+  pluginId: string,
+  values: Record<string, PluginSettingValue>,
+) => {
+  const contribution = getRuntimePluginSettingsContribution(pluginId);
+  await contribution?.onChange?.(values);
+};

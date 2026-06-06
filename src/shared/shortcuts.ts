@@ -12,6 +12,7 @@ export type ShortcutCommand =
   | 'toggleMute'
   | 'toggleFavorite'
   | 'togglePlayMode'
+  | 'toggleMiniPlayer'
   | 'toggleWindow'
   | 'toggleSidebar';
 

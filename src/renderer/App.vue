@@ -68,6 +68,7 @@ onMounted(async () => {
   if (isMiniPlayerRoute.value) return;
 
   await waitForSqlitePersistHydration();
+  settings.ensureShortcutDefaults();
   await playlistStore.hydratePlaybackStateFromStorage();
   player.init();
   updateTheme();

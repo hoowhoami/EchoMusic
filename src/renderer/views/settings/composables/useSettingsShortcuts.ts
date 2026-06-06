@@ -3,7 +3,12 @@ import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
 import type { ShortcutRecordingState, ShortcutScope } from '@/types';
 import type { ShortcutCommand } from '../../../../shared/shortcuts';
-import { areShortcutLabelsEquivalent, formatShortcutLabelForDisplay } from '@/utils/shortcuts';
+import {
+  areShortcutLabelsEquivalent,
+  buildShortcutLabelFromEvent,
+  canUseStandaloneShortcutLabel,
+  formatShortcutLabelForDisplay,
+} from '@/utils/shortcuts';
 import { shortcutItems } from '../constants';
 
 export function useSettingsShortcuts() {
@@ -12,48 +17,12 @@ export function useSettingsShortcuts() {
   const recording = ref<ShortcutRecordingState | null>(null);
   const shortcutBindings = computed(() => settingStore.shortcutBindings ?? {});
   const globalShortcutBindings = computed(() => settingStore.globalShortcutBindings ?? {});
-  const isMac = computed(() => window.electron?.platform === 'darwin');
 
   let removeRecorder: (() => void) | null = null;
   let removeOutside: (() => void) | null = null;
 
   const isRecording = (command: ShortcutCommand, scope: ShortcutScope) =>
     recording.value?.command === command && recording.value?.scope === scope;
-
-  const formatMainKey = (key: string, mac: boolean) => {
-    if (key === ' ' || key === 'Spacebar') return 'Space';
-    if (key === 'ArrowLeft') return mac ? '←' : 'Left';
-    if (key === 'ArrowRight') return mac ? '→' : 'Right';
-    if (key === 'ArrowUp') return mac ? '↑' : 'Up';
-    if (key === 'ArrowDown') return mac ? '↓' : 'Down';
-    if (key.length === 1) return key.toUpperCase();
-    return key;
-  };
-
-  const buildShortcutLabel = (event: KeyboardEvent) => {
-    const key = event.key;
-    if (['Shift', 'Control', 'Alt', 'Meta'].includes(key)) return '';
-    const mainKey = formatMainKey(key, isMac.value);
-    if (!mainKey) return '';
-    if (isMac.value) {
-      const parts = [
-        event.metaKey ? '⌘' : '',
-        event.shiftKey ? '⇧' : '',
-        event.altKey ? '⌥' : '',
-        event.ctrlKey ? '⌃' : '',
-        mainKey,
-      ].filter(Boolean);
-      return parts.join('');
-    }
-    const parts = [
-      event.ctrlKey ? 'Ctrl' : '',
-      event.shiftKey ? 'Shift' : '',
-      event.altKey ? 'Alt' : '',
-      event.metaKey ? 'Meta' : '',
-      mainKey,
-    ].filter(Boolean);
-    return parts.join('+');
-  };
 
   const resolveLabel = (
     binding: Record<string, string>,
@@ -87,6 +56,11 @@ export function useSettingsShortcuts() {
 
   const getBindingState = (scope: ShortcutScope) =>
     scope === 'global' ? globalShortcutBindings.value : shortcutBindings.value;
+
+  const getDefaultState = (scope: ShortcutScope) =>
+    scope === 'global'
+      ? (settingStore.defaultGlobalShortcutLabels ?? {})
+      : (settingStore.defaultShortcutLabels ?? {});
 
   const getShortcutCommandTitle = (command: ShortcutCommand) =>
     shortcutItems.find((item) => item.command === command)?.title || command;
@@ -125,23 +99,23 @@ export function useSettingsShortcuts() {
         stopRecording();
         return;
       }
-      const label = buildShortcutLabel(event);
+      const label = buildShortcutLabelFromEvent(event, window.electron?.platform);
       if (!label) return;
-      if (!(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)) {
-        toastStore.warning('快捷键至少需要包含一个修饰键');
+      const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
+      if (!hasModifier && !canUseStandaloneShortcutLabel(label)) {
+        toastStore.warning('普通按键快捷键至少需要包含一个修饰键');
         return;
       }
       const currentScope = recording.value.scope;
       const currentBindings = getBindingState(currentScope);
-      const conflictEntry = Object.entries(currentBindings).find(
-        ([existingCommand, existingLabel]) =>
-          areShortcutLabelsEquivalent(existingLabel, label) &&
-          existingCommand !== recording.value?.command,
-      );
+      const currentDefaults = getDefaultState(currentScope);
+      const conflictEntry = shortcutItems.find((item) => {
+        if (item.command === recording.value?.command) return false;
+        const existingLabel = resolveLabel(currentBindings, currentDefaults, item.command);
+        return existingLabel && areShortcutLabelsEquivalent(existingLabel, label);
+      });
       if (conflictEntry) {
-        toastStore.warning(
-          `该快捷键已分配给“${getShortcutCommandTitle(conflictEntry[0] as ShortcutCommand)}”`,
-        );
+        toastStore.warning(`该快捷键已分配给“${getShortcutCommandTitle(conflictEntry.command)}”`);
         return;
       }
       if (recording.value.scope === 'global') {

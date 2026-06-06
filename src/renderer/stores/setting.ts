@@ -22,6 +22,7 @@ export const DEFAULT_SHORTCUT_LABELS: Record<string, string> = {
   toggleMute: '⌘M',
   toggleFavorite: '⌘L',
   togglePlayMode: '⌘P',
+  toggleMiniPlayer: '⌘I',
   toggleWindow: '⌘W',
   toggleSidebar: '⌘B',
 };
@@ -37,6 +38,7 @@ export const DEFAULT_GLOBAL_SHORTCUT_LABELS: Record<string, string> = {
   toggleMute: '⌘⇧M',
   toggleFavorite: '⌘⇧L',
   togglePlayMode: '⌘⇧P',
+  toggleMiniPlayer: '⌘⇧I',
   toggleWindow: '⌥⌘S',
   toggleSidebar: '⌘⇧B',
 };
@@ -160,6 +162,16 @@ export const useSettingStore = defineStore('setting', {
     resetShortcutDefaults() {
       this.defaultShortcutLabels = { ...DEFAULT_SHORTCUT_LABELS };
       this.defaultGlobalShortcutLabels = { ...DEFAULT_GLOBAL_SHORTCUT_LABELS };
+    },
+    ensureShortcutDefaults() {
+      this.defaultShortcutLabels = {
+        ...(this.defaultShortcutLabels ?? {}),
+        ...DEFAULT_SHORTCUT_LABELS,
+      };
+      this.defaultGlobalShortcutLabels = {
+        ...(this.defaultGlobalShortcutLabels ?? {}),
+        ...DEFAULT_GLOBAL_SHORTCUT_LABELS,
+      };
     },
     openLogDirectory() {
       if (window.electron?.ipcRenderer) {

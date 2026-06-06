@@ -216,6 +216,7 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.invoke('mini-player:get-snapshot') as Promise<MiniPlayerSnapshot>,
     show: () => ipcRenderer.invoke('mini-player:show') as Promise<MiniPlayerSnapshot>,
     hide: () => ipcRenderer.invoke('mini-player:hide') as Promise<MiniPlayerSnapshot>,
+    toggle: () => ipcRenderer.invoke('mini-player:toggle') as Promise<MiniPlayerSnapshot>,
     syncSnapshot: (payload: MiniPlayerSnapshotPatch) =>
       sendWithPlainPayload('mini-player:sync-snapshot', payload),
     setExpanded: (expanded: boolean) =>
