@@ -14,7 +14,6 @@ interface Props {
   formatValue?: (value: number) => string;
   disabled?: boolean;
   orientation?: SliderOrientation;
-  class?: string;
   trackClass?: string;
   rangeClass?: string;
   thumbClass?: string;
@@ -50,7 +49,6 @@ const handleCommit = (value?: number[]) => {
 const rootClass = computed(() => [
   'slider-root',
   props.orientation === 'vertical' ? 'slider-root-vertical' : 'slider-root-horizontal',
-  props.class,
 ]);
 
 const trackClass = computed(() => ['slider-track', props.trackClass]);
@@ -100,6 +98,8 @@ const valueLabel = computed(() =>
 
 .slider-wrapper-horizontal {
   @apply relative flex items-center;
+  width: 100%;
+  min-width: 0;
 }
 
 .slider-wrapper-horizontal.has-value-label {
@@ -112,6 +112,8 @@ const valueLabel = computed(() =>
 
 .slider-root-horizontal {
   @apply flex items-center h-6;
+  width: 100%;
+  min-width: 0;
 }
 
 .slider-root-vertical {
@@ -121,6 +123,7 @@ const valueLabel = computed(() =>
 .slider-track {
   background-color: var(--control-track-bg);
   @apply relative grow rounded-full;
+  min-width: 0;
 }
 
 :global(.dark) .slider-track {

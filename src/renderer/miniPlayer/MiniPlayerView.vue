@@ -38,6 +38,8 @@ const cardExpandedHeight = `${
   MINI_PLAYER_DIMENSIONS.expandedHeight - MINI_PLAYER_DIMENSIONS.shellPadding * 2
 }px`;
 const COLLAPSE_ANCHOR_HOLD_MS = 320;
+const LYRIC_LOOKAHEAD_MS = 150;
+const LYRIC_CLOCK_INTERVAL_MS = 80;
 const isMac = navigator.platform.toLowerCase().includes('mac');
 
 const playback = ref<MiniPlayerPlaybackPayload | null>(null);
@@ -62,6 +64,7 @@ let disposeSnapshot: (() => void) | null = null;
 let lastAppliedLyricTrackId: string | null = null;
 let lastAppliedLyricIndex = -1;
 let lastAppliedLyricTime = 0;
+let lyricClockTimer: ReturnType<typeof setInterval> | null = null;
 
 const isQueueOpen = computed(() => expandedMode.value === 'queue');
 const isLyricOpen = computed(() => expandedMode.value === 'lyric');
@@ -103,6 +106,91 @@ const currentQueueTrackId = computed(
 
 const lyricTitle = computed(() => playback.value?.title || '未在播放');
 const lyricArtist = computed(() => playback.value?.artist || 'EchoMusic');
+const lyricLines = computed(() => lyric.value?.lines ?? []);
+const liveLyricIndex = ref(-1);
+
+const getLyricLineStartMs = (line: MiniPlayerLyricPayload['lines'][number]) =>
+  line.characters?.[0]?.startTime ?? Math.round((line.time || 0) * 1000);
+
+const calculateLyricIndex = (lines: MiniPlayerLyricPayload['lines'], seekMs: number) => {
+  if (lines.length === 0) return -1;
+  let index = -1;
+  let low = 0;
+  let high = lines.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (seekMs >= getLyricLineStartMs(lines[mid])) {
+      index = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return index;
+};
+
+const getLivePlaybackTimeMs = () => {
+  const currentPlayback = playback.value;
+  if (!currentPlayback) return 0;
+  const baseMs = Math.max(0, Number(currentPlayback.currentTime || 0) * 1000);
+  if (!currentPlayback.isPlaying) return baseMs;
+
+  const updatedAt = Number(currentPlayback.updatedAt || Date.now());
+  const playbackRate = Math.max(0.1, Number(currentPlayback.playbackRate || 1));
+  const elapsedMs = Math.max(0, Date.now() - updatedAt) * playbackRate;
+  const durationMs = Math.max(0, Number(currentPlayback.duration || 0) * 1000);
+  const nextMs = baseMs + elapsedMs;
+  return durationMs > 0 ? Math.min(nextMs, durationMs) : nextMs;
+};
+
+const resolveLiveLyricIndex = () => {
+  const currentLyric = lyric.value;
+  const lines = lyricLines.value;
+  if (!currentLyric || lines.length === 0) return -1;
+
+  const lyricTrackId = currentLyric.trackId ?? null;
+  const playbackTrackId = playback.value?.trackId ?? null;
+  const canPredictByPlaybackTime =
+    Boolean(playbackTrackId) && (!lyricTrackId || lyricTrackId === playbackTrackId);
+
+  if (canPredictByPlaybackTime) {
+    const seekMs =
+      getLivePlaybackTimeMs() + Number(currentLyric.timeOffset || 0) + LYRIC_LOOKAHEAD_MS;
+    const predictedIndex = calculateLyricIndex(lines, seekMs);
+    if (predictedIndex >= 0) return predictedIndex;
+  }
+
+  const syncedIndex = currentLyric.currentIndex;
+  if (syncedIndex >= 0 && syncedIndex < lines.length) return syncedIndex;
+  return 0;
+};
+
+const refreshLiveLyricIndex = () => {
+  const nextIndex = resolveLiveLyricIndex();
+  if (liveLyricIndex.value !== nextIndex) liveLyricIndex.value = nextIndex;
+};
+
+const syncLyricClockTimer = () => {
+  const shouldRun = Boolean(playback.value?.isPlaying && lyricLines.value.length > 0);
+  if (shouldRun && !lyricClockTimer) {
+    lyricClockTimer = setInterval(refreshLiveLyricIndex, LYRIC_CLOCK_INTERVAL_MS);
+    return;
+  }
+  if (!shouldRun && lyricClockTimer) {
+    clearInterval(lyricClockTimer);
+    lyricClockTimer = null;
+  }
+};
+
+const displayLyric = computed<MiniPlayerLyricPayload | null>(() => {
+  if (!lyric.value) return null;
+  return {
+    ...lyric.value,
+    currentIndex: liveLyricIndex.value,
+  };
+});
 
 // 播放列表虚拟滚动：复用主窗口同款 useVirtualList，仅渲染可视区，支撑大队列
 const MINI_QUEUE_ITEM_HEIGHT = 42;
@@ -208,6 +296,7 @@ const shouldApplyLyricSnapshot = (
     nextLyric.trackId === currentLyric.trackId;
   if (nextLyric.trackId !== currentLyric.trackId) return true;
   if (nextLyric.currentIndex !== currentLyric.currentIndex) return true;
+  if (nextLyric.timeOffset !== currentLyric.timeOffset) return true;
   if (nextLyric.desktopLyricEnabled !== currentLyric.desktopLyricEnabled) return true;
   if (isTransientEmptySameTrack) return false;
   if (nextLyric.wantTranslation !== currentLyric.wantTranslation) return true;
@@ -275,6 +364,8 @@ const applySnapshot = (snapshot: MiniPlayerSnapshot | null | undefined) => {
   if (shouldApplyLyricSnapshot(nextLyric, lyric.value)) {
     lyric.value = mergeLyricSnapshot(nextLyric);
   }
+  refreshLiveLyricIndex();
+  syncLyricClockTimer();
   if (appearance.value) {
     document.documentElement.classList.toggle('dark', appearance.value.isDark);
     // mini 模式使用固定主题色，不跟随主窗口的封面取色/自定义色
@@ -461,7 +552,11 @@ const handleSeekPointerUp = (event: PointerEvent) => {
   const duration = playback.value?.duration ?? 0;
   if (duration > 0) {
     // 乐观更新本地进度，避免等待 ~120ms 回传时进度条回跳
-    if (playback.value) playback.value.currentTime = ratio * duration;
+    if (playback.value) {
+      playback.value.currentTime = ratio * duration;
+      playback.value.updatedAt = Date.now();
+      refreshLiveLyricIndex();
+    }
     command({ type: 'seek', value: ratio * duration });
   }
 };
@@ -651,6 +746,25 @@ watch(isLyricOpen, (visible) => {
   window.electron?.miniPlayer?.notifyLyricVisibility?.(visible);
 });
 
+watch(
+  () => [
+    playback.value?.trackId ?? null,
+    playback.value?.currentTime ?? 0,
+    playback.value?.updatedAt ?? 0,
+    playback.value?.isPlaying ?? false,
+    playback.value?.playbackRate ?? 1,
+    lyric.value?.trackId ?? null,
+    lyric.value?.currentIndex ?? -1,
+    lyric.value?.timeOffset ?? 0,
+    lyricLines.value.length,
+  ],
+  () => {
+    refreshLiveLyricIndex();
+    syncLyricClockTimer();
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   document.documentElement.classList.add('mini-player-window');
   try {
@@ -672,6 +786,10 @@ onUnmounted(() => {
   preparingExpandedMode.value = null;
   clearVolumeCloseTimer();
   clearShellDirectionHoldTimer();
+  if (lyricClockTimer) {
+    clearInterval(lyricClockTimer);
+    lyricClockTimer = null;
+  }
   closeVolume(true);
   if (isExpanded.value) void window.electron?.miniPlayer?.setExpanded(false);
   disposeSnapshot?.();
@@ -874,7 +992,7 @@ onUnmounted(() => {
 
       <MiniLyricPanel
         v-show="isLyricOpen"
-        :lyric="lyric"
+        :lyric="displayLyric"
         :title="lyricTitle"
         :artist="lyricArtist"
         :cover-url="lyricCoverUrl"

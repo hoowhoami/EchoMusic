@@ -1,5 +1,5 @@
 import type { VideoAuthor, VideoMeta, VideoSource, VideoTag } from '@/models/video';
-import { getCoverUrl } from '@/utils/cover';
+import { normalizeCoverUrl } from '@/utils/cover';
 import { isRecord, toRecord, type UnknownRecord } from '../../../shared/object';
 
 const readString = (value: unknown, fallback = ''): string => {
@@ -40,7 +40,7 @@ const parseAuthors = (value: unknown): VideoAuthor[] => {
       .map((item) => ({
         id: parseNumber(item.author_id ?? item.id ?? item.user_id),
         name: readString(item.author_name ?? item.name, ''),
-        avatar: getCoverUrl(readString(item.sizable_avatar ?? item.avatar ?? '', ''), 240),
+        avatar: normalizeCoverUrl(readString(item.sizable_avatar ?? item.avatar ?? '', ''), 240),
       }))
       .filter((item) => item.name),
     (item) => `${item.id ?? ''}-${item.name}`,
@@ -117,7 +117,7 @@ const pickFirstSourceFromCodecMap = (
 };
 
 const collectSourcesFromMvRecord = (record: UnknownRecord): VideoSource[] => {
-  const thumb = getCoverUrl(
+  const thumb = normalizeCoverUrl(
     readString(record.hdpic ?? record.thumb ?? record.img ?? record.image, ''),
     360,
   );
@@ -216,7 +216,7 @@ export const mapVideoMeta = (payload: unknown, targetHash = ''): VideoMeta | nul
     description: readString(record.desc ?? record.remark ?? '', ''),
     remark: readString(record.remark ?? '', ''),
     topic: readString(record.topic ?? '', ''),
-    coverUrl: getCoverUrl(cover, 720),
+    coverUrl: normalizeCoverUrl(cover, 720),
     duration: parseDuration(record.duration),
     playCount,
     publishTime: parsePublishTime(record.publish_time),
@@ -265,7 +265,10 @@ export const mapVideoSourcesFromPrivilege = (payload: unknown): VideoSource[] =>
       return {
         hash,
         url: '',
-        thumb: getCoverUrl(readString(item.hdpic ?? item.thumb ?? item.img ?? item.image, ''), 360),
+        thumb: normalizeCoverUrl(
+          readString(item.hdpic ?? item.thumb ?? item.img ?? item.image, ''),
+          360,
+        ),
         label:
           (parseNumber(item.level) === 5 && '1080P') ||
           (parseNumber(item.level) === 4 && '720P') ||

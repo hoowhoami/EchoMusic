@@ -153,6 +153,7 @@ export interface EchoPluginManifest {
   contributes?: PluginContributionMap & {
     image?: string;
     icon?: string;
+    runInMiniPlayer?: boolean;
     windows?: PluginWindowManifest[];
   };
   engines?: {

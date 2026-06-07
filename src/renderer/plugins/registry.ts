@@ -3,6 +3,12 @@ import type { Component } from 'vue';
 import type { IconifyIcon } from '@iconify/types';
 import type { Song } from '@/models/song';
 import { registerSongContextMenuExtension } from '@/components/music/songContextMenuExtensions';
+import {
+  registerCoverFallbackResolver,
+  removeCoverFallbackResolversByPlugin,
+  type CoverFallbackContext,
+  type CoverFallbackResolver,
+} from './coverFallback';
 
 export type PluginIcon = string | IconifyIcon | Record<string, unknown>;
 
@@ -49,6 +55,8 @@ export interface PluginSettingOption {
   value: string | number | boolean;
 }
 
+export type PluginSettingControlWidth = number | string;
+
 export interface PluginSettingField {
   key: string;
   type: PluginSettingFieldType;
@@ -61,6 +69,7 @@ export interface PluginSettingField {
   max?: number;
   step?: number;
   multiple?: boolean;
+  width?: PluginSettingControlWidth;
   filters?: Array<{ name: string; extensions: string[] }>;
   options?: PluginSettingOption[];
 }
@@ -78,6 +87,13 @@ export interface PluginSettingsContribution extends PluginOwnedContribution {
   sections: PluginSettingSection[];
   onChange?: (values: Record<string, PluginSettingValue>) => void | Promise<void>;
 }
+
+export interface PluginCoverFallbackContribution {
+  id?: string;
+  resolveUrl: CoverFallbackResolver;
+}
+
+export type PluginCoverFallbackInput = CoverFallbackResolver | PluginCoverFallbackContribution;
 
 export interface PluginUiRegistryState {
   pages: PluginPageContribution[];
@@ -155,6 +171,20 @@ const normalizeSettingValue = (value: unknown): PluginSettingValue => {
 const normalizeNumberOption = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
+const normalizeSettingControlWidth = (value: unknown): string | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return `${Math.round(value)}px`;
+  }
+
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  if (text === 'full') return '100%';
+  if (/^\d+(\.\d+)?$/.test(text)) return `${text}px`;
+
+  return typeof CSS !== 'undefined' && CSS.supports('width', text) ? text : undefined;
+};
+
 const normalizeSettingField = (field: PluginSettingField): PluginSettingField => {
   const rawType = String(field.type || 'text');
   const type = pluginSettingFieldTypes.has(rawType as PluginSettingFieldType)
@@ -174,6 +204,7 @@ const normalizeSettingField = (field: PluginSettingField): PluginSettingField =>
     max: normalizeNumberOption(field.max),
     step: normalizeNumberOption(field.step),
     multiple: Boolean(field.multiple),
+    width: normalizeSettingControlWidth(field.width),
     filters: Array.isArray(field.filters)
       ? field.filters
           .map((filter) => ({
@@ -211,6 +242,7 @@ export const removePluginContributions = (pluginId: string) => {
     dispose();
     pluginSongContextMenuDisposers.delete(key);
   }
+  removeCoverFallbackResolversByPlugin(pluginId);
 };
 
 export const createPluginUiApi = (
@@ -232,6 +264,22 @@ export const createPluginUiApi = (
 
   const reportError = (source: string, error: unknown) => {
     onRuntimeError?.(source, error);
+  };
+
+  const normalizeCoverFallback = (
+    contribution: PluginCoverFallbackInput,
+  ): PluginCoverFallbackContribution => {
+    if (typeof contribution === 'function') {
+      return {
+        id: 'default',
+        resolveUrl: contribution,
+      };
+    }
+
+    return {
+      id: String(contribution.id || 'default').trim() || 'default',
+      resolveUrl: contribution.resolveUrl,
+    };
   };
 
   return {
@@ -317,6 +365,38 @@ export const createPluginUiApi = (
             : undefined,
         };
         const dispose = upsertContribution(pluginUiRegistry.settings, item);
+        return add(dispose);
+      },
+    },
+    cover: {
+      setFallback(contribution: PluginCoverFallbackInput) {
+        const item = normalizeCoverFallback(contribution);
+        if (typeof item.resolveUrl !== 'function') {
+          throw new Error('封面兜底 resolveUrl 必须是函数');
+        }
+
+        const dispose = registerCoverFallbackResolver({
+          pluginId,
+          id: item.id || 'default',
+          resolveUrl: (context: CoverFallbackContext) => {
+            try {
+              const value = item.resolveUrl(context) as unknown;
+              if (value instanceof Promise) {
+                reportError(
+                  `封面兜底: ${item.id || 'default'}`,
+                  new Error('封面兜底 resolver 必须同步返回字符串'),
+                );
+                return null;
+              }
+              return typeof value === 'string' || value === null || value === undefined
+                ? value
+                : null;
+            } catch (error) {
+              reportError(`封面兜底: ${item.id || 'default'}`, error);
+              return null;
+            }
+          },
+        });
         return add(dispose);
       },
     },

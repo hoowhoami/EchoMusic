@@ -1,8 +1,8 @@
 import type { SongRelateGood, SongArtist } from '@/models/song';
-import { getCoverUrl } from '../cover';
+import { normalizeCoverUrl } from '../cover';
 import { EMPTY_RECORD, isRecord, toRecord, type UnknownRecord } from '../../../shared/object';
 
-export { getCoverUrl };
+export { normalizeCoverUrl };
 export { EMPTY_RECORD, isRecord, toRecord };
 export type { UnknownRecord };
 

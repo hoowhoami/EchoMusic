@@ -134,6 +134,7 @@ const buildPlaybackPayload = (): MiniPlayerPlaybackPayload | null => {
     coverUrl: String(track.coverUrl || track.cover || ''),
     duration: Number(playerStore.duration || track.duration || 0),
     currentTime: Number(playerStore.currentTime || 0),
+    playbackRate: Number(playerStore.playbackRate || 1),
     isPlaying: Boolean(playerStore.isPlaying),
     isFavorite: resolveFavoriteState(track),
     lyricsLabel: lyricStore.currentDisplayLabel,
@@ -170,6 +171,7 @@ const buildLyricPayload = (): MiniPlayerLyricPayload => {
     trackId: playerStore.currentTrackId ? String(playerStore.currentTrackId) : null,
     lines: lyricStore.lines.map(normalizeLyricLinePayload),
     currentIndex: lyricStore.currentIndex,
+    timeOffset: lyricStore.currentTimeOffset,
     wantTranslation: lyricStore.wantTranslation,
     wantRomanization: lyricStore.wantRomanization,
     hasTranslation: lyricStore.hasTranslation,
@@ -283,14 +285,22 @@ export const initMiniPlayerSync = async () => {
     currentTime,
     isPlaying,
     duration,
+    playbackRate,
     currentTrackId,
     currentTrackSnapshot,
     volume,
     currentSourceQueueId,
   } = storeToRefs(playerStore);
   const { favorites, favoritesLoaded } = storeToRefs(playlistStore);
-  const { lines, wantTranslation, wantRomanization, hasTranslation, hasRomanization, tips } =
-    storeToRefs(lyricStore);
+  const {
+    lines,
+    wantTranslation,
+    wantRomanization,
+    hasTranslation,
+    hasRomanization,
+    tips,
+    currentTimeOffset,
+  } = storeToRefs(lyricStore);
 
   let lastSyncedPlaybackKey = '';
   let lastSyncedQueueKey = '';
@@ -365,6 +375,7 @@ export const initMiniPlayerSync = async () => {
     const nextLinesKey = lyricLinesPayloadKey(lyric);
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
+      timeOffset: lyric.timeOffset,
       desktopLyricEnabled: lyric.desktopLyricEnabled,
     });
     if (nextLinesKey === lastSyncedLyricLinesKey && nextStateKey === lastSyncedLyricStateKey) {
@@ -381,6 +392,7 @@ export const initMiniPlayerSync = async () => {
     const lyric = stabilizeLyricPayload(buildLyricPayload());
     const nextStateKey = JSON.stringify({
       currentIndex: lyric.currentIndex,
+      timeOffset: lyric.timeOffset,
       desktopLyricEnabled: lyric.desktopLyricEnabled,
     });
     if (nextStateKey === lastSyncedLyricStateKey) return;
@@ -388,6 +400,7 @@ export const initMiniPlayerSync = async () => {
     window.electron.miniPlayer?.syncSnapshot({
       lyric: {
         currentIndex: lyric.currentIndex,
+        timeOffset: lyric.timeOffset,
         desktopLyricEnabled: lyric.desktopLyricEnabled,
       },
     });
@@ -429,6 +442,7 @@ export const initMiniPlayerSync = async () => {
         currentTime,
         isPlaying,
         duration,
+        playbackRate,
         currentTrackId,
         currentTrackSnapshot,
         volume,
@@ -450,6 +464,7 @@ export const initMiniPlayerSync = async () => {
         wantRomanization,
         hasTranslation,
         hasRomanization,
+        currentTimeOffset,
         tips,
         () => desktopLyricStore.settings.enabled,
       ],

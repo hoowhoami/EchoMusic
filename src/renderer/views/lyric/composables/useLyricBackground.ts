@@ -1,6 +1,6 @@
 import { ref, watch, type ComputedRef } from 'vue';
 import { extractDominantColor, getNormalizedAccent } from '@/utils/color';
-import { getCoverUrl } from '@/utils/cover';
+import { normalizeCoverUrl } from '@/utils/cover';
 
 /**
  * 歌词页面背景主题色取色
@@ -71,7 +71,7 @@ export function useLyricBackground(coverUrl: ComputedRef<string | undefined>) {
       return;
     }
     const seq = ++requestSeq;
-    const processedUrl = getCoverUrl(url, 300);
+    const processedUrl = normalizeCoverUrl(url, 300);
     const color = await extractDominantColor(processedUrl);
     if (seq !== requestSeq) return;
 

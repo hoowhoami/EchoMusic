@@ -1035,7 +1035,7 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
   }
 };
 
-export const refreshPlugins = async () => {
+export const refreshPlugins = async (options: { miniPlayer?: boolean } = {}) => {
   pluginRuntimeState.loading = true;
   try {
     const result: PluginListResult | undefined = await window.electron.plugins?.list();
@@ -1044,12 +1044,19 @@ export const refreshPlugins = async () => {
     pluginRuntimeState.lastFailure = result?.lastFailure ?? null;
     const descriptors = result?.plugins ?? [];
     const nextIds = new Set(descriptors.map((plugin) => plugin.id));
+    const isRuntimeEligible = (descriptor: EchoPluginDescriptor) => {
+      if (!descriptor.enabled || descriptor.invalid) return false;
+      if (options.miniPlayer) return descriptor.manifest.contributes?.runInMiniPlayer === true;
+      return true;
+    };
 
     for (const pluginId of Array.from(activePlugins.keys())) {
+      const descriptor = descriptors.find((plugin) => plugin.id === pluginId);
       if (
         pluginRuntimeState.safeMode ||
         !nextIds.has(pluginId) ||
-        !descriptors.find((plugin) => plugin.id === pluginId)?.enabled
+        !descriptor ||
+        !isRuntimeEligible(descriptor)
       ) {
         await deactivatePlugin(pluginId);
       }
@@ -1067,9 +1074,7 @@ export const refreshPlugins = async () => {
       return;
     }
 
-    const enabledDescriptors = descriptors.filter(
-      (descriptor) => descriptor.enabled && !descriptor.invalid,
-    );
+    const enabledDescriptors = descriptors.filter(isRuntimeEligible);
     if (enabledDescriptors.length === 0) {
       await window.electron.plugins?.clearStartup();
       await syncActivePluginSession();

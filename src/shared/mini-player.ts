@@ -37,6 +37,7 @@ export interface MiniPlayerPlaybackPayload {
   coverUrl?: string;
   duration: number;
   currentTime: number;
+  playbackRate?: number;
   isPlaying: boolean;
   isFavorite: boolean;
   lyricsLabel?: string;
@@ -88,6 +89,7 @@ export interface MiniPlayerLyricPayload {
   trackId: string | null;
   lines: LyricLinePayload[];
   currentIndex: number;
+  timeOffset?: number;
   wantTranslation: boolean;
   wantRomanization: boolean;
   hasTranslation: boolean;

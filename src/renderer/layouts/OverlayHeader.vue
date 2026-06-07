@@ -1,15 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { iconMinus, iconSquare, iconX, iconFullscreen } from '@/icons';
+import { iconMinus, iconSquare, iconX, iconFullscreen, iconPictureInPicture } from '@/icons';
 import Button from '@/components/ui/Button.vue';
 import { useSettingStore } from '@/stores/setting';
 
+const props = withDefaults(
+  defineProps<{
+    showMiniPlayerControl?: boolean;
+  }>(),
+  {
+    showMiniPlayerControl: false,
+  },
+);
 const isMac = computed(() => window.electron.platform === 'darwin');
 const headerRef = ref<HTMLElement | null>(null);
 const settingStore = useSettingStore();
 
 const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen') => {
   window.electron.windowControl(action);
+};
+
+const openMiniPlayer = () => {
+  void window.electron?.miniPlayer?.show();
 };
 </script>
 
@@ -27,8 +39,22 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
       <slot name="left" />
     </div>
 
-    <div v-if="!isMac" class="overlay-header-controls no-drag relative z-10">
+    <div
+      v-if="props.showMiniPlayerControl || !isMac"
+      class="overlay-header-controls no-drag relative z-10"
+    >
       <Button
+        v-if="props.showMiniPlayerControl"
+        variant="unstyled"
+        size="none"
+        @click="openMiniPlayer"
+        class="overlay-control-btn overlay-control-btn--mini"
+        title="mini 模式"
+      >
+        <Icon :icon="iconPictureInPicture" width="16" height="16" />
+      </Button>
+      <Button
+        v-if="!isMac"
         variant="unstyled"
         size="none"
         @click="handleControl('minimize')"
@@ -38,7 +64,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
         <Icon :icon="iconMinus" width="14" height="14" />
       </Button>
       <Button
-        v-if="settingStore.showFullscreenButton"
+        v-if="!isMac && settingStore.showFullscreenButton"
         variant="unstyled"
         size="none"
         @click="handleControl('fullscreen')"
@@ -48,6 +74,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
         <Icon :icon="iconFullscreen" width="14" height="14" />
       </Button>
       <Button
+        v-if="!isMac"
         variant="unstyled"
         size="none"
         @click="handleControl('maximize')"
@@ -57,6 +84,7 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
         <Icon :icon="iconSquare" width="13" height="13" />
       </Button>
       <Button
+        v-if="!isMac"
         variant="unstyled"
         size="none"
         @click="handleControl('close')"
@@ -128,6 +156,17 @@ const handleControl = (action: 'minimize' | 'maximize' | 'close' | 'fullscreen')
 .overlay-control-btn--close:hover {
   background: #ff3b30;
   color: white;
+  opacity: 1;
+}
+
+.overlay-control-btn--mini {
+  width: 40px;
+}
+
+.overlay-control-btn--mini:hover,
+:global(.dark) .overlay-control-btn--mini:hover {
+  background: transparent;
+  color: var(--color-primary);
   opacity: 1;
 }
 </style>

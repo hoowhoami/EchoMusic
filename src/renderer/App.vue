@@ -15,7 +15,7 @@ import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
 import { initNowPlayingSync } from '@/nowPlaying/sync';
 import { refreshPlugins } from '@/plugins/runtime';
-import { getCoverUrl } from '@/utils/cover';
+import { normalizeCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
 import LyricView from '@/views/lyric/LyricPage.vue';
 
@@ -67,7 +67,10 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
 };
 
 onMounted(async () => {
-  if (isMiniPlayerRoute.value) return;
+  if (isMiniPlayerRoute.value) {
+    void refreshPlugins({ miniPlayer: true });
+    return;
+  }
 
   await waitForSqlitePersistHydration();
   settings.ensureShortcutDefaults();
@@ -196,7 +199,7 @@ watch(
       void themeStore.refreshCoverColor('');
       return;
     }
-    const normalizedCoverUrl = getCoverUrl(coverUrl, 300);
+    const normalizedCoverUrl = normalizeCoverUrl(coverUrl, 300);
     void themeStore.refreshCoverColor(normalizedCoverUrl);
     if (themeStore.accentMode !== 'cover') return;
     void themeStore.refreshFromCover(normalizedCoverUrl);
@@ -212,7 +215,7 @@ watch(
     if (mode !== 'cover') return;
     const coverUrl = player.currentTrackSnapshot?.coverUrl;
     if (!coverUrl) return;
-    void themeStore.refreshFromCover(getCoverUrl(coverUrl, 300));
+    void themeStore.refreshFromCover(normalizeCoverUrl(coverUrl, 300));
   },
 );
 </script>

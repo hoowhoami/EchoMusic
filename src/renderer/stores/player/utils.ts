@@ -6,7 +6,7 @@ import type { TrackLoudness } from '@/utils/player';
 import type { PlaybackNotice } from './types';
 
 import logger from '@/utils/logger';
-import { getCoverUrl } from '@/utils/cover';
+import { resolveCoverDisplayUrl } from '@/utils/cover';
 import type { MediaSessionMeta, MediaSessionState } from '@/utils/player';
 
 export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null => {
@@ -16,7 +16,7 @@ export const buildMediaMeta = (track: Song | undefined): MediaSessionMeta | null
   logger.debug('MediaSession', 'buildMediaMeta - original coverUrl:', track.coverUrl);
 
   const artwork = [96, 128, 192, 256, 384, 512].map((size) => {
-    const url = getCoverUrl(track.coverUrl, size);
+    const url = resolveCoverDisplayUrl(track.coverUrl, size, { scope: 'media-session' });
     return {
       src: url,
       sizes: `${size}x${size}`,

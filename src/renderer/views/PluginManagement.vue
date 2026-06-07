@@ -3,6 +3,9 @@ import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Input from '@/components/ui/Input.vue';
+import InputNumber from '@/components/ui/InputNumber.vue';
+import Select from '@/components/ui/Select.vue';
 import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
@@ -553,10 +556,6 @@ const updateTextField = (field: PluginSettingField, event: Event) => {
   updateSettingDraft(field, (event.target as HTMLInputElement | HTMLTextAreaElement).value);
 };
 
-const updateNumberField = (field: PluginSettingField, event: Event) => {
-  updateSettingDraft(field, (event.target as HTMLInputElement).value);
-};
-
 const resetSettingsDraft = () => {
   const contribution = activeSettingsContribution.value;
   if (!contribution) return;
@@ -598,8 +597,23 @@ const getFieldNumberValue = (field: PluginSettingField) => {
   return typeof fallback === 'number' ? fallback : (field.min ?? 0);
 };
 
+const getSettingControlStyle = (field: PluginSettingField) => {
+  if (!field.width) return undefined;
+  const width = typeof field.width === 'number' ? `${field.width}px` : String(field.width);
+  return {
+    '--plugin-settings-control-width': width,
+    '--plugin-settings-path-control-width': width,
+  };
+};
+
 const getSelectOptionKey = (option: PluginSettingOption, index: number) =>
   `${index}:${typeof option.value}:${String(option.value)}`;
+
+const getSelectOptions = (field: PluginSettingField) =>
+  (field.options ?? []).map((option, index) => ({
+    label: option.label,
+    value: getSelectOptionKey(option, index),
+  }));
 
 const getSelectedOptionKey = (field: PluginSettingField) => {
   const value = settingsDraft.value[field.key];
@@ -611,8 +625,12 @@ const getSelectedOptionKey = (field: PluginSettingField) => {
   return getSelectOptionKey(field.options[index], index);
 };
 
-const updateSelectField = (field: PluginSettingField, event: Event) => {
-  const optionIndex = Number((event.target as HTMLSelectElement).value.split(':')[0]);
+const updateSelectField = (
+  field: PluginSettingField,
+  value: string | number | Array<string | number>,
+) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const optionIndex = Number(String(rawValue ?? '').split(':')[0]);
   const option = field.options?.[optionIndex];
   if (!option) return;
   updateSettingDraft(field, option.value);
@@ -759,7 +777,11 @@ const selectPathForField = async (field: PluginSettingField) => {
               }"
             >
               <div class="plugin-card-main">
-                <div class="plugin-card-media" :style="getPluginAccentStyle(record.descriptor.id)">
+                <div
+                  class="plugin-card-media"
+                  :class="{ 'has-image': getPluginImageUrl(record) }"
+                  :style="getPluginAccentStyle(record.descriptor.id)"
+                >
                   <img
                     v-if="getPluginImageUrl(record)"
                     :src="getPluginImageUrl(record)"
@@ -976,7 +998,7 @@ const selectPathForField = async (field: PluginSettingField) => {
               class="plugin-settings-field"
               :class="{
                 'is-toggle': field.type === 'switch',
-                'is-wide': field.type === 'textarea' || field.type === 'file',
+                'is-top-aligned': field.type === 'textarea' || field.type === 'file',
               }"
             >
               <div class="plugin-settings-field-copy">
@@ -984,7 +1006,7 @@ const selectPathForField = async (field: PluginSettingField) => {
                 <p v-if="field.description">{{ field.description }}</p>
               </div>
 
-              <div class="plugin-settings-field-control">
+              <div class="plugin-settings-field-control" :style="getSettingControlStyle(field)">
                 <Switch
                   v-if="field.type === 'switch'"
                   :model-value="Boolean(settingsDraft[field.key])"
@@ -1000,26 +1022,26 @@ const selectPathForField = async (field: PluginSettingField) => {
                   @input="(event) => updateTextField(field, event)"
                 ></textarea>
 
-                <input
+                <Input
                   v-else-if="field.type === 'text'"
-                  :id="`plugin-setting-${field.key}`"
                   class="plugin-settings-input"
-                  type="text"
-                  :value="getFieldStringValue(field)"
+                  input-class="plugin-settings-input-field"
+                  :model-value="getFieldStringValue(field)"
                   :placeholder="field.placeholder"
-                  @input="(event) => updateTextField(field, event)"
+                  :show-clear="false"
+                  @update:model-value="(value) => updateSettingDraft(field, value)"
                 />
 
-                <input
+                <InputNumber
                   v-else-if="field.type === 'number'"
-                  :id="`plugin-setting-${field.key}`"
                   class="plugin-settings-input"
-                  type="number"
-                  :value="getFieldNumberValue(field)"
+                  :model-value="String(getFieldNumberValue(field))"
                   :min="field.min"
                   :max="field.max"
                   :step="field.step ?? 1"
-                  @input="(event) => updateNumberField(field, event)"
+                  :placeholder="field.placeholder"
+                  :suffix="field.unit ?? ''"
+                  @update:model-value="(value) => updateSettingDraft(field, value)"
                 />
 
                 <Slider
@@ -1034,21 +1056,14 @@ const selectPathForField = async (field: PluginSettingField) => {
                   @update:model-value="(value) => updateSettingDraft(field, value)"
                 />
 
-                <select
+                <Select
                   v-else-if="field.type === 'select'"
-                  :id="`plugin-setting-${field.key}`"
                   class="plugin-settings-select"
-                  :value="getSelectedOptionKey(field)"
-                  @change="(event) => updateSelectField(field, event)"
-                >
-                  <option
-                    v-for="(option, index) in field.options ?? []"
-                    :key="getSelectOptionKey(option, index)"
-                    :value="getSelectOptionKey(option, index)"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
+                  :model-value="getSelectedOptionKey(field)"
+                  :options="getSelectOptions(field)"
+                  :placeholder="field.placeholder ?? '请选择'"
+                  @update:model-value="(value) => updateSelectField(field, value)"
+                />
 
                 <div
                   v-else-if="field.type === 'file' || field.type === 'directory'"
@@ -1228,6 +1243,11 @@ const selectPathForField = async (field: PluginSettingField) => {
   border: 1px solid color-mix(in srgb, var(--plugin-accent) 18%, var(--border-subtle));
   flex-shrink: 0;
   overflow: hidden;
+}
+
+.plugin-card-media.has-image {
+  background: transparent;
+  border: 0;
 }
 
 .plugin-card-image {
@@ -1594,7 +1614,7 @@ const selectPathForField = async (field: PluginSettingField) => {
   border-top: 0;
 }
 
-.plugin-settings-field.is-wide {
+.plugin-settings-field.is-top-aligned {
   align-items: flex-start;
 }
 
@@ -1627,11 +1647,15 @@ const selectPathForField = async (field: PluginSettingField) => {
   background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
 }
 
-.plugin-settings-input,
-.plugin-settings-select,
+.plugin-settings-field-control :deep(.plugin-settings-input),
+.plugin-settings-field-control :deep(.plugin-settings-select),
 .plugin-settings-textarea {
-  width: min(100%, 320px);
+  width: var(--plugin-settings-control-width, min(100%, 320px));
+  max-width: 100%;
   min-width: 0;
+}
+
+.plugin-settings-textarea {
   border: 1px solid var(--plugin-settings-border, var(--control-border));
   border-radius: 8px;
   color: var(--color-text-main);
@@ -1644,10 +1668,56 @@ const selectPathForField = async (field: PluginSettingField) => {
     box-shadow 0.16s ease;
 }
 
-.plugin-settings-input,
-.plugin-settings-select {
+.plugin-settings-field-control :deep(.plugin-settings-input-field) {
   height: 34px;
   padding: 0 0.625rem;
+  border: 1px solid var(--plugin-settings-border, var(--control-border));
+  border-radius: 8px;
+  color: var(--color-text-main);
+  background: var(--plugin-settings-control-bg, var(--control-bg));
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  outline: none;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.plugin-settings-field-control :deep(.plugin-settings-input-field::placeholder) {
+  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
+  opacity: 1;
+}
+
+.plugin-settings-field-control :deep(.plugin-settings-input.input-number) {
+  height: 34px;
+  border-color: var(--plugin-settings-border, var(--control-border));
+  border-radius: 8px;
+  background: var(--plugin-settings-control-bg, var(--control-bg));
+}
+
+.plugin-settings-field-control :deep(.plugin-settings-input.input-number .input-number-field) {
+  height: 32px;
+  padding-left: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 32px;
+}
+
+.plugin-settings-field-control :deep(.plugin-settings-input.input-number .input-number-controls) {
+  width: 26px;
+}
+
+.plugin-settings-field-control :deep(.plugin-settings-select.echo-select-trigger) {
+  width: var(--plugin-settings-control-width, min(100%, 320px));
+  max-width: 100%;
+  height: 34px;
+  min-width: 0;
+  border-color: var(--plugin-settings-border, var(--control-border));
+  border-radius: 8px;
+  background: var(--plugin-settings-control-bg, var(--control-bg));
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .plugin-settings-textarea {
@@ -1657,20 +1727,35 @@ const selectPathForField = async (field: PluginSettingField) => {
   resize: vertical;
 }
 
-.plugin-settings-input:focus,
-.plugin-settings-select:focus,
+.plugin-settings-field-control :deep(.plugin-settings-input-field:focus),
+.plugin-settings-field-control :deep(.plugin-settings-input.input-number:focus-within),
+.plugin-settings-field-control
+  :deep(.plugin-settings-select.echo-select-trigger[data-state='open']),
 .plugin-settings-textarea:focus {
   border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
 .plugin-settings-slider {
-  width: min(100%, 320px);
+  width: var(--plugin-settings-control-width, min(100%, 320px));
+  min-width: min(180px, 100%);
+  max-width: 100%;
+}
+
+.plugin-settings-slider :deep(.slider-root) {
+  width: 100%;
+  min-width: 0;
 }
 
 .plugin-settings-slider :deep(.slider-track) {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 4px;
   background-color: var(--plugin-settings-slider-track-bg, var(--control-track-bg));
+}
+
+.plugin-settings-slider :deep(.slider-range) {
+  background-color: var(--color-primary);
 }
 
 .plugin-settings-slider :deep(.slider-thumb) {
@@ -1688,7 +1773,8 @@ const selectPathForField = async (field: PluginSettingField) => {
 }
 
 .plugin-settings-path-control {
-  width: min(100%, 360px);
+  width: var(--plugin-settings-path-control-width, min(100%, 360px));
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1726,12 +1812,21 @@ const selectPathForField = async (field: PluginSettingField) => {
     justify-content: flex-start;
   }
 
-  .plugin-settings-input,
-  .plugin-settings-select,
+  .plugin-settings-field-control :deep(.plugin-settings-input),
+  .plugin-settings-field-control :deep(.plugin-settings-select),
   .plugin-settings-textarea,
   .plugin-settings-slider,
   .plugin-settings-path-control {
     width: 100%;
+  }
+
+  .plugin-settings-field-control :deep(.plugin-settings-select.echo-select-trigger) {
+    width: 100%;
+  }
+
+  .plugin-settings-slider {
+    min-width: 0;
+    max-width: none;
   }
 }
 

@@ -252,8 +252,8 @@ onUnmounted(() => {
       <div class="lyric-blur-bg-overlay"></div>
     </div>
 
-    <!-- 头部（仅关闭按钮） -->
-    <OverlayHeader>
+    <!-- 头部窗口控件 -->
+    <OverlayHeader show-mini-player-control>
       <template #left>
         <Button
           variant="unstyled"
@@ -587,6 +587,11 @@ onUnmounted(() => {
 
 .lyric-page :deep(.overlay-control-btn:hover) {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.lyric-page :deep(.overlay-control-btn--mini:hover) {
+  background: transparent;
+  color: var(--color-primary);
 }
 
 .lyric-page :deep(.overlay-control-btn--close:hover) {

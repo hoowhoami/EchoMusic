@@ -117,16 +117,16 @@ watch(
     cancelLyricSettleTimer();
     const [previousIndex = -1, previousTrackId = null, wasVisible = false] = oldValue ?? [];
 
-    // 面板刚打开：进入稳定化阶段，延迟后定位一次（无动画），忽略中间的 index 变化
+    // 面板刚打开：先立即定位，再短延迟校准一次，避免刚展开时看起来慢半拍。
     if (!wasVisible) {
-      isStabilizing.value = true;
       cancelStabilizeTimer();
-      stabilizeTimer = setTimeout(async () => {
+      isStabilizing.value = false;
+      await nextTick();
+      positionActiveLyric(false);
+      stabilizeTimer = setTimeout(() => {
         stabilizeTimer = null;
-        isStabilizing.value = false;
-        await nextTick();
         positionActiveLyric(false);
-      }, 200);
+      }, 120);
       return;
     }
 

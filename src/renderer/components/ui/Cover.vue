@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { getCoverUrl } from '@/utils/cover';
+import { normalizeCoverUrl, resolveCoverDisplayUrl } from '@/utils/cover';
 import { iconMusic } from '@/icons';
 
 interface Props {
@@ -23,15 +23,32 @@ const props = withDefaults(defineProps<Props>(), {
   class: '',
 });
 
-const processedUrl = computed(() => getCoverUrl(props.url, props.size));
-
+const primaryUrl = computed(() => normalizeCoverUrl(props.url, props.size));
+const failedPrimaryUrl = ref('');
+const useFallback = ref(false);
 const status = ref<'loading' | 'success' | 'error'>('loading');
+const fallbackUrl = computed(() =>
+  resolveCoverDisplayUrl(props.url, props.size, {
+    reason: primaryUrl.value ? 'error' : 'empty',
+    scope: 'cover',
+    alt: props.alt,
+    failedUrl: failedPrimaryUrl.value,
+  }),
+);
+const processedUrl = computed(() => {
+  if (primaryUrl.value && !useFallback.value) return primaryUrl.value;
+  return fallbackUrl.value;
+});
+
+watch(primaryUrl, () => {
+  failedPrimaryUrl.value = '';
+  useFallback.value = false;
+});
 
 watch(
-  () => props.url,
+  processedUrl,
   (newUrl) => {
-    if (newUrl) status.value = 'loading';
-    else status.value = 'error';
+    status.value = newUrl ? 'loading' : 'error';
   },
   { immediate: true },
 );
@@ -41,6 +58,12 @@ const handleLoad = () => {
 };
 
 const handleError = () => {
+  if (primaryUrl.value && !useFallback.value) {
+    failedPrimaryUrl.value = primaryUrl.value;
+    useFallback.value = true;
+    status.value = 'loading';
+    return;
+  }
   status.value = 'error';
 };
 
@@ -75,7 +98,7 @@ const containerStyle = computed(() => {
 
     <!-- 2. 图片主体 -->
     <img
-      v-if="url || processedUrl"
+      v-if="processedUrl"
       :src="processedUrl"
       :alt="alt"
       loading="lazy"

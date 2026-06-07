@@ -667,6 +667,7 @@ export const registerMiniPlayerHandlers = () => {
         trackId: null,
         lines: [],
         currentIndex: -1,
+        timeOffset: 0,
         wantTranslation: false,
         wantRomanization: false,
         hasTranslation: false,
