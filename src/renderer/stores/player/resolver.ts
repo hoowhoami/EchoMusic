@@ -147,6 +147,17 @@ export const createResolver = (
       };
     }
 
+    // 如果歌曲已有 audioUrl（如 WebDAV 等外部音源），直接使用，不经过酷狗 API
+    if (track.audioUrl && track.source !== 'cloud') {
+      return {
+        url: track.audioUrl,
+        quality: null,
+        effect: 'none',
+        loudness: null,
+        timeLength: 0,
+      };
+    }
+
     const audioQuality = getEffectiveAudioQuality();
     const audioEffect = normalizeEffect(state.audioEffect);
     const compatibilityMode = settingStore.compatibilityMode ?? true;
