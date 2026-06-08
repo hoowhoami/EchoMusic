@@ -64,7 +64,7 @@ export const usePlayerStore = defineStore(
       state.currentResolvedAudioEffect = resolved.effect;
       track.audioUrl = resolved.url;
       const savedDuration = state.duration;
-      engine.setSource(resolved.url, { force: true });
+      engine.setSource(resolved.url);
       if (!state.duration && !engine.duration && savedDuration) state.duration = savedDuration;
       engine.applyTrackLoudness(resolved.loudness);
       engine.setPlaybackRate(state.playbackRate);
@@ -144,139 +144,6 @@ export const usePlayerStore = defineStore(
       clearPlaybackNotice,
     );
     let impulseResponseFailureListenerRegistered = false;
-    let playbackStallTimer: number | null = null;
-    let playbackStallChecking = false;
-    let playbackStallRecovering = false;
-    let playbackStallTrackId: string | null = null;
-    let playbackStallObservedTime = 0;
-    let playbackStallProgressAt = Date.now();
-    let playbackStallAttempts = 0;
-
-    const PLAYBACK_STALL_CHECK_MS = 2000;
-    const PLAYBACK_STALL_THRESHOLD_MS = 8000;
-    const PLAYBACK_STALL_RECOVERY_COOLDOWN_MS = 12000;
-    const PLAYBACK_STALL_PROGRESS_EPSILON = 0.15;
-    const MAX_PLAYBACK_STALL_RECOVERIES_PER_TRACK = 2;
-    let nextPlaybackStallRecoveryAt = 0;
-
-    const resetPlaybackStallSample = (time = state.currentTime) => {
-      playbackStallTrackId = state.currentTrackId;
-      playbackStallObservedTime = Number(time || 0);
-      playbackStallProgressAt = Date.now();
-    };
-
-    const notePlaybackProgress = (time: number) => {
-      const trackId = state.currentTrackId;
-      if (trackId !== playbackStallTrackId) {
-        playbackStallAttempts = 0;
-        resetPlaybackStallSample(time);
-        return;
-      }
-
-      const observedTime = Number(time || 0);
-      const jumpedBack = observedTime < playbackStallObservedTime - 1;
-      const movedForward =
-        observedTime > playbackStallObservedTime + PLAYBACK_STALL_PROGRESS_EPSILON;
-      if (jumpedBack || movedForward) {
-        playbackStallObservedTime = observedTime;
-        playbackStallProgressAt = Date.now();
-      }
-    };
-
-    const recoverPlaybackStall = async (reason: string, observedTime: number) => {
-      const now = Date.now();
-      if (
-        playbackStallRecovering ||
-        now < nextPlaybackStallRecoveryAt ||
-        playbackStallAttempts >= MAX_PLAYBACK_STALL_RECOVERIES_PER_TRACK ||
-        !state.currentTrackId ||
-        !state.currentAudioUrl
-      )
-        return;
-
-      playbackStallRecovering = true;
-      playbackStallAttempts += 1;
-      nextPlaybackStallRecoveryAt = now + PLAYBACK_STALL_RECOVERY_COOLDOWN_MS;
-
-      const resumeTime = Math.max(0, observedTime || state.currentTime || 0);
-      state.currentTime = resumeTime;
-      logger.warn('PlayerStore', 'Playback progress stalled, reloading current track', {
-        reason,
-        trackId: state.currentTrackId,
-        resumeTime,
-        attempt: playbackStallAttempts,
-      });
-
-      try {
-        await refreshCurrentTrack();
-      } catch (error) {
-        logger.warn('PlayerStore', 'Playback stall recovery failed', error);
-      } finally {
-        playbackStallRecovering = false;
-        resetPlaybackStallSample(resumeTime);
-      }
-    };
-
-    const registerPlaybackStallWatchdog = () => {
-      if (playbackStallTimer !== null) return;
-      resetPlaybackStallSample();
-      playbackStallTimer = window.setInterval(() => {
-        if (playbackStallChecking) return;
-        playbackStallChecking = true;
-        void (async () => {
-          try {
-            if (
-              !state.isPlaying ||
-              state.isLoading ||
-              !state.currentTrackId ||
-              !state.currentAudioUrl ||
-              Date.now() - state.seekTimestamp < 3000
-            ) {
-              resetPlaybackStallSample();
-              return;
-            }
-
-            const mpvState = await window.electron?.mpv?.getState?.();
-            if (!mpvState) {
-              resetPlaybackStallSample();
-              return;
-            }
-
-            if (state.currentTrackId !== playbackStallTrackId) {
-              playbackStallAttempts = 0;
-              resetPlaybackStallSample(mpvState.timePos || state.currentTime);
-              return;
-            }
-
-            const observedTime = Number(mpvState.timePos || state.currentTime || 0);
-            if (mpvState.duration > 0 && state.duration <= 0) state.duration = mpvState.duration;
-            notePlaybackProgress(observedTime);
-
-            const effectiveDuration =
-              mpvState.duration > 0 ? mpvState.duration : state.duration || 0;
-            const nearEnd =
-              effectiveDuration > 0 && observedTime >= Math.max(0, effectiveDuration - 3);
-            if (nearEnd) {
-              resetPlaybackStallSample(observedTime);
-              return;
-            }
-
-            if (observedTime > state.currentTime + 0.5) state.currentTime = observedTime;
-
-            const stalledFor = Date.now() - playbackStallProgressAt;
-            const mpvNotActuallyPlaying = !mpvState.playing || mpvState.paused || mpvState.idle;
-            if (mpvNotActuallyPlaying || stalledFor >= PLAYBACK_STALL_THRESHOLD_MS) {
-              await recoverPlaybackStall(
-                mpvNotActuallyPlaying ? 'mpv-not-playing' : 'time-not-advancing',
-                observedTime,
-              );
-            }
-          } finally {
-            playbackStallChecking = false;
-          }
-        })();
-      }, PLAYBACK_STALL_CHECK_MS);
-    };
 
     const toggleLyricView = (open?: boolean) => {
       state.isLyricViewOpen = open ?? !state.isLyricViewOpen;
@@ -422,7 +289,6 @@ export const usePlayerStore = defineStore(
           )
             return;
           state.seekTargetTime = null;
-          notePlaybackProgress(currentTime);
           state.currentTime = currentTime;
           const now = Date.now();
           if (now - lastHistoryCheck >= HISTORY_CHECK_MS) {
@@ -497,7 +363,6 @@ export const usePlayerStore = defineStore(
         if (mpvState.duration > 0) state.duration = mpvState.duration;
         if (mpvState.timePos > 0) state.currentTime = mpvState.timePos;
       });
-      registerPlaybackStallWatchdog();
     };
 
     const notifySeekStart = () => {

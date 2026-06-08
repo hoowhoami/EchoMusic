@@ -175,6 +175,8 @@ export interface IElectronAPI {
     list: () => Promise<PluginListResult>;
     getDirectory: () => Promise<string>;
     openDirectory: () => Promise<string>;
+    reloadRuntimes: () => Promise<void>;
+    onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;
     setSafeMode: (enabled: boolean) => Promise<PluginSetSafeModeResult>;
     uninstall: (pluginId: string) => Promise<PluginUninstallResult>;

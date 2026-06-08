@@ -2,7 +2,14 @@ import { app, shell } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'fs';
 import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'path';
 import { pathToFileURL } from 'url';
+import {
+  coerce as semverCoerce,
+  satisfies as semverSatisfies,
+  valid as semverValid,
+  validRange as semverValidRange,
+} from 'semver';
 import type {
+  EchoPluginCompatibility,
   EchoPluginDescriptor,
   EchoPluginManifest,
   PluginAssetSourceResult,
@@ -43,6 +50,7 @@ const PLUGIN_WINDOW_MIN_WIDTH = 180;
 const PLUGIN_WINDOW_MIN_HEIGHT = 48;
 const PLUGIN_WINDOW_MAX_WIDTH = 1400;
 const PLUGIN_WINDOW_MAX_HEIGHT = 900;
+const BARE_SEMVER_PATTERN = /^v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 type PluginEnabledState = Record<string, boolean>;
 type PluginRuntimeSession = {
@@ -149,6 +157,31 @@ const setLastFailure = (failure: PluginFailureRecord) => {
 export const getPluginLastFailure = () =>
   getKvStorage().get<PluginFailureRecord>(PLUGIN_LAST_FAILURE_KEY);
 
+const removePluginIdFromFailure = (
+  failure: PluginFailureRecord,
+  pluginId: string,
+): PluginFailureRecord | null => {
+  const normalizedPluginId = normalizePluginId(pluginId);
+  if (!normalizedPluginId) return failure;
+
+  const failurePluginIds = Array.from(
+    new Set(
+      [failure.pluginId, ...(failure.pluginIds ?? [])].map(normalizePluginId).filter(Boolean),
+    ),
+  );
+  if (!failurePluginIds.includes(normalizedPluginId)) return failure;
+
+  const remainingPluginIds = failurePluginIds.filter((id) => id !== normalizedPluginId);
+  if (remainingPluginIds.length === 0) return null;
+
+  return {
+    pluginIds: remainingPluginIds,
+    reason: failure.reason,
+    message: failure.message,
+    createdAt: failure.createdAt,
+  };
+};
+
 const recoverPreviousPluginCrash = () => {
   if (getPluginSafeMode()) return;
 
@@ -243,11 +276,11 @@ export const clearPluginFailureRecord = (pluginId?: string): PluginReportFailure
     return { ok: true };
   }
 
-  const failurePluginIds = new Set(
-    [failure.pluginId, ...(failure.pluginIds ?? [])].map(normalizePluginId).filter(Boolean),
-  );
-  if (failurePluginIds.has(normalizedPluginId)) {
+  const nextFailure = removePluginIdFromFailure(failure, normalizedPluginId);
+  if (!nextFailure) {
     getKvStorage().delete(PLUGIN_LAST_FAILURE_KEY);
+  } else if (nextFailure !== failure) {
+    setLastFailure(nextFailure);
   }
   return { ok: true };
 };
@@ -288,16 +321,9 @@ const isRemoteImageSource = (source: string) =>
 const isSupportedPluginImage = (source: string) =>
   isRemoteImageSource(source) || PLUGIN_IMAGE_EXTENSIONS.has(extname(source).toLowerCase());
 
-const getManifestImageSource = (manifest: EchoPluginManifest) => {
-  const contributes = manifest.contributes;
-  const image = contributes?.image;
-  if (typeof image === 'string' && isSupportedPluginImage(image.trim())) return image.trim();
-
-  const legacyIcon = contributes?.icon;
-  if (typeof legacyIcon === 'string' && isSupportedPluginImage(legacyIcon.trim())) {
-    return legacyIcon.trim();
-  }
-
+const getManifestIconSource = (manifest: EchoPluginManifest) => {
+  const icon = manifest.icon;
+  if (typeof icon === 'string' && isSupportedPluginImage(icon.trim())) return icon.trim();
   return '';
 };
 
@@ -419,11 +445,73 @@ const readManifest = (manifestPath: string): { manifest: EchoPluginManifest; err
   }
 };
 
+const getHostVersion = () =>
+  semverValid(app.getVersion()) ?? semverCoerce(app.getVersion())?.version ?? '';
+
+const normalizeEchoMusicVersionRequirement = (value: unknown) => {
+  const text = String(value ?? '').trim();
+  if (!text) return { range: '', error: '' };
+
+  if (BARE_SEMVER_PATTERN.test(text)) {
+    const version = semverValid(text) ?? semverCoerce(text)?.version;
+    return version
+      ? { range: `>=${version}`, error: '' }
+      : { range: '', error: `requires.echoMusicVersion 主程序版本要求无效: ${text}` };
+  }
+
+  const range = semverValidRange(text);
+  if (!range) return { range: '', error: `requires.echoMusicVersion 主程序版本范围无效: ${text}` };
+  return { range, error: '' };
+};
+
+const validateEchoMusicVersionRequirement = (manifest: EchoPluginManifest) => {
+  const requirement = manifest.requires?.echoMusicVersion;
+  if (!requirement) return '';
+
+  return normalizeEchoMusicVersionRequirement(requirement).error;
+};
+
+const getEchoMusicCompatibility = (manifest: EchoPluginManifest): EchoPluginCompatibility => {
+  const requirement = String(manifest.requires?.echoMusicVersion ?? '').trim();
+  const hostVersion = getHostVersion();
+
+  if (!requirement) {
+    return {
+      compatible: true,
+      currentEchoMusicVersion: hostVersion,
+      requiredEchoMusicVersion: '',
+      message: '',
+    };
+  }
+
+  const { range, error } = normalizeEchoMusicVersionRequirement(requirement);
+  if (error || !range || !hostVersion) {
+    return {
+      compatible: false,
+      currentEchoMusicVersion: hostVersion,
+      requiredEchoMusicVersion: requirement,
+      message: error || '无法确认当前 EchoMusic 版本',
+    };
+  }
+
+  const compatible = semverSatisfies(hostVersion, range, { includePrerelease: true });
+  return {
+    compatible,
+    currentEchoMusicVersion: hostVersion,
+    requiredEchoMusicVersion: range,
+    message: compatible
+      ? ''
+      : `版本不兼容：需要 EchoMusic 主程序 ${range}，当前版本 ${hostVersion}`,
+  };
+};
+
 const validateManifest = (manifest: EchoPluginManifest, manifestError: string) => {
   if (manifestError) return manifestError;
   if (!normalizePluginId(manifest.id)) return 'manifest.id 不能为空';
   if (!String(manifest.name ?? '').trim()) return 'manifest.name 不能为空';
   if (!String(manifest.version ?? '').trim()) return 'manifest.version 不能为空';
+  const versionRequirementError = validateEchoMusicVersionRequirement(manifest);
+  if (versionRequirementError) return versionRequirementError;
   return '';
 };
 
@@ -438,12 +526,11 @@ const toDescriptor = (
   const mainFile = resolvePluginFile(directory, manifest.main || 'index.js');
   const styleFile = manifest.style ? resolvePluginFile(directory, manifest.style) : '';
   const { windows, error: windowError } = normalizePluginWindowDescriptors(id, directory, manifest);
-  const imageSource = getManifestImageSource(manifest);
-  const imageFile =
-    imageSource && !isRemoteImageSource(imageSource)
-      ? resolvePluginFile(directory, imageSource)
-      : '';
+  const iconSource = getManifestIconSource(manifest);
+  const iconFile =
+    iconSource && !isRemoteImageSource(iconSource) ? resolvePluginFile(directory, iconSource) : '';
   const validationError = validateManifest(manifest, manifestError);
+  const compatibility = getEchoMusicCompatibility(manifest);
   const mainError = !validationError && mainFile && !existsSync(mainFile) ? '插件入口不存在' : '';
   const styleError =
     !validationError && styleFile && !existsSync(styleFile) ? '插件样式文件不存在' : '';
@@ -485,16 +572,17 @@ const toDescriptor = (
     manifestPath,
     mainFile,
     styleFile,
-    imageUrl:
-      imageFile && existsSync(imageFile)
-        ? pathToFileURL(imageFile).toString()
-        : isRemoteImageSource(imageSource)
-          ? imageSource
+    iconUrl:
+      iconFile && existsSync(iconFile)
+        ? pathToFileURL(iconFile).toString()
+        : isRemoteImageSource(iconSource)
+          ? iconSource
           : '',
     windows,
-    enabled: !invalid && Boolean(enabledState[id]),
+    enabled: !invalid && compatibility.compatible && Boolean(enabledState[id]),
     invalid,
     error,
+    compatibility,
     manifest: {
       ...manifest,
       id,
@@ -535,11 +623,16 @@ export const listPlugins = (): PluginListResult => {
 const findPlugin = (pluginId: string) =>
   listPlugins().plugins.find((plugin) => plugin.id === normalizePluginId(pluginId)) ?? null;
 
+const getPluginCompatibilityError = (plugin: EchoPluginDescriptor) =>
+  plugin.compatibility.compatible
+    ? ''
+    : plugin.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容';
+
 export const getPluginDescriptor = (pluginId: string) => findPlugin(pluginId);
 
 export const getPluginWindowDescriptor = (pluginId: string, windowId: string) => {
   const plugin = findPlugin(pluginId);
-  if (!plugin || plugin.invalid || !plugin.enabled) return null;
+  if (!plugin || plugin.invalid || !plugin.compatibility.compatible || !plugin.enabled) return null;
   const normalizedWindowId = normalizePluginId(windowId);
   return plugin.windows.find((item) => item.id === normalizedWindowId) ?? null;
 };
@@ -548,6 +641,10 @@ export const setPluginEnabled = (pluginId: string, enabled: boolean): PluginSetE
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
   if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  if (enabled) {
+    const compatibilityError = getPluginCompatibilityError(plugin);
+    if (compatibilityError) return { ok: false, error: compatibilityError };
+  }
 
   const nextState = getEnabledState();
   nextState[plugin.id] = Boolean(enabled);
@@ -564,6 +661,8 @@ export const readPluginTextAsset = (
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
   if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return { ok: false, error: compatibilityError };
   if (!plugin.enabled) return { ok: false, error: '插件未启用' };
 
   const filePath = asset === 'main' ? plugin.mainFile : plugin.styleFile;
@@ -601,6 +700,8 @@ export const readPluginWindowTextAsset = (
   const plugin = findPlugin(pluginId);
   if (!plugin) return { ok: false, error: '插件不存在' };
   if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  const compatibilityError = getPluginCompatibilityError(plugin);
+  if (compatibilityError) return { ok: false, error: compatibilityError };
   if (!plugin.enabled) return { ok: false, error: '插件未启用' };
 
   const descriptor = plugin.windows.find((item) => item.id === normalizePluginId(windowId));

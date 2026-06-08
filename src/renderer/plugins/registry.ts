@@ -24,6 +24,45 @@ export interface PluginPageContribution extends PluginOwnedContribution {
   order: number;
 }
 
+export type PluginSidebarSectionId = 'discover' | 'library' | 'plugins' | string;
+
+export interface PluginPageSidebarOptions {
+  id?: string;
+  title?: string;
+  icon?: PluginIcon;
+  section?: PluginSidebarSectionId;
+  sectionTitle?: string;
+  sectionOrder?: number;
+  collapsible?: boolean;
+  order?: number;
+  before?: string;
+  after?: string;
+  visible?: boolean | (() => boolean);
+  disabled?: boolean | (() => boolean);
+}
+
+export type PluginPageRegistration = Omit<PluginPageContribution, 'pluginId' | 'order'> & {
+  order?: number;
+  sidebar?: boolean | PluginPageSidebarOptions;
+};
+
+export interface PluginSidebarItemContribution extends PluginOwnedContribution {
+  title: string;
+  icon?: PluginIcon;
+  section: PluginSidebarSectionId;
+  sectionTitle?: string;
+  sectionOrder?: number;
+  collapsible?: boolean;
+  pageId?: string;
+  path?: string;
+  order: number;
+  before?: string;
+  after?: string;
+  visible?: boolean | (() => boolean);
+  disabled?: boolean | (() => boolean);
+  onClick?: () => void | Promise<void>;
+}
+
 export interface PluginSongContextMenuItem extends PluginOwnedContribution {
   label: string;
   order: number;
@@ -38,54 +77,10 @@ export interface PluginCommand extends PluginOwnedContribution {
   handler: (...args: unknown[]) => unknown;
 }
 
-export type PluginSettingValue = string | number | boolean | string[] | null;
-
-export type PluginSettingFieldType =
-  | 'text'
-  | 'textarea'
-  | 'number'
-  | 'slider'
-  | 'switch'
-  | 'select'
-  | 'file'
-  | 'directory';
-
-export interface PluginSettingOption {
-  label: string;
-  value: string | number | boolean;
-}
-
-export type PluginSettingControlWidth = number | string;
-
-export interface PluginSettingField {
-  key: string;
-  type: PluginSettingFieldType;
-  label: string;
-  description?: string;
-  placeholder?: string;
-  default?: PluginSettingValue;
-  unit?: string;
-  min?: number;
-  max?: number;
-  step?: number;
-  multiple?: boolean;
-  width?: PluginSettingControlWidth;
-  filters?: Array<{ name: string; extensions: string[] }>;
-  options?: PluginSettingOption[];
-}
-
-export interface PluginSettingSection {
-  id: string;
-  title?: string;
-  description?: string;
-  fields: PluginSettingField[];
-}
-
 export interface PluginSettingsContribution extends PluginOwnedContribution {
   title?: string;
   description?: string;
-  sections: PluginSettingSection[];
-  onChange?: (values: Record<string, PluginSettingValue>) => void | Promise<void>;
+  component: Component;
 }
 
 export interface PluginCoverFallbackContribution {
@@ -97,12 +92,14 @@ export type PluginCoverFallbackInput = CoverFallbackResolver | PluginCoverFallba
 
 export interface PluginUiRegistryState {
   pages: PluginPageContribution[];
+  sidebarItems: PluginSidebarItemContribution[];
   settings: PluginSettingsContribution[];
   commands: PluginCommand[];
 }
 
 export const pluginUiRegistry = reactive<PluginUiRegistryState>({
   pages: [],
+  sidebarItems: [],
   settings: [],
   commands: [],
 });
@@ -122,6 +119,7 @@ const sortByOrder = <T extends { order: number; title?: string; label?: string }
     );
 
 export const pluginPages = computed(() => sortByOrder(pluginUiRegistry.pages));
+export const pluginSidebarItems = computed(() => sortByOrder(pluginUiRegistry.sidebarItems));
 export const pluginSettingsContributions = computed(() =>
   pluginUiRegistry.settings
     .slice()
@@ -130,17 +128,6 @@ export const pluginSettingsContributions = computed(() =>
         left.pluginId.localeCompare(right.pluginId) || left.id.localeCompare(right.id),
     ),
 );
-
-const pluginSettingFieldTypes = new Set<PluginSettingFieldType>([
-  'text',
-  'textarea',
-  'number',
-  'slider',
-  'switch',
-  'select',
-  'file',
-  'directory',
-]);
 
 const removeContribution = <T extends PluginOwnedContribution>(
   list: T[],
@@ -160,77 +147,11 @@ const upsertContribution = <T extends PluginOwnedContribution>(
   return () => removeContribution(list, contribution.pluginId, contribution.id);
 };
 
-const normalizeSettingValue = (value: unknown): PluginSettingValue => {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map((item) => String(item));
-  return null;
-};
-
-const normalizeNumberOption = (value: unknown) =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-
-const normalizeSettingControlWidth = (value: unknown): string | undefined => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return `${Math.round(value)}px`;
-  }
-
-  if (typeof value !== 'string') return undefined;
-  const text = value.trim();
-  if (!text) return undefined;
-  if (text === 'full') return '100%';
-  if (/^\d+(\.\d+)?$/.test(text)) return `${text}px`;
-
-  return typeof CSS !== 'undefined' && CSS.supports('width', text) ? text : undefined;
-};
-
-const normalizeSettingField = (field: PluginSettingField): PluginSettingField => {
-  const rawType = String(field.type || 'text');
-  const type = pluginSettingFieldTypes.has(rawType as PluginSettingFieldType)
-    ? (rawType as PluginSettingFieldType)
-    : 'text';
-
-  return {
-    ...field,
-    type,
-    key: String(field.key || '').trim(),
-    label: String(field.label || field.key || '').trim(),
-    description: field.description ? String(field.description) : undefined,
-    placeholder: field.placeholder ? String(field.placeholder) : undefined,
-    default: normalizeSettingValue(field.default),
-    unit: field.unit ? String(field.unit) : undefined,
-    min: normalizeNumberOption(field.min),
-    max: normalizeNumberOption(field.max),
-    step: normalizeNumberOption(field.step),
-    multiple: Boolean(field.multiple),
-    width: normalizeSettingControlWidth(field.width),
-    filters: Array.isArray(field.filters)
-      ? field.filters
-          .map((filter) => ({
-            name: String(filter.name || 'Files'),
-            extensions: Array.isArray(filter.extensions)
-              ? filter.extensions.map((extension) => String(extension).replace(/^\./, ''))
-              : [],
-          }))
-          .filter((filter) => filter.extensions.length > 0)
-      : undefined,
-    options: Array.isArray(field.options)
-      ? field.options.map((option) => ({
-          label: String(option.label || option.value),
-          value:
-            typeof option.value === 'string' ||
-            typeof option.value === 'number' ||
-            typeof option.value === 'boolean'
-              ? option.value
-              : String(option.value ?? ''),
-        }))
-      : undefined,
-  };
-};
-
 export const removePluginContributions = (pluginId: string) => {
   pluginUiRegistry.pages = pluginUiRegistry.pages.filter((item) => item.pluginId !== pluginId);
+  pluginUiRegistry.sidebarItems = pluginUiRegistry.sidebarItems.filter(
+    (item) => item.pluginId !== pluginId,
+  );
   pluginUiRegistry.settings = pluginUiRegistry.settings.filter(
     (item) => item.pluginId !== pluginId,
   );
@@ -283,13 +204,62 @@ export const createPluginUiApi = (
   };
 
   return {
-    addPage(contribution: Omit<PluginPageContribution, 'pluginId' | 'order'> & { order?: number }) {
+    addPage(contribution: PluginPageRegistration) {
       const item = withOwner({
         ...contribution,
         component: markRaw(contribution.component),
       });
       const disposePage = upsertContribution(pluginUiRegistry.pages, item);
-      return add(disposePage);
+      const sidebar = contribution.sidebar;
+      if (!sidebar) return add(disposePage);
+
+      const sidebarOptions = typeof sidebar === 'object' ? sidebar : {};
+      const disposeSidebar = upsertContribution(pluginUiRegistry.sidebarItems, {
+        pluginId,
+        id: String(sidebarOptions.id || item.id).trim(),
+        title: String(sidebarOptions.title || item.title || item.id).trim(),
+        icon: sidebarOptions.icon ?? item.icon,
+        section: String(sidebarOptions.section || 'plugins').trim() || 'plugins',
+        sectionTitle: sidebarOptions.sectionTitle,
+        sectionOrder: sidebarOptions.sectionOrder,
+        collapsible: sidebarOptions.collapsible,
+        pageId: item.id,
+        order: Number(sidebarOptions.order ?? item.order),
+        before: sidebarOptions.before,
+        after: sidebarOptions.after,
+        visible: sidebarOptions.visible,
+        disabled: sidebarOptions.disabled,
+      });
+      return add(() => {
+        disposeSidebar();
+        disposePage();
+      });
+    },
+    sidebar: {
+      addItem(
+        contribution: Omit<
+          PluginSidebarItemContribution,
+          'pluginId' | 'id' | 'order' | 'section'
+        > & {
+          id?: string;
+          order?: number;
+          section?: PluginSidebarSectionId;
+        },
+      ) {
+        const id = String(contribution.id || contribution.pageId || '').trim();
+        if (!id) throw new Error('侧边栏入口 id 不能为空');
+        const item = withOwner({
+          ...contribution,
+          id,
+          title: String(contribution.title || id).trim(),
+          section: String(contribution.section || 'plugins').trim() || 'plugins',
+          pageId: contribution.pageId ? String(contribution.pageId).trim() : id,
+          path: contribution.path ? String(contribution.path).trim() : undefined,
+          order: contribution.order,
+        });
+        const dispose = upsertContribution(pluginUiRegistry.sidebarItems, item);
+        return add(dispose);
+      },
     },
     addSongContextMenuItem(
       contribution: Omit<PluginSongContextMenuItem, 'pluginId' | 'order'> & { order?: number },
@@ -338,31 +308,31 @@ export const createPluginUiApi = (
     },
     settings: {
       define(
-        contribution: Omit<PluginSettingsContribution, 'pluginId'> & {
+        contribution: Omit<PluginSettingsContribution, 'pluginId' | 'id'> & {
           id?: string;
         },
       ) {
-        const sections = (Array.isArray(contribution.sections) ? contribution.sections : [])
-          .map((section, index) => ({
-            ...section,
-            id: String(section.id || `section-${index + 1}`).trim(),
-            fields: (Array.isArray(section.fields) ? section.fields : [])
-              .map(normalizeSettingField)
-              .filter((field) => field.key && field.label),
-          }))
-          .filter((section) => section.id && section.fields.length > 0);
+        const rawContribution = contribution as Record<string, unknown>;
+        if (
+          'sections' in rawContribution ||
+          'fields' in rawContribution ||
+          'onChange' in rawContribution
+        ) {
+          throw new Error(
+            'ctx.ui.settings.define 已移除 sections/fields/onChange 设置方式，请提供 component',
+          );
+        }
+
+        if (!contribution.component) {
+          throw new Error('ctx.ui.settings.define 需要提供 component');
+        }
 
         const item: PluginSettingsContribution = {
           pluginId,
           id: String(contribution.id || 'default').trim(),
           title: contribution.title,
           description: contribution.description,
-          sections,
-          onChange: contribution.onChange
-            ? async (values) => {
-                await contribution.onChange?.(values);
-              }
-            : undefined,
+          component: markRaw(contribution.component),
         };
         const dispose = upsertContribution(pluginUiRegistry.settings, item);
         return add(dispose);

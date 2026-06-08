@@ -36,6 +36,8 @@ import type { PlaylistSortOrder } from '@/stores/playlist';
 import { useUserStore } from '@/stores/user';
 import { useToastStore } from '@/stores/toast';
 import { useSettingStore } from '@/stores/setting';
+import PluginIcon from '@/plugins/PluginIcon.vue';
+import { pluginSidebarItems, type PluginIcon as PluginIconValue } from '@/plugins/registry';
 defineOptions({
   inheritAttrs: false,
 });
@@ -95,7 +97,10 @@ interface SidebarMenuItem {
   title: string;
   order: number;
   path?: string;
+  pluginId?: string;
+  pageId?: string;
   builtinIcon?: BuiltinSidebarIcon;
+  pluginIcon?: PluginIconValue;
   before?: string;
   after?: string;
   disabled?: boolean | (() => boolean);
@@ -180,6 +185,56 @@ const builtinSidebarSections = [
   },
 ] satisfies SidebarSection[];
 
+const getPluginPagePath = (pluginId: string, pageId: string) =>
+  `/main/plugin/${encodeURIComponent(pluginId)}/${encodeURIComponent(pageId)}`;
+
+const pluginSidebarSections = computed<SidebarSection[]>(() => {
+  const sections = new Map<string, SidebarSection>();
+
+  for (const contribution of pluginSidebarItems.value) {
+    const sectionId = String(contribution.section || 'plugins').trim() || 'plugins';
+    const pageId = String(contribution.pageId || contribution.id).trim();
+    const path =
+      contribution.path || (pageId ? getPluginPagePath(contribution.pluginId, pageId) : '');
+    let section = sections.get(sectionId);
+    if (!section) {
+      section = {
+        id: sectionId,
+        title:
+          contribution.sectionTitle || (sectionId === 'plugins' ? '插件' : contribution.section),
+        order: Number(contribution.sectionOrder ?? 300),
+        collapsible: contribution.collapsible !== false,
+        items: [],
+      };
+      sections.set(sectionId, section);
+    } else {
+      if (contribution.sectionTitle) section.title = contribution.sectionTitle;
+      if (contribution.sectionOrder !== undefined) {
+        section.order = Math.min(section.order, Number(contribution.sectionOrder));
+      }
+      if (contribution.collapsible === false) section.collapsible = false;
+    }
+
+    section.items.push({
+      id: contribution.id,
+      key: `plugin:${contribution.pluginId}:${contribution.id}`,
+      title: contribution.title,
+      order: contribution.order,
+      path,
+      pluginId: contribution.pluginId,
+      pageId,
+      pluginIcon: contribution.icon,
+      before: contribution.before,
+      after: contribution.after,
+      disabled: contribution.disabled,
+      visible: contribution.visible,
+      onClick: contribution.onClick,
+    });
+  }
+
+  return Array.from(sections.values());
+});
+
 const sortMenuItems = (items: SidebarMenuItem[]) => {
   const sorted = items
     .slice()
@@ -229,7 +284,24 @@ const resolveFlag = (value?: boolean | (() => boolean), fallback = false) => {
 };
 
 const allMenuGroups = computed(() => {
-  return builtinSidebarSections
+  const sections = new Map<string, SidebarSection>();
+  for (const section of builtinSidebarSections) {
+    sections.set(section.id, {
+      ...section,
+      items: [...section.items],
+    });
+  }
+
+  for (const section of pluginSidebarSections.value) {
+    const existing = sections.get(section.id);
+    if (existing) {
+      existing.items.push(...section.items);
+      continue;
+    }
+    sections.set(section.id, section);
+  }
+
+  return Array.from(sections.values())
     .map((section) => ({
       ...section,
       items: sortMenuItems(section.items).filter((item) => resolveFlag(item.visible, true)),
@@ -526,6 +598,12 @@ const handleMenuClick = async (item: SidebarMenuItem) => {
 };
 
 const isMenuItemActive = (item: SidebarMenuItem) => {
+  if (item.pluginId && item.pageId && route.name === 'plugin-page') {
+    return (
+      String(route.params.pluginId ?? '') === item.pluginId &&
+      String(route.params.pageId ?? '') === item.pageId
+    );
+  }
   return Boolean(item.path && route.path === item.path);
 };
 
@@ -639,6 +717,12 @@ watch(
                   <Icon
                     v-if="item.builtinIcon"
                     :icon="iconMap[item.builtinIcon]"
+                    width="19"
+                    height="19"
+                  />
+                  <PluginIcon
+                    v-else-if="item.pluginId"
+                    :icon="item.pluginIcon"
                     width="19"
                     height="19"
                   />
@@ -941,6 +1025,19 @@ watch(
                     <Icon
                       v-if="item.builtinIcon"
                       :icon="iconMap[item.builtinIcon]"
+                      width="18"
+                      height="18"
+                      :class="[
+                        isMenuItemDisabled(item)
+                          ? 'text-text-main opacity-40'
+                          : isMenuItemActive(item)
+                            ? 'text-primary'
+                            : 'text-text-main opacity-60 group-hover:opacity-100',
+                      ]"
+                    />
+                    <PluginIcon
+                      v-else-if="item.pluginId"
+                      :icon="item.pluginIcon"
                       width="18"
                       height="18"
                       :class="[

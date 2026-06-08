@@ -378,6 +378,12 @@ contextBridge.exposeInMainWorld('electron', {
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
     getDirectory: () => ipcRenderer.invoke('plugins:get-directory') as Promise<string>,
     openDirectory: () => ipcRenderer.invoke('plugins:open-directory') as Promise<string>,
+    reloadRuntimes: () => ipcRenderer.invoke('plugins:runtime-reload') as Promise<void>,
+    onRuntimeReloadRequested: (func: () => void) => {
+      const listener = () => func();
+      ipcRenderer.on('plugins:runtime-reload-requested', listener);
+      return () => ipcRenderer.removeListener('plugins:runtime-reload-requested', listener);
+    },
     setEnabled: (pluginId: string, enabled: boolean) =>
       ipcRenderer.invoke(
         'plugins:set-enabled',

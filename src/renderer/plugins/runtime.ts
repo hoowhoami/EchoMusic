@@ -22,10 +22,8 @@ import { logger } from '@/utils/logger';
 import {
   createPluginUiApi,
   executePluginCommand,
-  pluginSettingsContributions,
   registerPluginCommand,
   removePluginContributions,
-  type PluginSettingValue,
 } from './registry';
 import type { Component } from 'vue';
 
@@ -624,6 +622,25 @@ const getFailurePluginIds = (failure: PluginFailureRecord | null) =>
 const isLastFailureForPlugin = (pluginId: string) =>
   getFailurePluginIds(pluginRuntimeState.lastFailure).has(pluginId);
 
+const removePluginIdFromFailure = (
+  failure: PluginFailureRecord | null,
+  pluginId: string,
+): PluginFailureRecord | null => {
+  if (!failure) return null;
+  const pluginIds = Array.from(getFailurePluginIds(failure));
+  if (!pluginIds.includes(pluginId)) return failure;
+
+  const remainingPluginIds = pluginIds.filter((id) => id !== pluginId);
+  if (remainingPluginIds.length === 0) return null;
+
+  return {
+    pluginIds: remainingPluginIds,
+    reason: failure.reason,
+    message: failure.message,
+    createdAt: failure.createdAt,
+  };
+};
+
 const clearCurrentPluginFailure = (pluginId: string) => {
   delete pluginRuntimeState.failures[pluginId];
 };
@@ -1035,7 +1052,9 @@ const activatePlugin = async (descriptor: EchoPluginDescriptor, host: PluginRunt
   }
 };
 
-export const refreshPlugins = async (options: { miniPlayer?: boolean } = {}) => {
+export const refreshPlugins = async (
+  options: { miniPlayer?: boolean; desktopLyric?: boolean; reloadActive?: boolean } = {},
+) => {
   pluginRuntimeState.loading = true;
   try {
     const result: PluginListResult | undefined = await window.electron.plugins?.list();
@@ -1045,8 +1064,11 @@ export const refreshPlugins = async (options: { miniPlayer?: boolean } = {}) => 
     const descriptors = result?.plugins ?? [];
     const nextIds = new Set(descriptors.map((plugin) => plugin.id));
     const isRuntimeEligible = (descriptor: EchoPluginDescriptor) => {
-      if (!descriptor.enabled || descriptor.invalid) return false;
-      if (options.miniPlayer) return descriptor.manifest.contributes?.runInMiniPlayer === true;
+      if (!descriptor.enabled || descriptor.invalid || !descriptor.compatibility.compatible) {
+        return false;
+      }
+      if (options.miniPlayer) return descriptor.manifest.runtime?.miniPlayer === true;
+      if (options.desktopLyric) return descriptor.manifest.runtime?.desktopLyric === true;
       return true;
     };
 
@@ -1056,7 +1078,8 @@ export const refreshPlugins = async (options: { miniPlayer?: boolean } = {}) => 
         pluginRuntimeState.safeMode ||
         !nextIds.has(pluginId) ||
         !descriptor ||
-        !isRuntimeEligible(descriptor)
+        !isRuntimeEligible(descriptor) ||
+        options.reloadActive
       ) {
         await deactivatePlugin(pluginId);
       }
@@ -1120,7 +1143,10 @@ export const clearRuntimePluginFailure = async (pluginId: string) => {
     if (!result?.ok) {
       throw new Error('插件异常记录清除失败');
     }
-    pluginRuntimeState.lastFailure = null;
+    pluginRuntimeState.lastFailure = removePluginIdFromFailure(
+      pluginRuntimeState.lastFailure,
+      pluginId,
+    );
   }
   clearCurrentPluginFailure(pluginId);
   clearRecordFailure(pluginId);
@@ -1137,6 +1163,12 @@ export const uninstallRuntimePlugin = async (pluginId: string) => {
 };
 
 export const openPluginDirectory = () => window.electron.plugins?.openDirectory();
+
+export const reloadOtherPluginRuntimes = () =>
+  window.electron.plugins?.reloadRuntimes() ?? Promise.resolve();
+
+export const onPluginRuntimeReloadRequested = (handler: () => void) =>
+  window.electron.plugins?.onRuntimeReloadRequested(handler) ?? (() => {});
 
 export const installPluginRuntime = (host: PluginRuntimeHost) => {
   hostRef = host;
@@ -1166,20 +1198,3 @@ export const installPluginRuntime = (host: PluginRuntimeHost) => {
 };
 
 export const getActivePluginIds = () => Array.from(activePlugins.keys());
-
-export const getRuntimePluginSettingsContribution = (pluginId: string) =>
-  pluginSettingsContributions.value.find((item) => item.pluginId === pluginId) ?? null;
-
-export const notifyRuntimePluginSettingsChanged = async (
-  pluginId: string,
-  values: Record<string, PluginSettingValue>,
-) => {
-  const contribution = getRuntimePluginSettingsContribution(pluginId);
-  if (!contribution?.onChange) return;
-  try {
-    await contribution.onChange(values);
-  } catch (error) {
-    await reportPluginRuntimeError(pluginId, error, '插件设置变更');
-    throw error;
-  }
-};

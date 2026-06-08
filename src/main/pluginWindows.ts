@@ -269,8 +269,16 @@ export const showPluginWindow = async (
   windowId: string,
   options: PluginWindowShowOptions = {},
 ): Promise<PluginWindowResult> => {
+  const plugin = getPluginDescriptor(pluginId);
+  if (!plugin) return { ok: false, error: '插件不存在' };
+  if (plugin.invalid) return { ok: false, error: plugin.error || '插件无效' };
+  if (!plugin.compatibility.compatible) {
+    return { ok: false, error: plugin.compatibility.message || '插件版本不兼容' };
+  }
+  if (!plugin.enabled) return { ok: false, error: '插件未启用' };
+
   const descriptor = getPluginWindowDescriptor(pluginId, windowId);
-  if (!descriptor) return { ok: false, error: '插件窗口不存在或插件未启用' };
+  if (!descriptor) return { ok: false, error: '插件窗口不存在' };
 
   let record = getRecord(descriptor.pluginId, descriptor.id);
   if (!record || !canUseWindow(record.window)) {
@@ -363,6 +371,12 @@ export const getPluginWindowContext = (pluginId: string, windowId: string) => {
   const plugin = getPluginDescriptor(pluginId);
   if (!plugin) return { ok: false as const, error: '插件不存在' };
   if (plugin.invalid) return { ok: false as const, error: plugin.error || '插件无效' };
+  if (!plugin.compatibility.compatible) {
+    return {
+      ok: false as const,
+      error: plugin.compatibility.message || '插件版本不兼容',
+    };
+  }
   if (!plugin.enabled) return { ok: false as const, error: '插件未启用' };
   const windowDescriptor =
     plugin.windows.find((item) => item.id === normalizePluginId(windowId)) ?? null;

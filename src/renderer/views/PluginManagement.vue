@@ -3,10 +3,6 @@ import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
-import Input from '@/components/ui/Input.vue';
-import InputNumber from '@/components/ui/InputNumber.vue';
-import Select from '@/components/ui/Select.vue';
-import Slider from '@/components/ui/Slider.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import {
@@ -19,39 +15,29 @@ import {
 } from '@/icons';
 import {
   clearRuntimePluginFailure,
-  notifyRuntimePluginSettingsChanged,
   uninstallRuntimePlugin,
   openPluginDirectory,
   pluginRuntimeState,
+  reloadOtherPluginRuntimes,
   refreshPlugins,
   setRuntimePluginEnabled,
   setRuntimePluginSafeMode,
   type PluginRuntimeFailureDetail,
 } from '@/plugins/runtime';
-import {
-  pluginSettingsContributions,
-  type PluginSettingField,
-  type PluginSettingOption,
-  type PluginSettingsContribution,
-  type PluginSettingValue,
-} from '@/plugins/registry';
+import { pluginSettingsContributions } from '@/plugins/registry';
 import { useToastStore } from '@/stores/toast';
-import type { PluginFailureRecord, PluginOpenDialogOptions } from '../../shared/plugins';
+import type { PluginFailureRecord } from '../../shared/plugins';
 
 const toastStore = useToastStore();
 const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
-const isSettingsLoading = ref(false);
-const isSettingsSaving = ref(false);
 const isClearingFailure = ref(false);
 const pendingUninstallPluginId = ref('');
 const settingsPluginId = ref('');
 const failureDetailPluginId = ref('');
-const settingsDraft = ref<Record<string, PluginSettingValue>>({});
 const busyPluginIds = ref<Set<string>>(new Set());
-const failedPluginImageIds = ref<Set<string>>(new Set());
-const pluginSettingsStorageKey = 'settings';
+const failedPluginIconIds = ref<Set<string>>(new Set());
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -106,10 +92,7 @@ const showUninstallDialog = computed({
 const showSettingsDialog = computed({
   get: () => Boolean(settingsPluginId.value),
   set: (open: boolean) => {
-    if (!open && !isSettingsSaving.value) {
-      settingsPluginId.value = '';
-      settingsDraft.value = {};
-    }
+    if (!open) settingsPluginId.value = '';
   },
 });
 const showFailureDetailDialog = computed({
@@ -128,6 +111,7 @@ const failureReasonLabels: Record<PluginFailureRecord['reason'], string> = {
 const pluginCardFailureReasonLabels = {
   ...failureReasonLabels,
   invalid: '插件无效',
+  incompatible: '版本不兼容',
   record: '插件异常',
 } as const;
 
@@ -175,7 +159,8 @@ const refresh = async () => {
   if (isRefreshing.value) return;
   isRefreshing.value = true;
   try {
-    await refreshPlugins();
+    await refreshPlugins({ reloadActive: true });
+    await reloadOtherPluginRuntimes();
     toastStore.actionCompleted('插件已刷新');
   } catch {
     toastStore.actionFailed('刷新插件');
@@ -249,6 +234,7 @@ const confirmUninstallPlugin = async () => {
 
 const getStatusLabel = (record: (typeof records.value)[number]) => {
   if (record.descriptor.invalid) return '无效';
+  if (!record.descriptor.compatibility.compatible) return '不兼容';
   if (getCurrentPluginCardFailure(record)) return record.status === 'error' ? '出错' : '异常';
   if (!record.descriptor.enabled) return '已停用';
   if (pluginRuntimeState.safeMode && record.descriptor.enabled) return '安全模式';
@@ -265,15 +251,15 @@ const getPluginInitial = (record: (typeof records.value)[number]) => {
   return Array.from(source.trim())[0]?.toUpperCase() ?? 'E';
 };
 
-const getPluginImageUrl = (record: (typeof records.value)[number]) => {
-  if (failedPluginImageIds.value.has(record.descriptor.id)) return '';
-  return record.descriptor.imageUrl || '';
+const getPluginIconUrl = (record: (typeof records.value)[number]) => {
+  if (failedPluginIconIds.value.has(record.descriptor.id)) return '';
+  return record.descriptor.iconUrl || '';
 };
 
-const markPluginImageFailed = (pluginId: string) => {
-  const next = new Set(failedPluginImageIds.value);
+const markPluginIconFailed = (pluginId: string) => {
+  const next = new Set(failedPluginIconIds.value);
   next.add(pluginId);
-  failedPluginImageIds.value = next;
+  failedPluginIconIds.value = next;
 };
 
 const getPluginAccentStyle = (pluginId: string) => {
@@ -333,6 +319,17 @@ const getCurrentPluginCardFailure = (
     };
   }
 
+  if (!record.descriptor.compatibility.compatible) {
+    return {
+      pluginId,
+      reason: 'incompatible',
+      source: '版本兼容性',
+      message: record.descriptor.compatibility.message || '插件与当前 EchoMusic 主程序版本不兼容',
+      stack: '',
+      createdAt: 0,
+    };
+  }
+
   if (record.status === 'error' && record.error) {
     return {
       pluginId,
@@ -376,7 +373,10 @@ const activeFailureTitle = computed(() => {
 });
 
 const canClearActiveFailureDetail = computed(
-  () => Boolean(activeFailureDetail.value) && activeFailureDetail.value?.reason !== 'invalid',
+  () =>
+    Boolean(activeFailureDetail.value) &&
+    activeFailureDetail.value?.reason !== 'invalid' &&
+    activeFailureDetail.value?.reason !== 'incompatible',
 );
 
 const openPluginFailureDetail = (pluginId: string) => {
@@ -405,25 +405,33 @@ const getSettingsContribution = (pluginId: string) =>
 const getPluginSettingsButtonTitle = (record: (typeof records.value)[number]) => {
   if (getSettingsContribution(record.descriptor.id)) return '打开插件设置';
   if (record.descriptor.invalid) return '插件无效，无法读取设置';
+  if (!record.descriptor.compatibility.compatible)
+    return '插件与当前主程序版本不兼容，无法加载设置';
   if (!record.descriptor.enabled) return '启用插件后可读取设置项';
   if (pluginRuntimeState.safeMode) return '安全模式下不会加载插件设置';
   if (record.status !== 'active') return '插件运行后可读取设置项';
   return '该插件没有提供设置项';
 };
 
-const requestOpenPluginSettings = async (record: (typeof records.value)[number]) => {
+const openPluginSettings = (pluginId: string) => {
+  if (getSettingsContribution(pluginId)) settingsPluginId.value = pluginId;
+};
+
+const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   const pluginId = record.descriptor.id;
   if (getSettingsContribution(pluginId)) {
-    try {
-      await openPluginSettings(pluginId);
-    } catch (error) {
-      toastStore.warning(error instanceof Error ? error.message : '插件设置打开失败');
-    }
+    openPluginSettings(pluginId);
     return;
   }
 
   if (record.descriptor.invalid) {
     toastStore.warning('插件无效，无法读取设置');
+    return;
+  }
+  if (!record.descriptor.compatibility.compatible) {
+    toastStore.warning(
+      record.descriptor.compatibility.message || '插件与当前主程序版本不兼容，无法加载设置',
+    );
     return;
   }
   if (!record.descriptor.enabled) {
@@ -439,247 +447,6 @@ const requestOpenPluginSettings = async (record: (typeof records.value)[number])
     return;
   }
   toastStore.info('该插件没有提供设置项');
-};
-
-const cloneSettingValue = (value: PluginSettingValue): PluginSettingValue =>
-  Array.isArray(value) ? [...value] : value;
-
-const getFallbackSettingValue = (field: PluginSettingField): PluginSettingValue => {
-  if (field.default !== null && field.default !== undefined)
-    return cloneSettingValue(field.default);
-  if (field.type === 'switch') return false;
-  if (field.type === 'number' || field.type === 'slider') return field.min ?? 0;
-  if (field.type === 'file') return field.multiple ? [] : '';
-  if (field.type === 'select') return field.options?.[0]?.value ?? '';
-  return '';
-};
-
-const getSettingsFields = (contribution: PluginSettingsContribution) =>
-  contribution.sections.flatMap((section) => section.fields);
-
-const coerceSettingValue = (
-  field: PluginSettingField,
-  value: unknown,
-  fallback = getFallbackSettingValue(field),
-): PluginSettingValue => {
-  if (field.type === 'switch') return Boolean(value);
-
-  if (field.type === 'number' || field.type === 'slider') {
-    const next = Number(value);
-    if (!Number.isFinite(next)) return fallback;
-    const min = field.min ?? -Infinity;
-    const max = field.max ?? Infinity;
-    return Math.max(min, Math.min(max, next));
-  }
-
-  if (field.type === 'file') {
-    if (field.multiple) {
-      return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
-    }
-    return typeof value === 'string' ? value : '';
-  }
-
-  if (field.type === 'directory' || field.type === 'text' || field.type === 'textarea') {
-    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-      ? String(value)
-      : '';
-  }
-
-  if (field.type === 'select') {
-    const matched = field.options?.find(
-      (option) => Object.is(option.value, value) || String(option.value) === String(value ?? ''),
-    );
-    return matched?.value ?? fallback;
-  }
-
-  return fallback;
-};
-
-const buildDefaultSettings = (contribution: PluginSettingsContribution) =>
-  Object.fromEntries(
-    getSettingsFields(contribution).map((field) => [field.key, getFallbackSettingValue(field)]),
-  ) as Record<string, PluginSettingValue>;
-
-const buildSettingsDraft = (
-  contribution: PluginSettingsContribution,
-  saved: Record<string, unknown> | null,
-) => {
-  const defaults = buildDefaultSettings(contribution);
-  for (const field of getSettingsFields(contribution)) {
-    if (!saved || !Object.hasOwn(saved, field.key)) continue;
-    defaults[field.key] = coerceSettingValue(field, saved[field.key], defaults[field.key]);
-  }
-  return defaults;
-};
-
-const getSerializableSettingsDraft = (contribution: PluginSettingsContribution) => {
-  const result = buildDefaultSettings(contribution);
-  for (const field of getSettingsFields(contribution)) {
-    result[field.key] = coerceSettingValue(
-      field,
-      settingsDraft.value[field.key],
-      result[field.key],
-    );
-  }
-  return result;
-};
-
-const openPluginSettings = async (pluginId: string) => {
-  const contribution = getSettingsContribution(pluginId);
-  if (!contribution || isSettingsLoading.value) return;
-
-  settingsPluginId.value = pluginId;
-  isSettingsLoading.value = true;
-  try {
-    const saved =
-      (await window.electron.plugins?.storage.get<Record<string, unknown>>(
-        pluginId,
-        pluginSettingsStorageKey,
-      )) ?? null;
-    settingsDraft.value = buildSettingsDraft(contribution, saved);
-  } catch {
-    settingsDraft.value = buildSettingsDraft(contribution, null);
-    toastStore.actionFailed('读取插件设置');
-  } finally {
-    isSettingsLoading.value = false;
-  }
-};
-
-const updateSettingDraft = (field: PluginSettingField, value: unknown) => {
-  settingsDraft.value = {
-    ...settingsDraft.value,
-    [field.key]: coerceSettingValue(field, value),
-  };
-};
-
-const updateTextField = (field: PluginSettingField, event: Event) => {
-  updateSettingDraft(field, (event.target as HTMLInputElement | HTMLTextAreaElement).value);
-};
-
-const resetSettingsDraft = () => {
-  const contribution = activeSettingsContribution.value;
-  if (!contribution) return;
-  settingsDraft.value = buildDefaultSettings(contribution);
-};
-
-const savePluginSettings = async () => {
-  const pluginId = settingsPluginId.value;
-  const contribution = activeSettingsContribution.value;
-  if (!pluginId || !contribution || isSettingsSaving.value) return;
-
-  isSettingsSaving.value = true;
-  const nextSettings = getSerializableSettingsDraft(contribution);
-  try {
-    const result = await window.electron.plugins?.storage.set(
-      pluginId,
-      pluginSettingsStorageKey,
-      nextSettings,
-    );
-    if (result && !result.ok) throw new Error('插件设置保存失败');
-    await notifyRuntimePluginSettingsChanged(pluginId, nextSettings);
-    settingsDraft.value = nextSettings;
-    toastStore.actionCompleted('插件设置已保存');
-    showSettingsDialog.value = false;
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '插件设置保存失败');
-  } finally {
-    isSettingsSaving.value = false;
-  }
-};
-
-const getFieldStringValue = (field: PluginSettingField) =>
-  String(settingsDraft.value[field.key] ?? '');
-
-const getFieldNumberValue = (field: PluginSettingField) => {
-  const value = Number(settingsDraft.value[field.key]);
-  if (Number.isFinite(value)) return value;
-  const fallback = getFallbackSettingValue(field);
-  return typeof fallback === 'number' ? fallback : (field.min ?? 0);
-};
-
-const getSettingControlStyle = (field: PluginSettingField) => {
-  if (!field.width) return undefined;
-  const width = typeof field.width === 'number' ? `${field.width}px` : String(field.width);
-  return {
-    '--plugin-settings-control-width': width,
-    '--plugin-settings-path-control-width': width,
-  };
-};
-
-const getSelectOptionKey = (option: PluginSettingOption, index: number) =>
-  `${index}:${typeof option.value}:${String(option.value)}`;
-
-const getSelectOptions = (field: PluginSettingField) =>
-  (field.options ?? []).map((option, index) => ({
-    label: option.label,
-    value: getSelectOptionKey(option, index),
-  }));
-
-const getSelectedOptionKey = (field: PluginSettingField) => {
-  const value = settingsDraft.value[field.key];
-  const index =
-    field.options?.findIndex(
-      (option) => Object.is(option.value, value) || String(option.value) === String(value ?? ''),
-    ) ?? -1;
-  if (index < 0 || !field.options) return '';
-  return getSelectOptionKey(field.options[index], index);
-};
-
-const updateSelectField = (
-  field: PluginSettingField,
-  value: string | number | Array<string | number>,
-) => {
-  const rawValue = Array.isArray(value) ? value[0] : value;
-  const optionIndex = Number(String(rawValue ?? '').split(':')[0]);
-  const option = field.options?.[optionIndex];
-  if (!option) return;
-  updateSettingDraft(field, option.value);
-};
-
-const getPathValues = (field: PluginSettingField) => {
-  const value = settingsDraft.value[field.key];
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string' && value) return [value];
-  return [];
-};
-
-const getPathLabel = (field: PluginSettingField) => {
-  const values = getPathValues(field);
-  if (values.length === 0) return field.type === 'directory' ? '未选择文件夹' : '未选择文件';
-  if (field.multiple) return `已选择 ${values.length} 个文件`;
-  return values[0];
-};
-
-const clearPathField = (field: PluginSettingField) => {
-  updateSettingDraft(field, field.multiple ? [] : '');
-};
-
-const buildPathDialogOptions = (field: PluginSettingField): PluginOpenDialogOptions => ({
-  title: String(field.label ?? ''),
-  buttonLabel: '选择',
-  multiple: Boolean(field.multiple),
-  filters: Array.isArray(field.filters)
-    ? field.filters.map((filter) => ({
-        name: String(filter?.name || 'Files'),
-        extensions: Array.isArray(filter?.extensions)
-          ? filter.extensions.map((extension) => String(extension).replace(/^\./, ''))
-          : ['*'],
-      }))
-    : undefined,
-});
-
-const selectPathForField = async (field: PluginSettingField) => {
-  try {
-    const options = buildPathDialogOptions(field);
-    const result =
-      field.type === 'directory'
-        ? await window.electron.plugins?.dialog.selectDirectory(options)
-        : await window.electron.plugins?.dialog.selectFiles(options);
-    if (!result || result.canceled || result.paths.length === 0) return;
-    updateSettingDraft(field, field.multiple ? result.paths : result.paths[0]);
-  } catch (error) {
-    toastStore.warning(error instanceof Error ? error.message : '选择路径失败');
-  }
 };
 </script>
 
@@ -772,22 +539,28 @@ const selectPathForField = async (field: PluginSettingField) => {
               :key="record.descriptor.id"
               class="plugin-card"
               :class="{
-                'is-disabled': !record.descriptor.enabled || record.descriptor.invalid,
-                'is-error': hasCurrentPluginCardFailure(record),
+                'is-disabled':
+                  !record.descriptor.enabled ||
+                  record.descriptor.invalid ||
+                  !record.descriptor.compatibility.compatible,
+                'is-error':
+                  hasCurrentPluginCardFailure(record) &&
+                  getPluginCardFailure(record)?.reason !== 'incompatible',
+                'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
               }"
             >
               <div class="plugin-card-main">
                 <div
                   class="plugin-card-media"
-                  :class="{ 'has-image': getPluginImageUrl(record) }"
+                  :class="{ 'has-icon': getPluginIconUrl(record) }"
                   :style="getPluginAccentStyle(record.descriptor.id)"
                 >
                   <img
-                    v-if="getPluginImageUrl(record)"
-                    :src="getPluginImageUrl(record)"
+                    v-if="getPluginIconUrl(record)"
+                    :src="getPluginIconUrl(record)"
                     :alt="record.descriptor.name"
-                    class="plugin-card-image"
-                    @error="markPluginImageFailed(record.descriptor.id)"
+                    class="plugin-card-icon"
+                    @error="markPluginIconFailed(record.descriptor.id)"
                   />
                   <span v-else class="plugin-card-initial">
                     {{ getPluginInitial(record) }}
@@ -804,11 +577,14 @@ const selectPathForField = async (field: PluginSettingField) => {
                       :class="{
                         'is-active':
                           record.status === 'active' && !hasCurrentPluginCardFailure(record),
-                        'is-error': hasCurrentPluginCardFailure(record),
+                        'is-error':
+                          hasCurrentPluginCardFailure(record) &&
+                          getPluginCardFailure(record)?.reason !== 'incompatible',
                         'is-safe':
                           pluginRuntimeState.safeMode &&
                           record.descriptor.enabled &&
                           !hasCurrentPluginCardFailure(record),
+                        'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
                       }"
                     >
                       {{ getStatusLabel(record) }}
@@ -864,7 +640,10 @@ const selectPathForField = async (field: PluginSettingField) => {
                   <button
                     v-if="hasPluginCardFailure(record)"
                     class="plugin-card-failure-btn"
-                    :class="{ 'is-historical': hasHistoricalPluginCardFailure(record) }"
+                    :class="{
+                      'is-historical': hasHistoricalPluginCardFailure(record),
+                      'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                    }"
                     type="button"
                     :title="getPluginFailureButtonTitle(record)"
                     @click="openPluginFailureDetail(record.descriptor.id)"
@@ -875,7 +654,11 @@ const selectPathForField = async (field: PluginSettingField) => {
 
                 <Switch
                   :model-value="record.descriptor.enabled"
-                  :disabled="record.descriptor.invalid || busyPluginIds.has(record.descriptor.id)"
+                  :disabled="
+                    record.descriptor.invalid ||
+                    !record.descriptor.compatibility.compatible ||
+                    busyPluginIds.has(record.descriptor.id)
+                  "
                   @update:model-value="(value) => togglePlugin(record.descriptor.id, value)"
                 />
               </div>
@@ -967,7 +750,7 @@ const selectPathForField = async (field: PluginSettingField) => {
       </template>
     </Dialog>
 
-    <!-- 插件统一设置 -->
+    <!-- 插件设置 -->
     <Dialog
       v-model:open="showSettingsDialog"
       :title="activeSettingsTitle"
@@ -975,147 +758,16 @@ const selectPathForField = async (field: PluginSettingField) => {
       show-close
       content-class="plugin-settings-dialog"
       body-class="plugin-settings-dialog-body"
-      :close-on-escape="!isSettingsSaving"
-      :close-on-interact-outside="!isSettingsSaving"
     >
-      <div v-if="isSettingsLoading" class="plugin-settings-loading">正在读取设置...</div>
-
-      <div v-else-if="activeSettingsContribution" class="plugin-settings-content">
-        <section
-          v-for="section in activeSettingsContribution.sections"
-          :key="section.id"
-          class="plugin-settings-section"
-        >
-          <div v-if="section.title || section.description" class="plugin-settings-section-header">
-            <h4 v-if="section.title">{{ section.title }}</h4>
-            <p v-if="section.description">{{ section.description }}</p>
-          </div>
-
-          <div class="plugin-settings-fields">
-            <div
-              v-for="field in section.fields"
-              :key="field.key"
-              class="plugin-settings-field"
-              :class="{
-                'is-toggle': field.type === 'switch',
-                'is-top-aligned': field.type === 'textarea' || field.type === 'file',
-              }"
-            >
-              <div class="plugin-settings-field-copy">
-                <label :for="`plugin-setting-${field.key}`">{{ field.label }}</label>
-                <p v-if="field.description">{{ field.description }}</p>
-              </div>
-
-              <div class="plugin-settings-field-control" :style="getSettingControlStyle(field)">
-                <Switch
-                  v-if="field.type === 'switch'"
-                  :model-value="Boolean(settingsDraft[field.key])"
-                  @update:model-value="(value) => updateSettingDraft(field, value)"
-                />
-
-                <textarea
-                  v-else-if="field.type === 'textarea'"
-                  :id="`plugin-setting-${field.key}`"
-                  class="plugin-settings-textarea"
-                  :value="getFieldStringValue(field)"
-                  :placeholder="field.placeholder"
-                  @input="(event) => updateTextField(field, event)"
-                ></textarea>
-
-                <Input
-                  v-else-if="field.type === 'text'"
-                  class="plugin-settings-input"
-                  input-class="plugin-settings-input-field"
-                  :model-value="getFieldStringValue(field)"
-                  :placeholder="field.placeholder"
-                  :show-clear="false"
-                  @update:model-value="(value) => updateSettingDraft(field, value)"
-                />
-
-                <InputNumber
-                  v-else-if="field.type === 'number'"
-                  class="plugin-settings-input"
-                  :model-value="String(getFieldNumberValue(field))"
-                  :min="field.min"
-                  :max="field.max"
-                  :step="field.step ?? 1"
-                  :placeholder="field.placeholder"
-                  :suffix="field.unit ?? ''"
-                  @update:model-value="(value) => updateSettingDraft(field, value)"
-                />
-
-                <Slider
-                  v-else-if="field.type === 'slider'"
-                  :model-value="getFieldNumberValue(field)"
-                  :min="field.min ?? 0"
-                  :max="field.max ?? 100"
-                  :step="field.step ?? 1"
-                  show-value
-                  :value-suffix="field.unit ?? ''"
-                  class="plugin-settings-slider"
-                  @update:model-value="(value) => updateSettingDraft(field, value)"
-                />
-
-                <Select
-                  v-else-if="field.type === 'select'"
-                  class="plugin-settings-select"
-                  :model-value="getSelectedOptionKey(field)"
-                  :options="getSelectOptions(field)"
-                  :placeholder="field.placeholder ?? '请选择'"
-                  @update:model-value="(value) => updateSelectField(field, value)"
-                />
-
-                <div
-                  v-else-if="field.type === 'file' || field.type === 'directory'"
-                  class="plugin-settings-path-control"
-                >
-                  <div class="plugin-settings-path-value" :title="getPathValues(field).join('\n')">
-                    {{ getPathLabel(field) }}
-                  </div>
-                  <div class="plugin-settings-path-actions">
-                    <Button variant="outline" size="xs" @click="selectPathForField(field)">
-                      <Icon :icon="iconFolderOpen" width="14" height="14" />
-                      选择
-                    </Button>
-                    <Button
-                      v-if="getPathValues(field).length > 0"
-                      variant="ghost"
-                      size="xs"
-                      @click="clearPathField(field)"
-                    >
-                      清除
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+      <div v-if="activeSettingsContribution?.component" class="plugin-settings-content is-custom">
+        <component
+          :is="activeSettingsContribution.component"
+          :contribution="activeSettingsContribution"
+          :plugin-id="settingsPluginId"
+        />
       </div>
 
-      <template #footer>
-        <Button variant="ghost" size="xs" :disabled="isSettingsSaving" @click="resetSettingsDraft">
-          恢复默认
-        </Button>
-        <div class="plugin-settings-footer-actions">
-          <Button
-            variant="ghost"
-            size="xs"
-            :disabled="isSettingsSaving"
-            @click="showSettingsDialog = false"
-          >
-            取消
-          </Button>
-          <Button
-            variant="primary"
-            size="xs"
-            :loading="isSettingsSaving"
-            @click="savePluginSettings"
-          >
-            保存
-          </Button>
-        </div>
-      </template>
+      <div v-else class="plugin-settings-empty">插件设置入口不可用</div>
     </Dialog>
   </div>
 </template>
@@ -1219,6 +871,11 @@ const selectPathForField = async (field: PluginSettingField) => {
   background: var(--state-danger-bg-soft);
 }
 
+.plugin-card.is-warning {
+  border-color: color-mix(in srgb, var(--state-warning) 34%, var(--border-subtle));
+  background: var(--state-warning-bg-soft);
+}
+
 .plugin-card-main {
   display: flex;
   align-items: flex-start;
@@ -1245,12 +902,12 @@ const selectPathForField = async (field: PluginSettingField) => {
   overflow: hidden;
 }
 
-.plugin-card-media.has-image {
+.plugin-card-media.has-icon {
   background: transparent;
   border: 0;
 }
 
-.plugin-card-image {
+.plugin-card-icon {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1320,7 +977,17 @@ const selectPathForField = async (field: PluginSettingField) => {
   background: var(--state-warning-bg-soft);
 }
 
+.plugin-card-failure-btn.is-warning {
+  color: var(--state-warning);
+  background: var(--state-warning-bg-soft);
+}
+
 .plugin-card-failure-btn.is-historical:hover {
+  color: white;
+  background: var(--state-warning);
+}
+
+.plugin-card-failure-btn.is-warning:hover {
   color: white;
   background: var(--state-warning);
 }
@@ -1339,6 +1006,10 @@ const selectPathForField = async (field: PluginSettingField) => {
 }
 
 .plugin-status-badge.is-safe {
+  @apply text-amber-500 bg-amber-500/10;
+}
+
+.plugin-status-badge.is-warning {
   @apply text-amber-500 bg-amber-500/10;
 }
 
@@ -1517,16 +1188,6 @@ const selectPathForField = async (field: PluginSettingField) => {
   width: min(640px, 92vw);
   max-height: min(760px, calc(100vh - 120px));
   --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 96%, transparent);
-  --plugin-settings-panel-bg: color-mix(in srgb, var(--surface-elevated-base) 94%, transparent);
-  --plugin-settings-control-bg: color-mix(in srgb, var(--surface-card-base) 96%, transparent);
-  --plugin-settings-border: color-mix(in srgb, var(--color-text-main) 14%, var(--border-subtle));
-  --plugin-settings-slider-track-bg: color-mix(in srgb, var(--color-text-main) 18%, transparent);
-  --plugin-settings-slider-thumb-bg: var(--surface-dialog-base);
-  --plugin-settings-slider-thumb-border: color-mix(
-    in srgb,
-    var(--color-text-main) 24%,
-    var(--plugin-settings-border)
-  );
   background: var(--plugin-settings-dialog-bg);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   backdrop-filter: blur(18px) saturate(140%);
@@ -1534,31 +1195,10 @@ const selectPathForField = async (field: PluginSettingField) => {
 
 :global(.dark .dialog-content.plugin-settings-dialog) {
   --plugin-settings-dialog-bg: color-mix(in srgb, var(--surface-dialog-base) 98%, transparent);
-  --plugin-settings-panel-bg: color-mix(
-    in srgb,
-    var(--surface-elevated-base) 92%,
-    var(--color-text-main) 8%
-  );
-  --plugin-settings-control-bg: color-mix(
-    in srgb,
-    var(--surface-card-base) 88%,
-    var(--color-text-main) 8%
-  );
-  --plugin-settings-border: color-mix(in srgb, var(--color-text-main) 22%, var(--border-light));
-  --plugin-settings-slider-track-bg: rgba(255, 255, 255, 0.24);
-  --plugin-settings-slider-thumb-bg: #f5f5f7;
-  --plugin-settings-slider-thumb-border: rgba(255, 255, 255, 0.44);
 }
 
 :global(.plugin-settings-dialog-body) {
   padding-right: 1.125rem;
-}
-
-.plugin-settings-loading {
-  padding: 2rem 0;
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
 }
 
 .plugin-settings-content {
@@ -1567,267 +1207,11 @@ const selectPathForField = async (field: PluginSettingField) => {
   gap: 1rem;
 }
 
-.plugin-settings-section {
-  border: 1px solid var(--plugin-settings-border, var(--border-subtle));
-  border-radius: 8px;
-  background: var(--plugin-settings-panel-bg, var(--color-bg-elevated));
-  overflow: hidden;
-}
-
-.plugin-settings-section-header {
-  padding: 0.875rem 1rem 0.25rem;
-}
-
-.plugin-settings-section-header h4 {
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 800;
-  color: var(--color-text-main);
-}
-
-.plugin-settings-section-header p {
-  margin: 0.25rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.5;
+.plugin-settings-empty {
+  padding: 2rem 0;
+  text-align: center;
+  font-size: 0.8125rem;
   color: var(--color-text-secondary);
-}
-
-.plugin-settings-fields {
-  display: flex;
-  flex-direction: column;
-}
-
-.plugin-settings-field {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.72fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: center;
-  padding: 0.875rem 1rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.plugin-settings-section-header + .plugin-settings-fields .plugin-settings-field:first-child {
-  border-top-color: transparent;
-}
-
-.plugin-settings-section > .plugin-settings-fields:first-child .plugin-settings-field:first-child {
-  border-top: 0;
-}
-
-.plugin-settings-field.is-top-aligned {
-  align-items: flex-start;
-}
-
-.plugin-settings-field-copy {
-  min-width: 0;
-}
-
-.plugin-settings-field-copy label {
-  display: block;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--color-text-main);
-}
-
-.plugin-settings-field-copy p {
-  margin: 0.25rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-}
-
-.plugin-settings-field-control {
-  min-width: 0;
-  display: flex;
-  justify-content: flex-end;
-}
-
-.plugin-settings-field-control :deep(.switch-root:not([data-state='checked'])) {
-  border-color: var(--plugin-settings-border, var(--control-border));
-  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input),
-.plugin-settings-field-control :deep(.plugin-settings-select),
-.plugin-settings-textarea {
-  width: var(--plugin-settings-control-width, min(100%, 320px));
-  max-width: 100%;
-  min-width: 0;
-}
-
-.plugin-settings-textarea {
-  border: 1px solid var(--plugin-settings-border, var(--control-border));
-  border-radius: 8px;
-  color: var(--color-text-main);
-  background: var(--plugin-settings-control-bg, var(--control-bg));
-  font: inherit;
-  font-size: 0.8125rem;
-  outline: none;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input-field) {
-  height: 34px;
-  padding: 0 0.625rem;
-  border: 1px solid var(--plugin-settings-border, var(--control-border));
-  border-radius: 8px;
-  color: var(--color-text-main);
-  background: var(--plugin-settings-control-bg, var(--control-bg));
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  outline: none;
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input-field::placeholder) {
-  color: color-mix(in srgb, var(--color-text-main) 42%, transparent);
-  opacity: 1;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input.input-number) {
-  height: 34px;
-  border-color: var(--plugin-settings-border, var(--control-border));
-  border-radius: 8px;
-  background: var(--plugin-settings-control-bg, var(--control-bg));
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input.input-number .input-number-field) {
-  height: 32px;
-  padding-left: 0.625rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 32px;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input.input-number .input-number-controls) {
-  width: 26px;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-select.echo-select-trigger) {
-  width: var(--plugin-settings-control-width, min(100%, 320px));
-  max-width: 100%;
-  height: 34px;
-  min-width: 0;
-  border-color: var(--plugin-settings-border, var(--control-border));
-  border-radius: 8px;
-  background: var(--plugin-settings-control-bg, var(--control-bg));
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.plugin-settings-textarea {
-  min-height: 92px;
-  padding: 0.625rem;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.plugin-settings-field-control :deep(.plugin-settings-input-field:focus),
-.plugin-settings-field-control :deep(.plugin-settings-input.input-number:focus-within),
-.plugin-settings-field-control
-  :deep(.plugin-settings-select.echo-select-trigger[data-state='open']),
-.plugin-settings-textarea:focus {
-  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--control-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
-}
-
-.plugin-settings-slider {
-  width: var(--plugin-settings-control-width, min(100%, 320px));
-  min-width: min(180px, 100%);
-  max-width: 100%;
-}
-
-.plugin-settings-slider :deep(.slider-root) {
-  width: 100%;
-  min-width: 0;
-}
-
-.plugin-settings-slider :deep(.slider-track) {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 4px;
-  background-color: var(--plugin-settings-slider-track-bg, var(--control-track-bg));
-}
-
-.plugin-settings-slider :deep(.slider-range) {
-  background-color: var(--color-primary);
-}
-
-.plugin-settings-slider :deep(.slider-thumb) {
-  width: 14px;
-  height: 14px;
-  border-color: var(--plugin-settings-slider-thumb-border, var(--control-border));
-  background: var(--plugin-settings-slider-thumb-bg, var(--control-thumb-bg));
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--surface-dialog-base) 72%, transparent),
-    var(--shadow-control);
-}
-
-.plugin-settings-slider :deep(.slider-value-label) {
-  color: var(--color-text-main);
-}
-
-.plugin-settings-path-control {
-  width: var(--plugin-settings-path-control-width, min(100%, 360px));
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.plugin-settings-path-value {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  padding: 0.45rem 0.625rem;
-  border-radius: 8px;
-  border: 1px solid var(--plugin-settings-border, var(--control-border));
-  background: var(--plugin-settings-control-bg, var(--control-bg));
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--color-text-secondary);
-  word-break: break-all;
-}
-
-.plugin-settings-path-actions,
-.plugin-settings-footer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-@media (max-width: 640px) {
-  .plugin-settings-field {
-    grid-template-columns: 1fr;
-    gap: 0.625rem;
-  }
-
-  .plugin-settings-field-control {
-    justify-content: flex-start;
-  }
-
-  .plugin-settings-field-control :deep(.plugin-settings-input),
-  .plugin-settings-field-control :deep(.plugin-settings-select),
-  .plugin-settings-textarea,
-  .plugin-settings-slider,
-  .plugin-settings-path-control {
-    width: 100%;
-  }
-
-  .plugin-settings-field-control :deep(.plugin-settings-select.echo-select-trigger) {
-    width: 100%;
-  }
-
-  .plugin-settings-slider {
-    min-width: 0;
-    max-width: none;
-  }
 }
 
 /* 错误提示卡片 */

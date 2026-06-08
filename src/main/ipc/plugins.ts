@@ -1,4 +1,4 @@
-import { dialog, ipcMain, type OpenDialogOptions } from 'electron';
+import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from 'electron';
 import type {
   PluginAssetSourceResult,
   PluginDialogResult,
@@ -74,6 +74,17 @@ export const registerPluginHandlers = (context: IpcContext) => {
   ipcMain.handle('plugins:list', (): PluginListResult => listPlugins());
   ipcMain.handle('plugins:get-directory', (): string => getPluginDirectory());
   ipcMain.handle('plugins:open-directory', (): string => openPluginDirectory());
+  ipcMain.handle('plugins:runtime-reload', (event): void => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      try {
+        if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+        if (win.webContents.id === event.sender.id) return;
+        win.webContents.send('plugins:runtime-reload-requested');
+      } catch {
+        // ignore windows that are closing while broadcasting
+      }
+    });
+  });
   ipcMain.handle(
     'plugins:dialog:select-directory',
     (_event, options?: PluginOpenDialogOptions): Promise<PluginDialogResult> =>
@@ -177,6 +188,7 @@ export const unregisterPluginHandlers = () => {
   ipcMain.removeHandler('plugins:list');
   ipcMain.removeHandler('plugins:get-directory');
   ipcMain.removeHandler('plugins:open-directory');
+  ipcMain.removeHandler('plugins:runtime-reload');
   ipcMain.removeHandler('plugins:dialog:select-directory');
   ipcMain.removeHandler('plugins:dialog:select-files');
   ipcMain.removeHandler('plugins:fs:list-image-files');

@@ -14,7 +14,7 @@ import { initShortcutSync, syncGlobalShortcuts } from '@/utils/shortcuts';
 import { initDesktopLyricSync } from '@/desktopLyric/sync';
 import { initMiniPlayerSync } from '@/miniPlayer/sync';
 import { initNowPlayingSync } from '@/nowPlaying/sync';
-import { refreshPlugins } from '@/plugins/runtime';
+import { onPluginRuntimeReloadRequested, refreshPlugins } from '@/plugins/runtime';
 import { normalizeCoverUrl } from '@/utils/cover';
 import type { UpdateCheckResult } from '../shared/app';
 import LyricView from '@/views/lyric/LyricPage.vue';
@@ -30,6 +30,7 @@ let disposeMiniPlayerSync: (() => void) | null = null;
 let disposeNowPlayingSync: (() => void) | null = null;
 let disposeTrayPlayModeSync: (() => void) | null = null;
 let disposePowerResumeSync: (() => void) | null = null;
+let disposePluginRuntimeReload: (() => void) | null = null;
 let silentUpdateCheckTimer: number | null = null;
 let colorSchemeMediaQuery: MediaQueryList | null = null;
 
@@ -67,6 +68,12 @@ const handleSilentUpdateCheckResult = (payload: unknown) => {
 };
 
 onMounted(async () => {
+  disposePluginRuntimeReload = onPluginRuntimeReloadRequested(() => {
+    void refreshPlugins(
+      isMiniPlayerRoute.value ? { miniPlayer: true, reloadActive: true } : { reloadActive: true },
+    );
+  });
+
   if (isMiniPlayerRoute.value) {
     void refreshPlugins({ miniPlayer: true });
     return;
@@ -134,6 +141,8 @@ onUnmounted(() => {
   disposeTrayPlayModeSync = null;
   disposePowerResumeSync?.();
   disposePowerResumeSync = null;
+  disposePluginRuntimeReload?.();
+  disposePluginRuntimeReload = null;
   colorSchemeMediaQuery?.removeEventListener('change', updateTheme);
   colorSchemeMediaQuery = null;
 });

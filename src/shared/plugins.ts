@@ -1,5 +1,3 @@
-export type PluginContributionMap = Record<string, unknown>;
-
 export type PluginWindowType = 'floating';
 export type PluginWindowPosition = 'center' | 'top-center';
 
@@ -148,17 +146,26 @@ export interface EchoPluginManifest {
   version: string;
   description?: string;
   author?: string;
+  icon?: string;
   main?: string;
   style?: string;
-  contributes?: PluginContributionMap & {
-    image?: string;
-    icon?: string;
-    runInMiniPlayer?: boolean;
+  runtime?: {
+    miniPlayer?: boolean;
+    desktopLyric?: boolean;
+  };
+  contributes?: {
     windows?: PluginWindowManifest[];
   };
-  engines?: {
-    echoMusic?: string;
+  requires?: {
+    echoMusicVersion?: string;
   };
+}
+
+export interface EchoPluginCompatibility {
+  compatible: boolean;
+  currentEchoMusicVersion: string;
+  requiredEchoMusicVersion: string;
+  message: string;
 }
 
 export interface EchoPluginDescriptor {
@@ -172,11 +179,12 @@ export interface EchoPluginDescriptor {
   manifestPath: string;
   mainFile: string;
   styleFile: string;
-  imageUrl: string;
+  iconUrl: string;
   windows: PluginWindowDescriptor[];
   enabled: boolean;
   invalid: boolean;
   error: string;
+  compatibility: EchoPluginCompatibility;
   manifest: EchoPluginManifest;
 }
 
