@@ -3,14 +3,22 @@ import { computed, ref } from 'vue';
 import { Icon } from '@iconify/vue';
 import Button from '@/components/ui/Button.vue';
 import Dialog from '@/components/ui/Dialog.vue';
+import Input from '@/components/ui/Input.vue';
+import Select from '@/components/ui/Select.vue';
 import Switch from '@/components/ui/Switch.vue';
 import Scrollbar from '@/components/ui/Scrollbar.vue';
 import {
+  iconArrowBarDown,
+  iconCheck,
+  iconCloud,
+  iconExternalLink,
   iconFolderOpen,
+  iconPlus,
   iconPlugin,
   iconRefreshCw,
   iconSettings,
   iconShield,
+  iconTrash,
   iconTriangleAlert,
 } from '@/icons';
 import {
@@ -25,19 +33,40 @@ import {
   type PluginRuntimeFailureDetail,
 } from '@/plugins/runtime';
 import { pluginSettingsContributions } from '@/plugins/registry';
+import { useSettingStore } from '@/stores/setting';
 import { useToastStore } from '@/stores/toast';
-import type { PluginFailureRecord } from '../../shared/plugins';
+import type {
+  PluginFailureRecord,
+  PluginMarketplacePlugin,
+  PluginMarketplaceSource,
+} from '../../shared/plugins';
 
 const toastStore = useToastStore();
+const settingStore = useSettingStore();
+const activeView = ref<'installed' | 'marketplace'>('installed');
 const isRefreshing = ref(false);
 const isSafeModeBusy = ref(false);
 const isUninstalling = ref(false);
 const isClearingFailure = ref(false);
+const marketplaceLoaded = ref(false);
+const isMarketplaceLoading = ref(false);
+const isMarketplaceRefreshing = ref(false);
+const isSourceDialogOpen = ref(false);
+const isAddingSource = ref(false);
+const marketplaceSearch = ref('');
+const marketplaceSourceFilter = ref('all');
+const newSourceUrl = ref('');
+const newSourceName = ref('');
 const pendingUninstallPluginId = ref('');
 const settingsPluginId = ref('');
 const failureDetailPluginId = ref('');
 const busyPluginIds = ref<Set<string>>(new Set());
+const busyMarketplacePluginKeys = ref<Set<string>>(new Set());
+const busySourceIds = ref<Set<string>>(new Set());
 const failedPluginIconIds = ref<Set<string>>(new Set());
+const marketplacePlugins = ref<PluginMarketplacePlugin[]>([]);
+const marketplaceSources = ref<PluginMarketplaceSource[]>([]);
+const marketplaceFetchedAt = ref(0);
 
 const records = computed(() => pluginRuntimeState.records);
 const pluginCountLabel = computed(() => {
@@ -45,6 +74,53 @@ const pluginCountLabel = computed(() => {
   const enabled = records.value.filter((record) => record.descriptor.enabled).length;
   return `${enabled}/${total} 个已启用`;
 });
+const sourceSelectOptions = computed(() => [
+  { label: '全部源', value: 'all' },
+  ...marketplaceSources.value.map((source) => ({
+    label: source.name,
+    value: source.id,
+    disabled: !source.enabled,
+  })),
+]);
+const enabledMarketplaceSourceCount = computed(
+  () => marketplaceSources.value.filter((source) => source.enabled).length,
+);
+const marketplaceSourceSummary = computed(() => {
+  const total = marketplaceSources.value.length;
+  if (total === 0) return '暂无插件源';
+  return `${enabledMarketplaceSourceCount.value}/${total} 个源启用`;
+});
+const marketplaceFetchedAtLabel = computed(() =>
+  marketplaceFetchedAt.value ? new Date(marketplaceFetchedAt.value).toLocaleString() : '',
+);
+
+const filteredMarketplacePlugins = computed(() => {
+  const keyword = marketplaceSearch.value.trim().toLowerCase();
+  return marketplacePlugins.value.filter((plugin) => {
+    if (
+      marketplaceSourceFilter.value !== 'all' &&
+      plugin.sourceId !== marketplaceSourceFilter.value
+    ) {
+      return false;
+    }
+    if (!keyword) return true;
+    return [
+      plugin.name,
+      plugin.id,
+      plugin.description,
+      plugin.author,
+      plugin.sourceName,
+      plugin.tags.join(' '),
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(keyword);
+  });
+});
+const marketplaceCountLabel = computed(() => `${filteredMarketplacePlugins.value.length} 个可浏览`);
+const marketplaceSourceErrors = computed(() =>
+  marketplaceSources.value.filter((source) => source.enabled && source.lastError),
+);
 const pendingUninstallRecord = computed(
   () =>
     records.value.find((record) => record.descriptor.id === pendingUninstallPluginId.value) ?? null,
@@ -177,6 +253,120 @@ const openDirectory = async () => {
   }
 };
 
+const getMarketplaceRequestOptions = (refresh = false) => ({
+  refresh,
+  githubProxyUrl: settingStore.githubProxyUrl,
+});
+
+const loadMarketplace = async (refreshSource = false) => {
+  if (isMarketplaceLoading.value || isMarketplaceRefreshing.value) return;
+  if (refreshSource) isMarketplaceRefreshing.value = true;
+  else isMarketplaceLoading.value = true;
+
+  try {
+    const result = await window.electron.plugins?.marketplace.list(
+      getMarketplaceRequestOptions(refreshSource),
+    );
+    marketplaceSources.value = result?.sources ?? [];
+    marketplacePlugins.value = result?.plugins ?? [];
+    marketplaceFetchedAt.value = result?.fetchedAt ?? 0;
+    marketplaceLoaded.value = true;
+    if (result && !result.ok) {
+      toastStore.warning(result.error || '插件源刷新失败');
+    } else if (refreshSource) {
+      toastStore.actionCompleted('在线插件列表已刷新');
+    }
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '在线插件列表加载失败');
+  } finally {
+    isMarketplaceLoading.value = false;
+    isMarketplaceRefreshing.value = false;
+  }
+};
+
+const switchView = (view: 'installed' | 'marketplace') => {
+  activeView.value = view;
+  if (view === 'marketplace' && !marketplaceLoaded.value) {
+    void loadMarketplace(false);
+  }
+};
+
+const openSourceDialog = async () => {
+  isSourceDialogOpen.value = true;
+  try {
+    const result = await window.electron.plugins?.marketplace.listSources();
+    marketplaceSources.value = result?.sources ?? marketplaceSources.value;
+  } catch {
+    toastStore.warning('插件源列表读取失败');
+  }
+};
+
+const addMarketplaceSource = async () => {
+  const url = newSourceUrl.value.trim();
+  if (!url || isAddingSource.value) return;
+  isAddingSource.value = true;
+  try {
+    const result = await window.electron.plugins?.marketplace.addSource(
+      {
+        url,
+        name: newSourceName.value.trim() || undefined,
+      },
+      getMarketplaceRequestOptions(false),
+    );
+    if (!result?.ok) throw new Error(result?.error || '插件源添加失败');
+    marketplaceSources.value = result.sources;
+    newSourceUrl.value = '';
+    newSourceName.value = '';
+    toastStore.actionCompleted('插件源已添加');
+    await loadMarketplace(true);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件源添加失败');
+  } finally {
+    isAddingSource.value = false;
+  }
+};
+
+const patchMarketplaceSource = async (
+  source: PluginMarketplaceSource,
+  patch: { name?: string; enabled?: boolean },
+) => {
+  const next = new Set(busySourceIds.value);
+  next.add(source.id);
+  busySourceIds.value = next;
+  try {
+    const result = await window.electron.plugins?.marketplace.patchSource(source.id, patch);
+    if (!result?.ok) throw new Error(result?.error || '插件源更新失败');
+    marketplaceSources.value = result.sources;
+    if (patch.enabled !== undefined) await loadMarketplace(true);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件源更新失败');
+  } finally {
+    const done = new Set(busySourceIds.value);
+    done.delete(source.id);
+    busySourceIds.value = done;
+  }
+};
+
+const removeMarketplaceSource = async (source: PluginMarketplaceSource) => {
+  const next = new Set(busySourceIds.value);
+  next.add(source.id);
+  busySourceIds.value = next;
+  try {
+    const result = await window.electron.plugins?.marketplace.removeSource(source.id);
+    if (!result?.ok) throw new Error(result?.error || '插件源删除失败');
+    marketplaceSources.value = result.sources;
+    if (marketplaceSourceFilter.value === source.id) marketplaceSourceFilter.value = 'all';
+    toastStore.actionCompleted('插件源已删除');
+    await loadMarketplace(true);
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件源删除失败');
+  } finally {
+    const done = new Set(busySourceIds.value);
+    done.delete(source.id);
+    busySourceIds.value = done;
+  }
+};
+
 const togglePlugin = async (pluginId: string, enabled: boolean) => {
   const next = new Set(busyPluginIds.value);
   next.add(pluginId);
@@ -229,6 +419,56 @@ const confirmUninstallPlugin = async () => {
     done.delete(pluginId);
     busyPluginIds.value = done;
     isUninstalling.value = false;
+  }
+};
+
+const getMarketplacePluginKey = (plugin: PluginMarketplacePlugin) =>
+  `${plugin.sourceId}:${plugin.id}`;
+
+const getMarketplaceInstallLabel = (plugin: PluginMarketplacePlugin) => {
+  if (!plugin.compatibility.compatible) return '不兼容';
+  if (plugin.updateAvailable) return '更新';
+  if (plugin.installed) return '已安装';
+  return '安装';
+};
+
+const getMarketplaceStatusLabel = (plugin: PluginMarketplacePlugin) => {
+  if (!plugin.compatibility.compatible) return '不兼容';
+  if (plugin.updateAvailable) return `可更新至 v${plugin.version}`;
+  if (plugin.installed) return `已安装 v${plugin.installedVersion}`;
+  return '未安装';
+};
+
+const canInstallMarketplacePlugin = (plugin: PluginMarketplacePlugin) =>
+  plugin.compatibility.compatible && (!plugin.installed || plugin.updateAvailable);
+
+const openExternalUrl = (url: string) => {
+  if (!url) return;
+  window.electron.ipcRenderer.send('open-external', url);
+};
+
+const installMarketplacePlugin = async (plugin: PluginMarketplacePlugin) => {
+  if (!canInstallMarketplacePlugin(plugin)) return;
+  const key = getMarketplacePluginKey(plugin);
+  const next = new Set(busyMarketplacePluginKeys.value);
+  next.add(key);
+  busyMarketplacePluginKeys.value = next;
+  try {
+    const result = await window.electron.plugins?.marketplace.install(plugin.sourceId, plugin.id, {
+      githubProxyUrl: settingStore.githubProxyUrl,
+      enableAfterInstall: false,
+    });
+    if (!result?.ok) throw new Error(result?.error || '插件安装失败');
+    await refreshPlugins({ reloadActive: true });
+    await reloadOtherPluginRuntimes();
+    await loadMarketplace(false);
+    toastStore.actionCompleted(result.updated ? '插件已更新' : '插件已安装');
+  } catch (error) {
+    toastStore.warning(error instanceof Error ? error.message : '插件安装失败');
+  } finally {
+    const done = new Set(busyMarketplacePluginKeys.value);
+    done.delete(key);
+    busyMarketplacePluginKeys.value = done;
   }
 };
 
@@ -485,17 +725,58 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
             <Icon :icon="iconFolderOpen" width="16" height="16" />
           </Button>
 
+          <!-- 插件源 -->
+          <Button
+            v-if="activeView === 'marketplace'"
+            variant="ghost"
+            size="sm"
+            class="h-8"
+            title="管理插件源"
+            @click="openSourceDialog"
+          >
+            <Icon :icon="iconCloud" width="16" height="16" />
+          </Button>
+
           <!-- 刷新 -->
-          <Button variant="ghost" size="sm" :disabled="isRefreshing" @click="refresh" class="h-8">
+          <Button
+            variant="ghost"
+            size="sm"
+            :disabled="isRefreshing || isMarketplaceRefreshing"
+            @click="activeView === 'marketplace' ? loadMarketplace(true) : refresh()"
+            class="h-8"
+          >
             <Icon
               :icon="iconRefreshCw"
               width="16"
               height="16"
-              :class="isRefreshing ? 'animate-spin' : ''"
+              :class="isRefreshing || isMarketplaceRefreshing ? 'animate-spin' : ''"
             />
           </Button>
         </div>
       </div>
+
+      <nav class="plugin-view-tabs mt-4" aria-label="插件视图">
+        <button
+          type="button"
+          class="plugin-view-tab"
+          :class="{ 'is-active': activeView === 'installed' }"
+          @click="switchView('installed')"
+        >
+          <Icon :icon="iconPlugin" width="14" height="14" />
+          <span>已安装</span>
+          <small>{{ records.length }}</small>
+        </button>
+        <button
+          type="button"
+          class="plugin-view-tab"
+          :class="{ 'is-active': activeView === 'marketplace' }"
+          @click="switchView('marketplace')"
+        >
+          <Icon :icon="iconCloud" width="14" height="14" />
+          <span>在线插件</span>
+          <small>{{ marketplaceLoaded ? marketplacePlugins.length : '-' }}</small>
+        </button>
+      </nav>
 
       <!-- 错误提示 -->
       <div v-if="globalFailure" class="plugin-failure-card mt-3">
@@ -520,153 +801,384 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
     <!-- 插件列表 -->
     <Scrollbar class="flex-1 min-h-0">
       <div class="plugin-content px-6 pb-6">
-        <!-- 空状态 -->
-        <div v-if="records.length === 0" class="plugin-empty-state">
-          <Icon :icon="iconPlugin" width="48" height="48" class="text-text-main/20" />
-          <p class="text-text-main/60 mt-4 font-medium">暂无插件</p>
-          <p class="text-text-secondary text-sm mt-2">将插件文件夹放入上方目录后点击刷新</p>
-        </div>
-
-        <template v-else>
-          <div class="plugin-content-heading">
-            <h2>已安装插件</h2>
-            <span>{{ pluginCountLabel }}</span>
+        <template v-if="activeView === 'installed'">
+          <!-- 空状态 -->
+          <div v-if="records.length === 0" class="plugin-empty-state">
+            <Icon :icon="iconPlugin" width="48" height="48" class="text-text-main/20" />
+            <p class="text-text-main/60 mt-4 font-medium">暂无插件</p>
+            <p class="text-text-secondary text-sm mt-2">将插件文件夹放入上方目录后点击刷新</p>
           </div>
 
-          <div class="plugin-card-grid">
+          <template v-else>
+            <div class="plugin-content-heading">
+              <h2>已安装插件</h2>
+              <span>{{ pluginCountLabel }}</span>
+            </div>
+
+            <div class="plugin-card-grid">
+              <article
+                v-for="record in records"
+                :key="record.descriptor.id"
+                class="plugin-card"
+                :class="{
+                  'is-disabled':
+                    !record.descriptor.enabled ||
+                    record.descriptor.invalid ||
+                    !record.descriptor.compatibility.compatible,
+                  'is-error':
+                    hasCurrentPluginCardFailure(record) &&
+                    getPluginCardFailure(record)?.reason !== 'incompatible',
+                  'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                }"
+              >
+                <div class="plugin-card-main">
+                  <div
+                    class="plugin-card-media"
+                    :class="{ 'has-icon': getPluginIconUrl(record) }"
+                    :style="getPluginAccentStyle(record.descriptor.id)"
+                  >
+                    <img
+                      v-if="getPluginIconUrl(record)"
+                      :src="getPluginIconUrl(record)"
+                      :alt="record.descriptor.name"
+                      class="plugin-card-icon"
+                      @error="markPluginIconFailed(record.descriptor.id)"
+                    />
+                    <span v-else class="plugin-card-initial">
+                      {{ getPluginInitial(record) }}
+                    </span>
+                  </div>
+
+                  <div class="plugin-card-summary">
+                    <div class="plugin-card-header">
+                      <h3 class="plugin-card-name" :title="record.descriptor.name">
+                        {{ record.descriptor.name }}
+                      </h3>
+                      <span
+                        class="plugin-status-badge"
+                        :class="{
+                          'is-active':
+                            record.status === 'active' && !hasCurrentPluginCardFailure(record),
+                          'is-error':
+                            hasCurrentPluginCardFailure(record) &&
+                            getPluginCardFailure(record)?.reason !== 'incompatible',
+                          'is-safe':
+                            pluginRuntimeState.safeMode &&
+                            record.descriptor.enabled &&
+                            !hasCurrentPluginCardFailure(record),
+                          'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                        }"
+                      >
+                        {{ getStatusLabel(record) }}
+                      </span>
+                    </div>
+
+                    <div class="plugin-card-meta">
+                      <span>v{{ record.descriptor.version }}</span>
+                      <span v-if="record.descriptor.manifest.author">
+                        · {{ record.descriptor.manifest.author }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <p class="plugin-card-description">
+                  {{ record.descriptor.description || '暂无描述' }}
+                </p>
+
+                <div class="plugin-card-id" :title="record.descriptor.id">
+                  ID: {{ record.descriptor.id }}
+                </div>
+
+                <div class="plugin-card-actions">
+                  <div class="plugin-card-action-group">
+                    <div class="plugin-card-primary-actions">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        class="plugin-settings-btn"
+                        :class="{
+                          'is-unavailable': !getSettingsContribution(record.descriptor.id),
+                        }"
+                        :title="getPluginSettingsButtonTitle(record)"
+                        :disabled="busyPluginIds.has(record.descriptor.id)"
+                        @click="requestOpenPluginSettings(record)"
+                      >
+                        <Icon :icon="iconSettings" width="14" height="14" />
+                        设置
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        class="plugin-remove-btn"
+                        :disabled="busyPluginIds.has(record.descriptor.id)"
+                        @click="requestUninstallPlugin(record.descriptor.id)"
+                      >
+                        移除
+                      </Button>
+                    </div>
+
+                    <button
+                      v-if="hasPluginCardFailure(record)"
+                      class="plugin-card-failure-btn"
+                      :class="{
+                        'is-historical': hasHistoricalPluginCardFailure(record),
+                        'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                      }"
+                      type="button"
+                      :title="getPluginFailureButtonTitle(record)"
+                      @click="openPluginFailureDetail(record.descriptor.id)"
+                    >
+                      <Icon :icon="iconTriangleAlert" width="14" height="14" />
+                    </button>
+                  </div>
+
+                  <Switch
+                    :model-value="record.descriptor.enabled"
+                    :disabled="
+                      record.descriptor.invalid ||
+                      !record.descriptor.compatibility.compatible ||
+                      busyPluginIds.has(record.descriptor.id)
+                    "
+                    @update:model-value="(value) => togglePlugin(record.descriptor.id, value)"
+                  />
+                </div>
+              </article>
+            </div>
+          </template>
+        </template>
+
+        <template v-else>
+          <div class="marketplace-toolbar">
+            <Input
+              v-model="marketplaceSearch"
+              placeholder="搜索插件、作者或标签"
+              class="marketplace-search"
+              input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
+            />
+            <Select
+              v-model="marketplaceSourceFilter"
+              class="marketplace-source-select"
+              :options="sourceSelectOptions"
+            />
+            <Button
+              variant="outline"
+              size="xs"
+              class="marketplace-source-btn"
+              @click="openSourceDialog"
+            >
+              <Icon :icon="iconCloud" width="14" height="14" />
+              插件源
+            </Button>
+          </div>
+
+          <div v-if="marketplaceSourceErrors.length > 0" class="marketplace-source-errors">
+            <Icon :icon="iconTriangleAlert" width="15" height="15" />
+            <span>
+              {{ marketplaceSourceErrors[0].name }}：{{ marketplaceSourceErrors[0].lastError }}
+            </span>
+          </div>
+
+          <div class="plugin-content-heading">
+            <h2>在线插件</h2>
+            <span>
+              {{ marketplaceCountLabel }} · {{ marketplaceSourceSummary }}
+              <template v-if="marketplaceFetchedAtLabel">
+                · {{ marketplaceFetchedAtLabel }}</template
+              >
+            </span>
+          </div>
+
+          <div v-if="isMarketplaceLoading" class="plugin-empty-state">
+            <Icon
+              :icon="iconRefreshCw"
+              width="38"
+              height="38"
+              class="animate-spin text-text-main/20"
+            />
+            <p class="text-text-main/60 mt-4 font-medium">正在加载在线插件</p>
+          </div>
+
+          <div v-else-if="filteredMarketplacePlugins.length === 0" class="plugin-empty-state">
+            <Icon :icon="iconCloud" width="48" height="48" class="text-text-main/20" />
+            <p class="text-text-main/60 mt-4 font-medium">暂无在线插件</p>
+            <p class="text-text-secondary text-sm mt-2">添加插件源或刷新在线列表后再试</p>
+          </div>
+
+          <div v-else class="plugin-card-grid">
             <article
-              v-for="record in records"
-              :key="record.descriptor.id"
-              class="plugin-card"
+              v-for="plugin in filteredMarketplacePlugins"
+              :key="getMarketplacePluginKey(plugin)"
+              class="plugin-card marketplace-card"
               :class="{
-                'is-disabled':
-                  !record.descriptor.enabled ||
-                  record.descriptor.invalid ||
-                  !record.descriptor.compatibility.compatible,
-                'is-error':
-                  hasCurrentPluginCardFailure(record) &&
-                  getPluginCardFailure(record)?.reason !== 'incompatible',
-                'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                'is-disabled': !plugin.compatibility.compatible,
+                'is-warning': !plugin.compatibility.compatible,
               }"
             >
               <div class="plugin-card-main">
                 <div
                   class="plugin-card-media"
-                  :class="{ 'has-icon': getPluginIconUrl(record) }"
-                  :style="getPluginAccentStyle(record.descriptor.id)"
+                  :class="{ 'has-icon': plugin.iconUrl }"
+                  :style="getPluginAccentStyle(plugin.id)"
                 >
                   <img
-                    v-if="getPluginIconUrl(record)"
-                    :src="getPluginIconUrl(record)"
-                    :alt="record.descriptor.name"
+                    v-if="plugin.iconUrl"
+                    :src="plugin.iconUrl"
+                    :alt="plugin.name"
                     class="plugin-card-icon"
-                    @error="markPluginIconFailed(record.descriptor.id)"
                   />
                   <span v-else class="plugin-card-initial">
-                    {{ getPluginInitial(record) }}
+                    {{ plugin.name.trim()[0]?.toUpperCase() || 'E' }}
                   </span>
                 </div>
 
                 <div class="plugin-card-summary">
                   <div class="plugin-card-header">
-                    <h3 class="plugin-card-name" :title="record.descriptor.name">
-                      {{ record.descriptor.name }}
-                    </h3>
+                    <h3 class="plugin-card-name" :title="plugin.name">{{ plugin.name }}</h3>
                     <span
                       class="plugin-status-badge"
                       :class="{
-                        'is-active':
-                          record.status === 'active' && !hasCurrentPluginCardFailure(record),
-                        'is-error':
-                          hasCurrentPluginCardFailure(record) &&
-                          getPluginCardFailure(record)?.reason !== 'incompatible',
-                        'is-safe':
-                          pluginRuntimeState.safeMode &&
-                          record.descriptor.enabled &&
-                          !hasCurrentPluginCardFailure(record),
-                        'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
+                        'is-active': plugin.installed && !plugin.updateAvailable,
+                        'is-warning': plugin.updateAvailable || !plugin.compatibility.compatible,
                       }"
                     >
-                      {{ getStatusLabel(record) }}
+                      {{ getMarketplaceStatusLabel(plugin) }}
                     </span>
                   </div>
 
                   <div class="plugin-card-meta">
-                    <span>v{{ record.descriptor.version }}</span>
-                    <span v-if="record.descriptor.manifest.author">
-                      · {{ record.descriptor.manifest.author }}
-                    </span>
+                    <span>v{{ plugin.version }}</span>
+                    <span v-if="plugin.author"> · {{ plugin.author }}</span>
                   </div>
                 </div>
               </div>
 
-              <p class="plugin-card-description">
-                {{ record.descriptor.description || '暂无描述' }}
-              </p>
+              <p class="plugin-card-description">{{ plugin.description || '暂无描述' }}</p>
 
-              <div class="plugin-card-id" :title="record.descriptor.id">
-                ID: {{ record.descriptor.id }}
+              <div class="marketplace-tags">
+                <span>{{ plugin.sourceName }}</span>
+                <span v-for="tag in plugin.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
               </div>
+
+              <div class="plugin-card-id" :title="plugin.id">ID: {{ plugin.id }}</div>
 
               <div class="plugin-card-actions">
-                <div class="plugin-card-action-group">
-                  <div class="plugin-card-primary-actions">
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      class="plugin-settings-btn"
-                      :class="{
-                        'is-unavailable': !getSettingsContribution(record.descriptor.id),
-                      }"
-                      :title="getPluginSettingsButtonTitle(record)"
-                      :disabled="busyPluginIds.has(record.descriptor.id)"
-                      @click="requestOpenPluginSettings(record)"
-                    >
-                      <Icon :icon="iconSettings" width="14" height="14" />
-                      设置
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      class="plugin-remove-btn"
-                      :disabled="busyPluginIds.has(record.descriptor.id)"
-                      @click="requestUninstallPlugin(record.descriptor.id)"
-                    >
-                      移除
-                    </Button>
-                  </div>
-
-                  <button
-                    v-if="hasPluginCardFailure(record)"
-                    class="plugin-card-failure-btn"
-                    :class="{
-                      'is-historical': hasHistoricalPluginCardFailure(record),
-                      'is-warning': getPluginCardFailure(record)?.reason === 'incompatible',
-                    }"
-                    type="button"
-                    :title="getPluginFailureButtonTitle(record)"
-                    @click="openPluginFailureDetail(record.descriptor.id)"
+                <div class="plugin-card-primary-actions">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="plugin-settings-btn"
+                    :disabled="!plugin.repo"
+                    @click="openExternalUrl(plugin.repo || plugin.homepage)"
                   >
-                    <Icon :icon="iconTriangleAlert" width="14" height="14" />
-                  </button>
+                    <Icon :icon="iconExternalLink" width="14" height="14" />
+                    仓库
+                  </Button>
                 </div>
 
-                <Switch
-                  :model-value="record.descriptor.enabled"
+                <Button
+                  variant="primary"
+                  size="xs"
+                  class="marketplace-install-btn"
+                  :loading="busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))"
                   :disabled="
-                    record.descriptor.invalid ||
-                    !record.descriptor.compatibility.compatible ||
-                    busyPluginIds.has(record.descriptor.id)
+                    !canInstallMarketplacePlugin(plugin) ||
+                    busyMarketplacePluginKeys.has(getMarketplacePluginKey(plugin))
                   "
-                  @update:model-value="(value) => togglePlugin(record.descriptor.id, value)"
-                />
+                  @click="installMarketplacePlugin(plugin)"
+                >
+                  <Icon
+                    v-if="plugin.installed && !plugin.updateAvailable"
+                    :icon="iconCheck"
+                    width="14"
+                    height="14"
+                  />
+                  <Icon v-else :icon="iconArrowBarDown" width="14" height="14" />
+                  {{ getMarketplaceInstallLabel(plugin) }}
+                </Button>
               </div>
             </article>
           </div>
         </template>
       </div>
     </Scrollbar>
+
+    <!-- 插件源管理 -->
+    <Dialog
+      v-model:open="isSourceDialogOpen"
+      title="插件源"
+      description="添加 GitHub 仓库地址后，EchoMusic 会读取仓库根目录的 echo-plugins.json。"
+      show-close
+      content-class="plugin-source-dialog"
+      body-class="plugin-source-dialog-body"
+    >
+      <div class="plugin-source-manager">
+        <div class="plugin-source-add">
+          <Input
+            v-model="newSourceUrl"
+            placeholder="https://github.com/owner/repo"
+            input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
+          />
+          <Input
+            v-model="newSourceName"
+            placeholder="显示名称，可选"
+            input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
+          />
+          <Button
+            variant="primary"
+            size="xs"
+            :loading="isAddingSource"
+            :disabled="!newSourceUrl.trim() || isAddingSource"
+            @click="addMarketplaceSource"
+          >
+            <Icon :icon="iconPlus" width="14" height="14" />
+            添加
+          </Button>
+        </div>
+
+        <div v-if="marketplaceSources.length === 0" class="plugin-source-empty">暂无插件源</div>
+
+        <div v-else class="plugin-source-list">
+          <div v-for="source in marketplaceSources" :key="source.id" class="plugin-source-row">
+            <div class="plugin-source-main">
+              <div class="plugin-source-title">
+                <strong>{{ source.name }}</strong>
+                <span v-if="source.official">官方</span>
+              </div>
+              <p :title="source.url">{{ source.url }}</p>
+              <small>
+                {{ source.pluginCount }} 个插件
+                <template v-if="source.lastFetchedAt">
+                  · {{ new Date(source.lastFetchedAt).toLocaleString() }}
+                </template>
+              </small>
+              <div v-if="source.lastError" class="plugin-source-error">
+                {{ source.lastError }}
+              </div>
+            </div>
+
+            <div class="plugin-source-actions">
+              <Switch
+                :model-value="source.enabled"
+                :disabled="busySourceIds.has(source.id)"
+                @update:model-value="(enabled) => patchMarketplaceSource(source, { enabled })"
+              />
+              <Button
+                variant="ghost"
+                size="xs"
+                class="plugin-source-delete-btn"
+                :title="source.official ? '官方插件源可停用，但不能删除' : '删除插件源'"
+                :disabled="source.official || busySourceIds.has(source.id)"
+                @click="removeMarketplaceSource(source)"
+              >
+                <Icon :icon="iconTrash" width="14" height="14" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Dialog>
 
     <!-- 卸载对话框 -->
     <Dialog
@@ -806,8 +1318,112 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   color: var(--color-text-main);
 }
 
+.plugin-view-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--control-bg) 92%, var(--color-text-main) 4%);
+  border: 1px solid var(--control-border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.plugin-view-tab {
+  height: 2.125rem;
+  min-width: 8.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.plugin-view-tab:hover {
+  color: var(--color-text-main);
+  background: var(--row-hover-bg);
+}
+
+.plugin-view-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-view-tab small {
+  min-width: 1.375rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 0.6875rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.plugin-view-tab.is-active {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-elevated));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
 .plugin-content {
   padding-top: 1.25rem;
+}
+
+.marketplace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+}
+
+:deep(.marketplace-search) {
+  width: min(22rem, 100%);
+}
+
+:deep(.marketplace-source-select) {
+  width: min(17rem, 100%);
+  min-width: 14rem;
+}
+
+:deep(.marketplace-source-btn) {
+  gap: 0.375rem;
+}
+
+.marketplace-source-errors {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.875rem;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.08);
+  color: rgb(180, 83, 9);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:global(.dark) .marketplace-source-errors {
+  color: rgb(251, 191, 36);
 }
 
 .plugin-empty-state {
@@ -1044,6 +1660,39 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
   white-space: nowrap;
 }
 
+.marketplace-card {
+  min-height: 236px;
+}
+
+.marketplace-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-height: 1.5rem;
+}
+
+.marketplace-tags span {
+  max-width: 9rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.5rem;
+  border-radius: 6px;
+  background: var(--control-muted-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketplace-install-btn {
+  min-width: 5rem;
+  gap: 0.375rem;
+}
+
 .plugin-card-error {
   display: flex;
   align-items: flex-start;
@@ -1100,6 +1749,124 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 
 .plugin-card.is-error .plugin-remove-btn {
   @apply text-red-500 hover:text-red-400;
+}
+
+:global(.dialog-content.plugin-source-dialog) {
+  width: min(680px, 92vw);
+  max-height: min(720px, calc(100vh - 120px));
+}
+
+:global(.plugin-source-dialog-body) {
+  padding-right: 1.25rem;
+}
+
+.plugin-source-manager {
+  display: grid;
+  gap: 1rem;
+}
+
+.plugin-source-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr) auto;
+  gap: 0.625rem;
+  align-items: center;
+}
+
+.plugin-source-list {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.plugin-source-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--color-bg-elevated);
+}
+
+.plugin-source-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.plugin-source-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plugin-source-title strong {
+  min-width: 0;
+  color: var(--color-text-main);
+  font-size: 0.875rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-source-title span {
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-size: 0.6875rem;
+  font-weight: 800;
+}
+
+.plugin-source-main p,
+.plugin-source-main small {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.plugin-source-main p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugin-source-error {
+  color: rgb(180, 83, 9);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:global(.dark) .plugin-source-error {
+  color: rgb(251, 191, 36);
+}
+
+.plugin-source-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.plugin-source-delete-btn {
+  width: 2rem;
+  min-width: 2rem;
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+.plugin-source-empty {
+  min-height: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 8px;
 }
 
 :global(.plugin-failure-detail-dialog) {
@@ -1233,5 +2000,35 @@ const requestOpenPluginSettings = (record: (typeof records.value)[number]) => {
 
 .plugin-failure-message {
   @apply mt-0.5 text-[11px] text-amber-600 dark:text-amber-400 whitespace-pre-wrap break-words;
+}
+
+@media (max-width: 720px) {
+  .plugin-view-tabs {
+    width: 100%;
+  }
+
+  .plugin-view-tab {
+    min-width: 0;
+  }
+
+  :deep(.marketplace-search),
+  :deep(.marketplace-source-select),
+  :deep(.marketplace-source-btn) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .plugin-source-add {
+    grid-template-columns: 1fr;
+  }
+
+  .plugin-source-row {
+    flex-direction: column;
+  }
+
+  .plugin-source-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>

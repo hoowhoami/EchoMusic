@@ -292,6 +292,7 @@ impl MpvPlayer {
         if let Ok(mut s) = self.state.lock() {
             s.path = url.to_string();
             s.idle = true;
+            s.audio_track_id = 0;
         }
         self.command(&["loadfile", url, "replace"])
     }
@@ -301,6 +302,7 @@ impl MpvPlayer {
         if let Ok(mut s) = self.state.lock() {
             s.path = url.to_string();
             s.idle = true;
+            s.audio_track_id = track_id;
         }
         self.command(&["loadfile", url, "replace"])?;
         // 音轨 ID 需要在文件加载后设置，这里先记录
@@ -364,6 +366,7 @@ impl MpvPlayer {
             s.time_pos = 0.0;
             s.duration = 0.0;
             s.path.clear();
+            s.audio_track_id = 0;
         }
         // stop 在 idle 状态下可能失败，忽略
         result.or(Ok(()))
@@ -568,6 +571,9 @@ impl MpvPlayer {
         if rc < 0 {
             Err(format!("failed to set audio track {track_id}: {}", self.error_string(rc)))
         } else {
+            if let Ok(mut s) = self.state.lock() {
+                s.audio_track_id = track_id;
+            }
             Ok(())
         }
     }

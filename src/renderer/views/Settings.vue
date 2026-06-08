@@ -214,7 +214,7 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
   {
     id: 'experimental',
     label: '实验性功能',
-    order: 900,
+    order: 1150,
     component: ExperimentalSettingsSection,
   },
   {

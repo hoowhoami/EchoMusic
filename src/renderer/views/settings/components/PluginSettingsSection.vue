@@ -39,7 +39,7 @@ const handleOpenDocs = () => {
       <div class="space-y-1">
         <h3 class="font-semibold">插件管理</h3>
         <p class="text-sm text-text-secondary">
-          管理已安装的插件，配置插件设置
+          浏览在线插件源，管理已安装插件和插件设置
           <span v-if="pluginCount > 0">（{{ enabledCount }}/{{ pluginCount }} 个已启用）</span>
         </p>
       </div>

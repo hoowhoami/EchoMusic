@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import { useSettingStore } from '@/stores/setting';
 import Button from '@/components/ui/Button.vue';
-import Input from '@/components/ui/Input.vue';
 import Switch from '@/components/ui/Switch.vue';
 import FontIcon from '@/components/ui/FontIcon.vue';
 import { Icon } from '@iconify/vue';
@@ -50,19 +49,6 @@ defineProps<{
         <p class="text-sm text-text-secondary">开启后可收到 Alpha/Beta/RC 版本更新推送</p>
       </div>
       <Switch v-model="settingStore.checkPrerelease" />
-    </div>
-    <div class="settings-divider"></div>
-    <div class="settings-item">
-      <div class="space-y-1">
-        <h3 class="font-semibold">GitHub 加速地址</h3>
-        <p class="text-sm text-text-secondary">用于加速更新检测与下载，留空则直连 GitHub</p>
-      </div>
-      <Input
-        v-model="settingStore.githubProxyUrl"
-        placeholder="https://ghfast.top"
-        class="w-60! rounded-lg"
-        input-class="!h-9 !rounded-lg !pl-3 !pr-8 !text-sm"
-      />
     </div>
     <div class="settings-divider"></div>
     <div class="settings-item">

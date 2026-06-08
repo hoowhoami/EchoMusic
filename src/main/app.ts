@@ -10,6 +10,7 @@ import { createDockMenu, destroyTray, initTray, refreshTray } from './tray';
 import { getDesktopLyricWindow } from './desktopLyric';
 import { initMpvPlayer, destroyMpvPlayer } from './mpv';
 import { registerPlayerIpc } from './ipc/player';
+import { registerAudioSpectrumIpc, unregisterAudioSpectrumIpc } from './audioSpectrum';
 import { initMediaControls, destroyMediaControls } from './mediaControls';
 import { initPowerMonitor } from './powerMonitor';
 import { clearPluginRuntimeSession, setPluginSafeMode } from './plugins';
@@ -73,6 +74,7 @@ if (!gotTheLock) {
     // 注册播放器 IPC（渲染进程启动后立即可用）
     const mpvRef: { current: import('./mpv/controller').MpvController | null } = { current: null };
     registerPlayerIpc(mpvRef);
+    registerAudioSpectrumIpc(mpvRef);
 
     // 并行初始化 API 服务器和 mpv 播放引擎
     const [, mpvInstance] = await Promise.all([
@@ -150,6 +152,7 @@ if (!gotTheLock) {
       log.info('[Main] before-quit: cleaning up native resources');
       globalShortcut.unregisterAll();
       clearPluginRuntimeSession();
+      unregisterAudioSpectrumIpc();
       destroyMediaControls();
       destroyMpvPlayer();
       // 销毁桌面歌词窗口

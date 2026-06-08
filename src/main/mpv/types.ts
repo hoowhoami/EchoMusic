@@ -10,6 +10,7 @@ export interface MpvState {
   /** 当前播放的 URL */
   path: string;
   audioDevice: string;
+  audioTrackId: number;
 }
 
 /** mpv JSON IPC 消息 */

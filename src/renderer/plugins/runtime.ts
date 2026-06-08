@@ -11,6 +11,7 @@ import type {
   PluginWindowBounds,
   PluginWindowShowOptions,
 } from '../../shared/plugins';
+import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../../shared/audio-spectrum';
 import * as icons from '@/icons';
 import { usePlayerStore } from '@/stores/player';
 import { usePlaylistStore } from '@/stores/playlist';
@@ -77,6 +78,7 @@ export interface EchoPluginContext {
     theme: ReturnType<typeof useThemeStore>;
   };
   player: ReturnType<typeof createPlayerApi>;
+  audio: ReturnType<typeof createAudioApi>;
   playlist: ReturnType<typeof createPlaylistApi>;
   lyric: ReturnType<typeof useLyricStore>;
   settings: ReturnType<typeof useSettingStore>;
@@ -332,6 +334,29 @@ const createPlayerApi = () => {
     setPlayMode: player.setPlayMode,
   };
 };
+
+const createAudioApi = (pluginId: string, addDisposable: (dispose: () => void) => () => void) => ({
+  spectrum: {
+    getStatus: () =>
+      window.electron.audioSpectrum?.getStatus() ??
+      Promise.resolve({
+        available: false,
+        running: false,
+        provider: 'unavailable' as const,
+        reason: '频谱 API 不可用',
+      }),
+    getSnapshot: () => window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null),
+    subscribe: (options: AudioSpectrumOptions, handler: (frame: AudioSpectrumFrame) => void) => {
+      const dispose =
+        window.electron.audioSpectrum?.subscribe(
+          options,
+          (frame) => runPluginCallback(pluginId, '音频频谱事件', () => handler(frame), undefined),
+          { pluginId },
+        ) ?? (() => undefined);
+      return addDisposable(dispose);
+    },
+  },
+});
 
 const createPlaylistApi = () => {
   const playlist = usePlaylistStore();
@@ -842,6 +867,7 @@ const createPluginContext = (
       theme: themeStore,
     },
     player: createPlayerApi(),
+    audio: createAudioApi(descriptor.id, addDisposable),
     playlist: createPlaylistApi(),
     lyric: lyricStore,
     settings: settingStore,

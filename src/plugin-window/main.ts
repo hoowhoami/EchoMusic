@@ -2,6 +2,7 @@ import * as Vue from 'vue';
 import './style.css';
 import type { EchoPluginDescriptor, PluginWindowDescriptor } from '../shared/plugins';
 import type { NowPlayingCommand } from '../shared/now-playing';
+import type { AudioSpectrumFrame, AudioSpectrumOptions } from '../shared/audio-spectrum';
 
 type PluginWindowModule =
   | {
@@ -29,6 +30,16 @@ interface EchoPluginWindowContext {
   vue: typeof Vue;
   container: HTMLElement;
   nowPlaying: NonNullable<Window['electron']['nowPlaying']>;
+  audio: {
+    spectrum: {
+      getStatus: NonNullable<Window['electron']['audioSpectrum']>['getStatus'];
+      getSnapshot: NonNullable<Window['electron']['audioSpectrum']>['getSnapshot'];
+      subscribe: (
+        options: AudioSpectrumOptions,
+        handler: (frame: AudioSpectrumFrame) => void,
+      ) => () => void;
+    };
+  };
   storage: {
     get: <T = unknown>(key: string) => Promise<T | null>;
     set: (key: string, value: unknown) => Promise<unknown>;
@@ -162,6 +173,25 @@ const buildContext = (
   vue: Vue,
   container,
   nowPlaying: window.electron.nowPlaying,
+  audio: {
+    spectrum: {
+      getStatus: () =>
+        window.electron.audioSpectrum?.getStatus() ??
+        Promise.resolve({
+          available: false,
+          running: false,
+          provider: 'unavailable' as const,
+          reason: '频谱 API 不可用',
+        }),
+      getSnapshot: () => window.electron.audioSpectrum?.getSnapshot() ?? Promise.resolve(null),
+      subscribe: (options, handler) =>
+        addDisposable(
+          window.electron.audioSpectrum?.subscribe(options, handler, {
+            pluginId: descriptor.id,
+          }) ?? (() => undefined),
+        ),
+    },
+  },
   storage: {
     get: <T = unknown>(key: string) =>
       window.electron.plugins?.storage.get<T>(descriptor.id, key) ?? Promise.resolve(null),

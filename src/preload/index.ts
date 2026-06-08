@@ -25,6 +25,12 @@ import type {
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
 } from '../shared/audio';
+import type {
+  AudioSpectrumFrame,
+  AudioSpectrumOptions,
+  AudioSpectrumStatus,
+  AudioSpectrumSubscribeResult,
+} from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
@@ -36,6 +42,15 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginMarketplaceInstallOptions,
+  PluginMarketplaceInstallResult,
+  PluginMarketplaceListResult,
+  PluginMarketplaceRemoveSourceResult,
+  PluginMarketplaceRequestOptions,
+  PluginMarketplaceSourceInput,
+  PluginMarketplaceSourceListResult,
+  PluginMarketplaceSourceMutationResult,
+  PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
   PluginReportFailureResult,
   PluginSetEnabledResult,
@@ -98,6 +113,8 @@ const toPlainIpcPayload = <T>(value: T): T => {
 
 const invokeWithPlainPayload = <T = unknown>(channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args.map(toPlainIpcPayload)) as Promise<T>;
+
+let audioSpectrumSubscriptionSeq = 0;
 
 const sendWithPlainPayload = (channel: string, ...args: unknown[]) => {
   ipcRenderer.send(channel, ...args.map(toPlainIpcPayload));
@@ -364,6 +381,40 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('mpv:audio-device-list-changed', listener);
     },
   },
+  audioSpectrum: {
+    getStatus: () =>
+      ipcRenderer.invoke('audio-spectrum:get-status') as Promise<AudioSpectrumStatus>,
+    getSnapshot: () =>
+      ipcRenderer.invoke('audio-spectrum:get-snapshot') as Promise<AudioSpectrumFrame | null>,
+    subscribe: (
+      options: AudioSpectrumOptions,
+      func: (frame: AudioSpectrumFrame) => void,
+      metadata?: { pluginId?: string },
+    ) => {
+      const subscriptionId = `audio-spectrum-${Date.now()}-${++audioSpectrumSubscriptionSeq}`;
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        frameSubscriptionId: string,
+        frame: AudioSpectrumFrame,
+      ) => {
+        if (frameSubscriptionId === subscriptionId) func(frame);
+      };
+      ipcRenderer.on('audio-spectrum:frame', listener);
+      void invokeWithPlainPayload<AudioSpectrumSubscribeResult>('audio-spectrum:subscribe', {
+        subscriptionId,
+        pluginId: metadata?.pluginId,
+        options,
+      }).catch(() => {
+        ipcRenderer.removeListener('audio-spectrum:frame', listener);
+      });
+      return () => {
+        ipcRenderer.removeListener('audio-spectrum:frame', listener);
+        void invokeWithPlainPayload<AudioSpectrumStatus>('audio-spectrum:unsubscribe', {
+          subscriptionId,
+        }).catch(() => {});
+      };
+    },
+  },
   shazam: {
     recognize: (pcmData: ArrayBuffer) =>
       ipcRenderer.invoke('shazam:recognize', pcmData) as Promise<RecognizeResponse>,
@@ -378,6 +429,38 @@ contextBridge.exposeInMainWorld('electron', {
     list: () => ipcRenderer.invoke('plugins:list') as Promise<PluginListResult>,
     getDirectory: () => ipcRenderer.invoke('plugins:get-directory') as Promise<string>,
     openDirectory: () => ipcRenderer.invoke('plugins:open-directory') as Promise<string>,
+    marketplace: {
+      listSources: () =>
+        ipcRenderer.invoke(
+          'plugins:marketplace:sources:list',
+        ) as Promise<PluginMarketplaceSourceListResult>,
+      addSource: (input: PluginMarketplaceSourceInput, options?: PluginMarketplaceRequestOptions) =>
+        invokeWithPlainPayload<PluginMarketplaceSourceMutationResult>(
+          'plugins:marketplace:sources:add',
+          input,
+          options,
+        ),
+      patchSource: (sourceId: string, patch: PluginMarketplaceSourcePatch) =>
+        invokeWithPlainPayload<PluginMarketplaceSourceMutationResult>(
+          'plugins:marketplace:sources:patch',
+          sourceId,
+          patch,
+        ),
+      removeSource: (sourceId: string) =>
+        ipcRenderer.invoke(
+          'plugins:marketplace:sources:remove',
+          sourceId,
+        ) as Promise<PluginMarketplaceRemoveSourceResult>,
+      list: (options?: PluginMarketplaceRequestOptions) =>
+        invokeWithPlainPayload<PluginMarketplaceListResult>('plugins:marketplace:list', options),
+      install: (sourceId: string, pluginId: string, options?: PluginMarketplaceInstallOptions) =>
+        invokeWithPlainPayload<PluginMarketplaceInstallResult>(
+          'plugins:marketplace:install',
+          sourceId,
+          pluginId,
+          options,
+        ),
+    },
     reloadRuntimes: () => ipcRenderer.invoke('plugins:runtime-reload') as Promise<void>,
     onRuntimeReloadRequested: (func: () => void) => {
       const listener = () => func();

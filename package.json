@@ -1,6 +1,6 @@
 {
   "name": "echo-music",
-  "version": "2.2.6-beta.10",
+  "version": "2.2.6-beta.11",
   "description": "EchoMusic desktop client.",
   "author": {
     "name": "hoowhoami",
@@ -27,6 +27,7 @@
     "electron-audio-loopback": "^1.0.6",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.3",
+    "extract-zip": "^2.0.1",
     "font-list": "^2.1.0",
     "marked": "^18.0.4",
     "pinia": "^3.0.4",

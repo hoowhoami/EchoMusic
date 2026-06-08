@@ -3,6 +3,7 @@
 mod event_loop;
 mod mpv_ffi;
 mod player;
+mod spectrum;
 mod types;
 
 use event_loop::start_event_loop;
@@ -10,6 +11,7 @@ use mpv_ffi::MpvLib;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use player::MpvPlayer;
+use spectrum::SpectrumAnalyzer;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -22,6 +24,8 @@ static EVENT_THREAD: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 /// 事件回调（Arc<Mutex> 包装，供多线程共享访问）
 static EVENT_CALLBACK: Mutex<Option<Arc<Mutex<ThreadsafeFunction<PlayerEvent>>>>> =
     Mutex::new(None);
+/// 频谱分析器
+static SPECTRUM_ANALYZER: Mutex<Option<Arc<SpectrumAnalyzer>>> = Mutex::new(None);
 
 /// 获取播放器实例
 fn get_player() -> napi::Result<Arc<MpvPlayer>> {
@@ -31,6 +35,19 @@ fn get_player() -> napi::Result<Arc<MpvPlayer>> {
         .as_ref()
         .cloned()
         .ok_or_else(|| napi::Error::from_reason("player not initialized".to_string()))
+}
+
+fn get_spectrum_analyzer() -> napi::Result<Arc<SpectrumAnalyzer>> {
+    let mut guard = SPECTRUM_ANALYZER
+        .lock()
+        .map_err(|e| napi::Error::from_reason(format!("failed to acquire spectrum lock: {e}")))?;
+    if let Some(analyzer) = guard.as_ref() {
+        return Ok(analyzer.clone());
+    }
+
+    let analyzer = Arc::new(SpectrumAnalyzer::new());
+    *guard = Some(analyzer.clone());
+    Ok(analyzer)
 }
 
 /// 通过全局回调发送事件
@@ -59,12 +76,10 @@ pub fn initialize(lib_path: String) -> napi::Result<()> {
     // 先销毁旧实例
     let _ = destroy();
 
-    let lib =
-        unsafe { MpvLib::load(&lib_path) }.map_err(|e| napi::Error::from_reason(e))?;
+    let lib = unsafe { MpvLib::load(&lib_path) }.map_err(|e| napi::Error::from_reason(e))?;
     let lib = Arc::new(lib);
 
-    let player =
-        unsafe { MpvPlayer::new(lib) }.map_err(|e| napi::Error::from_reason(e))?;
+    let player = unsafe { MpvPlayer::new(lib) }.map_err(|e| napi::Error::from_reason(e))?;
     player
         .request_log_messages("warn")
         .map_err(|e| napi::Error::from_reason(e))?;
@@ -81,6 +96,12 @@ pub fn initialize(lib_path: String) -> napi::Result<()> {
 /// 销毁播放器
 #[napi]
 pub fn destroy() -> napi::Result<()> {
+    if let Ok(mut analyzer) = SPECTRUM_ANALYZER.lock() {
+        if let Some(active) = analyzer.take() {
+            let _ = active.stop();
+        }
+    }
+
     // 先清除回调
     if let Ok(mut cb) = EVENT_CALLBACK.lock() {
         *cb = None;
@@ -319,6 +340,31 @@ pub fn get_property(name: String) -> napi::Result<String> {
         .map_err(|e| napi::Error::from_reason(e))
 }
 
+/// 启动频谱分析器
+#[napi]
+pub fn start_spectrum(_options: AudioSpectrumOptions) -> napi::Result<AudioSpectrumStatus> {
+    let player = get_player()?;
+    Ok(get_spectrum_analyzer()?.start(player.lib().clone(), player.state().clone(), _options))
+}
+
+/// 停止频谱分析器
+#[napi]
+pub fn stop_spectrum() -> napi::Result<AudioSpectrumStatus> {
+    Ok(get_spectrum_analyzer()?.stop())
+}
+
+/// 获取最近一帧频谱快照
+#[napi]
+pub fn get_spectrum_snapshot() -> napi::Result<Option<AudioSpectrumFrame>> {
+    Ok(get_spectrum_analyzer()?.snapshot())
+}
+
+/// 获取频谱分析器状态
+#[napi]
+pub fn get_spectrum_status() -> napi::Result<AudioSpectrumStatus> {
+    Ok(get_spectrum_analyzer()?.current_status())
+}
+
 /// 淡入淡出
 /// 返回后 fade 在后台线程执行，完成时通过事件回调通知
 #[napi]
@@ -371,9 +417,7 @@ pub fn pause_with_fade(saved_volume: f64, duration_ms: f64) -> napi::Result<()> 
     let duration = duration_ms as u64;
 
     if duration == 0 {
-        player
-            .pause()
-            .map_err(|e| napi::Error::from_reason(e))?;
+        player.pause().map_err(|e| napi::Error::from_reason(e))?;
         return Ok(());
     }
 
@@ -413,9 +457,7 @@ pub fn play_with_fade(target_volume: f64, duration_ms: f64) -> napi::Result<()> 
     player
         .set_volume(0.0)
         .map_err(|e| napi::Error::from_reason(e))?;
-    player
-        .play()
-        .map_err(|e| napi::Error::from_reason(e))?;
+    player.play().map_err(|e| napi::Error::from_reason(e))?;
 
     if duration == 0 {
         player

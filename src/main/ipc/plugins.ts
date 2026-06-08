@@ -7,6 +7,15 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginMarketplaceInstallOptions,
+  PluginMarketplaceInstallResult,
+  PluginMarketplaceListResult,
+  PluginMarketplaceRemoveSourceResult,
+  PluginMarketplaceRequestOptions,
+  PluginMarketplaceSourceInput,
+  PluginMarketplaceSourceListResult,
+  PluginMarketplaceSourceMutationResult,
+  PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
   PluginSetEnabledResult,
   PluginReportFailureResult,
@@ -20,12 +29,18 @@ import {
   getPluginData,
   getPluginDirectory,
   getPluginFileUrl,
+  addPluginMarketplaceSource,
+  installPluginFromMarketplace,
   listPluginImageFiles,
+  listPluginMarketplace,
+  listPluginMarketplaceSources,
   listPlugins,
   markPluginStartup,
   openPluginDirectory,
+  patchPluginMarketplaceSource,
   readPluginTextAsset,
   readPluginWindowTextAsset,
+  removePluginMarketplaceSource,
   reportPluginFailure,
   setPluginData,
   setPluginActiveSession,
@@ -74,6 +89,48 @@ export const registerPluginHandlers = (context: IpcContext) => {
   ipcMain.handle('plugins:list', (): PluginListResult => listPlugins());
   ipcMain.handle('plugins:get-directory', (): string => getPluginDirectory());
   ipcMain.handle('plugins:open-directory', (): string => openPluginDirectory());
+  ipcMain.handle(
+    'plugins:marketplace:sources:list',
+    (): PluginMarketplaceSourceListResult => ({
+      sources: listPluginMarketplaceSources(),
+    }),
+  );
+  ipcMain.handle(
+    'plugins:marketplace:sources:add',
+    (
+      _event,
+      input: PluginMarketplaceSourceInput,
+      options?: PluginMarketplaceRequestOptions,
+    ): Promise<PluginMarketplaceSourceMutationResult> => addPluginMarketplaceSource(input, options),
+  );
+  ipcMain.handle(
+    'plugins:marketplace:sources:patch',
+    (
+      _event,
+      sourceId: string,
+      patch: PluginMarketplaceSourcePatch,
+    ): PluginMarketplaceSourceMutationResult => patchPluginMarketplaceSource(sourceId, patch),
+  );
+  ipcMain.handle(
+    'plugins:marketplace:sources:remove',
+    (_event, sourceId: string): PluginMarketplaceRemoveSourceResult =>
+      removePluginMarketplaceSource(sourceId),
+  );
+  ipcMain.handle(
+    'plugins:marketplace:list',
+    (_event, options?: PluginMarketplaceRequestOptions): Promise<PluginMarketplaceListResult> =>
+      listPluginMarketplace(options),
+  );
+  ipcMain.handle(
+    'plugins:marketplace:install',
+    (
+      _event,
+      sourceId: string,
+      pluginId: string,
+      options?: PluginMarketplaceInstallOptions,
+    ): Promise<PluginMarketplaceInstallResult> =>
+      installPluginFromMarketplace(sourceId, pluginId, options),
+  );
   ipcMain.handle('plugins:runtime-reload', (event): void => {
     BrowserWindow.getAllWindows().forEach((win) => {
       try {
@@ -188,6 +245,12 @@ export const unregisterPluginHandlers = () => {
   ipcMain.removeHandler('plugins:list');
   ipcMain.removeHandler('plugins:get-directory');
   ipcMain.removeHandler('plugins:open-directory');
+  ipcMain.removeHandler('plugins:marketplace:sources:list');
+  ipcMain.removeHandler('plugins:marketplace:sources:add');
+  ipcMain.removeHandler('plugins:marketplace:sources:patch');
+  ipcMain.removeHandler('plugins:marketplace:sources:remove');
+  ipcMain.removeHandler('plugins:marketplace:list');
+  ipcMain.removeHandler('plugins:marketplace:install');
   ipcMain.removeHandler('plugins:runtime-reload');
   ipcMain.removeHandler('plugins:dialog:select-directory');
   ipcMain.removeHandler('plugins:dialog:select-files');

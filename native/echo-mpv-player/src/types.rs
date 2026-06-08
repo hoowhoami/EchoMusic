@@ -15,6 +15,7 @@ pub struct PlayerState {
     pub idle: bool,
     pub path: String,
     pub audio_device: String,
+    pub audio_track_id: i64,
 }
 
 impl Default for PlayerState {
@@ -29,6 +30,7 @@ impl Default for PlayerState {
             idle: true,
             path: String::new(),
             audio_device: "auto".to_string(),
+            audio_track_id: 0,
         }
     }
 }
@@ -192,4 +194,59 @@ pub struct TrackInfo {
 pub struct AudioDevice {
     pub name: String,
     pub description: String,
+}
+
+/// 频谱分析配置
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioSpectrumOptions {
+    pub fps: Option<f64>,
+    pub bin_count: Option<u32>,
+    pub fft_size: Option<u32>,
+    pub smoothing: Option<f64>,
+    pub min_frequency: Option<f64>,
+    pub max_frequency: Option<f64>,
+    pub scale: Option<String>,
+    pub include_waveform: Option<bool>,
+}
+
+/// 频谱分析器状态
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioSpectrumStatus {
+    pub available: bool,
+    pub running: bool,
+    pub provider: String,
+    pub reason: Option<String>,
+    pub subscriber_count: Option<u32>,
+}
+
+impl AudioSpectrumStatus {
+    pub fn unavailable(reason: &str) -> Self {
+        Self {
+            available: false,
+            running: false,
+            provider: "unavailable".to_string(),
+            reason: Some(reason.to_string()),
+            subscriber_count: None,
+        }
+    }
+}
+
+/// 频谱帧
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct AudioSpectrumFrame {
+    pub source: String,
+    pub state: String,
+    pub timestamp: f64,
+    pub time_pos: Option<f64>,
+    pub sample_rate: u32,
+    pub fft_size: u32,
+    pub min_frequency: f64,
+    pub max_frequency: f64,
+    pub bins: Vec<u32>,
+    pub waveform: Option<Vec<f64>>,
+    pub rms: f64,
+    pub peak: f64,
 }

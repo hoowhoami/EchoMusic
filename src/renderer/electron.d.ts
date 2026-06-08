@@ -23,6 +23,11 @@ import type {
   ImpulseResponseFile,
   ImpulseResponsePlaybackOptions,
 } from '../shared/audio';
+import type {
+  AudioSpectrumFrame,
+  AudioSpectrumOptions,
+  AudioSpectrumStatus,
+} from '../shared/audio-spectrum';
 import type { LogSettings } from '../shared/logging';
 import type { RecognizeResponse } from '../shared/shazam';
 import type { ResolvePlaylistRequest, ResolvePlaylistResponse } from '../shared/external';
@@ -34,6 +39,15 @@ import type {
   PluginListImageFilesOptions,
   PluginListImageFilesResult,
   PluginListResult,
+  PluginMarketplaceInstallOptions,
+  PluginMarketplaceInstallResult,
+  PluginMarketplaceListResult,
+  PluginMarketplaceRemoveSourceResult,
+  PluginMarketplaceRequestOptions,
+  PluginMarketplaceSourceInput,
+  PluginMarketplaceSourceListResult,
+  PluginMarketplaceSourceMutationResult,
+  PluginMarketplaceSourcePatch,
   PluginOpenDialogOptions,
   PluginReportFailureResult,
   PluginSetEnabledResult,
@@ -163,6 +177,15 @@ export interface IElectronAPI {
     get: () => Promise<LogSettings>;
     update: (settings: Partial<LogSettings>) => Promise<LogSettings>;
   };
+  audioSpectrum?: {
+    getStatus: () => Promise<AudioSpectrumStatus>;
+    getSnapshot: () => Promise<AudioSpectrumFrame | null>;
+    subscribe: (
+      options: AudioSpectrumOptions,
+      func: (frame: AudioSpectrumFrame) => void,
+      metadata?: { pluginId?: string },
+    ) => () => void;
+  };
   shazam: {
     recognize: (pcmData: ArrayBuffer) => Promise<RecognizeResponse>;
     enableLoopback: () => Promise<void>;
@@ -175,6 +198,24 @@ export interface IElectronAPI {
     list: () => Promise<PluginListResult>;
     getDirectory: () => Promise<string>;
     openDirectory: () => Promise<string>;
+    marketplace: {
+      listSources: () => Promise<PluginMarketplaceSourceListResult>;
+      addSource: (
+        input: PluginMarketplaceSourceInput,
+        options?: PluginMarketplaceRequestOptions,
+      ) => Promise<PluginMarketplaceSourceMutationResult>;
+      patchSource: (
+        sourceId: string,
+        patch: PluginMarketplaceSourcePatch,
+      ) => Promise<PluginMarketplaceSourceMutationResult>;
+      removeSource: (sourceId: string) => Promise<PluginMarketplaceRemoveSourceResult>;
+      list: (options?: PluginMarketplaceRequestOptions) => Promise<PluginMarketplaceListResult>;
+      install: (
+        sourceId: string,
+        pluginId: string,
+        options?: PluginMarketplaceInstallOptions,
+      ) => Promise<PluginMarketplaceInstallResult>;
+    };
     reloadRuntimes: () => Promise<void>;
     onRuntimeReloadRequested: (func: () => void) => () => void;
     setEnabled: (pluginId: string, enabled: boolean) => Promise<PluginSetEnabledResult>;

@@ -98,8 +98,8 @@ const valueLabel = computed(() =>
 
 .slider-wrapper-horizontal {
   @apply relative flex items-center;
-  width: 100%;
   min-width: 0;
+  max-width: 100%;
 }
 
 .slider-wrapper-horizontal.has-value-label {

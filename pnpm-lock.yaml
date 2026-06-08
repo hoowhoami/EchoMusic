@@ -32,6 +32,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      extract-zip:
+        specifier: ^2.0.1
+        version: 2.0.1
       font-list:
         specifier: ^2.1.0
         version: 2.1.0

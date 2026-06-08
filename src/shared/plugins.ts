@@ -153,6 +153,9 @@ export interface EchoPluginManifest {
     miniPlayer?: boolean;
     desktopLyric?: boolean;
   };
+  capabilities?: {
+    audioSpectrum?: boolean;
+  };
   contributes?: {
     windows?: PluginWindowManifest[];
   };
@@ -187,6 +190,121 @@ export interface EchoPluginDescriptor {
   compatibility: EchoPluginCompatibility;
   manifest: EchoPluginManifest;
 }
+
+export interface PluginMarketplaceSource {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  official: boolean;
+  indexUrl: string;
+  homepage: string;
+  pluginCount: number;
+  addedAt: number;
+  updatedAt: number;
+  lastFetchedAt: number;
+  lastError: string;
+}
+
+export interface PluginMarketplaceSourceInput {
+  url: string;
+  name?: string;
+  enabled?: boolean;
+}
+
+export interface PluginMarketplaceSourcePatch {
+  name?: string;
+  enabled?: boolean;
+}
+
+export interface PluginMarketplaceRequestOptions {
+  githubProxyUrl?: string;
+  refresh?: boolean;
+}
+
+export interface PluginMarketplaceInstallOptions {
+  githubProxyUrl?: string;
+  enableAfterInstall?: boolean;
+}
+
+export interface PluginMarketplacePlugin {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  icon: string;
+  iconUrl: string;
+  tags: string[];
+  repo: string;
+  homepage: string;
+  downloadUrl: string;
+  packagePath: string;
+  checksum: string;
+  sourceId: string;
+  sourceName: string;
+  sourceUrl: string;
+  installed: boolean;
+  installedVersion: string;
+  updateAvailable: boolean;
+  compatibility: EchoPluginCompatibility;
+  manifest: EchoPluginManifest;
+}
+
+export type PluginMarketplaceListResult =
+  | {
+      ok: true;
+      sources: PluginMarketplaceSource[];
+      plugins: PluginMarketplacePlugin[];
+      fetchedAt: number;
+    }
+  | {
+      ok: false;
+      error: string;
+      sources: PluginMarketplaceSource[];
+      plugins: PluginMarketplacePlugin[];
+      fetchedAt: number;
+    };
+
+export type PluginMarketplaceSourceListResult = {
+  sources: PluginMarketplaceSource[];
+};
+
+export type PluginMarketplaceSourceMutationResult =
+  | {
+      ok: true;
+      source: PluginMarketplaceSource;
+      sources: PluginMarketplaceSource[];
+    }
+  | {
+      ok: false;
+      error: string;
+      sources: PluginMarketplaceSource[];
+    };
+
+export type PluginMarketplaceRemoveSourceResult =
+  | {
+      ok: true;
+      sourceId: string;
+      sources: PluginMarketplaceSource[];
+    }
+  | {
+      ok: false;
+      error: string;
+      sources: PluginMarketplaceSource[];
+    };
+
+export type PluginMarketplaceInstallResult =
+  | {
+      ok: true;
+      plugin: EchoPluginDescriptor;
+      updated: boolean;
+      enabled: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
 
 export interface PluginFailureRecord {
   pluginId?: string;
