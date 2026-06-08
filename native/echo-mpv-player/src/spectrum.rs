@@ -18,6 +18,9 @@ const FRAME_POLL_MS: u64 = 16;
 const STATE_SYNC_MS: u64 = 250;
 const MAX_PCM_FILE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_RING_FACTOR: usize = 4;
+const SIDECAR_CACHE_SECS: &str = "15";
+const SIDECAR_DEMUXER_MAX_BYTES: &str = "16MiB";
+const SIDECAR_DEMUXER_MAX_BACK_BYTES: &str = "4MiB";
 const DEFAULT_FPS: f64 = 30.0;
 const DEFAULT_BIN_COUNT: u32 = 128;
 const DEFAULT_FFT_SIZE: u32 = 2048;
@@ -37,6 +40,12 @@ struct SpectrumOptions {
     include_waveform: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Complex {
+    re: f64,
+    im: f64,
+}
+
 impl SpectrumOptions {
     fn from_input(input: AudioSpectrumOptions) -> Self {
         let min_frequency = input
@@ -47,7 +56,8 @@ impl SpectrumOptions {
             .max_frequency
             .unwrap_or(DEFAULT_MAX_FREQ)
             .clamp(min_frequency + 1.0, SAMPLE_RATE as f64 / 2.0);
-        let fft_size = normalize_power_of_two(input.fft_size.unwrap_or(DEFAULT_FFT_SIZE), 256, 8192);
+        let fft_size =
+            normalize_power_of_two(input.fft_size.unwrap_or(DEFAULT_FFT_SIZE), 256, 8192);
 
         Self {
             fps: input.fps.unwrap_or(DEFAULT_FPS).clamp(1.0, 60.0),
@@ -99,16 +109,18 @@ impl Drop for SidecarMpv {
 impl SpectrumAnalyzer {
     pub fn new() -> Self {
         Self {
-            options: Arc::new(Mutex::new(SpectrumOptions::from_input(AudioSpectrumOptions {
-                fps: None,
-                bin_count: None,
-                fft_size: None,
-                smoothing: None,
-                min_frequency: None,
-                max_frequency: None,
-                scale: None,
-                include_waveform: None,
-            }))),
+            options: Arc::new(Mutex::new(SpectrumOptions::from_input(
+                AudioSpectrumOptions {
+                    fps: None,
+                    bin_count: None,
+                    fft_size: None,
+                    smoothing: None,
+                    min_frequency: None,
+                    max_frequency: None,
+                    scale: None,
+                    include_waveform: None,
+                },
+            ))),
             latest_frame: Arc::new(Mutex::new(None)),
             status: Arc::new(Mutex::new(AudioSpectrumStatus {
                 available: true,
@@ -146,7 +158,9 @@ impl SpectrumAnalyzer {
             let shutdown = self.shutdown.clone();
             let handle = std::thread::Builder::new()
                 .name("mpv-spectrum".to_string())
-                .spawn(move || run_worker(lib, player_state, options, latest_frame, status, shutdown));
+                .spawn(move || {
+                    run_worker(lib, player_state, options, latest_frame, status, shutdown)
+                });
 
             match handle {
                 Ok(handle) => {
@@ -197,17 +211,23 @@ impl SpectrumAnalyzer {
     }
 
     pub fn snapshot(&self) -> Option<AudioSpectrumFrame> {
-        self.latest_frame.lock().ok().and_then(|frame| frame.clone())
+        self.latest_frame
+            .lock()
+            .ok()
+            .and_then(|frame| frame.clone())
     }
 
     pub fn current_status(&self) -> AudioSpectrumStatus {
-        self.status.lock().map(|status| status.clone()).unwrap_or_else(|_| AudioSpectrumStatus {
-            available: false,
-            running: false,
-            provider: "unavailable".to_string(),
-            reason: Some("spectrum status lock poisoned".to_string()),
-            subscriber_count: None,
-        })
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| AudioSpectrumStatus {
+                available: false,
+                running: false,
+                provider: "unavailable".to_string(),
+                reason: Some("spectrum status lock poisoned".to_string()),
+                subscriber_count: None,
+            })
     }
 }
 
@@ -326,7 +346,8 @@ fn run_worker(
                 &mut last_frame,
                 "paused",
             );
-        } else if sample_ring.len() >= current_options.fft_size && last_frame.elapsed() >= frame_interval
+        } else if sample_ring.len() >= current_options.fft_size
+            && last_frame.elapsed() >= frame_interval
         {
             let samples = latest_samples(&sample_ring, current_options.fft_size);
             let frame = build_frame(&samples, &current_options, &state, &mut previous_bins);
@@ -384,14 +405,17 @@ impl SidecarMpv {
         sidecar.set_option("af", "lavfi=[arealtime]")?;
         sidecar.set_option("user-agent", "Mozilla/5.0")?;
         sidecar.set_option("cache", "yes")?;
-        sidecar.set_option("cache-secs", "120")?;
-        sidecar.set_option("demuxer-readahead-secs", "120")?;
-        sidecar.set_option("demuxer-max-bytes", "150MiB")?;
-        sidecar.set_option("demuxer-max-back-bytes", "50MiB")?;
+        sidecar.set_option("cache-secs", SIDECAR_CACHE_SECS)?;
+        sidecar.set_option("demuxer-readahead-secs", SIDECAR_CACHE_SECS)?;
+        sidecar.set_option("demuxer-max-bytes", SIDECAR_DEMUXER_MAX_BYTES)?;
+        sidecar.set_option("demuxer-max-back-bytes", SIDECAR_DEMUXER_MAX_BACK_BYTES)?;
 
         let rc = unsafe { (sidecar.lib.mpv_initialize)(sidecar.handle) };
         if rc < 0 {
-            return Err(format!("spectrum sidecar initialize failed: {}", sidecar.error_string(rc)));
+            return Err(format!(
+                "spectrum sidecar initialize failed: {}",
+                sidecar.error_string(rc)
+            ));
         }
 
         sidecar.command(&["loadfile", path, "replace"])?;
@@ -433,7 +457,10 @@ impl SidecarMpv {
             )
         };
         if rc < 0 {
-            Err(format!("spectrum sidecar pause sync failed: {}", self.error_string(rc)))
+            Err(format!(
+                "spectrum sidecar pause sync failed: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -451,7 +478,10 @@ impl SidecarMpv {
             )
         };
         if rc < 0 {
-            Err(format!("spectrum sidecar time-pos failed: {}", self.error_string(rc)))
+            Err(format!(
+                "spectrum sidecar time-pos failed: {}",
+                self.error_string(rc)
+            ))
         } else {
             Ok(value)
         }
@@ -494,7 +524,11 @@ impl SidecarMpv {
         ptrs.push(std::ptr::null());
         let rc = unsafe { (self.lib.mpv_command)(self.handle, ptrs.as_ptr()) };
         if rc < 0 {
-            Err(format!("spectrum sidecar command {:?} failed: {}", args, self.error_string(rc)))
+            Err(format!(
+                "spectrum sidecar command {:?} failed: {}",
+                args,
+                self.error_string(rc)
+            ))
         } else {
             Ok(())
         }
@@ -512,8 +546,8 @@ impl SidecarMpv {
             return Ok(());
         }
 
-        let mut file = File::open(&self.pcm_path)
-            .map_err(|err| format!("open spectrum pcm failed: {err}"))?;
+        let mut file =
+            File::open(&self.pcm_path).map_err(|err| format!("open spectrum pcm failed: {err}"))?;
         file.seek(SeekFrom::Start(self.read_offset))
             .map_err(|err| format!("seek spectrum pcm failed: {err}"))?;
         let mut chunk = Vec::new();
@@ -603,7 +637,7 @@ fn maybe_publish_silence(
     last_frame: &mut Instant,
     playback_state: &str,
 ) {
-    let frame_interval = Duration::from_secs_f64(1.0 / options.fps);
+    let frame_interval = Duration::from_secs_f64(1.0 / options.fps.min(4.0));
     if last_frame.elapsed() < frame_interval {
         return;
     }
@@ -643,10 +677,10 @@ fn build_frame(
     state: &PlayerState,
     previous_bins: &mut Vec<f64>,
 ) -> AudioSpectrumFrame {
-    let windowed = apply_hann(samples, options.fft_size);
-    let mut raw_bins = Vec::with_capacity(options.bin_count);
+    let mut frequency_bins = apply_hann(samples, options.fft_size);
     let mut bins = Vec::with_capacity(options.bin_count);
-    let window_sum = windowed.iter().map(|(_, w)| *w).sum::<f64>().max(1.0);
+    let window_sum = hann_window_sum(options.fft_size).max(1.0);
+    fft_in_place(&mut frequency_bins);
 
     if previous_bins.len() != options.bin_count {
         previous_bins.clear();
@@ -655,16 +689,17 @@ fn build_frame(
 
     for index in 0..options.bin_count {
         let freq = bin_center_frequency(index, options);
-        let magnitude = dft_magnitude(&windowed, freq, window_sum);
+        let magnitude = fft_magnitude(&frequency_bins, freq, window_sum);
         let db = 20.0 * (magnitude + 1e-9).log10();
         let normalized = ((db + 80.0) / 80.0).clamp(0.0, 1.0);
-        let smoothed = previous_bins[index] * options.smoothing + normalized * (1.0 - options.smoothing);
+        let smoothed =
+            previous_bins[index] * options.smoothing + normalized * (1.0 - options.smoothing);
         previous_bins[index] = smoothed;
-        raw_bins.push(smoothed);
         bins.push((smoothed * 255.0).round().clamp(0.0, 255.0) as u32);
     }
 
-    let rms = (samples.iter().map(|sample| sample * sample).sum::<f64>() / samples.len().max(1) as f64)
+    let rms = (samples.iter().map(|sample| sample * sample).sum::<f64>()
+        / samples.len().max(1) as f64)
         .sqrt()
         .clamp(0.0, 1.0);
     let peak = samples
@@ -689,7 +724,7 @@ fn build_frame(
     }
 }
 
-fn apply_hann(samples: &[f64], fft_size: usize) -> Vec<(f64, f64)> {
+fn apply_hann(samples: &[f64], fft_size: usize) -> Vec<Complex> {
     let mut values = Vec::with_capacity(fft_size);
     for index in 0..fft_size {
         let sample = samples.get(index).copied().unwrap_or(0.0);
@@ -698,30 +733,106 @@ fn apply_hann(samples: &[f64], fft_size: usize) -> Vec<(f64, f64)> {
         } else {
             1.0
         };
-        values.push((sample * window, window));
+        values.push(Complex {
+            re: sample * window,
+            im: 0.0,
+        });
     }
     values
 }
 
-fn dft_magnitude(windowed: &[(f64, f64)], frequency: f64, window_sum: f64) -> f64 {
-    let omega = 2.0 * std::f64::consts::PI * frequency / SAMPLE_RATE as f64;
-    let cos_delta = omega.cos();
-    let sin_delta = omega.sin();
-    let mut cos_value = 1.0;
-    let mut sin_value = 0.0;
-    let mut real = 0.0;
-    let mut imag = 0.0;
+fn hann_window_sum(fft_size: usize) -> f64 {
+    if fft_size <= 1 {
+        return 1.0;
+    }
+    (0..fft_size)
+        .map(|index| {
+            0.5 - 0.5 * ((2.0 * std::f64::consts::PI * index as f64) / (fft_size - 1) as f64).cos()
+        })
+        .sum()
+}
 
-    for (sample, _) in windowed {
-        real += sample * cos_value;
-        imag -= sample * sin_value;
-        let next_cos = cos_value * cos_delta - sin_value * sin_delta;
-        let next_sin = sin_value * cos_delta + cos_value * sin_delta;
-        cos_value = next_cos;
-        sin_value = next_sin;
+fn fft_in_place(values: &mut [Complex]) {
+    let len = values.len();
+    if len <= 1 {
+        return;
     }
 
-    (2.0 * (real * real + imag * imag).sqrt() / window_sum).clamp(0.0, 1.0)
+    let mut target = 0;
+    for source in 1..len {
+        let mut bit = len >> 1;
+        while target & bit != 0 {
+            target ^= bit;
+            bit >>= 1;
+        }
+        target ^= bit;
+        if source < target {
+            values.swap(source, target);
+        }
+    }
+
+    let mut step = 2;
+    while step <= len {
+        let half_step = step / 2;
+        let angle = -2.0 * std::f64::consts::PI / step as f64;
+        let phase_step_re = angle.cos();
+        let phase_step_im = angle.sin();
+
+        for start in (0..len).step_by(step) {
+            let mut phase_re = 1.0;
+            let mut phase_im = 0.0;
+
+            for offset in 0..half_step {
+                let even_index = start + offset;
+                let odd_index = even_index + half_step;
+                let odd = values[odd_index];
+                let rotated = Complex {
+                    re: odd.re * phase_re - odd.im * phase_im,
+                    im: odd.re * phase_im + odd.im * phase_re,
+                };
+                let even = values[even_index];
+
+                values[even_index] = Complex {
+                    re: even.re + rotated.re,
+                    im: even.im + rotated.im,
+                };
+                values[odd_index] = Complex {
+                    re: even.re - rotated.re,
+                    im: even.im - rotated.im,
+                };
+
+                let next_phase_re = phase_re * phase_step_re - phase_im * phase_step_im;
+                let next_phase_im = phase_re * phase_step_im + phase_im * phase_step_re;
+                phase_re = next_phase_re;
+                phase_im = next_phase_im;
+            }
+        }
+
+        step *= 2;
+    }
+}
+
+fn fft_magnitude(frequency_bins: &[Complex], frequency: f64, window_sum: f64) -> f64 {
+    if frequency_bins.is_empty() {
+        return 0.0;
+    }
+
+    let max_index = frequency_bins.len() / 2;
+    let position = (frequency / SAMPLE_RATE as f64) * frequency_bins.len() as f64;
+    if position <= 0.0 {
+        return normalized_fft_magnitude(frequency_bins[0], window_sum);
+    }
+
+    let lower_index = position.floor().clamp(0.0, max_index as f64) as usize;
+    let upper_index = (lower_index + 1).min(max_index);
+    let mix = (position - lower_index as f64).clamp(0.0, 1.0);
+    let lower = normalized_fft_magnitude(frequency_bins[lower_index], window_sum);
+    let upper = normalized_fft_magnitude(frequency_bins[upper_index], window_sum);
+    (lower + (upper - lower) * mix).clamp(0.0, 1.0)
+}
+
+fn normalized_fft_magnitude(value: Complex, window_sum: f64) -> f64 {
+    (2.0 * (value.re * value.re + value.im * value.im).sqrt() / window_sum).clamp(0.0, 1.0)
 }
 
 fn bin_center_frequency(index: usize, options: &SpectrumOptions) -> f64 {
@@ -757,7 +868,11 @@ fn build_waveform(samples: &[f64]) -> Vec<f64> {
     (0..POINTS)
         .map(|index| {
             let source_index = index * samples.len() / POINTS;
-            samples.get(source_index).copied().unwrap_or(0.0).clamp(-1.0, 1.0)
+            samples
+                .get(source_index)
+                .copied()
+                .unwrap_or(0.0)
+                .clamp(-1.0, 1.0)
         })
         .collect()
 }

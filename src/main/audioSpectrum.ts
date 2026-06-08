@@ -26,6 +26,7 @@ type AudioSpectrumSubscription = {
   webContents: WebContents;
   options: Required<AudioSpectrumOptions>;
   lastSentAt: number;
+  lastFrameTimestamp: number;
 };
 
 const DEFAULT_OPTIONS: Required<AudioSpectrumOptions> = {
@@ -185,6 +186,21 @@ const ensurePollTimer = (ref: AudioSpectrumControllerRef) => {
     const controller = ref.current;
     if (!controller) return;
 
+    const now = Date.now();
+    let hasDueSubscriber = false;
+    for (const subscription of Array.from(subscriptions.values())) {
+      if (subscription.webContents.isDestroyed()) {
+        subscriptions.delete(getSubscriptionKey(subscription.webContents, subscription.id));
+        continue;
+      }
+
+      const interval = 1000 / subscription.options.fps;
+      if (now - subscription.lastSentAt >= interval) {
+        hasDueSubscriber = true;
+      }
+    }
+    if (!hasDueSubscriber) return;
+
     let frame: AudioSpectrumFrame | null = null;
     try {
       frame = normalizeFrame(controller.getSpectrumSnapshot());
@@ -194,7 +210,7 @@ const ensurePollTimer = (ref: AudioSpectrumControllerRef) => {
     }
     if (!frame) return;
 
-    const now = Date.now();
+    const frameTimestamp = Math.round(Number(frame.timestamp) || 0);
     for (const subscription of Array.from(subscriptions.values())) {
       if (subscription.webContents.isDestroyed()) {
         subscriptions.delete(getSubscriptionKey(subscription.webContents, subscription.id));
@@ -204,6 +220,8 @@ const ensurePollTimer = (ref: AudioSpectrumControllerRef) => {
       const interval = 1000 / subscription.options.fps;
       if (now - subscription.lastSentAt < interval) continue;
       subscription.lastSentAt = now;
+      if (frameTimestamp && subscription.lastFrameTimestamp === frameTimestamp) continue;
+      subscription.lastFrameTimestamp = frameTimestamp;
       subscription.webContents.send('audio-spectrum:frame', subscription.id, frame);
     }
   }, 1000 / 60);
@@ -240,6 +258,7 @@ export const registerAudioSpectrumIpc = (ref: AudioSpectrumControllerRef) => {
         webContents,
         options: normalizeOptions(payload?.options),
         lastSentAt: 0,
+        lastFrameTimestamp: 0,
       });
 
       if (!destroyedWebContents.has(webContents)) {
