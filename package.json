@@ -108,6 +108,13 @@
         ]
       },
       {
+        "from": "native/echo-spectrum-capture/echo-spectrum-capture.node",
+        "to": "native/echo-spectrum-capture.node",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build/mpv",
         "to": "mpv",
         "filter": [

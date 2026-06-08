@@ -5,11 +5,6 @@ import path from 'path';
 import { resolveLibmpvPath, resolveLibmpvDir } from './path';
 import type { MpvAudioDevice, MpvState, MpvTrackInfo } from './types';
 import type { ImpulseResponsePlaybackOptions } from '../../shared/audio';
-import type {
-  AudioSpectrumFrame,
-  AudioSpectrumOptions,
-  AudioSpectrumStatus,
-} from '../../shared/audio-spectrum';
 import log from '../logger';
 
 // native addon 类型（与自动生成的 index.d.ts 对齐）
@@ -48,10 +43,6 @@ interface MpvAddon {
   setMediaTitle(title: string): void;
   getState(): MpvState;
   getProperty(name: string): string;
-  startSpectrum?: (options: AudioSpectrumOptions) => AudioSpectrumStatus;
-  stopSpectrum?: () => AudioSpectrumStatus;
-  getSpectrumSnapshot?: () => AudioSpectrumFrame | null;
-  getSpectrumStatus?: () => AudioSpectrumStatus;
   setLoopFile(value: string): void;
   fade(from: number, to: number, durationMs: number): void;
   cancelFade(): void;
@@ -142,70 +133,6 @@ export class MpvController extends EventEmitter {
       }
     }
     return { ...this.state };
-  }
-
-  private getSpectrumUnavailableStatus(reason: string): AudioSpectrumStatus {
-    return {
-      available: false,
-      running: false,
-      provider: 'unavailable',
-      reason,
-    };
-  }
-
-  startSpectrum(options: AudioSpectrumOptions): AudioSpectrumStatus {
-    if (!this.addon) return this.getSpectrumUnavailableStatus('mpv 播放引擎未初始化');
-    if (typeof this.addon.startSpectrum !== 'function') {
-      return this.getSpectrumUnavailableStatus('当前 native 播放器未提供频谱分析器');
-    }
-    try {
-      return this.addon.startSpectrum(options);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error || '频谱分析器启动失败');
-      log.warn('[MpvController] startSpectrum failed:', error);
-      return this.getSpectrumUnavailableStatus(message);
-    }
-  }
-
-  stopSpectrum(): AudioSpectrumStatus {
-    if (!this.addon) return this.getSpectrumUnavailableStatus('mpv 播放引擎未初始化');
-    if (typeof this.addon.stopSpectrum !== 'function') {
-      return this.getSpectrumUnavailableStatus('当前 native 播放器未提供频谱分析器');
-    }
-    try {
-      return this.addon.stopSpectrum();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error || '频谱分析器停止失败');
-      log.warn('[MpvController] stopSpectrum failed:', error);
-      return this.getSpectrumUnavailableStatus(message);
-    }
-  }
-
-  getSpectrumSnapshot(): AudioSpectrumFrame | null {
-    if (!this.addon || typeof this.addon.getSpectrumSnapshot !== 'function') return null;
-    try {
-      return this.addon.getSpectrumSnapshot();
-    } catch (error) {
-      log.warn('[MpvController] getSpectrumSnapshot failed:', error);
-      return null;
-    }
-  }
-
-  getSpectrumStatus(): AudioSpectrumStatus {
-    if (!this.addon) return this.getSpectrumUnavailableStatus('mpv 播放引擎未初始化');
-    if (typeof this.addon.getSpectrumStatus !== 'function') {
-      return this.getSpectrumUnavailableStatus('当前 native 播放器未提供频谱分析器');
-    }
-    try {
-      return this.addon.getSpectrumStatus();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error || '频谱分析器状态读取失败');
-      log.warn('[MpvController] getSpectrumStatus failed:', error);
-      return this.getSpectrumUnavailableStatus(message);
-    }
   }
 
   // ── 生命周期 ──

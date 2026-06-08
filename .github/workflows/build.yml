@@ -137,6 +137,17 @@ jobs:
             npm run build
           fi
 
+      - name: Build native spectrum capture addon
+        working-directory: native/echo-spectrum-capture
+        shell: bash
+        run: |
+          npm install
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --no-const-enum --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
+
       - name: Install server runtime dependencies
         working-directory: server
         shell: bash

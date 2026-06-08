@@ -8,122 +8,30 @@ import type {
   AudioSpectrumUnsubscribePayload,
 } from '../shared/audio-spectrum';
 import log from './logger';
-
-export interface AudioSpectrumController {
-  startSpectrum(options: AudioSpectrumOptions): AudioSpectrumStatus;
-  stopSpectrum(): AudioSpectrumStatus;
-  getSpectrumSnapshot(): AudioSpectrumFrame | null;
-  getSpectrumStatus(): AudioSpectrumStatus;
-}
-
-export type AudioSpectrumControllerRef = {
-  current: AudioSpectrumController | null;
-};
+import { loadSpectrumCapture, type NativeSpectrumCapture } from './spectrumCapture';
 
 type AudioSpectrumSubscription = {
   id: string;
   pluginId: string;
   webContents: WebContents;
-  options: Required<AudioSpectrumOptions>;
-  lastSentAt: number;
-  lastFrameTimestamp: number;
-};
-
-const DEFAULT_OPTIONS: Required<AudioSpectrumOptions> = {
-  fps: 30,
-  binCount: 128,
-  fftSize: 2048,
-  smoothing: 0.72,
-  minFrequency: 20,
-  maxFrequency: 20000,
-  scale: 'log',
-  includeWaveform: false,
+  options?: AudioSpectrumOptions;
 };
 
 const subscriptions = new Map<string, AudioSpectrumSubscription>();
 const destroyedWebContents = new WeakSet<WebContents>();
-let pollTimer: ReturnType<typeof setInterval> | null = null;
 let registered = false;
+let capture: NativeSpectrumCapture | null | undefined;
+let currentOptionsKey = '';
+let pollingTimer: ReturnType<typeof setInterval> | null = null;
+let pollingIntervalMs = 0;
+let lastFrameTimestamp = 0;
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const normalizeFps = (value: unknown) => {
-  const fps = Math.round(Number(value));
-  if (!Number.isFinite(fps) || fps <= 0) return DEFAULT_OPTIONS.fps;
-  return clamp(fps, 1, 60);
-};
-
-const normalizePowerOfTwo = (value: unknown, fallback: number, min: number, max: number) => {
-  const next = Math.round(Number(value));
-  if (!Number.isFinite(next) || next <= 0) return fallback;
-  let power = 1;
-  while (power < next) power *= 2;
-  return clamp(power, min, max);
-};
-
-const normalizeOptions = (
-  options: AudioSpectrumOptions | undefined,
-): Required<AudioSpectrumOptions> => {
-  const minFrequency = clamp(
-    Math.round(Number(options?.minFrequency ?? DEFAULT_OPTIONS.minFrequency)),
-    1,
-    96000,
-  );
-  const maxFrequency = clamp(
-    Math.round(Number(options?.maxFrequency ?? DEFAULT_OPTIONS.maxFrequency)),
-    minFrequency + 1,
-    96000,
-  );
-
-  return {
-    fps: normalizeFps(options?.fps),
-    binCount: clamp(
-      Math.round(Number(options?.binCount ?? DEFAULT_OPTIONS.binCount)) || DEFAULT_OPTIONS.binCount,
-      8,
-      512,
-    ),
-    fftSize: normalizePowerOfTwo(options?.fftSize, DEFAULT_OPTIONS.fftSize, 256, 8192),
-    smoothing: clamp(Number(options?.smoothing ?? DEFAULT_OPTIONS.smoothing), 0, 0.95),
-    minFrequency,
-    maxFrequency,
-    scale:
-      options?.scale === 'linear' || options?.scale === 'mel' || options?.scale === 'log'
-        ? options.scale
-        : DEFAULT_OPTIONS.scale,
-    includeWaveform: Boolean(options?.includeWaveform),
-  };
-};
+const UNAVAILABLE_REASON = '系统音频频谱捕获不可用';
 
 const getSubscriptionKey = (webContents: WebContents, subscriptionId: string) =>
   `${webContents.id}:${String(subscriptionId || '').trim()}`;
 
-const mergeOptions = (): AudioSpectrumOptions => {
-  if (subscriptions.size === 0) return DEFAULT_OPTIONS;
-
-  const values = Array.from(subscriptions.values()).map((item) => item.options);
-  return {
-    fps: Math.max(...values.map((item) => item.fps)),
-    binCount: Math.max(...values.map((item) => item.binCount)),
-    fftSize: Math.max(...values.map((item) => item.fftSize)),
-    smoothing: Math.max(...values.map((item) => item.smoothing)),
-    minFrequency: Math.min(...values.map((item) => item.minFrequency)),
-    maxFrequency: Math.max(...values.map((item) => item.maxFrequency)),
-    scale: values.find((item) => item.scale !== 'log')?.scale ?? DEFAULT_OPTIONS.scale,
-    includeWaveform: values.some((item) => item.includeWaveform),
-  };
-};
-
-const withSubscriberCount = (
-  status: AudioSpectrumStatus | null | undefined,
-): AudioSpectrumStatus => ({
-  available: Boolean(status?.available),
-  running: Boolean(status?.running),
-  provider: status?.provider ?? 'unavailable',
-  reason: status?.reason,
-  subscriberCount: subscriptions.size,
-});
-
-const getUnavailableStatus = (reason = 'mpv 播放引擎不可用'): AudioSpectrumStatus => ({
+const getUnavailableStatus = (reason = UNAVAILABLE_REASON): AudioSpectrumStatus => ({
   available: false,
   running: false,
   provider: 'unavailable',
@@ -131,20 +39,195 @@ const getUnavailableStatus = (reason = 'mpv 播放引擎不可用'): AudioSpectr
   subscriberCount: subscriptions.size,
 });
 
-const normalizeFrame = (frame: AudioSpectrumFrame | null): AudioSpectrumFrame | null => {
-  if (!frame) return null;
+const withSubscriberCount = (status: AudioSpectrumStatus): AudioSpectrumStatus => ({
+  ...status,
+  subscriberCount: subscriptions.size,
+});
+
+const clampNumber = (value: unknown, min: number, max: number) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return undefined;
+  return Math.min(max, Math.max(min, number));
+};
+
+const getCapture = () => {
+  if (capture !== undefined) return capture;
+  capture = loadSpectrumCapture();
+  return capture;
+};
+
+const getMergedOptions = (): AudioSpectrumOptions => {
+  let fps = 30;
+  let binCount = 128;
+  let fftSize = 2048;
+  let smoothing = 0.65;
+  let minFrequency = 20;
+  let maxFrequency = 20000;
+  let scale: AudioSpectrumOptions['scale'] = 'log';
+  let includeWaveform = false;
+
+  for (const subscription of subscriptions.values()) {
+    const options = subscription.options || {};
+    fps = Math.max(fps, clampNumber(options.fps, 1, 60) ?? fps);
+    binCount = Math.max(binCount, clampNumber(options.binCount, 8, 512) ?? binCount);
+    fftSize = Math.max(fftSize, clampNumber(options.fftSize, 512, 8192) ?? fftSize);
+    smoothing = Math.min(smoothing, clampNumber(options.smoothing, 0, 0.95) ?? smoothing);
+    minFrequency = Math.min(
+      minFrequency,
+      clampNumber(options.minFrequency, 1, 20000) ?? minFrequency,
+    );
+    maxFrequency = Math.max(
+      maxFrequency,
+      clampNumber(options.maxFrequency, minFrequency + 1, 24000) ?? maxFrequency,
+    );
+    if (options.scale) scale = options.scale;
+    includeWaveform = includeWaveform || Boolean(options.includeWaveform);
+  }
+
   return {
-    ...frame,
-    timePos: typeof frame.timePos === 'number' ? frame.timePos : null,
-    bins: Array.from(frame.bins ?? []),
-    waveform: frame.waveform ? Array.from(frame.waveform) : undefined,
+    fps,
+    binCount,
+    fftSize,
+    smoothing,
+    minFrequency,
+    maxFrequency,
+    scale,
+    includeWaveform,
   };
 };
 
-const stopPollTimer = () => {
-  if (!pollTimer) return;
-  clearInterval(pollTimer);
-  pollTimer = null;
+const stopPolling = () => {
+  if (pollingTimer) clearInterval(pollingTimer);
+  pollingTimer = null;
+  pollingIntervalMs = 0;
+  lastFrameTimestamp = 0;
+};
+
+const removeDeadSubscriptions = () => {
+  let changed = false;
+  for (const [key, subscription] of subscriptions) {
+    if (!subscription.webContents.isDestroyed()) continue;
+    subscriptions.delete(key);
+    changed = true;
+  }
+  return changed;
+};
+
+const broadcastFrame = (frame: AudioSpectrumFrame) => {
+  for (const [key, subscription] of subscriptions) {
+    if (subscription.webContents.isDestroyed()) {
+      subscriptions.delete(key);
+      continue;
+    }
+
+    try {
+      subscription.webContents.send('audio-spectrum:frame', subscription.id, frame);
+    } catch (err) {
+      log.debug('[AudioSpectrum] Failed to send frame:', err);
+      subscriptions.delete(key);
+    }
+  }
+};
+
+const pollFrame = () => {
+  if (subscriptions.size === 0) {
+    stopCapture();
+    return;
+  }
+
+  const nativeCapture = getCapture();
+  if (!nativeCapture) {
+    stopPolling();
+    return;
+  }
+
+  try {
+    const frame = nativeCapture.getSnapshot();
+    if (!frame || frame.timestamp === lastFrameTimestamp) return;
+    lastFrameTimestamp = frame.timestamp;
+    broadcastFrame(frame);
+    if (removeDeadSubscriptions() && subscriptions.size === 0) stopCapture();
+  } catch (err) {
+    log.warn('[AudioSpectrum] getSnapshot failed:', err);
+    stopPolling();
+  }
+};
+
+const startPolling = (fps = 30) => {
+  const intervalMs = Math.max(16, Math.round(1000 / Math.max(1, Math.min(60, fps))));
+  if (pollingTimer && pollingIntervalMs === intervalMs) return;
+  stopPolling();
+  pollingIntervalMs = intervalMs;
+  pollingTimer = setInterval(pollFrame, intervalMs);
+  pollFrame();
+};
+
+const stopCapture = (): AudioSpectrumStatus => {
+  stopPolling();
+  currentOptionsKey = '';
+  const nativeCapture = capture === undefined ? null : capture;
+  if (!nativeCapture) return getUnavailableStatus();
+
+  try {
+    return withSubscriberCount(nativeCapture.stop());
+  } catch (err) {
+    log.warn('[AudioSpectrum] stop failed:', err);
+    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+  }
+};
+
+const syncCaptureForSubscriptions = (): AudioSpectrumStatus => {
+  if (subscriptions.size === 0) return stopCapture();
+
+  const nativeCapture = getCapture();
+  if (!nativeCapture) return getUnavailableStatus('echo-spectrum-capture native addon 未加载');
+
+  const options = getMergedOptions();
+  const nextOptionsKey = JSON.stringify(options);
+  if (pollingTimer && currentOptionsKey === nextOptionsKey) {
+    try {
+      return withSubscriberCount(nativeCapture.getStatus());
+    } catch (err) {
+      log.warn('[AudioSpectrum] getStatus failed:', err);
+      return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  try {
+    const status = withSubscriberCount(nativeCapture.start(options));
+    currentOptionsKey = nextOptionsKey;
+    if (status.running) startPolling(options.fps);
+    else stopPolling();
+    return status;
+  } catch (err) {
+    log.warn('[AudioSpectrum] start failed:', err);
+    stopPolling();
+    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+  }
+};
+
+const getStatus = (): AudioSpectrumStatus => {
+  const nativeCapture = getCapture();
+  if (!nativeCapture) return getUnavailableStatus('echo-spectrum-capture native addon 未加载');
+
+  try {
+    return withSubscriberCount(nativeCapture.getStatus());
+  } catch (err) {
+    log.warn('[AudioSpectrum] getStatus failed:', err);
+    return getUnavailableStatus(err instanceof Error ? err.message : String(err));
+  }
+};
+
+const getSnapshot = (): AudioSpectrumFrame | null => {
+  const nativeCapture = getCapture();
+  if (!nativeCapture) return null;
+
+  try {
+    return nativeCapture.getSnapshot();
+  } catch (err) {
+    log.warn('[AudioSpectrum] getSnapshot failed:', err);
+    return null;
+  }
 };
 
 const removeWebContentsSubscriptions = (webContents: WebContents) => {
@@ -157,92 +240,13 @@ const removeWebContentsSubscriptions = (webContents: WebContents) => {
   return changed;
 };
 
-const syncNativeSpectrum = (ref: AudioSpectrumControllerRef): AudioSpectrumStatus => {
-  const controller = ref.current;
-  if (!controller) return getUnavailableStatus();
-
-  try {
-    if (subscriptions.size === 0) {
-      stopPollTimer();
-      return withSubscriberCount(controller.stopSpectrum());
-    }
-    return withSubscriberCount(controller.startSpectrum(mergeOptions()));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error || '频谱分析器启动失败');
-    log.warn('[AudioSpectrum] Native spectrum sync failed:', error);
-    return getUnavailableStatus(message);
-  }
-};
-
-const ensurePollTimer = (ref: AudioSpectrumControllerRef) => {
-  if (pollTimer || subscriptions.size === 0) return;
-
-  pollTimer = setInterval(() => {
-    if (subscriptions.size === 0) {
-      stopPollTimer();
-      return;
-    }
-
-    const controller = ref.current;
-    if (!controller) return;
-
-    const now = Date.now();
-    let hasDueSubscriber = false;
-    for (const subscription of Array.from(subscriptions.values())) {
-      if (subscription.webContents.isDestroyed()) {
-        subscriptions.delete(getSubscriptionKey(subscription.webContents, subscription.id));
-        continue;
-      }
-
-      const interval = 1000 / subscription.options.fps;
-      if (now - subscription.lastSentAt >= interval) {
-        hasDueSubscriber = true;
-      }
-    }
-    if (!hasDueSubscriber) return;
-
-    let frame: AudioSpectrumFrame | null = null;
-    try {
-      frame = normalizeFrame(controller.getSpectrumSnapshot());
-    } catch (error) {
-      log.warn('[AudioSpectrum] Failed to read spectrum snapshot:', error);
-      frame = null;
-    }
-    if (!frame) return;
-
-    const frameTimestamp = Math.round(Number(frame.timestamp) || 0);
-    for (const subscription of Array.from(subscriptions.values())) {
-      if (subscription.webContents.isDestroyed()) {
-        subscriptions.delete(getSubscriptionKey(subscription.webContents, subscription.id));
-        continue;
-      }
-
-      const interval = 1000 / subscription.options.fps;
-      if (now - subscription.lastSentAt < interval) continue;
-      subscription.lastSentAt = now;
-      if (frameTimestamp && subscription.lastFrameTimestamp === frameTimestamp) continue;
-      subscription.lastFrameTimestamp = frameTimestamp;
-      subscription.webContents.send('audio-spectrum:frame', subscription.id, frame);
-    }
-  }, 1000 / 60);
-};
-
-export const registerAudioSpectrumIpc = (ref: AudioSpectrumControllerRef) => {
+export const registerAudioSpectrumIpc = () => {
   if (registered) return;
   registered = true;
 
-  ipcMain.handle('audio-spectrum:get-status', () =>
-    withSubscriberCount(ref.current?.getSpectrumStatus() ?? getUnavailableStatus()),
-  );
+  ipcMain.handle('audio-spectrum:get-status', () => getStatus());
 
-  ipcMain.handle('audio-spectrum:get-snapshot', () => {
-    try {
-      return normalizeFrame(ref.current?.getSpectrumSnapshot() ?? null);
-    } catch (error) {
-      log.warn('[AudioSpectrum] Failed to get snapshot:', error);
-      return null;
-    }
-  });
+  ipcMain.handle('audio-spectrum:get-snapshot', () => getSnapshot());
 
   ipcMain.handle(
     'audio-spectrum:subscribe',
@@ -256,23 +260,19 @@ export const registerAudioSpectrumIpc = (ref: AudioSpectrumControllerRef) => {
         id: subscriptionId,
         pluginId: String(payload?.pluginId || '').trim(),
         webContents,
-        options: normalizeOptions(payload?.options),
-        lastSentAt: 0,
-        lastFrameTimestamp: 0,
+        options: payload?.options,
       });
 
       if (!destroyedWebContents.has(webContents)) {
         destroyedWebContents.add(webContents);
         webContents.once('destroyed', () => {
           if (removeWebContentsSubscriptions(webContents)) {
-            syncNativeSpectrum(ref);
+            syncCaptureForSubscriptions();
           }
         });
       }
 
-      const status = syncNativeSpectrum(ref);
-      ensurePollTimer(ref);
-      return { ok: true, status };
+      return { ok: true, status: syncCaptureForSubscriptions() };
     },
   );
 
@@ -283,7 +283,7 @@ export const registerAudioSpectrumIpc = (ref: AudioSpectrumControllerRef) => {
       if (subscriptionId) {
         subscriptions.delete(getSubscriptionKey(event.sender, subscriptionId));
       }
-      return syncNativeSpectrum(ref);
+      return syncCaptureForSubscriptions();
     },
   );
 };
@@ -292,7 +292,7 @@ export const unregisterAudioSpectrumIpc = () => {
   if (!registered) return;
   registered = false;
   subscriptions.clear();
-  stopPollTimer();
+  stopCapture();
   ipcMain.removeHandler('audio-spectrum:get-status');
   ipcMain.removeHandler('audio-spectrum:get-snapshot');
   ipcMain.removeHandler('audio-spectrum:subscribe');

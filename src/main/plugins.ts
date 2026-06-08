@@ -944,11 +944,11 @@ const normalizeMarketplacePackagePath = (value: unknown) =>
     .replace(/\/+$/, '');
 
 const isSafeMarketplacePackagePath = (value: string) =>
-  Boolean(value) &&
-  value !== '.' &&
-  !value.split('/').includes('..') &&
-  !value.startsWith('..') &&
-  !isAbsolute(value);
+  value === '' ||
+  (value !== '.' &&
+    !value.split('/').includes('..') &&
+    !value.startsWith('..') &&
+    !isAbsolute(value));
 
 const normalizeMarketplaceTags = (value: unknown) => {
   if (!Array.isArray(value)) return [];
@@ -962,13 +962,18 @@ const normalizeMarketplaceTags = (value: unknown) => {
   );
 };
 
-const getMarketplaceEntryDownloadUrl = (
+const getMarketplaceEntryRepository = (
   sourceRepo: GithubRepository,
+  entry: PluginMarketplaceIndexEntry,
+) => parseGithubRepository(entry.repo) ?? sourceRepo;
+
+const getMarketplaceEntryDownloadUrl = (
+  pluginRepo: GithubRepository,
   entry: PluginMarketplaceIndexEntry,
 ) => {
   const explicitUrl = String(entry.downloadUrl || '').trim();
   if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
-  return toGithubArchiveUrl(sourceRepo);
+  return toGithubArchiveUrl(pluginRepo);
 };
 
 const resolveMarketplaceAssetUrl = (
@@ -999,8 +1004,9 @@ const normalizeMarketplaceIndexPlugins = (
     const pluginId = normalizePluginId(rawEntry?.id);
     const name = String(rawEntry?.name || pluginId).trim();
     const version = String(rawEntry?.version || '').trim();
-    const packagePath = normalizeMarketplacePackagePath(rawEntry?.packagePath || rawEntry?.path);
+    const packagePath = normalizeMarketplacePackagePath(rawEntry?.packagePath ?? rawEntry?.path);
     if (!pluginId || !name || !version || !isSafeMarketplacePackagePath(packagePath)) continue;
+    const pluginRepo = getMarketplaceEntryRepository(sourceRepo, rawEntry);
 
     const manifest: EchoPluginManifest = {
       id: pluginId,
@@ -1014,7 +1020,7 @@ const normalizeMarketplaceIndexPlugins = (
     const repo = String(rawEntry.repo || '').trim() || source.url;
     const homepage = String(rawEntry.homepage || '').trim() || repo;
     const icon = String(rawEntry.icon || '').trim();
-    const iconUrl = resolveMarketplaceAssetUrl(sourceRepo, packagePath, icon);
+    const iconUrl = resolveMarketplaceAssetUrl(pluginRepo, packagePath, icon);
 
     plugins.push({
       id: pluginId,
@@ -1027,7 +1033,7 @@ const normalizeMarketplaceIndexPlugins = (
       tags: normalizeMarketplaceTags(rawEntry.tags),
       repo,
       homepage,
-      downloadUrl: getMarketplaceEntryDownloadUrl(sourceRepo, rawEntry),
+      downloadUrl: getMarketplaceEntryDownloadUrl(pluginRepo, rawEntry),
       packagePath,
       checksum: String(rawEntry.checksum || rawEntry.sha256 || '').trim(),
       sourceId: source.id,

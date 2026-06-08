@@ -9,6 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const SEEK_MUTE_HOLD_MS: u64 = 80;
+const PLAYER_CACHE_SECS: &str = "30";
+const PLAYER_DEMUXER_MAX_BYTES: &str = "48MiB";
+const PLAYER_DEMUXER_MAX_BACK_BYTES: &str = "12MiB";
+const PLAYER_CACHE_SEEK_MIN_SECS: &str = "15";
 
 /// 淡入淡出请求
 #[allow(dead_code)]
@@ -65,15 +69,15 @@ impl MpvPlayer {
         player.set_option("audio-display", "no");
         player.set_option("hr-seek", "yes");
         player.set_option("volume-max", "100");
-        // 网络音频显式开启 mpv demuxer 缓冲，弱网时优先缓冲而不是断续播放。
-        player.set_option("demuxer-max-bytes", "150MiB");
-        player.set_option("demuxer-max-back-bytes", "50MiB");
-        player.set_option("demuxer-readahead-secs", "120");
+        // 网络音频保留一定预读，但避免 mpv 为音频播放长期占用过大的 demuxer cache。
+        player.set_option("demuxer-max-bytes", PLAYER_DEMUXER_MAX_BYTES);
+        player.set_option("demuxer-max-back-bytes", PLAYER_DEMUXER_MAX_BACK_BYTES);
+        player.set_option("demuxer-readahead-secs", PLAYER_CACHE_SECS);
         player.set_option("cache", "yes");
-        player.set_option("cache-secs", "120");
+        player.set_option("cache-secs", PLAYER_CACHE_SECS);
         player.set_option("cache-pause", "yes");
         player.set_option("cache-pause-wait", "2");
-        player.set_option("cache-seek-min", "50");
+        player.set_option("cache-seek-min", PLAYER_CACHE_SEEK_MIN_SECS);
         player.set_option("user-agent", "Mozilla/5.0");
         player.set_option("input-media-keys", "no");
         player.set_option("audio-client-name", "EchoMusic");

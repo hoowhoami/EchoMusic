@@ -70,6 +70,7 @@ export default defineConfig({
                 '../../native/echo-media-controls',
                 '../../native/echo-mpv-player',
                 '../../native/echo-storage',
+                '../../native/echo-spectrum-capture',
               ],
             },
           },

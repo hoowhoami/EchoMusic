@@ -35,6 +35,7 @@
 - **歌词显示**：支持 LRC/YRC 逐字歌词解析、歌词选择、歌词翻译、正则过滤、滚动同步、全屏歌词、写真模式、桌面歌词。
 - **音频增强**：支持 10 段 EQ 均衡器、音量均衡（基于 LUFS 响度标准化）、空间音效（IR 文件导入/切换）与多种音效模式。
 - **系统媒体控制**：原生集成 macOS MPNowPlayingInfoCenter、Windows SMTC、Linux MPRIS，支持系统媒体按键和进度同步。
+- **系统音频频谱**：通过原生系统音频捕获为插件提供频谱数据，避免依赖播放引擎导出频谱。
 - **系统集成**：支持窗口控制、系统托盘、托盘快捷控制、全局快捷键、开机自启动、启动时最小化和 mini 模式。
 - **音频设备**：支持切换音频输出设备、独占模式输出。
 - **插件扩展**：支持在线插件源浏览安装与本地插件加载，自定义页面、侧边栏入口、设置项、播放器按钮、歌曲右键菜单与播放事件监听。
@@ -64,6 +65,7 @@
   - `echo-mpv-player`：libmpv 播放引擎封装，支持淡入淡出、EQ、音量均衡、空间音效
   - `echo-media-controls`：系统媒体控制集成（macOS/Windows/Linux 原生 API）
   - `echo-storage`：SQLite 本地持久化存储，负责设置、播放队列与状态快照
+  - `echo-spectrum-capture`：系统音频捕获与频谱分析，为插件 `ctx.audio.spectrum` 提供处理后的频谱帧
 
 ## 🖼️ 界面截图
 
@@ -102,6 +104,7 @@
 - [pnpm](https://pnpm.io/) 9+
 - [Rust](https://www.rust-lang.org/)（编译原生模块需要）
 - [mpv / libmpv](https://mpv.io/)（播放引擎，macOS: `brew install mpv`，Linux: `apt install libmpv-dev`，Windows: 自行下载 `libmpv-2.dll` 到 `build\mpv` 目录）
+- Linux 构建系统音频捕获模块需要 ALSA 开发库（Debian/Ubuntu: `sudo apt install libasound2-dev`）
 
 ### 本地开发
 
@@ -123,7 +126,7 @@
    在Linux下，可能会出现如下报错:
 
    ```bash
-   Error: ENOENT: no such file or directory, open '/home/tzgml/Projects/Work/EchoMusic/node_modules/electron/path.txt'
+   Error: ENOENT: no such file or directory, open '/home/xxx/Projects/Work/EchoMusic/node_modules/electron/path.txt'
    ```
 
    需手动下载并解压Electron到对应目录：
@@ -136,7 +139,7 @@
    printf '%s' './electron' > path.txt
    ```
 
-3. **编译Rust原生模块**
+3. **编译 Rust 原生模块**
 
    倘若出现如下报错:
 
@@ -145,23 +148,29 @@
    [error] [MpvController] Failed to load echo-mpv-player addon
    ```
 
-   需要手动编译rust原生模块，因为\*.node文件在.gitignore中被排除：
+   需要手动编译 Rust 原生模块，因为 `*.node` 文件在 `.gitignore` 中被排除。推荐使用各 addon 自带的 napi-rs 构建脚本生成平台对应的 `.node`：
 
    ```bash
-     cd native/echo-mpv-player
-     cargo build --release
-     cp target/release/libecho_mpv_player.so echo-mpv-player.node
+   cd native/echo-mpv-player
+   npm install
+   npm run build
 
-     cd ../echo-media-controls
-     cargo build --release
-     cp target/release/libecho_media_controls.so echo-media-controls.node
+   cd ../echo-media-controls
+   npm install
+   npm run build
 
-     cd ../echo-storage
-     cargo build --release
-     cp target/release/libecho_storage.so echo-storage.node
+   cd ../echo-storage
+   npm install
+   npm run build
 
-     cd ../..
+   cd ../echo-spectrum-capture
+   npm install
+   npm run build
+
+   cd ../..
    ```
+
+   `echo-spectrum-capture` 负责系统音频频谱捕获：Windows 使用 WASAPI loopback，Linux 使用系统 monitor/loopback 输入，macOS 使用 ScreenCaptureKit。macOS 首次使用频谱可视化或 `ctx.audio.spectrum` 时，需要在“系统设置 -> 隐私与安全性 -> 屏幕与系统音频录制”中授权 EchoMusic；开发模式下也可能需要授权 Terminal、Electron 或当前启动进程。
 
 4. **启动本地开发服务器**
 
@@ -173,7 +182,7 @@
 
 ## 插件系统
 
-EchoMusic 支持在线插件源浏览安装与本地插件扩展。官方插件源会作为内置默认源提供，可停用但不可删除；用户也可以添加自定义 GitHub 插件源，仓库根目录提供 `echo-plugins.json` 后即可在“插件管理”的“在线插件”中浏览、安装和更新。网络环境不佳时可在“实验性功能”中配置 GitHub 加速地址，插件源索引和插件下载会复用该地址。
+EchoMusic 支持在线插件源浏览安装与本地插件扩展。
 
 插件可以注册页面、侧边栏、设置项、播放栏按钮、歌曲右键菜单，也可以通过 DOM selector 把 Vue 组件挂载到界面的任意位置。内置安全模式与故障自动恢复机制，插件出错时无需手动操作即可恢复正常。
 
