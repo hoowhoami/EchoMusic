@@ -61,7 +61,7 @@ export const canPlaySong = (song: Song): boolean => {
 };
 
 export const isPlayableSong = (song: Song): boolean =>
-  Boolean(song.hash?.trim()) && canPlaySong(song);
+  Boolean(song.hash?.trim() || song.audioUrl?.trim()) && canPlaySong(song);
 
 export const isSameSong = (left: Song, right: Song): boolean => {
   const leftMixSongId = String(left.mixSongId ?? '0');

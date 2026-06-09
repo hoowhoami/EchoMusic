@@ -186,7 +186,9 @@ export interface EchoPluginManifest {
     desktopLyric?: boolean;
   };
   capabilities?: {
+    audioSource?: boolean;
     audioSpectrum?: boolean;
+    lyrics?: boolean;
     process?: boolean;
   };
   contributes?: {

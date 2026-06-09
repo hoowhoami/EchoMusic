@@ -217,6 +217,7 @@ export const createPlaybackManager = (
       void lyricStore.fetchLyrics(lyricHash, {
         preserveCurrent: Boolean(track.lyric),
         duration: resolved.timeLength || 0,
+        track,
       });
     } else if (!track.lyric) {
       lyricStore.clear('', '暂无歌词');

@@ -648,8 +648,14 @@ const validateManifestCapabilities = (manifest: EchoPluginManifest) => {
   if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) {
     return 'manifest.capabilities 必须是对象';
   }
+  if (capabilities.audioSource !== undefined && typeof capabilities.audioSource !== 'boolean') {
+    return 'manifest.capabilities.audioSource 必须是布尔值';
+  }
   if (capabilities.audioSpectrum !== undefined && typeof capabilities.audioSpectrum !== 'boolean') {
     return 'manifest.capabilities.audioSpectrum 必须是布尔值';
+  }
+  if (capabilities.lyrics !== undefined && typeof capabilities.lyrics !== 'boolean') {
+    return 'manifest.capabilities.lyrics 必须是布尔值';
   }
   if (capabilities.process !== undefined && typeof capabilities.process !== 'boolean') {
     return 'manifest.capabilities.process 必须是布尔值';

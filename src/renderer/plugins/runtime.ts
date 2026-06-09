@@ -29,6 +29,11 @@ import {
   registerPluginCommand,
   removePluginContributions,
 } from './registry';
+import {
+  registerPluginAudioSourceResolver,
+  type PluginAudioSourceResolverContribution,
+} from './audioSource';
+import { registerPluginLyricResolver, type PluginLyricResolverContribution } from './lyrics';
 import type { Component } from 'vue';
 
 type PluginModule =
@@ -84,6 +89,9 @@ export interface EchoPluginContext {
   audio: ReturnType<typeof createAudioApi>;
   playlist: ReturnType<typeof createPlaylistApi>;
   lyric: ReturnType<typeof useLyricStore>;
+  lyrics: {
+    registerResolver: (contribution: PluginLyricResolverContribution) => () => void;
+  };
   settings: ReturnType<typeof useSettingStore>;
   theme: PluginThemeApi;
   nowPlaying: Window['electron']['nowPlaying'];
@@ -321,7 +329,10 @@ const createThemeApi = (pluginId: string, addDisposable: (dispose: () => void) =
   };
 };
 
-const createPlayerApi = () => {
+const createPlayerApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => {
   const player = usePlayerStore();
   return {
     store: player,
@@ -339,6 +350,18 @@ const createPlayerApi = () => {
     seek: (time: number) => player.seek(time),
     setVolume: (volume: number) => player.setVolume(volume),
     setPlayMode: player.setPlayMode,
+    audioSource: {
+      register: (contribution: PluginAudioSourceResolverContribution) => {
+        if (descriptor.manifest.capabilities?.audioSource !== true) {
+          throw new Error('插件未声明音源解析能力');
+        }
+        return addDisposable(
+          registerPluginAudioSourceResolver(descriptor.id, contribution, (source, error) => {
+            void reportPluginRuntimeError(descriptor.id, error, source);
+          }),
+        );
+      },
+    },
   };
 };
 
@@ -362,6 +385,22 @@ const createAudioApi = (pluginId: string, addDisposable: (dispose: () => void) =
         ) ?? (() => undefined);
       return addDisposable(dispose);
     },
+  },
+});
+
+const createLyricsApi = (
+  descriptor: EchoPluginDescriptor,
+  addDisposable: (dispose: () => void) => () => void,
+) => ({
+  registerResolver: (contribution: PluginLyricResolverContribution) => {
+    if (descriptor.manifest.capabilities?.lyrics !== true) {
+      throw new Error('插件未声明歌词解析能力');
+    }
+    return addDisposable(
+      registerPluginLyricResolver(descriptor.id, contribution, (source, error) => {
+        void reportPluginRuntimeError(descriptor.id, error, source);
+      }),
+    );
   },
 });
 
@@ -885,10 +924,11 @@ const createPluginContext = (
       settings: settingStore,
       theme: themeStore,
     },
-    player: createPlayerApi(),
+    player: createPlayerApi(descriptor, addDisposable),
     audio: createAudioApi(descriptor.id, addDisposable),
     playlist: createPlaylistApi(),
     lyric: lyricStore,
+    lyrics: createLyricsApi(descriptor, addDisposable),
     settings: settingStore,
     theme: createThemeApi(descriptor.id, addDisposable),
     nowPlaying: window.electron.nowPlaying,
